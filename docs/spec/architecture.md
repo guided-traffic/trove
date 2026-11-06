@@ -295,12 +295,12 @@ Acceptance criteria:
   never shows a connection named `trove:<that replica>:lease`.
 - On a `packages` replica, `GET /ui/`, `GET /`, `GET /auth/oidc/corp/start`, `GET /api/v1/system/ping` and
   `POST /api/v1/auth/oidc/token` answer the problem of `GET /does-not-exist` (the `404` with a token or with anonymous access on, the same `401` `credentials_required` without a credential while it is off, Q-ARCH-302), and a request with a valid
-  `__Host-trv_session` cookie and no token to `GET /api/npm/npm-local/@acme%2fsdk` is treated as one without a
+  `__Host-trv_session` cookie and no token to `GET /api/npm/web/npm-local/@acme%2fsdk` is treated as one without a
   credential (`401` `credentials_required` while anonymous access is off); on an `api` replica,
-  `GET /api/npm/npm-local/@acme%2fsdk`, `GET /files/generic-local/x` and `GET /v2/` answer that problem, and a test
+  `GET /api/npm/web/npm-local/@acme%2fsdk`, `GET /files/web/generic-local/x` and `GET /v2/` answer that problem, and a test
   double of the upstream records no request from it while the e2e suite runs, except the upstream tests it sends.
 - With `api.cors.allowed_origins` set and the rate limits on, each of these requests and `OPTIONS /api/v1/system/ping` on
-  `packages`, `OPTIONS /files/generic-local/x` on `api`, sent with no credential, a token, a rejected token, a live session
+  `packages`, `OPTIONS /files/web/generic-local/x` on `api`, sent with no credential, a token, a rejected token, a live session
   cookie with and without its CSRF token, an ended session cookie, the Fetch Metadata headers of a browser or as the CORS
   preflight of an allowed origin, with anonymous access off and on, answers what the request with the same method and
   headers to `/does-not-exist` answers: the same status, the same header apart from `X-Request-Id`, `Date` and
@@ -400,7 +400,7 @@ flowchart LR
 | vuln | `internal/vuln`, `internal/vuln/{advisory,match,osv,metrics,store,sync,evaluate,triage,report}` | Vulnerability scanning: the domain vocabulary and ports at the root; the advisory records, the matcher, the OSV decoder and the metrics are leaves | [vulnerability-scanning.md](vulnerability-scanning.md), Q-VULN-23 |
 | catalog | `internal/formats/catalog` | The format catalog (leaf): every format's facts, its package-name rule and its exposure facts; `repository` and `authz` read it | R-REPO-003, R-AUTHZ-005, Q-ARCH-188 |
 | api | `internal/api/v1`, `internal/api/edge` | Management REST API; the conversions every HTTP entry point shares (the request to the `authz.Subject`, the holder of a request's index) | [api-and-ui.md](api-and-ui.md), R-AUTHZ-015 |
-| dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
+| dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<projectKey>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
 | formathost | `internal/formathost` | The `Host` of the format contract and the adapters of the item store's hooks and the generic layer's seam; the data ports are bound by the composition root | R-ARCH-009, Q-ARCH-193, Q-ARCH-212 |
 | packages | `internal/packages` | The generic package rows: the package store and the package writer that raises `packages.rev_seq` | R-ARCH-009, Q-ARCH-212 |
 | webui | `internal/webui`, `internal/webui/shared` | Embedded Angular build; the shared asset store of the UI's hashed files on the blob store, which the handler takes as an interface (Q-ARCH-332) | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004, [ha-and-helm.md](ha-and-helm.md) (R-HA-020, Q-HA-120) |
@@ -485,7 +485,7 @@ connection through an edge proxy that balances per request.
 | Registered in-process caches (R-ARCH-018): the repository snapshot; the proxy's copies of the claims and pin-rule trie, gone packages, circuit state, global offline switch and cache invalidations ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045); the grant index; the identity caches `auth_tokens`, `auth_sessions`, `auth_principals` and `auth_settings` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023); the rendition cache; the merged-metadata cache; the per-remote upstream HTTP clients with their connection pools (`proxy_upstream_clients`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-049, Q-REPO-89); CI issuer keys; from M4b the advisory source state `vuln_source_state` and the rendered NuGet vulnerability page `vuln_nuget_page` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-027) | Until evicted, invalidated or `SafetyTTL` | Each is a copy of PostgreSQL state. It is self-validating (`rev_seq`, epochs) or kept within the propagation bound of R-ARCH-018, and a fill never re-inserts a value that a change has already invalidated (R-ARCH-018), so another replica gives the same answer from PostgreSQL. An epoch that went backwards or was reused after a PostgreSQL failover flushes the area on every replica, for every change area (R-ARCH-018, change-area step 5). |
 | The last read advisory data state per ecosystem, kept beside the registered cache `vuln_source_state` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-027, Q-VULN-72) | Replaced by every successful read of the state; kept while the read fails | The answer a caller gets when the refill is slow or failed, so that no download waits for the database. A copy of PostgreSQL state that only a repository with `onMissingData: block` reads, and only when no finding blocks already; its age shows through the state's synced time (`Stale`). It outlives the cache's `SafetyTTL` on purpose: a state read that fails says nothing about the data, and the download's own lookup reads PostgreSQL anyway. |
 | Metadata-bytes cache, keyed by blob digest ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025) | Until evicted | Self-validating: which digest a request serves is always read from PostgreSQL, and the key is the content address, so every replica serves the same bytes. |
-| Negative cache of unknown repository keys (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the key shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
+| Negative cache of unknown repository names, a project key with a repository key (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the name shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
 | Negative-cache L1 (R-ARCH-030) | At most the checked lifetime of the Valkey entry it copies | A copy of an upstream `404` or `410`, not of PostgreSQL state. Any replica may answer from such an entry or ask the upstream within `notFoundTtlSeconds` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028), so both answers are the same contract; an invalidation applies to the L1 as to Valkey. |
 | Caches of external documents: OIDC discovery and JWKS of the login providers ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004) | Until their refresh | A copy of what the provider publishes. An unknown `kid` makes the replica refetch, at most once per provider and replica per 60 s, so right after a provider signs with a new key, one replica may reject a login that another accepts, for at most that throttle. A provider that publishes a key before signing with it never opens this window. The GitLab issuer keys live in PostgreSQL and are a registered cache above ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003). On an unknown `kid`, a CI issuer re-reads its `ci_issuer_keys` row at most once per issuer and replica per `cluster.epoch_poll_interval`, then refetches under the same kind of per-replica throttle (`ci.signing_keys.unknown_kid_refresh_interval`). A key that any replica has stored is accepted on every replica within one poll interval, and a forged `kid` costs no PostgreSQL query of its own ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003, Q-CI-12). |
 | Pass-through answers of remote repositories, the registered cache `proxy_query_results` (R-ARCH-013 step 6, Q-ARCH-270): the forwarded NuGet search results ([formats/nuget.md](formats/nuget.md) R-NUGET-016) | At most the period the format asks (`nuget.search.remote_result_ttl`), and never more than one hour | A copy of an upstream answer, stored unfiltered; patterns, claims and permissions are applied on every use. Any replica may answer from its copy or ask the upstream within the period, so both answers meet the same contract. |
@@ -575,7 +575,7 @@ trove/
 │   ├── api/v1/                  # management API handlers
 │   │   └── gen/                 # oapi-codegen output: models, std-http-server interface (generated, committed)
 │   ├── api/rawfiles/            # the /files/ handler (R-API-025); content responses through api/edge
-│   ├── api/dispatch/            # the format dispatcher: /api/<id>/<repoKey>/…, the error shape of a format prefix (Q-ARCH-214)
+│   ├── api/dispatch/            # the format dispatcher: /api/<id>/<projectKey>/<repoKey>/…, the error shape of a format prefix (Q-ARCH-214)
 │   ├── formathost/              # the Host of the format contract, the hook and seam adapters, the data-port bindings (Q-ARCH-212)
 │   ├── packages/                # the generic package rows: store and writer, rev_seq raised once per package per transaction (Q-ARCH-212)
 │   ├── api/edge/                # what every entry point shares: Subject, Access, the content response, conditional and digest headers, links, list query, JSON (Q-ARCH-205)
@@ -736,8 +736,8 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
 | Pattern | Handler |
 |---|---|
 | `/api/v1/` | Management API ([api-and-ui.md](api-and-ui.md)) |
-| `/api/<id>/{repoKey}/{rest...}` (and the bare `/api/<id>/{repoKey}`), registered once per format ID whose `Routes()` is not empty | Format dispatcher (R-ARCH-008; `internal/api/dispatch`). generic has no routes, its protocol is `/files/`, so it registers no prefix (Q-GENERIC-7) |
-| `/files/{repoKey}/{path...}` | Raw file access ([storage.md](storage.md)) |
+| `/api/<id>/{projectKey}/{repoKey}/{rest...}` (and the bare `/api/<id>/{projectKey}/{repoKey}`), registered once per format ID whose `Routes()` is not empty | Format dispatcher (R-ARCH-008; `internal/api/dispatch`). generic has no routes, its protocol is `/files/`, so it registers no prefix (Q-GENERIC-7). Every other path below `/api/<id>/`, one segment such as `/api/npm/web` included, answers the `404` problem in the format's shape |
+| `/files/{projectKey}/{repoKey}/{path...}` | Raw file access ([storage.md](storage.md)); `/files/<projectKey>` alone answers the `404` problem |
 | `/auth/` | Browser login flow ([identity-and-authentication.md](identity-and-authentication.md)) |
 | `/ui/` | Embedded UI (R-ARCH-004) |
 | `POST /-/npm/v1/oidc/token/exchange/package/{name...}` | npm plug-in: trusted-publishing token exchange at the host root ([formats/npm.md](formats/npm.md) R-NPM-022, P1; Q-NPM-1) |
@@ -749,16 +749,27 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
 - Format IDs match `^[a-z][a-z0-9-]{1,31}$` and MUST NOT match `^v[0-9]+$`, which is reserved for API
   versions. Registering literal format segments keeps `/api/v1/` and the format routes free of
   ServeMux conflicts. A conflicting registration panics at start-up, so a collision cannot ship.
+- **One parser of repository addresses.** A repository is addressed inside its project
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-002,
+  [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)).
+  The format dispatcher, the raw-file handler, the authentication stage of step 6 (the API-key route match), the rate
+  limits of step 7 and the Bastion ([bastion.md](bastion.md) R-BAS-018) read the format, the project key, the repository
+  key with its `~cache` suffix (R-REPO-032) and the rest of a protocol or raw-file path through one parser of the escaped
+  path (`qname.ParseAddress`). A project or repository segment that holds `%`, or that does not match its key pattern
+  (project `^[a-z][a-z0-9-]{1,31}$`, [authorization.md](authorization.md) R-AUTHZ-026; repository INV-5), names no
+  repository: the request answers `404` `repository_not_found` without a query. A project that does not exist, or that
+  the caller cannot see, answers exactly like a repository that does not exist
+  ([authorization.md](authorization.md) R-AUTHZ-016). `~cache` belongs to the repository segment only.
 - A host-root route exists only where a client fixes the path and cannot be configured to use
-  `/api/<format>/<repoKey>/`. The format's owning page adds it to INV-6 and registers it as a literal
-  ServeMux pattern in the table above. It never carries a repository key and never changes the
-  `/api/<format>/<repoKey>/` layout (Q-ARCH-11). The decided host-root routes:
+  `/api/<format>/<projectKey>/<repoKey>/`. The format's owning page adds it to INV-6 and registers it as a literal
+  ServeMux pattern in the table above. It never carries a project or repository key and never changes the
+  `/api/<format>/<projectKey>/<repoKey>/` layout (Q-ARCH-11). The decided host-root routes:
   - **npm** ([formats/npm.md](formats/npm.md) Q-NPM-1). The only host-root route is
     `POST /-/npm/v1/oidc/token/exchange/package/{name...}`. npm builds the exchange URL against the
     host root of the registry URL. trove owns that host root, because `server.base_url` is an origin
     without a path ([operations-and-observability.md](operations-and-observability.md) R-OPS-005).
     - The registry-relative form of the same exchange,
-      `/api/npm/<repoKey>/-/npm/v1/oidc/token/exchange/package/{name}`, used by Yarn 4 and current
+      `/api/npm/<projectKey>/<repoKey>/-/npm/v1/oidc/token/exchange/package/{name}`, used by Yarn 4 and current
       pnpm, is an ordinary npm route behind the format dispatcher. Both entry points run one handler.
     - Like the dispatcher, the handler takes the name from `r.URL.EscapedPath()`, so `@scope%2fname`
       stays one name.
@@ -766,8 +777,8 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
     npm's attestation path `/-/npm/v1/attestations/…`. Attestations are served later below the
     registry URL ([formats/npm.md](formats/npm.md) R-NPM-027).
   - **OCI** ([ha-and-helm.md](ha-and-helm.md) Q-HA-4, R-HA-041). `/v2/` and everything below it
-    belong to the OCI distribution API, with the repository key as the first path segment after
-    `/v2/`. The reservation is MVP; the OCI format itself is P1. Until it exists, nothing is
+    belong to the OCI distribution API, with the project key and the repository key as the first two path
+    segments after `/v2/`. The reservation is MVP; the OCI format itself is P1. Until it exists, nothing is
     registered under `/v2/`, and those paths answer the `404` problem.
     - A route-table test in `internal/httpserver` fails when any registered client-listener pattern
       other than the OCI format's has a path that is `/v2` or starts with `/v2/`, whatever its
@@ -790,9 +801,10 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
   format's shape for the prefix with `Router.HandleErrorShape`, and `Problem` consults that table by
   path prefix (Q-ARCH-214). The `/api/v1/` paths keep `problem+json`.
 - The dispatcher hands the format the remaining path exactly as received: `r.URL.EscapedPath()`
-  minus `/api/<id>/<repoKey>/`. It never hands over the unescaped wildcard value. This keeps an
-  encoded slash in a package name (`@scope%2fname`) apart from a separator. Repository keys contain
-  nothing that needs escaping (INV-5), so the prefix looks the same escaped and unescaped.
+  minus `/api/<id>/<projectKey>/<repoKey>/`. It never hands over the unescaped wildcard value. This keeps an
+  encoded slash in a package name (`@scope%2fname`) apart from a separator. Project and repository keys contain
+  nothing that needs escaping (INV-5, R-AUTHZ-026), and a `%` in either segment is refused, so the prefix looks the
+  same escaped and unescaped.
 - Every repository-relative path passes `repository.CleanPath` before authorization runs.
   `CleanPath` decodes percent-escapes exactly once and answers `400` with code `invalid_path` when a
   segment is `.`, `..` or empty, or contains NUL, `\` or a control character
@@ -913,8 +925,12 @@ server:
 Acceptance criteria:
 - `curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/healthz` prints `404`. The same
   request on `:8081` prints `200`.
-- `curl -s http://localhost:8080/api/npm/npm-all/@types%2fnode | jq -r .name` prints `@types/node`.
-  A request to `…/api/npm/npm-all/%2e%2e/x` gets `400` with code `invalid_path`.
+- `curl -s http://localhost:8080/api/npm/web/npm-all/@types%2fnode | jq -r .name` prints `@types/node`.
+  A request to `…/api/npm/web/npm-all/%2e%2e/x` gets `400` with code `invalid_path`.
+- `GET /api/npm/web` (one segment below the format) answers the `404` problem in npm's shape;
+  `GET /api/npm/w%65b/npm-all/lodash` and `GET /files/web/npm%2Dall/x` answer `404` `repository_not_found` without a
+  database query; `GET /api/npm/nope/npm-all/lodash`, for a project that does not exist, answers what
+  `GET /api/npm/web/nope/lodash` answers.
 - `curl -T 5GiB.bin --limit-rate 5M` to a generic repository (P1) completes. A client that stops
   sending for 61 s has its connection closed.
 - `curl -v -T pkg.tgz -H 'Expect: 100-continue'` without credentials, against a repository that
@@ -924,7 +940,7 @@ Acceptance criteria:
   with a problem body. From P1, `POST /-/npm/v1/oidc/token/exchange/package/@acme%2Fui` with a
   GitLab ID token as `Bearer` reaches the npm exchange handler instead of being rejected with `401`
   by the authentication step.
-- Until the OCI format exists, `GET /v2/` and `GET /v2/docker-all/manifests/latest` answer `404`
+- Until the OCI format exists, `GET /v2/` and `GET /v2/web/docker-all/manifests/latest` answer `404`
   with a problem body. The route-table test fails on a fixture plug-in that registers
   `GET /v2/x` as a host-root route, and passes again once the fixture is removed.
 - With a further endpoint configured (R-EP-001), `:8080` and the endpoint's port each answer with
@@ -1115,12 +1131,12 @@ server:
 Acceptance criteria:
 - Set-up: `content_base_url: https://trove-content.example.net`, and a browser logged in to
   `https://trove.example.com`.
-  - Opening `https://trove.example.com/files/generic-local/evil.svg` ends on the content host with
+  - Opening `https://trove.example.com/files/web/generic-local/evil.svg` ends on the content host with
     `trv_sig` in the URL, and the response carries the content headers.
   - The Playwright request log shows no request to the content host carrying
     `__Host-trv_session` or `__Host-trv_csrf`, and the browser's cookie store holds no cookie for
     the content host.
-- `curl -H "Authorization: Bearer $T" https://trove.example.com/files/generic-local/x.bin`
+- `curl -H "Authorization: Bearer $T" https://trove.example.com/files/web/generic-local/x.bin`
   answers `200` without a redirect. `npm ci` and `dotnet restore` against the UI host make no
   request to the content host.
 - A signed URL is a credential, so a failed check never falls back to anonymous access
@@ -1181,7 +1197,7 @@ type (
 type Format interface {
 	Descriptor() Descriptor
 
-	// Routes lists every protocol operation below /api/<id>/<repoKey>/. It is empty for a format whose
+	// Routes lists every protocol operation below /api/<id>/<projectKey>/<repoKey>/. It is empty for a format whose
 	// protocol is /files/ alone: generic (Q-GENERIC-7).
 	Routes() []Route
 	// Match resolves method + repository-relative path (still percent-encoded) to a route. It returns
@@ -1228,14 +1244,14 @@ type Format interface {
 
 	// WriteError renders a core error in the client's native error shape (R-ARCH-023). The dispatcher also
 	// uses it for the refusals of the chain's own stages on this format's paths (Q-ARCH-214). Once the dispatcher
-	// knows the repository key, r carries a Refusal (RefusalFrom(r)): the format ID, the key as addressed and the
+	// knows the repository's name, r carries a Refusal (RefusalFrom(r)): the format ID, the project and the key as addressed and the
 	// response base URL, so that a refusal can name an absolute URL (Q-ARCH-263).
 	WriteError(w http.ResponseWriter, r *http.Request, err error)
 }
 
 // Descriptor is what a format registers: the catalog facts (R-REPO-003) plus what only the contract needs.
 type Descriptor struct {
-	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ...
+	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ProtocolBasePath ("/api/<id>/{project}/{key}/" for a format with routes), ...
 	ContractVersion  int             // the literal the format was written against; Register panics on a mismatch
 	Names            catalog.Names   // the one package-name normaliser; nil exactly when !PackageNames
 	Clients          []Client        // native clients and tested versions (FMT-002, FMT-003)
@@ -1288,24 +1304,24 @@ type Request struct {
 	Log      *slog.Logger          // request-scoped; nil logs to slog's default
 }
 
-// Refusal is what the dispatcher hands WriteError through the request it receives, once the repository key is known
-// (Q-ARCH-263). Registry is Base + "/api/" + Format + "/" + Key + "/".
+// Refusal is what the dispatcher hands WriteError through the request it receives, once the repository's name is known
+// (Q-ARCH-263). Registry is Base + "/api/" + Format + "/" + Project + "/" + Key + "/".
 type Refusal struct {
 	Format  ID
-	Key     string // as addressed: the key, or "<remote>~cache"
-	BaseURL string // the response base URL without a trailing slash
+	Name    qname.Repo // as addressed: the project key and the key, or "<remote>~cache" as the key
+	BaseURL string     // the response base URL without a trailing slash
 }
 
-func (f Refusal) Registry() string // BaseURL + "/api/" + Format + "/" + escaped Key + "/"
+func (f Refusal) Registry() string // BaseURL + "/api/" + Format + "/" + Project + "/" + Key + "/"
 func WithRefusal(r *http.Request, f Refusal) *http.Request
 func RefusalFrom(r *http.Request) (Refusal, bool)
 
-// Addressed is the key of the repository the client addressed: the outermost virtual repository on a request derived for
+// Addressed is the name (project key and key) of the repository the client addressed: the outermost virtual repository on a request derived for
 // one of its members, the request's own repository otherwise. Every coordinate the Host builds carries it as
 // Coordinate.Addressed (R-AUTHZ-015, Q-AUTHZ-165).
-func (rq *Request) Addressed() string
+func (rq *Request) Addressed() qname.Repo
 
-// Member returns a copy of the request made for a member of rq.Repo: Repo is the member, the addressed key stays the
+// Member returns a copy of the request made for a member of rq.Repo: Repo is the member, the addressed name stays the
 // outermost one. A repository that is no member is refused with an internal error.
 func (rq *Request) Member(m *repository.Repository) (*Request, error)
 
@@ -1313,7 +1329,7 @@ func (rq *Request) Member(m *repository.Repository) (*Request, error)
 // carries no addressed virtual repository: such a read is decided on the target, which a scope must name itself.
 func (rq *Request) WriteTarget(target *repository.Repository) *Request
 
-// RepoRef is Repo as the Host's calls name it: the numeric id of its row, key, class and format.
+// RepoRef is Repo as the Host's calls name it: the numeric id of its row, its name (project key and key), class and format.
 func (rq *Request) RepoRef() RepoRef
 
 // Target is what a format asks the decision point inside the addressed repository. The host completes the
@@ -1770,7 +1786,7 @@ Normative rules:
   stored document even under duplicate fills, which a lost `FlightLock` or an unavailable Valkey
   causes (R-ARCH-033).
 - **Serve-time check.** The core calls `ServeCheck` before it serves a stored item on any route:
-  `/files/<repo>/<path>`, a remote's cache view, virtual tier resolution and the format's own
+  `/files/<projectKey>/<repoKey>/<path>`, a remote's cache view, virtual tier resolution and the format's own
   routes. The mode says what the route may do: `ServeStored` decides on the stored marks only and
   never contacts an upstream (`/files/`, the cache view, virtual tiers 1 and 2);
   `ServeMayRevalidate` lets the format's own route revalidate a stale document first (Q-NPM-13). The
@@ -2068,27 +2084,29 @@ introduces no rules of its own beyond that order.
 ### R-ARCH-011 · Request path: download from a local repository
 Priority: **MVP** · Covers: ART-011, REPO-016, STOR-001
 
-1. ServeMux matches `/api/<id>/{repoKey}/…` or `/files/{repoKey}/…`. Middleware resolves the
+1. ServeMux matches `/api/<id>/{projectKey}/{repoKey}/…` or `/files/{projectKey}/{repoKey}/…`, and the one parser of
+   repository addresses (R-ARCH-005) reads the project key and the repository key. Middleware resolves the
    client address, base URL and principal.
-2. The repository comes from the in-process snapshot. A format segment that does not match the
-   repository's format answers `404` with code `repository_not_found`. A key that the snapshot does
-   not know is handled so that a repository is usable on every replica as soon as its creation has
+2. The repository comes from the in-process snapshot, by its name: the project key and the repository key. A format
+   segment that does not match the repository's format answers `404` with code `repository_not_found`. A name that the
+   snapshot does not know is handled so that a repository is usable on every replica as soon as its creation has
    answered ([api-and-ui.md](api-and-ui.md) R-API-052, Q-API-12):
-   - A key that fails INV-5's key pattern answers `404` `repository_not_found` without a query.
-   - Any other key is looked up in PostgreSQL before the replica answers. Concurrent lookups of one
-     key share one query.
-   - If the key exists, the replica triggers one immediate change-log poll (R-ARCH-018,
+   - A name whose project key or repository key fails its pattern (R-AUTHZ-026, INV-5) or holds `%` answers `404`
+     `repository_not_found` without a query. A project that does not exist answers like a repository that does not.
+   - Any other name is looked up in PostgreSQL before the replica answers. Concurrent lookups of one
+     name share one query.
+   - If the repository exists, the replica triggers one immediate change-log poll (R-ARCH-018,
      change-area step 3), coalesced with concurrent ones, and waits until the caches that poll
      invalidates are rebuilt, the grant index of [authorization.md](authorization.md) R-AUTHZ-028
      included. It then resolves and authorizes the request against them. The wait is bounded like
      a wait for the database ([ha-and-helm.md](ha-and-helm.md) R-HA-009); if the bound ends first,
      the request answers `503` with `Retry-After`.
-   - If the key does not exist, the request answers `404` `repository_not_found`, and the miss is
-     recorded in the negative cache of unknown repository keys. It is a registered cache
+   - If it does not exist, the request answers `404` `repository_not_found`, and the miss is
+     recorded in the negative cache of unknown repository names. It is a registered cache
      (`repo_key_misses`, R-ARCH-018) bounded by `cache.unknown_repo_keys` per replica, with a
-     `SafetyTTL` of 60 s, and every `repo_config` change evicts it. Repeated misses for one key are
-     answered from it without a query, so a flood of requests for unknown keys costs at most one
-     indexed query per distinct key and entry lifetime.
+     `SafetyTTL` of 60 s, and every `repo_config` change evicts it. Repeated misses for one name are
+     answered from it without a query, so a flood of requests for unknown names costs at most one
+     indexed query per distinct name and entry lifetime.
 3. `Format.Match` selects the route, and `repository.CleanPath` canonicalises the path.
 4. Authorization checks `read` on the repository and the path or package
    ([authorization.md](authorization.md)). Denial answers `401` with a challenge for an anonymous
@@ -2111,13 +2129,13 @@ Priority: **MVP** · Covers: ART-011, REPO-016, STOR-001
    flushed at shutdown (R-ARCH-024).
 
 Acceptance criteria:
-- `npm install @acme/lib@1.0.0 --registry https://trove.example.com/api/npm/npm-local/` succeeds.
+- `npm install @acme/lib@1.0.0 --registry https://trove.example.com/api/npm/web/npm-local/` succeeds.
 - A conditional request with the item's ETag answers `304`, and the object-store GET counter does
   not move.
 - With Valkey stopped and `cluster.epoch_poll_interval: 10s`, a repository created with
-  `POST /api/v1/repositories` through replica A takes an `npm publish` through replica B at once
+  `POST /api/v1/projects/web/repositories` through replica A takes an `npm publish` through replica B at once
   after the creation answered ([api-and-ui.md](api-and-ui.md) R-API-052). 1,000 requests for one
-  unknown key that matches INV-5's pattern cause one PostgreSQL lookup on a replica.
+  unknown name whose keys match their patterns cause one PostgreSQL lookup on a replica.
 
 ### R-ARCH-012 · Read-your-writes package metadata for local repositories
 Priority: **MVP** · Covers: FMT-011
@@ -2172,16 +2190,16 @@ Acceptance criteria, against three replicas, 50 iterations, no sleep, zero failu
 
 ```sh
 npm version patch --no-git-tag-version
-npm publish --registry https://trove.example.com/api/npm/npm-local/
+npm publish --registry https://trove.example.com/api/npm/web/npm-local/
 npm view "@acme/lib@$(node -p 'require("./package.json").version')" version \
-  --registry https://trove.example.com/api/npm/npm-all/
+  --registry https://trove.example.com/api/npm/web/npm-all/
 ```
 
 ```sh
 dotnet nuget push "Acme.Lib.1.0.$i.nupkg" --api-key "$TOKEN" \
-  --source https://trove.example.com/api/nuget/nuget-local/v3/index.json
+  --source https://trove.example.com/api/nuget/web/nuget-local/v3/index.json
 dotnet add package Acme.Lib --version "1.0.$i" \
-  --source https://trove.example.com/api/nuget/nuget-all/v3/index.json
+  --source https://trove.example.com/api/nuget/web/nuget-all/v3/index.json
 ```
 
 ### R-ARCH-013 · Request path: download through a remote repository
@@ -2267,7 +2285,7 @@ sequenceDiagram
     participant VK as Valkey
     participant S3 as Object storage
     participant U as registry.npmjs.org
-    C->>A: GET /api/npm/npm-remote/left-pad/-/left-pad-1.3.0.tgz
+    C->>A: GET /api/npm/web/npm-remote/left-pad/-/left-pad-1.3.0.tgz
     A->>A: snapshot, Match, CleanPath, authorize read
     A->>PG: cache entry?
     PG-->>A: none
@@ -2288,7 +2306,7 @@ sequenceDiagram
 ```
 
 Acceptance criteria (metric names per [operations-and-observability.md](operations-and-observability.md)):
-- On an empty remote, `npm cache clean --force && npm install lodash@4.17.21 --registry https://trove.example.com/api/npm/npm-remote/`
+- On an empty remote, `npm cache clean --force && npm install lodash@4.17.21 --registry https://trove.example.com/api/npm/web/npm-remote/`
   fetches from the upstream. A second run after `npm cache clean --force` makes no upstream request.
 - After the metadata cache period has passed and with the upstream unreachable,
   `npm install lodash@4.17.21` still succeeds from stale metadata and the cached tarball.
@@ -2377,8 +2395,8 @@ components act in this order:
    target through R-ARCH-014.
 
 Acceptance criteria, with `npm-all` = [`npm-local`, `npm-remote`]:
-- `npm view lodash versions --registry …/npm-all/` lists the upstream versions, and
-  `npm view @acme/lib versions --registry …/npm-all/` lists the local ones.
+- `npm view lodash versions --registry …/web/npm-all/` lists the upstream versions, and
+  `npm view @acme/lib versions --registry …/web/npm-all/` lists the local ones.
 - A user with `read` on `npm-remote` only cannot see `@acme/lib` through `npm-all`. A user with
   `read` on both can.
 - With Valkey stopped, so that no signal reaches replica B, the next `npm view @acme/lib versions`
@@ -2386,7 +2404,7 @@ Acceptance criteria, with `npm-all` = [`npm-local`, `npm-remote`]:
   same test passes for `nuget-all` with the registration index, and for the `formattest` fake
   format.
 - With Valkey stopped and `local.autoClaim: false` on `npm-local` (so no new claim changes
-  the member fingerprint), `npm view lodash versions --registry …/npm-all/` is cached on replica
+  the member fingerprint), `npm view lodash versions --registry …/web/npm-all/` is cached on replica
   B, then `lodash@99.0.0` is published to `npm-local` on replica A by a caller with `manage`
   ([repositories-and-proxy.md](repositories-and-proxy.md) Q-REPO-6). The next `npm view` on B lists
   `99.0.0`.
@@ -2419,7 +2437,7 @@ CREATE TABLE job (
     task           text,                                    -- maintenance task name for scheduled runs
     scheduled_for  timestamptz,                             -- schedule slot of a scheduled run
     target_kind    text,                                    -- R-API-015 operation target
-    target_key     text,
+    target_key     text,                                    -- for a repository the qualified name <projectKey>/<repoKey>
     locked_by      uuid,                                    -- replica instance id (replica registry)
     locked_until   timestamptz,                             -- lease, extended by heartbeat
     progress_done  bigint,
@@ -2874,9 +2892,9 @@ leaves:
      that changed records, never per request (R-VULN-004, R-VULN-027).
 
      A transaction that notifies several change areas updates their `cluster_epoch` rows in
-     area-name order, so two such transactions cannot deadlock. A project repository assignment
-     (P1), for example, notifies both `authz` and `repo_config`
-     ([authorization.md](authorization.md) R-AUTHZ-028).
+     area-name order, so two such transactions cannot deadlock. A move of a repository to another
+     project, for example, notifies both `authz` and `repo_config`
+     ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060, [authorization.md](authorization.md) R-AUTHZ-028).
   2. After commit, the writer applies its own invalidation at once and publishes
      `{"a": <area>, "e": <epoch>, "v": <payload version>, "p": <payload>}` on the Valkey channel
      `trove:<ks>:inv:v1` (R-ARCH-030).
@@ -2894,7 +2912,7 @@ leaves:
        the `created_at` of the row it applied last, which equals the `changed_at` that the same
        transaction wrote. Only this poll advances the last applied epoch.
      - Besides the interval, a request may trigger one immediate poll: R-ARCH-011 step 2 does so
-       for a repository key that PostgreSQL knows and the replica's snapshot does not. Concurrent
+       for a repository name that PostgreSQL knows and the replica's snapshot does not. Concurrent
        triggers, and a trigger that meets a running poll, coalesce into one poll on the control
        connection. The triggering request waits until the caches that poll invalidates are
        rebuilt.
@@ -3025,7 +3043,7 @@ The owning page may move one of its areas to the other class. Until it does, thi
 | `jobs` | this page | signal | Wake the workers of a queue; the payload names the queues |
 | `cache` | this page | change | System settings, and flush requests: the installation-wide cache flush of [operations-and-observability.md](operations-and-observability.md) R-OPS-047 (P1) writes the flush entries, counted as `trove_cache_flushes_total{reason="admin"}` |
 | `auth` | [identity-and-authentication.md](identity-and-authentication.md) | change | Token revocation and rotation, session end, principal status (disable, enable, delete), membership changes, runtime auth settings, and the break-glass rotation end. The payload carries the token ID with the hash of the ended credential, the session ID or the principal ID (R-AUTH-023). |
-| `authz` | [authorization.md](authorization.md) | change | Policies (entries, selectors, patterns), role bindings, projects, project administrators and project repository assignments. Its epoch is the authorization epoch of R-AUTHZ-028 and of the `Trove-Authz-Epoch` header (R-AUTHZ-032); the grant index also rebuilds on `repo_config`. |
+| `authz` | [authorization.md](authorization.md) | change | Policies (entries, selectors, patterns), role bindings, projects and their members with their roles. Its epoch is the authorization epoch of R-AUTHZ-028 and of the `Trove-Authz-Epoch` header (R-AUTHZ-032); the grant index also rebuilds on `repo_config`. |
 | `repo_config`, `claims`, `cache_invalidation` | [repositories-and-proxy.md](repositories-and-proxy.md) | change | Repository snapshot, claims and pin rules, cache invalidation (RMT-026). `claims` is also written by the auto claim of a first publish and by the repository-delete job, `cache_invalidation` by the fold job (change-area step 1 above). |
 | `upstream_state` | [repositories-and-proxy.md](repositories-and-proxy.md) | change | Circuit state, the global offline switch (R-REPO-031) and the reload of one repository's gone packages (R-REPO-029). Moved from the hot-path class: its transitions are rare, and R-REPO-029's 2 s bound then holds without Valkey. |
 | `metadata_changed` | [repositories-and-proxy.md](repositories-and-proxy.md) | signal | Early merged-metadata eviction after a remote refresh; R-ARCH-015's `rev_seq` check keeps local members exact without it |
@@ -3048,7 +3066,7 @@ cluster:
 cache:
   rendition_bytes: 268435456       # default (proposed), 256 MiB per replica, rendered package documents
   snapshot_safety_ttl: 5m          # default (proposed), full reload of the repository snapshot
-  unknown_repo_keys: 10000         # default (proposed), per replica: negative cache of unknown repository keys (R-ARCH-011 step 2)
+  unknown_repo_keys: 10000         # default (proposed), per replica: negative cache of unknown repository names (R-ARCH-011 step 2)
 ```
 
 Acceptance criteria:
@@ -3939,12 +3957,12 @@ func (e *Error) Unwrap() error
   - A cancelled client context is not an error. It is logged with status `499`.
 
 Acceptance criteria:
-- `curl -s -D h.txt -H "Authorization: Bearer $T" https://trove.example.com/api/v1/repositories/nope`
+- `curl -s -D h.txt -H "Authorization: Bearer $T" https://trove.example.com/api/v1/projects/web/repositories/nope`
   returns `404`, `application/problem+json` and `.code == "repository_not_found"`, and
   `.requestId` equals the `X-Request-Id` header in `h.txt`.
 - With PostgreSQL unreachable, API calls return `503` with code `database_unavailable` and
   `Retry-After`, and the body contains no SQL.
-- `npm view trove-nope-4711 --registry …/npm-local/` makes npm print its normal `404 Not Found`
+- `npm view trove-nope-4711 --registry …/web/npm-local/` makes npm print its normal `404 Not Found`
   message.
 
 ### R-ARCH-024 · Process lifecycle: start-up, readiness, graceful shutdown
@@ -4110,9 +4128,9 @@ Acceptance criteria:
   commands in parallel loops and is checked for at least these counts
   ([Q-HA-101](ha-and-helm.md#q-ha-101--how-r-arch-024s-drain-criterion-is-counted)).
 - `kubectl rollout restart deployment/trove-web` runs during a
-  `curl --limit-rate 20M -o f.bin …/files/generic-local/400MiB.bin` (about 20 s). curl exits `0`,
+  `curl --limit-rate 20M -o f.bin …/files/web/generic-local/400MiB.bin` (about 20 s). curl exits `0`,
   and `sha256sum f.bin` matches.
-- A `curl --limit-rate 2M -o f.bin …/files/generic-local/400MiB.bin` (about 200 s, longer than the
+- A `curl --limit-rate 2M -o f.bin …/files/web/generic-local/400MiB.bin` (about 200 s, longer than the
   grace period) runs while the serving pod is deleted. The transfer is cut at the deadline.
   `curl -C - --limit-rate 20M -o f.bin` with the same URL resumes with `206` from another replica,
   and `sha256sum f.bin` matches.
@@ -5016,7 +5034,7 @@ package files.
 
 ### Q-ARCH-11 · URL layout and port numbers (INV-6)
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared): the project key precedes the repository key, `/api/<format>/<projectKey>/<repoKey>/…`; the format segment, `/api/v1/` and the ports stay.
 
 A consistency review asked whether the package path layout `/api/<format>/<repoKey>/…` and the
 port pair 8080/8081 should change, so that trove does not look like existing repository managers.

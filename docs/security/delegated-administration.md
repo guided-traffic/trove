@@ -156,6 +156,15 @@ mechanisms only this page describes, and H-530, which lives on the page of the d
   without a project or be listed by a virtual repository of another project, so no project's administrators see it and no
   project policy can name it (the owner decided that every repository belongs to exactly one and none is shared,
   Q-AUTHZ-206).
+- [H-541](../spec/repositories-and-proxy.md#h-541--repositories-are-addressed-by-a-global-key) — a repository is still addressed by a key unique in the installation, and a
+  project administrator's repository carries the project key as a prefix; the decided address contains the project
+  (Q-REPO-212). Not built.
+- [H-542](../spec/authorization.md#h-542--a-user-belongs-to-no-project-only-a-project-administrator-does) — a project still names only its administrators with their two
+  switches; members with the roles Reader, Developer, Maintainer and Owner (Q-AUTHZ-207, Q-AUTHZ-208) are not built, so
+  no user's set of projects exists and every other caller reaches a project's repositories through policies.
+- [H-546](../spec/authorization.md#h-546--names-of-a-projects-policies-and-service-accounts-carry-its-prefix) — a project's policies and service accounts are still named
+  `<projectKey>-…` with the overlap rules of Q-AUTHZ-176; naming within the project (Q-AUTHZ-209, and for CI mappings
+  Q-AUTHZ-214) is not built.
 - [H-530](data-and-secret-flow.md#h-530--the-mirror-status-shows-the-engines-failure-text-as-stored) — the status of a mirror shows the
   engine's failure text as stored, to the same readers.
 

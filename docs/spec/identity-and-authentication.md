@@ -130,7 +130,7 @@ Normative rules:
   - the CI exchange `POST /api/v1/auth/oidc/token` (INV-10);
   - from P1, the npm trusted-publishing exchange, both at the host root,
     `POST /-/npm/v1/oidc/token/exchange/package/{name}`, and below every npm registry URL,
-    `POST /api/npm/{repoKey}/-/npm/v1/oidc/token/exchange/package/{name}`
+    `POST /api/npm/{projectKey}/{repoKey}/-/npm/v1/oidc/token/exchange/package/{name}`
     ([formats/npm.md](formats/npm.md) R-NPM-022, Q-NPM-1).
 
   That ID token is not a credential for this stage, and the endpoints themselves are
@@ -164,8 +164,8 @@ Acceptance criteria:
   anonymous response.
 - (P1, with R-NPM-022.) A GitLab ID token whose mapping grants `deploy` on `@acme/ui`, sent as
   `Bearer` to `POST /-/npm/v1/oidc/token/exchange/package/@acme%2Fui` and to
-  `POST /api/npm/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui`, gets 201 with a
-  `trv_cit_` token on both routes. The same ID token as `Bearer` on `GET /api/npm/npm-all/@acme%2Fui`
+  `POST /api/npm/web/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui`, gets 201 with a
+  `trv_cit_` token on both routes. The same ID token as `Bearer` on `GET /api/npm/web/npm-all/@acme%2Fui`
   gets 401 `invalid_token` without a token-table query.
 - Grep the request log after the whole acceptance suite has run. It contains no `trv_pat_`,
   `trv_sat_` or `trv_cit_` substring followed by more than 4 characters.
@@ -199,7 +199,7 @@ Priority: **MVP** · Covers: TOK-033, TOK-034, PKG-NPM-007, PKG-NUGET-016
 
 Acceptance criteria:
 
-- `curl -si https://trove.test/api/nuget/nuget-all/v3/index.json` with anonymous access off
+- `curl -si https://trove.test/api/nuget/web/nuget-all/v3/index.json` with anonymous access off
   returns 401 with `WWW-Authenticate: Basic realm="trove"`. `dotnet restore` against that
   source with credentials in `nuget.config` then succeeds, which proves the client answers the
   challenge.
@@ -995,8 +995,8 @@ Acceptance criteria:
   `csrf_failed`. A `fetch` from the UI with the header succeeds.
 - `curl -X DELETE -b "__Host-trv_session=$S" https://trove.test/api/v1/users/me/sessions`
   without the header gets 403.
-- `curl -X PUT -b "__Host-trv_session=$S" -T x.bin https://trove.test/files/generic-local/x.bin`
-  without the header gets 403 `csrf_failed`. A `PUT` on `/api/npm/npm-local/…` carrying only the
+- `curl -X PUT -b "__Host-trv_session=$S" -T x.bin https://trove.test/files/web/generic-local/x.bin`
+  without the header gets 403 `csrf_failed`. A `PUT` on `/api/npm/web/npm-local/…` carrying only the
   cookie gets 401.
 
 ### R-AUTH-013 · Logout and RP-initiated logout
@@ -1217,7 +1217,7 @@ the revocation journal (R-AUTH-041, R-BAK-024).
 Acceptance criteria:
 
 - On a fresh installation, the following lets `$T` create a repository through
-  `POST /api/v1/repositories`:
+  `POST /api/v1/projects/web/repositories`:
 
   ```shell
   kubectl exec deploy/trove-api -- trove admin service-account create bootstrap --admin
@@ -1248,11 +1248,14 @@ Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADM
 `anonymous` and `authenticated` each have exactly one built-in row (R-AUTH-037). The
 `ci_mapping` subtype is owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
 
-- Its principal `name` is `<CI issuer name>/<mapping name>`, for example
-  `gitlab-com/acme-release-publish` (Q-CI-10). Mapping names are unique only per CI issuer, but
-  both parts match `^[a-z0-9][a-z0-9._-]{1,63}$` and so contain no `/`, which makes the composite
-  unique under `UNIQUE (kind, name)` and splittable back into its parts.
-- It is never renamed, because both parts are immutable.
+- Its principal `name` is `<CI issuer name>/<mapping name>` for a mapping of the system tier, for
+  example `gitlab-com/acme-release-publish` (Q-CI-10), and `<CI issuer name>/<projectKey>/<mapping name>`
+  for a mapping of a project's tier, for example `gitlab-com/web/release-publish`
+  ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)). Mapping names are unique only per CI issuer and tier, but issuer and
+  mapping names match `^[a-z0-9][a-z0-9._-]{1,63}$` and project keys `^[a-z][a-z0-9-]{1,31}$`, so no part
+  contains a `/`, which makes the composite unique under `UNIQUE (kind, name)` and splittable back into
+  its parts: two parts name a system mapping, three a project's.
+- It is never renamed, because its parts are immutable.
 - The row is created and deleted together with the mapping, in the same transaction
   ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-009).
 
@@ -1430,8 +1433,8 @@ Priority: **MVP** · Covers: IAM-013, IAM-014, IAM-016, IAM-018, ADMAPI-013, ADM
   `scim`.
 - Groups are flat; nesting is not supported.
 
-**Members.** Members are users and service accounts. Member lists write service accounts as
-`sa:<name>`. The built-in principals `anonymous` and `authenticated` (R-AUTH-037) cannot be
+**Members.** Members are users and service accounts of no project; a project's service account is
+no group member (R-AUTH-020). Member lists write service accounts as `sa:<name>`. The built-in principals `anonymous` and `authenticated` (R-AUTH-037) cannot be
 members.
 
 **Memberships carry a source:**
@@ -1538,22 +1541,34 @@ account or to its groups, never from placeholder users.
 
 **Properties:**
 
-- Names match `^[a-z0-9][a-z0-9-]{1,62}$` and are shown as `sa:<name>` in member lists, audit
-  events and `whoami`.
+- A service account belongs to one project or to none (`project`, the project's key, fixed at creation; `null` for an
+  account of no project, called instance-wide)
+  ([Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
+- Names match `^[a-z0-9][a-z0-9-]{1,62}$` and are unique among the service accounts of the same project, and among the
+  instance-wide ones: `partner` may exist in project `web`, in project `mobile` and once instance-wide. A name carries no
+  project prefix. A second account of the same name in the same place answers 409 `already_exists`.
+- An instance-wide account is shown as `sa:<name>`, a project's account as `sa:<projectKey>/<name>` (`sa:web/partner`), in
+  member lists, policy entries, token owners, audit events (which carry `project` as well) and `whoami`. Its principal row
+  stores that qualified name; neither a project key nor a name contains `/`, so `UNIQUE (kind, name)` of R-AUTH-016 keeps
+  both rules.
 - A service account has no login, no session, no UI access and no IdP link.
+- It is never a member of a project (422 `principal_not_allowed`): it reaches a project's repositories through policies
+  ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - It can be a group member (R-AUTH-018) and a policy principal, unless it is a project service account (below).
 - It holds `trv_sat_` tokens, at most `max_active_per_principal`.
 
+**Instance-wide service accounts** are created, changed, disabled, enabled and deleted, and their tokens issued, only by
+administrators of trove (`identities:write`; tokens also by owners from P1; Q-AUTHZ-209).
+
 **Project service accounts (owner, [Q-AUTHZ-169](authorization.md#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)).**
-A service account may belong to a project (`project`, the project's key; fixed at creation, `null` for a global account).
-A project service account's name starts with `<projectKey>-` and goes on after the hyphen (422 `project_prefix_required`,
-[Q-AUTH-193](#q-auth-193--the-key-and-the-hyphen-alone-are-no-project-name-and-the-schemas-refusal-answers-422)); it is created, disabled, enabled and deleted by
-administrators of the project and by `identities:write`, and its tokens are issued and revoked by them
-([R-AUTHZ-026](authorization.md)). It is no group member (422 `project_account_not_groupable`), holds no system role
+A project's service account lives under the project's routes. It is created, changed, disabled, enabled and deleted by an
+Owner of the project ([Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner))
+and by `identities:write`, and its tokens are issued and revoked by them; a token an Owner issues has the bounds of
+R-AUTH-027 ([Q-AUTHZ-177](authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens),
+[R-AUTHZ-026](authorization.md)). It is no group member (422 `project_account_not_groupable`), holds no system role
 (422 `role_not_allowed`), and is granted only through policies of its project (422 `principal_outside_project`
-elsewhere). A global service account takes no name that starts with an existing project's key and a hyphen (422
-`name_reserved_by_project`). A project with a service account is not empty. Disabling and deleting follow the rules above
-for every service account.
+elsewhere). A project with a service account is not empty. Disabling and deleting follow the rules above for every
+service account.
 
 **Owners (P1).** Owners are users who may create, rotate and revoke the account's tokens without
 being administrators. They cannot change the account's grants.
@@ -1568,6 +1583,8 @@ CREATE TABLE service_account (
   principal_id  uuid PRIMARY KEY REFERENCES principal (id) ON DELETE CASCADE,
   description   text NOT NULL DEFAULT ''
 );
+-- service_account.project_id uuid NULL REFERENCES project (id): R-AUTHZ-026; immutable; principal.name is
+-- '<projectKey>/<name>' for a project's account and '<name>' for an instance-wide one
 
 CREATE TABLE service_account_owner (            -- P1
   service_account_id uuid NOT NULL REFERENCES service_account (principal_id) ON DELETE CASCADE,
@@ -1576,21 +1593,40 @@ CREATE TABLE service_account_owner (            -- P1
 );
 ```
 
-API (administrator; token operations also by owners from P1; the operations on a project's service accounts also by administrators of the project, R-AUTHZ-026; `GET /service-accounts?project=<key>`):
+API. The routes under `/api/v1/service-accounts/{name}` address only instance-wide accounts and need an administrator
+(`identities:read`, `identities:write`); the routes under `/api/v1/projects/{projectKey}/service-accounts` address the
+accounts of that project and admit, besides those capabilities, an Owner of the project (R-AUTHZ-026). Token operations
+also by owners from P1.
 
 | Method and path | Request | Status codes |
 |---|---|---|
-| `POST /api/v1/service-accounts` | `{"name": "ci-bot", "description": "…", "owners": ["alice"]}`; for a project service account `{"name": "web-partner", "project": "web"}` | 201, 400, 409, 422 |
-| `GET /api/v1/service-accounts?q=&limit=&cursor=`, `GET /api/v1/service-accounts/{name}` | — | 200, 404 |
+| `POST /api/v1/service-accounts` | `{"name": "ci-bot", "description": "…", "owners": ["alice"]}`: an instance-wide account | 201, 400, 409, 422 |
+| `GET /api/v1/service-accounts?q=&project=&limit=&cursor=` | — : every service account, instance-wide and of every project, each with its `project` (`null` for none); `project=<key>` keeps the accounts of that project | 200 |
+| `GET /api/v1/service-accounts/{name}` | — | 200, 404 |
 | `PATCH /api/v1/service-accounts/{name}` | `description`, `owners` | 200, 404, 412, 428 |
 | `POST /api/v1/service-accounts/{name}/disable`, `…/enable` | — | 204, 404 |
 | `DELETE /api/v1/service-accounts/{name}` | — | 204, 404 |
 | `POST /api/v1/service-accounts/{name}/tokens` | See R-AUTH-027 | 201 |
+| `POST /api/v1/projects/{projectKey}/service-accounts` | `{"name": "partner", "description": "…"}` | 201, 400, 404, 409, 422 |
+| `GET /api/v1/projects/{projectKey}/service-accounts?q=&limit=&cursor=`, `GET /api/v1/projects/{projectKey}/service-accounts/{name}` | — | 200, 404 |
+| `PATCH /api/v1/projects/{projectKey}/service-accounts/{name}` | `description`, `owners` | 200, 404, 412, 428 |
+| `POST /api/v1/projects/{projectKey}/service-accounts/{name}/disable`, `…/enable` | — | 204, 404 |
+| `DELETE /api/v1/projects/{projectKey}/service-accounts/{name}` | — | 204, 404 |
+| `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | See R-AUTH-027 | 201 |
+
+A project the caller is no member of answers 404 on its routes, as a missing project does; a member that is not its Owner
+gets 403.
 
 Acceptance criteria:
 
-- A SAT of `ci-bot`, whose only grant is deploy on `npm-local`, can `npm publish` to
-  `npm-local`. `npm whoami` prints `sa:ci-bot`.
+- A SAT of `ci-bot`, whose only grant is deploy on `web/npm-local`, can `npm publish` to
+  `https://trove.example.com/api/npm/web/npm-local/`. `npm whoami` prints `sa:ci-bot`.
+- An Owner of `web` creates `partner` with `POST /api/v1/projects/web/service-accounts` (201), an Owner of `mobile`
+  creates `partner` in `mobile` (201), and an administrator creates the instance-wide `partner` with
+  `POST /api/v1/service-accounts` (201); a second `partner` in `web` answers 409 `already_exists`. `npm whoami` with a
+  token of the first prints `sa:web/partner`; `GET /api/v1/service-accounts/partner` returns the instance-wide account,
+  and `GET /api/v1/service-accounts?project=web` lists `partner` with `"project": "web"`. The Owner of `web` gets 403 on
+  `POST /api/v1/service-accounts` and 404 on `POST /api/v1/projects/mobile/service-accounts`.
 - No path creates a session for a service account. `POST /auth/local/login` with
   `{"username": "sa:ci-bot", "password": "<its SAT>"}` answers 401 `invalid_credentials`, and
   `GET /api/v1/users/me/sessions` with the SAT answers 403.
@@ -1889,7 +1925,7 @@ structure, its validation and who may request what.
   "admin": false,
   "repositories": [
     {
-      "repositories": ["npm-local", "npm-team-*"],
+      "repositories": ["web/npm-local", "web/npm-team-*"],
       "packages": {"include": ["@acme/*"]},
       "actions": ["read", "deploy"]
     }
@@ -1908,7 +1944,7 @@ structure, its validation and who may request what.
 |---|---|
 | `inherit` | `true` means all repository grants of the owner and, from P1, all build grants, evaluated at use time. This is the catalog's user-permissions scope (TOK-008) and gives identity tokens (TOK-005). `repositories` and `builds` must then be empty. |
 | `admin` | `true` lets the token exercise system administration if, and only if, the owner holds the administrator role at use time (TOK-009). An administrator's token without `admin: true` acts as a non-administrator, so administrator power is always an explicit choice. |
-| `repositories` | Restricted grants with the same resource selector as a policy grant: repository keys or patterns, package-name and path include/exclude patterns (`packages`, `paths`; [authorization.md](authorization.md) R-AUTHZ-005), actions from `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` (INV-9). Each element is `{"repositories": [...], "packages": {"include": [...], "exclude": [...]}, "paths": {"include": [...], "exclude": [...]}, "actions": [...]}`; `packages` and `paths` are optional. Pattern syntax and matching are defined by [authorization.md](authorization.md). |
+| `repositories` | Restricted grants with the same resource selector as a policy grant, written as in every instance context ([authorization.md](authorization.md) R-AUTHZ-004, [Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)): `<projectKey>/<repoKey>`, a pattern of project and key such as `web/npm-*` or `*/npm-remote`, or a class such as `@any-local:npm`; a bare key is 400 `invalid_scope`; package-name and path include/exclude patterns (`packages`, `paths`; [authorization.md](authorization.md) R-AUTHZ-005), actions from `read`, `annotate`, `deploy`, `overwrite`, `delete`, `manage` (INV-9). Each element is `{"repositories": [...], "packages": {"include": [...], "exclude": [...]}, "paths": {"include": [...], "exclude": [...]}, "actions": [...]}`; `packages` and `paths` are optional. Pattern syntax and matching are defined by [authorization.md](authorization.md). |
 | `system` | Items from the closed list of R-AUTH-025 (P1). |
 | `endpoints` | The endpoints the token is valid on ([endpoints.md](endpoints.md) R-EP-011): at most 16 configured endpoint names; absent or empty means unbound. A binding, not a resource type: it grants nothing and only limits where the token is accepted (R-EP-010). An unknown name answers 400 `invalid_scope`. |
 | `builds` | P1. Restricted build grants: each element is `{"builds": {"include": [...], "exclude": [...]}, "actions": [...]}`, with build-name globs (syntax of the `packages` dimension) and actions from `read`, `annotate`, `deploy`, `delete`, `manage` ([authorization.md](authorization.md) R-AUTHZ-027). `overwrite` does not apply to build records and answers 400 `invalid_scope`. `inherit: true` also admits build rights from P1; a restricted scope without a `builds` element admits no build action. |
@@ -1917,8 +1953,10 @@ structure, its validation and who may request what.
 (repository content, MVP), `system` (system capabilities, P1) and `builds` (build records, P1),
 the resource types the grant model has ([authorization.md](authorization.md) R-AUTHZ-013,
 Q-AUTHZ-10). `inherit` and `admin` are switches and `endpoints` is a binding, not resource types. There is no project resource
-type before project roles exist (TOK-011, TOK-013, P2), and no per-repository configuration type:
-repository configuration rights are system capabilities and apply instance-wide.
+type (TOK-011, TOK-013, P2): a scope selects the repositories of a project with `<projectKey>/*`, and what the owner's
+project roles grant reaches the token through the repository part like every other grant ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)). There
+is no per-repository configuration type either: repository configuration rights are system capabilities, which apply in
+every project, or come from the Owner role of a project ([authorization.md](authorization.md) R-AUTHZ-026).
 
 **Validation and defaults:**
 
@@ -1935,9 +1973,9 @@ repository configuration rights are system capabilities and apply instance-wide.
     that OAuth scope string: each item `<action>:<selector>` becomes one grant
     `{"repositories": [<selector>], "actions": [<action>]}`, and an item without selector stands
     for `@any` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-007, Q-CI-2). For example,
-    `read:npm-all deploy:npm-internal` is stored as
-    `{"inherit": false, "repositories": [{"repositories": ["npm-all"], "actions": ["read"]},
-    {"repositories": ["npm-internal"], "actions": ["deploy"]}]}`.
+    `read:web/npm-all deploy:web/npm-internal` is stored as
+    `{"inherit": false, "repositories": [{"repositories": ["web/npm-all"], "actions": ["read"]},
+    {"repositories": ["web/npm-internal"], "actions": ["deploy"]}]}`.
   - The package-bound token of npm trusted publishing (P1, [formats/npm.md](formats/npm.md)
     R-NPM-022) is the one exception: its scope is a single grant whose `packages.include` pattern
     is the package name, with the actions `read` and `deploy`.
@@ -1948,17 +1986,18 @@ simply yields nothing for them, because a token can never be a back door around 
 
 Acceptance criteria:
 
-- `alice` may read and deploy `npm-local`. Her token with scope
-  `{"repositories": [{"repositories": ["npm-local"], "actions": ["read"]}]}` can install from
-  `npm-local`, and `npm publish` with it gets 403.
+- `alice` may read and deploy `npm-local` of project `web`. Her token with scope
+  `{"repositories": [{"repositories": ["web/npm-local"], "actions": ["read"]}]}` can install from
+  `web/npm-local`, and `npm publish` with it gets 403. A scope naming the bare key `npm-local` answers
+  400 `invalid_scope`.
 - An administrator's PAT created with the default scope gets 403 on
-  `POST /api/v1/repositories`. One created with `{"inherit": true, "admin": true}` succeeds.
-- `alice`'s group loses deploy on `npm-local`. Within the bound of
+  `POST /api/v1/projects/web/repositories`. One created with `{"inherit": true, "admin": true}` succeeds.
+- `alice`'s group loses deploy on `web/npm-local`. Within the bound of
   [authorization.md](authorization.md) R-AUTHZ-028 her `inherit` token can no longer publish.
 - Creating a token whose scope element carries `"include": ["@acme/*"]` at the top level answers
   400 `invalid_scope`. The same pattern as `"packages": {"include": ["@acme/*"]}` is accepted.
 - (P1) `alice` may deploy build records named `acme/**`. Her token with scope
-  `{"repositories": [{"repositories": ["npm-local"], "actions": ["read"]}]}` gets 403 on
+  `{"repositories": [{"repositories": ["web/npm-local"], "actions": ["read"]}]}` gets 403 on
   uploading build record `acme/web/frontend`; her `inherit` token succeeds.
 
 ### R-AUTH-025 · System scope items
@@ -2042,7 +2081,7 @@ included. Every default is a finite duration; there is no "no default forced" se
 | Creation path | Default lifetime |
 |---|---|
 | `POST /api/v1/tokens`, UI token dialog | `pat.default_ttl` (its runtime value, R-AUTH-040); the UI pre-fills it |
-| `POST /api/v1/service-accounts/{name}/tokens` | `sat.default_ttl` (its runtime value) |
+| `POST /api/v1/service-accounts/{name}/tokens`, `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | `sat.default_ttl` (its runtime value) |
 | Token-authenticated create under the derivation rule (R-AUTH-027) | The path's default, capped at the presenting token's expiry |
 | npm web login (R-AUTH-034), device login (R-AUTH-036) | `cli_login.token_ttl`, capped by the PAT maximum; the approver may shorten it |
 | `trove admin token create` (R-AUTH-015) | 15 min |
@@ -2050,8 +2089,8 @@ included. Every default is a finite duration; there is no "no default forced" se
 | CI exchange | Set by [gitlab-ci-oidc.md](gitlab-ci-oidc.md), at most `cit.max_ttl` |
 
 **Who the caps bind (TOK-019).** The maximum binds every creator: users, service-account owners
-(P1), administrators and `trove admin`. There is no separate cap for non-administrators or
-project administrators, and no variant that caps at the default. This departs from the catalog,
+(P1), Owners of projects, administrators and `trove admin`. There is no separate cap for
+non-administrators or Owners, and no variant that caps at the default. This departs from the catalog,
 where administrators are uncapped, so that the security setting means what it says. The only
 way past the maximum is the non-expiring SAT above, which is off by default and reserved to
 administrators.
@@ -2104,7 +2143,8 @@ Priority: **MVP** · Covers: TOK-025, TOK-006, AUTHN-040, ADMAPI-039, IAM-037
 | Method and path | Creates | Caller |
 |---|---|---|
 | `POST /api/v1/tokens` | A PAT for the caller | user with a session (recent authentication, R-AUTH-011), or a PAT under the derivation rule |
-| `POST /api/v1/service-accounts/{name}/tokens` | A SAT | administrator (session with recent authentication, or token with `admin: true`); owners from P1; administrator of the account's project with `managePolicies` (Q-AUTHZ-177); a SAT of that account under the derivation rule |
+| `POST /api/v1/service-accounts/{name}/tokens` | A SAT of an account of no project | administrator (session with recent authentication, or token with `admin: true`); owners from P1; a SAT of that account under the derivation rule |
+| `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | A SAT of a project's account | administrator, as above; an Owner of the project through a UI session or a token with `admin: true` ([Q-AUTHZ-177](authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens), [Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)); owners from P1; a SAT of that account under the derivation rule |
 
 **Derivation rule** (IAM-037: token creation by non-interactive callers). A token-authenticated
 create call must satisfy all of the following:
@@ -2123,9 +2163,9 @@ create call must satisfy all of the following:
   them was revoked or expired meanwhile, also when a replica's cache still accepted the presenting
   token within the revocation bound of R-AUTH-023 (Q-AUTH-89).
 
-**Tokens of a project administrator** ([Q-AUTHZ-177](authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)).
-A token that an administrator of a project issues for a project service account is never non-expiring (the administrator
-rule of R-AUTH-026 applies to administrators of trove only), lives at most `auth.tokens.sat.max_ttl`, has `admin: false`
+**Tokens an Owner issues** ([Q-AUTHZ-177](authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens), [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)).
+A token that an Owner of a project, acting without the system capability, issues for a service account of the project is
+never non-expiring (the administrator rule of R-AUTH-026 applies to administrators of trove only), lives at most `auth.tokens.sat.max_ttl`, has `admin: false`
 and no `system` item (422 `invalid_scope`), and is not self-rotatable (422 `validation_failed` at `/selfRotatable`,
 [Q-AUTH-192](#q-auth-192--a-token-a-project-administrator-issues-is-not-self-rotatable)); repository grants, `inherit` and an
 `endpoints` binding are allowed.
@@ -2207,7 +2247,7 @@ Priority: **MVP** · Covers: TOK-026, TOK-027, TOK-028, ADMAPI-043, ADMAPI-044
 
 | Filter | Values or meaning |
 |---|---|
-| `owner` | `me`, a username, or `sa:<name>` |
+| `owner` | `me`, a username, `sa:<name>` (an account of no project) or `sa:<projectKey>/<name>` (a project's account) |
 | `type` | `pat`, `sat` or `cit` |
 | `state` | `active` (default), `expired`, `revoked` or `all` |
 | `expiresBefore`, `expiresAfter` | Expiry bounds |
@@ -2256,6 +2296,7 @@ Priority: **MVP** · Covers: TOK-030, TOK-031, TOK-032, ADMAPI-045, ADMAPI-046
 | `DELETE /api/v1/tokens/current` | Revoke the presenting token, reason `owner` | any token: PAT, SAT or CIT | 204 |
 | `DELETE /api/v1/users/me/tokens` | Revoke all own tokens | user | 204 |
 | `DELETE /api/v1/users/{username}/tokens`, `DELETE /api/v1/service-accounts/{name}/tokens` | Revoke all tokens of a principal | administrator | 204, 404 |
+| `DELETE /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | Revoke all tokens of a project's service account | administrator, `tokens:revoke`, an Owner of the project | 204, 404 |
 | `POST /api/v1/tokens/revoke` | Revoke by value: `{"token": "trv_…"}` | anyone; no authentication needed | 202; 200 with `{"id", "owner"}` for administrators; 400 if the syntax check fails |
 
 **Revocation by value.** The endpoint is open to unauthenticated callers (decided in Q-AUTH-6).
@@ -2375,7 +2416,7 @@ Acceptance criteria:
 - An administrator's session with recent authentication gets 403 `forbidden` from
   `POST /api/v1/tokens/{id of alice's PAT}/rotate`; `DELETE /api/v1/tokens/{same id}` succeeds.
   A token whose scope is `{"system": ["tokens:revoke"]}` behaves the same way.
-- `alice`'s PAT with scope `{"repositories": [{"repositories": ["npm-local"], "actions":
+- `alice`'s PAT with scope `{"repositories": [{"repositories": ["web/npm-local"], "actions":
   ["read"]}]}` gets 403 `derivation_exceeds_parent` when it rotates her PAT with
   `{"inherit": true}`.
 
@@ -2481,10 +2522,10 @@ endpoint routes themselves belong to the format pages.
 
 | Client | Configuration (example) | Wire form | Accepted |
 |---|---|---|---|
-| npm, pnpm, Yarn 1 | `//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}` in `.npmrc` ([npmrc auth settings](https://docs.npmjs.com/cli/configuring-npm/npmrc#auth-related-configuration)) | `Authorization: Bearer <token>` | yes |
-| npm, pnpm, Yarn 1 | `//trove.example.com/api/npm/npm-all/:_auth=<base64(any:token)>` | `Authorization: Basic …` | yes; the username is ignored |
+| npm, pnpm, Yarn 1 | `//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}` in `.npmrc` ([npmrc auth settings](https://docs.npmjs.com/cli/configuring-npm/npmrc#auth-related-configuration)) | `Authorization: Bearer <token>` | yes |
+| npm, pnpm, Yarn 1 | `//trove.example.com/api/npm/web/npm-all/:_auth=<base64(any:token)>` | `Authorization: Basic …` | yes; the username is ignored |
 | Yarn 2+ | `npmAuthToken: ${TROVE_TOKEN}` or `npmAuthIdent: "any:${TROVE_TOKEN}"` in `.yarnrc.yml` | Bearer or Basic | yes |
-| npm interactive | `npm login --registry=https://trove.example.com/api/npm/npm-all/` | web login (R-AUTH-034) or legacy login (R-AUTH-035); stores `_authToken` | P1 |
+| npm interactive | `npm login --registry=https://trove.example.com/api/npm/web/npm-all/` | web login (R-AUTH-034) or legacy login (R-AUTH-035); stores `_authToken` | P1 |
 | NuGet (dotnet, nuget.exe, Visual Studio) | `packageSourceCredentials` with `Username=<any>` and `ClearTextPassword=<token>` in `nuget.config` ([reference](https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#packagesourcecredentials)) | Basic after a 401 challenge ([authenticated feeds](https://learn.microsoft.com/en-us/nuget/consume-packages/consuming-packages-authenticated-feeds)) | yes |
 | NuGet push, delete, relist | `dotnet nuget push … --api-key <token>` or `nuget setapikey <user>:<token>` | `X-NuGet-ApiKey` ([publish resource](https://learn.microsoft.com/en-us/nuget/api/package-publish-resource)) | yes; rules below |
 | Generic (curl, CI scripts, other formats) | — | Bearer or Basic | yes |
@@ -2542,8 +2583,8 @@ under the rules of this table.
 | Principal | Rendered name |
 |---|---|
 | User | Username |
-| Service account | `sa:<name>` |
-| CI token | `ci:<CI issuer name>/<mapping name>`, the owner principal's reference (R-AUTH-016) |
+| Service account | `sa:<name>` for an account of no project, `sa:<projectKey>/<name>` for a project's (R-AUTH-020) |
+| CI token | `ci:<CI issuer name>/<mapping name>`, or `ci:<CI issuer name>/<projectKey>/<mapping name>` when a project's tier owns the token: the owner principal's reference (R-AUTH-016) |
 | Anonymous | Gets 401 |
 
 **Basic switch.** `auth.clients.basic.enabled` turns off Basic token presentation everywhere
@@ -2563,22 +2604,22 @@ auth:
 
 Acceptance criteria:
 
-- `npm whoami --registry=https://trove.test/api/npm/npm-all/` with `_authToken` prints
+- `npm whoami --registry=https://trove.test/api/npm/web/npm-all/` with `_authToken` prints
   `alice`. With `_auth=$(printf 'whatever:%s' "$PAT" | base64)` it prints `alice` as well.
 - NuGet with credentials in `nuget.config`, all of which succeed:
 
   ```shell
-  dotnet nuget add source https://trove.test/api/nuget/nuget-all/v3/index.json -n trove -u alice -p "$PAT" --store-password-in-clear-text
+  dotnet nuget add source https://trove.test/api/nuget/web/nuget-all/v3/index.json -n trove -u alice -p "$PAT" --store-password-in-clear-text
   dotnet restore
   dotnet nuget push Acme.Lib.1.0.0.nupkg -s trove --api-key "$PAT"
   ```
 
   Push with `--api-key az` and the credentials configured succeeds as well. Push with
   `--api-key "$REVOKED_PAT"` gets 401 even though valid credentials are configured.
-- `curl -u ci:$SAT -T file.bin https://trove.test/files/generic-local/a/file.bin` deploys the
+- `curl -u ci:$SAT -T file.bin https://trove.test/files/web/generic-local/a/file.bin` deploys the
   file.
 - With a `.netrc` entry `machine trove.test login any password <PAT>`, `curl --netrc
-  https://trove.test/api/npm/npm-all/lodash` answers 200. `curl "https://any:$PAT@trove.test/files/generic-local/a/file.bin"`
+  https://trove.test/api/npm/web/npm-all/lodash` answers 200. `curl "https://any:$PAT@trove.test/files/web/generic-local/a/file.bin"`
   downloads the file. A request whose path or query contains the PAT but which has no
   `Authorization` header gets 401.
 - `dotnet nuget push … --api-key "$PAT"` with valid source credentials of another user stores
@@ -2594,7 +2635,7 @@ OIDC session.
 
 **Flow:**
 
-1. **Start.** `POST /api/npm/{repoKey}/-/v1/login` needs no credential and is rate-limited
+1. **Start.** `POST /api/npm/{projectKey}/{repoKey}/-/v1/login` needs no credential and is rate-limited
    (R-AUTH-038). The repository must exist and have format npm; otherwise 404, which makes npm
    fall back to legacy login. trove creates a pending `cli_login` row (expiry
    `auth.cli_login.ttl`) and answers 200:
@@ -2704,7 +2745,7 @@ CREATE TABLE cli_login (
   poll_secret_sha256 bytea       NOT NULL UNIQUE,
   client_kind        text        NOT NULL CHECK (client_kind IN ('npm', 'device')),
   client_name        text,                         -- device flow: client_id given by the tool
-  repository_key     text,                         -- npm: the registry the login started on
+  repository_key     text,                         -- npm: the registry the login started on, '<projectKey>/<repoKey>'
   user_code          text,                         -- device flow only
   requested_addr     inet,
   requested_ua       text,
@@ -2743,9 +2784,9 @@ auth:
 
 Acceptance criteria:
 
-- `npm login --registry=https://trove.test/api/npm/npm-all/` prints a URL. Opening it, logging
+- `npm login --registry=https://trove.test/api/npm/web/npm-all/` prints a URL. Opening it, logging
   in through the test IdP and approving lets the command finish. `~/.npmrc` then contains
-  `//trove.test/api/npm/npm-all/:_authToken=trv_pat_`, and `npm whoami` prints the user.
+  `//trove.test/api/npm/web/npm-all/:_authToken=trv_pat_`, and `npm whoami` prints the user.
 - Polling the same `doneUrl` after success gives 404. A denied login makes npm stop polling.
 - Two polls of one approved `doneUrl`, sent at the same moment to two different `web` replicas:
   exactly one gets 200 with a token, the other 404, and
@@ -2768,7 +2809,7 @@ Acceptance criteria:
 ### R-AUTH-035 · npm legacy login and logout
 Priority: **P1** · Covers: PKG-NPM-009, PKG-NPM-010
 
-**Legacy login.** `PUT /api/npm/{repoKey}/-/user/org.couchdb.user:{name}` carries
+**Legacy login.** `PUT /api/npm/{projectKey}/{repoKey}/-/user/org.couchdb.user:{name}` carries
 `{"name", "password", …}`. Users of `npm login --auth-type=legacy`, of Yarn 2+ `yarn npm login`
 and of the web-login fallback type a username and, as password, an existing PAT or SAT:
 
@@ -2779,7 +2820,7 @@ and of the web-login fallback type a username and, as password, an existing PAT 
 
 Legacy login never answers 409 and never creates a user.
 
-**Logout.** `DELETE /api/npm/{repoKey}/-/user/token/{token}` is what `npm logout` sends
+**Logout.** `DELETE /api/npm/{projectKey}/{repoKey}/-/user/token/{token}` is what `npm logout` sends
 ([npm logout](https://docs.npmjs.com/cli/commands/npm-logout)):
 
 - If the path token equals the token that authenticates the request, and `npm_logout_revokes` is
@@ -2875,8 +2916,8 @@ exists. It cannot be deleted, cannot hold tokens or sessions, and cannot be a gr
   part of the principal set of service-account tokens, CI tokens or anonymous requests.
 - The anonymous switches below do not affect it.
 
-Its grant rules (`read` only, no roles, no ownership, not grantable by delegated managers or
-project administrators) are in [authorization.md](authorization.md) R-AUTHZ-030.
+Its grant rules (`read` only, no roles, no project membership, no ownership, not grantable by
+delegated managers or Owners of projects) are in [authorization.md](authorization.md) R-AUTHZ-030.
 
 **Enabling anonymous access.** Anonymous access is off by default. It takes both of these:
 
@@ -2899,8 +2940,8 @@ the grants that policies give that principal ([authorization.md](authorization.m
 
 - If `anonymous` lacks read access to the addressed repository, the answer is 401 with the
   challenge of R-AUTH-002, never 403 or 404. Clients then send their configured credentials.
-- The same 401 is given for a repository key that does not exist, so unauthenticated callers
-  cannot probe repository names.
+- The same 401 is given for a project or repository key that does not exist, so unauthenticated
+  callers cannot probe project or repository names.
 - Inside a repository that `anonymous` may read, a missing package is 404.
 - The repository field `requireAuthentication` (R-REPO-004 in
   [repositories-and-proxy.md](repositories-and-proxy.md); PKG-NUGET-016) overrides anonymous
@@ -2929,10 +2970,11 @@ the change area `auth`.
 
 Acceptance criteria:
 
-- With anonymous access off, `curl -si https://trove.test/api/npm/npm-all/lodash` gets 401.
-- With anonymous access on and a policy granting `anonymous` read on `npm-all`, the same call
-  gets 200. `curl -si https://trove.test/api/npm/no-such-repo/lodash` gets 401, not 404.
-- `curl -X POST https://trove.test/api/v1/repositories` without credentials gets 401 even if
+- With anonymous access off, `curl -si https://trove.test/api/npm/web/npm-all/lodash` gets 401.
+- With anonymous access on and a policy granting `anonymous` read on `web/npm-all`, the same call
+  gets 200. `curl -si https://trove.test/api/npm/web/no-such-repo/lodash` and
+  `curl -si https://trove.test/api/npm/no-such-project/npm-all/lodash` get 401, not 404.
+- `curl -X POST https://trove.test/api/v1/projects/web/repositories` without credentials gets 401 even if
   a policy grants `anonymous` `manage`.
 
 ### R-AUTH-038 · Brute-force protection and rate limiting
@@ -3451,7 +3493,9 @@ not scheduled:
 - AUTHN-042 (P2): password self-service and reset. No passwords.
 - AUTHN-043 (P2): legacy per-user API key. Tokens in every header position replace it.
 - TOK-003 (P2): self-contained signed token format. trove tokens are opaque (INV-8).
-- TOK-011, TOK-013 (P2): project-role and project-membership scopes. They come with projects.
+- TOK-011, TOK-013 (P2): project-role and project-membership scopes. A token reaches what its owner's
+  project roles grant through the repository part of its scope (`web/*`, R-AUTH-024); a scope element that names
+  a project or a role is not offered ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - TOK-016 (P2): audience restriction. It is meaningful only with several trusting instances.
 - TOK-020, TOK-021, TOK-022 (P2): revocability and persistence thresholds and the
   force-revocable flag. Not applicable, because every trove token is stored and revocable.
@@ -3488,8 +3532,8 @@ Handed to other pages, not deferred:
 - [authorization.md](authorization.md): IAM-006, IAM-007, IAM-008 (administration and
   scan-related roles); IAM-019 to IAM-033 (permission policies); IAM-034 (anonymous grants by
   delegated managers); IAM-051 to IAM-068 (projects, roles and environments, P2 and Later).
-- [gitlab-ci-oidc.md](gitlab-ci-oidc.md): IAM-040 (hiding global identity mappings from project
-  administrators, P2).
+- [gitlab-ci-oidc.md](gitlab-ci-oidc.md): IAM-040 (hiding global identity mappings from the Owners of
+  projects, P2).
 - No page in the ownership table claims IAM-046 to IAM-049 (signing key pairs, external secret
   managers, JAR signing keystore, trusted public keys; P2 and Later). They are package and
   secret infrastructure, not identity.
@@ -5241,7 +5285,7 @@ malformed repository selector, package pattern or path pattern was stored and ad
 
 ### Q-AUTH-189 · The rules of a project service account are checked in the creating transaction
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones): a project's service account is named within the project without the prefix, so the checks `project_prefix_required` and `name_reserved_by_project` and the window of H-399 go; the project comes from the path of the project's routes, not from a `project` member.
 
 Context: Q-AUTHZ-169 and Q-AUTHZ-176 give a project service account its project and a name that starts with the project's key; a global account takes no such name.
 
@@ -5258,7 +5302,7 @@ Context: Q-AUTHZ-169 and Q-AUTHZ-176 give a project service account its project 
 
 ### Q-AUTH-190 · A project administrator issues, sees and revokes the tokens of its project's accounts through the token service's own rule
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner): the Owner of the project issues, sees and revokes these tokens, with the same bounds; the switch `managePolicies` and the answer `project_switch_off` go.
 
 Context: Q-AUTHZ-177 lets a project administrator issue a token for a project service account and bounds it. Open: where the bound lives, and what the list, the read and the revocation show.
 
@@ -5310,7 +5354,7 @@ Context: Q-AUTHZ-177 bounds a token a project administrator issues by the instal
 
 ### Q-AUTH-193 · The key and the hyphen alone are no project name, and the schema's refusal answers 422
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded by [Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones): a project's service accounts and repositories carry no prefix of the project key, so there is no prefix to complete and `AI003` no longer checks one.
 
 Context: the trigger `AI003` of migration `00019_projects.sql` refuses a project service account whose name is the key and the hyphen alone (`web-`), while `bindProject` only asked for the prefix. Such a create passed the code's check, failed in the trigger and, with `AI003` unmapped, answered 500; the UI prefills `web-`.
 
