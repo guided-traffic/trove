@@ -97,7 +97,7 @@ const (
 type Format interface {
 	Descriptor() Descriptor
 
-	// Routes lists every protocol operation below /api/<id>/<repoKey>/. It is empty
+	// Routes lists every protocol operation below /api/<id>/<projectKey>/<repoKey>/. It is empty
 	// for a format whose protocol is /files/ alone: generic (Q-GENERIC-7).
 	Routes() []Route
 	// Match resolves method and the repository-relative path, still

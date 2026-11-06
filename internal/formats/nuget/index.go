@@ -41,7 +41,7 @@ type serviceIndex struct {
 }
 
 // ServiceIndex renders the service index of the repository whose v3 root is feed (with its
-// trailing slash, "<base>/api/nuget/<key>/v3/"). Because a client only looks up the @type
+// trailing slash, "<base>/api/nuget/<projectKey>/<repoKey>/v3/"). Because a client only looks up the @type
 // values it knows, every resource is listed under every alias of the table of R-NUGET-002.
 // The publish resources are listed when the repository takes pushes: a local repository,
 // and a virtual one with a deployment target (R-NUGET-019). The resources of the P1

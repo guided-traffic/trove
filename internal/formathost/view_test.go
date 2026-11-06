@@ -131,15 +131,15 @@ func TestR_API_029_ViewAdaptersBridgeTheRegisteredFormats(t *testing.T) {
 	if !ok || a.Compare("aa", "b") <= 0 || !a.Prerelease("pre") || a.Prerelease("1.0.0") || a.Prerelease("junk") {
 		t.Fatal("Compare does not reach the format, or Prerelease is not the exposure adapter's answer (a text that is no version is none)")
 	}
-	got, err := a.Describe(context.Background(), []view.Version{{ID: 5, Format: "alpha", Repo: "r", Package: "p", Version: "1"}},
+	got, err := a.Describe(context.Background(), []view.Version{{ID: 5, Format: "alpha", Repo: "it/rr", Package: "p", Version: "1"}},
 		view.FieldSummary|view.FieldReadme, func(v string) bool { return v == "1" })
 	if err != nil || got[5].Description != "d" || !got[5].HasReadme || !slices.Equal(got[5].Keywords, []string{"k"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if stub.want != formats.ViewSummary|formats.ViewReadme || stub.got[0].Repo.Name != qr("r") || stub.got[0].Package != "p" {
+	if stub.want != formats.ViewSummary|formats.ViewReadme || stub.got[0].Repo.Name != qr("rr") || stub.got[0].Package != "p" {
 		t.Fatalf("%+v", stub)
 	}
-	ids, err := a.Find(context.Background(), view.Find{Repos: []string{"r"}, Text: "x"}, 9)
+	ids, err := a.Find(context.Background(), view.Find{Repos: []string{"it/rr"}, Text: "x"}, 9)
 	if err != nil || !slices.Equal(ids, []int64{1, 2}) || stub.find.Text != "x" || stub.limit != 9 {
 		t.Fatalf("%v %v %+v", ids, err, stub)
 	}

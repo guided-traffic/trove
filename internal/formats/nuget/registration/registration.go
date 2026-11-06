@@ -82,7 +82,7 @@ func (p Paging) inlineBelow() int {
 }
 
 // Feed is the v3 root of the repository the documents are served from, with its trailing
-// slash: "<base>/api/nuget/<key>/v3/". Every URL of a document is built from it.
+// slash: "<base>/api/nuget/<projectKey>/<repoKey>/v3/". Every URL of a document is built from it.
 type Feed string
 
 // Index is the URL of the registration index of an ID in a hive.

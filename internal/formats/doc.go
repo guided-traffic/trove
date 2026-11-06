@@ -1,7 +1,7 @@
 // Package formats is the contract of the package formats and their registry
 // (R-ARCH-008, R-ARCH-010, R-REPO-003).
 //
-// A format is a [Format]: its [Descriptor], its routes below /api/<id>/<repoKey>/,
+// A format is a [Format]: its [Descriptor], its routes below /api/<id>/<projectKey>/<repoKey>/,
 // the classification of its paths, the storage hooks that keep its package rows
 // in step with the items (OnCommit, OnItemsRemoved), the adapters of the remote
 // and the virtual class, the exposure and view adapters, the client setup

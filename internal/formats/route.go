@@ -94,7 +94,7 @@ func (k RouteKind) RequestKind() RequestKind {
 // connection is aborted instead ([ServeRoute]).
 type HandlerFunc func(ctx context.Context, rq *Request, w http.ResponseWriter) error
 
-// Route is one protocol operation below /api/<id>/<repoKey>/ (R-ARCH-008).
+// Route is one protocol operation below /api/<id>/<projectKey>/<repoKey>/ (R-ARCH-008).
 type Route struct {
 	// Name is the stable metric, log and audit label: "npm.tarball.get". The
 	// request log and the metrics name the handler of a request by it.

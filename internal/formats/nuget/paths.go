@@ -10,16 +10,16 @@ import (
 
 // Two kinds of path meet in this format and must not be mixed up (Q-NUGET-29).
 //
-// A protocol path is what a client requests below /api/nuget/<key>/: "v3/flatcontainer/
+// A protocol path is what a client requests below /api/nuget/<projectKey>/<repoKey>/: "v3/flatcontainer/
 // acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg". Routes match protocol paths (match.go).
 //
-// A canonical path is where the item lives in the repository, the path of /files/<key>/
+// A canonical path is where the item lives in the repository, the path of /files/<projectKey>/<repoKey>/
 // and of the remote cache: "acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg" (R-NUGET-005
 // storage layout, R-NUGET-015 descriptors). Classify, PackageDocumentPath and the helpers
 // below speak canonical paths.
 
 // FeedSegment is the first segment of every protocol resource: the v3 root of a
-// repository, <base>/api/nuget/<key>/v3 (R-NUGET-001).
+// repository, <base>/api/nuget/<projectKey>/<repoKey>/v3 (R-NUGET-001).
 const FeedSegment = "v3"
 
 // The resources below the feed root, as the first segment after it (R-NUGET-001).
