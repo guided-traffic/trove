@@ -407,69 +407,6 @@ func (q *Queries) MarkRepositoryDeleting(ctx context.Context, arg MarkRepository
 	return items, nil
 }
 
-const moveRepository = `-- name: MoveRepository :many
-UPDATE repositories
-   SET project_id = $1::text::uuid, updated_at = now(),
-       config_version = config_version + 1,
-       updated_by = NULLIF($2::text, '')::uuid
- WHERE id = $3::bigint AND project_id = $4::text::uuid AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
-`
-
-type MoveRepositoryParams struct {
-	ProjectID     string
-	Actor         string
-	ID            int64
-	FromProjectID string
-}
-
-// Moves a repository to another project (Q-REPO-212); its address changes, its id
-// and its content do not. The condition names the source project so that two
-// concurrent moves cannot both win; the callers hold ProjectLock of both projects
-// and the row lock. No row back: the repository is gone or no longer in `from`. A
-// target that has the key answers SQLSTATE 23505 on repositories_project_key (409
-// already_exists). config_version moves on: the project is a member of the
-// repository's document.
-func (q *Queries) MoveRepository(ctx context.Context, arg MoveRepositoryParams) ([]Repository, error) {
-	rows, err := q.db.Query(ctx, moveRepository,
-		arg.ProjectID,
-		arg.Actor,
-		arg.ID,
-		arg.FromProjectID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Repository{}
-	for rows.Next() {
-		var i Repository
-		if err := rows.Scan(
-			&i.ID,
-			&i.Key,
-			&i.Format,
-			&i.Class,
-			&i.Config,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Lifecycle,
-			&i.ConfigVersion,
-			&i.CreatedBy,
-			&i.UpdatedBy,
-			&i.LastActivityAt,
-			&i.ClaimsVersion,
-			&i.ProjectID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const repositoryProjectKeys = `-- name: RepositoryProjectKeys :many
 SELECT id::text AS id, key FROM project
 `
@@ -531,38 +468,6 @@ func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]Rep
 		return nil, err
 	}
 	return items, nil
-}
-
-const repositoryReferences = `-- name: RepositoryReferences :one
-SELECT (SELECT count(*) FROM virtual_members WHERE member_id = $1::bigint)::bigint AS virtual_members,
-       (SELECT count(*) FROM virtual_pin_members WHERE member_id = $1::bigint)::bigint AS pin_members,
-       (SELECT count(*) FROM virtual_deploy_targets WHERE target_id = $1::bigint)::bigint AS deploy_targets,
-       (SELECT count(*) FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
-         WHERE s.repository_id = $1::bigint AND a.project_id IS NOT NULL)::bigint AS policy_selectors
-`
-
-type RepositoryReferencesRow struct {
-	VirtualMembers  int64
-	PinMembers      int64
-	DeployTargets   int64
-	PolicySelectors int64
-}
-
-// What references a repository of the project and blocks its move (409
-// repository_in_use): the virtual repositories that list it as a member, pin rules
-// that name it, virtual repositories that deploy into it, and policy selectors of the
-// project's policies that name it. The CI mappings of the project name
-// repositories inside their grants document and are checked by the caller.
-func (q *Queries) RepositoryReferences(ctx context.Context, id int64) (RepositoryReferencesRow, error) {
-	row := q.db.QueryRow(ctx, repositoryReferences, id)
-	var i RepositoryReferencesRow
-	err := row.Scan(
-		&i.VirtualMembers,
-		&i.PinMembers,
-		&i.DeployTargets,
-		&i.PolicySelectors,
-	)
-	return i, err
 }
 
 const updateRepositoryConfig = `-- name: UpdateRepositoryConfig :many

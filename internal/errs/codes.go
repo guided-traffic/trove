@@ -94,6 +94,7 @@ const (
 	CodeLastAdmin               = "last_admin"
 	CodeAnonymousNotAllowed     = "anonymous_not_allowed"
 	CodeAutoJoinAdminConflict   = "auto_join_admin_conflict"
+	CodeAutoJoinMemberConflict  = "auto_join_member_conflict"
 	CodeUsernameInvalid         = "username_invalid"
 )
 
@@ -609,6 +610,7 @@ var registry = []CodeInfo{
 	{CodeLastAdmin, Conflict, "Last administrator", "The change would remove the last administrator."},
 	{CodeAnonymousNotAllowed, Conflict, "Anonymous access not allowed", "The configuration forbids anonymous access."},
 	{CodeAutoJoinAdminConflict, Conflict, "Auto-join conflicts with an administration role", "A group with an administration role binding cannot be an auto-join group."},
+	{CodeAutoJoinMemberConflict, Conflict, "Auto-join conflicts with a project membership", "A group that is a member of a project cannot be an auto-join group."},
 	{CodeUsernameInvalid, Invalid, "Invalid username", "The username does not match the name rule or is reserved."},
 	// <<< M1 identity
 	//

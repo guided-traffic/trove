@@ -688,6 +688,35 @@ func (q *Queries) IdentityGroupMembers(ctx context.Context, arg IdentityGroupMem
 	return items, nil
 }
 
+const identityGroupProjects = `-- name: IdentityGroupProjects :many
+SELECT p.key FROM project_member m JOIN project p ON p.id = m.project_id
+ WHERE m.principal_id = $1::text::uuid ORDER BY p.key
+`
+
+// The keys of the projects the group is a member of. An auto-join group is never a
+// project member (every user is in it), so turning the flag on is refused while the
+// list is not empty (R-AUTH-019, R-AUTHZ-026); the member write reads the flag under
+// the same row lock (ProjectGroupAutoJoinShare).
+func (q *Queries) IdentityGroupProjects(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityGroupProjects, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityGroupRoles = `-- name: IdentityGroupRoles :many
 SELECT role FROM authz_role_binding WHERE principal_id = $1::text::uuid ORDER BY role
 `

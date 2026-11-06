@@ -56,33 +56,6 @@ VALUES (sqlc.arg(key)::text, sqlc.arg(format)::text, sqlc.arg(class)::text, sqlc
 ON CONFLICT (project_id, key) DO NOTHING
 RETURNING *;
 
--- name: MoveRepository :many
--- Moves a repository to another project (Q-REPO-212); its address changes, its id
--- and its content do not. The condition names the source project so that two
--- concurrent moves cannot both win; the callers hold ProjectLock of both projects
--- and the row lock. No row back: the repository is gone or no longer in `from`. A
--- target that has the key answers SQLSTATE 23505 on repositories_project_key (409
--- already_exists). config_version moves on: the project is a member of the
--- repository's document.
-UPDATE repositories
-   SET project_id = sqlc.arg(project_id)::text::uuid, updated_at = now(),
-       config_version = config_version + 1,
-       updated_by = NULLIF(sqlc.arg(actor)::text, '')::uuid
- WHERE id = sqlc.arg(id)::bigint AND project_id = sqlc.arg(from_project_id)::text::uuid AND lifecycle = 'active'
-RETURNING *;
-
--- name: RepositoryReferences :one
--- What references a repository of the project and blocks its move (409
--- repository_in_use): the virtual repositories that list it as a member, pin rules
--- that name it, virtual repositories that deploy into it, and policy selectors of the
--- project's policies that name it. The CI mappings of the project name
--- repositories inside their grants document and are checked by the caller.
-SELECT (SELECT count(*) FROM virtual_members WHERE member_id = sqlc.arg(id)::bigint)::bigint AS virtual_members,
-       (SELECT count(*) FROM virtual_pin_members WHERE member_id = sqlc.arg(id)::bigint)::bigint AS pin_members,
-       (SELECT count(*) FROM virtual_deploy_targets WHERE target_id = sqlc.arg(id)::bigint)::bigint AS deploy_targets,
-       (SELECT count(*) FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
-         WHERE s.repository_id = sqlc.arg(id)::bigint AND a.project_id IS NOT NULL)::bigint AS policy_selectors;
-
 -- name: UpdateRepositoryConfig :many
 -- The write of R-REPO-011. The caller holds the row lock and has compared the
 -- version already; the version in the WHERE clause is the second guard.

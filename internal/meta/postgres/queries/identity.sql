@@ -270,6 +270,14 @@ SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principa
 -- name: IdentityGroupHasAdminRole :one
 SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = sqlc.arg(id)::text::uuid);
 
+-- name: IdentityGroupProjects :many
+-- The keys of the projects the group is a member of. An auto-join group is never a
+-- project member (every user is in it), so turning the flag on is refused while the
+-- list is not empty (R-AUTH-019, R-AUTHZ-026); the member write reads the flag under
+-- the same row lock (ProjectGroupAutoJoinShare).
+SELECT p.key FROM project_member m JOIN project p ON p.id = m.project_id
+ WHERE m.principal_id = sqlc.arg(id)::text::uuid ORDER BY p.key;
+
 -- name: IdentityLockGroup :many
 -- Locks a group's row, so that binding a role to the group and turning on its
 -- auto-join flag, which each check the other, run one after the other
