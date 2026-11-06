@@ -946,11 +946,29 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   `large` in run 42126196109. Open: green nightly runs in a row on the fix
 - 🟡 The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
-- ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
-- ⚪ The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling
-- ⚪ The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
-  failing over, a rolling upgrade of either side
-- ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
+- 🟡 The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588).
+  Built 2026-11-06: the drain tests (`TestE14Drain`, `TestDrainRoles`, the drain of `TestNPMHA`) read from each evicted pod's own log the
+  time from its readiness flip to the last request the edge sent it, and fail when the delay is not longer
+  ([Q-HA-110](../spec/ha-and-helm.md#q-ha-110--how-the-drain-test-measures-the-edges-endpoint-removal-time)). Measured: at most 1.79 s
+  in four `push` runs and 0.98 s under the npm load of nightly run 42126196109 (read from their kept logs), 0.14 s on an idle dev cluster,
+  13.4 s on a CPU-starved one; the default stays 5 s and the dev profile keeps 15 s
+  ([Q-HA-111](../spec/ha-and-helm.md#q-ha-111--the-default-of-healthshutdown_drain_delay), Q-HA-112). `TestE14Drain` passed with the
+  measurement on kind. Open: a nightly `drain-roles` and `npm-ha` with the measurement
+- 🟡 The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling. Built
+  2026-11-06 in the set `mirror-long` ([Q-REPO-198](../spec/repositories-and-proxy.md#q-repo-198--the-failure-suite-of-the-mirror-a-remote-and-a-range-of-names-per-scenario-the-upstreams-request-log-for-the-waits-the-process-lost-three-ways)):
+  the pass's process force-deleted, its node stopped and frozen, a `429` and a `503 SlowDown` across a drain and a kill (witnessed by the
+  counting upstream's new request log), a switchover and a Valkey failover during a pass. Open: their first run (nightly)
+- 🟡 The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
+  failing over, a rolling upgrade of either side. Built 2026-11-06 in the set `bastion-long` (Q-BAS-141 to Q-BAS-144) and green on the
+  dev cluster under `npm ci`, `dotnet restore` and cold-miss loops: a replica force-deleted on either backend (about 100 commands each,
+  0 failed), a PostgreSQL switchover, a Valkey failover and a crashed main `packages` pod (208 commands, 0 failed), rolling restarts and
+  a `helm upgrade` of the main installation (837 commands, 0 failed) and of either Bastion (247 and 224, 0 failed), the mismatch gauge 0
+  throughout. The drain and the unreachable main installation were green before. Open: the nightly leg
+- 🟡 Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13).
+  Built 2026-11-06 in the set `vuln-long` (Q-VULN-87 to Q-VULN-89): a switchover during an evaluation of 40,000 expected findings (no
+  finding twice, none lost), the block of four versions answered on every replica through a node drain, a Valkey failover and a
+  switchover, a worker killed mid-sync (a failed job and a clean next run: the sync kinds have one attempt). Open: their first run
+  (nightly), drain variants B to E, and the restore part, which waits for backup and restore
 - 🟡 Rolling upgrade from the previous pre-release with mixed versions
 - 🟡 Performance targets met in two nightly runs in a row
 
