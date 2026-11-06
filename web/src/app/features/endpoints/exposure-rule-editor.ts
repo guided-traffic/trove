@@ -18,7 +18,7 @@ import {
   ExposureRule,
 } from '../../api/endpoints-api';
 import { ApiError, FieldProblem } from '../../api/problem';
-import { RepositoriesApi } from '../../api/repositories-api';
+import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { ConflictResolver } from '../../shared/conflict-dialog';
@@ -136,6 +136,7 @@ export class ExposureRuleEditor implements HasUnsavedChanges {
     loader: ({ params }) => this.api.get(params),
   });
   protected readonly formats = resource({ loader: () => this.repositories.formats() });
+  protected readonly refOf = refOf;
   protected readonly repos = resource({ loader: () => this.repositories.listAll() });
   protected readonly loaded = resource({
     params: () => ({ endpoint: this.endpoint(), name: this.name() }),
@@ -174,7 +175,7 @@ export class ExposureRuleEditor implements HasUnsavedChanges {
   protected readonly inert = computed(() => valueOf(this.info)?.inert ?? false);
   protected readonly modeAll = computed(() => this.configuration()?.exposure === 'all');
   protected readonly repository = computed(
-    () => (valueOf(this.repos) ?? []).find((r) => r.key === this.form().repository) ?? null,
+    () => (valueOf(this.repos) ?? []).find((r) => refOf(r) === this.form().repository) ?? null,
   );
   protected readonly format = computed(
     () => (valueOf(this.formats) ?? []).find((f) => f.name === this.repository()?.format) ?? null,

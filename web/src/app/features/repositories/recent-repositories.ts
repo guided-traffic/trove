@@ -3,11 +3,11 @@ import { BrowserStorage } from '../../core/storage';
 
 const STORAGE_KEY = 'trove.recent-repositories';
 
-/** "Recently viewed" holds this many repository keys (R-UI-020). */
+/** "Recently viewed" holds this many repositories (R-UI-020). */
 export const RECENT_LIMIT = 20;
 
 /**
- * The keys of the repositories the user opened last, newest first, in browser storage. Non-secret
+ * The qualified names (`<project>/<key>`) of the repositories the user opened last, newest first, in browser storage. Non-secret
  * convenience data (R-UI-043): when storage is blocked the list is empty and the feature disappears.
  */
 @Injectable({ providedIn: 'root' })

@@ -18,7 +18,7 @@
     <ng-container i18n="@@policy.project">Project policy of</ng-container>&ngsp;
     <a [routerLink]="['/admin/projects', key]" translate="no">{{ key }}</a>
   </p>
-  <trove-project-needs [state]="projectState()" capability="policies:write" right="managePolicies" />
+  <trove-project-needs [state]="projectState()" capability="policies:write" />
 } @else {
   @if (isNew() || loaded()) {
     <p class="subject" role="note">
@@ -154,8 +154,7 @@
           [(value)]="repositories"
           [readonly]="!canWrite()"
           [error]="problems('/resources/repositories')[0] ?? null"
-          i18n-hint="@@policy.repositories-hint"
-          hint="One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm)."
+          [hint]="selectorHint()"
         />
         <p class="covers" role="status">
           @if (validating()) {
@@ -178,7 +177,7 @@
         }
         @if (policyProject()) {
           <p class="muted" i18n="@@policy.project-selectors">
-            A project policy covers the repositories of its project only, whatever the selectors name.
+            A project policy covers the repositories of its project only; its selectors are bare keys, never project/key.
           </p>
         }
 

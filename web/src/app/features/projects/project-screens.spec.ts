@@ -246,7 +246,7 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
   it('R-UI-041 projectRights, canWritePolicies and canWriteRepositories follow authz/me and the capabilities', async () => {
     const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectAdmin(true, false) });
     const session = get(SessionStore);
-    expect(session.isProjectAdministrator()).toBe(true);
+    expect(session.isProjectOwner()).toBe(true);
     expect(session.hasAdminArea()).toBe(true);
     expect(session.isAdministrator()).toBe(false);
     expect(session.projectRights('web')).toEqual({ key: 'web', managePolicies: true, manageRepositories: false });

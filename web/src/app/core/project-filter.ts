@@ -22,7 +22,7 @@ export class ProjectFilter {
 
   /** The visible projects, ordered by key. */
   readonly projects = this._projects.asReadonly();
-  readonly canList = computed(() => this.session.has('projects:read') || this.session.isProjectAdministrator());
+  readonly canList = computed(() => this.session.has('projects:read') || this.session.isProjectOwner());
   /** The header offers the filter. */
   readonly visible = computed(() => this.canList() && this._projects().length > 0);
   /** The key lists filter by, or null for none. */

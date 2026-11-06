@@ -346,34 +346,32 @@ export function settingsOf(form: RepositoryForm, format?: FormatMemberOf): Recor
   };
 }
 
-/** The document a create sends; `project` assigns the repository to a project in the same transaction (R-AUTHZ-026). */
+/** The document a create sends; the project is named by the path of the request (R-REPO-001). */
 export function documentOf(
   cls: Repository['class'],
   format: FormatMemberOf,
   form: RepositoryForm,
-  project?: string | null,
 ): Repository {
   return {
     key: form.key,
     class: cls,
     format: format.name,
-    ...(project ? { project } : {}),
     ...settingsOf(form, format),
   };
 }
 
 /**
- * The client address of a repository: the server's base URL (ServerAddress, Q-UI-69) plus the
+ * The client address of the repository `ref` (`<project>/<key>`): the server's base URL (ServerAddress, Q-UI-69) plus the
  * format's `protocolBasePath`. Empty while the base URL is unknown; the page's own location is
  * never a substitute.
  */
 export function clientAddress(
   baseUrl: string | null | undefined,
   format: FormatDescriptor | undefined,
-  key: string,
+  ref: string,
 ): string {
   if (!format || !baseUrl) return '';
-  return baseUrl.replace(/\/+$/, '') + protocolPath(format, key);
+  return baseUrl.replace(/\/+$/, '') + protocolPath(format, ref);
 }
 
 /** The management API address of a path, or the path with a marker while the base URL is unknown. */

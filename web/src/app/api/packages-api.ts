@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { ApiClient } from './client';
 import { PageFetcher } from './pagination';
 import { ApiError } from './problem';
+import { repositoryUrl } from './repositories-api';
 import { cleanQuery, seg } from './query';
 import { Schema } from './types';
 
@@ -106,7 +107,7 @@ export class HttpClientSetupApi extends ClientSetupApi {
 
   override async get(repository: string, query: ClientSetupQuery): Promise<ClientSetup> {
     return (
-      await this.client.getJson<ClientSetup>(`/api/v1/repositories/${seg(repository)}/client-setup`, {
+      await this.client.getJson<ClientSetup>(`${repositoryUrl(repository)}/client-setup`, {
         params: cleanQuery(query),
       })
     ).body;

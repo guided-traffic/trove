@@ -28,6 +28,9 @@ import {
   RepositoryConsumerView,
   RepositorySummary,
   isConsumerView,
+  refOf,
+  repoRef,
+  splitRef,
 } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
@@ -237,7 +240,12 @@ export class Browse {
     if (sel.path === '') return 'repository';
     return this.item()?.kind ?? null;
   });
-  protected readonly members = computed(() => this.fullRepository()?.virtual?.members ?? []);
+  /** The members of a virtual repository as qualified names: they are bare keys of its own project. */
+  protected readonly members = computed(() => {
+    const project = splitRef(this.selected()?.repo ?? '').project;
+    return (this.fullRepository()?.virtual?.members ?? []).map((m) => repoRef(project, m));
+  });
+  protected readonly parts = (ref: string): string[] => ref.split('/');
 
   /** What the caller may do at the selection (R-UI-005): one batched check, cached for 60 seconds. */
   protected readonly allowed = resource({
@@ -313,10 +321,10 @@ export class Browse {
     if (!sel) return [];
     const parts = sel.path.split('/').filter((p) => p !== '');
     return [
-      { label: sel.repo, commands: ['/browse', sel.repo] },
+      { label: sel.repo, commands: ['/browse', ...sel.repo.split('/')] },
       ...parts.map((p, i) => ({
         label: p,
-        commands: ['/browse', sel.repo, ...parts.slice(0, i + 1)],
+        commands: ['/browse', ...sel.repo.split('/'), ...parts.slice(0, i + 1)],
       })),
     ];
   });
@@ -384,7 +392,7 @@ export class Browse {
     effect(() => {
       // A node made by a deep link before the list arrived learns its class and format from the list.
       for (const r of this.list.items()) {
-        const node = untracked(() => this.nodes.get(r.key));
+        const node = untracked(() => this.nodes.get(refOf(r)));
         if (node && node.meta().cls === undefined) {
           node.meta.set({ cls: r.class, format: r.format, disabled: r.disabled });
         }
@@ -393,8 +401,9 @@ export class Browse {
     effect(() => {
       // A repository the list did not show (a deep link) learns its class and format from the read.
       const doc = this.repositoryDoc();
-      if (!doc) return;
-      const node = untracked(() => this.nodes.get(doc.key));
+      const repo = this.selected()?.repo;
+      if (!doc || !repo) return;
+      const node = untracked(() => this.nodes.get(repo));
       if (node && node.meta().cls === undefined) {
         node.meta.set({ cls: doc.class, format: doc.format, disabled: 'disabled' in doc && !!doc.disabled });
       }
@@ -404,7 +413,7 @@ export class Browse {
   // --- tree ---------------------------------------------------------------------------------
 
   private rootOf(r: RepositorySummary): TreeNode {
-    return this.nodeFor(r.key, '', 'repository', r.key, {
+    return this.nodeFor(refOf(r), '', 'repository', refOf(r), {
       cls: r.class,
       format: r.format,
       disabled: r.disabled,
@@ -509,9 +518,11 @@ export class Browse {
   /** A virtual repository's children are its members in resolution order (R-UI-010). */
   private async loadMembers(node: TreeNode): Promise<void> {
     const read = (await this.repositories.get(node.repository)).value;
-    const keys = isConsumerView(read) ? [] : (read.virtual?.members ?? []);
+    // The members of a virtual repository are bare keys of its own project (R-REPO-017).
+    const project = splitRef(node.repository).project;
+    const keys = isConsumerView(read) ? [] : (read.virtual?.members ?? []).map((m) => repoRef(project, m));
     node.membersHidden.set(isConsumerView(read));
-    const known = new Map(this.list.items().map((r) => [r.key, r]));
+    const known = new Map(this.list.items().map((r) => [refOf(r), r]));
     this.setChildren(
       node,
       keys.map((key, i) => {
@@ -612,7 +623,7 @@ export class Browse {
   }
 
   protected go(repo: string, path: string): void {
-    void this.router.navigate(['/browse', repo, ...path.split('/').filter((s) => s !== '')], {
+    void this.router.navigate(['/browse', ...repo.split('/'), ...path.split('/').filter((s) => s !== '')], {
       queryParams: { tab: null },
       queryParamsHandling: 'merge',
     });
@@ -725,7 +736,7 @@ export class Browse {
   }
 
   protected commandsOf(node: TreeNode): string[] {
-    return ['/browse', node.repository, ...node.path.split('/').filter((s) => s !== '')];
+    return ['/browse', ...node.repository.split('/'), ...node.path.split('/').filter((s) => s !== '')];
   }
 
   // --- actions ------------------------------------------------------------------------------

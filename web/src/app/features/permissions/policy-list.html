@@ -45,7 +45,7 @@
       @for (p of list.items(); track p.name) {
         <tr>
           <th scope="row">
-            <a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a>
+            <a [routerLink]="policyLink(p)" translate="no">{{ p.name }}</a>
             @if (p.inert) {
               <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@policies.inert">Grants nothing</ng-container></span>
             }

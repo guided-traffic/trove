@@ -1,9 +1,15 @@
 import { Injectable, inject } from '@angular/core';
-import { FormatDescriptor, RepositoriesApi } from '../api/repositories-api';
+import { FormatDescriptor, RepositoriesApi, splitRef } from '../api/repositories-api';
 
-/** The path part of a client address: the format's `protocolBasePath` with the key filled in. */
-export function protocolPath(format: FormatDescriptor, key: string): string {
-  return format.protocolBasePath.replace('{key}', encodeURIComponent(key));
+/**
+ * The path part of a client address: the format's `protocolBasePath` with the project and the key of the repository
+ * (`ref`, `<project>/<key>`) filled in (R-REPO-002).
+ */
+export function protocolPath(format: FormatDescriptor, ref: string): string {
+  const { project, key } = splitRef(ref);
+  return format.protocolBasePath
+    .replace('{project}', encodeURIComponent(project))
+    .replace('{key}', encodeURIComponent(key));
 }
 
 /**

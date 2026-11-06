@@ -477,7 +477,7 @@
                         </dl>
                         <p class="links">
                           @if (fullRepository()) {
-                            <a [routerLink]="['/admin/repositories', sel.repo]" i18n="@@browse.repo-config"
+                            <a [routerLink]="['/admin/repositories', ...parts(sel.repo)]" i18n="@@browse.repo-config"
                               >Repository configuration</a
                             >
                           }
@@ -489,7 +489,7 @@
                               <ol class="members">
                                 @for (m of members(); track m) {
                                   <li>
-                                    <a [routerLink]="['/browse', m]" translate="no">{{ m }}</a>
+                                    <a [routerLink]="['/browse', ...parts(m)]" translate="no">{{ m }}</a>
                                   </li>
                                 }
                               </ol>

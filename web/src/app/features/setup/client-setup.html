@@ -69,17 +69,17 @@
         <p class="empty" i18n="@@setup.no-repositories">You can read no repository of this package type.</p>
       }
       <div class="choices vertical">
-        @for (r of repositoryOptions(); track r.key) {
+        @for (r of repositoryOptions(); track refOf(r)) {
           <label class="choice">
             <input
               type="radio"
               name="repository"
-              [value]="r.key"
-              [checked]="r.key === activeRepository()"
-              (change)="pick({ repository: r.key })"
+              [value]="refOf(r)"
+              [checked]="refOf(r) === activeRepository()"
+              (change)="pick({ repository: refOf(r) })"
             />
             <span class="choice-text">
-              <span translate="no"><strong>{{ r.key }}</strong></span>
+              <span translate="no"><strong>{{ refOf(r) }}</strong></span>
               <span class="secondary">
                 {{ labelOfClass(r.class) }}
                 @if (r.class === 'virtual') {
@@ -320,7 +320,7 @@
               </p>
               @if (canReadConfig()) {
                 <p>
-                  <a [routerLink]="['/admin/repositories', s.repository]" i18n="@@setup.publish.members">Open the repository to see its members</a>
+                  <a [routerLink]="['/admin/repositories', ...s.repository.split('/')]" i18n="@@setup.publish.members">Open the repository to see its members</a>
                 </p>
               }
             } @else {

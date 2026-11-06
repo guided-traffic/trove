@@ -1,5 +1,6 @@
 import { EndpointConfiguration, ExposureRule } from '../../api/endpoints-api';
 import { isFilesAddress } from '../../api/files-api';
+import { protocolPath } from '../../core/server-address';
 import { FormatDescriptor } from '../../api/repositories-api';
 import { lines } from '../repositories/repository-model';
 
@@ -110,17 +111,16 @@ export interface ClientAddress {
   readonly served: boolean;
 }
 
-/** The client address of a repository on an endpoint: its base URL plus the format's path (R-EP-017). */
+/** The client address of the repository `ref` (`<project>/<key>`) on an endpoint: its base URL plus the format's path (R-EP-017). */
 export function endpointAddress(
   configuration: EndpointConfiguration,
   format: FormatDescriptor | undefined,
-  key: string,
+  ref: string,
 ): ClientAddress | null {
   if (!format) return null;
   const template = format.protocolBasePath;
   return {
-    url:
-      configuration.baseUrl.replace(/\/$/, '') + template.replace('{key}', encodeURIComponent(key)),
+    url: configuration.baseUrl.replace(/\/$/, '') + protocolPath(format, ref),
     served: configuration.surface.includes(familyOfAddress(template)),
   };
 }

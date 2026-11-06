@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { PackageFilters, PackageSort, PackageSummary, PackagesApi } from '../../api/packages-api';
-import { RepositoriesApi } from '../../api/repositories-api';
+import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { PagedResource, valueOf } from '../../shared/paged-resource';
 import { formatIcon } from '../../shared/format-icon';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
@@ -173,7 +173,7 @@ export class PackageList {
     (valueOf(this.formats) ?? []).filter((f) => f.name !== 'generic'),
   );
   protected readonly repositoryOptions = computed(() =>
-    (valueOf(this.repositoryList) ?? []).filter((r) => r.format !== 'generic').map((r) => r.key),
+    (valueOf(this.repositoryList) ?? []).filter((r) => r.format !== 'generic').map((r) => refOf(r)),
   );
 
   protected readonly tableCaption = $localize`:@@pkg.list.caption:Packages`;
