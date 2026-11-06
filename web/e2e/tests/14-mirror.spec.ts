@@ -1,4 +1,4 @@
-import { expect, expectAccessible, signInLocal, signOut, test, unique } from '../support';
+import { e2eProject, expect, expectAccessible, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
 // R-UI-047 journeys "mirror" (R-REPO-059, R-UI-021, Q-UI-104, Q-UI-105, Q-UI-119 to Q-UI-124) and "upstream settings" (F-54,
 // R-UI-021, R-REPO-024, R-REPO-033). Both use the counting npm test upstream of the end-to-end tests (test/npmstub): trove
@@ -23,8 +23,8 @@ const upstreamKey = unique('ui-upstream');
 const secret = `journey-secret-${Date.now().toString(36)}`;
 
 test.afterAll(async ({ admin }) => {
-  await admin.delete(`/api/v1/repositories/${mirrorKey}`);
-  await admin.delete(`/api/v1/repositories/${upstreamKey}`);
+  await admin.delete(repositoryApi(mirrorKey));
+  await admin.delete(repositoryApi(upstreamKey));
 });
 
 type Remote = {
@@ -45,6 +45,7 @@ async function remoteWizard(page: import('@playwright/test').Page, key: string):
   await page.getByRole('button', { name: 'Next' }).click();
   await page.getByRole('radio', { name: /^Remote/ }).check();
   await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByLabel('Project', { exact: true }).selectOption(e2eProject);
   await page.locator('#f-key').fill(key);
   await expect(page.getByText('The key is available.')).toBeVisible();
   await page.getByRole('button', { name: 'Next' }).click();
@@ -53,7 +54,7 @@ async function remoteWizard(page: import('@playwright/test').Page, key: string):
 
 test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resume and a pass on request', async ({ page, replicas, admin }) => {
   await signInLocal(page);
-  const remoteOf = async () => ((await (await admin.get(`/api/v1/repositories/${mirrorKey}`)).json()) as { remote?: Remote }).remote;
+  const remoteOf = async () => ((await (await admin.get(repositoryApi(mirrorKey))).json()) as { remote?: Remote }).remote;
   const state = page.getByTestId('mirror-state');
 
   await test.step('the wizard creates an npm remote in mode mirror against the test upstream, bounded by a storage limit', async () => {
@@ -68,7 +69,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('Mirror mode: a background pass stores what the upstream offers.')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${mirrorKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${mirrorKey}$`));
     const remote = await remoteOf();
     expect(remote?.mode).toBe('mirror');
     expect(remote?.url).toBe(stubUrl);
@@ -96,7 +97,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
   });
 
   await test.step('Pause patches the document with If-Match and the state reads Paused; Resume reverts it', async () => {
-    const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith(`/api/v1/repositories/${mirrorKey}`));
+    const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith(repositoryApi(mirrorKey)));
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     const res = await patched;
     expect(res.status()).toBe(200);
@@ -142,7 +143,7 @@ test('R-REPO-059 R-UI-021 Q-UI-104 Q-UI-105 the status of a mirror, pause, resum
 test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, write-only credentials and Test connection', async ({ page, replicas, admin }) => {
   await signInLocal(page);
   const remoteOf = async () => {
-    const res = await admin.get(`/api/v1/repositories/${upstreamKey}`);
+    const res = await admin.get(repositoryApi(upstreamKey));
     return { text: await res.text(), remote: (JSON.parse(await res.text()) as { remote?: Remote }).remote };
   };
 
@@ -179,7 +180,7 @@ test('F-54 R-UI-021 R-REPO-024 R-REPO-033 a remote with a non-default upstream, 
     await expect(page.getByText('<the password>').first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(secret);
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${upstreamKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${upstreamKey}$`));
     const { text, remote } = await remoteOf();
     expect(text).not.toContain(secret);
     expect(remote).toMatchObject({

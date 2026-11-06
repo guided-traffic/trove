@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { APIRequestContext, expect } from '@playwright/test';
+import { e2eProject, repositories } from './support';
 
 /** One ustar entry: a 512-byte header and the content padded to the block size. */
 function tarEntry(name: string, content: Buffer): Buffer {
@@ -38,7 +39,7 @@ export function npmPublishBody(repoKey: string, name: string, version: string): 
         dist: {
           integrity: `sha512-${createHash('sha512').update(tgz).digest('base64')}`,
           shasum: createHash('sha1').update(tgz).digest('hex'),
-          tarball: `https://localhost/api/npm/${repoKey}/${name}/-/${name}-${version}.tgz`,
+          tarball: `https://localhost/api/npm/${e2eProject}/${repoKey}/${name}/-/${name}-${version}.tgz`,
         },
       },
     },
@@ -55,10 +56,10 @@ export function npmPublishBody(repoKey: string, name: string, version: string): 
  * automatic claim, and a claimed name of a repository without the setting is an internal name, which no public advisory applies to.
  */
 export async function localNpmRepository(admin: APIRequestContext, key: string, packages: readonly (readonly [string, string])[]): Promise<void> {
-  const created = await admin.post('/api/v1/repositories', { data: { key, class: 'local', format: 'npm', vulnerabilities: { matchPublicAdvisories: 'always' } } });
+  const created = await admin.post(repositories(), { data: { key, class: 'local', format: 'npm', vulnerabilities: { matchPublicAdvisories: 'always' } } });
   expect(created.status(), await created.text()).toBe(201);
   for (const [name, version] of packages) {
-    const published = await admin.put(`/api/npm/${key}/${name}`, { data: npmPublishBody(key, name, version) });
+    const published = await admin.put(`/api/npm/${e2eProject}/${key}/${name}`, { data: npmPublishBody(key, name, version) });
     expect(published.status(), `publish ${name}@${version}: ${await published.text()}`).toBe(201);
   }
 }
