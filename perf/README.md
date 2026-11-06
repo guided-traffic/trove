@@ -30,7 +30,7 @@ a push stores them, so version 1.0.0 of every package has one finding: 10,000 fi
 
 | File | What it is |
 |---|---|
-| `vuln/env_test.go` | the report (`.out/perf-vuln.json`), the percentile and histogram helpers, the cost of a download (V-5b), the publish body |
+| `vuln/env_test.go` | the report (`.out/perf-vuln.json`), the percentile and histogram helpers, the count of a download after the refills R-ARCH-027 exempts (V-5b, `refills`), the publish body |
 | `vuln/perf_test.go` | `TestR_VULN_028_PerformanceRun`: V-1 to V-9 in order |
 | `vuln/seed_test.go` | `TestR_VULN_028_TheSeededInstallation`: the shape of the seeded installation |
 
@@ -66,15 +66,19 @@ measured value above its target, and a scenario that does not finish fails it wi
 | V-3 to V-8 | V-1 and V-2 | each measures an installation that is imported and evaluated; V-3 is an incremental sync only on a complete ecosystem, a full one otherwise |
 
 V-5b ([Q-VULN-98](../docs/spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter),
-[Q-VULN-99](../docs/spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-p99-of-the-statements-of-one-download-not-the-mean-of-the-transactions-of-a-window))
+[Q-VULN-99](../docs/spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-largest-count-of-a-download-after-the-refills-r-arch-027-exempts-not-the-mean-of-the-transactions-of-a-window))
 is counted in the two `web` replicas, not in the database: `testenv.RequestTransactions` is the tracer of their request pools and gives a
-statement to the download whose request ID (the answer's `X-Request-Id`) its context carries. The value is the p99 of a download's
-statements (its transactions where they are more) over the 2,000 downloads of a replica, the larger of the two, against 1: the item
-lookup. The note gives per replica the mean statements and transactions of a download, how many downloads cost how much, and every
-statement by name; a run on the integration stack reads for each replica about `1999 cost 1, 1 cost 4` and `GetLiveItem x2000,
-IdentityGroupsOfMember x1, IdentityPrincipalByID x1, IdentityTokenBySecret x1`: the download of more than one statement is the refill of
-the authentication caches after `auth.tokens.cache_ttl`, one or two in a window (the three statements can also fall to two downloads). A
-statement the block check added reads `cost 2` for nearly every download of the scanning replica, and the value is 2. The note ends
+statement to the download whose request ID (the answer's `X-Request-Id`) its context carries. The refills R-ARCH-027 exempts are taken
+out by name (`refills` in [vuln/env_test.go](vuln/env_test.go): the token check's caches `auth_tokens` and `auth_principals`, each at most
+once per `auth.tokens.cache_ttl` and replica). What is left of every download, its statements or its transactions where they are more,
+must be exactly 1, the item lookup; the value is the largest over both replicas. A download that is not exactly 1 fails the run with or
+without the gate, and the failure names the replica, the request ID, the statements that counted and the refills taken out, for example
+`web-1 (scanning on), request <id>: 2 statements and 1 transactions after the refills (GetLiveItem, DatabaseNow; refills none)`: either the
+download path gained a statement, which is the cost to remove, or a refill R-ARCH-027 exempts is not on the list yet. The note gives per
+replica the largest count, how many downloads were not exactly 1 and how many ran a refill, the mean statements and transactions of a
+download before the refills are taken out, and every statement by name; a run on the integration stack reads for each replica about
+`GetLiveItem x2000, IdentityGroupsOfMember x1, IdentityPrincipalByID x1, IdentityTokenBySecret x1` (one or two downloads ran the refill;
+the token's and the principal's can fall to two downloads). The note ends
 with the count of runs before 2026-11-06, the database's commits over the window minus an idle window: it includes the database's
 background and lags by up to 10 s, so it moved between 0.72 and 1.07 from run to run; it compares with those runs and is not the
 value.

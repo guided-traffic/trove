@@ -325,16 +325,21 @@ Found on 2026-11-03 while building phase 6:
   V-4's publishes before the window and of the last downloads fell into the wrong window; in 42211913572 the window began 1.4 s after the
   last of 300 publishes of about 7.6 transactions each (read from the replicas' logs, not verified by a statement log there). Fixed with
   [Q-VULN-98](../spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter)
-  and [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-p99-of-the-statements-of-one-download-not-the-mean-of-the-transactions-of-a-window):
-  V-5b is counted in the replicas by request ID and is the p99 of a download's statements, bound 1 unchanged. Local runs on the
-  integration stack, V-5b and in brackets the old database-wide count of the same window: 1 (0.956), 1 (0.859), 1 (1.051), 1 (0.806),
-  1 (0.930); the base commit's measure read 0.983 and 0.767 on the same day. With a cost added to the lookup on purpose (not committed)
-  it read 2 (a second statement in every download: old count 0.867; a transaction of its own in one download of 25: old count 0.718, both
-  passes of the old measure). The last of those runs met all eleven values with the gate on (V-4 3.81 ms). Under the shared host's load
-  five local runs missed V-4 (5.0 to 12.1 ms at load averages of 10 to 120; the base commit's code missed it too, 5.4 ms, so it is the
-  thin margin named above, not the counter), and in one at a load average of 110 to 123 a download from the replica without the scanning
-  answered `503 authz_stale` (its grant index unconfirmed within `authz.cache.max_staleness`, R-AUTHZ-028), so V-5 did not finish there;
-  neither was seen on a CI runner. Left: two nightly runs in a row with every value met.
+  and [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-largest-count-of-a-download-after-the-refills-r-arch-027-exempts-not-the-mean-of-the-transactions-of-a-window):
+  V-5b is counted in the replicas by request ID; after the refills R-ARCH-027 exempts (the token check's caches, by name) every download
+  must run exactly one statement, and the value is the largest, bound 1 unchanged; a statement off the list fails the run with its name
+  and the download. Local runs on the integration stack, V-5b and in brackets the old database-wide count of the same window: 1 (0.909),
+  1 (1.050), 1 (0.806), 1 (0.803; that run met all eleven values with the gate on), every download exactly 1 after one to three refills
+  per replica; earlier the same day, read with a p99, 1 (0.956), 1 (0.859), 1 (1.051), 1 (0.806), 1 (0.930), and the base commit's
+  measure 0.983 and 0.767. With a cost added to the lookup on
+  purpose (not committed) it read 2 and named the downloads: a second statement in every download (2,000 named; old count 0.949), a
+  transaction of its own in one download of 25 (80 named; old count 0.875) and a second statement in one download of 500 (4 named; old
+  count 0.971; a p99 would have read 1), all passes of the old measure. Under the shared host's load six local runs missed V-4 (5.0 to
+  12.1 ms at load averages of 10 to 120; the base commit's code missed it too, 5.4 ms, so it is the thin margin named above, not the
+  counter), two missed V-5a (1.12 ms beside three concurrent runs, 7.3 ms in a window whose p99 latencies were 46 to 53 ms), and in one
+  at a load average of 110 to 123 a download from the replica without the scanning answered `503 authz_stale` (its grant index unconfirmed
+  within `authz.cache.max_staleness`, R-AUTHZ-028), so V-5 did not finish there; none of these was seen on a CI runner. Left: two nightly
+  runs in a row with every value met.
 
 Found on 2026-11-03 while closing phase 5:
 

@@ -62,7 +62,7 @@ var rows = map[string]row{
 	"V-3":  {"incremental sync with 500 changed records and their evaluation", "min", 2},
 	"V-4":  {"evaluation added to a publish commit, p99 (exact, per call)", "ms", 5},
 	"V-5a": {"latency added by the block check on a cached download, p99", "ms", 1},
-	"V-5b": {"database statements of a cached download, p99 (the larger of the two replicas, counted per request)", "statements", 1.0},
+	"V-5b": {"database statements of every cached download after the cache refills R-ARCH-027 exempts, the largest (both replicas, counted per request; each must be exactly 1)", "statements", 1.0},
 	"V-6":  {"npm local audit of a 1,000-package lockfile, p99", "ms", 500},
 	"V-7a": {"first page of the findings list for an admin, p99", "ms", 300},
 	"V-7b": {"first page of the findings list for a caller with package-pattern grants, p99", "ms", 300},
@@ -142,6 +142,26 @@ func (r *report) record(id string, value float64, note string) {
 	r.t.Logf("%s %s: %.3f %s (target %.3f %s) met=%t %s", id, w.name, value, w.unit, w.target, w.unit, met, note)
 	if !met && os.Getenv("TROVE_PERF_GATE") == "1" {
 		r.t.Errorf("%s %s: %.3f %s misses the target of %.3f %s", id, w.name, value, w.unit, w.target, w.unit)
+	}
+}
+
+// recordCount records a count every sample of which must equal the target (V-5b): the value is the largest sample, and the
+// row meets its target only when no sample missed, whatever the value. A miss fails the test with or without the gate,
+// because a count does not depend on the host; its message names the first 20 samples that missed and how many there are
+// (the note counts their statements by name).
+func (r *report) recordCount(id string, value float64, misses []string, note string) {
+	r.t.Helper()
+	w := r.rowOf(id)
+	met := len(misses) == 0 && value == w.target
+	v := round(value)
+	r.add(result{ID: id, Name: w.name, Outcome: outcomeMeasured, Value: &v, Unit: w.unit, Target: w.target, Met: met, Note: note})
+	r.t.Logf("%s %s: %.3f %s (target exactly %.3f %s for every sample) met=%t %s", id, w.name, value, w.unit, w.target, w.unit, met, note)
+	if !met {
+		shown := misses
+		if len(shown) > 20 {
+			shown = append(append([]string{}, shown[:20]...), fmt.Sprintf("and %d more", len(misses)-20))
+		}
+		r.t.Errorf("%s %s: %d samples are not exactly %.0f %s:\n%s", id, w.name, len(misses), w.target, w.unit, strings.Join(shown, "\n"))
 	}
 }
 
@@ -254,58 +274,126 @@ func percentile(samples []time.Duration, p float64) time.Duration {
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
 
-// downloadCosts is what each of a set of downloads ran in the database, counted in its replica by its request ID (V-5b,
-// Q-VULN-98).
-type downloadCosts []testenv.RequestCost
-
-// statements is the number of statements a download ran, without the transaction control.
-func statements(rc testenv.RequestCost) int {
-	n := 0
-	for _, v := range rc.Statements {
-		n += v
-	}
-	return n
+// refills are the only statements V-5b takes out of a download (Q-VULN-99): the refills R-ARCH-027 exempts. Its database
+// budget per request reads "token and policy checks: 0 queries while their caches are valid" (docs/spec/architecture.md,
+// R-ARCH-027). The token check reads two of the replica's caches, `auth_tokens` (the token row and its owner's status) and
+// `auth_principals` (status and group memberships), which refill after their SafetyTTL, auth.tokens.cache_ttl (R-AUTH-023).
+// The policy check reads the replica's grant index, which no request refills: it has no statement here. The repository
+// snapshot is not here either: neither R-ARCH-027 nor its decisions exempt it. A statement that is not listed counts, and a
+// download whose count is not exactly one fails the run with the statement's name: a false alarm at worst, never a hidden cost.
+var refills = map[string]string{
+	"IdentityTokenBySecret":  "auth_tokens (internal/auth/token/validate.go, Service.load)",
+	"IdentityPrincipalByID":  "auth_principals (internal/auth/principal/store.go, PGStore.loadByID)",
+	"IdentityGroupsOfMember": "auth_principals (internal/auth/principal/store.go, groupsOf)",
 }
 
-// cost is what V-5b counts of one download: its statements, or its transactions where they are more (a transaction runs at
-// least one statement, so this is the statements unless a transaction ran none).
-func cost(rc testenv.RequestCost) int { return max(statements(rc), rc.Transactions) }
+// authCacheTTL is auth.tokens.cache_ttl, the SafetyTTL of the caches of refills; the run keeps its default. A refill comes once
+// per TTL and cache: a refill statement beyond ceil(window / TTL) + 1 in one replica is no refill of the TTL and counts.
+const authCacheTTL = 15 * time.Second
 
-// p99 is the 99th percentile of the downloads' costs, by the nearest rank as percentile reads it: what 99 downloads in 100
-// stay within. With no download it is the largest int, a miss of every target.
-func (c downloadCosts) p99() int {
-	if len(c) == 0 {
+// download is one download of V-5b: its replica, its request ID and what it ran in the database (testenv.RequestTransactions).
+type download struct {
+	replica, id string
+	ran         testenv.RequestCost
+}
+
+// downloadCost is what V-5b counts of one download, after the refills are taken out: its statements and its transactions
+// outside the refills, the statements that count by name, and the refill statements it ran.
+type downloadCost struct {
+	statements, transactions int
+	counted, refilled        []string
+}
+
+// value is the download's count: its statements, or its transactions where they are more. Exactly 1 is the item lookup.
+func (c downloadCost) value() int { return max(c.statements, c.transactions) }
+
+// downloadCosts is what the downloads of one replica ran, in the order they ran, over a window of the given length.
+type downloadCosts struct {
+	replica string
+	window  time.Duration
+	all     []download
+}
+
+// costs takes the refills out of every download: a statement of refills is taken out while its cache has a refill left in
+// the window (ceil(window / authCacheTTL) + 1 for each statement), and counts like any other statement after that. A
+// transaction counts when it ran a statement that counts, or none at all.
+func (c downloadCosts) costs() []downloadCost {
+	left := map[string]int{}
+	for name := range refills {
+		left[name] = int(math.Ceil(float64(c.window)/float64(authCacheTTL))) + 1
+	}
+	out := make([]downloadCost, len(c.all))
+	for i, d := range c.all {
+		var dc downloadCost
+		for _, tx := range d.ran.Transactions {
+			counts := len(tx) == 0
+			for _, s := range tx {
+				if _, ok := refills[s]; ok && left[s] > 0 {
+					left[s]--
+					dc.refilled = append(dc.refilled, s)
+					continue
+				}
+				dc.statements++
+				dc.counted = append(dc.counted, s)
+				counts = true
+			}
+			if counts {
+				dc.transactions++
+			}
+		}
+		out[i] = dc
+	}
+	return out
+}
+
+// largest is the largest count of a download of the replica; with no download the largest int, a miss of every target.
+func (c downloadCosts) largest() int {
+	if len(c.all) == 0 {
 		return math.MaxInt
 	}
-	s := make([]int, len(c))
-	for i, rc := range c {
-		s[i] = cost(rc)
+	m := 0
+	for _, dc := range c.costs() {
+		m = max(m, dc.value())
 	}
-	sort.Ints(s)
-	return s[max(0, min(int(math.Ceil(0.99*float64(len(s))))-1, len(s)-1))]
+	return m
 }
 
-// String names the p99, the means of the statements and the transactions per download, how many downloads cost how much, and
-// every statement the downloads ran by name: a download above the p99 is listed here even when the value does not show it.
-func (c downloadCosts) String() string {
-	byCost, names := map[int]int{}, map[string]int{}
-	stmts, txs := 0, 0
-	for _, rc := range c {
-		byCost[cost(rc)]++
-		stmts += statements(rc)
-		txs += rc.Transactions
-		for k, v := range rc.Statements {
-			names[k] += v
+// misses names every download whose count is not exactly 1, with what counted in it; empty when there is none.
+func (c downloadCosts) misses() []string {
+	var out []string
+	for i, dc := range c.costs() {
+		if dc.value() != 1 {
+			d := c.all[i]
+			out = append(out, fmt.Sprintf("%s, request %s: %d statements and %d transactions after the refills (%s; refills %s)",
+				d.replica, d.id, dc.statements, dc.transactions, orNone(dc.counted), orNone(dc.refilled)))
 		}
 	}
-	costs := make([]int, 0, len(byCost))
-	for k := range byCost {
-		costs = append(costs, k)
+	return out
+}
+
+func orNone(names []string) string {
+	if len(names) == 0 {
+		return "none"
 	}
-	sort.Ints(costs)
-	parts := make([]string, 0, len(costs))
-	for _, k := range costs {
-		parts = append(parts, fmt.Sprintf("%d cost %d", byCost[k], k))
+	return strings.Join(names, ", ")
+}
+
+// String names the replica's count, how many downloads ran a refill, the means before the refills are taken out, and every
+// statement the downloads ran by name.
+func (c downloadCosts) String() string {
+	names, refilled := map[string]int{}, 0
+	stmts, txs := 0, 0
+	for _, dc := range c.costs() {
+		if len(dc.refilled) > 0 {
+			refilled++
+		}
+	}
+	for _, d := range c.all {
+		txs += len(d.ran.Transactions)
+		for k, v := range d.ran.Statements() {
+			names[k] += v
+			stmts += v
+		}
 	}
 	keys := make([]string, 0, len(names))
 	for k := range names {
@@ -316,9 +404,10 @@ func (c downloadCosts) String() string {
 	for _, k := range keys {
 		ran = append(ran, fmt.Sprintf("%s x%d", k, names[k]))
 	}
-	n := float64(max(len(c), 1))
-	return fmt.Sprintf("%d downloads, p99 %d, mean %.4f statements and %.4f transactions per download; %s; statements %s",
-		len(c), c.p99(), float64(stmts)/n, float64(txs)/n, strings.Join(parts, ", "), strings.Join(ran, ", "))
+	n := float64(max(len(c.all), 1))
+	return fmt.Sprintf("%s: %d downloads, the largest count %d, %d not exactly 1, %d ran a refill; before the refills are taken out "+
+		"%.4f statements and %.4f transactions per download; statements %s",
+		c.replica, len(c.all), c.largest(), len(c.misses()), refilled, float64(stmts)/n, float64(txs)/n, strings.Join(ran, ", "))
 }
 
 // logExcerpt returns the last n lines of a replica's JSON log that say why a sync or a job ended: every WARN and ERROR line,

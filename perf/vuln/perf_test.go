@@ -378,11 +378,12 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 
 	// V-5: the block check of a download of a stored item. One replica has the scanning on, one off; the same stored
 	// item is requested alternately from both, so that the latency difference is the block check (V-5a). V-5b is what each
-	// download ran in the database, counted in its replica by its request ID (Q-VULN-98): its statements without the
-	// transaction control, or its transactions where they are more, as the p99 over the downloads of a replica, the larger of
-	// the two (Q-VULN-99). The database-wide count of earlier runs (the commits over the window minus an idle window) stays in
-	// the note: it moves with the background of the database and with when PostgreSQL publishes its counters, so it is not
-	// the value, but it also sees work a download would leave to a context without its request ID.
+	// download ran in the database, counted in its replica by its request ID (Q-VULN-98), after the refills R-ARCH-027
+	// exempts are taken out (refills): its statements without the transaction control, or its transactions where they are
+	// more, must be exactly 1 for every download of both replicas, and the value is the largest (Q-VULN-99). The database-wide
+	// count of earlier runs (the commits over the window minus an idle window) stays in the note: it moves with the
+	// background of the database and with when PostgreSQL publishes its counters, so it is not the value, but it also sees
+	// work a download would leave to a context without its request ID.
 	rep.scenario(t, "V-5 block check on a cached download", []string{"V-5a", "V-5b"}, evaluated, func(t *testing.T) {
 		off := in.web("web-off", "TROVE_VULNERABILITIES_ENABLED=false")
 		name := "perf-cached"
@@ -421,12 +422,12 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		idle1 := xacts()
 		in.requests.Count(false) // after the idle window, so a statement a download ran after its answer is still its own
 		database := float64((x1-x0)-(idle1-idle0)) / float64(2*cachedDownloads)
-		onCost, offCost := in.downloadCosts(t, onIDs), in.downloadCosts(t, offIDs)
+		onCost := in.downloadCosts(t, web.Name+" (scanning on)", loaded, onIDs)
+		offCost := in.downloadCosts(t, off.Name+" (scanning off)", loaded, offIDs)
 		rep.record("V-5a", ms(percentile(on, 0.99))-ms(percentile(offS, 0.99)),
 			fmt.Sprintf("p99 on %.2f ms, off %.2f ms", ms(percentile(on, 0.99)), ms(percentile(offS, 0.99))))
-		rep.record("V-5b", float64(max(onCost.p99(), offCost.p99())),
-			fmt.Sprintf("scanning on: %s; scanning off: %s; database-wide over the window, background included: %.3f transactions per download",
-				onCost, offCost, database))
+		rep.recordCount("V-5b", float64(max(onCost.largest(), offCost.largest())), append(onCost.misses(), offCost.misses()...),
+			fmt.Sprintf("%s; %s; database-wide over the window, background included: %.3f transactions per download", onCost, offCost, database))
 	})
 
 	// V-6: the local audit of a lockfile of 1,000 packages: 1,000 names with one version each, half of them with an advisory.
@@ -495,16 +496,16 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 	})
 }
 
-// downloadCosts is what the downloads with the request IDs ran, as their replicas counted it (in.requests). A download whose
-// answer carried no request ID fails the test: what it ran could not be attributed to it.
-func (in *installation) downloadCosts(t *testing.T, ids []string) downloadCosts {
+// downloadCosts is what the downloads of one replica with the request IDs ran in a window, as the replica counted it
+// (in.requests). A download whose answer carried no request ID fails the test: what it ran could not be attributed to it.
+func (in *installation) downloadCosts(t *testing.T, replica string, window time.Duration, ids []string) downloadCosts {
 	t.Helper()
-	var c downloadCosts
+	c := downloadCosts{replica: replica, window: window}
 	for _, id := range ids {
 		if id == "" {
 			t.Fatal("a download answered without X-Request-Id: what it ran in the database cannot be counted")
 		}
-		c = append(c, in.requests.Of(id))
+		c.all = append(c.all, download{replica: replica, id: id, ran: in.requests.Of(id)})
 	}
 	return c
 }

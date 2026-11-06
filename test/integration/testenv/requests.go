@@ -21,24 +21,42 @@ import (
 // nothing depends on when PostgreSQL publishes its statistics (R-VULN-028 V-5, Q-VULN-98).
 //
 // A transaction is what PostgreSQL counts as one: an explicit transaction from BEGIN to its end, a statement outside one, and
-// a batch outside one (one implicit transaction). The connection's liveness ping and its set-up are not statements of the
-// tracer and are not counted. It counts between Count(true) and Count(false) only; outside that the tracer reads one flag,
-// so the requests of a test that are not measured run as they would without it.
+// a batch outside one (one implicit transaction). Each is kept with the names of its statements, so that a test can take
+// out the transactions of named statements exactly. The connection's liveness ping and its set-up are not statements of
+// the tracer and are not counted. It counts between Count(true) and Count(false) only; outside that the tracer reads one
+// flag, so the requests of a test that are not measured run as they would without it.
 type RequestTransactions struct {
 	// idOf reads the request ID from a statement's context: httpserver.RequestID.
 	idOf func(context.Context) string
 	on   atomic.Bool
 	mu   sync.Mutex
-	// inTx is the connections inside an explicit transaction.
-	inTx map[*pgx.Conn]bool
-	reqs map[string]*RequestCost
+	// tx is the explicit transaction each connection is inside, batch the batch it sends.
+	tx, batch map[*pgx.Conn]open
+	reqs      map[string]*RequestCost
 }
 
-// RequestCost is what one request ran: its transactions and its statements by name (the sqlc name, or the start of the
-// text), without the transaction control.
+// open is a transaction a connection is inside: the request that began it ("" for none) and its index among the request's
+// transactions.
+type open struct {
+	id string
+	i  int
+}
+
+// RequestCost is what one request ran: its transactions in order, each with the names of its statements in order (the sqlc
+// name, or the start of the text), without the transaction control.
 type RequestCost struct {
-	Transactions int
-	Statements   map[string]int
+	Transactions [][]string
+}
+
+// Statements is the number of the request's statements by name.
+func (c RequestCost) Statements() map[string]int {
+	out := map[string]int{}
+	for _, tx := range c.Transactions {
+		for _, s := range tx {
+			out[s]++
+		}
+	}
+	return out
 }
 
 var (
@@ -48,47 +66,60 @@ var (
 
 // NewRequestTransactions returns an empty counter.
 func NewRequestTransactions() *RequestTransactions {
-	return &RequestTransactions{idOf: httpserver.RequestID, inTx: map[*pgx.Conn]bool{}, reqs: map[string]*RequestCost{}}
+	return &RequestTransactions{idOf: httpserver.RequestID, tx: map[*pgx.Conn]open{}, batch: map[*pgx.Conn]open{}, reqs: map[string]*RequestCost{}}
 }
 
 // Option is the database option that installs the counter in a replica (ReplicaOptions.Database). One counter may serve
 // several replicas: request IDs and connections are their own in each.
 func (r *RequestTransactions) Option() postgres.Option { return postgres.WithQueryTracer(r) }
 
-// Count starts (true) or stops (false) the counting. Starting it forgets which connections were inside a transaction, so a
-// test starts it while none of the requests it measures runs; the counts of earlier requests are kept.
+// Count starts (true) or stops (false) the counting. Starting it forgets which connections were inside a transaction or a
+// batch, so a test starts it while none of the requests it measures runs; the counts of earlier requests are kept.
 func (r *RequestTransactions) Count(on bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if on {
-		clear(r.inTx)
+		clear(r.tx)
+		clear(r.batch)
 	}
 	r.on.Store(on)
 }
 
-// Of returns a copy of what the request with the ID ran; the zero cost when it ran no statement.
+// Of returns a copy of what the request with the ID ran; no transaction when it ran no statement.
 func (r *RequestTransactions) Of(id string) RequestCost {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c, ok := r.reqs[id]
 	if !ok {
-		return RequestCost{Statements: map[string]int{}}
+		return RequestCost{}
 	}
-	out := RequestCost{Transactions: c.Transactions, Statements: make(map[string]int, len(c.Statements))}
-	for k, v := range c.Statements {
-		out.Statements[k] = v
+	out := RequestCost{Transactions: make([][]string, len(c.Transactions))}
+	for i, tx := range c.Transactions {
+		out.Transactions[i] = append([]string{}, tx...)
 	}
 	return out
 }
 
-// cost returns the entry of a request; the caller holds the lock.
-func (r *RequestTransactions) cost(id string) *RequestCost {
+// begin opens a transaction of the request and returns it; the caller holds the lock.
+func (r *RequestTransactions) begin(id string, first ...string) open {
 	c, ok := r.reqs[id]
 	if !ok {
-		c = &RequestCost{Statements: map[string]int{}}
+		c = &RequestCost{}
 		r.reqs[id] = c
 	}
-	return c
+	c.Transactions = append(c.Transactions, append([]string{}, first...))
+	return open{id: id, i: len(c.Transactions) - 1}
+}
+
+// add puts a statement of the request into the open transaction o when the request began it, and into a transaction of its
+// own otherwise; the caller holds the lock.
+func (r *RequestTransactions) add(id string, o open, ok bool, name string) {
+	if ok && o.id == id {
+		c := r.reqs[id]
+		c.Transactions[o.i] = append(c.Transactions[o.i], name)
+		return
+	}
+	r.begin(id, name)
 }
 
 // control classifies the transaction control: "begin" opens a transaction, "end" closes it, "savepoint" is a savepoint
@@ -120,7 +151,8 @@ func word(s string) (first, rest string) {
 	return s, ""
 }
 
-// TraceQueryStart counts a statement of a request, and a transaction for a BEGIN or a statement outside a transaction.
+// TraceQueryStart opens a transaction of a request for its BEGIN, and puts a statement of a request into its transaction, or
+// into one of its own outside a transaction.
 func (r *RequestTransactions) TraceQueryStart(ctx context.Context, conn *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
 	if !r.on.Load() {
 		return ctx
@@ -130,13 +162,14 @@ func (r *RequestTransactions) TraceQueryStart(ctx context.Context, conn *pgx.Con
 	defer r.mu.Unlock()
 	switch control(d.SQL) {
 	case "begin":
-		r.inTx[conn] = true
+		o := open{i: -1}
 		if id != "" {
-			r.cost(id).Transactions++
+			o = r.begin(id)
 		}
+		r.tx[conn] = o
 		return ctx
 	case "end":
-		delete(r.inTx, conn)
+		delete(r.tx, conn)
 		return ctx
 	case "savepoint":
 		return ctx
@@ -144,11 +177,8 @@ func (r *RequestTransactions) TraceQueryStart(ctx context.Context, conn *pgx.Con
 	if id == "" {
 		return ctx
 	}
-	c := r.cost(id)
-	if !r.inTx[conn] {
-		c.Transactions++
-	}
-	c.Statements[StatementName(d.SQL)]++
+	o, ok := r.tx[conn]
+	r.add(id, o, ok, StatementName(d.SQL))
 	return ctx
 }
 
@@ -160,11 +190,12 @@ func (r *RequestTransactions) TraceQueryEnd(_ context.Context, conn *pgx.Conn, d
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if conn.PgConn().TxStatus() == 'I' {
-		delete(r.inTx, conn)
+		delete(r.tx, conn)
 	}
 }
 
-// TraceBatchStart counts a batch outside a transaction as one transaction of the request.
+// TraceBatchStart opens the transaction of a request's batch: the explicit transaction the batch runs in, or a transaction
+// of its own outside one.
 func (r *RequestTransactions) TraceBatchStart(ctx context.Context, conn *pgx.Conn, _ pgx.TraceBatchStartData) context.Context {
 	if !r.on.Load() {
 		return ctx
@@ -175,14 +206,16 @@ func (r *RequestTransactions) TraceBatchStart(ctx context.Context, conn *pgx.Con
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.inTx[conn] {
-		r.cost(id).Transactions++
+	if o, ok := r.tx[conn]; ok && o.id == id {
+		r.batch[conn] = o
+	} else {
+		r.batch[conn] = r.begin(id)
 	}
 	return ctx
 }
 
-// TraceBatchQuery counts a statement of a batch.
-func (r *RequestTransactions) TraceBatchQuery(ctx context.Context, _ *pgx.Conn, d pgx.TraceBatchQueryData) {
+// TraceBatchQuery puts a statement of a batch into the batch's transaction.
+func (r *RequestTransactions) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, d pgx.TraceBatchQueryData) {
 	if !r.on.Load() {
 		return
 	}
@@ -192,8 +225,16 @@ func (r *RequestTransactions) TraceBatchQuery(ctx context.Context, _ *pgx.Conn, 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.cost(id).Statements[StatementName(d.SQL)]++
+	o, ok := r.batch[conn]
+	r.add(id, o, ok, StatementName(d.SQL))
 }
 
-// TraceBatchEnd ends a batch; nothing to count.
-func (r *RequestTransactions) TraceBatchEnd(context.Context, *pgx.Conn, pgx.TraceBatchEndData) {}
+// TraceBatchEnd ends a batch.
+func (r *RequestTransactions) TraceBatchEnd(_ context.Context, conn *pgx.Conn, _ pgx.TraceBatchEndData) {
+	if !r.on.Load() {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.batch, conn)
+}

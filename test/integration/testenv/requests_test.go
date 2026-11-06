@@ -2,6 +2,7 @@ package testenv
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -9,8 +10,8 @@ import (
 
 type requestKey struct{}
 
-// R-VULN-028 V-5b (Q-VULN-98): the counter attributes a transaction to the request whose context ran it, the way PostgreSQL
-// counts transactions, and leaves the statements of other contexts out.
+// R-VULN-028 V-5b (Q-VULN-98): the counter attributes a transaction, with its statements, to the request whose context ran it,
+// the way PostgreSQL counts transactions, and leaves the statements of other contexts out.
 func TestR_VULN_028_RequestTransactionsCountsWhatARequestRan(t *testing.T) {
 	r := NewRequestTransactions()
 	r.idOf = func(ctx context.Context) string { s, _ := ctx.Value(requestKey{}).(string); return s }
@@ -35,9 +36,12 @@ func TestR_VULN_028_RequestTransactionsCountsWhatARequestRan(t *testing.T) {
 	r.TraceBatchStart(b, c2, pgx.TraceBatchStartData{})
 	r.TraceBatchQuery(b, c2, pgx.TraceBatchQueryData{SQL: "-- name: X :one\nSELECT 1"})
 	r.TraceBatchQuery(b, c2, pgx.TraceBatchQueryData{SQL: "-- name: Y :one\nSELECT 2"})
+	r.TraceBatchEnd(b, c2, pgx.TraceBatchEndData{})
 	q(b, c2, "BEGIN")
+	q(b, c2, "-- name: Z :one\nSELECT 3")
 	r.TraceBatchStart(b, c2, pgx.TraceBatchStartData{})
 	r.TraceBatchQuery(b, c2, pgx.TraceBatchQueryData{SQL: "-- name: X :one\nSELECT 1"})
+	r.TraceBatchEnd(b, c2, pgx.TraceBatchEndData{})
 	q(b, c2, "ROLLBACK")
 	// the replica's own loop: no request ID, not counted, and it does not leave c1 inside a transaction.
 	q(loop, c1, "begin")
@@ -50,17 +54,26 @@ func TestR_VULN_028_RequestTransactionsCountsWhatARequestRan(t *testing.T) {
 	r.TraceBatchStart(b, c2, pgx.TraceBatchStartData{})
 	r.TraceBatchQuery(b, c2, pgx.TraceBatchQueryData{SQL: "-- name: X :one\nSELECT 1"})
 
-	if got := r.Of("a"); got.Transactions != 3 || got.Statements["GetLiveItem"] != 2 || got.Statements["NPMTombstoned"] != 1 ||
-		got.Statements["IdentityTokenBySecret"] != 1 || len(got.Statements) != 3 {
-		t.Errorf("request a: %+v, want 3 transactions and GetLiveItem x2, NPMTombstoned x1, IdentityTokenBySecret x1", got)
+	want := map[string][][]string{
+		"a":       {{"GetLiveItem", "NPMTombstoned"}, {"IdentityTokenBySecret"}, {"GetLiveItem"}},
+		"b":       {{"X", "Y"}, {"Z", "X"}},
+		"unknown": nil,
+		"":        nil,
 	}
-	if got := r.Of("b"); got.Transactions != 2 || got.Statements["X"] != 2 || got.Statements["Y"] != 1 || len(got.Statements) != 2 {
-		t.Errorf("request b: %+v, want 2 transactions and X x2, Y x1", got)
+	for id, w := range want {
+		got := r.Of(id).Transactions
+		if len(got) != len(w) {
+			t.Errorf("request %q: transactions %q, want %q", id, got, w)
+			continue
+		}
+		for i := range w {
+			if strings.Join(got[i], ",") != strings.Join(w[i], ",") {
+				t.Errorf("request %q: transactions %q, want %q", id, got, w)
+				break
+			}
+		}
 	}
-	if got := r.Of("unknown"); got.Transactions != 0 || len(got.Statements) != 0 {
-		t.Errorf("a request that ran nothing: %+v", got)
-	}
-	if got := r.Of(""); got.Transactions != 0 || len(got.Statements) != 0 {
-		t.Errorf("the statements without a request ID were counted: %+v", got)
+	if got := r.Of("a").Statements(); got["GetLiveItem"] != 2 || got["NPMTombstoned"] != 1 || got["IdentityTokenBySecret"] != 1 || len(got) != 3 {
+		t.Errorf("the statements of request a by name: %v", got)
 	}
 }

@@ -1035,8 +1035,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   (Q-ARCH-325). The dispatched nightly run 42211913572 met ten of the eleven values of R-VULN-028 (V-1 1.01 min, V-4 3.18 ms, V-7b 112 ms);
   V-5b missed with 1.065 transactions per cached download against 1. P-13 and P-14 were green in every nightly run of the day. V-5b's miss
   was its measurement: a statement log showed one transaction per cached download, and the database-wide commit count carried the
-  background and the delay of PostgreSQL's counters; V-5b is now counted in the replicas by request and is the p99 of a download's
-  statements (Q-VULN-98, Q-VULN-99), 1 in the local runs. Open: two nightly runs in a row
+  background and the delay of PostgreSQL's counters; V-5b is now counted in the replicas by request, and every download must run exactly
+  one statement after the cache refills R-ARCH-027 exempts (Q-VULN-98, Q-VULN-99), 1 in the local runs. Open: two nightly runs in a row
 
 **Backup and restore**
 - ⚪ Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target

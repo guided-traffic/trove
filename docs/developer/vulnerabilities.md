@@ -446,7 +446,11 @@ a run: [perf/README.md](../../perf/README.md#reading-a-run). V-5b is counted in 
 (`testenv.RequestTransactions` through `testenv.ReplicaOptions.Database`, [Q-VULN-98](../spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter)):
 every download of a replica with the scanning on and of one with it off runs one statement, `GetLiveItem`, whose lateral join is the block
 check ([the download policy](#the-download-policy)); a refill of the authentication caches adds three statements to one or two downloads of each replica about
-every 15 s, which the p99 of [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-p99-of-the-statements-of-one-download-not-the-mean-of-the-transactions-of-a-window) leaves out and the note lists.
+every 15 s. [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-largest-count-of-a-download-after-the-refills-r-arch-027-exempts-not-the-mean-of-the-transactions-of-a-window)
+takes out by name only those refills, the ones R-ARCH-027 exempts (`refills` in [env_test.go](../../perf/vuln/env_test.go)), and requires
+exactly one statement of every download after it. A statement that a change adds to the download path, or a renamed refill, fails the run
+with its name and the request ID: add a refill to the list only when R-ARCH-027 exempts its cache, and otherwise the statement is a cost to
+remove.
 
 Two integration tests measure the paths of V-4 and V-7b in minutes and not in the run's tens: `TestR_VULN_028_TheEvaluationOfAPublishIsMeasured`
 ([vulnfindings](../../test/integration/vulnfindings/publish_cost_test.go)) and `TestR_VULN_028_TheFirstPageOfAPatternGrantAtTheShapeOfTheRun`
