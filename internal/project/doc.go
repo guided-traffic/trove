@@ -1,21 +1,22 @@
-// Package project is the domain service of projects, the unit of delegated
-// administration (R-AUTHZ-026, Q-AUTHZ-169 to Q-AUTHZ-185): the projects with their
-// switches and administrators, the assignment of repositories to them, and the
-// lookup of users and groups a project administrator names in policies.
+// Package project is the domain service of projects (R-AUTHZ-026, Q-AUTHZ-206 to
+// Q-AUTHZ-209, Q-AUTHZ-215 to Q-AUTHZ-217): the projects, their members with one of
+// the four roles, the move of a repository from one project to another (R-REPO-060,
+// Q-REPO-217), and the lookup of users and groups an Owner names as members and in
+// policies.
 //
-// What it does not own: the grant index and every decision about what a project
-// administrator may do (internal/authz answers ProjectsOn, AdministersOn and
-// AdministersRepositoryOn on the index of the request); project policies
-// (authz.Service, with their `project` member); repositories and their creation by
-// a project administrator (internal/repository); project service accounts and
-// their tokens (internal/auth). The service only reads and writes the rows of
-// project, project_admin and the project column of repositories, notifies the
-// change areas, and records the audit events of internal/audit (events_projects.go).
+// What it does not own: the grant index and every decision about what a member may
+// do (internal/authz answers MembershipsOn, RoleOn and OwnsOn on the index of the
+// request and gives a role its actions in the decision path); project policies
+// (authz.Service, with their `project` member); the repositories of a project and
+// their creation (internal/repository); project service accounts and their tokens
+// (internal/auth). The service reads and writes the rows of project and
+// project_member and the project of a repository, notifies the change areas, and
+// records the audit events of internal/audit (events_projects.go).
 //
 // The service does not decide whether the caller may call it: the management API's
 // shared authorization step does (the declarations of api/openapi.yaml). It checks
-// the rules of the data: a unique and non-overlapping key, an administrator that is
-// a user or a group, a repository that exists, an assignment that does not take
-// another project's repository without a move, a delete of an empty project only.
-// docs/developer/projects.md lists the contract.
+// the rules of the data: a unique key, members that are users or groups and no
+// auto-join group, a project that keeps an Owner unless an administrator of trove
+// acts, a move that nothing of the source project names, a delete of an empty
+// project only. docs/developer/projects.md lists the contract.
 package project

@@ -16,7 +16,7 @@ const (
 )
 
 // PrincipalKind is the kind of a project member or of a lookup result: a user or a
-// group (Q-AUTHZ-183). Service accounts and CI mappings are no members.
+// group (Q-AUTHZ-207, Q-AUTHZ-215). Service accounts and CI mappings are no members.
 type PrincipalKind string
 
 // The two kinds that are members of a project.
@@ -43,6 +43,10 @@ type Input struct {
 	Key         string
 	DisplayName string
 	Description string
+	// Owners are the references of the users and groups ("user:alice",
+	// "group:web-leads") a create makes the first Owners of the project (Q-AUTHZ-208);
+	// a replace ignores them, the members have operations of their own.
+	Owners []string
 }
 
 // Project is a stored project as the service returns it.

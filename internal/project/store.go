@@ -30,18 +30,15 @@ type authzChange struct {
 }
 
 // repoChange is the payload of a repo_config change, the shape the repository
-// package writes (internal/repository changePayload): the repository id and the
-// config_version the write left (R-REPO-008).
+// package writes (internal/repository changePayload): the repository id, its
+// qualified name and the config_version the write left (R-REPO-008); a move
+// writes it (move.go).
 type repoChange struct {
 	ID      string `json:"id"`
 	Key     string `json:"key"`
 	Op      string `json:"op"`
 	Version int64  `json:"version"`
 }
-
-// opUpdated is the repo_config op of an assignment: the repository's document
-// changed (its project member), which is what an "updated" says.
-const opUpdated = "updated"
 
 var errNoEpochRow = errors.New("project: the authz epoch row is missing")
 
