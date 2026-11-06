@@ -1,5 +1,4 @@
 import { Component, ElementRef, afterNextRender, inject, input, output, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Notifier } from '../../core/notifier';
 
 /**
@@ -10,7 +9,7 @@ import { Notifier } from '../../core/notifier';
  */
 @Component({
   selector: 'trove-token-secret',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     <section class="secret" aria-labelledby="secret-heading" tabindex="-1">
       <h2 id="secret-heading" i18n="@@token-secret.heading">Your new token</h2>
@@ -32,8 +31,7 @@ import { Notifier } from '../../core/notifier';
           spellcheck="false"
           translate="no"
         />
-        <button
-          mat-button
+        <button class="btn btn-tertiary"
           type="button"
           [attr.aria-pressed]="revealed()"
           (click)="revealed.set(!revealed())"
@@ -44,9 +42,9 @@ import { Notifier } from '../../core/notifier';
             <ng-container i18n="@@token-secret.show">Show</ng-container>
           }
         </button>
-        <button mat-flat-button type="button" (click)="copy()" i18n="@@token-secret.copy">Copy</button>
+        <button class="btn btn-confirm" type="button" (click)="copy()" i18n="@@token-secret.copy">Copy</button>
       </div>
-      <button mat-button type="button" (click)="closed.emit()" i18n="@@token-secret.done">
+      <button class="btn btn-tertiary" type="button" (click)="closed.emit()" i18n="@@token-secret.done">
         I have copied it
       </button>
     </section>
@@ -56,11 +54,11 @@ import { Notifier } from '../../core/notifier';
       margin-block: var(--trove-space-4);
       padding: var(--trove-space-4);
       border: 2px solid var(--trove-status-warn);
-      border-radius: var(--mat-sys-corner-medium);
+      border-radius: var(--trove-radius-l);
     }
     h2 {
       margin-block: 0 var(--trove-space-3);
-      font: var(--mat-sys-title-medium);
+      font: var(--trove-type-title-medium);
     }
     .warning {
       display: flex;
@@ -84,10 +82,10 @@ import { Notifier } from '../../core/notifier';
       min-inline-size: 0;
       padding: var(--trove-space-2);
       font-family: ui-monospace, monospace;
-      color: var(--mat-sys-on-surface);
-      background: var(--mat-sys-surface-container);
-      border: 1px solid var(--mat-sys-outline);
-      border-radius: var(--mat-sys-corner-extra-small);
+      color: var(--trove-on-surface);
+      background: var(--trove-surface-container);
+      border: 1px solid var(--trove-border-strong);
+      border-radius: var(--trove-radius-s);
     }
     .visually-hidden {
       position: absolute;

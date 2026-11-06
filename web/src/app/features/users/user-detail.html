@@ -1,6 +1,6 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@user.heading">User</h1>
-  <a mat-button routerLink="/admin/users" i18n="@@user.back">All users</a>
+  <a class="btn btn-tertiary" routerLink="/admin/users" i18n="@@user.back">All users</a>
 </header>
 <p class="subject" translate="no">{{ username() }}</p>
 <trove-needs capability="identities:write" />
@@ -63,7 +63,7 @@
         <trove-text-field i18n-label="@@user.display-name" label="Display name" name="displayName" [(value)]="displayName" [error]="fieldError('/displayName')" />
         <trove-text-field i18n-label="@@user.email" label="Email" name="email" type="email" [(value)]="email" [error]="fieldError('/email')" />
         <div class="row-actions">
-          <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@user.save">Save correction</button>
+          <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@user.save">Save correction</button>
         </div>
       </form>
     }
@@ -71,17 +71,17 @@
     <div class="row-actions">
       @if (canWrite() && editable()) {
         @if (u.status === 'active') {
-          <button mat-button type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="disable()" i18n="@@user.disable">Disable</button>
+          <button class="btn btn-tertiary" type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="disable()" i18n="@@user.disable">Disable</button>
         } @else {
-          <button mat-button type="button" [disabled]="busy()" (click)="enable()" i18n="@@user.enable">Enable</button>
+          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@user.enable">Enable</button>
         }
-        <button mat-button type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="remove()" i18n="@@user.delete">Delete</button>
+        <button class="btn btn-tertiary" type="button" [disabled]="isSelf() || busy()" [attr.aria-describedby]="isSelf() ? 'self-guard' : null" (click)="remove()" i18n="@@user.delete">Delete</button>
       }
       @if (locked() && session.has('content:bypass')) {
-        <button mat-button type="button" [disabled]="busy()" (click)="unlock()" i18n="@@user.unlock">Unlock</button>
+        <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="unlock()" i18n="@@user.unlock">Unlock</button>
       }
       @if (session.has('audit:read')) {
-        <a mat-button routerLink="/admin/audit" [queryParams]="{ actor: u.username }" i18n="@@user.audit">Audit log of this user</a>
+        <a class="btn btn-tertiary" routerLink="/admin/audit" [queryParams]="{ actor: u.username }" i18n="@@user.audit">Audit log of this user</a>
       }
     </div>
     @if (isSelf()) {
@@ -138,7 +138,7 @@
               <td><span class="badge">{{ sourceLabel(g.source) }}</span></td>
               <td class="actions">
                 @if (editableGroup(g)) {
-                  <button mat-button type="button" [disabled]="busy()" (click)="removeGroup(g)">
+                  <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="removeGroup(g)">
                     <ng-container i18n="@@user.remove-group">Remove</ng-container>
                     <span class="visually-hidden" translate="no"> {{ g.name }}</span>
                   </button>
@@ -152,7 +152,7 @@
     @if (canWrite() && editable()) {
       <form class="toolbar" (submit)="addGroup($event)">
         <trove-text-field i18n-label="@@user.add-group" label="Add to group" name="group" [(value)]="newGroup" />
-        <button mat-flat-button type="submit" [disabled]="busy() || newGroup().trim() === ''" i18n="@@user.add-group-submit">Add</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || newGroup().trim() === ''" i18n="@@user.add-group-submit">Add</button>
       </form>
     }
   </section>
@@ -200,7 +200,7 @@
         </table>
         @if (canWrite()) {
           <div class="row-actions">
-            <button mat-button type="button" [disabled]="busy()" (click)="endSessions()" i18n="@@user.end-sessions">End all sessions</button>
+            <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="endSessions()" i18n="@@user.end-sessions">End all sessions</button>
           </div>
         }
       }

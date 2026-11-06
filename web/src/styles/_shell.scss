@@ -421,7 +421,7 @@ trove-root {
   .bare-panel {
     h1 {
       margin: 0 0 var(--trove-space-6);
-      font: var(--mat-sys-title-large);
+      font: var(--trove-type-title-large);
       text-align: center;
       outline: none;
     }
@@ -435,7 +435,7 @@ trove-root {
     margin: 0 auto var(--trove-space-3);
   }
 
-  .bare a:not([class*='mat-']):not([class*='mdc-']):not(.btn):not(.tab-link) {
+  .bare a:not(.btn):not(.tab-link) {
     color: var(--trove-link);
     text-underline-offset: 0.2em;
 
@@ -447,8 +447,10 @@ trove-root {
 
   // Links in the page: the link colour and an underline, so a link in running text is not told apart by colour alone
   // (R-UI-044). In a table or a key-value list the column or the row says what is a link, so there the underline
-  // appears under the pointer and on focus only, as in the reference (Q-UI-128).
-  .content a:not([class*='mat-']):not([class*='mdc-']):not(.btn):not(.tab-link) {
+  // appears under the pointer and on focus only, as in the reference (Q-UI-128). There the link is also its own box
+  // (inline-block), so it is not a link inside a block of text: a cell with a link, a badge and a second line is not
+  // running text, and axe's `link-in-text-block` (colour as the only mark, WCAG 1.4.1) does not apply to it.
+  .content a:not(.btn):not(.tab-link) {
     color: var(--trove-link);
     text-underline-offset: 0.2em;
 
@@ -458,7 +460,8 @@ trove-root {
     }
   }
 
-  .content :is(table, dl) a:not([class*='mat-']):not([class*='mdc-']):not(.btn):not(.tab-link) {
+  .content :is(table, dl) a:not(.btn):not(.tab-link) {
+    display: inline-block;
     text-decoration: none;
 
     &:is(:hover, :focus-visible) {

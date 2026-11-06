@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { Router, RouterLink } from '@angular/router';
 import { PermissionPolicy, PolicyApi } from '../../api/authz-api';
 import { Group, GroupMember, GroupPatch, IdentityApi } from '../../api/identity-api';
@@ -27,7 +26,7 @@ import { groupOriginLabel } from './group-list';
  */
 @Component({
   selector: 'trove-group-detail',
-  imports: [DatePipe, MatButtonModule, MatCheckboxModule, RouterLink, ErrorNotice, Needs, SelectField, TextField],
+  imports: [DatePipe, Checkbox, RouterLink, ErrorNotice, Needs, SelectField, TextField],
   templateUrl: './group-detail.html',
   styleUrl: '../../shared/access/access.scss',
 })

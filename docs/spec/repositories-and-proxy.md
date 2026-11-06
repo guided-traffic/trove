@@ -72,8 +72,8 @@ and `$TROVE_TOKEN` as a trove token (INV-8).
 Priority: **MVP** · Covers: REPO-001, REPO-002, REPO-016
 
 - Every repository MUST have exactly one class, `local`, `remote` or `virtual` (INV-5), and exactly
-  one format from the format catalog (R-REPO-003). Class, format and key are fixed at creation. An
-  update that changes any of them MUST be refused with 422 `validation_failed` with `immutable` in `errors[]`; there is no class
+  one format from the format catalog (R-REPO-003). Class, format and key are fixed at creation, and the
+  project changes only through a move (R-REPO-060). An update that changes any of them MUST be refused with 422 `validation_failed` with `immutable` in `errors[]`; there is no class
   conversion and no rename (rename is create, copy per [storage.md](storage.md), delete).
 - A local repository stores what clients deploy. A remote repository stores what it fetched from its
   single upstream (R-REPO-024). A virtual repository stores no content and answers through its
@@ -84,7 +84,7 @@ Priority: **MVP** · Covers: REPO-001, REPO-002, REPO-016
   invisible to clients and only costs storage.
 - Federated and release-set storage classes are not part of the model (see Deferred).
 
-Data model. The base table `repositories (id, key, format, class, config jsonb, created_at,
+Data model. The base table `repositories (id, project_id, key, format, class, config jsonb, created_at,
 updated_at)` is defined in [storage.md](storage.md) (R-STOR-003). This page owns the content of
 `config` (R-REPO-004) except its `storage` member, and adds:
 
@@ -96,14 +96,14 @@ ALTER TABLE repositories
   ADD COLUMN claims_version   bigint NOT NULL DEFAULT 1,     -- claims ETag, R-REPO-023; R-BAK-022
   ADD COLUMN created_by       uuid,                          -- principal id
   ADD COLUMN updated_by       uuid,
-  ADD COLUMN project_id       uuid REFERENCES project (id),  -- assignment: R-AUTHZ-026
   ADD COLUMN last_activity_at timestamptz,                   -- R-REPO-012
   ADD CONSTRAINT repositories_key_dots CHECK (key !~ '\.\.' AND key !~ '\.$');
 ```
 
 The M1 migration adds `lifecycle`, `config_version`, `created_by`, `updated_by`, `last_activity_at` and the key
-constraint; `claims_version` and `project_id` come with the migrations of their requirements (Q-REPO-11); `project_id`
-is `00019_projects.sql` (R-AUTHZ-026).
+constraint; `claims_version` comes with the migration of R-REPO-023 (Q-REPO-11). The repository's project is part of
+the base table: `project_id` is required and the key is unique within the project ([storage.md](storage.md) R-STOR-003,
+[authorization.md](authorization.md) R-AUTHZ-026).
 
 `config` never contains secret values; they are in `repository_secrets` (R-REPO-033). References
 that need referential integrity (members, deploy targets, pin targets, client certificates,
@@ -118,50 +118,70 @@ included, that its author never saw (R-REPO-023).
 
 Acceptance criteria:
 
-- `POST /api/v1/repositories` with `{"key":"npm-local","class":"local","format":"npm"}` returns
+- `POST /api/v1/projects/web/repositories` with `{"key":"npm-local","class":"local","format":"npm"}` returns
   201; a following `PATCH` with `{"format":"nuget"}` returns 422 `validation_failed` with `immutable` in `errors[]` at `/format`.
 - A create with `"class":"federated"` returns 422 `validation_failed` with `unsupported_class` in `errors[]`.
 - `curl -X PUT --data-binary @notes.txt -H "Authorization: Bearer $TROVE_TOKEN"
-  https://trove.example.com/files/npm-local/notes.txt` returns 422 `not_a_package`.
+  https://trove.example.com/files/web/npm-local/notes.txt` returns 422 `not_a_package`.
 
 ### R-REPO-002 · Repository keys and client addresses
 Priority: **MVP** · Covers: REPO-004, REPO-005
 
-- A key MUST match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5: 2 to 64 characters, lower case, so it is
-  valid for container formats too), MUST NOT contain `..` and MUST NOT end in `.` (trailing dots
-  are stripped by some reverse proxies and Windows clients). Keys are unique across all classes.
-  Violations answer 422 `validation_failed` with `invalid_key` in `errors[]`.
+- Every repository belongs to exactly one project and is addressed inside it
+  ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
+  [Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
+  [authorization.md](authorization.md) R-AUTHZ-026). A key MUST match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5: 2 to 64
+  characters, lower case, so it is valid for container formats too), MUST NOT contain `..` and MUST NOT end in `.`
+  (trailing dots are stripped by some reverse proxies and Windows clients). Keys are unique within the project across
+  all classes; two projects can each have a repository of the same key (`web/npm-remote`, `mobile/npm-remote`).
+  Violations answer 422 `validation_failed` with `invalid_key` in `errors[]`; a key taken in the project answers 409
+  `already_exists`.
+- A key carries no project prefix: the project is part of the address, and no key or key prefix is reserved for a
+  project.
 - No suffix is reserved. The cache view of a remote repository is addressed with `~cache`
   (R-REPO-032); `~` cannot occur in a key, so the cache address never collides with a key and remote
-  keys keep the full 64 characters.
+  keys keep the full 64 characters. `~cache` belongs to the repository segment, never to the project segment.
 - Reserved names: `batch-create`, `batch-update`, `batch-get`, `batch-delete` and `quick-setup`
-  are literal sub-paths of `/api/v1/repositories` (R-REPO-014, R-REPO-015) and MUST be rejected
-  as keys with 422 `reserved_name` ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7). The
+  are literal sub-paths of `/api/v1/projects/<projectKey>/repositories` (R-REPO-014, R-REPO-015) and MUST be rejected
+  as keys in every project with 422 `reserved_name` ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7). The
   OpenAPI key schema lists them as `x-trove-reserved-names`.
-- Repositories created by project administrators carry the project key as prefix
-  (`<projectKey>-…`, 422 `project_prefix_required`, [R-AUTHZ-026](authorization.md)); a repository an administrator
-  creates, or one that already exists, is assigned to a project without any prefix rule.
-- A key stays taken while its repository is being deleted and becomes free when the deletion job
-  completes (R-REPO-013).
+- Outside its project a repository is named by its qualified name `<projectKey>/<repoKey>` (`web/npm-internal`): in
+  instance-wide lists, in the selectors of instance contexts ([authorization.md](authorization.md) R-AUTHZ-004), in audit
+  events, log fields, metric labels and job targets. Inside its project (virtual members, deploy targets, project
+  policies) it is named by its bare key.
+- A key stays taken in its project while its repository is being deleted and becomes free when the deletion job
+  completes (R-REPO-013); a move frees it in the source project in the move's transaction (R-REPO-060).
 - Addresses of a repository (INV-6):
 
 | Address | Purpose |
 |---|---|
-| `/api/<format>/<key>/…` | Package-manager protocol, e.g. `/api/npm/npm-all/`, `/api/nuget/nuget-all/v3/index.json` |
-| `/api/<format>/<key>~cache/…`, `/files/<key>~cache/<path>` | Cache view of a remote repository (R-REPO-032) |
-| `/files/<key>/<path>` | Raw file access ([storage.md](storage.md)) |
-| `/api/v1/repositories/<key>` | Configuration |
+| `/api/<format>/<projectKey>/<repoKey>/…` | Package-manager protocol, e.g. `/api/npm/web/npm-all/`, `/api/nuget/web/nuget-all/v3/index.json` |
+| `/api/<format>/<projectKey>/<repoKey>~cache/…`, `/files/<projectKey>/<repoKey>~cache/<path>` | Cache view of a remote repository (R-REPO-032) |
+| `/files/<projectKey>/<repoKey>/<path>` | Raw file access ([storage.md](storage.md)) |
+| `/api/v1/projects/<projectKey>/repositories/<repoKey>` | Configuration |
 
-- Recommended, not enforced: `<team>-<format>-<purpose>-<class>` for local and remote repositories
-  (`billing-npm-release-local`); virtual repositories drop the class part (`billing-npm`).
+- One parser reads the project and the repository segment of every route that names a repository
+  ([architecture.md](architecture.md) R-ARCH-005): each segment must match its key pattern, and a `%` in either is refused,
+  so an escaped `/` can never shift a segment (as on the Bastion, [bastion.md](bastion.md) R-BAS-018). An address without
+  the repository segment (`/api/npm/web`) answers 404, and so does an address whose project does not exist or is one the
+  caller cannot see: a project answers exactly like a missing repository ([authorization.md](authorization.md)
+  R-AUTHZ-016).
+- A move to another project changes every address of the repository (R-REPO-060); a client configured with the old
+  address gets 404.
+- Recommended, not enforced: `<format>-<purpose>-<class>` for local and remote repositories (`npm-release-local`);
+  virtual repositories drop the class part (`npm`). The team is the project and is not repeated in the key.
 
 Acceptance criteria:
 
 - Creating repositories with the keys `Npm`, `a`, `-x`, `a..b`, `x.` and `npm~cache` each returns
   422 `validation_failed` with `invalid_key` in `errors[]`; `npm-local` and `a1` are accepted.
+- With `web/npm-remote` in place, creating `npm-remote` in project `mobile` returns 201, and creating it again in `web`
+  returns 409 `already_exists`.
 - Creating a repository with the key `batch-create` or `quick-setup` returns 422 `reserved_name`.
-- With remote `npm-remote` in place, `GET /api/npm/npm-remote~cache/lodash` reaches the cache view,
+- With remote `npm-remote` in project `web`, `GET /api/npm/web/npm-remote~cache/lodash` reaches the cache view,
   and creating a repository named `npm-remote-cache` succeeds.
+- `GET /api/npm/web/web`, `GET /api/npm/web/nope/npm-remote/lodash` (no project `nope`) and `GET /api/npm/web/web%2Fx/npm-remote/lodash`
+  each answer 404.
 
 ### R-REPO-003 · Format catalog and request classification
 Priority: **MVP** · Covers: REPO-006
@@ -207,7 +227,7 @@ API:
       "name": "npm",
       "classes": ["local", "remote", "virtual"],
       "layout": "npm",
-      "protocolBasePath": "/api/npm/{key}/",
+      "protocolBasePath": "/api/npm/{project}/{key}/",
       "defaultUpstreamUrl": "https://registry.npmjs.org/",
       "defaultMetadataTtlSeconds": 7200,
       "defaultNotFoundTtlSeconds": 1800,
@@ -244,7 +264,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `priorityMember` | R-REPO-022; local and remote only | `false` | this page |
 | `hideExistence` | `inherit`, `true`, `false` | `inherit` | [R-AUTHZ-017](authorization.md) |
 | `layout` | R-REPO-006, read-only | the format's layout | this page |
-| `project` | Project key. Written on create only (the repository is assigned in the transaction that creates it, by a project administrator, who must send it, or by `repositories:write-config`); read-only afterwards, assigned and moved through the project API | `null` | [R-AUTHZ-026](authorization.md) |
+| `project` | The key of the repository's project, taken from the address of the create request (R-REPO-009); read-only, changed only by a move (R-REPO-060) | — (every repository is in one project) | [R-AUTHZ-026](authorization.md) |
 | `local` | `packageOwnership`, `ownershipDomain` ([R-AUTHZ-018](authorization.md), [R-AUTHZ-020](authorization.md)); `autoClaim` (R-REPO-023); `caps` (R-REPO-007). An omitted `packageOwnership` is the format's default, stored with the document; `ownershipDomain` answers `not_applicable` until R-AUTHZ-020 (P1) is built (Q-AUTHZ-155) | see owners | mixed |
 | `remote` | R-REPO-024; `cacheFillAction` within it is [R-AUTHZ-008](authorization.md) | — | this page |
 | `virtual` | R-REPO-017 | — | this page |
@@ -272,12 +292,12 @@ read (R-REPO-010) and the object body of configuration as code
 Acceptance criteria:
 
 - With `disabled: true` on `npm-local`, `npm view @acme/util --registry
-  https://trove.example.com/api/npm/npm-local/` fails with `E404`, while the same command against
+  https://trove.example.com/api/npm/web/npm-local/` fails with `E404`, while the same command against
   the virtual repository `npm-all` still succeeds when another member holds the package.
 - With anonymous read granted and `requireAuthentication: true` on `npm-local`, an unauthenticated
-  `curl -i https://trove.example.com/api/npm/npm-local/@acme%2futil` returns 401 with a `Basic`
+  `curl -i https://trove.example.com/api/npm/web/npm-local/@acme%2futil` returns 401 with a `Basic`
   challenge.
-- `GET /api/v1/repositories/npm-local` by a caller without `repositories:read-config` contains no
+- `GET /api/v1/projects/web/repositories/npm-local` by a caller without `repositories:read-config` contains no
   `adminNotes`.
 
 ### R-REPO-005 · Include and exclude patterns
@@ -326,7 +346,7 @@ Priority: **MVP** · Covers: REPO-011, RMT-034
 Acceptance criteria:
 
 - Remote `npm-remote` with `excludePatterns: ["@acme/*"]`: `npm view @acme/util --registry
-  https://trove.example.com/api/npm/npm-remote/` fails with `E404`, and a counting stub upstream
+  https://trove.example.com/api/npm/web/npm-remote/` fails with `E404`, and a counting stub upstream
   records no request.
 - Local `npm-local` with `includePatterns: ["@acme/*"]`: `npm publish` of `left-pad` fails with 403
   `not_admitted`; publishing `@acme/left-pad` succeeds.
@@ -353,7 +373,7 @@ Priority: **MVP** · Covers: REPO-012, REPO-046, REPO-047
 
 Acceptance criteria:
 
-- `GET /api/v1/repositories/nuget-local` returns `"layout":"nuget"`; a create with
+- `GET /api/v1/projects/web/repositories/nuget-local` returns `"layout":"nuget"`; a create with
   `"layout":"maven-2"` for an npm repository returns 422 `validation_failed` with `unsupported_layout` in `errors[]`.
 - After `npm publish` of `@acme/util@1.4.0`, the tarball item belongs to package `@acme/util`,
   version `1.4.0`.
@@ -417,7 +437,7 @@ own transaction, wherever they run:
   `detach=true` removes the repository from member lists, pin rules and deploy targets, and the
   job transaction that removes the row (R-REPO-013);
 - every change of the virtual membership (R-REPO-017, R-REPO-018), the deploy target (R-REPO-021),
-  the project assignment ([R-AUTHZ-026](authorization.md)) or one of the authorization
+  the project (a move, R-REPO-060) or one of the authorization
   settings `cacheFillAction`, `packageOwnership`, `hideExistence` and `requireAuthentication`
   ([R-AUTHZ-031](authorization.md)).
 
@@ -433,7 +453,10 @@ the notification, a replica would keep deciding on the old member list or the ol
 Capability and action names are those of [authorization.md](authorization.md) (R-AUTHZ-010): `repositories:read-config`
 (roles `admin`, `security-admin`, `auditor`, `repository-admin`), `repositories:write-config` (roles `admin`,
 `repository-admin`), `settings:read` and `settings:write`, repository actions `read`, `deploy`,
-`delete`, `manage`.
+`delete`, `manage`. Within its project, the
+role `owner` allows what `repositories:read-config` and `repositories:write-config` allow, with the restrictions of
+[authorization.md](authorization.md) R-AUTHZ-026 for an Owner without the capability; every other role reads a
+repository's consumer view as far as its `read` reaches.
 
 ### R-REPO-008 · Configuration validation
 Priority: **MVP** · Covers: REPO-053, REPO-054, RMT-002
@@ -446,17 +469,16 @@ leaves the operator believing it is in effect.
 | Rule | Code |
 |---|---|
 | Key syntax (R-REPO-002) | `invalid_key` |
-| Key of a project administrator's create without `<projectKey>-` and at least one character after it (R-AUTHZ-026, Q-REPO-126) | `project_prefix_required`, also the top-level code |
-| A project administrator's `secretRef` other than the stored one, or a stored credential kept while its hosts change (R-REPO-033, Q-REPO-127) | `secret_value_required`, also the top-level code |
-| A project administrator's `outboundProxy.mode` other than `default` or `sourceNetwork`, unless stored and kept with the url and the extra hosts (Q-REPO-128) | `outbound_path_restricted`, also the top-level code |
+| An Owner's `secretRef` other than the stored one (an Owner without `repositories:write-config`), or a stored credential kept while its hosts change (R-REPO-033, Q-REPO-127) | `secret_value_required`, also the top-level code |
+| An Owner's `outboundProxy.mode` (an Owner without `repositories:write-config`) other than `default` or `sourceNetwork`, unless stored and kept with the url and the extra hosts (Q-REPO-128) | `outbound_path_restricted`, also the top-level code |
 | Key is a reserved name (R-REPO-002) | `reserved_name` |
-| Key taken, also by a repository being deleted | `already_exists` (409) |
+| Key taken in the project, also by a repository being deleted | `already_exists` (409) |
 | Class or format unknown, or the format does not support the class | `unsupported_class`, `unknown_format` |
 | Class, format or key changed on update | `immutable` |
 | Pattern syntax or limits (R-REPO-005); claim or pin-rule pattern outside the forms R-REPO-023 admits | `invalid_pattern` |
-| Member missing, being deleted, of another format, duplicated, or the virtual repository itself | `invalid_member` |
+| Member missing from the virtual repository's project, written with a `/`, being deleted, of another format, duplicated, or the virtual repository itself | `invalid_member` |
 | Nesting cycle or depth over the limit (R-REPO-018) | `virtual_cycle`, `virtual_too_deep` |
-| Deploy target not a local repository in the effective member list (R-REPO-021) | `invalid_deploy_target` |
+| Deploy target not a local repository in the effective member list (R-REPO-021), or written with a `/` | `invalid_deploy_target` |
 | Pin rule member not in the effective member list (R-REPO-023) | `invalid_pin_member` |
 | Upstream URL not absolute `http`/`https`, or carrying user info or a fragment (R-REPO-024) | `invalid_upstream_url` |
 | Numeric setting outside its range (R-REPO-024 and others) | `out_of_range` |
@@ -484,13 +506,16 @@ Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
 
 | | |
 |---|---|
-| Request | `POST /api/v1/repositories`, body: the configuration document; omitted settings take their defaults, format defaults included |
-| Success | 201, `Location: /api/v1/repositories/<key>`, `ETag: "<config_version>"`, body: the stored document as R-REPO-010 returns it, plus `warnings` |
-| Errors | 400 `malformed_request`; 401; 403; 409 `already_exists`; 422 (R-REPO-008) |
-| Permission | `repositories:write-config`; or project administrator of a project with `manageRepositories`, with `project` in the body and a key `<projectKey>-…`: the repository is assigned to that project in the same transaction, and a virtual repository's members and deploy target are repositories of the project ([R-AUTHZ-026](authorization.md), Q-AUTHZ-178, Q-AUTHZ-184) |
+| Request | `POST /api/v1/projects/{projectKey}/repositories`, body: the configuration document; omitted settings take their defaults, format defaults included |
+| Success | 201, `Location: /api/v1/projects/<projectKey>/repositories/<key>`, `ETag: "<config_version>"`, body: the stored document as R-REPO-010 returns it, plus `warnings` |
+| Errors | 400 `malformed_request`; 401; 403; 404 for a project that does not exist or that the caller cannot see; 409 `already_exists` (the key is taken in the project); 422 (R-REPO-008) |
+| Permission | `repositories:write-config`, or the role `owner` in the project ([R-AUTHZ-026](authorization.md), Q-AUTHZ-173) |
 
 - Create is never an upsert. Configuration, relational rows, sealed secrets and the audit event are
   written in one transaction.
+- The repository belongs to the project of the path from the transaction that creates it; a `project` member in the
+  body that names another project answers 422 `validation_failed` with `immutable` at `/project`. A virtual repository's
+  members and deploy target are bare keys of the same project (R-REPO-017, R-REPO-021).
 - Responses are JSON, not plain-text confirmations.
 
 ```json
@@ -512,34 +537,36 @@ Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
 Acceptance criteria:
 
 - `curl -sS -X POST -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/json'
-  --data @npm-remote.json https://trove.example.com/api/v1/repositories` returns 201, and a `GET`
+  --data @npm-remote.json https://trove.example.com/api/v1/projects/web/repositories` returns 201, and a `GET`
   of the `Location` shows `metadataTtlSeconds: 7200` and `notFoundTtlSeconds: 1800` from the npm
   format defaults.
-- Repeating the call returns 409 `already_exists`.
-- The same call with a token lacking `repositories:write-config` returns 403 and creates nothing.
+- Repeating the call returns 409 `already_exists`; the same call against `/api/v1/projects/mobile/repositories` returns
+  201: `mobile/npm-remote` is another repository.
+- The same call with a token lacking `repositories:write-config`, whose user is no Owner of `web`, returns 403 and
+  creates nothing; against a project that does not exist it returns 404.
 
 ### R-REPO-010 · Read a repository configuration
 Priority: **MVP** · Covers: REPO-055, REPO-056, API-057, API-058
 
 | | |
 |---|---|
-| Request | `GET /api/v1/repositories/{key}` |
+| Request | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}` |
 | Success | 200, `ETag: "<config_version>"`, body: the full document or the consumer view |
 | Errors | 401; 404 per [R-AUTHZ-016](authorization.md) |
-| Permission | `repositories:read-config` (or project administrator of the repository's project): full document; `read` on the repository: consumer view (Q-REPO-20) |
+| Permission | `repositories:read-config`, or the role `owner` in the repository's project: full document; `read` on the repository (by a grant or a role): consumer view (Q-REPO-20) |
 
 - The document contains only members that apply to the repository's class and format; the
   catalog's format-filtered read is therefore the only read.
 - Secret fields are never returned: an inline secret reads as `{"set": true}`, a reference reads back
   as the `secretRef` it is (a file name or variable name is not secret).
-- The consumer view contains `key`, `class`, `format`, `description`, `layout` and the client
+- The consumer view contains `key`, `project`, `class`, `format`, `description`, `layout` and the client
   addresses, as [R-AUTHZ-016](authorization.md) defines it. It omits upstream settings, notes, pins,
   claims and members: an internal registry host or another team's repository key is information
   too.
 
 Acceptance criteria:
 
-- With `repositories:read-config`, `GET /api/v1/repositories/nuget-remote` returns `remote.url` and
+- With `repositories:read-config`, `GET /api/v1/projects/web/repositories/nuget-remote` returns `remote.url` and
   `"password": {"secretRef": {"file": "nuget-upstream-token"}}`; for an inline secret it returns
   `{"set": true}` and never the value.
 - A user holding only `read` on `nuget-remote` receives the consumer view without a `remote`
@@ -550,7 +577,7 @@ Priority: **MVP** · Covers: REPO-054, RMT-002, API-054
 
 | | |
 |---|---|
-| Request | `PATCH /api/v1/repositories/{key}` with `Content-Type: application/merge-patch+json` ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)); or `PUT /api/v1/repositories/{key}` with a complete document (omitted settings revert to defaults). `If-Match: "<config_version>"` required (428 without it; `If-Match: *` for a deliberate blind write). |
+| Request | `PATCH /api/v1/projects/{projectKey}/repositories/{repoKey}` with `Content-Type: application/merge-patch+json` ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)); or `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}` with a complete document (omitted settings revert to defaults). `If-Match: "<config_version>"` required (428 without it; `If-Match: *` for a deliberate blind write). |
 | Success | 200, new `ETag`, body: the stored document plus `warnings` |
 | Errors | 400; 401; 403; 404; 409 managed by configuration as code ([R-OPS-029](operations-and-observability.md)); 412 `precondition_failed` with `currentEtag` ([api-and-ui.md](api-and-ui.md) R-API-009); 422 (R-REPO-008); 428 `precondition_required` |
 | Permission | as create (R-REPO-009); the authorization members (`cacheFillAction`, `packageOwnership`, `ownershipDomain`, `hideExistence`) per [R-AUTHZ-012](authorization.md) |
@@ -580,7 +607,7 @@ Acceptance criteria:
   next `GET` shows it and a new `ETag`.
 - Two `PATCH` calls with the same `If-Match` value: the first returns 200, the second 412 with
   `currentEtag` set to the first call's new `ETag`.
-- `curl -X PATCH -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/merge-patch+json' -d '{"description":"npm proxy"}' https://trove.example.com/api/v1/repositories/npm-remote`
+- `curl -X PATCH -H "Authorization: Bearer $TROVE_TOKEN" -H 'Content-Type: application/merge-patch+json' -d '{"description":"npm proxy"}' https://trove.example.com/api/v1/projects/web/repositories/npm-remote`
   without `If-Match` returns 428 `precondition_required` and the next `GET` shows the old
   `ETag`; the same call with `-H 'If-Match: *'` returns 200.
 - After a change of `remote.url`, the next `npm view lodash` through the repository causes an
@@ -591,22 +618,23 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
 
 | | |
 |---|---|
-| Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` |
+| Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` (every project); `GET /api/v1/projects/{projectKey}/repositories?class=&format=&q=&state=&view=&limit=&cursor=` (one project) |
 | Success | 200, `{"items": [...], "nextCursor": "…"}` (paging per [api-and-ui.md](api-and-ui.md) R-API-010, Q-API-6) |
 | Errors | 400 invalid filter; 401 |
-| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` ([R-AUTHZ-016](authorization.md)), and every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19); `view=full` requires `repositories:read-config` |
+| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` by a grant or a role ([R-AUTHZ-016](authorization.md)), every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19), and every repository of its project for an Owner; `view=full` requires `repositories:read-config`, or on the project's list the role `owner`. The project's list answers 404 for a project the caller cannot see |
 
 - Filters: `class` and `format` take comma-separated lists; `q` matches key and description
   case-insensitively; `project` filters by project key; `state=inactive` returns disabled
   repositories, offline remote repositories and remote repositories whose circuit is open
   (R-REPO-029).
-- `view=summary` (default) returns per repository: key, class, format, description, client address,
+- `view=summary` (default) returns per repository: key, project, class, format, description, client address,
   `disabled`, `lastActivityAt`, project, and for remote repositories the availability (`online`,
   `offline`, `assumed-offline`). Holders of `repositories:read-config` also get the upstream URL.
 - `view=full` returns complete documents (the catalog's "all configurations").
 - Class and format values are spelled as in configuration documents (lower case).
-- The list is sorted by key in byte order (`ORDER BY key COLLATE "C"`), whatever the collation the
-  database was created with, because the cursor is the last key of a page compared byte by byte: under
+- The list is sorted by project key, then key, in byte order (`ORDER BY p.key COLLATE "C", r.key COLLATE "C"`),
+  whatever the collation the database was created with, because the cursor is the last (project, key) pair of a page
+  compared byte by byte: under
   `en_US.UTF-8` the hyphen weighs nothing at the first level, so `weba` sorted before `web-b` and the
   page after `weba` skipped `web-b` (`TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder`). The key column
   itself carries the database's collation ([H-404](#h-404--the-repository-key-column-carries-the-databases-collation)).
@@ -621,7 +649,9 @@ Acceptance criteria:
 - `curl -s -H "Authorization: Bearer $TROVE_TOKEN"
   'https://trove.example.com/api/v1/repositories?class=remote&format=npm'` returns only npm remote
   repositories, each with an availability state.
-- An anonymous caller, with anonymous read granted on `npm-all` only, sees exactly `npm-all`.
+- An anonymous caller, with anonymous read granted on `web/npm-all` only, sees exactly `web/npm-all`.
+- `GET /api/v1/projects/web/repositories` lists the repositories of `web` only; with `npm-remote` in `web` and in
+  `mobile`, the instance-wide list returns both, each with its project.
 - `view=full` without `repositories:read-config` returns 403.
 
 ### R-REPO-013 · Delete a repository
@@ -629,16 +659,13 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
 
 | | |
 |---|---|
-| Request | `DELETE /api/v1/repositories/{key}?detach=true\|false` |
+| Request | `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}?detach=true\|false` |
 | Success | 204 for a virtual repository (no content); 202 with a job reference for local and remote repositories; repeated while the job runs: 202 with the same job |
 | Errors | 401; 403; 404; 409 `repository_referenced` naming the referencing virtual repositories, when `detach` is false; 409 managed by configuration as code |
 | Permission | as create (R-REPO-009) |
 
-- A project administrator (R-AUTHZ-026) deletes a repository of its project, and its `detach` edits the
-  virtual repositories of the project only: while a virtual repository outside the project lists the
-  repository, the delete answers 409 `repository_referenced` with or without `detach`, and the answer
-  names the project's own referencing virtual repositories and no other key
-  ([Q-REPO-129](#q-repo-129--a-project-administrators-delete-leaves-virtual-repositories-outside-the-project-alone)).
+- Only virtual repositories of the same project can list a repository (R-REPO-017), so `detach` edits virtual
+  repositories of the project and of no other, whoever deletes.
 
 - The first transaction MUST set `lifecycle = 'deleting'`. From then on the repository is not
   resolvable, not addressable by clients, absent from virtual resolution and listed only to holders
@@ -665,23 +692,75 @@ Acceptance criteria:
 
 - Deleting `npm-local` while `npm-all` lists it returns 409 naming `npm-all`; with `detach=true` it
   returns 202, `npm-all` no longer lists it, and `npm view @acme/util --registry
-  …/api/npm/npm-local/` returns `E404` at once.
-- An administrator of project `web` deleting `web-npm`, which `web-all` (of the project) and `company-npm`
-  (of no project) list, gets 409 naming `web-all` and not `company-npm`, also with `detach=true`;
-  `company-npm` keeps its member.
-- After the job completes, a new repository named `npm-local` can be created and is empty.
+  …/api/npm/web/npm-local/` returns `E404` at once.
+- Deleting `web/npm-local` leaves `mobile/npm-local` and the virtual repositories of `mobile` untouched.
+- After the job completes, a new repository named `npm-local` can be created in `web` and is empty.
 - Killing the `worker` replica that runs the job does not prevent completion: another `worker`
   replica resumes it.
+
+### R-REPO-060 · Move a repository to another project
+Priority: **MVP** · Covers: trove-only
+
+Every repository belongs to exactly one project, and a move to another project stays possible and changes the repository's
+address ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
+[Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)). The move is an
+operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)):
+
+| | |
+|---|---|
+| Request | `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move`, body `{"project": "<target project key>"}`; no `If-Match`: the path names the source |
+| Success | 200, `Location: /api/v1/projects/<target>/repositories/<repoKey>`, the new `ETag`, `Trove-Authz-Epoch`; body: the document as R-REPO-010 returns it at the new address |
+| Errors | 400 `malformed_request`; 401; 403; 404 for a source repository or a target project the caller cannot see; 409 `repository_in_use` naming the objects of the source project that name the repository; 409 `already_exists` when the target project has the key, also for a repository being deleted there; 409 managed by configuration as code ([R-OPS-029](operations-and-observability.md)) |
+| Permission | `repositories:write-config`, or the role `owner` in both the source and the target project ([authorization.md](authorization.md) R-AUTHZ-026); recent authentication ([api-and-ui.md](api-and-ui.md) R-API-007) |
+
+- **Only while nothing of the source project names it.** The move is refused with 409 `repository_in_use` while a virtual
+  repository of the source project lists the repository as a member or as its deployment target (R-REPO-017, R-REPO-021),
+  a key selector of a policy of the source project names it ([authorization.md](authorization.md) R-AUTHZ-004), an inline
+  grant of a CI mapping of the source project's tier names it ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-013), or its
+  `ownershipDomain` names a shared ownership domain of the source project ([authorization.md](authorization.md)
+  R-AUTHZ-020, P1). A virtual repository moves only without members and deployment target, which are repositories of the
+  source project. The answer lists each referencing object by kind and name, as far as the caller may read it; the caller
+  removes the references and moves again. Nothing is rewritten on the caller's behalf.
+- **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
+  repository's `project_id`, raises its `config_version`, writes the audit event `repository.moved` with the source and the
+  target project, and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
+  ([architecture.md](architecture.md) R-ARCH-018), as the change of an input of the grant index (Repository management
+  API above). A target project that holds the key, also a repository being deleted there, answers 409 `already_exists` and
+  nothing changes. A target equal to the source changes nothing and answers 200 without an event
+  ([authorization.md](authorization.md) Q-AUTHZ-193). A repository being deleted is not addressable and answers 404.
+- **What moves with it.** Items, packages, cached entries, claims, package owners, findings, mirror state and running jobs
+  are held by the repository's ID and stay as they are; no content is copied. The key becomes free in the source project
+  and is taken in the target project.
+- **What changes.** Every address of the repository changes (R-REPO-002): the old address answers 404 from the move's
+  epoch on, on every replica within the bound of R-AUTHZ-028. The roles and policies of the source project stop reaching
+  it, those of the target project reach it. An object outside the project that holds the repository by its ID (a key
+  selector of a global policy, an exposure rule of [endpoints.md](endpoints.md) R-EP-012) keeps holding it and reads back
+  the new qualified name; what matches by address (a key pattern or class selector, a host-root binding of
+  [endpoints.md](endpoints.md) R-EP-006, a client's registry URL) matches the new address or no longer matches.
+- **Narrowing.** A move is journaled as a narrowing ([authorization.md](authorization.md) R-AUTHZ-031) and reaches the
+  Bastion's feed ([bastion.md](bastion.md) R-BAS-015).
+
+Acceptance criteria:
+
+- An Owner of `web` and of `mobile` moves `web/npm-libs` to `mobile` (200). `npm view @acme/util --registry
+  https://trove.example.com/api/npm/web/npm-libs/` then fails with `E404` on every replica, the same command against
+  `https://trove.example.com/api/npm/mobile/npm-libs/` shows the versions published before the move, and no blob is
+  written. A member of `web` with the role `developer` and no role in `mobile` gets `E404` at the new address.
+- While the virtual repository `npm-all` of `web` lists `npm-libs`, the move answers 409 `repository_in_use` naming
+  `npm-all` and changes nothing; after the member is removed it succeeds.
+- With `mobile/npm-libs` in place the move answers 409 `already_exists`.
+- An Owner of `web` with the role `developer` in `mobile` gets 403; one that is no member of `mobile` gets 404.
+- A global policy with the key selector `web/npm-libs` reads back `mobile/npm-libs` after the move and keeps granting.
 
 ### R-REPO-014 · Batch operations
 Priority: **P1** · Covers: REPO-059, REPO-061, REPO-062, REPO-064, API-053, API-055, API-059, API-064
 
 | Request | Semantics | Success | Permission |
 |---|---|---|---|
-| `POST /api/v1/repositories/batch-create` `{"repositories": [doc, …]}` | All or nothing, one transaction; members may reference repositories created in the same batch | 201 with the stored documents | as create |
-| `POST /api/v1/repositories/batch-update` `{"updates": [{"key", "ifMatch", "patch"}, …]}` | All or nothing, one transaction, merge patch per entry; `ifMatch` required per entry | 200 with the stored documents | as update |
-| `POST /api/v1/repositories/batch-get` `{"keys": [...]}` | R-REPO-010 per key | 200 `{"repositories": {"<key>": doc}, "missing": [...]}` | as read, per key |
-| `POST /api/v1/repositories/batch-delete` `{"keys": [...], "detach": false}` | Best effort per key, in request order | 202 with one result per key (job reference or error) | as delete |
+| `POST /api/v1/projects/{projectKey}/repositories/batch-create` `{"repositories": [doc, …]}` | All or nothing, one transaction; members may reference repositories created in the same batch | 201 with the stored documents | as create |
+| `POST /api/v1/projects/{projectKey}/repositories/batch-update` `{"updates": [{"key", "ifMatch", "patch"}, …]}` | All or nothing, one transaction, merge patch per entry; `ifMatch` required per entry | 200 with the stored documents | as update |
+| `POST /api/v1/projects/{projectKey}/repositories/batch-get` `{"keys": [...]}` | R-REPO-010 per key | 200 `{"repositories": {"<key>": doc}, "missing": [...]}` | as read, per key |
+| `POST /api/v1/projects/{projectKey}/repositories/batch-delete` `{"keys": [...], "detach": false}` | Best effort per key, in request order | 202 with one result per key (job reference or error) | as delete |
 
 - The actions are sub-path verbs ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7); their names
   are reserved repository keys (R-REPO-002). All of them accept `Idempotency-Key`
@@ -693,6 +772,7 @@ Priority: **P1** · Covers: REPO-059, REPO-061, REPO-062, REPO-064, API-053, API
 - The batch size is limited by `repositories.batch_limit`; larger batches answer 400
   `batch_too_large`. A failing create or update entry answers 422 (or 404, 412, 428) naming the
   index of every failing entry.
+- Keys are bare keys of the path's project; members may name repositories of that project only (R-REPO-017).
 - A key the caller may not see is reported under `missing`, like a key that does not exist.
 
 Configuration:
@@ -715,12 +795,12 @@ Priority: **P1** · Covers: REPO-008
 
 | | |
 |---|---|
-| Request | `POST /api/v1/repositories/quick-setup` `{"prefix": "billing", "formats": ["npm", "nuget"]}` |
+| Request | `POST /api/v1/projects/{projectKey}/repositories/quick-setup` `{"prefix": "billing", "formats": ["npm", "nuget"]}` |
 | Success | 201 with the created documents |
-| Errors | 409 when any generated key exists (nothing created); 422 invalid prefix or format |
-| Permission | as create (a project administrator's prefix must start with the project key) |
+| Errors | 409 when any generated key exists in the project (nothing created); 422 invalid prefix or format |
+| Permission | as create |
 
-- Per format, one transaction creates `<prefix>-<format>-local`, `<prefix>-<format>-remote`
+- Per format, one transaction creates, in the path's project, `<prefix>-<format>-local`, `<prefix>-<format>-remote`
   (upstream: the format's default upstream URL) and the virtual `<prefix>-<format>` with members
   local then remote, the local repository as deploy target, and `autoClaim` on for the local
   repository (R-REPO-023).
@@ -728,9 +808,9 @@ Priority: **P1** · Covers: REPO-008
 
 Acceptance criteria:
 
-- Quick setup with prefix `billing` and format `npm` creates `billing-npm-local`,
+- Quick setup in project `web` with prefix `billing` and format `npm` creates `billing-npm-local`,
   `billing-npm-remote` and `billing-npm`; `npm install lodash --registry
-  https://trove.example.com/api/npm/billing-npm/` succeeds, and `npm publish` to the same registry
+  https://trove.example.com/api/npm/web/billing-npm/` succeeds, and `npm publish` to the same registry
   lands in `billing-npm-local`.
 
 ### R-REPO-016 · Recalculate a repository's index
@@ -738,7 +818,7 @@ Priority: **P1** · Covers: REPO-009
 
 | | |
 |---|---|
-| Request | `POST /api/v1/repositories/{key}/reindex` |
+| Request | `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` |
 | Success | 202 with a job reference |
 | Errors | 404; 405 for formats or classes without derived metadata; 409 `reindex_running` naming the queued or running job |
 | Permission | `repositories:write-config`, or `manage` on the repository |
@@ -785,15 +865,17 @@ Priority: **MVP** · Covers: REPO-033
 
 | Member (`virtual.…`) | Meaning | Default (proposed) | Constraint |
 |---|---|---|---|
-| `members` | Ordered member keys | `[]` (warning `no_members`) | ≤ `repositories.max_virtual_members`; same format; no duplicates |
+| `members` | Ordered member keys: bare keys of the virtual repository's project | `[]` (warning `no_members`) | ≤ `repositories.max_virtual_members`; same format; no duplicates |
 | `deployTarget` | R-REPO-021 | `null` | local repository in the effective member list |
 | `mergedMetadataTtlSeconds` | R-REPO-020 | `7200` | 0–86400 |
 | `pinning` | R-REPO-023 | `{"rules": []}` | R-REPO-023 |
 | `effectiveMembers` | R-REPO-018, read-only | — | — |
 
-- A write by a project administrator (R-AUTHZ-026) adds only members of its own project and sets a deploy target in it
-  (422 `repository_outside_project`, the same for an unknown key); members that an administrator of trove placed stay
-  (Q-AUTHZ-178).
+- Members and the deploy target are repositories of the virtual repository's own project, named by their bare keys (a
+  project context, [authorization.md](authorization.md) R-AUTHZ-004): a key that names no repository of the project, or
+  a value with a `/`, answers 422 `validation_failed` with `invalid_member` (`invalid_deploy_target`). No repository is
+  shared across projects ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project), [Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)): a project that needs a public
+  registry has a remote repository of its own, and the blob store keeps a package fetched by two projects once (INV-4).
 - Members MUST be of the virtual repository's format. In the MVP they are local or remote
   repositories; virtual members arrive with R-REPO-018 and are refused with 422 `validation_failed` with `invalid_member` in `errors[]`
   until then.
@@ -835,7 +917,7 @@ repositories:
 Acceptance criteria:
 
 - A virtual `npm-all` with members `npm-local`, `npm-remote` serves `npm install lodash --registry
-  https://trove.example.com/api/npm/npm-all/`.
+  https://trove.example.com/api/npm/web/npm-all/`.
 - With two replicas, a `PATCH` that reverses the member order is visible in the resolution
   explanation (R-REPO-019) of both replicas within 2 seconds, also with Valkey stopped.
 
@@ -916,7 +998,7 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
 - Artifact responses MUST carry `Trove-Resolved-From: <member key>`; the member is one the caller
   can read, so the header discloses nothing new. On an endpoint with exposure rules the header is
   never sent, because members are not exposed there ([endpoints.md](endpoints.md) R-EP-018).
-- **Resolution explanation.** `GET /api/v1/repositories/{key}/resolution?path=<client path>`
+- **Resolution explanation.** `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution?path=<client path>`
   evaluates steps 1 to 6 for the calling principal without transferring content and without
   contacting upstreams, and returns per member the decision and its reason (`disabled`,
   `not_admitted`, `pinned-out`, `claimed-elsewhere`, `refused-claimed`, `no-read`, `no-cache-fill`,
@@ -948,7 +1030,7 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
 Acceptance criteria:
 
 - `left-pad@1.0.0` exists in `npm-local` and in the stub upstream of `npm-remote`; members are
-  ordered remote first: `npm install left-pad@1.0.0 --registry …/api/npm/npm-all/` downloads the
+  ordered remote first: `npm install left-pad@1.0.0 --registry …/api/npm/web/npm-all/` downloads the
   local tarball (`Trove-Resolved-From: npm-local`), because local members form the first tier.
 - A caller with `read` on `npm-all` and `npm-remote` only receives the upstream package and no error
   from `npm-local`.
@@ -1018,7 +1100,7 @@ proxy:
 Acceptance criteria:
 
 - After `npm publish` of `@acme/util@1.5.0` to `npm-local`, `npm view @acme/util versions
-  --registry …/api/npm/npm-all/` on the other replica lists `1.5.0` immediately, also with Valkey
+  --registry …/api/npm/web/npm-all/` on the other replica lists `1.5.0` immediately, also with Valkey
   stopped.
 - With Valkey stopped and `local.autoClaim: false` on `npm-local` (so no new claim changes
   the member set), the merged document of `lodash`, served so far only by `npm-remote`, is cached
@@ -1033,20 +1115,20 @@ Priority: **MVP** · Covers: REPO-038
 - `virtual.deployTarget` names a local repository in the effective member list. Without one, the
   virtual repository is read-only: writes answer 405 `no_deploy_target`, and format pages leave the
   publish resources out of their service documents.
-- A write through the virtual address (format publish, `PUT /files/<virtual>/<path>`) MUST be
+- A write through the virtual address (format publish, `PUT /files/<projectKey>/<virtual>/<path>`) MUST be
   executed as if addressed to the target: the target's patterns, format rules, ownership and
   permissions apply ([R-AUTHZ-009](authorization.md) rule 5). Format writes such as npm deprecate and
   dist-tag changes or NuGet delete, unlist and relist are routed to the target as the format pages
   define.
-- A raw `DELETE /files/<virtual>/<path>` answers 405 ([storage.md](storage.md)).
+- A raw `DELETE /files/<projectKey>/<virtual>/<path>` answers 405 ([storage.md](storage.md)).
 - An update that removes the target from the members without changing the target answers 422
   `invalid_deploy_target`.
 
 Acceptance criteria:
 
-- `npm publish --registry https://trove.example.com/api/npm/npm-all/` stores the package in
+- `npm publish --registry https://trove.example.com/api/npm/web/npm-all/` stores the package in
   `npm-local`; `dotnet nuget push Acme.Widgets.1.0.0.nupkg --source
-  https://trove.example.com/api/nuget/nuget-all/v3/index.json --api-key "$TROVE_TOKEN"` stores it
+  https://trove.example.com/api/nuget/web/nuget-all/v3/index.json --api-key "$TROVE_TOKEN"` stores it
   in `nuget-local`.
 - Without a target, `npm publish` to `npm-all` fails with `E405`.
 
@@ -1076,13 +1158,13 @@ Acceptance criteria:
 
 - `npm-local` (`local.autoClaim: false`, no claims) is a priority member holding `util@1.0.0`,
   published by a `manage` holder (R-REPO-048); the stub upstream holds `util@9.9.9`: `npm view
-  util versions --registry …/api/npm/npm-all/` lists only `1.0.0`; after the local package is
+  util versions --registry …/api/npm/web/npm-all/` lists only `1.0.0`; after the local package is
   deleted, it lists the upstream versions. (With the default `autoClaim: true`, the claim of
   R-REPO-023 keeps answering 404 after the deletion.)
 - `nuget-all` = [`nuget-org`, `nuget-partner`]; `nuget-partner` (remote, priority member) serves
   `Partner.Sdk` `2.0.0`, the stub behind `nuget-org` serves `Partner.Sdk` `9.0.0`: the version list
-  `GET …/api/nuget/nuget-all/v3/flatcontainer/partner.sdk/index.json` contains only `2.0.0`.
-- `PATCH /api/v1/repositories/npm-all` with `{"priorityMember": true}` returns 422
+  `GET …/api/nuget/web/nuget-all/v3/flatcontainer/partner.sdk/index.json` contains only `2.0.0`.
+- `PATCH /api/v1/projects/web/repositories/npm-all` with `{"priorityMember": true}` returns 422
   `not_applicable`.
 
 ### R-REPO-023 · Dependency-confusion protection: pin rules and namespace claims
@@ -1210,9 +1292,9 @@ API:
 
 | Method and path | Body / response | Permission |
 |---|---|---|
-| `GET /api/v1/repositories/{key}/claims` | 200 `{"claims": [{"pattern": "@acme/*", "source": "manual", "scope": "global", "createdAt": …}]}`, `ETag: "<claims_version>"` | `read` on the repository |
-| `PUT /api/v1/repositories/{key}/claims` | `{"claims": [{"pattern": "@acme/*", "scope": "global"}]}`; `scope` defaults to `members`; replaces the manual claims; auto claims stay unless listed under `"removeAuto"`; `If-Match: "<claims_version>"` required → 200 with the new `ETag`; 412 `precondition_failed` when stale; 428 `precondition_required` without it | `manage` on the repository for `members` claims; `repositories:write-config` when the request adds, keeps, narrows or removes a `global` claim |
-| `PATCH /api/v1/repositories/{key}` | `{"virtual": {"pinning": {"rules": [...]}}}` with `If-Match: "<config_version>"` (R-REPO-011) | as update |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | 200 `{"claims": [{"pattern": "@acme/*", "source": "manual", "scope": "global", "createdAt": …}]}`, `ETag: "<claims_version>"` | `read` on the repository |
+| `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/claims` | `{"claims": [{"pattern": "@acme/*", "scope": "global"}]}`; `scope` defaults to `members`; replaces the manual claims; auto claims stay unless listed under `"removeAuto"`; `If-Match: "<claims_version>"` required → 200 with the new `ETag`; 412 `precondition_failed` when stale; 428 `precondition_required` without it | `manage` on the repository for `members` claims; `repositories:write-config` when the request adds, keeps, narrows or removes a `global` claim |
+| `PATCH /api/v1/projects/{projectKey}/repositories/{repoKey}` | `{"virtual": {"pinning": {"rules": [...]}}}` with `If-Match: "<config_version>"` (R-REPO-011) | as update |
 
 - The claims of a repository are one revisioned resource: `claims_version` increases with every
   change of its claims, manual or automatic (R-REPO-048), in the transaction that makes it. A `PUT`
@@ -1238,19 +1320,19 @@ most 256 characters.
 Acceptance criteria (counting stub upstream behind `npm-remote` and `nuget-remote`):
 
 - `npm-local` claims `@acme/*` with scope `global`. The stub publishes `@acme/util@99.0.0`: `npm view @acme/util
-  versions --registry …/api/npm/npm-all/` lists only local versions; `npm view @acme/brand-new`
-  fails with `E404`; `npm view @acme/brand-new --registry …/api/npm/npm-remote/` fails with `E404`
+  versions --registry …/api/npm/web/npm-all/` lists only local versions; `npm view @acme/brand-new`
+  fails with `E404`; `npm view @acme/brand-new --registry …/api/npm/web/npm-remote/` fails with `E404`
   as well; the stub records no request for either name.
 - `autoClaim: true` and `left-pad@1.0.0` published to `npm-local` by a holder of `manage` on it
   (R-REPO-048); the stub holds `left-pad@2.0.0`.
-  `npm install left-pad --registry …/api/npm/npm-all/` installs `1.0.0`. After the local package is
+  `npm install left-pad --registry …/api/npm/web/npm-all/` installs `1.0.0`. After the local package is
   deleted, the install fails with `E404` instead of installing `2.0.0`. A user with `read` on
   `npm-all` but not on `npm-local` gets `E404`, not `2.0.0`.
 - `nuget-local` claims `Acme.*` with scope `global`: `dotnet add package Acme.Internal` against
   `nuget-remote` directly fails with a not-found error, and the stub records no request.
 - `npm-sandbox` (local, `autoClaim: true`, member of no virtual repository) receives a publish of
   `react@99.0.0`. The claim reads back with scope `members`; `npm view react versions --registry
-  …/api/npm/npm-all/` still lists the upstream versions, and `npm-remote` addressed directly still
+  …/api/npm/web/npm-all/` still lists the upstream versions, and `npm-remote` addressed directly still
   serves `react`.
 - A principal holding `manage` on `npm-local` but not `repositories:write-config` gets 403 on
   `PUT …/claims` with a `global` claim, and 200 with the same pattern as a `members` claim (both
@@ -1263,7 +1345,7 @@ Acceptance criteria (counting stub upstream behind `npm-remote` and `nuget-remot
 - `npm-team-a` (manual claim `@acme/*`, scope `members`) and `npm-team-b` are both members of
   `npm-all`. A holder of `deploy` on `npm-team-b` publishes `@acme/util@9.9.9` there: the publish
   succeeds, `GET …/repositories/npm-team-b/claims` lists no claim for `@acme/util`, and `npm view
-  @acme/util versions --registry …/api/npm/npm-all/` lists only the versions in `npm-team-a`.
+  @acme/util versions --registry …/api/npm/web/npm-all/` lists only the versions in `npm-team-a`.
 
 ### R-REPO-048 · Shadowing check on the first publish of a name
 Priority: **MVP** · Covers: BEYOND-028
@@ -1366,7 +1448,7 @@ plays no part):
 
 - The stub serves `lodash`. `ci-bot` runs `npm publish` of `lodash@4.17.22` through `npm-all`: it
   fails with `E403` and a message naming `shadows_remote_package`; `npm-local` holds no `lodash`
-  and no claim for it; `npm view lodash version --registry …/api/npm/npm-all/` still shows the
+  and no claim for it; `npm view lodash version --registry …/api/npm/web/npm-all/` still shows the
   upstream version.
 - `lead` publishes the same tarball: it succeeds, and a `repository.remote_package_shadowed` event
   names `npm-local`, `npm-all` and `npm-remote`. `ci-bot` then publishes `lodash@4.17.23`, which
@@ -1383,7 +1465,7 @@ plays no part):
   and the stub records no request.
 - The circuit of `npm-remote` is open and nothing is stored for `brand-new-2`: `ci-bot`'s publish
   of it answers 503 `shadow_check_unavailable` with `Retry-After`; `lead`'s succeeds.
-- `dotnet nuget push Newtonsoft.Json.99.0.0.nupkg --source …/api/nuget/nuget-all/v3/index.json
+- `dotnet nuget push Newtonsoft.Json.99.0.0.nupkg --source …/api/nuget/web/nuget-all/v3/index.json
   --api-key "$CI_BOT_TOKEN"` fails with 403 while the stub serves `newtonsoft.json`.
 - P1, with copy: `ci-bot` publishes `lodash@4.17.22` to `npm-sandbox` (succeeds, nothing exposed)
   and then copies it to `npm-local` with `POST /api/v1/content/copy`: the item is reported with
@@ -1493,8 +1575,8 @@ API, besides R-REPO-009 to R-REPO-013:
 
 | Method and path | Purpose | Response | Permission |
 |---|---|---|---|
-| `POST /api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | 200 with the result below | `repositories:write-config`; an administrator of the repository's project with `manageRepositories` (R-AUTHZ-026) |
-| `POST /api/v1/upstream-tests` | Probe an unsaved `remote` section (body: `format` and `remote`); secret values in the body are used once and not stored | 200 with the result below | `repositories:write-config`; an administrator of a project with `manageRepositories` |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test` | Probe the saved upstream configuration | 200 with the result below | `repositories:write-config`, or the role `owner` in the project (R-AUTHZ-026) |
+| `POST /api/v1/projects/{projectKey}/upstream-tests` | Probe an unsaved `remote` section (body: `format` and `remote`); secret values in the body are used once and not stored | 200 with the result below | `repositories:write-config`, or the role `owner` in the project |
 
 ```json
 {
@@ -1528,14 +1610,15 @@ egress rules, proxy and credentials that real fetches use (Q-REPO-90).
 - The test reads and writes no circuit state, counts nothing toward it and leaves cache entries
   alone (R-REPO-029). It runs on the replica that received it; with a `sourceNetwork`,
   `sourceAddress` is the address that replica bound.
-- `POST /api/v1/repositories/{key}/upstream-test` answers 404 `repository_not_found` for a missing key
-  and 400 `not_applicable` for a local or virtual repository. `POST /api/v1/upstream-tests` checks
+- `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test` answers 404 `repository_not_found` for a
+  missing project or key and 400 `not_applicable` for a local or virtual repository. `POST
+  /api/v1/projects/{projectKey}/upstream-tests` checks
   the section like a create (422 with every violation, 400 for a misspelt member); a secret value in
   it is used for the probe and stored nowhere; `{"set": true}` is 422 `invalid_secret`, because it
   refers to a stored value.
-- A project administrator's saved test reads the repository's project from PostgreSQL again: a
-  repository that left the project after the handler decided answers 404 and is not contacted, as a
-  replace, a patch and a delete do (Q-AUTHZ-184). Its unsaved test follows the rules of its creates: no
+- An Owner's saved test reads the repository by project and key from PostgreSQL again: a repository that moved out of
+  the project after the step decided answers 404 and is not contacted, as a replace, a patch and a delete do. The
+  unsaved test of an Owner without `repositories:write-config` follows the rules of its creates: no
   `secretRef` (422 `secret_value_required`, Q-REPO-127), no `sourceNetwork` and no `outboundProxy.mode`
   but `default` (422 `outbound_path_restricted`, Q-REPO-128).
 
@@ -1691,13 +1774,13 @@ CREATE INDEX remote_cache_entries_gone ON remote_cache_entries (repo_id)
 
 Acceptance criteria:
 
-- First `npm install lodash@4.17.21 --registry …/api/npm/npm-remote/`: the stub upstream records one
+- First `npm install lodash@4.17.21 --registry …/api/npm/web/npm-remote/`: the stub upstream records one
   document and one tarball request; the response carries `Cache-Status: trove; fwd=uri-miss;
   fwd-status=200; stored`. A second install records no upstream request and carries `hit`.
 - With `cacheFillAction: deploy`, a user with `read` only installs `lodash@4.17.21` (cached) and
   gets `E403` (`populate_not_permitted`) for `lodash@4.17.20` (not cached); the stub records no
   request.
-- `curl -I …/files/npm-remote/express/-/express-4.21.2.tgz` for an uncached tarball returns the
+- `curl -I …/files/web/npm-remote/express/-/express-4.21.2.tgz` for an uncached tarball returns the
   upstream's headers and leaves no cache entry.
 - With the S3 store stopped, an uncached tarball is still installed through `npm-remote` and no cache entry
   is written.
@@ -2162,8 +2245,8 @@ Acceptance criteria:
 ### R-REPO-032 · Cache view and cached content
 Priority: **MVP** · Covers: RMT-003
 
-- `<key>~cache` addresses the cache view of remote repository `<key>` on the protocol and raw-file
-  paths (R-REPO-002). It MUST serve stored entries only, never contact the upstream, ignore expiry
+- `<repoKey>~cache` addresses the cache view of remote repository `<repoKey>` of its project on the protocol and
+  raw-file paths (R-REPO-002). It MUST serve stored entries only, never contact the upstream, ignore expiry
   and negative entries, and answer 404 for anything not stored, for documents marked upstream
   gone and for every entry of a gone package (R-REPO-029). It needs `read` on the remote
   repository and is the address for clients that must not trigger upstream checks.
@@ -2175,7 +2258,7 @@ Priority: **MVP** · Covers: RMT-003
   [storage.md](storage.md) (R-STOR-018 to R-STOR-020), for example to keep a package that
   disappeared upstream. Items of a gone package (R-REPO-029) stay listed and copyable; only
   serving them to clients stops.
-- Metadata entries are listed for diagnosis by `GET /api/v1/repositories/{key}/cache/entries?pathPrefix=&kind=&limit=&cursor=`
+- Metadata entries are listed for diagnosis by `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries?pathPrefix=&kind=&limit=&cursor=`
   (path, variant, kind, fetched, validated, expires, upstream gone, last used, upstream URL), in the
   `items` and `nextCursor` envelope of [api-and-ui.md](api-and-ui.md) R-API-010, in the byte order of
   path and variant; permission `repositories:read-config` or `manage` on the repository, the
@@ -2185,9 +2268,9 @@ Priority: **MVP** · Covers: RMT-003
 
 Acceptance criteria:
 
-- `npm view lodash --registry …/api/npm/npm-remote~cache/` returns the stored document even when it
+- `npm view lodash --registry …/api/npm/web/npm-remote~cache/` returns the stored document even when it
   has expired, and the stub records no request; for an uncached package it fails with `E404`.
-- `curl -H 'Cache-Control: only-if-cached' …/files/npm-remote/express/-/express-4.21.2.tgz` for an
+- `curl -H 'Cache-Control: only-if-cached' …/files/web/npm-remote/express/-/express-4.21.2.tgz` for an
   uncached tarball returns 504.
 
 ### R-REPO-033 · Upstream authentication and stored secrets
@@ -2216,10 +2299,11 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
     secrets can never be routed to an upstream. A changed file takes effect on each replica within
     10 s of the change, which keeps R-REPO-033's bound of 60 s (Q-REPO-89). The file content has its
     trailing line break removed and holds at most 8 KiB.
-- A project administrator's write (R-AUTHZ-026) and its unsaved upstream test give a secret as a value:
+- The write and the unsaved upstream test of an Owner without `repositories:write-config` ([authorization.md](authorization.md)
+  R-AUTHZ-026) give a secret as a value:
   a `secretRef` is refused (422 `secret_value_required`), except the reference the repository holds,
   sent back unchanged. A stored credential, sealed or referenced, stays only while the hosts it goes
-  to stay: a project administrator's write that changes `url`, adds an `extraHosts` entry with
+  to stay: such a write that changes `url`, adds an `extraHosts` entry with
   `sendCredentials: true` or turns `forwardAuthOnRedirect` on carries a new value or no credential
   (422 `secret_value_required` otherwise,
   [Q-REPO-127](#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts)).
@@ -2275,7 +2359,7 @@ Acceptance criteria:
 - `PATCH` with `{"remote": {"password": {"value": "new"}}}` moves `config_version` and the next
   request, on every replica, carries the new token; `{"remote": {"password": null}}` removes the
   row; sending back a document that was read changes nothing.
-- An administrator of project `web` patching the `url` of `web-partner`, whose sealed token an
+- An Owner of project `web` without `repositories:write-config` patching the `url` of `partner`, whose sealed token an
   administrator of trove stored, gets 422 `secret_value_required` at `/remote/password` and the new
   host receives nothing; the same patch with `{"password": {"value": "own"}}` succeeds and the saved
   upstream test sends `own`. Its unsaved test with `{"secretRef": {"file": "partner-token"}}` answers
@@ -2395,7 +2479,7 @@ Priority: **P1** · Covers: RMT-016, RMT-048, RMT-049
   system outbound proxy, such as webhooks in [R-OPS-042](operations-and-observability.md) or GitLab
   discovery in [gitlab-ci-oidc.md](gitlab-ci-oidc.md)). At most one definition is the default per
   scope.
-- A project administrator's remote repository takes `default`; `direct`, and a `named` proxy once it
+- The remote repository of an Owner without `repositories:write-config` takes `default`; `direct`, and a `named` proxy once it
   exists, stay an administrator's choice ([Q-REPO-128](#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)).
 - A remote repository's `outboundProxy.mode` is resolved per request: `direct` → no proxy, whatever
   the defaults; `named` → that definition; `default` → the definition that is default for
@@ -2746,8 +2830,8 @@ CREATE TABLE remote_url_map (
 
 Acceptance criteria:
 
-- `npm view lodash dist.tarball --registry https://trove.example.com/api/npm/npm-all/` prints
-  `https://trove.example.com/api/npm/npm-all/lodash/-/lodash-4.17.21.tgz`.
+- `npm view lodash dist.tarball --registry https://trove.example.com/api/npm/web/npm-all/` prints
+  `https://trove.example.com/api/npm/web/npm-all/lodash/-/lodash-4.17.21.tgz`.
 - A request with `Host: evil.example` returns a document whose tarball URLs still name
   `trove.example.com`, and the next client sees the same.
 - A stub document whose tarball lives on `cdn.partner.example` fails with 502 `foreign_host_denied`
@@ -2778,7 +2862,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: RMT-026, ART-050
 
 The operation surface is [R-OPS-021](operations-and-observability.md): `POST
-/api/v1/repositories/{key}/cache/invalidate` with `{"path": "<prefix>", "scope": "metadata" |
+/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate` with `{"path": "<prefix>", "scope": "metadata" |
 "negative" | "all"}`, answer `200 {"invalidated": n}`, permission `manage` on the repository
 ([R-AUTHZ-008](authorization.md)), audit `repository.cache_invalidated`. It is needed in the MVP,
 because RMT-026 is. This requirement specifies its semantics and mechanism.
@@ -2934,7 +3018,7 @@ Priority: **MVP** · Covers: API-082, API-083
   the status stay (Q-REPO-148), so turning it on again continues incrementally.
 - The members of `remote.mirror` and `remote.mode` are not part of the upstream identity of R-REPO-011: changing them
   invalidates nothing.
-- Who may set them: a holder of `repositories:write-config`; a project administrator only keeps what is stored, pauses,
+- Who may set them: a holder of `repositories:write-config`; an Owner without `repositories:write-config` only keeps what is stored, pauses,
   resumes or turns the mode back to `pullThrough` (Q-REPO-142; 422 `mirror_restricted` otherwise). While a mirror stays a
   mirror it also keeps the `includePatterns`, `excludePatterns`, `remote.url` and `remote.extraHosts` as stored: they decide what
   the mirror covers and where it reads from, so a write that changes one answers 422 `mirror_restricted` at its pointer
@@ -3315,8 +3399,8 @@ Priority: **MVP** · Covers: API-084, API-085
 
 | Method and path | Purpose | Response | Permission |
 |---|---|---|---|
-| `GET /api/v1/repositories/{key}/mirror` | The mirror's status | 200 with the document below | as the full configuration read (R-REPO-010): `repositories:read-config`, `manage` on the repository, or an administrator of its project; 400 `not_applicable` for a local or virtual repository (Q-API-199) |
-| `POST /api/v1/repositories/{key}/mirror/run` | Request a pass now; body `{"full": false}` (optional) | 202 with the job reference of R-API-015 | as an update (R-REPO-011): `repositories:write-config`, `manage`, or an administrator of its project with `manageRepositories`; a project administrator holds `manage` on its project's repositories, so the switch does not refuse a run (Q-API-199) |
+| `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror` | The mirror's status | 200 with the document below | as the full configuration read (R-REPO-010): `repositories:read-config`, `manage` on the repository, or the role `owner` in its project; 400 `not_applicable` for a local or virtual repository (Q-API-199) |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | Request a pass now; body `{"full": false}` (optional) | 202 with the job reference of R-API-015 | as an update (R-REPO-011): `repositories:write-config`, or `manage` on the repository, which the roles `maintainer` and `owner` hold on their project's repositories (Q-API-199) |
 
 ```json
 {
@@ -3471,7 +3555,7 @@ Priority: **MVP** · Covers: trove-only
   ([formats/nuget.md](formats/nuget.md) Q-NUGET-104, Q-NUGET-105).
 - **Integration** (against the stack of [ha-and-helm.md](ha-and-helm.md) R-HA-051): every acceptance criterion of R-REPO-050
   to R-REPO-058 that names the integration level, the npm and NuGet discovery criteria of the format pages, the fence, the
-  status and run operations with permission-narrowed callers and a project administrator, and the audit events.
+  status and run operations with permission-narrowed callers and an Owner, and the audit events.
 - **e2e** (set `mirror` on kind, three client-serving replicas and two processes that claim the queue `mirror`): npm and
   NuGet mirrors of the stub upstreams while
   `npm ci` and `dotnet restore` run through the same remotes, with the clients-first criterion of R-REPO-055; the drain of
@@ -3653,7 +3737,7 @@ L covers the name) is not counted (Q-REPO-115).
 
 Acceptance criteria:
 
-- `curl -sI …/api/npm/npm-remote/lodash` shows a `Cache-Status` header of the documented form on the
+- `curl -sI …/api/npm/web/npm-remote/lodash` shows a `Cache-Status` header of the documented form on the
   first and on the second request.
 - After a stub outage opens the circuit, `trove_remote_upstream_up{repo="npm-remote"}` is 0 on
   every replica within 2 s.
@@ -3665,8 +3749,8 @@ Acceptance criteria:
 
 | ID | Priority | One line |
 |---|---|---|
-| REPO-014 | P2 | Sharing a repository with other projects. |
-| REPO-015 | P2 | A remote repository connected to a shared repository of another project. |
+| REPO-014 | P2 | Sharing a repository with other projects. No repository is shared (owner, Q-AUTHZ-206): a project that needs another project's packages reads them with a grant on that project's repository. |
+| REPO-015 | P2 | A remote repository connected to a shared repository of another project. Each project has its own remote repositories (Q-REPO-212). |
 | REPO-019 | P2 | Per-repository download redirect; the mechanism is R-STOR-014 in [storage.md](storage.md). |
 | REPO-021 | Later | Indexing repositories for a vulnerability and license scanner. |
 | REPO-032 | P2 | Local settings of further formats; each arrives with its format page. |
@@ -3809,7 +3893,7 @@ MVP and P1 entries of the covered catalog pages that this page does not specify:
   security event is written (R-REPO-026, R-REPO-041).
 - **Explanations do not leak member keys** to callers who cannot read those members (R-REPO-019).
 - **A mirror amplifies the cache-fill question** of R-AUTHZ-008: it fills without a client, as the system, for every name its
-  patterns admit. Switching a remote to `mirror` therefore needs `repositories:write-config`; a project administrator keeps,
+  patterns admit. Switching a remote to `mirror` therefore needs `repositories:write-config`; an Owner without `repositories:write-config` keeps,
   pauses or turns off what an administrator set (Q-REPO-142). Its volume is bounded by its patterns, `maxBytes` and, once
   built, the quotas (R-REPO-052); a well-known public upstream cannot be mirrored without a bound. A mirror stores content
   before anyone asked for it, so a malicious version under its patterns is stored sooner (H-503); the download blocking of
@@ -5189,7 +5273,7 @@ Context: the generated clients are built from the OpenAPI document, and the crea
 
 ### Q-REPO-125 · The project of a repository is written on create only, and a project administrator reads the whole document of its project
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)**: the project comes from the address of the create request and of every operation, so the document's `project` is read-only and the Owner reads the full document of its project's repositories.
 
 Context: R-AUTHZ-026 assigns a repository to a project in the transaction that creates it and makes `project` read-only afterwards. Open: what a replace or a patch that names a project does, and what the list and the read show to a project administrator, who holds no `repositories:read-config`.
 
@@ -5207,7 +5291,7 @@ Context: R-AUTHZ-026 assigns a repository to a project in the transaction that c
 
 ### Q-REPO-126 · A project administrator's create names its project, and the refusals answer with their own code
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared) and [Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)**: no key carries a prefix, so `project_prefix_required` and `unknown_project` go; the members and the deploy target are bare keys of the project and an unknown one is `invalid_member` (`invalid_deploy_target`).
 
 Context: Q-AUTHZ-176 and Q-AUTHZ-178 fix the prefix and the virtual rule. Open: how the violations are reported, what a caller that only administers a project must send, and whether the prefix applies to a holder of `repositories:write-config`.
 
@@ -5284,7 +5368,7 @@ own to choose.
 
 ### Q-REPO-129 · A project administrator's delete leaves virtual repositories outside the project alone
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded by [Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project) and [Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)**: only virtual repositories of the same project can list a repository, so a delete's `detach` never meets one outside the project.
 
 Context: R-REPO-013's `detach=true` removes the repository from every virtual repository that lists it, and the 409 without it
 names them. For a project administrator that edits virtual repositories outside its project (an administrator of trove may list
@@ -6975,7 +7059,50 @@ data are not a cost before the first stable release ([CLAUDE.md](../../CLAUDE.md
 a project's permission policies and service accounts, which carry the project prefix today (Q-AUTHZ-176); the owner decided
 them the same way ([Q-AUTHZ-209](authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones)).
 
-**Applied in the spec:** nothing yet; the routes of R-REPO, the format pages and R-AUTHZ-026 change when it is built.
+**Applied in the spec:** R-REPO-001, R-REPO-002, R-REPO-004, R-REPO-009 to R-REPO-016, R-REPO-017, R-REPO-021,
+R-REPO-060 and every address of this page; [authorization.md](authorization.md) R-AUTHZ-004
+([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)),
+R-AUTHZ-026; [formats/npm.md](formats/npm.md) R-NPM-001, [formats/nuget.md](formats/nuget.md) R-NUGET-001 and
+[formats/generic.md](formats/generic.md) R-GENERIC-001 with their examples; [architecture.md](architecture.md) R-ARCH-005,
+R-ARCH-008, R-ARCH-011; [api-and-ui.md](api-and-ui.md) R-API-004, R-API-022; [endpoints.md](endpoints.md) R-EP-006
+([Q-EP-76](endpoints.md#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)),
+R-EP-012; [bastion.md](bastion.md) R-BAS-018; [README.md](README.md) INV-6; [ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project). Nothing built yet (H-541).
+
+### Q-REPO-217 · A repository moves to another project through an operation of its own, and only while nothing of its project names it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: every repository belongs to exactly one project, and "a move to another project stays and changes the repository's
+address" ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
+[Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)). Assignment and
+unassignment (`PUT`/`DELETE /projects/{key}/repositories/{repoKey}`, `?move=true`, `?from=`) go with the optional project.
+Inside the source project, other objects name the repository by key: the member lists and deployment targets of virtual
+repositories, key selectors of project policies, inline grants of the project's CI mappings and, from P1, a shared ownership
+domain. After a move they would name a repository of another project, which a project's objects never do (R-AUTHZ-004).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `POST …/repositories/{repoKey}/move` with `{"project": "<target>"}`, refused while the source project names it (chosen) | 409 `repository_in_use` lists the referencing objects; 409 `already_exists` when the target has the key; allowed for `repositories:write-config` or an Owner of both projects | The path states the source, so no `If-Match` or `from` is needed; nothing grants or resolves differently without the people who own those objects acting; the operation is easy to audit and to journal | The caller removes references by hand before a move |
+| (b) `PATCH` of `project` on the repository document | A field of the configuration | No new operation | The document's own URL changes under the `PATCH`; an `If-Match` on `config_version` couples a move with every configuration edit (the reason Q-AUTHZ-205 rejected it); a merge patch carries no precondition about references |
+| (c) Move and rewrite the references | The same transaction removes the repository from the source project's virtual repositories, policy selectors and CI grants | One call | A virtual repository silently loses a member and a policy a selector; what clients resolve and who may read changes without the owners of those objects seeing it |
+| (d) No move: create in the target, copy, delete | As a rename is (R-REPO-001) | No special case | Copies content, loses claims, package owners, findings and mirror state, changes the ID that global key selectors and exposure rules hold |
+
+**Choice:** (a). The plan behind this decision named the conflict code `repository_exists`; the API answers a taken key with
+409 `already_exists` everywhere ([Q-REPO-84](#q-repo-84--a-violation-answers-422-validation_failed-a-body-error-400-malformed_request),
+[Q-API-136](api-and-ui.md#q-api-136--one-rule-for-the-top-level-code-of-an-error)), so the move does too. A virtual repository
+moves only without members and deployment target. Objects outside the project that hold the repository by its ID follow it;
+what matches by address does not.
+
+**Rationale:** a move changes who may read the repository and how clients reach it; the objects of the source project that name
+it were written by people who decided about that repository in that project, and they are told by a refusal rather than
+edited behind their back. An Owner of both projects is the narrowest caller who may decide for both sides, and
+`repositories:write-config` acts in every project already. The development agent would revisit this if moves become routine
+and removing references by hand a burden; then (c) with an explicit `"detach": true`, as R-REPO-013's delete has it.
+
+**Applied in the spec:** R-REPO-060 (new), R-REPO-002 (a move changes the address), R-REPO-004 (`project`);
+[authorization.md](authorization.md) R-AUTHZ-004 (key selectors follow the ID), R-AUTHZ-026 (the Owner's table, the audit
+event), R-AUTHZ-031 (the journal); [api-and-ui.md](api-and-ui.md) R-API-007, R-API-022; [bastion.md](bastion.md) R-BAS-015;
+[endpoints.md](endpoints.md) R-EP-006, R-EP-012. Q-AUTHZ-179 and Q-AUTHZ-205 are marked superseded.
 
 ## What this does not cover
 

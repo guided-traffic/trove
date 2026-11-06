@@ -1,5 +1,4 @@
 import { TestBed } from '@angular/core/testing';
-import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -20,7 +19,6 @@ async function harness(routes: typeof CI_ROUTES, capabilities: string[] = ['ci:r
     providers: [
       provideRouter(routes, withComponentInputBinding()),
       ...provideFakeApis(),
-      { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
     ],
   });
   (TestBed.inject(SessionApi) as FakeSessionApi).meResult = {

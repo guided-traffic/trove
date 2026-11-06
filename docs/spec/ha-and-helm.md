@@ -158,7 +158,7 @@ Acceptance criteria:
 
 - With two `api` replicas behind the edge, `for i in $(seq 1 300); do curl -s -o /dev/null -w '%{http_code}\n' https://trove.example.com/api/v1/system/ping; done | sort | uniq -c`
   prints only `200`, and the `X-Trove-Replica` header of authenticated calls shows both `api` pod
-  names and no other; the same loop over `GET /api/npm/npm-all/lodash` with a token shows the three `packages` pod names.
+  names and no other; the same loop over `GET /api/npm/web/npm-all/lodash` with a token shows the three `packages` pod names.
 - `kubectl scale deploy/trove-packages --replicas=4` adds a replica that serves traffic and appears in
   `GET /api/v1/system/replicas` without any other change.
 - `helm upgrade … --set api.replicaCount=1 --set packages.replicaCount=1 --set worker.replicaCount=1 --set highAvailability.enforce=false`
@@ -282,7 +282,7 @@ role serves, a pool is routing and scheduling only.
 api:
   pools: []                    # default (proposed); example:
   # - name: admin              # example
-  #   paths: [/api/v1/repositories]   # example; prefixes inside the families of api
+  #   paths: [/api/v1/projects]   # example; prefixes inside the families of api
   #   replicaCount: 2          # example; every key of api may be overridden here
 packages:
   pools: []                    # default (proposed); example:
@@ -911,7 +911,7 @@ Acceptance criteria (in addition to R-STOR-036's):
 - With the local profile's S3 store scaled to 0 for 5 minutes during an `npm ci` loop against a
   virtual repository whose tarballs are cached: `npm view <pkg> versions` keeps succeeding for the
   whole period, every replica's `/readyz` keeps answering `200`, while
-  `curl -T big.bin https://trove.example.com/files/generic-local/x.bin -H 'Expect: 100-continue'`
+  `curl -T big.bin https://trove.example.com/files/web/generic-local/x.bin -H 'Expect: 100-continue'`
   receives `503` without sending the body. Within `storage.s3.circuit_breaker.open_duration`
   plus 10 s of the store returning, both work.
 - A pod deleted during that outage is replaced, and the replacement stays not ready until the store
@@ -969,7 +969,7 @@ background work.
 
 Acceptance criteria:
 
-- `kubectl rollout restart deploy/trove-packages` (before phase 6a: `deploy/trove-web`) during a loop of `curl -T 500mb.bin …/files/generic-local/<n>.bin`
+- `kubectl rollout restart deploy/trove-packages` (before phase 6a: `deploy/trove-web`) during a loop of `curl -T 500mb.bin …/files/web/generic-local/<n>.bin`
   over a link limited to 50 MB/s: no upload fails.
 - `kubectl delete pod <worker>` during a test job that persists its cursor every second: the job
   continues on another replica from the persisted cursor with `attempt` unchanged.
@@ -1078,7 +1078,7 @@ except where a variant says otherwise. The load starts 5 minutes before the drai
 | `dotnet restore --no-cache --force` of a fixture with 60 packages through `nuget-all` | 4 parallel loops |
 | `npm publish` of a new version to `npm-local`; `dotnet nuget push` of a new version to `nuget-local` | one each every 10 s |
 | k6 `constant-arrival-rate` against the edge: 50 % npm packument GETs, 30 % npm tarball GETs of 1–5 MB, 20 % NuGet registration and flat-container GETs | 150 requests/s |
-| Long-transfer probes: `curl --limit-rate 2M --retry 5 --retry-all-errors -C - -o big.bin …/files/generic-local/1gib.bin` (about 512 s, longer than the `web` grace period) | 2 parallel loops |
+| Long-transfer probes: `curl --limit-rate 2M --retry 5 --retry-all-errors -C - -o big.bin …/files/web/generic-local/1gib.bin` (about 512 s, longer than the `web` grace period) | 2 parallel loops |
 
 The drain is `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=20m` of a
 node that hosts at least one `api`, one `packages` and one `worker` pod. Pass conditions:
@@ -1202,7 +1202,7 @@ Routing reads to replicas is Deferred.
 
 - trove sets `TimeZone=UTC` and its `search_path` per session and stores time as `timestamptz`, so
   the server's time zone setting does not matter.
-- Text columns that carry indexed keys (repository keys, package names, paths) are declared with
+- Text columns that carry indexed keys (project and repository keys, package names, paths) are declared with
   `COLLATE "C"`. Byte-wise ordering is stable, so an operating-system collation update on the
   database server cannot corrupt these indexes. Case-insensitive matching (NuGet IDs) uses
   normalized columns computed in Go, not database collations.
@@ -3154,9 +3154,10 @@ to this mechanism. At least these events are flagged:
 | `authz.role.unbound` | [authorization.md](authorization.md) R-AUTHZ-022 | Remove the role binding |
 | `authz.policy.deleted` | authorization R-AUTHZ-021 | Delete the policy |
 | `authz.ownership.removed`, `authz.ownership.released` | authorization R-AUTHZ-019 | Remove the owner |
-| `authz.project.deleted`, `authz.project.admin_removed`, `authz.project.repository_unassigned` | authorization R-AUTHZ-026, R-AUTHZ-031 | Delete the project (when empty), remove the administrator, unassign the repository |
+| `authz.project.deleted`, `authz.project.member_removed` | authorization R-AUTHZ-026, R-AUTHZ-031 | Delete the project (when empty), remove the membership |
+| `repository.moved` | authorization R-AUTHZ-031, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060 | Disable the repository when the restored database holds it in the source project, and report it `suspended` |
 | `ci.issuer.*` and `ci.mapping.*` disables and deletions | gitlab-ci R-CI-002, R-CI-019, R-CI-020 | Disable the issuer or mapping. Disabling a mapping that was enabled also suspends every later enabled mapping of its tier, so no job falls through to a mapping that grants more ([Q-CI-11](gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match)) |
-| `authz.policy.updated`, `authz.project.updated`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
+| `authz.policy.updated`, `authz.project.member_changed`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
 | `endpoint.exposure.deleted`; `endpoint.exposure.updated` | [endpoints.md](endpoints.md) R-EP-020 | Delete the rule; the update rule below with the exposure comparator of R-EP-020, whose suspension disables the rule |
 | `npm.unpublish` | [formats/npm.md](formats/npm.md) R-NPM-017, R-NPM-047 | Withhold the version: tombstone it and apply the dist-tag rule, leaving its items stored and unserved, when the restored repository holds it live with the journaled integrity (`applied`); `already in effect` when it is tombstoned; otherwise `subject unknown`. Nothing is deleted; `trove admin npm reinstate` reverses it |
 | `vulnerability.finding.status_changed`, `vulnerability.finding.reopened` when the change sets a download block (`block: set`) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-48 | Set `blocked` on the restored finding of the journaled id when it is `confirmed`; `already in effect` when it is blocked; `subject unknown` when it is missing. The entry is optional: a change that lifts a block or sets none is not journaled |
@@ -3626,7 +3627,7 @@ api:
   podAnnotations: {}
   podLabels: {}
   extraEnv: []                          # appended after the shared extraEnv
-  pools: []                             # example: [{name: admin, paths: [/api/v1/repositories], replicaCount: 2}]
+  pools: []                             # example: [{name: admin, paths: [/api/v1/projects], replicaCount: 2}]
 
 # ── packages Deployment: trove serve --role packages ─────────────
 # The package protocols and the raw file transfer, tokens only; no login secret mounts here.
@@ -4543,7 +4544,7 @@ The HTTPRoute of R-HA-038 reads the same table and is not rendered yet (Q-HA-81)
   |---|---|---|
   | `/` | `ui` (`GET /`, `/ui/…`, `/auth/…`), the npm exchange at the host root (`/-/npm/v1/oidc/…`, `ci_exchange`, P1), and every path no other rule matches | `<fullname>-api` |
   | `/api/v1` | `api`, and `ci_exchange`'s `POST /api/v1/auth/oidc/token` | `<fullname>-api` |
-  | `/api` | `packages`: `/api/<format>/<repoKey>/…` | `<fullname>-packages` |
+  | `/api` | `packages`: `/api/<format>/<projectKey>/<repoKey>/…` | `<fullname>-packages` |
   | `/files` | `files` | `<fullname>-packages` |
   | `/v2`, `/.well-known` | `packages`: the host-root routes reserved by INV-6 and the host-root bindings of [endpoints.md](endpoints.md) R-EP-006 | `<fullname>-packages` |
 
@@ -4551,7 +4552,7 @@ The HTTPRoute of R-HA-038 reads the same table and is not rendered yet (Q-HA-81)
   rule of the other role (an encoded segment that the router decodes into another family, for example) reaches a role that
   does not register its family and answers the `404` of an unknown path: the edge shares load, each role's router decides
   what it serves. One family is nested inside another's prefix: the npm trusted-publishing exchange below a registry URL
-  (`/api/npm/<repoKey>/-/npm/v1/oidc/token/exchange/package/<name>`, [formats/npm.md](formats/npm.md) R-NPM-022, P1) belongs
+  (`/api/npm/<projectKey>/<repoKey>/-/npm/v1/oidc/token/exchange/package/<name>`, [formats/npm.md](formats/npm.md) R-NPM-022, P1) belongs
   to `ci_exchange` but matches `/api`. The chart renders a rule of its own for it when R-NPM-022 is built (Q-HA-72); until
   then the route does not exist, and its path answers `404` on either role.
 - **Further endpoints.** Each further endpoint has its own port, its own Ingress or HTTPRoute with its own class, hosts,
@@ -4604,7 +4605,7 @@ Acceptance criteria:
 
 - With `ingress.enabled: true`, `className: haproxy` and a cert-manager issuer, `curl -sI https://trove.example.com/api/v1/system/ping`
   returns `200` with a certificate for the host and an `X-Trove-Replica` of an `api` pod, and
-  `curl -sI -H "Authorization: Bearer $T" https://trove.example.com/api/npm/npm-all/lodash` one of a `packages` pod.
+  `curl -sI -H "Authorization: Bearer $T" https://trove.example.com/api/npm/web/npm-all/lodash` one of a `packages` pod.
 - `curl -s https://trove.example.com:8081/metrics` and any Ingress path to the operations port
   fail. The Ingress manifest contains no rule for port 8081.
 - `helm template … --set ingress.enabled=true --set ingress.path=/trove` fails schema validation
@@ -4749,11 +4750,11 @@ Route timeouts come from the HTTPRoute (R-HA-038).
 
 Acceptance criteria (run through the chart's Ingress and through the HTTPRoute in CI):
 
-- `curl -T 6gib.bin https://trove.example.com/files/generic-local/big.bin` succeeds. 6 GiB is
+- `curl -T 6gib.bin https://trove.example.com/files/web/generic-local/big.bin` succeeds. 6 GiB is
   above the 5 GiB single-request limit of S3, so the multipart path is covered as well.
-- `curl --limit-rate 2M -o /dev/null https://trove.example.com/files/generic-local/big.bin` runs
+- `curl --limit-rate 2M -o /dev/null https://trove.example.com/files/web/generic-local/big.bin` runs
   longer than 15 minutes and completes.
-- `curl -s https://trove.example.com/api/npm/npm-all/@acme%2fui` returns the packument.
+- `curl -s https://trove.example.com/api/npm/web/npm-all/@acme%2fui` returns the packument.
 - `dotnet nuget push big.nupkg --source …` of a 1 GiB package succeeds.
 
 ### R-HA-040 · Public base URL and forwarded headers in the chart
@@ -4838,20 +4839,20 @@ can be added later without moving anything.
   check is not enough, because a more specific pattern such as `/v2/x` does not conflict with
   `/v2/`.
 - The chart routes the whole host to trove (R-HA-037). `/v2/` reaches trove without rewrite
-  rules. The repository is the first path segment after `/v2/`
-  (`docker pull trove.example.com/docker-all/library/alpine:3`). The OCI format page specifies
-  this.
-- Subdomain-per-repository routing (`docker-all.registry.example.com`) needs a wildcard host and a
-  wildcard certificate. It is an endpoint with `wildcardHost: "*.registry.example.com"` and
-  `wildcardRoot: label` ([endpoints.md](endpoints.md) R-EP-006, R-EP-007): the chart renders the
-  wildcard host into that endpoint's Ingress and HTTPRoute, and the binding maps the host label to
-  the repository. A Docker Engine mirror is an endpoint host bound to one repository the same way.
-  The OCI page specifies the registry side.
+  rules. The project key and the repository key are the first two path segments after `/v2/`
+  (`docker pull trove.example.com/web/docker-all/library/alpine:3`), as below `/api/<format>/`
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-002). The OCI format page specifies this.
+- Subdomain-per-repository routing (`docker-all.registry.example.com`) is not offered: a host label cannot name a
+  project and a repository key, and the binding of a host label to a repository is gone
+  ([endpoints.md](endpoints.md) [Q-EP-76](endpoints.md#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)).
+  A Docker Engine mirror is an endpoint host bound to one repository by its project and key
+  (`host_roots: {mirror.example.com: web/docker-hub}`, [endpoints.md](endpoints.md) R-EP-006, R-EP-007). The OCI page
+  specifies the registry side.
 - The chart renders no rewrite rules or snippets. This avoids the catalog's mismatch between edge
   rewrites and the server's routing method, where pushes break while pulls work.
 
 Acceptance criteria (when the OCI format exists):
-`docker login trove.example.com && docker push trove.example.com/docker-local/test:1` through
+`docker login trove.example.com && docker push trove.example.com/web/docker-local/test:1` through
 the chart's Ingress succeeds without any Ingress annotation beyond R-HA-039's.
 
 ### R-HA-042 · Network policies
@@ -5394,7 +5395,7 @@ kubectl -n trove port-forward svc/trove-api 8080:8080   # phase 6a; svc/trove be
 Acceptance criteria:
 
 - On a machine with Docker and the pinned tools, `dev-up` completes in under 15 minutes and
-  `npm ping --registry http://localhost:8080/api/npm/npm-all/` succeeds.
+  `npm ping --registry http://localhost:8080/api/npm/web/npm-all/` succeeds.
 - `dev-failover` and `dev-valkey-failover` during an `npm ci` loop cause no failed iteration.
   `dev-s3-outage 60s` behaves as R-HA-010 states, `dev-valkey-outage 60s` as R-HA-057 states.
 - `dev-backup` followed by `dev-restore` yields a second installation whose `npm view` output
@@ -5690,7 +5691,7 @@ MinIO running on isolated runners, which is no longer the case; see [H-80](#h-80
 
 ### Q-HA-4 · Reserve `/v2/` on the client listener for OCI
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-EP-76](endpoints.md#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes) and [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared): the first two segments after `/v2/` are the project key and the repository key, and the subdomain mode through a label binding is gone.
 
 INV-6 puts every package protocol under `/api/<format>/<repoKey>/`. Docker and OCI clients cannot
 use a path prefix before `/v2/`.
@@ -6791,7 +6792,7 @@ host to `packages`), R-HA-062 (path pools inside their role's prefixes).
 
 ### Q-HA-72 · How the npm exchange below a registry URL reaches `api`
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared): the registry URL holds the project key and the repository key, so the rule's path is `^/api/npm/[^/]+/[^/]+/-/npm/v1/oidc/`.
 
 Context: R-NPM-022 (P1, not built: the path is one of npm's deferred routes in
 [internal/formats/npm/routes.go](../../internal/formats/npm/routes.go)) serves the trusted-publishing exchange at the host root

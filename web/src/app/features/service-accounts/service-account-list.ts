@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle, TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
@@ -28,11 +27,11 @@ export interface ServiceAccountCreateData {
  */
 @Component({
   selector: 'trove-service-account-create-dialog',
-  imports: [MatButtonModule, MatDialogModule, ErrorNotice, TextField],
+  imports: [DialogTitle, DialogClose, ErrorNotice, TextField],
   template: `
-    <h2 mat-dialog-title i18n="@@sa-create.title">New service account</h2>
+    <h2 troveDialogTitle i18n="@@sa-create.title">New service account</h2>
     <form (submit)="submit($event)" novalidate>
-      <mat-dialog-content>
+      <div class="dialog-body">
         @if (error(); as e) {
           <trove-error-notice [error]="e" />
         }
@@ -46,20 +45,20 @@ export interface ServiceAccountCreateData {
           [hint]="nameHint"
         />
         <trove-text-field i18n-label="@@sa-create.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
-      </mat-dialog-content>
-      <mat-dialog-actions align="end">
-        <button mat-button type="button" mat-dialog-close i18n="@@sa-create.cancel">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@sa-create.submit">Create service account</button>
-      </mat-dialog-actions>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@sa-create.cancel">Cancel</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@sa-create.submit">Create service account</button>
+      </div>
     </form>
   `,
   styleUrl: '../../shared/access/access.scss',
 })
 export class ServiceAccountCreateDialog {
   private readonly api = inject(IdentityApi);
-  private readonly ref = inject<MatDialogRef<ServiceAccountCreateDialog, ServiceAccount>>(MatDialogRef);
+  private readonly ref = inject<DialogRef<ServiceAccount, ServiceAccountCreateDialog>>(DialogRef);
   private readonly notifier = inject(Notifier);
-  private readonly data = inject<ServiceAccountCreateData | null>(MAT_DIALOG_DATA, { optional: true });
+  private readonly data = inject<ServiceAccountCreateData | null>(DIALOG_DATA, { optional: true });
   private readonly key = newIdempotencyKey();
 
   protected readonly project = this.data?.project;
@@ -104,11 +103,11 @@ export class ServiceAccountCreateDialog {
  */
 @Component({
   selector: 'trove-service-account-list',
-  imports: [MatButtonModule, RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sas.heading">Service accounts</h1>
-      <button mat-flat-button type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-sas" (click)="add()" i18n="@@sas.add">New service account</button>
+      <button class="btn btn-confirm" type="button" [disabled]="!session.has('identities:write')" aria-describedby="needs-sas" (click)="add()" i18n="@@sas.add">New service account</button>
     </header>
     <trove-needs id="needs-sas" capability="identities:write" />
     <p i18n="@@sas.hint">
@@ -178,7 +177,7 @@ export class ServiceAccountCreateDialog {
 })
 export class ServiceAccountList {
   private readonly api = inject(IdentityApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
@@ -222,7 +221,7 @@ export class ServiceAccountList {
       ServiceAccountCreateDialog,
       { maxWidth: '36rem' },
     );
-    const created = await firstValueFrom(ref.afterClosed());
+    const created = await firstValueFrom(ref.closed);
     if (created) await this.router.navigate(['/admin/service-accounts', created.name]);
   }
 }

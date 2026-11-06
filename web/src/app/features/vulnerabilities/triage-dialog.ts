@@ -1,6 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError } from '../../api/problem';
 import { Versioned } from '../../api/repositories-api';
@@ -54,11 +53,11 @@ export interface TriageDialogResult {
  */
 @Component({
   selector: 'trove-triage-dialog',
-  imports: [MatButtonModule, MatDialogModule, ErrorNotice, SelectField, TextField],
+  imports: [DialogTitle, DialogClose, ErrorNotice, SelectField, TextField],
   template: `
-    <h2 mat-dialog-title>{{ title() }}</h2>
+    <h2 troveDialogTitle>{{ title() }}</h2>
     @if (results(); as r) {
-      <mat-dialog-content>
+      <div class="dialog-body">
         <p role="status">{{ summary() }}</p>
         <table class="data bulk-results">
           <caption class="visually-hidden" i18n="@@vuln.triage.results-caption">Result per finding</caption>
@@ -87,13 +86,13 @@ export interface TriageDialogResult {
             }
           </tbody>
         </table>
-      </mat-dialog-content>
-      <mat-dialog-actions align="end">
-        <button mat-flat-button type="button" (click)="finish()" i18n="@@vuln.triage.close">Close</button>
-      </mat-dialog-actions>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-confirm" type="button" (click)="finish()" i18n="@@vuln.triage.close">Close</button>
+      </div>
     } @else {
       <form (submit)="submit($event)" novalidate>
-        <mat-dialog-content>
+        <div class="dialog-body">
           @if (error(); as e) {
             <trove-error-notice [error]="e" />
           }
@@ -138,11 +137,11 @@ export interface TriageDialogResult {
             [error]="commentError()"
             [hint]="commentHint"
           />
-        </mat-dialog-content>
-        <mat-dialog-actions align="end">
-          <button mat-button type="button" mat-dialog-close i18n="@@vuln.triage.cancel">Cancel</button>
-          <button mat-flat-button type="submit" [disabled]="busy()">{{ submitLabel() }}</button>
-        </mat-dialog-actions>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@vuln.triage.cancel">Cancel</button>
+          <button class="btn btn-confirm" type="submit" [disabled]="busy()">{{ submitLabel() }}</button>
+        </div>
       </form>
     }
   `,
@@ -160,9 +159,9 @@ export interface TriageDialogResult {
   `,
 })
 export class TriageDialog {
-  protected readonly data = inject<TriageDialogData>(MAT_DIALOG_DATA);
+  protected readonly data = inject<TriageDialogData>(DIALOG_DATA);
   private readonly api = inject(VulnerabilitiesApi);
-  private readonly ref = inject<MatDialogRef<TriageDialog, TriageDialogResult>>(MatDialogRef);
+  private readonly ref = inject<DialogRef<TriageDialogResult, TriageDialog>>(DialogRef);
   /** One key for the dialog's whole life (R-UI-042): a repeated submit is the same request. */
   private readonly key = newIdempotencyKey();
 

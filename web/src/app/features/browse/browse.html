@@ -33,10 +33,9 @@
           [controls]="panel.panelId"
         />
         <button
-          mat-icon-button
           type="button"
-          class="sort-button"
-          [matMenuTriggerFor]="sortMenu"
+          class="btn btn-icon sort-button"
+          [cdkMenuTriggerFor]="sortMenu"
           aria-label="Sort repositories"
           i18n-aria-label="@@browse.sort.label"
           title="Sort repositories"
@@ -44,32 +43,34 @@
         >
           <span class="material-icons" aria-hidden="true">sort</span>
         </button>
-        <mat-menu #sortMenu="matMenu">
-          <button
-            mat-menu-item
-            type="button"
-            role="menuitemradio"
-            [attr.aria-checked]="sort() !== 'class'"
-            (click)="setSort('key')"
-          >
-            <span class="material-icons" aria-hidden="true">{{
-              sort() !== 'class' ? 'check' : ''
-            }}</span>
-            <span i18n="@@browse.sort.key">Key</span>
-          </button>
-          <button
-            mat-menu-item
-            type="button"
-            role="menuitemradio"
-            [attr.aria-checked]="sort() === 'class'"
-            (click)="setSort('class')"
-          >
-            <span class="material-icons" aria-hidden="true">{{
-              sort() === 'class' ? 'check' : ''
-            }}</span>
-            <span i18n="@@browse.sort.class">Class, then key</span>
-          </button>
-        </mat-menu>
+        <ng-template #sortMenu>
+          <div class="menu" cdkMenu>
+            <button
+              type="button"
+              class="menu-item"
+              cdkMenuItemRadio
+              [cdkMenuItemChecked]="sort() !== 'class'"
+              (cdkMenuItemTriggered)="setSort('key')"
+            >
+              <span class="material-icons" aria-hidden="true">{{
+                sort() !== 'class' ? 'check' : ''
+              }}</span>
+              <span i18n="@@browse.sort.key">Key</span>
+            </button>
+            <button
+              type="button"
+              class="menu-item"
+              cdkMenuItemRadio
+              [cdkMenuItemChecked]="sort() === 'class'"
+              (cdkMenuItemTriggered)="setSort('class')"
+            >
+              <span class="material-icons" aria-hidden="true">{{
+                sort() === 'class' ? 'check' : ''
+              }}</span>
+              <span i18n="@@browse.sort.class">Class, then key</span>
+            </button>
+          </div>
+        </ng-template>
         @if (list.loaded() && !panelOpen()) {
           <p class="pane-count" role="status">
             <ng-container i18n="@@browse.count">Repositories</ng-container>:
@@ -241,7 +242,7 @@
               <p i18n="@@browse.empty">
                 No repository matches. Repositories you may not read are not listed.
               </p>
-              <button mat-stroked-button type="button" (click)="clearFilters()" i18n="@@browse.clear-filters">
+              <button class="btn btn-default" type="button" (click)="clearFilters()" i18n="@@browse.clear-filters">
                 Clear all filters
               </button>
             } @else {
@@ -249,7 +250,7 @@
                 There is no repository you may read yet.
               </p>
               @if (canCreateRepository()) {
-                <a mat-flat-button routerLink="/admin/repositories/new" i18n="@@repo.list.create">Create repository</a>
+                <a class="btn btn-confirm" routerLink="/admin/repositories/new" i18n="@@repo.list.create">Create repository</a>
               } @else {
                 <p class="hint" i18n="@@browse.empty-ask">
                   Ask an administrator for read access to a repository.
@@ -276,8 +277,7 @@
         }
         @if (list.hasMore()) {
           <p class="pane-more">
-            <button
-              mat-stroked-button
+            <button class="btn btn-default"
               type="button"
               [disabled]="list.loading()"
               (click)="list.more()"
@@ -296,7 +296,7 @@
     <h2 id="detail-heading" class="visually-hidden" i18n="@@browse.details.heading">Details</h2>
     @if (selected(); as sel) {
       <header class="pane-head details-head">
-        <button mat-button type="button" class="back" (click)="goRoot()">
+        <button type="button" class="btn btn-tertiary back" (click)="goRoot()">
           <span class="material-icons" aria-hidden="true">arrow_back</span>
           <ng-container i18n="@@browse.back">Back to the tree</ng-container>
         </button>
@@ -327,7 +327,7 @@
         >
           @if (item(); as it) {
             @if (it.kind === 'file' && it.downloadUrl) {
-              <a mat-flat-button [href]="it.contentUrl ?? it.downloadUrl" download>
+              <a class="btn btn-confirm" [href]="it.contentUrl ?? it.downloadUrl" download>
                 <span class="material-icons" aria-hidden="true">download</span>
                 <ng-container i18n="@@browse.download">Download</ng-container>
               </a>
@@ -338,23 +338,23 @@
             <trove-copy-button [value]="it.path" [label]="copyPath" />
           }
           @if (repository()) {
-            <a mat-stroked-button routerLink="/setup" [queryParams]="{ repository: sel.repo }">
+            <a class="btn btn-default" routerLink="/setup" [queryParams]="{ repository: sel.repo }">
               <span class="material-icons" aria-hidden="true">terminal</span>
               <ng-container i18n="@@browse.client-setup">Client setup</ng-container>
             </a>
           }
           @if (canUpload()) {
-            <button mat-stroked-button type="button" (click)="upload()">
+            <button class="btn btn-default" type="button" (click)="upload()">
               <span class="material-icons" aria-hidden="true">upload</span>
               <ng-container i18n="@@browse.upload">Upload files</ng-container>
             </button>
-            <button mat-stroked-button type="button" (click)="newFolder()">
+            <button class="btn btn-default" type="button" (click)="newFolder()">
               <span class="material-icons" aria-hidden="true">create_new_folder</span>
               <ng-container i18n="@@browse.new-folder">New folder</ng-container>
             </button>
           }
           @if (item() && can().delete && sel.path !== '') {
-            <button mat-button type="button" (click)="remove()">
+            <button class="btn btn-tertiary" type="button" (click)="remove()">
               <span class="material-icons" aria-hidden="true">delete</span>
               <ng-container i18n="@@browse.delete">Delete</ng-container>
             </button>
@@ -381,14 +381,12 @@
         } @else if (detailLoading()) {
           <p class="pane-status" role="status" i18n="@@repo.loading">Loading.</p>
         } @else if (selectionKind()) {
-          <mat-tab-group
-            animationDuration="0ms"
-            [mat-stretch-tabs]="false"
+          <trove-tab-group
             [selectedIndex]="tabIndex()"
             (selectedIndexChange)="setTab($event)"
           >
             @for (t of tabNames(); track t) {
-              <mat-tab [label]="tabLabels[t]">
+              <trove-tab [label]="tabLabels[t]">
                 <div class="tab">
                   @switch (t) {
                     @case ('contents') {
@@ -572,9 +570,9 @@
                     }
                   }
                 </div>
-              </mat-tab>
+              </trove-tab>
             }
-          </mat-tab-group>
+          </trove-tab-group>
         }
       </div>
     } @else {

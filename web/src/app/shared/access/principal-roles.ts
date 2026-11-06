@@ -1,6 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { RoleBinding, RoleName, RolesApi } from '../../api/authz-api';
 import { collectAll } from '../../api/pagination';
@@ -31,7 +30,7 @@ export const ROLE_NAMES: readonly RoleName[] = [
  */
 @Component({
   selector: 'trove-principal-roles',
-  imports: [DatePipe, MatButtonModule, RouterLink, ErrorNotice, SelectField],
+  imports: [DatePipe, RouterLink, ErrorNotice, SelectField],
   template: `
     <section class="card" [attr.aria-labelledby]="headingId">
       <h2 [id]="headingId" i18n="@@principal-roles.heading">System roles</h2>
@@ -61,8 +60,7 @@ export const ROLE_NAMES: readonly RoleName[] = [
                     <td>{{ b.grantedAt | date: 'medium' }}</td>
                     @if (canWrite()) {
                       <td class="actions">
-                        <button
-                          mat-button
+                        <button class="btn btn-tertiary"
                           type="button"
                           [disabled]="lastAdmin(b)"
                           [attr.aria-describedby]="lastAdmin(b) ? headingId + '-guard' : null"
@@ -93,7 +91,7 @@ export const ROLE_NAMES: readonly RoleName[] = [
               [options]="freeOptions()"
               [(value)]="chosen"
             />
-            <button mat-flat-button type="button" [disabled]="busy()" (click)="bind()" i18n="@@principal-roles.bind">
+            <button class="btn btn-confirm" type="button" [disabled]="busy()" (click)="bind()" i18n="@@principal-roles.bind">
               Bind role
             </button>
           </div>

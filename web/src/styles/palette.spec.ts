@@ -1,7 +1,6 @@
 // The palette's contrast, computed from the stylesheets themselves (Q-UI-88, Q-UI-96,
 // docs/developer/design-language.md). jsdom paints nothing, so axe's `color-contrast` runs only in the
 // browser tier; this test holds the accent pairs in the unit tier, where a colour change is made.
-import mainScss from './main.scss' with { loader: 'text' };
 import tokensScss from './_tokens.scss' with { loader: 'text' };
 
 type Scheme = 'light' | 'dark';
@@ -26,14 +25,9 @@ function splitTop(s: string): string[] {
   return out;
 }
 
-/** Every `light-dark()` pair of mat.theme-overrides (as --mat-sys-*) and of the trove tokens. */
+/** Every `light-dark()` pair of the trove tokens. */
 function readPalette(): Map<string, readonly [string, string]> {
   const vals = new Map<string, readonly [string, string]>();
-  const overrides = mainScss.split('mat.theme-overrides(')[1]?.split(');')[0] ?? '';
-  for (const m of overrides.matchAll(/^\s*([a-z-]+):\s*light-dark\((.+)\),\s*$/gm)) {
-    const [light = '', dark = ''] = splitTop(m[2] ?? '');
-    vals.set(`--mat-sys-${m[1]}`, [light, dark]);
-  }
   const root = tokensScss.split(':root {')[1]?.split('\n}')[0] ?? '';
   for (const m of root.matchAll(/^\s*(--trove-[a-z0-9-]+):\s*(.+);\s*$/gm)) {
     const v = (m[2] ?? '').trim();
@@ -48,7 +42,7 @@ const palette = readPalette();
 
 function colour(name: string, scheme: Scheme): Rgba {
   const pair = palette.get(name);
-  if (!pair) throw new Error(`${name} is set neither in main.scss nor in _tokens.scss`);
+  if (!pair) throw new Error(`${name} is not set in _tokens.scss`);
   return parse(scheme === 'light' ? pair[0] : pair[1], scheme);
 }
 
@@ -97,17 +91,17 @@ function hueOf(c: Rgba): { hue: number; saturation: number } {
 
 // The surfaces an accent sits on; a pair of names is a translucent fill over a surface.
 const surfaces: Record<string, string | readonly [string, string]> = {
-  page: '--mat-sys-surface',
+  page: '--trove-surface',
   raised: '--trove-surface-raised',
   'table head': '--trove-table-head-bg',
   'row hover': '--trove-row-hover',
-  menu: '--mat-sys-surface-container',
-  dialog: '--mat-sys-surface-container-high',
-  'filled field': '--mat-sys-surface-variant',
-  'selected row': '--mat-sys-secondary-container',
-  'primary-container': '--mat-sys-primary-container',
-  'inverse surface': '--mat-sys-inverse-surface',
-  primary: '--mat-sys-primary',
+  menu: '--trove-surface-container',
+  dialog: '--trove-dialog-bg',
+  'filled field': '--trove-surface-variant',
+  'selected row': '--trove-accent-container',
+  'primary-container': '--trove-accent-container',
+  'inverse surface': '--trove-inverse-surface',
+  primary: '--trove-accent',
   'side bar': '--trove-nav-bg',
   'open group': '--trove-nav-bg-nested',
   'top bar': '--trove-nav-bg-deep',
@@ -116,11 +110,11 @@ const surfaces: Record<string, string | readonly [string, string]> = {
   // trove's own controls (Q-UI-126, _controls.scss).
   'accent fill': '--trove-accent-fill',
   'accent fill hover': '--trove-accent-fill-hover',
-  'default button': ['--trove-btn-default-bg', '--mat-sys-surface'],
-  'default button hover': ['--trove-btn-default-bg-hover', '--mat-sys-surface'],
-  'tertiary button hover': ['--trove-btn-tertiary-bg-hover', '--mat-sys-surface'],
+  'default button': ['--trove-btn-default-bg', '--trove-surface'],
+  'default button hover': ['--trove-btn-default-bg-hover', '--trove-surface'],
+  'tertiary button hover': ['--trove-btn-tertiary-bg-hover', '--trove-surface'],
   'danger fill': '--trove-danger-fill',
-  control: ['--trove-control-bg', '--mat-sys-surface'],
+  control: ['--trove-control-bg', '--trove-surface'],
   // The reference's translucent fills, measured over what they sit on (Q-UI-128): the default button on the page and on
   // the frame (the Admin button), a menu item under the pointer, the search field on the frame, a card's strong fill.
   'default button on the frame': ['--trove-btn-default-bg', '--trove-nav-bg'],
@@ -152,30 +146,30 @@ function measure(fg: string, on: string, scheme: Scheme): number {
 
 // Text: WCAG 1.4.3, 4.5:1. The same pairs as the table of design-language.md.
 const textPairs: readonly (readonly [string, string])[] = [
-  ['--mat-sys-primary', 'page'],
-  ['--mat-sys-primary', 'raised'],
-  ['--mat-sys-primary', 'table head'],
-  ['--mat-sys-primary', 'row hover'],
-  ['--mat-sys-primary', 'menu'],
-  ['--mat-sys-primary', 'dialog'],
-  ['--mat-sys-primary', 'filled field'],
-  ['--mat-sys-on-primary', 'primary'],
+  ['--trove-accent', 'page'],
+  ['--trove-accent', 'raised'],
+  ['--trove-accent', 'table head'],
+  ['--trove-accent', 'row hover'],
+  ['--trove-accent', 'menu'],
+  ['--trove-accent', 'dialog'],
+  ['--trove-accent', 'filled field'],
+  ['--trove-on-accent', 'primary'],
   ['--trove-link', 'page'],
   ['--trove-link', 'raised'],
   ['--trove-link', 'table head'],
   ['--trove-link', 'row hover'],
   ['--trove-link', 'dialog'],
   ['--trove-link', 'selected row'],
-  ['--mat-sys-on-secondary-container', 'selected row'],
-  ['--mat-sys-on-surface', 'selected row'],
-  ['--mat-sys-on-surface-variant', 'selected row'],
-  ['--mat-sys-on-primary-container', 'primary-container'],
-  ['--mat-sys-inverse-primary', 'inverse surface'],
-  ['--mat-sys-on-surface', 'page'],
-  ['--mat-sys-on-surface', 'raised'],
-  ['--mat-sys-on-surface-variant', 'page'],
-  ['--mat-sys-on-surface-variant', 'filled field'],
-  ['--mat-sys-on-surface-variant', 'dialog'],
+  ['--trove-on-accent-container', 'selected row'],
+  ['--trove-on-surface', 'selected row'],
+  ['--trove-text-muted', 'selected row'],
+  ['--trove-on-accent-container', 'primary-container'],
+  ['--trove-inverse-accent', 'inverse surface'],
+  ['--trove-on-surface', 'page'],
+  ['--trove-on-surface', 'raised'],
+  ['--trove-text-muted', 'page'],
+  ['--trove-text-muted', 'filled field'],
+  ['--trove-text-muted', 'dialog'],
   ['--trove-status-bad', 'page'],
   ['--trove-status-bad', 'filled field'],
   ['--trove-status-warn', 'page'],
@@ -207,7 +201,7 @@ const textPairs: readonly (readonly [string, string])[] = [
   ['--trove-search-fg', 'search'],
   ['--trove-search-muted', 'search'],
   ['--trove-heading', 'card'],
-  ['--mat-sys-on-surface-variant', 'card'],
+  ['--trove-text-muted', 'card'],
   // A badge's text on its pill (Q-UI-128).
   ['--trove-badge-neutral-fg', 'neutral badge'],
   ['--trove-badge-ok-fg', 'positive badge'],
@@ -218,10 +212,10 @@ const textPairs: readonly (readonly [string, string])[] = [
 
 // Marks: WCAG 1.4.11, 3:1 (focus ring, tab underline, checkbox, the navigation's bar and icon).
 const markPairs: readonly (readonly [string, string])[] = [
-  ['--mat-sys-primary', 'page'],
-  ['--mat-sys-primary', 'raised'],
-  ['--mat-sys-primary', 'dialog'],
-  ['--mat-sys-primary', 'filled field'],
+  ['--trove-accent', 'page'],
+  ['--trove-accent', 'raised'],
+  ['--trove-accent', 'dialog'],
+  ['--trove-accent', 'filled field'],
   ['--trove-nav-accent', 'side bar'],
   ['--trove-nav-accent', 'open group'],
   ['--trove-nav-accent', 'top bar'],
@@ -268,7 +262,7 @@ describe('palette', () => {
   });
 
   it('R-UI-044 the focus ring is the accent', () => {
-    const ring = '2px solid var(--mat-sys-primary)';
+    const ring = '2px solid var(--trove-accent)';
     expect(palette.get('--trove-focus-ring')).toEqual([ring, ring]);
   });
 
@@ -278,7 +272,7 @@ describe('palette', () => {
       return saturation > 0.15 && hue >= 75 && hue <= 165;
     };
     for (const scheme of ['light', 'dark'] as const) {
-      for (const name of ['--mat-sys-primary', '--trove-link', '--trove-nav-accent']) {
+      for (const name of ['--trove-accent', '--trove-link', '--trove-nav-accent']) {
         const { hue } = hueOf(colour(name, scheme));
         expect(hue, `${name} (${scheme})`).toBeGreaterThanOrEqual(200);
         expect(hue, `${name} (${scheme})`).toBeLessThanOrEqual(220);
@@ -292,7 +286,7 @@ describe('palette', () => {
         try {
           c = colour(name, scheme);
         } catch {
-          continue; // a length, a shadow or a token Material generates
+          continue; // a length, a shadow or another token that is no colour
         }
         if (isGreen(c)) green.push(name);
       }

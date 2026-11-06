@@ -1,5 +1,4 @@
 import { Component, LOCALE_ID, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { CiApi, CiMapping } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
@@ -23,16 +22,16 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-ci-mapping-list',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, DataTable, Needs, ProjectNeeds],
+  imports: [RouterLink, ErrorNotice, DataTable, Needs, ProjectNeeds],
   template: `
     <div class="toolbar">
       @if (writable()) {
-        <a mat-flat-button [routerLink]="newLink()" [queryParams]="newQuery()" i18n="@@ci.mappings.add">New mapping</a>
+        <a class="btn btn-confirm" [routerLink]="newLink()" [queryParams]="newQuery()" i18n="@@ci.mappings.add">New mapping</a>
       } @else {
-        <button mat-flat-button type="button" disabled aria-describedby="needs-ci-mappings" i18n="@@ci.mappings.add-disabled">New mapping</button>
+        <button class="btn btn-confirm" type="button" disabled aria-describedby="needs-ci-mappings" i18n="@@ci.mappings.add-disabled">New mapping</button>
       }
       @if (testable()) {
-        <a mat-stroked-button [routerLink]="testLink()" [queryParams]="testQuery()" i18n="@@ci.mappings.test-all">Test with claims</a>
+        <a class="btn btn-default" [routerLink]="testLink()" [queryParams]="testQuery()" i18n="@@ci.mappings.test-all">Test with claims</a>
       }
     </div>
     @if (project(); as key) {
@@ -80,12 +79,12 @@ import { ErrorNotice } from '../../shared/error-notice';
             </td>
             <td class="num">{{ lifetime(m) }}</td>
             <td class="actions">
-              <a mat-button [routerLink]="mappingLink(m)" [queryParams]="linkQuery(m)">{{ writable() ? edit : view }}</a>
+              <a class="btn btn-tertiary" [routerLink]="mappingLink(m)" [queryParams]="linkQuery(m)">{{ writable() ? edit : view }}</a>
               @if (testable()) {
-                <a mat-button [routerLink]="testLink()" [queryParams]="testQuery(m)" i18n="@@ci.mappings.test">Test</a>
+                <a class="btn btn-tertiary" [routerLink]="testLink()" [queryParams]="testQuery(m)" i18n="@@ci.mappings.test">Test</a>
               }
               @if (writable()) {
-                <button mat-button type="button" (click)="remove(m)" i18n="@@ci.mappings.delete">Delete</button>
+                <button class="btn btn-tertiary" type="button" (click)="remove(m)" i18n="@@ci.mappings.delete">Delete</button>
               }
             </td>
           </tr>

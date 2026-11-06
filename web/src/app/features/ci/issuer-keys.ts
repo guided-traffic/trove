@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { CiApi, CiKeyStatus } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
@@ -18,10 +17,10 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-ci-issuer-keys',
-  imports: [DatePipe, MatButtonModule, ErrorNotice, DataTable, Needs],
+  imports: [DatePipe, ErrorNotice, DataTable, Needs],
   template: `
     <div class="toolbar">
-      <button mat-flat-button type="button" [disabled]="busy() || !session.has('ci:write')" aria-describedby="needs-ci-keys" (click)="refresh()" i18n="@@ci.keys.refresh">
+      <button class="btn btn-confirm" type="button" [disabled]="busy() || !session.has('ci:write')" aria-describedby="needs-ci-keys" (click)="refresh()" i18n="@@ci.keys.refresh">
         Refresh keys
       </button>
     </div>

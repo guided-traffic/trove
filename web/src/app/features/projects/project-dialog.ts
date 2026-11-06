@@ -1,7 +1,6 @@
 import { Component, computed, inject, resource, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { Checkbox } from '../../shared/ui/checkbox';
+import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { newIdempotencyKey } from '../../api/client';
 import { IdentityApi } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
@@ -37,9 +36,9 @@ export interface ProjectDialogData {
  */
 @Component({
   selector: 'trove-project-dialog',
-  imports: [MatButtonModule, MatCheckboxModule, MatDialogModule, ErrorNotice, PrincipalPicker, SelectField, TextField],
+  imports: [Checkbox, DialogTitle, DialogClose, ErrorNotice, PrincipalPicker, SelectField, TextField],
   template: `
-    <h2 mat-dialog-title>
+    <h2 troveDialogTitle>
       @if (existing(); as p) {
         <ng-container i18n="@@project-dialog.title-edit">Edit project {{ p.value.key }}</ng-container>
       } @else {
@@ -47,7 +46,7 @@ export interface ProjectDialogData {
       }
     </h2>
     <form (submit)="submit($event)" novalidate>
-      <mat-dialog-content>
+      <div class="dialog-body">
         @if (error(); as e) {
           <trove-error-notice [error]="e" />
         }
@@ -81,15 +80,15 @@ export interface ProjectDialogData {
 
         <fieldset class="group">
           <legend i18n="@@project-dialog.switches">What the administrators may do</legend>
-          <mat-checkbox [checked]="managePolicies()" (change)="managePolicies.set($event.checked)">
+          <trove-checkbox [checked]="managePolicies()" (checkedChange)="managePolicies.set($event)">
             <ng-container i18n="@@project-dialog.manage-policies">Manage policies and service accounts</ng-container>
-          </mat-checkbox>
+          </trove-checkbox>
           <p class="hint" i18n="@@project-dialog.manage-policies-hint">
             Create and change the project's permission policies, create and enable its service accounts, issue their tokens and look up users and groups.
           </p>
-          <mat-checkbox [checked]="manageRepositories()" (change)="manageRepositories.set($event.checked)">
+          <trove-checkbox [checked]="manageRepositories()" (checkedChange)="manageRepositories.set($event)">
             <ng-container i18n="@@project-dialog.manage-repositories">Manage repositories</ng-container>
-          </mat-checkbox>
+          </trove-checkbox>
           <p class="hint" i18n="@@project-dialog.manage-repositories-hint">
             Create, change and delete the project's repositories, also remote ones that reach other servers. Assigning repositories stays with you.
           </p>
@@ -104,7 +103,7 @@ export interface ProjectDialogData {
               @for (a of admins(); track a) {
                 <li>
                   <span translate="no">{{ a }}</span>
-                  <button mat-icon-button type="button" (click)="removeAdmin(a)">
+                  <button class="btn btn-icon" type="button" (click)="removeAdmin(a)">
                     <span class="material-icons" aria-hidden="true">close</span>
                     <span class="visually-hidden"><ng-container i18n="@@project-dialog.remove-admin">Remove administrator</ng-container> {{ a }}</span>
                   </button>
@@ -134,7 +133,7 @@ export interface ProjectDialogData {
                   @if (movedFrom(r); as from) {
                     <span class="move" i18n="@@project-dialog.moves">moves from {{ from }}</span>
                   }
-                  <button mat-icon-button type="button" (click)="removeRepository(r)">
+                  <button class="btn btn-icon" type="button" (click)="removeRepository(r)">
                     <span class="material-icons" aria-hidden="true">close</span>
                     <span class="visually-hidden"><ng-container i18n="@@project-dialog.remove-repository">Remove repository</ng-container> {{ r }}</span>
                   </button>
@@ -151,17 +150,17 @@ export interface ProjectDialogData {
             (valueChange)="addRepository($event)"
           />
         </fieldset>
-      </mat-dialog-content>
-      <mat-dialog-actions align="end">
-        <button mat-button type="button" mat-dialog-close i18n="@@project-dialog.cancel">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()">
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-tertiary" type="button" troveDialogClose i18n="@@project-dialog.cancel">Cancel</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy()">
           @if (existing()) {
             <ng-container i18n="@@project-dialog.save">Save project</ng-container>
           } @else {
             <ng-container i18n="@@project-dialog.create">Create project</ng-container>
           }
         </button>
-      </mat-dialog-actions>
+      </div>
     </form>
   `,
   styleUrl: '../../shared/access/access.scss',
@@ -169,13 +168,13 @@ export interface ProjectDialogData {
     .group {
       margin: 0 0 var(--trove-space-3);
       padding: var(--trove-space-2) var(--trove-space-3);
-      border: 1px solid var(--mat-sys-outline-variant);
-      border-radius: var(--mat-sys-corner-small);
+      border: 1px solid var(--trove-border);
+      border-radius: var(--trove-radius-m);
     }
     .hint {
       margin: 0 0 var(--trove-space-2);
-      color: var(--mat-sys-on-surface-variant);
-      font: var(--mat-sys-body-small);
+      color: var(--trove-text-muted);
+      font: var(--trove-type-body-small);
     }
     .chips {
       display: flex;
@@ -190,12 +189,12 @@ export interface ProjectDialogData {
       align-items: center;
       gap: var(--trove-space-1);
       padding-inline: var(--trove-space-3) var(--trove-space-1);
-      border: 1px solid var(--mat-sys-outline);
-      border-radius: var(--mat-sys-corner-full);
+      border: 1px solid var(--trove-border-strong);
+      border-radius: var(--trove-radius-full);
     }
     .move {
-      color: var(--mat-sys-on-surface-variant);
-      font: var(--mat-sys-label-small);
+      color: var(--trove-text-muted);
+      font: var(--trove-type-label-small);
     }
   `,
 })
@@ -206,8 +205,8 @@ export class ProjectDialog {
   private readonly conflicts = inject(ConflictResolver);
   private readonly confirm = inject(Confirm);
   private readonly filter = inject(ProjectFilter);
-  private readonly ref = inject<MatDialogRef<ProjectDialog, Project>>(MatDialogRef);
-  private readonly data = inject<ProjectDialogData>(MAT_DIALOG_DATA);
+  private readonly ref = inject<DialogRef<Project, ProjectDialog>>(DialogRef);
+  private readonly data = inject<ProjectDialogData>(DIALOG_DATA);
   /** Replaced after every refusal of the create: the server stores a 4xx outcome under its key (R-API-014). */
   private idempotencyKey = newIdempotencyKey();
 

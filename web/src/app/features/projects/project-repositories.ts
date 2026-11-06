@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
 import { SessionStore } from '../../core/session-store';
@@ -16,23 +15,22 @@ import { ProjectNeeds, createState } from './project-access';
  */
 @Component({
   selector: 'trove-project-repositories',
-  imports: [MatButtonModule, RouterLink, DataTable, ProjectNeeds],
+  imports: [RouterLink, DataTable, ProjectNeeds],
   template: `
     <div class="toolbar">
       @if (state() === 'enabled') {
-        <a
-          mat-flat-button
+        <a class="btn btn-confirm"
           routerLink="/admin/repositories/new"
           [queryParams]="{ project: project() }"
           i18n="@@project-repos.create"
           >Create repository</a
         >
       } @else {
-        <button mat-flat-button type="button" disabled aria-describedby="needs-project-repos" i18n="@@project-repos.create-disabled">
+        <button class="btn btn-confirm" type="button" disabled aria-describedby="needs-project-repos" i18n="@@project-repos.create-disabled">
           Create repository
         </button>
       }
-      <a mat-button routerLink="/admin/repositories" [queryParams]="{ project: project() }" i18n="@@project-repos.open-list">
+      <a class="btn btn-tertiary" routerLink="/admin/repositories" [queryParams]="{ project: project() }" i18n="@@project-repos.open-list">
         Open in the repository list
       </a>
     </div>

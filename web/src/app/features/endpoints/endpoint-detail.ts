@@ -1,5 +1,4 @@
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { EndpointsApi, ExposureRule, ruleEtag } from '../../api/endpoints-api';
 import { ApiError } from '../../api/problem';
@@ -20,7 +19,7 @@ import { endpointAddress, patternSummary, versionSummary } from './endpoint-mode
  */
 @Component({
   selector: 'trove-endpoint-detail',
-  imports: [MatButtonModule, RouterLink, CopyButton, ErrorNotice],
+  imports: [RouterLink, CopyButton, ErrorNotice],
   templateUrl: './endpoint-detail.html',
   styleUrl: './endpoint-detail.scss',
 })

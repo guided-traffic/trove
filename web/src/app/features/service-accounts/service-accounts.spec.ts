@@ -136,7 +136,7 @@ describe('Service accounts (R-UI-026)', () => {
     expect(text(form)).toContain('Endpoints');
     typeInto(form, 'Description', 'customer acme');
     const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('.endpoints input[type="checkbox"]'));
-    expect(boxes.map((b) => b.closest('mat-checkbox')?.textContent?.trim())).toEqual(['default', 'customers']);
+    expect(boxes.map((b) => b.closest('trove-checkbox')?.textContent?.trim())).toEqual(['default', 'customers']);
     boxes[1]!.click();
     await settle(fixture);
     buttonByText(form, 'Create token').click();

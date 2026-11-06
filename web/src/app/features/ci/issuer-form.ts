@@ -1,6 +1,5 @@
 import { Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { CI_NAME_PATTERN, CiApi, CiIssuer, CiIssuerCreate, CiIssuerInput } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
 import { Versioned } from '../../api/repositories-api';
@@ -30,7 +29,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
  */
 @Component({
   selector: 'trove-ci-issuer-form',
-  imports: [MatButtonModule, MatCheckboxModule, ErrorNotice, TextField],
+  imports: [Checkbox, ErrorNotice, TextField],
   template: `
     @if (configured()) {
       <p class="source-note" role="note">
@@ -119,7 +118,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           hint="The base URL of the GitLab instance, https only. It must match the iss claim exactly."
         />
         <trove-text-field i18n-label="@@ci.form.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
-        <mat-checkbox [checked]="enabled()" (change)="enabled.set($event.checked)" i18n="@@ci.form.enabled-check">Enabled (disabling revokes the tokens issued through this issuer)</mat-checkbox>
+        <trove-checkbox [checked]="enabled()" (checkedChange)="enabled.set($event)" i18n="@@ci.form.enabled-check">Enabled (disabling revokes the tokens issued through this issuer)</trove-checkbox>
         <trove-text-field
           i18n-label="@@ci.form.audiences-lines"
           label="Accepted audiences"
@@ -130,7 +129,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           i18n-hint="@@ci.form.audiences-hint"
           hint="One per line. Empty: the base URL of this server and npm:host."
         />
-        <mat-checkbox [checked]="publicIssuer()" (change)="publicIssuer.set($event.checked)" i18n="@@ci.form.public-check">Public issuer (anyone can obtain tokens from it, such as GitLab.com): mappings must pin a project or namespace ID</mat-checkbox>
+        <trove-checkbox [checked]="publicIssuer()" (checkedChange)="publicIssuer.set($event)" i18n="@@ci.form.public-check">Public issuer (anyone can obtain tokens from it, such as GitLab.com): mappings must pin a project or namespace ID</trove-checkbox>
         @if (fieldError('/publicIssuer'); as text) {
           <p class="field-error">{{ text }}</p>
         }
@@ -152,26 +151,26 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           <fieldset class="algorithms">
             <legend i18n="@@ci.form.algorithms">Signing algorithms</legend>
             @for (a of algorithms; track a) {
-              <mat-checkbox [checked]="algorithmSet().includes(a)" (change)="toggleAlgorithm(a, $event.checked)">{{ a }}</mat-checkbox>
+              <trove-checkbox [checked]="algorithmSet().includes(a)" (checkedChange)="toggleAlgorithm(a, $event)">{{ a }}</trove-checkbox>
             }
             @if (fieldError('/allowedAlgorithms'); as text) {
               <p class="field-error">{{ text }}</p>
             }
           </fieldset>
-          <mat-checkbox [checked]="exclusiveAudience()" (change)="exclusiveAudience.set($event.checked)" i18n="@@ci.form.exclusive-check">Accept only tokens whose audience is in the list above</mat-checkbox>
+          <trove-checkbox [checked]="exclusiveAudience()" (checkedChange)="exclusiveAudience.set($event)" i18n="@@ci.form.exclusive-check">Accept only tokens whose audience is in the list above</trove-checkbox>
           <trove-text-field i18n-label="@@ci.form.required-lines" label="Required claims" name="requiredClaims" type="textarea" [(value)]="requiredClaims" [error]="fieldError('/requiredClaims')" i18n-hint="@@ci.form.required-hint" hint="One per line. Empty: the preset of the kind." />
           <trove-text-field i18n-label="@@ci.form.skew" label="Clock skew (seconds)" name="clockSkewSeconds" type="number" [(value)]="clockSkew" [error]="fieldError('/clockSkewSeconds')" i18n-hint="@@ci.form.skew-hint" hint="0 to 300" />
           <trove-text-field i18n-label="@@ci.form.max-ttl" label="Maximum token lifetime (seconds)" name="maxTtlSeconds" type="number" [(value)]="maxTtl" [error]="fieldError('/maxTtlSeconds')" i18n-hint="@@ci.form.max-ttl-hint" hint="Empty: only the global maximum applies" />
-          <mat-checkbox [checked]="singleUse()" (change)="singleUse.set($event.checked)" i18n="@@ci.form.single-use">Reject a second exchange of the same ID token</mat-checkbox>
-          <mat-checkbox [checked]="useOutboundProxy()" (change)="useOutboundProxy.set($event.checked)" i18n="@@ci.form.proxy-check">Fetch discovery and keys through the outbound proxy</mat-checkbox>
+          <trove-checkbox [checked]="singleUse()" (checkedChange)="singleUse.set($event)" i18n="@@ci.form.single-use">Reject a second exchange of the same ID token</trove-checkbox>
+          <trove-checkbox [checked]="useOutboundProxy()" (checkedChange)="useOutboundProxy.set($event)" i18n="@@ci.form.proxy-check">Fetch discovery and keys through the outbound proxy</trove-checkbox>
           <trove-text-field i18n-label="@@ci.form.ca" label="CA bundle" name="caBundleRef" [(value)]="caBundleRef" [error]="fieldError('/caBundleRef')" i18n-hint="@@ci.form.ca-hint" hint="A reference such as file:/path or env:NAME, for an instance behind a private CA" />
         </details>
 
         @if (isNew()) {
-          <mat-checkbox [checked]="validate()" (change)="validate.set($event.checked)" i18n="@@ci.form.validate">Check the discovery document and the keys before saving</mat-checkbox>
+          <trove-checkbox [checked]="validate()" (checkedChange)="validate.set($event)" i18n="@@ci.form.validate">Check the discovery document and the keys before saving</trove-checkbox>
         }
         <div class="row-actions">
-          <button mat-flat-button type="submit" [disabled]="busy()">
+          <button class="btn btn-confirm" type="submit" [disabled]="busy()">
             @if (isNew()) {
               <ng-container i18n="@@ci.form.create">Create issuer</ng-container>
             } @else {
@@ -189,7 +188,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
       gap: var(--trove-space-2);
       align-items: flex-start;
       margin-block: var(--trove-space-2);
-      color: var(--mat-sys-on-surface-variant);
+      color: var(--trove-text-muted);
     }
     .source-note.warn .material-icons {
       color: var(--trove-status-warn);

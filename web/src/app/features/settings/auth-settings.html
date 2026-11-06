@@ -15,14 +15,14 @@
 
     <section class="card" aria-labelledby="as-anonymous">
       <h2 id="as-anonymous" i18n="@@auth-settings.anonymous">Anonymous access</h2>
-      <mat-checkbox
+      <trove-checkbox
         [checked]="anonymousAccess()"
         [disabled]="!canWrite() || (!s.ceilings.anonymousAllowed && !anonymousAccess())"
-        [attr.aria-describedby]="!s.ceilings.anonymousAllowed ? 'anonymous-ceiling' : null"
-        (change)="anonymousAccess.set($event.checked)"
+        [describedBy]="!s.ceilings.anonymousAllowed ? 'anonymous-ceiling' : null"
+        (checkedChange)="anonymousAccess.set($event)"
       >
         <ng-container i18n="@@auth-settings.anonymous-switch">Allow requests without a credential to read what the anonymous principal may read</ng-container>
-      </mat-checkbox>
+      </trove-checkbox>
       @if (!s.ceilings.anonymousAllowed) {
         <p id="anonymous-ceiling" class="muted">
           <span class="material-icons" aria-hidden="true">lock</span>
@@ -100,7 +100,7 @@
 
     @if (canWrite()) {
       <div class="row-actions">
-        <button mat-flat-button type="submit" [disabled]="busy() || !dirty()" i18n="@@auth-settings.save">Save settings</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirty()" i18n="@@auth-settings.save">Save settings</button>
       </div>
     }
   </form>

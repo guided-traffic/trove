@@ -283,7 +283,7 @@ describe('Exposure rule editor', () => {
     expect(text(body)).toContain('Save changes to rule releases?');
     expect(text(body)).toContain('paths.include');
     expect(r.endpoints.replaced).toHaveLength(0);
-    button(body.querySelector('mat-dialog-container')!, 'Save').click();
+    button(body.querySelector('[role="dialog"]')!, 'Save').click();
     await settle(r.fixture);
     expect(r.endpoints.replaced).toHaveLength(1);
     expect(r.endpoints.replaced[0]?.etag).toBe('"1"');
@@ -301,7 +301,7 @@ describe('Exposure rule editor', () => {
     await settle(r.fixture);
     button(r.root, 'Review and save').click();
     await settle(r.fixture);
-    button(r.root.ownerDocument.body.querySelector('mat-dialog-container')!, 'Save').click();
+    button(r.root.ownerDocument.body.querySelector('[role="dialog"]')!, 'Save').click();
     await settle(r.fixture);
     const body = r.root.ownerDocument.body;
     expect(text(body)).toContain('Changed by someone else since you opened it');

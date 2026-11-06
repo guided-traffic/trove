@@ -9,7 +9,6 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import {
@@ -107,7 +106,7 @@ const FIELD_LABELS: readonly (readonly [prefix: string, label: () => string])[] 
  */
 @Component({
   selector: 'trove-exposure-rule-editor',
-  imports: [MatButtonModule, RouterLink, CopyButton, ErrorNotice, ErrorSummary],
+  imports: [RouterLink, CopyButton, ErrorNotice, ErrorSummary],
   templateUrl: './exposure-rule-editor.html',
   styleUrl: './exposure-rule-editor.scss',
 })

@@ -95,11 +95,11 @@
     <form class="form-grid" (submit)="savePreferences($event)">
       <trove-select-field i18n-label="@@profile.pref.locale" label="Language" name="locale" [options]="localeOptions" [(value)]="locale" />
       <trove-select-field i18n-label="@@profile.pref.theme" label="Theme" name="theme" [options]="themeOptions" [(value)]="theme" />
-      <mat-checkbox [checked]="shortcuts()" (change)="shortcuts.set($event.checked)">
+      <trove-checkbox [checked]="shortcuts()" (checkedChange)="shortcuts.set($event)">
         <ng-container i18n="@@profile.pref.shortcuts">Keyboard shortcuts with a single key</ng-container>
-      </mat-checkbox>
+      </trove-checkbox>
       <div class="row-actions">
-        <button mat-flat-button type="submit" [disabled]="saving()" i18n="@@profile.pref.save">Save preferences</button>
+        <button class="btn btn-confirm" type="submit" [disabled]="saving()" i18n="@@profile.pref.save">Save preferences</button>
       </div>
     </form>
   }

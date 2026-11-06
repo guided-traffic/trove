@@ -1,6 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogClose, DialogTitle } from '../../shared/ui/dialog';
 import { DiffLine } from './policy-model';
 
 export interface PolicyDiffData {
@@ -14,10 +13,10 @@ export interface PolicyDiffData {
  */
 @Component({
   selector: 'trove-policy-diff-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [DialogTitle, DialogClose],
   template: `
-    <h2 mat-dialog-title i18n="@@policy-diff.title">Save these changes?</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle i18n="@@policy-diff.title">Save these changes?</h2>
+    <div class="dialog-body">
       @if (data.lines.length === 0) {
         <p i18n="@@policy-diff.none">Nothing differs from the stored policy.</p>
       } @else {
@@ -44,11 +43,11 @@ export interface PolicyDiffData {
           }
         </ul>
       }
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button type="button" [mat-dialog-close]="false" i18n="@@policy-diff.cancel">Keep editing</button>
-      <button mat-flat-button type="button" [mat-dialog-close]="true" i18n="@@policy-diff.confirm">Save policy</button>
-    </mat-dialog-actions>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-tertiary" type="button" [troveDialogClose]="false" i18n="@@policy-diff.cancel">Keep editing</button>
+      <button class="btn btn-confirm" type="button" [troveDialogClose]="true" i18n="@@policy-diff.confirm">Save policy</button>
+    </div>
   `,
   styles: `
     .diff {
@@ -82,5 +81,5 @@ export interface PolicyDiffData {
   `,
 })
 export class PolicyDiffDialog {
-  protected readonly data = inject<PolicyDiffData>(MAT_DIALOG_DATA);
+  protected readonly data = inject<PolicyDiffData>(DIALOG_DATA);
 }

@@ -1,6 +1,4 @@
 import { Component, computed, input, model } from '@angular/core';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
 
 let nextFieldId = 1;
 
@@ -12,13 +10,12 @@ let nextFieldId = 1;
  */
 @Component({
   selector: 'trove-text-field',
-  imports: [MatFormFieldModule, MatInputModule],
   template: `
-    <mat-form-field class="field" subscriptSizing="dynamic">
-      <mat-label>{{ label() }}</mat-label>
+    <div class="field">
+      <label class="field-label" [for]="id">{{ label() }}</label>
       @if (type() === 'textarea') {
         <textarea
-          matInput
+          class="area-input"
           rows="3"
           [id]="id"
           [name]="name()"
@@ -31,7 +28,7 @@ let nextFieldId = 1;
         ></textarea>
       } @else {
         <input
-          matInput
+          class="text-input"
           [id]="id"
           [type]="type()"
           [name]="name()"
@@ -46,9 +43,9 @@ let nextFieldId = 1;
         />
       }
       @if (hint()) {
-        <mat-hint [id]="id + '-hint'">{{ hint() }}</mat-hint>
+        <p class="hint" [id]="id + '-hint'">{{ hint() }}</p>
       }
-    </mat-form-field>
+    </div>
     @if (error(); as text) {
       <p class="field-error" [id]="id + '-error'">{{ text }}</p>
     }
@@ -59,12 +56,28 @@ let nextFieldId = 1;
       inline-size: 100%;
     }
     .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--trove-space-1);
+      margin-block-end: var(--trove-space-3);
+    }
+    .field:has(+ .field-error) {
+      margin-block-end: var(--trove-space-1);
+    }
+    .area-input {
       inline-size: 100%;
+      resize: vertical;
+    }
+    .text-input {
+      inline-size: 100%;
+    }
+    .hint {
+      margin: 0;
     }
     .field-error {
       margin: 0 0 var(--trove-space-3);
       color: var(--trove-status-bad);
-      font: var(--mat-sys-body-small);
+      font: var(--trove-type-body-small);
     }
   `,
 })
@@ -98,12 +111,11 @@ export interface SelectOption {
 /** A native `<select>` in a form field: the platform widget is keyboard-operable and announced correctly. */
 @Component({
   selector: 'trove-select-field',
-  imports: [MatFormFieldModule, MatInputModule],
   template: `
-    <mat-form-field class="field" subscriptSizing="dynamic">
-      <mat-label>{{ label() }}</mat-label>
+    <div class="field">
+      <label class="field-label" [for]="id">{{ label() }}</label>
       <select
-        matNativeControl
+        class="select-input"
         [id]="id"
         [name]="name()"
         [attr.aria-invalid]="error() ? 'true' : null"
@@ -114,7 +126,7 @@ export interface SelectOption {
           <option [value]="o.value" [selected]="o.value === value()">{{ o.label }}</option>
         }
       </select>
-    </mat-form-field>
+    </div>
     @if (error(); as text) {
       <p class="field-error" [id]="id + '-error'">{{ text }}</p>
     }
@@ -123,10 +135,19 @@ export interface SelectOption {
     :host {
       display: inline-block;
     }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--trove-space-1);
+      margin-block-end: var(--trove-space-3);
+    }
+    .field:has(+ .field-error) {
+      margin-block-end: var(--trove-space-1);
+    }
     .field-error {
       margin: 0 0 var(--trove-space-3);
       color: var(--trove-status-bad);
-      font: var(--mat-sys-body-small);
+      font: var(--trove-type-body-small);
     }
   `,
 })

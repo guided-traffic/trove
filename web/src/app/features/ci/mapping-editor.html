@@ -6,7 +6,7 @@
       <ng-container i18n="@@ci.editor.heading">Mapping</ng-container>
     }
   </h1>
-  <a mat-button [routerLink]="back()" i18n="@@ci.editor.back">Back to the mappings</a>
+  <a class="btn btn-tertiary" [routerLink]="back()" i18n="@@ci.editor.back">Back to the mappings</a>
 </header>
 @if (!isNew()) {
   <p class="subject" translate="no">{{ issuerName() }}/{{ mapping() }}</p>
@@ -82,7 +82,7 @@
             i18n-hint="@@ci.editor.priority-hint"
             hint="A lower number is evaluated first. Priorities are unique within a tier."
           />
-          <mat-checkbox [checked]="form().enabled" (change)="patch({ enabled: $event.checked })" i18n="@@ci.editor.enabled">Enabled</mat-checkbox>
+          <trove-checkbox [checked]="form().enabled" (checkedChange)="patch({ enabled: $event })" i18n="@@ci.editor.enabled">Enabled</trove-checkbox>
         </div>
       </section>
 
@@ -92,8 +92,8 @@
           The mapping applies to a job when this is true of the claims of its ID token. Pin a project or namespace by its ID, which a rename cannot change.
         </p>
         <div class="view-switch" role="group" aria-label="View" i18n-aria-label="@@ci.editor.view">
-          <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'builder'" (click)="showBuilder()" i18n="@@ci.editor.view-builder">Builder</button>
-          <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'json'" (click)="showJson()" i18n="@@ci.editor.view-json">JSON</button>
+          <button type="button" class="btn btn-default switch" [attr.aria-pressed]="view() === 'builder'" (click)="showBuilder()" i18n="@@ci.editor.view-builder">Builder</button>
+          <button type="button" class="btn btn-default switch" [attr.aria-pressed]="view() === 'json'" (click)="showJson()" i18n="@@ci.editor.view-json">JSON</button>
         </div>
         @if (fieldError('/match'); as text) {
           <p class="field-error" id="ci-m-match-error">{{ text }}</p>
@@ -137,7 +137,7 @@
             <span class="material-icons" aria-hidden="true">warning</span>
             <span i18n="@@ci.editor.unprotected">The grants can publish, overwrite or delete, so the top level must require ref_protected = true. Otherwise anyone who can push a branch can publish.</span>
             @if (writable()) {
-              <button mat-stroked-button type="button" (click)="addProtectedRef()" i18n="@@ci.editor.add-protected">Require protected refs</button>
+              <button class="btn btn-default" type="button" (click)="addProtectedRef()" i18n="@@ci.editor.add-protected">Require protected refs</button>
             }
           </p>
         }
@@ -186,7 +186,7 @@
             <div class="inline-head">
               <strong>{{ rowLabel(i) }}</strong>
               @if (writable()) {
-                <button mat-button type="button" (click)="removeRow(row.id)" i18n="@@ci.editor.remove-grant">Remove grant</button>
+                <button class="btn btn-tertiary" type="button" (click)="removeRow(row.id)" i18n="@@ci.editor.remove-grant">Remove grant</button>
               }
             </div>
             @for (text of rowProblems(i); track text) {
@@ -205,9 +205,9 @@
             @if (project() && projectRepositories().length > 0 && writable()) {
               <div class="quick" role="group" aria-label="Repositories of the project" i18n-aria-label="@@ci.editor.project-repos">
                 @for (r of projectRepositories(); track r) {
-                  <button mat-stroked-button type="button" (click)="addRepository(row, r)">{{ r }}</button>
+                  <button class="btn btn-default" type="button" (click)="addRepository(row, r)">{{ r }}</button>
                 }
-                <button mat-stroked-button type="button" (click)="addRepository(row, '@any')">&#64;any</button>
+                <button class="btn btn-default" type="button" (click)="addRepository(row, '@any')">&#64;any</button>
               </div>
             }
             <trove-select-field i18n-label="@@ci.editor.kind" label="Applies to" [name]="'kind-' + i" [options]="kindOptions" [value]="row.kind" (valueChange)="setRow(row.id, { kind: $any($event) })" />
@@ -224,7 +224,7 @@
             <fieldset class="actions-set">
               <legend i18n="@@ci.editor.actions">Actions</legend>
               @for (a of actions; track a) {
-                <mat-checkbox [checked]="row.actions.includes(a)" (change)="toggleAction(row, a, $event.checked)">{{ a }}</mat-checkbox>
+                <trove-checkbox [checked]="row.actions.includes(a)" (checkedChange)="toggleAction(row, a, $event)">{{ a }}</trove-checkbox>
               }
             </fieldset>
             <trove-select-field i18n-label="@@ci.editor.ownership" label="Ownership of package names" [name]="'ownership-' + i" [options]="ownershipOptions" [value]="row.ownership" (valueChange)="setRow(row.id, { ownership: $any($event) })" />
@@ -237,7 +237,7 @@
           </div>
         }
         @if (writable()) {
-          <button mat-stroked-button type="button" (click)="addInline()" i18n="@@ci.editor.add-grant">Add inline grant</button>
+          <button class="btn btn-default" type="button" (click)="addInline()" i18n="@@ci.editor.add-grant">Add inline grant</button>
         }
       </section>
 
@@ -264,9 +264,9 @@
             (valueChange)="patch({ crossProjectSource: $any($event) })"
             [error]="fieldError('/options/crossProjectSource')"
           />
-          <mat-checkbox [checked]="form().allowUnprotectedRefs" (change)="patch({ allowUnprotectedRefs: $event.checked })" i18n="@@ci.editor.allow-unprotected">
+          <trove-checkbox [checked]="form().allowUnprotectedRefs" (checkedChange)="patch({ allowUnprotectedRefs: $event })" i18n="@@ci.editor.allow-unprotected">
             Allow unprotected refs to use write grants
-          </mat-checkbox>
+          </trove-checkbox>
           @if (form().allowUnprotectedRefs) {
             <p class="hint warn" role="note" id="ci-m-unprotected-warning">
               <span class="material-icons" aria-hidden="true">warning</span>
@@ -281,7 +281,7 @@
 
     <div class="row-actions">
       @if (writable()) {
-        <button mat-flat-button type="submit" [disabled]="busy() || !!jsonError()">
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || !!jsonError()">
           @if (isNew()) {
             <ng-container i18n="@@ci.editor.create">Create mapping</ng-container>
           } @else {
@@ -290,9 +290,9 @@
         </button>
       }
       @if (!isNew()) {
-        <a mat-stroked-button [routerLink]="testLink()" [queryParams]="testQuery()" i18n="@@ci.editor.test">Test with claims</a>
+        <a class="btn btn-default" [routerLink]="testLink()" [queryParams]="testQuery()" i18n="@@ci.editor.test">Test with claims</a>
         @if (canSnippet()) {
-          <button mat-stroked-button type="button" [attr.aria-expanded]="snippetOpen()" aria-controls="ci-m-snippet" (click)="toggleSnippet()" i18n="@@ci.editor.snippet">CI snippet</button>
+          <button class="btn btn-default" type="button" [attr.aria-expanded]="snippetOpen()" aria-controls="ci-m-snippet" (click)="toggleSnippet()" i18n="@@ci.editor.snippet">CI snippet</button>
         }
       }
     </div>

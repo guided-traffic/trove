@@ -1,6 +1,5 @@
 import { Component, computed, input, output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatTooltipModule } from '@angular/material/tooltip';
+import { Tooltip } from './tooltip';
 import { ApiError } from '../../api/problem';
 import { ErrorNotice } from '../error-notice';
 
@@ -41,7 +40,7 @@ let nextTableId = 1;
  */
 @Component({
   selector: 'trove-data-table',
-  imports: [MatButtonModule, MatTooltipModule, ErrorNotice],
+  imports: [Tooltip, ErrorNotice],
   template: `
     @if (error(); as e) {
       <trove-error-notice [error]="e" (retry)="retry.emit()" />
@@ -76,8 +75,7 @@ let nextTableId = 1;
                         <button
                           type="button"
                           class="th-help"
-                          [matTooltip]="c.help"
-                          matTooltipPosition="below"
+                          [troveTooltip]="c.help"
                           [attr.aria-label]="helpLabel(c)"
                         >
                           <span class="material-icons" aria-hidden="true">help_outline</span>
@@ -96,8 +94,7 @@ let nextTableId = 1;
       </div>
       @if (hasMore()) {
         <p class="table-more">
-          <button
-            mat-stroked-button
+          <button class="btn btn-default"
             type="button"
             [disabled]="loading()"
             (click)="more.emit()"

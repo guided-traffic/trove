@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { IdentityApi, ServiceAccount } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
@@ -24,14 +23,14 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
  */
 @Component({
   selector: 'trove-service-account-detail',
-  imports: [DatePipe, MatButtonModule, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager],
+  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sa.heading">Service account</h1>
       @if (project(); as projectKey) {
-        <a mat-button [routerLink]="['/admin/projects', projectKey]" i18n="@@sa.back-project">Back to the project</a>
+        <a class="btn btn-tertiary" [routerLink]="['/admin/projects', projectKey]" i18n="@@sa.back-project">Back to the project</a>
       } @else {
-        <a mat-button routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
+        <a class="btn btn-tertiary" routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
       }
     </header>
     <p class="subject" translate="no">{{ name() }}</p>
@@ -73,13 +72,13 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
           <trove-text-field i18n-label="@@sa.description" label="Description" name="description" [(value)]="description" [readonly]="!canWrite()" [error]="fieldError('/description')" />
           @if (canWrite()) {
             <div class="row-actions">
-              <button mat-flat-button type="submit" [disabled]="busy()" i18n="@@sa.save">Save description</button>
+              <button class="btn btn-confirm" type="submit" [disabled]="busy()" i18n="@@sa.save">Save description</button>
               @if (a.status === 'active') {
-                <button mat-button type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
+                <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
               } @else {
-                <button mat-button type="button" [disabled]="busy() || !canEnable()" aria-describedby="sa-enable-note" (click)="enable()" i18n="@@sa.enable">Enable</button>
+                <button class="btn btn-tertiary" type="button" [disabled]="busy() || !canEnable()" aria-describedby="sa-enable-note" (click)="enable()" i18n="@@sa.enable">Enable</button>
               }
-              <button mat-button type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
+              <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
             </div>
           }
         </form>

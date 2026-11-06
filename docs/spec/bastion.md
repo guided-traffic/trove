@@ -49,12 +49,14 @@ Conventions on this page:
 
 - `https://trove.example.com` is the main endpoint of the main installation *(example)*; `https://packages.example.com` is the
   base URL of a Bastion registered as `partners` *(example)*.
-- `npm-all` is a virtual repository over `npm-local` and `npm-remote` (upstream `https://registry.npmjs.org/`), `nuget-all` its
-  NuGet counterpart; `npm-partner` is a local repository *(examples)*.
-- Fixture principals *(examples)*: the service account `acme-full`, whose policy grants `read` on `npm-all`, `nuget-all` and
-  every member, and whose token is `$FULL`; the service account `acme-part`, whose policy grants `read` on `npm-all` and on
-  `npm-local` with `packages.include: ["@acme/*"]` only, token `$PART`; `$NONE`, a token of a service account without grants;
-  `$BST`, the Bastion token of `partners`.
+- The repositories are those of project `web` *(example)*: `npm-all` is a virtual repository over `npm-local` and `npm-remote`
+  (upstream `https://registry.npmjs.org/`), `nuget-all` its NuGet counterpart; `npm-partner` is a local repository
+  *(examples)*. Their addresses carry the project (`/api/npm/web/npm-all/`), and every wire value that names a repository is
+  its qualified name (`web/npm-all`); a bare key in a sentence names the repository of `web`.
+- Fixture principals *(examples)*: the service account `acme-full` of project `web` (`sa:web/acme-full`), whose project policy
+  grants `read` on `npm-all`, `nuget-all` and every member, and whose token is `$FULL`; the service account `acme-part` of
+  `web`, whose project policy grants `read` on `npm-all` and on `npm-local` with `packages.include: ["@acme/*"]` only, token
+  `$PART`; `$NONE`, a token of a service account without grants; `$BST`, the Bastion token of `partners`.
 - *Main installation* is the trove installation whose content a Bastion serves; *caller* is a client of the Bastion; *answer*
   is something the main installation told the Bastion about a caller (R-BAS-020).
 
@@ -218,8 +220,8 @@ Priority: **MVP** · Covers: DIST-024
   except `/api/v1/…`) and `/files/…` of INV-6, mirrored from the main installation (R-BAS-018). Every other path answers `404`
   from the Bastion itself (R-BAS-029): `/`, `/ui/…`, `/auth/…`, `/api/v1/…`, `/-/…`, `/v2/…`, `/.well-known/…`. The main
   installation's router decodes every segment before it compares it, so `/api/%761/users` is `/api/v1/users` there: a path
-  whose family, format or key segment contains a percent-encoding, and a path with a `.` or `..` segment, answer `404` from the
-  Bastion as well ([Q-BAS-121](#q-bas-121--a-path-is-classified-as-the-main-installations-router-will-read-it-and-a-token-refusal-on-a-forward-is-no-statement-about-the-bastions-token)).
+  whose family, format, project or key segment contains a percent-encoding, and a path with a `.` or `..` segment, answer `404`
+  from the Bastion as well ([Q-BAS-121](#q-bas-121--a-path-is-classified-as-the-main-installations-router-will-read-it-and-a-token-refusal-on-a-forward-is-no-statement-about-the-bastions-token)).
 - There is no login, no session, no cookie and no browser flow. A `Cookie` header is ignored and never forwarded. A session
   token never reaches the Bastion from trove, because trove never sets a cookie for the Bastion's host.
 - The ops listener serves `/healthz`, `/readyz` and `/metrics` as on every trove role ([operations-and-observability.md](operations-and-observability.md)
@@ -231,7 +233,7 @@ Acceptance criteria:
   flow; the others answer `404` with `bastion_not_served` and the counting double of the main installation records no request.
 - A request with `Cookie: __Host-trv_session=…` and no other credential is treated as anonymous, and the request the Bastion
   forwards carries no `Cookie`.
-- `/api/%761/users`, `/api/%76%31/bastion/handshake` and every other encoded spelling of a family, format or key segment
+- `/api/%761/users`, `/api/%76%31/bastion/handshake` and every other encoded spelling of a family, format, project or key segment
   answer `404 bastion_not_served`, reach the main installation never, and leave the replica reachable however often they are
   repeated (`TestR_BAS_003_R_BAS_018_APathIsClassifiedAsTheMainInstallationsRouterWillRouteIt`,
   `TestR_BAS_003_R_BAS_006_AnEncodedSpellingOfTheInterfaceRoutesCannotTurnTheReplicaUnreachable`).
@@ -319,7 +321,8 @@ The Bastion token identifies the Bastion and may only have tokens checked; it re
   Bastion interface.
 - **What it grants.** Nothing in the decision point: it is never a subject of a read, a write or a management operation. On
   the interface it allows: the handshake, the check of a caller's credential and read (which tells the Bastion what the caller
-  could find out by using its credential itself), reading the revocation feed (token and principal IDs, repository keys), and
+  could find out by using its credential itself), reading the revocation feed (token and principal IDs, qualified repository
+  names `<projectKey>/<repoKey>`), and
   submitting download events (R-BAS-016). It cannot issue tokens, change a Secret, read a package, write content, or read the
   audit trail.
 - **Forwarded requests** are decided on the caller's credential alone. The Bastion token on a forwarded request only makes the
@@ -328,9 +331,9 @@ The Bastion token identifies the Bastion and may only have tokens checked; it re
 
 Acceptance criteria:
 
-- `$BST` as `Authorization: Bearer`, as Basic password and as `X-NuGet-ApiKey` on `/api/npm/npm-all/lodash`,
-  `/files/npm-local/x` and `/api/v1/repositories` answers `401 invalid_token`, and the token table records no query for it.
-- `GET /api/npm/npm-all/@acme%2fsdk` with `Trove-Bastion-Authorization: Bearer $BST` and no `Authorization` answers exactly what
+- `$BST` as `Authorization: Bearer`, as Basic password and as `X-NuGet-ApiKey` on `/api/npm/web/npm-all/lodash`,
+  `/files/web/npm-local/x` and `/api/v1/repositories` answers `401 invalid_token`, and the token table records no query for it.
+- `GET /api/npm/web/npm-all/@acme%2fsdk` with `Trove-Bastion-Authorization: Bearer $BST` and no `Authorization` answers exactly what
   an anonymous request answers, plus the marking headers.
 - `server.endpoints.default.auth.token_types: [pat, bst]` stops startup naming the key.
 
@@ -385,7 +388,7 @@ Priority: **MVP** · Covers: trove-only
   30 days, and the actions create, disable, delete, issue token (the secret shown once, as for every token) and revoke token.
   The screen uses only the operations of R-BAS-004 (INV-17). It is one page with a card per registration, which shows the
   registration's facts and actions, the last contact of every replica and its tokens ([Q-BAS-95](#q-bas-95--the-bastions-screen-is-one-page-with-a-card-per-registration)).
-- **Client setup.** `GET /api/v1/repositories/{repoKey}/client-setup` ([api-and-ui.md](api-and-ui.md) R-API-030) accepts
+- **Client setup.** `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup` ([api-and-ui.md](api-and-ui.md) R-API-030) accepts
   `bastion=<name>`: the snippets are rendered on the base URL the Bastion reported at its last handshake, provided it is an
   entry of `server.additional_base_urls` (else `409 bastion_base_url_unknown`, also while it has reported none; a name that is no
   registration answers `404`; [Q-BAS-97](#q-bas-97--the-reported-address-is-matched-against-the-listed-addresses-and-the-setup-needs-no-base-url-of-its-own)),
@@ -402,8 +405,8 @@ Acceptance criteria:
 
 - The browser test creates `partners`, issues a token, copies it once, and sees the last contact appear after the Bastion of
   the e2e cluster starts; a token expiring in 20 days shows the warning mark.
-- `client-setup?client=npm&bastion=partners` on `npm-all` returns a registry URL
-  `https://packages.example.com/api/npm/npm-all/`, `replace-registry-host=always`, and no `publish` tab
+- `client-setup?client=npm&bastion=partners` on `web/npm-all` returns a registry URL
+  `https://packages.example.com/api/npm/web/npm-all/`, `replace-registry-host=always`, and no `publish` tab
   (`TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported`, and through the stack
   `TestR_BAS_007_ClientSetupForABastionThroughTheStack`).
 
@@ -557,15 +560,15 @@ Priority: **MVP** · Covers: RMT-040
 content is cached and no fetch is needed (R-BAS-022, R-BAS-023).
 
 ```json
-{"credential": "trv_pat_3kQ9…", "clientAddress": "203.0.113.7", "repositories": ["npm-all", "npm-partner"]}
+{"credential": "trv_pat_3kQ9…", "clientAddress": "203.0.113.7", "repositories": ["web/npm-all", "web/npm-partner"]}
 ```
 
 ```json
 {
   "subject": {"kind": "token", "tokenId": "0192…", "principalId": "0191…", "expiresAt": "2027-01-31T00:00:00Z"},
   "repositories": {
-    "npm-all":     {"read": "full"},
-    "npm-partner": {"read": "none", "status": 404}
+    "web/npm-all":     {"read": "full"},
+    "web/npm-partner": {"read": "none", "status": 404}
   }
 }
 ```
@@ -579,10 +582,12 @@ content is cached and no fetch is needed (R-BAS-022, R-BAS-023).
   `anonymous_refused` (no credential; anonymous access off), `invalid` (malformed, unknown, expired, revoked, owner disabled:
   R-AUTH-002 does not tell which, and neither does this answer), or `throttled` with `retryAfterSeconds` (the address is in
   R-AUTH-038's throttled mode and the credential is not exempt).
-- `repositories`: at most `bastions.check.max_repositories` keys; for each, the read shape of R-BAS-012 and, for `none`, the
-  status the caller would receive for a read of the repository (`401` for an anonymous caller, otherwise `404` or `403` by
-  R-AUTHZ-016 and R-AUTHZ-017). An unknown key answers `none` with the status of a missing repository for that caller, so the
-  check reveals no more than the caller's own request would.
+- `repositories`: at most `bastions.check.max_repositories` qualified names `<projectKey>/<repoKey>`, the addresses the
+  Bastion classified (R-BAS-018); for each, the read shape of R-BAS-012 and, for `none`, the status the caller would receive
+  for a read of the repository (`401` for an anonymous caller, otherwise `404` or `403` by R-AUTHZ-016 and R-AUTHZ-017). An
+  unknown name, a project the caller cannot see included, answers `none` with the status of a missing repository for that
+  caller, so the check reveals no more than the caller's own request would; a name without a project is refused with
+  `400 malformed_request`.
 - The check writes no `authz.denied` events: it asks about repositories, not about a request a client made; the request that
   follows a `none` is the Bastion's own refusal (R-BAS-029), and its audit is the request log of the Bastion.
 - An answer has no lifetime of its own: the Bastion keeps it for its period (R-BAS-020), never beyond `expiresAt`.
@@ -600,7 +605,7 @@ bastions:                              # the main installation's section (the Ba
 
 Acceptance criteria:
 
-- `$FULL` on `["npm-all", "npm-partner"]` answers `full` and `none` with `404`; `$PART` on `["npm-all"]` answers `partial`;
+- `$FULL` on `["web/npm-all", "web/npm-partner"]` answers `full` and `none` with `404`; `$PART` on `["web/npm-all"]` answers `partial`;
   a revoked token answers `"kind": "invalid"`; `null` with anonymous access off answers `anonymous_refused`.
 - 400 checks with random well-formed tokens for one `clientAddress` within a minute: from the 301st on the answer is
   `throttled` (R-AUTH-038's default), and a direct request from that address is throttled too.
@@ -617,7 +622,7 @@ The read shape of a subject on an addressed repository is computed by the decisi
   exposure `all`), and for a remote repository additionally the populate right of R-AUTHZ-008. For a virtual repository: the
   gate `read` on the repository itself (R-AUTHZ-009 rule 1) and `full` on every member, recursively.
 - `none`: the subject may read nothing through the repository: no gate, `ReadNone` on every member, an anonymous subject on a
-  repository with `requireAuthentication` or anonymous access off, an unknown key.
+  repository with `requireAuthentication` or anonymous access off, an unknown repository or project.
 - `partial`: every other case.
 
 The shape is the answer to the owner's "the main installation confirmed a full read of the repository" (Q-BAS-18): a `full`
@@ -629,7 +634,7 @@ Acceptance criteria:
 
 - `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint`: over every subject, repository, package and version of the R-AUTHZ fixture,
   a `full` shape never meets a refused read, and a `none` shape never meets an allowed one.
-- `acme-full` without the populate right on `npm-remote` has shape `partial` on `npm-all`; with it, `full`.
+- `acme-full` without the populate right on `web/npm-remote` has shape `partial` on `web/npm-all`; with it, `full`.
 - An exposure rule on the default endpoint makes every shape on the exposed repository `partial` at most.
 
 The rules the list leaves open are decided in [Q-BAS-73](#q-bas-73--the-read-shape-is-computed-inside-the-decision-point-and-agrees-with-it-by-test):
@@ -651,7 +656,7 @@ recognized Bastion request; no format code is involved, because the dispatcher k
 | Header | Value |
 |---|---|
 | `Trove-Bastion-Class` | `artifact` for a `200` or `304` of a `Download` route or of a file under `/files/`; `shared` for a `200` or `304` of a `Metadata` or `Computed` route (or a `/files/` folder listing) when the caller's shape on the addressed repository is `full`; `private` for the same routes otherwise; `absent` for a `404` of a read route when the item does not exist in the repository for any subject (no member holds it, the remote's negative cache or upstream says so); `pass` for every other answer (`Volatile` and other routes, errors, redirects) |
-| `Trove-Bastion-Repository` | the addressed repository key |
+| `Trove-Bastion-Repository` | the addressed repository's qualified name `<projectKey>/<repoKey>` |
 | `Trove-Bastion-Read` | the caller's shape on the addressed repository (R-BAS-012) |
 | `Trove-Bastion-Subject` | `token=<token ID>; principal=<principal ID>; expires=<unix seconds>` (`expires` left out for a token that does not expire, [Q-BAS-49](#q-bas-49--the-interface-is-one-package-of-wire-types-four-details-of-the-contract-are-fixed-in-it)), or `anonymous`, or `invalid` on a `401` for a rejected credential |
 | `Trove-Bastion-Interface` | the main installation's interface version |
@@ -683,7 +688,7 @@ Acceptance criteria:
 
 - Through the in-process main installation: a tarball `GET` with `$FULL` carries `Trove-Bastion-Class: artifact`,
   `Trove-Bastion-Read: full`; the package document with `$FULL` carries `shared` and with `$PART` `private`; `-/v1/search`
-  carries `pass`; a missing name in `npm-local` with `$FULL` carries `absent`, and a name `$PART` may not read carries `pass`
+  carries `pass`; a missing name in `web/npm-local` with `$FULL` carries `absent`, and a name `$PART` may not read carries `pass`
   with the same `404` body as a missing one.
 - The kit check passes for npm and NuGet: two `full` subjects receive byte-identical documents and the same ETag on every
   `Metadata` and `Computed` route of the fixture.
@@ -706,7 +711,7 @@ answers a write in the client's protocol shape and points at the main installati
   - a route whose `RouteKind` is `Upload`, `Delete` or `Admin`, or whose coarse action is not `read`: `403` with the problem
     code `bastion_read_only` in the format's error shape (R-ARCH-023), whose detail names the main installation's URL of the
     addressed repository: `This is a read-only Bastion of https://trove.example.com; publish to
-    https://trove.example.com/api/npm/npm-all/`;
+    https://trove.example.com/api/npm/web/npm-all/`;
   - a read route that takes a body (npm's `POST …/-/npm/v1/security/advisories/bulk`): `204` with `Trove-Bastion-Route:
     read-with-body`;
   - no route: the format's or the core's `404`.
@@ -754,16 +759,17 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
 | `authz.role.unbound` of a user or service account | `principal` with that principal |
 | `group.deleted`, `authz.role.unbound` of a group, `authz.policy.deleted`, `authz.policy.updated`, `authz.settings.changed`, the `ci.issuer.*` and `ci.mapping.*` disables, deletions and updates, `endpoint.exposure.deleted` and `.updated` of the default endpoint | `{"kind": "grants"}`: every permission answer of every caller |
 | `settings.auth.changed` | `{"kind": "settings"}`, and `grants` when anonymous access was switched off |
-| `npm.unpublish`, `package.deleted` | `{"kind": "content", "repositories": [<key>, …]}`: the repository and every virtual repository that includes it, recursively, at the time the feed is read |
+| `npm.unpublish`, `package.deleted` | `{"kind": "content", "repositories": [<projectKey>/<repoKey>, …]}`: the repository and every virtual repository that includes it, recursively, at the time the feed is read, by their qualified names |
 | from M4b: `vulnerability.finding.status_changed` and `vulnerability.finding.reopened` with `block: set` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013) | `content` for the finding's repository and its virtual repositories |
-| `authz.project.repository_unassigned` | `grants`: the repository left its project's policies behind ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified)) |
-| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted`, `authz.project.admin_removed` | none: they bound publishing, reserve numbers, bound what project administrators may change, or narrow reads through events of their own (a project's policies are deleted before it, each `authz.policy.deleted`); each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
+| `repository.moved` | `grants`: the repository left its project's roles and policies behind and changed its address ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified), [repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)) |
+| `authz.project.member_removed`, `authz.project.member_changed` | `grants`: a member's role grants reads on every repository of the project ([authorization.md](authorization.md) R-AUTHZ-026), so a removal or a lower role narrows them |
+| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted` | none: they bound publishing, reserve numbers, change a project's name and description, or remove a project that holds no repository (a project's policies are deleted before it, each `authz.policy.deleted`); each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
 
 ```json
 {
   "entries": [
     {"id": "0192f2a0-…", "at": "2026-11-02T10:00:01.250Z", "kind": "token", "tokens": ["0192…"]},
-    {"id": "0192f2a1-…", "at": "2026-11-02T10:00:02.900Z", "kind": "content", "repositories": ["npm-local", "npm-all"]}
+    {"id": "0192f2a1-…", "at": "2026-11-02T10:00:02.900Z", "kind": "content", "repositories": ["web/npm-local", "web/npm-all"]}
   ],
   "cursor": "MjAyNi0xMS0wMlQxMDowMDowMi45MDBafDAxOTJmMmExLi4u",
   "more": false,
@@ -807,7 +813,9 @@ Acceptance criteria:
 - Revoking `$FULL` adds one `token` entry within the commit; a feed read with the earlier cursor returns it once, and the next
   read with the returned cursor returns it again only while it lies within `lookback`, with the same `id`.
 - A point-in-time restore of the main installation to before the cursor's entry answers the next feed read with `reset: true`.
-- `npm unpublish @acme/sdk@1.0.0` in `npm-local` yields a `content` entry naming `npm-local` and `npm-all`.
+- `npm unpublish @acme/sdk@1.0.0` in `web/npm-local` yields a `content` entry naming `web/npm-local` and `web/npm-all`.
+- Removing a member from project `web`, lowering its role, and moving a repository of `web` to another project each yield a
+  `grants` entry.
 
 ### R-BAS-016 · Download intake
 Priority: **MVP** · Covers: RMT-041
@@ -819,7 +827,7 @@ most `bastions.downloads.max_batch` (owner, [Q-BAS-13](#q-bas-13--downloads-serv
 {
   "events": [
     {"at": "2026-11-02T10:00:03.100Z", "tokenId": "0192…", "principalId": "0191…", "clientAddress": "203.0.113.7",
-     "repository": "npm-all", "path": "/api/npm/npm-all/@acme/sdk/-/sdk-2.1.0.tgz",
+     "repository": "web/npm-all", "path": "/api/npm/web/npm-all/@acme/sdk/-/sdk-2.1.0.tgz",
      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
      "userAgent": "npm/11.20.0 node/v24.0.0", "replica": "trove-bastion-7d9c-x2k4q"}
   ],
@@ -831,7 +839,7 @@ most `bastions.downloads.max_batch` (owner, [Q-BAS-13](#q-bas-13--downloads-serv
 *(example request)*
 
 - The main installation writes each event as `artifact.downloaded` (asynchronous, R-OPS-015) with `actor` from `principalId`
-  (or `anonymous`), `token_id`, `source_ip = clientAddress`, `repository`, `path` (the request path; the Bastion knows no item
+  (or `anonymous`), `token_id`, `source_ip = clientAddress`, `repository` (the qualified name) and `project`, `path` (the request path; the Bastion knows no item
   path), `details.sha256`, `details.origin: "bastion"`, `details.bastion: <registration name>`, `details.replica`, and
   `occurred_at = at`. An event whose `at` lies in the future is recorded at the time of receipt; one older than
   `bastions.downloads.max_age` is not recorded and is counted as dropped.
@@ -922,11 +930,14 @@ Q-BAS-17). Each request passes these steps in order; the first that answers ends
 1. **Host.** The effective host (R-EP-003 rules, with the Bastion's own trusted proxies) must be the host of
    `server.base_url`; any other host, an IP literal and a missing host answer `421 misdirected_request` (a port is not part of the host, [Q-BAS-83](#q-bas-83--the-engine-decides-the-host-and-takes-the-client-address-from-the-chain)).
 2. **Block list** (R-BAS-037): a blocked address answers `429 address_blocked`.
-3. **Path family.** `/api/v1/…` and every path outside `/api/<format>/<key>/…` and `/files/<key>/…` answer `404
-   bastion_not_served` (R-BAS-003). `<key>` is the addressed repository key for the Bastion's bookkeeping until the main
-   installation's `Trove-Bastion-Repository` confirms it; a key that does not match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5)
-   answers `404` without a request. The Bastion reads no other part of a path. A family, format or key segment that is
-   percent-encoded and a `.` or `..` segment are not classified: the path answers `404 bastion_not_served` (Q-BAS-121).
+3. **Path family.** `/api/v1/…` and every path outside `/api/<format>/<projectKey>/<repoKey>/…` and
+   `/files/<projectKey>/<repoKey>/…` answer `404 bastion_not_served` (R-BAS-003): a protocol path needs four segments before
+   its rest, a raw path three. `<projectKey>/<repoKey>` is the addressed repository's qualified name for the Bastion's
+   bookkeeping (answer keys, the check, cache entries) until the main installation's `Trove-Bastion-Repository` confirms it; a
+   project segment that does not match `^[a-z][a-z0-9-]{1,31}$` or a key that does not match
+   `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5) answers `404` without a request, and so does `/api/npm/web` with one segment after
+   the format. The Bastion reads no other part of a path. A family, format, project or key segment that is percent-encoded
+   and a `.` or `..` segment are not classified: the path answers `404 bastion_not_served` (Q-BAS-121).
 4. **Per-address limits** (R-BAS-035) and **credentials** (R-BAS-019), including the failed-authentication timeout (R-BAS-036).
 5. **Method.** `GET` and `HEAD` go to the read flow (R-BAS-020 to R-BAS-024); `OPTIONS` answers `405`; every other method goes
    to the write refusal of R-BAS-014. A write needs no credential before its probe ([Q-BAS-81](#q-bas-81--a-write-is-decided-by-the-probe-first-its-credential-is-checked-only-if-the-real-request-is-forwarded)).
@@ -940,8 +951,11 @@ Q-BAS-17). Each request passes these steps in order; the first that answers ends
 
 Acceptance criteria:
 
-- `curl --resolve trove.example.com:443:<bastion address> https://trove.example.com/api/npm/npm-all/lodash` answers `421`.
-- `GET /api/npm/NPM-ALL/lodash` answers `404` without a request to the main installation; `GET /api/npm/npm-all/lodash` with
+- `curl --resolve trove.example.com:443:<bastion address> https://trove.example.com/api/npm/web/npm-all/lodash` answers `421`.
+- `GET /api/npm/web/NPM-ALL/lodash`, `GET /api/npm/Web/npm-all/lodash`, `GET /api/npm/1web/npm-all/lodash`,
+  `GET /api/npm/w%65b/npm-all/lodash` and `GET /api/npm/web` answer `404` without a request to the main installation;
+  `GET /api/npm/npm-all/lodash`, which names project `npm-all` and repository `lodash`, is forwarded and answers the main
+  installation's `404` of a missing repository; `GET /api/npm/web/npm-all/lodash` with
   `Accept: application/vnd.npm.install-v1+json` and without it are two cache entries.
 
 ### R-BAS-019 · Credentials at the Bastion
@@ -987,6 +1001,10 @@ An answer is what the main installation said about a caller (owner,
 | Credential | credential key | `kind`, token ID, principal ID, token expiry | the check, or `Trove-Bastion-Subject` of any marked response |
 | Read shape | credential key, repository | `full`, `partial`, `none` with its status | the check, or `Trove-Bastion-Read` |
 | URL | credential key, cache key | allowed, or the stored refusal (status, headers, body) | a forwarded or conditional request for that URL |
+
+A repository in an answer's key, in a cache entry and in a feed entry is the qualified name `<projectKey>/<repoKey>` of the
+address (R-BAS-018); the key of a read-shape answer is `<credential key>|<projectKey>/<repoKey>`, and its Valkey record is
+`ans:v1:shape:<sha256 of that key>` (R-BAS-034). Two repositories of the same key in two projects never share an answer.
 
 - **Validity** ([Q-BAS-32](#q-bas-32--answers-validate-themselves-against-the-feed-and-are-signed-in-valkey)). An answer obtained
   at `o` (the Bastion's clock when it sent the request) is usable while all of these hold:
@@ -1662,7 +1680,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: trove-only
 
 The Bastion exports R-OPS-007's conventions on its ops listener, with the request metrics of R-OPS-008, and these (no label
-carries an address, a token, a path or a repository key):
+carries an address, a token, a path or a repository's name):
 
 | Metric | Type | Labels |
 |---|---|---|
@@ -2288,7 +2306,7 @@ at least:
 
 **As built** ([Q-BAS-105](#q-bas-105--the-integration-suites-main-installation-is-the-web-role-behind-a-tls-front-another-interface-version-is-simulated-on-the-wire)):
 `test/integration/bastion` starts, per test, the web role of the stack (PostgreSQL, Valkey with Sentinel, S3) with `npm-local`, `npm-remote`
-(over the counting test upstream), `npm-all` and the NuGet counterparts, the fixture principals, a registration `partners` with its token,
+(over the counting test upstream), `npm-all` and the NuGet counterparts in one project, the fixture principals, a registration `partners` with its token,
 `server.trusted_proxies` and `server.additional_base_urls`, behind a TLS front that records every request of the Bastion and can cut the link,
 delay, hold or alter the interface version of a request or an answer; and one or two Bastion replicas from a configuration file, with the volume
 backend or the stack's S3, with and without Valkey. The tests are named `TestR_BAS_0nn_…`; the table of
@@ -4871,7 +4889,7 @@ development agent would revisit it if a second caller of the stage needs the rec
 
 ### Q-BAS-120 · Unassigning a repository from a project drops every permission answer, and every journaled event is classified
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-REPO-217](repositories-and-proxy.md#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)**: a repository is no longer unassigned; its move to another project (`repository.moved`) drops every permission answer the same way, and so do the removal and the lowered role of a project member.
 
 Context: `authz.project.repository_unassigned` is journaled as a revocation (R-AUTHZ-031): a repository that leaves its project leaves
 the project's policies behind, so callers' reads of it can narrow. The feed mapped it to no entry, and the test of R-BAS-015 checked a

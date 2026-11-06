@@ -34,7 +34,7 @@ import { CiWarning } from '../../api/ci-api';
     }
     h2 {
       margin: 0 0 var(--trove-space-2);
-      font: var(--mat-sys-title-small);
+      font: var(--trove-type-title-small);
     }
     ul {
       margin: 0;
@@ -44,7 +44,7 @@ import { CiWarning } from '../../api/ci-api';
     li {
       display: flex;
       gap: var(--trove-space-2);
-      color: var(--mat-sys-on-surface);
+      color: var(--trove-on-surface);
     }
     .material-icons {
       color: var(--trove-status-warn);

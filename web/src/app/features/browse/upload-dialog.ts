@@ -1,6 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { DIALOG_DATA, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { UPLOAD_LIMIT_BYTES, FilesApi, hexOfReprDigest, reprDigestOf } from '../../api/files-api';
 import { ApiError } from '../../api/problem';
 import { describeProblem } from '../../core/http/problem-messages';
@@ -32,10 +31,10 @@ interface Entry {
  */
 @Component({
   selector: 'trove-upload-dialog',
-  imports: [MatButtonModule, MatDialogModule],
+  imports: [DialogTitle],
   template: `
-    <h2 mat-dialog-title i18n="@@upload.title">Upload files</h2>
-    <mat-dialog-content>
+    <h2 troveDialogTitle i18n="@@upload.title">Upload files</h2>
+    <div class="dialog-body">
       <div class="field">
         <label class="field-label" for="upload-folder" i18n="@@upload.folder">Target folder</label>
         <input
@@ -60,8 +59,7 @@ interface Entry {
         (drop)="drop($event)"
       >
         <span i18n="@@upload.drop">Drop files here, or</span>
-        <button
-          mat-stroked-button
+        <button class="btn btn-default"
           type="button"
           [disabled]="running()"
           (click)="chooser.click()"
@@ -141,16 +139,15 @@ interface Entry {
         </table>
       }
       <span class="visually-hidden" role="status">{{ announcement() }}</span>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
+    </div>
+    <div class="dialog-actions">
       @if (running()) {
-        <button mat-button type="button" (click)="cancel()" i18n="@@upload.cancel">
+        <button class="btn btn-tertiary" type="button" (click)="cancel()" i18n="@@upload.cancel">
           Cancel upload
         </button>
       } @else {
-        <button mat-button type="button" (click)="close()" i18n="@@upload.close">Close</button>
-        <button
-          mat-flat-button
+        <button class="btn btn-tertiary" type="button" (click)="close()" i18n="@@upload.close">Close</button>
+        <button class="btn btn-confirm"
           type="button"
           [disabled]="pending() === 0"
           (click)="start()"
@@ -159,7 +156,7 @@ interface Entry {
           Upload
         </button>
       }
-    </mat-dialog-actions>
+    </div>
   `,
   styles: `
     .field {
@@ -173,12 +170,12 @@ interface Entry {
       align-items: center;
       gap: var(--trove-space-3);
       padding: var(--trove-space-4);
-      border: 2px dashed var(--mat-sys-outline);
-      border-radius: var(--mat-sys-corner-medium);
+      border: 2px dashed var(--trove-border-strong);
+      border-radius: var(--trove-radius-l);
       margin-block-end: var(--trove-space-3);
     }
     .drop.over {
-      border-color: var(--mat-sys-primary);
+      border-color: var(--trove-accent);
     }
     .check-row {
       display: flex;
@@ -188,8 +185,8 @@ interface Entry {
   `,
 })
 export class UploadDialog {
-  protected readonly data = inject<UploadDialogData>(MAT_DIALOG_DATA);
-  private readonly ref = inject<MatDialogRef<UploadDialog, number>>(MatDialogRef);
+  protected readonly data = inject<UploadDialogData>(DIALOG_DATA);
+  private readonly ref = inject<DialogRef<number, UploadDialog>>(DialogRef);
   private readonly files = inject(FilesApi);
 
   protected readonly folder = signal(this.data.folder);

@@ -10,7 +10,6 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { PackageFilters, PackageSort, PackageSummary, PackagesApi } from '../../api/packages-api';
 import { RepositoriesApi } from '../../api/repositories-api';
@@ -54,7 +53,6 @@ interface Chip {
   imports: [
     DatePipe,
     DecimalPipe,
-    MatButtonModule,
     RouterLink,
     DataTable,
     FilterCategory,

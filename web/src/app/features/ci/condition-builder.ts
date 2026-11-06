@@ -1,5 +1,4 @@
 import { Component, computed, input, output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { CondNode, GITLAB_CLAIMS, OPERATORS, Operator, depthOf, editAt, newGroup, newLeaf } from './ci-model';
 
 /** What every node of the tree shares: the tree, whether it can be edited and the problems the server reported. */
@@ -45,7 +44,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
  */
 @Component({
   selector: 'trove-ci-condition-node',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     @let n = node();
     @let c = ctx();
@@ -122,7 +121,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
               </label>
             }
             @if (!c.readonly() && path().length > 0) {
-              <button mat-button type="button" class="remove" (click)="remove()" [attr.aria-label]="removeLabel">
+              <button type="button" class="btn btn-tertiary remove" (click)="remove()" [attr.aria-label]="removeLabel">
                 <span class="material-icons" aria-hidden="true">delete</span>
                 <ng-container i18n="@@ci.cond.remove">Remove</ng-container>
               </button>
@@ -138,7 +137,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
           <div class="group-head">
             <strong i18n="@@ci.cond.not">Not: this must be false</strong>
             @if (!c.readonly() && path().length > 0) {
-              <button mat-button type="button" (click)="remove()" i18n="@@ci.cond.remove-group">Remove group</button>
+              <button class="btn btn-tertiary" type="button" (click)="remove()" i18n="@@ci.cond.remove-group">Remove group</button>
             }
           </div>
           @if (problem(); as text) {
@@ -156,11 +155,11 @@ const OPERATOR_LABELS: Record<Operator, string> = {
               <option value="any" [selected]="n.kind === 'any'" i18n="@@ci.cond.any">any of these</option>
             </select>
             @if (!c.readonly()) {
-              <button mat-stroked-button type="button" (click)="addLeaf()" i18n="@@ci.cond.add-leaf">Add condition</button>
-              <button mat-stroked-button type="button" [disabled]="!canNest()" (click)="addGroup('all')" i18n="@@ci.cond.add-group">Add group</button>
-              <button mat-stroked-button type="button" [disabled]="!canNest()" (click)="addNot()" i18n="@@ci.cond.add-not">Add negation</button>
+              <button class="btn btn-default" type="button" (click)="addLeaf()" i18n="@@ci.cond.add-leaf">Add condition</button>
+              <button class="btn btn-default" type="button" [disabled]="!canNest()" (click)="addGroup('all')" i18n="@@ci.cond.add-group">Add group</button>
+              <button class="btn btn-default" type="button" [disabled]="!canNest()" (click)="addNot()" i18n="@@ci.cond.add-not">Add negation</button>
               @if (path().length > 0) {
-                <button mat-button type="button" (click)="remove()" i18n="@@ci.cond.remove-group">Remove group</button>
+                <button class="btn btn-tertiary" type="button" (click)="remove()" i18n="@@ci.cond.remove-group">Remove group</button>
               }
             }
           </div>
@@ -222,7 +221,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
       flex: 2 1 14rem;
     }
     label {
-      font: var(--mat-sys-label-medium);
+      font: var(--trove-type-label-medium);
     }
     .text-input,
     .select-input {
@@ -232,7 +231,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
       border: 1px solid var(--trove-border-strong);
       border-radius: var(--trove-radius-s);
       background: var(--trove-surface-raised);
-      color: var(--mat-sys-on-surface);
+      color: var(--trove-on-surface);
       font: inherit;
     }
     .fold {
@@ -243,7 +242,7 @@ const OPERATOR_LABELS: Record<Operator, string> = {
     .field-error {
       margin: var(--trove-space-1) 0 0;
       color: var(--trove-status-bad);
-      font: var(--mat-sys-body-small);
+      font: var(--trove-type-body-small);
     }
     .muted {
       color: var(--trove-text-muted);

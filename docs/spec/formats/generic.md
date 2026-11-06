@@ -26,10 +26,11 @@ generic-specific parts of [features/repositories.md](../../features/repositories
 
 Conventions on this page:
 
-- `https://trove.example.com` is the public base URL *(example)*; `generic-local` is an example
-  local repository key, `generic-remote` and `generic-all` example remote and virtual keys;
-  `$TROVE_TOKEN` is a trove token (INV-8).
-- The *file URL* of a path is `<public base URL>/files/<repoKey>/<path>`. Paths in tables are
+- `https://trove.example.com` is the public base URL *(example)*; `web` is an example project key,
+  `generic-local` an example local repository key of that project, `generic-remote` and `generic-all`
+  example remote and virtual keys; `$TROVE_TOKEN` is a trove token (INV-8). A repository named outside its
+  project is written `<projectKey>/<repoKey>` (`web/generic-local`).
+- The *file URL* of a path is `<public base URL>/files/<projectKey>/<repoKey>/<path>`. Paths in tables are
   relative to the repository root.
 - Priorities: the local class is MVP, the remote and virtual classes are P1, three
   workflows on generic content are P2. The `Descriptor` of the format lists only the classes that
@@ -49,7 +50,7 @@ Priority: **MVP** · Covers: PKG-GENERIC-001
 | `name` | `generic` | Format ID (`^[a-z][a-z0-9-]{1,31}$`) |
 | `classes` | `["local"]`; `["local","remote","virtual"]` once R-GENERIC-009 and R-GENERIC-010 ship | Classes the implementation accepts |
 | `layout` | `generic` | The flat layout (R-GENERIC-003) |
-| `protocolBasePath` | `/files/{key}/` | The format has no protocol of its own; the raw file URL is the protocol |
+| `protocolBasePath` | `/files/{project}/{key}/` | The format has no protocol of its own; the raw file URL is the protocol |
 | `defaultUpstreamUrl` | `null` | A generic remote repository names its upstream explicitly (R-GENERIC-009) |
 | `defaultMetadataTtlSeconds`, `defaultNotFoundTtlSeconds` | `null`, `1800` | The format has no metadata documents, so no metadata period; only the not-found period (used by the P1 remote class) has a default |
 | `patternSubject` | `path` | Include and exclude patterns are path patterns (R-GENERIC-007) |
@@ -70,10 +71,10 @@ Priority: **MVP** · Covers: PKG-GENERIC-001
 Acceptance criteria:
 
 - `curl -s https://trove.example.com/api/v1/formats` lists `generic` with the field values above.
-- `POST /api/v1/repositories` with `{"key":"generic-local","class":"local","format":"generic"}`
+- `POST /api/v1/projects/web/repositories` with `{"key":"generic-local","class":"local","format":"generic"}`
   returns 201; a body with a `generic` member returns 400 `invalid_document`; the same create with
   `"class":"remote"` returns 422 `unsupported_class` until R-GENERIC-009 ships.
-- After a deploy into `generic-local`, `GET /api/v1/repositories/generic-local/items?path=…`
+- After a deploy into `generic-local`, `GET /api/v1/projects/web/repositories/generic-local/items?path=…`
   shows `"package": null`.
 
 ### R-GENERIC-002 · Free-form paths
@@ -101,9 +102,9 @@ implicitly from the paths of deployed files or explicitly (R-STOR-007).
 
 Acceptance criteria:
 
-- `curl -T a.bin https://trove.example.com/files/generic-local/a/b/c/d.bin` creates the folders
+- `curl -T a.bin https://trove.example.com/files/web/generic-local/a/b/c/d.bin` creates the folders
   `a`, `a/b` and `a/b/c` implicitly (R-STOR-017 lists them).
-- `curl --path-as-is https://trove.example.com/files/generic-local/a/%2e%2e/x` answers 400 with the
+- `curl --path-as-is https://trove.example.com/files/web/generic-local/a/%2e%2e/x` answers 400 with the
   code `invalid_path`; so do `…/a//b`, `…/a%00b` and `…/a%5Cb`.
 - `Report.pdf` and `report.pdf` deployed to one repository are two items.
 
@@ -134,18 +135,18 @@ Acceptance criteria:
 
 - A unit test of the format classifies `GET a/b.bin` as `artifact`, `GET a/` and `GET` of the root
   as `other`, and `PUT a/b.bin` and `DELETE a/b.bin` as `write`, each without a package name.
-- `GET /api/v1/repositories/generic-local` returns `"layout":"generic"`; a create with
+- `GET /api/v1/projects/web/repositories/generic-local` returns `"layout":"generic"`; a create with
   `"layout":"maven-2"` returns 422 `unsupported_layout`.
 
 ### R-GENERIC-004 · Deploy any file
 Priority: **MVP** · Covers: PKG-GENERIC-001, PKG-GENERIC-004
 
-The client protocol for writing is `PUT /files/<repoKey>/<path>` with the raw content as body
+The client protocol for writing is `PUT /files/<projectKey>/<repoKey>/<path>` with the raw content as body
 ([storage.md](../storage.md) R-STOR-007; request path R-ARCH-014):
 
 ```bash
 curl -fsS -H "Authorization: Bearer $TROVE_TOKEN" -T installer-2.4.1.msi \
-  "https://trove.example.com/files/generic-local/tools/installer/2.4.1/installer-2.4.1.msi"   # example
+  "https://trove.example.com/files/web/generic-local/tools/installer/2.4.1/installer-2.4.1.msi"   # example
 ```
 
 - The generic format refuses nothing on format grounds. No content check exists, so the response
@@ -169,7 +170,7 @@ curl -fsS -H "Authorization: Bearer $TROVE_TOKEN" -T installer-2.4.1.msi \
 
 Acceptance criteria:
 
-- `curl -fsS -u ci:$TROVE_TOKEN -T widget.bin https://trove.example.com/files/generic-local/tools/widget.bin`
+- `curl -fsS -u ci:$TROVE_TOKEN -T widget.bin https://trove.example.com/files/web/generic-local/tools/widget.bin`
   answers `201` with the item description of R-STOR-007; repeating it answers `200`.
 - With `read` and `deploy` but not `overwrite` on `generic-local`, a second `PUT` of different bytes
   to the same path answers 403 and the first content is still served.
@@ -178,7 +179,7 @@ Acceptance criteria:
 ### R-GENERIC-005 · Download any file
 Priority: **MVP** · Covers: PKG-GENERIC-001, PKG-GENERIC-005
 
-The client protocol for reading is `GET` and `HEAD` on `/files/<repoKey>/<path>`, with the semantics
+The client protocol for reading is `GET` and `HEAD` on `/files/<projectKey>/<repoKey>/<path>`, with the semantics
 of [storage.md](../storage.md) R-STOR-012 (streaming, `Content-Length`, `ETag` as the content
 address, `Repr-Digest`, a single byte range, `If-Range`, conditional requests) and R-STOR-013
 (integrity verification), on the request path of R-ARCH-011.
@@ -200,12 +201,12 @@ address, `Repr-Digest`, a single byte range, `If-Range`, conditional requests) a
 
 Acceptance criteria:
 
-- `curl -r 0-99 -o part https://trove.example.com/files/generic-local/tools/widget.bin` answers
+- `curl -r 0-99 -o part https://trove.example.com/files/web/generic-local/tools/widget.bin` answers
   `206` with 100 bytes equal to `head -c 100 widget.bin`.
 - An uploaded `evil.svg` with an embedded script, opened from `/files/` in a browser, does not run
   the script; the response carries `Content-Disposition: attachment`, `nosniff`, the sandbox policy
   and `Cross-Origin-Resource-Policy: same-site` (R-ARCH-007).
-- `curl -I …/files/generic-local/tools/widget.bin` answers `200` with `ETag: "<sha256 hex>"` and
+- `curl -I …/files/web/generic-local/tools/widget.bin` answers `200` with `ETag: "<sha256 hex>"` and
   `Accept-Ranges: bytes`.
 
 ### R-GENERIC-006 · Items of a generic repository: information, listing and deletion
@@ -222,7 +223,7 @@ The items operations of R-API-025 act on a generic repository without a format h
 
 Acceptance criteria:
 
-- `curl -X DELETE …/files/generic-local/tools/widget.bin` answers `204` and the next `GET` answers
+- `curl -X DELETE …/files/web/generic-local/tools/widget.bin` answers `204` and the next `GET` answers
   `404`.
 - Deleting a folder that contains one file the caller may not delete answers 403 and removes
   nothing (R-STOR-018).
@@ -247,8 +248,8 @@ number of segments, `\` escapes, by the matcher of R-AUTHZ-005.
 
 Acceptance criteria:
 
-- `generic-local` with `includePatterns: ["releases/**"]`: `PUT …/files/generic-local/tmp/x.bin`
-  answers 403 `not_admitted`; `PUT …/files/generic-local/releases/1.0/x.bin` answers 201.
+- `generic-local` with `includePatterns: ["releases/**"]`: `PUT …/files/web/generic-local/tmp/x.bin`
+  answers 403 `not_admitted`; `PUT …/files/web/generic-local/releases/1.0/x.bin` answers 201.
 - With `excludePatterns: ["**/*.pdb"]`, a deploy of `releases/1.0/x.pdb` answers 403 `not_admitted`.
 - After the patterns change so that `releases/1.0/x.bin` is no longer admitted, `GET` of it answers
   404 and the management items API still returns it.
@@ -275,7 +276,7 @@ Acceptance criteria:
 
 - A create of a generic local repository with `"local":{"packageOwnership":"enforce"}` returns 422
   `not_applicable` at `/local/packageOwnership`.
-- `GET /api/v1/repositories/generic-local` of a repository created with only key, class and format
+- `GET /api/v1/projects/web/repositories/generic-local` of a repository created with only key, class and format
   returns no `local`, `remote` or `virtual` member.
 
 ### R-GENERIC-016 · Setup snippets and guide for curl
@@ -286,7 +287,7 @@ format with one client, `curl` (Q-GENERIC-8). The format contributes its templat
 [setup.go](../../../internal/formats/generic/setup.go)) and its guide (`Guide()`,
 [guide/](../../../internal/formats/generic/guide/)); the API renders them like npm's.
 
-| Snippet `id` | Tab | Content (`<registry URL>` is `<public base URL>/files/<repoKey>/`) |
+| Snippet `id` | Tab | Content (`<registry URL>` is `<public base URL>/files/<projectKey>/<repoKey>/`) |
 |---|---|---|
 | `curl.configure.function` | Configure | The shell function `trove_curl` below |
 | `curl.install` | Install | `trove_curl --fail --remote-name "<registry URL><path>"` |
@@ -317,10 +318,10 @@ EOF
 
 Acceptance criteria:
 
-- `GET /api/v1/repositories/generic-local/client-setup?client=curl&credentials=env` holds the three snippets, the
+- `GET /api/v1/projects/web/repositories/generic-local/client-setup?client=curl&credentials=env` holds the three snippets, the
   configure snippet with `header = "Authorization: Bearer ${TROVE_TOKEN}"`; with `credentials=none` it holds no
   `Authorization` line; without `deploy` it holds no publish snippet (`TestR_GENERIC_016_TheClientSetupOfCurl`).
-- The `configure`, `install` and `publish` snippets of `GET /api/v1/repositories/generic-local/guide?client=curl`
+- The `configure`, `install` and `publish` snippets of `GET /api/v1/projects/web/repositories/generic-local/guide?client=curl`
   equal those of the client setup with `credentials=env` byte for byte
   (`TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup`).
 - The conformance kit runs check 8 over the generic format (`TestR_ARCH_010_Conformance`); every code of the
@@ -336,7 +337,7 @@ Acceptance criteria:
 Priority: **P1** · Covers: PKG-GENERIC-006
 
 A generic remote repository proxies and caches files from any HTTP(S) location, such as a vendor
-download site or a mirror. A request for `/files/<repoKey>/<path>` is forwarded to
+download site or a mirror. A request for `/files/<projectKey>/<repoKey>/<path>` is forwarded to
 `<upstream URL>/<path>` on a cache miss; the response is stored as an item and served. All common
 remote settings and rules of [repositories-and-proxy.md](../repositories-and-proxy.md) apply
 (R-REPO-024 to R-REPO-047); the generic format adds:
@@ -358,7 +359,7 @@ remote settings and rules of [repositories-and-proxy.md](../repositories-and-pro
 
 Acceptance criteria:
 
-- With a stub upstream serving `/tools/x.zip`, a first `GET …/files/generic-remote/tools/x.zip`
+- With a stub upstream serving `/tools/x.zip`, a first `GET …/files/web/generic-remote/tools/x.zip`
   causes one upstream request and the second causes none.
 - `PUT` to `generic-remote` answers 405.
 
@@ -371,7 +372,8 @@ A generic virtual repository puts several member repositories behind one URL
 - Unlike every other format, its members may be of any format: the same-format rule of
   R-REPO-017 does not apply to a generic virtual repository, and the member validation
   (`invalid_member`) accepts local and remote repositories of every format. This is the one
-  exception to the format check of virtual membership.
+  exception to the format check of virtual membership; the project rule stays: members are repositories of the
+  virtual repository's own project, named by bare key (R-REPO-017).
 - It keeps no metadata of its own. A request is resolved by walking the effective member list in
   order and serving the first hit (R-REPO-019); no format-specific merging, URL rewriting or
   metadata cache (R-REPO-020) is applied, because the paths of foreign members are served as the
@@ -381,9 +383,9 @@ A generic virtual repository puts several member repositories behind one URL
 
 Acceptance criteria:
 
-- A virtual `generic-all` with members `generic-local` and the npm repository `npm-local` serves
-  `…/files/generic-all/<path>` for a file in either member, `generic-local` first.
-- `PUT …/files/generic-all/x.bin` without a default deployment target answers 405
+- A virtual `generic-all` of project `web` with members `generic-local` and the npm repository `npm-local` of the same project serves
+  `…/files/web/generic-all/<path>` for a file in either member, `generic-local` first.
+- `PUT …/files/web/generic-all/x.bin` without a default deployment target answers 405
   `no_deploy_target`.
 
 ### R-GENERIC-011 · Non-conformant content and cross-format copy and move

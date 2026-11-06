@@ -1,6 +1,6 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@repo.wizard.heading">New repository</h1>
-  <a mat-button routerLink="/admin/repositories" i18n="@@repo.wizard.cancel">Cancel</a>
+  <a class="btn btn-tertiary" routerLink="/admin/repositories" i18n="@@repo.wizard.cancel">Cancel</a>
 </header>
 
 @if (loadFailure(); as f) {
@@ -304,8 +304,7 @@
   }
 
   <div class="nav-buttons">
-    <button
-      mat-button
+    <button class="btn btn-tertiary"
       type="button"
       [disabled]="step() === 0"
       (click)="back()"
@@ -314,8 +313,7 @@
       Back
     </button>
     @if (step() < steps().length - 1) {
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="!canNext() && step() !== 2"
         (click)="next()"
@@ -324,8 +322,7 @@
         Next
       </button>
     } @else {
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="creating()"
         (click)="create()"

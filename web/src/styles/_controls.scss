@@ -1,5 +1,5 @@
 // trove's own controls (Q-UI-126): buttons, text fields, selects and checkboxes as plain HTML elements with
-// classes, replacing Angular Material's. The behaviour of the composite widgets (dialog, menu, tabs) comes
+// classes. The behaviour of the composite widgets (dialog, menu, tabs) comes
 // from @angular/cdk and @angular/aria; this file is only the look. Every colour and length is a token of
 // _tokens.scss. The design language: flat controls of one height (32 px) and radius, labels above the
 // field in semibold, a primary ("confirm") button in the accent, a neutral default button, a text-only
@@ -111,10 +111,11 @@
 // ---- Tabs as links ---------------------------------------------------------------------------------------
 //
 //   <nav class="tab-nav" aria-label="…"><a class="tab-link" [attr.aria-current]="… ? 'page' : null">…</a></nav>
+//   <trove-tab-group> (shared/ui/tabs.ts): a tablist of <button class="tab-link" role="tab" aria-selected>
 //
-// The reference's tab strip (Q-UI-128) for views that are links: the labels in the text colour at 14 px, 16 px above and
+// The reference's tab strip (Q-UI-128), for views that are links and for tabs that switch a view in place: the labels in the text colour at 14 px, 16 px above and
 // below; the current one at weight 600 over a 2 px line in --trove-tab-indicator; under the pointer a neutral veil and
-// a line in the strong border colour; the strip on a hairline. Material's tabs take the same look (main.scss).
+// a line in the strong border colour; the strip on a hairline.
 
 .tab-nav {
   display: flex;
@@ -125,7 +126,11 @@
 .tab-link {
   position: relative;
   padding: var(--trove-space-4) var(--trove-space-3);
+  border: 0;
+  background: none;
   color: var(--trove-control-fg);
+  cursor: pointer;
+  font: inherit;
   font-size: var(--trove-text-size);
   line-height: 1rem;
   text-decoration: none;
@@ -150,7 +155,8 @@
     outline-offset: -2px;
   }
 
-  &[aria-current='page'] {
+  &[aria-current='page'],
+  &[aria-selected='true'] {
     font-weight: 600;
 
     &::before {

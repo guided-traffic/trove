@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
+import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiError } from '../../api/problem';
@@ -29,7 +28,6 @@ import { ProjectServiceAccounts } from './project-service-accounts';
   selector: 'trove-project-detail',
   imports: [
     DatePipe,
-    MatButtonModule,
     RouterLink,
     ErrorNotice,
     Needs,
@@ -40,7 +38,7 @@ import { ProjectServiceAccounts } from './project-service-accounts';
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@project.heading">Project</h1>
-      <a mat-button routerLink="/admin/projects" i18n="@@project.back">All projects</a>
+      <a class="btn btn-tertiary" routerLink="/admin/projects" i18n="@@project.back">All projects</a>
     </header>
     <p class="subject" translate="no">{{ key() }}</p>
 
@@ -96,9 +94,8 @@ import { ProjectServiceAccounts } from './project-service-accounts';
 
         @if (canWrite()) {
           <div class="row-actions">
-            <button mat-flat-button type="button" [disabled]="busy()" (click)="edit()" i18n="@@project.edit">Edit project</button>
-            <button
-              mat-button
+            <button class="btn btn-confirm" type="button" [disabled]="busy()" (click)="edit()" i18n="@@project.edit">Edit project</button>
+            <button class="btn btn-tertiary"
               type="button"
               [disabled]="busy() || !empty()"
               aria-describedby="project-delete-note"
@@ -139,7 +136,7 @@ import { ProjectServiceAccounts } from './project-service-accounts';
           <p class="muted" i18n="@@project.ci-hint">
             Let the GitLab jobs of your projects publish to and read from this project's repositories without a stored secret. A mapping states which jobs get which permissions.
           </p>
-          <a mat-stroked-button [routerLink]="['/admin/projects', p.key, 'ci']" i18n="@@project.ci-open">Open CI identity</a>
+          <a class="btn btn-default" [routerLink]="['/admin/projects', p.key, 'ci']" i18n="@@project.ci-open">Open CI identity</a>
         </section>
       }
       <!-- <<< M4 ci -->
@@ -167,7 +164,7 @@ export class ProjectDetail {
   readonly key = input.required<string>();
 
   private readonly api = inject(ProjectsApi);
-  private readonly dialog = inject(MatDialog);
+  private readonly dialog = inject(TroveDialog);
   private readonly confirmer = inject(Confirm);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
@@ -214,7 +211,7 @@ export class ProjectDetail {
         data: { project: loaded },
         maxWidth: '40rem',
       });
-      const saved = await firstValueFrom(ref.afterClosed());
+      const saved = await firstValueFrom(ref.closed);
       if (saved) {
         this.project.set(saved);
         this.notifier.status($localize`:@@project.saved:Project saved.`);

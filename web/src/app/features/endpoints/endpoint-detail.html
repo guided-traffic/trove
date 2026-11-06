@@ -1,9 +1,8 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@ep.detail.heading">Endpoint</h1>
-  <a mat-button routerLink="/admin/endpoints" i18n="@@ep.detail.back">All endpoints</a>
+  <a class="btn btn-tertiary" routerLink="/admin/endpoints" i18n="@@ep.detail.back">All endpoints</a>
   @if (canWrite() && !inert()) {
-    <a
-      mat-flat-button
+    <a class="btn btn-confirm"
       [routerLink]="['/admin/endpoints', endpoint(), 'rules', 'new']"
       i18n="@@ep.rule.new"
       >New rule</a
@@ -164,15 +163,13 @@
                   </td>
                   <td>
                     <div class="row-actions">
-                      <a
-                        mat-button
+                      <a class="btn btn-tertiary"
                         [routerLink]="['/admin/endpoints', endpoint(), 'rules', rule.name]"
                         i18n="@@repo.action.edit"
                         >Edit</a
                       >
                       @if (canWrite()) {
-                        <button
-                          mat-button
+                        <button class="btn btn-tertiary"
                           type="button"
                           (click)="remove(rule)"
                           i18n="@@repo.action.delete"

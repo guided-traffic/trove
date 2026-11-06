@@ -216,6 +216,16 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
 
+- **F-66 · The object-store outage of 30 s under the npm load stalls the `packages` replicas since this run's changes** (confirmed from
+  the job log of the dispatched nightly run 42258656348, leg `e2e-npm (ha-suite)`, release v0.20.2; cause not established).
+  `TestHASuite_ObjectStoreOutage` (30 s): `/readyz` of both `packages` pods answered non-200 11 and 2 times and `/healthz` 10 and 2 times
+  during the outage, and 2,094 k6 requests failed other than as a tarball `503`, the first ones `request_timeout` after 45 s, all
+  starting within 0.6 s (17:19:05.0 to 17:19:05.6); every npm command passed (188, 0 failed), the uploads were refused before the body.
+  In the dispatched nightly run 42211913572 (release v0.19.5) the same subtest had no non-200 `/readyz` or `/healthz` at all. The 300 s
+  outage, node loss and both primary losses behaved as before. Changed between the two runs on the object store's paths: the read of a
+  lost object and the recheck of a `missing` mark (F-62, Q-STOR-151, Q-STOR-153), the shared UI asset store (F-58, not on `packages`),
+  the lease sessions' `idle_session_timeout` (F-65). Not known: which of them stalls the replicas. The run's artifact
+  `e2e-npm-cluster-state-ha-suite` has the pods' logs. Done when the cause is named and fixed and the set passes in a nightly run.
 - **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
   the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
   14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197). Cause: the leg ran on a GitHub-hosted runner (4 vCPUs for the cluster, both stubs and the
@@ -224,36 +234,10 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   run that was suspected first does not apply to that class (each hosted job has its own VM). Fixed in CI: the nightly row `mirror` runs on
   `large` since [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class).
   The dispatched nightly run 42226311597 (2026-11-06, `large`) passed it: 96 % (pairs 90 %, 133 %, 96 %; the open requests within the
-  bound, the pre-emptions grew); one pair of three above the bound on `large` too, so the scheduled nightly run is the second reading. Done when the nightly leg passes the bound on `large`; a miss there is a product finding (split the phases as Q-REPO-211 did).
-- **F-65 · The node clearance of the mirror's failure suite raced the operator's own switchover, and a paused lease holder kept the
-  scheduler** (read from the job log and the cluster state of the dispatched nightly run 42211913572, leg `e2e-mirror (mirror-long)`,
-  2026-11-06; both causes reproduced on the dev cluster and fixed the same day; the entry stays until a nightly run passes the set).
-  Node loss: `clearNode` (test/e2e/node_loss_test.go) cordoned the node of the PostgreSQL primary and the CloudNativePG operator and
-  replaced the operator; the operator switches a primary off a cordoned node by itself (event `SwitchingOver … unschedulable node`), so
-  `failover.sh`, 14 s after the cordon, found the primary already moved, asked to switch back to the old primary on the cordoned node,
-  which the operator undid, and exited 1 after 3 minutes. The operator had come back and held its lease: that was not the cause. Fixed:
-  the primaries are moved before the cordon, the operators' replacements must be ready elsewhere and hold their leases, and
-  `failover.sh` waits for the operator and a settled cluster, refuses a standby on a cordoned node and asks with a tested patch
-  ([Q-HA-126](../spec/ha-and-helm.md#q-ha-126--the-node-clearance-moves-the-primaries-before-the-cordon-and-failoversh-waits-for-what-a-switchover-needs)).
-  Frozen node, the same run: the pass did not continue in another process for 15 minutes, and the test upstream saw no request of it
-  from the pause to the unpause. A pass moves through the next `mirror-dispatch`, which only the holder of the `scheduler` lease
-  enqueues; the lease is a session-level advisory lock, and a paused process's kernel keeps answering the server's keepalive, so a
-  paused holder keeps it (dev cluster: held for the whole 172 s of a pause; the run's artifacts cannot name that run's holder). Fixed:
-  the lease sessions carry `idle_session_timeout` at the keepalive's bound, 120 s with the defaults
-  ([Q-HA-127](../spec/ha-and-helm.md#q-ha-127--a-lease-session-that-stays-silent-is-ended-by-the-server-within-the-keepalives-bound),
-  `TestLeases_R_HA_006_FrozenHolder`). The earlier red `mirror-long` legs failed otherwise: 42177273488 on the policy write's `412`, a
-  remote left behind and the frozen loop's install (Q-REPO-199), 42192042297 on the node loss with the operator on the node (Q-REPO-200,
-  Q-HA-106) and the throttled count (Q-REPO-201), the scheduled 42194413882 on the throttled count; all fixed before 42211913572, whose
-  throttling and drain subtests passed. On the dev cluster (2026-11-06) `make e2e SET=mirror-long` with both fixes passed whole in 25
-  min 51 s (the passes progressed again 1 min 47 s after the pod crash, 1 min 55 s after the node loss with the primary switched over
-  first, 1 min 12 s after the freeze), and the frozen-node scenario with the holder of the `scheduler` lease and the standby on the
-  paused node, the configuration of 42211913572, progressed after 2 min 7 s and passed. A first run with the clearance fix alone passed
-  the three node scenarios, the throttling and the drain, and failed the switchover scenario on two tarballs served twice while the host
-  was loaded by lint and race-test runs beside it (the switchover took 103 s instead of 14 to 18 s); the run with both fixes on a quiet
-  host passed it. The clearance alone cleared the configuration of F-65 (the primary and the operator on one node, made on purpose)
-  three times in a row; `TestE13Failover` passed with the new `failover.sh` (k6 only `200`, the switchover 17 s); `TestHASuite_NodeLoss`
-  cleared a node of the Valkey operator and failed afterwards on a timeout of the kind API server under a host load average of 36, and
-  passed in the run after it (its node then hosted none of the dependencies). Done when the set passes in a nightly run.
+  bound, the pre-emptions grew); one pair of three above the bound on `large` too, so the scheduled nightly run is the second reading.
+  The dispatched nightly run 42258656348 (release v0.20.2, `large`) missed it: 131 % (pairs 16.4/16.8 s, 14.3/19.5 s, 12.8/12.7 s), so by
+  Q-REPO-211 this is a product finding now: the pass slows the installs on a 16-CPU runner too. Next: split the phases as Q-REPO-211 did,
+  from that run's artifact `e2e-mirror-cluster-state-mirror`. Done when the cause is named and the bound holds.
 
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
@@ -488,10 +472,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
   H-551): in the admin area, for `vulnerabilities:triage` or `content:metadata-read`: the counts and trend over all projects, a
   search by advisory ID (CVE, GHSA), package and project, and the triage of each finding; the project's own Vulnerabilities screen
   shows that project only. Check first what the current report already searches.
-- **T-11 · Finish trove's own controls** ([Q-UI-126](../spec/api-and-ui.md#q-ui-126--troves-own-controls-in-place-of-angular-material)):
-  the screens still on Angular Material move to the classes of `_controls.scss` (about 250 Material buttons in about 80 files,
-  dialogs to the CDK dialog, tabs to `.tab-nav` or `@angular/aria`, checkboxes, menus), the `--mat-sys-*` tokens to trove's own,
-  and `@angular/material` is removed. The measures and colours are Q-UI-128's; Material is themed to them meanwhile.
 - **T-12 · The logo's open point** ([design-language.md](../developer/design-language.md#logo)): `web/public/brand/drafts/` and
   the preview on the sign-in page removed once the owner calls the logo final. The reduced form for the favicon and the
   wordmark as paths are built ([Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)).

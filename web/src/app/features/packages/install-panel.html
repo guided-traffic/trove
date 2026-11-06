@@ -36,9 +36,8 @@
       </div>
       @if (collapsible()) {
         <button
-          mat-button
           type="button"
-          class="expander"
+          class="btn btn-tertiary expander"
           [attr.aria-expanded]="expanded()"
           (click)="expanded.set(!expanded())"
         >

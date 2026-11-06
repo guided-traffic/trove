@@ -29,8 +29,8 @@
 
 .detail {
   padding: var(--trove-space-4);
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: var(--mat-sys-corner-medium);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-l);
 }
 
 .detail-head {
@@ -60,5 +60,5 @@
 }
 
 tr.current {
-  background: var(--mat-sys-secondary-container);
+  background: var(--trove-accent-container);
 }

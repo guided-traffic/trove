@@ -11,7 +11,6 @@ import {
   untracked,
 } from '@angular/core';
 import { Listbox, Option } from '@angular/aria/listbox';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError, FieldProblem } from '../../api/problem';
@@ -113,7 +112,6 @@ export function classHelp(cls: string): string {
 @Component({
   selector: 'trove-repository-wizard',
   imports: [
-    MatButtonModule,
     RouterLink,
     ErrorNotice,
     ErrorSummary,

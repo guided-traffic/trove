@@ -6,7 +6,7 @@
       <ng-container i18n="@@ep.editor.heading.edit">Exposure rule</ng-container>
     }
   </h1>
-  <a mat-button [routerLink]="['/admin/endpoints', endpoint()]" i18n="@@ep.editor.back"
+  <a class="btn btn-tertiary" [routerLink]="['/admin/endpoints', endpoint()]" i18n="@@ep.editor.back"
     >Back to the endpoint</a
   >
 </header>
@@ -400,7 +400,7 @@
 
       @if (canWrite() && !inert()) {
         <div class="actions">
-          <button mat-flat-button type="submit" [disabled]="saving() || (!creating() && !dirty())">
+          <button class="btn btn-confirm" type="submit" [disabled]="saving() || (!creating() && !dirty())">
             @if (creating()) {
               <ng-container i18n="@@ep.editor.create">Create rule</ng-container>
             } @else {
@@ -408,8 +408,7 @@
             }
           </button>
           @if (!creating()) {
-            <button
-              mat-button
+            <button class="btn btn-tertiary"
               type="button"
               [disabled]="!dirty() || saving()"
               (click)="reset()"
@@ -427,7 +426,7 @@
       }
       @if (!creating() && canWrite()) {
         <p class="danger">
-          <button mat-button type="button" (click)="remove()" i18n="@@ep.editor.delete">
+          <button class="btn btn-tertiary" type="button" (click)="remove()" i18n="@@ep.editor.delete">
             Delete this rule
           </button>
         </p>

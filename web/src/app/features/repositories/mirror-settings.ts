@@ -1,5 +1,4 @@
 import { Component, computed, input, model } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { FieldProblem } from '../../api/problem';
 import { FormatDescriptor } from '../../api/repositories-api';
 import { fieldMessage, problemsAt } from '../../shared/field-errors';
@@ -88,7 +87,7 @@ interface NumberMember {
  */
 @Component({
   selector: 'trove-mirror-settings',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     <section class="mirror" [id]="sectionId" tabindex="-1" aria-labelledby="mirror-heading">
       <h2 id="mirror-heading" i18n="@@mirror.heading">Mirror</h2>
@@ -153,7 +152,7 @@ interface NumberMember {
 
       @if (restricted() && mode() === 'mirror') {
         <div class="turn-off">
-          <button mat-stroked-button type="button" (click)="setMode('pullThrough')">
+          <button class="btn btn-default" type="button" (click)="setMode('pullThrough')">
             <ng-container i18n="@@mirror.turn-off">Turn off</ng-container>
           </button>
           <span class="hint" i18n="@@mirror.turn-off.hint"
@@ -299,8 +298,8 @@ interface NumberMember {
       grid-template-columns: auto 1fr;
       column-gap: var(--trove-space-2);
       padding: var(--trove-space-3);
-      border: 1px solid var(--mat-sys-outline-variant);
-      border-radius: var(--mat-sys-corner-medium);
+      border: 1px solid var(--trove-border);
+      border-radius: var(--trove-radius-l);
 
       input {
         grid-row: 1 / span 2;

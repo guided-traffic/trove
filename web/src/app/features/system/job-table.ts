@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Job, jobActive, jobCancellable } from '../../api/jobs-api';
 import { SessionStore } from '../../core/session-store';
 import { jobStateText } from '../../shared/job-progress';
@@ -12,7 +11,7 @@ import { jobStateText } from '../../shared/job-progress';
  */
 @Component({
   selector: 'trove-job-table',
-  imports: [DatePipe, MatButtonModule],
+  imports: [DatePipe],
   template: `
     <div class="scroll" tabindex="0" role="region" [attr.aria-label]="caption()">
       <table class="data">
@@ -63,8 +62,7 @@ import { jobStateText } from '../../shared/job-progress';
               <td translate="no">{{ summary(j) }}</td>
               <td>
                 @if (canCancel(j)) {
-                  <button
-                    mat-button
+                  <button class="btn btn-tertiary"
                     type="button"
                     [attr.aria-label]="cancelLabel(j)"
                     (click)="cancelRequested.emit(j)"

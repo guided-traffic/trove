@@ -1,7 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatTabsModule } from '@angular/material/tabs';
+import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { PackageVersionSummary, PackagesApi } from '../../api/packages-api';
 import { collectAll } from '../../api/pagination';
@@ -87,8 +86,7 @@ function frameworkGroups(value: unknown): FrameworkGroup[] {
   imports: [
     DatePipe,
     DecimalPipe,
-    MatButtonModule,
-    MatTabsModule,
+    TabGroup, TabPage,
     RouterLink,
     CopyButton,
     DataTable,

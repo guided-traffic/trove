@@ -1,13 +1,13 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@system.heading">System status</h1>
-  <button mat-stroked-button type="button" [attr.aria-pressed]="paused()" (click)="togglePause()">
+  <button class="btn btn-default" type="button" [attr.aria-pressed]="paused()" (click)="togglePause()">
     @if (paused()) {
       <ng-container i18n="@@system.resume">Resume automatic refresh</ng-container>
     } @else {
       <ng-container i18n="@@system.pause">Pause automatic refresh</ng-container>
     }
   </button>
-  <button mat-button type="button" (click)="reload()" i18n="@@system.refresh">Refresh now</button>
+  <button class="btn btn-tertiary" type="button" (click)="reload()" i18n="@@system.refresh">Refresh now</button>
 </header>
 
 @if (failure(); as f) {
@@ -502,8 +502,7 @@
       </div>
     }
     @if (canReencrypt()) {
-      <button
-        mat-flat-button
+      <button class="btn btn-confirm"
         type="button"
         [disabled]="reencrypting() || !e.ringsCompatible || reencryptJob() !== null"
         [attr.aria-describedby]="e.ringsCompatible ? null : 'reencrypt-reason'"

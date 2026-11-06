@@ -4,7 +4,7 @@
     <span class="material-icons" aria-hidden="true">inventory_2</span>
     <span translate="no">{{ format() }}</span>
   </span>
-  <a mat-button routerLink="/packages" i18n="@@pkg.detail.back">All packages</a>
+  <a class="btn btn-tertiary" routerLink="/packages" i18n="@@pkg.detail.back">All packages</a>
 </header>
 
 @if (loadFailure(); as f) {
@@ -93,9 +93,9 @@
     </div>
 
     <div class="pkg-tabs">
-      <mat-tab-group animationDuration="0ms" [selectedIndex]="activeIndex()" (selectedIndexChange)="selectTab($event)">
+      <trove-tab-group [selectedIndex]="activeIndex()" (selectedIndexChange)="selectTab($event)">
         @for (t of tabs(); track t.id) {
-          <mat-tab [label]="t.label">
+          <trove-tab [label]="t.label">
             <div class="tab">
               @switch (t.id) {
                 @case ('readme') {
@@ -206,7 +206,7 @@
                           <trove-copy-button [value]="f.sha256" [label]="copySha" />
                         </td>
                         <td>
-                          <a mat-button [href]="fileHref(f)" download i18n="@@pkg.file.download-link">Download</a>
+                          <a class="btn btn-tertiary" [href]="fileHref(f)" download i18n="@@pkg.file.download-link">Download</a>
                         </td>
                       </tr>
                     }
@@ -222,7 +222,7 @@
                           <time [attr.datetime]="r.publishedAt">{{ r.publishedAt | date: 'medium' }}</time>
                         </td>
                         <td>
-                          <a mat-button [routerLink]="['/browse', r.key]" i18n="@@pkg.repo.show-in-browser">Show in browser</a>
+                          <a class="btn btn-tertiary" [routerLink]="['/browse', r.key]" i18n="@@pkg.repo.show-in-browser">Show in browser</a>
                         </td>
                       </tr>
                     }
@@ -272,9 +272,9 @@
                 }
               }
             </div>
-          </mat-tab>
+          </trove-tab>
         }
-      </mat-tab-group>
+      </trove-tab-group>
     </div>
   </div>
 }

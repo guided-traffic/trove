@@ -1,5 +1,4 @@
 import { Component, computed, input, output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { ApiError } from '../api/problem';
 import { describeProblem } from '../core/http/problem-messages';
 
@@ -10,7 +9,7 @@ import { describeProblem } from '../core/http/problem-messages';
  */
 @Component({
   selector: 'trove-error-notice',
-  imports: [MatButtonModule],
+  imports: [],
   template: `
     <div class="notice" role="alert">
       <span class="material-icons" aria-hidden="true">error</span>
@@ -20,7 +19,7 @@ import { describeProblem } from '../core/http/problem-messages';
           <p class="request">
             <span i18n="@@error.request-id">Request ID</span>:
             <code translate="no">{{ error().requestId }}</code>
-            <button mat-button type="button" (click)="copyRequestId()" i18n="@@error.copy">
+            <button class="btn btn-tertiary" type="button" (click)="copyRequestId()" i18n="@@error.copy">
               Copy
             </button>
           </p>
@@ -28,7 +27,7 @@ import { describeProblem } from '../core/http/problem-messages';
         }
       </div>
       @if (retryable()) {
-        <button mat-button type="button" (click)="retry.emit()" i18n="@@error.retry">Retry</button>
+        <button class="btn btn-tertiary" type="button" (click)="retry.emit()" i18n="@@error.retry">Retry</button>
       }
     </div>
   `,
@@ -38,10 +37,10 @@ import { describeProblem } from '../core/http/problem-messages';
       align-items: flex-start;
       gap: var(--trove-space-3);
       padding: var(--trove-space-3) var(--trove-space-4);
-      border: 1px solid var(--mat-sys-error);
-      border-radius: var(--mat-sys-corner-small);
-      background: var(--mat-sys-error-container);
-      color: var(--mat-sys-on-error-container);
+      border: 1px solid var(--trove-error);
+      border-radius: var(--trove-radius-m);
+      background: var(--trove-error-container);
+      color: var(--trove-on-error-container);
     }
     .body {
       flex: 1 1 auto;

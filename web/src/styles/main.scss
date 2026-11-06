@@ -1,7 +1,7 @@
-@use 'sass:string';
-@use '@angular/material' as mat;
+@use '@angular/cdk' as cdk;
 @use 'tokens';
 @use 'controls';
+@use 'dialog';
 @use 'icons';
 @use 'list-screens';
 @use 'browse';
@@ -13,132 +13,10 @@
 @use 'vulnerabilities';
 // <<< M4b vulnerabilities
 
-// Material is themed through its design tokens and mapped to trove's custom properties in
-// tokens. Compact density (-2) everywhere (Q-UI-2). `color-scheme: light dark` makes the
-// generated tokens follow prefers-color-scheme; a user preference sets color-scheme on <html>
-// (see tokens).
-html {
-  @include mat.theme(
-    (
-      color: (
-        primary: mat.$azure-palette,
-        tertiary: mat.$violet-palette,
-      ),
-      typography: (
-        plain-family: string.unquote('"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'),
-        brand-family: string.unquote('"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'),
-      ),
-      density: -2,
-    )
-  );
-  // The page palette (Q-UI-128, docs/developer/design-language.md): the reference's semantic colours, light from its
-  // token set and dark as measured on the owner's GitLab 19.0.1, where the two agree token for token. The primary is
-  // its blue, as text one step deeper than the confirm button's #1f75cb in the light scheme (#2f68b4, its hover; #1f75cb
-  // gives 4.0:1 on a filled field) and a hair lighter than #63a6e9 in the dark one (#66a8ea; 4.49:1 on a filled
-  // field); trove's own confirm button keeps the exact pair (--trove-accent-fill). White or #18171d on it; the page is
-  // white / #18171d, text #3a383f / #ececef, muted text #626168 / #bfbfc3, hairlines #dcdcde / #4c4b51, menus and
-  // dialogs white / #28272d. A pair that misses WCAG AA is moved in its own hue (R-UI-044); web/src/styles/
-  // palette.spec.ts recomputes the pairs. The generated azure (the blue's hue, 210 degrees) and violet palettes fill
-  // the tokens not named here.
-  @include mat.theme-overrides(
-    (
-      primary: light-dark(#2f68b4, #66a8ea),
-      on-primary: light-dark(#ffffff, #18171d),
-      primary-container: light-dark(#e9f3fc, #1d283e),
-      on-primary-container: light-dark(#18171d, #ececef),
-      inverse-primary: light-dark(#66a8ea, #2f68b4),
-      surface-tint: light-dark(#2f68b4, #66a8ea),
-      secondary-container: light-dark(#e9f3fc, #1d283e),
-      on-secondary-container: light-dark(#18171d, #ececef),
-      background: light-dark(#ffffff, #18171d),
-      on-background: light-dark(#3a383f, #ececef),
-      surface: light-dark(#ffffff, #18171d),
-      on-surface: light-dark(#3a383f, #ececef),
-      surface-variant: light-dark(#ececef, #3a383f),
-      on-surface-variant: light-dark(#626168, #bfbfc3),
-      surface-dim: light-dark(#ececef, #18171d),
-      surface-bright: light-dark(#ffffff, #3a383f),
-      surface-container-lowest: light-dark(#ffffff, #18171d),
-      surface-container-low: light-dark(#fbfafd, #28272d),
-      surface-container: light-dark(#ffffff, #28272d),
-      surface-container-high: light-dark(#ffffff, #28272d),
-      surface-container-highest: light-dark(#ececef, #3a383f),
-      inverse-surface: light-dark(#28272d, #ececef),
-      inverse-on-surface: light-dark(#ececef, #28272d),
-      outline: light-dark(#89888d, #737278),
-      outline-variant: light-dark(#dcdcde, #4c4b51),
-    )
-  );
-  // Material's buttons, until their screens move to trove's own (Q-UI-126), look like the reference's (Q-UI-128): 32 px,
-  // 8 px round, the label at 14 px and weight 400; filled is the confirm button, outlined the default button (its grey
-  // fill below), text the quiet one in the text colour.
-  @include mat.button-overrides(
-    (
-      filled-container-shape: var(--trove-radius-m),
-      outlined-container-shape: var(--trove-radius-m),
-      protected-container-shape: var(--trove-radius-m),
-      text-container-shape: var(--trove-radius-m),
-      tonal-container-shape: var(--trove-radius-m),
-      filled-container-height: var(--trove-control-height),
-      outlined-container-height: var(--trove-control-height),
-      protected-container-height: var(--trove-control-height),
-      text-container-height: var(--trove-control-height),
-      tonal-container-height: var(--trove-control-height),
-      filled-container-color: var(--trove-accent-fill),
-      filled-label-text-color: var(--trove-on-accent),
-      outlined-outline-color: var(--trove-btn-default-border),
-      outlined-label-text-color: var(--trove-control-fg),
-      text-label-text-color: var(--trove-control-fg),
-      filled-label-text-weight: 400,
-      outlined-label-text-weight: 400,
-      protected-label-text-weight: 400,
-      text-label-text-weight: 400,
-      tonal-label-text-weight: 400,
-      filled-label-text-size: var(--trove-text-size),
-      outlined-label-text-size: var(--trove-text-size),
-      protected-label-text-size: var(--trove-text-size),
-      text-label-text-size: var(--trove-text-size),
-      tonal-label-text-size: var(--trove-text-size),
-      filled-label-text-tracking: normal,
-      outlined-label-text-tracking: normal,
-      protected-label-text-tracking: normal,
-      text-label-text-tracking: normal,
-      tonal-label-text-tracking: normal,
-      filled-horizontal-padding: var(--trove-space-3),
-      outlined-horizontal-padding: var(--trove-space-3),
-      text-horizontal-padding: var(--trove-space-3),
-    )
-  );
-  // Material's tabs as the reference's: the labels in the text colour at 14 px, the current one at weight 600 (below)
-  // over a 2 px blue line, a hairline under the strip.
-  @include mat.tabs-overrides(
-    (
-      active-indicator-color: var(--trove-tab-indicator),
-      active-indicator-height: 2px,
-      active-label-text-color: var(--trove-control-fg),
-      inactive-label-text-color: var(--trove-control-fg),
-      active-hover-label-text-color: var(--trove-control-fg),
-      inactive-hover-label-text-color: var(--trove-control-fg),
-      active-focus-label-text-color: var(--trove-control-fg),
-      inactive-focus-label-text-color: var(--trove-control-fg),
-      active-hover-indicator-color: var(--trove-tab-indicator),
-      active-focus-indicator-color: var(--trove-tab-indicator),
-      label-text-size: var(--trove-text-size),
-      label-text-weight: 400,
-      label-text-tracking: normal,
-      divider-color: var(--trove-border),
-      divider-height: 1px,
-      container-height: 48px,
-    )
-  );
-  // The density of -2 sets the label of a filled field to `display: none`, which leaves the input without a
-  // visible or an accessible label (found by axe in the browser tier, R-UI-047). The label stays.
-  --mat-form-field-filled-label-display: block;
-  // A filled field under the pointer gets the hover layer (8 % of on-surface), and the label in on-surface-variant on that
-  // container measures 4.25:1 in the light scheme and 4.47:1 in the dark one, under the 4.5:1 of WCAG 2.2 AA (axe in the
-  // vulnerability journeys: the first field of the bulk dialog opens under the pointer that clicked "Change status").
-  --mat-form-field-filled-hover-label-text-color: var(--mat-sys-on-surface);
-}
+// The structural styles of the CDK's overlay (dialogs, menus and tooltips open in it).
+// Colours, type and measures are trove's own tokens (_tokens.scss); `color-scheme: light dark` makes light-dark() follow
+// prefers-color-scheme, and a user preference sets color-scheme on <html> (see tokens).
+@include cdk.overlay();
 
 html,
 body {
@@ -153,16 +31,6 @@ body {
   color: var(--trove-on-surface);
   font: 400 var(--trove-text-size) / var(--trove-text-line) var(--trove-font-sans);
   font-feature-settings: var(--trove-font-features);
-}
-
-// The rest of Material's default and confirm buttons (Q-UI-128): the outlined button takes the default button's fill,
-// the current tab's label is heavier.
-.mat-mdc-outlined-button:not(:disabled) {
-  background-color: var(--trove-btn-default-bg);
-}
-
-.mdc-tab--active .mdc-tab__text-label {
-  font-weight: 600;
 }
 
 h1 {

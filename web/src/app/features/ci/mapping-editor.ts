@@ -1,6 +1,5 @@
 import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { Router, RouterLink } from '@angular/router';
 import { CiApi, CiMapping, CiMappingInput, CiWarning, SnippetFormat } from '../../api/ci-api';
 import { PolicyApi } from '../../api/authz-api';
@@ -56,8 +55,7 @@ import { NamePicker } from './name-picker';
 @Component({
   selector: 'trove-ci-mapping-editor',
   imports: [
-    MatButtonModule,
-    MatCheckboxModule,
+    Checkbox,
     RouterLink,
     CiWarnings,
     ConditionBuilder,

@@ -1,5 +1,4 @@
 import { Component, effect, inject, input, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { CiApi, CiIssuerChoice } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
@@ -19,12 +18,12 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-project-ci',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, DataTable, IssuanceList, MappingList],
+  imports: [RouterLink, ErrorNotice, DataTable, IssuanceList, MappingList],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.project.heading">CI identity</h1>
-      <a mat-button [routerLink]="['/admin/projects', key()]" i18n="@@ci.project.back">Back to the project</a>
-      <a mat-stroked-button [routerLink]="testLink()" i18n="@@ci.project.test">Test with claims</a>
+      <a class="btn btn-tertiary" [routerLink]="['/admin/projects', key()]" i18n="@@ci.project.back">Back to the project</a>
+      <a class="btn btn-default" [routerLink]="testLink()" i18n="@@ci.project.test">Test with claims</a>
     </header>
     <p class="subject" translate="no">{{ key() }}</p>
     <p i18n="@@ci.project.hint">

@@ -9,7 +9,6 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { JobReference, RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
@@ -37,7 +36,6 @@ import { classLabel } from './repository-wizard';
   selector: 'trove-repository-list',
   imports: [
     DatePipe,
-    MatButtonModule,
     RouterLink,
     CopyButton,
     DataTable,

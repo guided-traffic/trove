@@ -10,8 +10,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatMenuModule } from '@angular/material/menu';
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
 import { RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { JobReference } from '../../api/jobs-api';
@@ -157,7 +156,7 @@ function boundText(kind: string): string {
  */
 @Component({
   selector: 'trove-mirror-status',
-  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, MatButtonModule, MatMenuModule, RouterLink, ErrorNotice],
+  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, CdkMenu, CdkMenuItem, CdkMenuTrigger, RouterLink, ErrorNotice],
   template: `
     <section class="status" aria-labelledby="mirror-status-heading">
       <h2 id="mirror-status-heading" i18n="@@mirror.status.heading">Mirror status</h2>
@@ -178,34 +177,35 @@ function boundText(kind: string): string {
         @if (canChange()) {
           <div class="buttons">
             @if (s.state === 'paused') {
-              <button mat-stroked-button type="button" [disabled]="busy()" (click)="setPaused.emit(false)">
+              <button class="btn btn-default" type="button" [disabled]="busy()" (click)="setPaused.emit(false)">
                 <ng-container i18n="@@mirror.resume">Resume</ng-container>
               </button>
             } @else {
-              <button mat-stroked-button type="button" [disabled]="busy() || s.state === 'off'" (click)="setPaused.emit(true)">
+              <button class="btn btn-default" type="button" [disabled]="busy() || s.state === 'off'" (click)="setPaused.emit(true)">
                 <ng-container i18n="@@mirror.pause">Pause</ng-container>
               </button>
             }
             <span class="split">
-              <button mat-flat-button type="button" [disabled]="requesting()" (click)="run(false)">
+              <button class="btn btn-confirm" type="button" [disabled]="requesting()" (click)="run(false)">
                 <ng-container i18n="@@mirror.run">Run a pass now</ng-container>
               </button>
               <button
-                mat-flat-button
                 type="button"
-                class="more"
+                class="btn btn-confirm more"
                 [disabled]="requesting()"
-                [matMenuTriggerFor]="runMenu"
+                [cdkMenuTriggerFor]="runMenu"
                 aria-label="More ways to run a pass"
                 i18n-aria-label="@@mirror.run.more"
               >
                 <span class="material-icons" aria-hidden="true">arrow_drop_down</span>
               </button>
-              <mat-menu #runMenu="matMenu">
-                <button mat-menu-item type="button" (click)="run(true)">
-                  <ng-container i18n="@@mirror.run.full">Run a full pass</ng-container>
-                </button>
-              </mat-menu>
+              <ng-template #runMenu>
+                <div class="menu" cdkMenu>
+                  <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="run(true)">
+                    <ng-container i18n="@@mirror.run.full">Run a full pass</ng-container>
+                  </button>
+                </div>
+              </ng-template>
             </span>
           </div>
         }
@@ -450,7 +450,7 @@ function boundText(kind: string): string {
     }
     h3 {
       margin-block: var(--trove-space-4) var(--trove-space-2);
-      font: var(--mat-sys-title-small);
+      font: var(--trove-type-title-small);
     }
     .state {
       display: flex;
@@ -464,10 +464,10 @@ function boundText(kind: string): string {
       align-items: center;
       padding: var(--trove-space-1) var(--trove-space-3);
       border: 1px solid currentColor;
-      border-radius: var(--mat-sys-corner-full);
+      border-radius: var(--trove-radius-full);
     }
     .chip.primary {
-      color: var(--mat-sys-primary);
+      color: var(--trove-accent);
     }
     .buttons {
       display: flex;

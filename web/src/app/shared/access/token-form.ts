@@ -1,6 +1,5 @@
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../ui/checkbox';
 import { ApiError } from '../../api/problem';
 import { Endpoint, EndpointsApi } from '../../api/endpoints-api';
 import { CreateTokenRequest } from '../../api/tokens-api';
@@ -44,7 +43,7 @@ export interface TokenDraft {
  */
 @Component({
   selector: 'trove-token-form',
-  imports: [MatButtonModule, MatCheckboxModule, SelectField, TextField],
+  imports: [Checkbox, SelectField, TextField],
   template: `
     <form class="form" (submit)="submit($event)" novalidate>
       <trove-text-field
@@ -116,7 +115,7 @@ export interface TokenDraft {
           <fieldset class="actions">
             <legend i18n="@@token-form.actions">Actions</legend>
             @for (a of actionList; track a) {
-              <mat-checkbox [checked]="actions().includes(a)" (change)="toggle(a, $event.checked)">{{ a }}</mat-checkbox>
+              <trove-checkbox [checked]="actions().includes(a)" (checkedChange)="toggle(a, $event)">{{ a }}</trove-checkbox>
             }
             @if (fieldError('/scope/actions', 'actions'); as text) {
               <p class="field-error">{{ text }}</p>
@@ -133,14 +132,14 @@ export interface TokenDraft {
             accepted. A further endpoint accepts only service-account tokens bound to it.
           </p>
           @for (e of endpointNames(); track e) {
-            <mat-checkbox [checked]="endpoints().includes(e)" (change)="toggleEndpoint(e, $event.checked)">{{ e }}</mat-checkbox>
+            <trove-checkbox [checked]="endpoints().includes(e)" (checkedChange)="toggleEndpoint(e, $event)">{{ e }}</trove-checkbox>
           }
         </fieldset>
       }
 
       <div class="row">
-        <button mat-flat-button type="submit" [disabled]="busy()">{{ submitLabel() }}</button>
-        <button mat-button type="button" (click)="cancelled.emit()" i18n="@@token-form.cancel">
+        <button class="btn btn-confirm" type="submit" [disabled]="busy()">{{ submitLabel() }}</button>
+        <button class="btn btn-tertiary" type="button" (click)="cancelled.emit()" i18n="@@token-form.cancel">
           Cancel
         </button>
       </div>
@@ -156,16 +155,16 @@ export interface TokenDraft {
     fieldset {
       margin: 0 0 var(--trove-space-3);
       padding: var(--trove-space-2) var(--trove-space-3);
-      border: 1px solid var(--mat-sys-outline-variant);
-      border-radius: var(--mat-sys-corner-small);
+      border: 1px solid var(--trove-border);
+      border-radius: var(--trove-radius-m);
       inline-size: 100%;
       box-sizing: border-box;
     }
     .hint {
       flex-basis: 100%;
       margin: 0;
-      color: var(--mat-sys-on-surface-variant);
-      font: var(--mat-sys-body-small);
+      color: var(--trove-text-muted);
+      font: var(--trove-type-body-small);
     }
     .actions,
     .endpoints {
@@ -188,7 +187,7 @@ export interface TokenDraft {
       flex-basis: 100%;
       margin: 0;
       color: var(--trove-status-bad);
-      font: var(--mat-sys-body-small);
+      font: var(--trove-type-body-small);
     }
   `,
 })

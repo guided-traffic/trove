@@ -1,0 +1,73 @@
+// trove's dialog (Q-UI-126): the look of the CDK dialog that TroveDialog (shared/ui/dialog.ts) opens. The behaviour (modal
+// role, focus trap and return, Escape, the backdrop) is the CDK's; this file is only the panel.
+//
+//   <h2 troveDialogTitle>Title</h2>
+//   <div class="dialog-body">…</div>
+//   <div class="dialog-actions"><button class="btn btn-tertiary" troveDialogClose>Cancel</button>…</div>
+
+.trove-dialog-backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.trove-dialog {
+  max-block-size: calc(100vh - 2rem);
+  min-inline-size: min(280px, calc(100vw - 2rem));
+}
+
+.trove-dialog .cdk-dialog-container {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  max-block-size: calc(100vh - 2rem);
+  border-radius: var(--trove-panel-radius);
+  background: var(--trove-dialog-bg);
+  box-shadow: var(--trove-elevation-2);
+  color: var(--trove-on-surface);
+  font-size: var(--trove-text-size);
+  line-height: var(--trove-text-line);
+  outline: 0;
+
+  // The dialog's component, and a form that wraps its parts, lay the parts out as the container's own flex children, so
+  // the body scrolls and the title and the actions stay in view.
+  > * {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-block-size: 0;
+  }
+
+  > * > form {
+    display: contents;
+  }
+}
+
+.dialog-title {
+  flex: none;
+  margin: 0;
+  padding: var(--trove-space-6) var(--trove-space-6) var(--trove-space-2);
+  color: var(--trove-heading);
+  font-size: var(--trove-heading-3);
+  font-weight: var(--trove-heading-weight);
+  line-height: 1.5;
+  letter-spacing: var(--trove-heading-tracking);
+}
+
+.dialog-body {
+  flex: 1 1 auto;
+  padding: var(--trove-space-2) var(--trove-space-6);
+  overflow: auto;
+
+  > :first-child {
+    margin-block-start: 0;
+  }
+}
+
+.dialog-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--trove-space-2);
+  padding: var(--trove-space-3) var(--trove-space-6) var(--trove-space-6);
+}

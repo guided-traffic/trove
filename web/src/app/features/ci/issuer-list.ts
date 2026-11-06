@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { CiApi, CiIssuer } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
@@ -18,13 +17,13 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-ci-issuer-list',
-  imports: [DatePipe, MatButtonModule, RouterLink, ErrorNotice, DataTable, Needs],
+  imports: [DatePipe, RouterLink, ErrorNotice, DataTable, Needs],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.issuers.heading">CI identity</h1>
-      <a mat-stroked-button routerLink="/admin/ci/issuances" i18n="@@ci.issuers.issuances">Issued tokens</a>
+      <a class="btn btn-default" routerLink="/admin/ci/issuances" i18n="@@ci.issuers.issuances">Issued tokens</a>
       @if (session.has('ci:write')) {
-        <a mat-flat-button routerLink="/admin/ci/new" i18n="@@ci.issuers.add">New issuer</a>
+        <a class="btn btn-confirm" routerLink="/admin/ci/new" i18n="@@ci.issuers.add">New issuer</a>
       }
     </header>
     <trove-needs capability="ci:write" />

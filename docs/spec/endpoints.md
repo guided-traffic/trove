@@ -88,7 +88,7 @@ pass `--resolve`.
 | Addressed repository | The repository a client names in its request URL, or the one a host-root binding names, whatever members resolution consults afterwards. |
 | Exposure fingerprint | SHA-256 over the endpoint's mode and the ID, revision and `enabled` flag of every rule of that endpoint for the addressed repository; a constant for mode `all` (R-EP-018). |
 | Host-root binding | A host of an endpoint whose root belongs to one repository (R-EP-006). |
-| Host label | The label a wildcard host matched (`docker-all` in `docker-all.registry.example.com`). |
+| Host label | The label a wildcard host matched (`docker-all` in `docker-all.registry.example.com`). It names no repository ([Q-EP-76](#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)). |
 
 ```text
       internal clients, browsers, CI jobs                        customers
@@ -127,8 +127,7 @@ runtime, live in PostgreSQL (R-EP-012).
   `server.base_url` with `server.additional_base_urls` (R-OPS-005), its in-flight limit
   `server.max_in_flight` and its certificate pair `server.tls` (R-ARCH-035). The entry
   `server.endpoints.default` is optional and may set only `hosts`, `wildcard_host`, `host_roots`,
-  `wildcard_root`, `surface`, `auth`, `exposure`, `cache_fill`, `rate_limit_class` and
-  `replica_header`. Any other key there stops startup with an error that names the `server` key
+  `surface`, `auth`, `exposure`, `cache_fill`, `rate_limit_class` and `replica_header`. Any other key there stops startup with an error that names the `server` key
   that owns the value.
 - **A further endpoint** MUST set `listen` and `base_url`. Every other key has the default shown
   below, which differs from the default endpoint's where a further endpoint is meant for an
@@ -162,8 +161,7 @@ server:
   #     base_url: https://packages.example.com   # example; required; an origin (R-OPS-005)
   #     hosts: []                         # default (proposed): only the host of base_url (R-EP-003); example [packages.example.com, pkgs.example.org]
   #     wildcard_host: ""                 # default (proposed): none; example "*.packages.example.com" (R-EP-003)
-  #     host_roots: {}                    # default (proposed); example {mirror.example.com: docker-hub} (R-EP-006)
-  #     wildcard_root: none               # default (proposed): none | label (R-EP-006)
+  #     host_roots: {}                    # default (proposed); example {mirror.example.com: web/docker-hub} (R-EP-006)
   #     trusted_proxies: []               # default (proposed): [] = server.trusted_proxies; example ["10.43.0.0/16"] (R-EP-003)
   #     pool: ""                          # default (proposed): "" = served by the main web Deployment; example ep-customers (R-EP-002)
   #     max_in_flight: 1024               # default (proposed), per replica (R-EP-002)
@@ -184,7 +182,6 @@ server:
   #     hosts: []                         # default (proposed): no host check, R-OPS-005 unchanged
   #     wildcard_host: ""                 # default (proposed)
   #     host_roots: {}                    # default (proposed)
-  #     wildcard_root: none               # default (proposed)
   #     surface: [ui, api, ci_exchange, packages, files]   # default (proposed)
   #     auth: {token_types: [pat, sat, cit], bound_tokens_only: false, anonymous: true}   # default (proposed); anonymous: true defers to R-AUTH-037
   #     exposure: all                     # default (proposed)
@@ -256,7 +253,7 @@ Acceptance criteria:
 - Endpoints `default` (`:8080`) and `customers` (`:8443`, base URL `https://packages.example.com`).
   `curl --resolve packages.example.com:8080:127.0.0.1 https://packages.example.com:8080/api/v1/system/ping`
   is logged with `"endpoint":"default"`, never with `customers`.
-  `curl --resolve trove.example.com:8443:127.0.0.1 https://trove.example.com:8443/api/npm/npm-all/`
+  `curl --resolve trove.example.com:8443:127.0.0.1 https://trove.example.com:8443/api/npm/web/npm-all/`
   answers `421` from `customers`.
 - A table test sends every combination of listener, `Host`, server name and forwarded host of a
   fixture to the server and asserts that the endpoint in the request context is always the
@@ -267,7 +264,7 @@ Acceptance criteria:
   `:8443` and `:8081` only; `ss -ltn` in its pod shows no `:8080`. A main `packages` pod shows `:8080`
   and `:8081` only. With `customers` on `surface: [packages]` and no pool, a main `api` pod shows no `:8443`; with
   `surface: [packages, files, api]`, both main Deployments show `:8443`, and on the `api` pod
-  `GET https://packages.example.com:8443/api/npm/npm-customers/` answers the `404` problem while
+  `GET https://packages.example.com:8443/api/npm/web/npm-customers/` answers the `404` problem while
   `GET /api/v1/repositories` there reaches the handler.
 - With `max_in_flight: 1` on `customers` and one slow request holding it, a second request on
   `customers` answers `503` `server_busy`, while a request on `:8080` answers `200`.
@@ -281,8 +278,8 @@ Priority: **MVP** · Covers: OPS-051, OPS-052, HA-025
 - **Wildcard host (Q-EP-6).** At most one per endpoint, in the form `*.<domain>` where `<domain>`
   has at least two labels. It matches a host with exactly one more left-most label, as a wildcard
   certificate does: `*.registry.example.com` matches `docker-all.registry.example.com`, not
-  `registry.example.com` and not `a.b.registry.example.com`. The matched label is the request's
-  host label, which R-EP-006 may bind to a repository.
+  `registry.example.com` and not `a.b.registry.example.com`. A wildcard host widens the host set
+  only; it binds no repository ([Q-EP-76](#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)).
 - **Effective host.** The request's `:authority` or `Host`, lower-cased and without its port. When
   the TCP peer lies in the endpoint's trusted proxies (`trusted_proxies`, else
   `server.trusted_proxies`) and the request carries a forwarded host in the one header family that
@@ -318,8 +315,8 @@ Priority: **MVP** · Covers: OPS-051, OPS-052, HA-025
 Acceptance criteria:
 
 - `customers` with base URL `https://packages.example.com` and `hosts: [pkgs.example.org]`:
-  - `GET https://pkgs.example.org:8443/api/npm/npm-customers/@acme%2fsdk` answers a document whose
-    tarball URLs start with `https://pkgs.example.org/api/npm/npm-customers/`;
+  - `GET https://pkgs.example.org:8443/api/npm/web/npm-customers/@acme%2fsdk` answers a document whose
+    tarball URLs start with `https://pkgs.example.org/api/npm/web/npm-customers/`;
   - `Host: trove.example.com` answers `421` with code `misdirected_request`, and so do
     `Host: 10.0.0.5` and an HTTP/1.0 request without `Host`;
   - `Host: evil.example` with `X-Forwarded-Host: packages.example.com` from a peer outside the
@@ -328,7 +325,7 @@ Acceptance criteria:
   - `Host: packages.example.com` with `X-Forwarded-Host: evil.example` from a trusted proxy answers
     `200` with URLs on `packages.example.com`, and the ignored-host counter increments.
 - With `wildcard_host: "*.registry.example.com"`, `docker-all.registry.example.com` passes the
-  check with host label `docker-all`; `registry.example.com` (not in the set) and
+  check; `registry.example.com` (not in the set) and
   `a.b.registry.example.com` answer `421`.
 - Without `server.endpoints.default`, R-OPS-005's acceptance criteria pass unchanged. With
   `server.endpoints.default.hosts: [trove.example.com]`, a request on `:8080` with
@@ -390,7 +387,7 @@ An endpoint serves only the route families of its `surface`:
 | `ui` | `/ui/…`, `GET /{$}`, `/auth/…` (browser sign-in, session, logout) | on | not allowed (Q-EP-13) |
 | `api` | `/api/v1/…` except the CI exchange | on | off by default |
 | `ci_exchange` | `POST /api/v1/auth/oidc/token`; from P1 the npm trusted-publishing exchange at the host root and below every registry URL ([formats/npm.md](formats/npm.md) R-NPM-022) | on | off by default |
-| `packages` | `/api/<format>/<repoKey>/…` other than the exchange routes, the format host-root routes other than the exchange (`/v2/` once OCI exists), and host-root bindings (R-EP-006) | on | on by default |
+| `packages` | `/api/<format>/<projectKey>/<repoKey>/…` other than the exchange routes, the format host-root routes other than the exchange (`/v2/` once OCI exists), and host-root bindings (R-EP-006) | on | on by default |
 | `files` | `/files/…` | on | off by default |
 
 - Each endpoint's ServeMux registers only the routes of its families. A path of a family the
@@ -420,8 +417,8 @@ An endpoint serves only the route families of its `surface`:
 Acceptance criteria:
 
 - On `customers` with the default surface, `GET /ui/`, `GET /`, `GET /auth/oidc/corp/start`,
-  `GET /api/v1/repositories`, `POST /api/v1/auth/oidc/token` and `GET /files/generic-local/x`
-  answer the same `404` problem body as `GET /does-not-exist`; `GET /api/npm/npm-customers/`
+  `GET /api/v1/repositories`, `POST /api/v1/auth/oidc/token` and `GET /files/web/generic-local/x`
+  answer the same `404` problem body as `GET /does-not-exist`; `GET /api/npm/web/npm-customers/`
   answers `200`.
 - `surface: [ui, packages]` on `customers` stops startup and names
   `server.endpoints.customers.surface`.
@@ -434,28 +431,29 @@ Acceptance criteria:
 
 This section is normative for every format page.
 
-- **Path-based is the default.** A format serves its protocol below `/api/<format>/<repoKey>/` on
+- **Path-based is the default.** A format serves its protocol below `/api/<format>/<projectKey>/<repoKey>/` on
   every endpoint (INV-6). A format page MAY use a host root, through a host-root route
   ([architecture.md](architecture.md) R-ARCH-005) or a host-root binding (R-EP-006), only where a
   client fixes the path at the host root and cannot be configured with a path. One host, one
   certificate and one edge route then serve every repository of every format.
-- **No wildcard host is required by the MVP.** npm and NuGet clients take a registry URL with a
-  path. An installation needs a wildcard host only for the optional subdomain mode of OCI (P1).
+- **No wildcard host is required.** npm and NuGet clients take a registry URL with a path. A
+  wildcard host widens an endpoint's host set (R-EP-003); it binds no repository, so no format
+  needs one (Q-EP-76).
 - **Where host roots are unavoidable** (from the owner request's analysis; each format page
   re-checks the client behaviour before relying on it):
 
 | Client or protocol | Registry URL with a path possible | Needs | Mechanism |
 |---|---|---|---|
-| npm, pnpm, Yarn; NuGet; PyPI; Maven and Gradle; Cargo (sparse index); Go module proxy; Helm (index and OCI path mode); Ansible Galaxy; Composer; Conan; Debian and RPM; RubyGems; pub; Swift; Conda; Bazel | yes | nothing | `/api/<format>/<repoKey>/` |
-| OCI clients (docker, Podman, containerd, CRI-O, ORAS) with image names that carry the repository key (`trove.example.com/docker-all/alpine:3`) | the API root is fixed at `/v2/` | the host-root prefix `/v2/`, reserved since the MVP ([ha-and-helm.md](ha-and-helm.md) Q-HA-4) | host-root route |
+| npm, pnpm, Yarn; NuGet; PyPI; Maven and Gradle; Cargo (sparse index); Go module proxy; Helm (index and OCI path mode); Ansible Galaxy; Composer; Conan; Debian and RPM; RubyGems; pub; Swift; Conda; Bazel | yes | nothing | `/api/<format>/<projectKey>/<repoKey>/` |
+| OCI clients (docker, Podman, containerd, CRI-O, ORAS) with image names that carry the project and repository keys (`trove.example.com/web/docker-all/alpine:3`) | the API root is fixed at `/v2/` | the host-root prefix `/v2/`, reserved since the MVP ([ha-and-helm.md](ha-and-helm.md) Q-HA-4) | host-root route |
 | containerd (`hosts.toml` with a path and `override_path`) and CRI-O (a mirror location with a path) as pull-through mirrors | yes | nothing beyond `/v2/` | host-root route |
 | Docker Engine `registry-mirrors` | no: the mirror URL may not carry a path, and pulls arrive as `/v2/library/<name>/…` without a repository segment | a host whose `/v2/` belongs to one repository | host-root binding (R-EP-007) |
 | Terraform and OpenTofu registry protocol | no: service discovery reads `/.well-known/terraform.json` at the host root | one host per Terraform registry; several Terraform repositories need several hosts | host-root binding (R-EP-007) |
-| OCI subdomain mode (`docker-all.registry.example.com/alpine:3`, image names without the repository segment) | optional | a wildcard host, a wildcard DNS record and a wildcard certificate | wildcard host with `wildcard_root: label` (R-EP-007) |
+| OCI subdomain mode (`docker-all.registry.example.com/alpine:3`, image names without the repository segment) | optional | a wildcard host whose one label would have to name a project and a repository | not offered ([Q-EP-76](#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)); the bound host of the Docker Engine row serves one repository per host |
 
 - **Bindings belong to hosts, not to repositories.** A repository may be bound on several hosts
   and reached by path on every endpoint at the same time; a binding never moves a repository off
-  `/api/<format>/<repoKey>/`.
+  `/api/<format>/<projectKey>/<repoKey>/`.
 - **npm and NuGet never use a binding.** npm's host-root exchange (R-NPM-022, P1) is a host-root
   route of the `ci_exchange` family on every endpoint that serves it.
 
@@ -464,21 +462,26 @@ Priority: **MVP** · Covers: trove-only
 
 The MVP builds the mechanism; no MVP format uses it (Q-EP-6). R-EP-007 lists its first consumers.
 
-- **Configuration.** `host_roots` maps exact hosts of the endpoint's host set to repository keys.
-  `wildcard_root: label` binds every host that `wildcard_host` matches to the repository whose key
-  equals the host label; `none` binds none. At startup, a `host_roots` key that is not an exact host
-  of the endpoint, a value that is not a valid repository key (INV-5), or `wildcard_root: label`
-  without a `wildcard_host` stops startup and names the key. Whether the repository exists is
-  decided per request, because repositories live in PostgreSQL: a binding to a key that does not
-  exist, or to a repository whose format serves no bound-host route, behaves as no binding.
+- **Configuration.** `host_roots` maps exact hosts of the endpoint's host set to repositories, each
+  named by its qualified name `<projectKey>/<repoKey>` (an instance context of
+  [authorization.md](authorization.md) R-AUTHZ-004, without patterns or classes). A wildcard host binds
+  no repository: a host label cannot name a project and a key
+  ([Q-EP-76](#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)). At
+  startup, a `host_roots` key that is not an exact host of the endpoint, or a value that is not a
+  qualified name (a bare key, a pattern, a project or repository key outside its syntax, INV-5)
+  stops startup and names the key. Whether the repository exists is decided per request, because
+  repositories live in PostgreSQL: a binding to a repository that does not exist, or whose format
+  serves no bound-host route, behaves as no binding; a repository moved to another project
+  ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project))
+  is no longer bound until the value names its new address.
 - **Request context.** Middleware step 5 places the binding of the effective host in the request
   context (`endpoint.RootRepository(ctx)`), next to the response base URL.
 - **Dispatch.** A format that needs host roots declares literal bound-host patterns relative to the
   host root (`/v2/`, `/.well-known/terraform.json`). The core registers them on every endpoint with
   `packages` in its surface. A request on a bound host whose path matches one of them goes to the
   bound repository's format with the repository fixed, and authorization and exposure run on that
-  repository exactly as for `/api/<format>/<repoKey>/`. On an unbound host the same path keeps its
-  unbound meaning (`/v2/<repoKey>/…`, Q-HA-4) or answers `404`.
+  repository exactly as for `/api/<format>/<projectKey>/<repoKey>/`. On an unbound host the same path
+  keeps its unbound meaning (`/v2/<projectKey>/<repoKey>/…`, Q-HA-4) or answers `404`.
 - **Reserved prefix.** INV-6 reserves `/.well-known/` at the host root for discovery documents that
   clients fetch there ([RFC 8615](https://www.rfc-editor.org/rfc/rfc8615)), the first being
   Terraform's on a bound host. No other route may use it, and until a format registers one, every
@@ -488,16 +491,16 @@ The MVP builds the mechanism; no MVP format uses it (Q-EP-6). R-EP-007 lists its
 
 Acceptance criteria:
 
-- `host_roots: {mirror.example.com: docker-hub}` with no OCI format: `GET /v2/` and
+- `host_roots: {mirror.example.com: web/docker-hub}` with no OCI format: `GET /v2/` and
   `GET /.well-known/terraform.json` on `mirror.example.com` answer the `404` problem; a unit test of
-  middleware step 5 finds `docker-hub` as the binding for `mirror.example.com` and none for
+  middleware step 5 finds `web/docker-hub` as the binding for `mirror.example.com` and none for
   `registry.example.com`.
-- A `host_roots` key outside the endpoint's hosts, and `wildcard_root: label` without
-  `wildcard_host`, each stop startup and name the key.
+- A `host_roots` key outside the endpoint's hosts, and a value `docker-hub` (a bare key) or
+  `web/docker-*` (a pattern), each stop startup and name the key.
 - The route-table test fails on a fixture plug-in that registers `GET /.well-known/x`, on every
   endpoint, and passes once the fixture is removed.
 
-### R-EP-007 · Single-repository hosts for Docker Engine mirrors, OCI subdomains and Terraform discovery
+### R-EP-007 · Single-repository hosts for Docker Engine mirrors and Terraform discovery
 Priority: **P1** · Covers: HA-027, PKG-DOCKER-007
 
 The format pages own the protocols; this requirement fixes that they reach host roots through
@@ -508,25 +511,27 @@ R-EP-006 and through nothing else.
   reads `library/alpine` in R. A Docker Engine configured with
   `registry-mirrors: ["https://mirror.example.com"]` pulls through R. The token challenge's realm
   is built from the response base URL of that host.
-- **OCI subdomain mode (F4).** With `wildcard_host: "*.registry.example.com"` and
-  `wildcard_root: label`, `docker pull docker-all.registry.example.com/alpine:3` reads `alpine` in
-  `docker-all`. It needs a wildcard DNS record and a certificate for `*.registry.example.com` at the
-  edge and, when the edge passes TLS through, on the listener (R-EP-004). This is the subdomain
-  routing of [ha-and-helm.md](ha-and-helm.md) R-HA-041.
+- **OCI subdomain mode: not offered.** A repository is addressed by its project and its key
+  (INV-6), and one host label of a wildcard host cannot carry both; the label binding is gone
+  ([Q-EP-76](#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes)).
+  An image name without the repository segment is served through a bound host per repository (the
+  Docker Engine mirror above). The OCI format page decides again when it wants a subdomain mode
+  (the revisit condition of Q-EP-76; [ha-and-helm.md](ha-and-helm.md) R-HA-041).
 - **Terraform discovery (the Terraform format page).** On a host bound to a Terraform repository,
   `GET /.well-known/terraform.json` answers the discovery document, whose `modules.v1` and
-  `providers.v1` point below `/api/terraform/<repoKey>/` on the same host. Each Terraform registry
-  needs its own host, or the wildcard mode.
+  `providers.v1` point below `/api/terraform/<projectKey>/<repoKey>/` on the same host. Each Terraform registry
+  needs a bound host of its own.
 - No format derives a repository from a host by any other means.
 
 Acceptance criteria (when the formats exist):
 
-- A Docker Engine with `registry-mirrors` set to a host bound to the remote `docker-hub` pulls
+- A Docker Engine with `registry-mirrors` set to a host bound to the remote `web/docker-hub` pulls
   `alpine:3`, and the counting upstream records one manifest request.
-- `docker pull docker-all.registry.example.com/alpine:3` succeeds through the chart's Ingress with a
-  wildcard certificate.
+- With `wildcard_host: "*.registry.example.com"` and no `host_roots` entry for it,
+  `docker pull docker-all.registry.example.com/alpine:3` binds no repository: `GET /v2/library/alpine/manifests/3`
+  there answers the `404` problem.
 - `terraform init` of a module `tf.example.com/acme/net/aws` resolves through the discovery
-  document of the host bound to `terraform-modules`.
+  document of the host bound to `web/terraform-modules`.
 
 ## Deployment and observability
 
@@ -554,8 +559,7 @@ endpoints: {}                             # default (proposed): only the default
 #    baseUrl: https://packages.example.com   # example; required
 #    hosts: []                            # default (proposed); example [pkgs.example.org]
 #    wildcardHost: ""                     # default (proposed); example "*.packages.example.com"
-#    hostRoots: {}                        # default (proposed)
-#    wildcardRoot: none                   # default (proposed)
+#    hostRoots: {}                        # default (proposed); example {mirror.example.com: web/docker-hub}
 #    surface: [packages]                  # default (proposed)
 #    auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}   # default (proposed)
 #    exposure: rules                      # default (proposed)
@@ -726,11 +730,11 @@ Acceptance criteria:
 - On `customers` with the defaults: a PAT gets `401` `invalid_token` and the token table records no
   query (query counter); an unbound SAT gets `401` after one lookup; a SAT bound to `customers`
   reaches authorization; the same bound SAT gets `401` on `default`.
-- `curl -b '__Host-trv_session=<valid session>' https://packages.example.com:8443/api/npm/npm-customers/@acme%2fsdk`
+- `curl -b '__Host-trv_session=<valid session>' https://packages.example.com:8443/api/npm/web/npm-customers/@acme%2fsdk`
   answers `401` `credentials_required`, because the cookie is ignored and anonymous requests are
-  off. On the default endpoint, the same cookie on `GET https://trove.example.com/api/npm/npm-local/@acme%2fsdk` (a
+  off. On the default endpoint, the same cookie on `GET https://trove.example.com/api/npm/web/npm-local/@acme%2fsdk` (a
   `packages` pod) is ignored as well, and the request is decided as one without a credential.
-- Anonymous access on (R-AUTH-037) and `anonymous` granted `read` on `npm-customers`: an anonymous
+- Anonymous access on (R-AUTH-037) and `anonymous` granted `read` on `web/npm-customers`: an anonymous
   `npm view @acme/sdk` succeeds on `default` and gets `E401` on `customers`.
 - Each case increments `trove_endpoint_credentials_refused_total` with its reason.
 
@@ -770,7 +774,7 @@ Priority: **MVP** · Covers: TOK-007
 }
 ```
 
-*(example request of `POST /api/v1/service-accounts/customer-acme/tokens`)*
+*(example request of `POST /api/v1/projects/web/service-accounts/customer-acme/tokens`)*
 
 Acceptance criteria:
 
@@ -788,8 +792,13 @@ Priority: **MVP** · Covers: trove-only
 - **Mode.** An endpoint with `exposure: all` has no ceiling. An endpoint with `exposure: rules`
   exposes nothing until a rule admits it (deny by default). Rules of an endpoint in mode `all` are
   stored and have no effect.
-- **A rule** belongs to one endpoint and one repository, named by key and stored by ID (Q-EP-8), and
-  narrows by these dimensions:
+- **A rule** belongs to one endpoint and one repository, named by its qualified name
+  `<projectKey>/<repoKey>` and stored by ID (Q-EP-8), and narrows by these dimensions. The name is an
+  instance context of [authorization.md](authorization.md) R-AUTHZ-004 that admits exactly one
+  repository: a bare key, a pattern or a class answers `422` `invalid_pattern`. Because the rule holds
+  the ID, it follows a repository moved to another project
+  ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project))
+  and reads back with its new address.
 
 | Dimension | Syntax | Default |
 |---|---|---|
@@ -817,7 +826,7 @@ Priority: **MVP** · Covers: trove-only
 {
   "name": "acme-sdk",
   "description": "SDK releases for customers",
-  "repository": "npm-customers",
+  "repository": "web/npm-customers",
   "enabled": true,
   "packages": {"include": ["@acme/sdk", "@acme/sdk-*"], "exclude": ["@acme/sdk-internal"]},
   "paths": {"include": [], "exclude": []},
@@ -862,13 +871,14 @@ CREATE INDEX endpoint_exposure_rule_repo ON endpoint_exposure_rule (repo_id);
     Valkey.
   - Deleting a repository deletes its rules through the foreign key, audited as
     `endpoint.exposure.deleted` with cause `repository_deleted`; a repository created later under
-    the same key is not exposed.
+    the same address is not exposed.
   - Rules whose endpoint is not configured stay stored and inert: the API reports them with
     `"inert": true`, and a replica logs a warning per such endpoint name with its rule count at
     startup (H-58).
 - **Limits.** At most 1,000 rules per endpoint; pattern lists as R-AUTHZ-005 (each pattern 1 to
   1,024 characters, at most 256 per list); a range of at most 256 characters.
-- **Validation** (`422`): `unknown_repository`; `invalid_pattern`; `invalid_version_range` (the
+- **Validation** (`422`): `unknown_repository`; `invalid_pattern` (also a repository named without
+  its project); `invalid_version_range` (the
   format refuses the range); `dimension_not_supported` (a non-empty `versions` or `distTags` for a
   format without versions or tags, or a non-empty `packages` for a format without package names);
   `format_not_exposable` (a format without exposure support, R-EP-018). Saved with a warning:
@@ -877,13 +887,14 @@ CREATE INDEX endpoint_exposure_rule_repo ON endpoint_exposure_rule (repo_id);
 
 Acceptance criteria:
 
-- Fixture: `npm-customers` (virtual over `npm-internal`) holds `@acme/sdk` 1.9.0, 2.0.0, 2.0.1,
+- Fixture: `web/npm-customers` (virtual over `npm-internal` of project `web`) holds `@acme/sdk` 1.9.0, 2.0.0, 2.0.1,
   2.1.0-rc.1 and 2.1.0, `@acme/sdk-internal` 1.0.0 and `@acme/billing` 3.0.0, with the example rule
   on `customers`. Exposed: `@acme/sdk` 2.0.0 and 2.1.0. Hidden: 1.9.0 (range), 2.0.1 (exclude),
   2.1.0-rc.1 (pre-release), `@acme/sdk-internal` (package exclude) and `@acme/billing` (no rule).
 - A rule with `"range": ">=2.0.0 <"` answers `422` `invalid_version_range`; a rule with
   `distTags.include` on a NuGet repository answers `422` `dimension_not_supported`.
-- Deleting `npm-customers` removes its rules; a re-created `npm-customers` exposes nothing.
+- Deleting `web/npm-customers` removes its rules; a re-created `web/npm-customers` exposes nothing. A rule
+  whose `repository` is `npm-customers` (no project) answers `422` `invalid_pattern`.
 - A rule written through replica A takes effect on replica B within the bound of R-AUTHZ-028, also
   with Valkey stopped, and at once for a request that sends the returned epoch in
   `Trove-Authz-Min-Epoch`.
@@ -955,7 +966,7 @@ Acceptance criteria (fixture of R-EP-012):
   records no lookup for either.
 - `npm publish` on `customers` with a bound token whose service account holds `deploy` answers
   `E403` with `endpoint_read_only`.
-- A bound SAT of a service account without a grant on `npm-customers` gets `E404` for
+- A bound SAT of a service account without a grant on `web/npm-customers` gets `E404` for
   `@acme/sdk@2.1.0`: exposure never grants.
 - Every row of R-AUTHZ-015's worked trace, repeated on an endpoint with `exposure: all`, gives the
   same result as on `default`.
@@ -963,7 +974,7 @@ Acceptance criteria (fixture of R-EP-012):
 ### R-EP-014 · Exposure on raw files, listings and the management API
 Priority: **MVP** · Covers: trove-only
 
-- **Raw files.** On an endpoint with `files`, `/files/<repoKey>/<path>` passes the ceiling with the
+- **Raw files.** On an endpoint with `files`, `/files/<projectKey>/<repoKey>/<path>` passes the ceiling with the
   coordinate the format plug-in gives the file: package name and version for npm and NuGet
   repositories, the path alone for generic ones. A folder listing (R-STOR-017, P1) lists only
   exposed entries, and a folder without an exposed entry answers `404`. A path of a format with
@@ -985,17 +996,17 @@ Priority: **MVP** · Covers: trove-only
 
 Acceptance criteria:
 
-- `generic-local` with a rule `paths.include: ["releases/**"]` on `customers` (surface
-  `[packages, files]`): `GET /files/generic-local/releases/1.0/app.zip` answers `200`, and
-  `GET /files/generic-local/internal/x.bin` answers a `404` byte-identical to a missing file.
-- With `api` added to `customers`, `GET /api/v1/repositories` lists only `npm-customers` and
-  `generic-local`, and `GET /api/v1/packages?repository=npm-customers` lists `@acme/sdk` with the
+- `web/generic-local` with a rule `paths.include: ["releases/**"]` on `customers` (surface
+  `[packages, files]`): `GET /files/web/generic-local/releases/1.0/app.zip` answers `200`, and
+  `GET /files/web/generic-local/internal/x.bin` answers a `404` byte-identical to a missing file.
+- With `api` added to `customers`, `GET /api/v1/repositories` lists only `web/npm-customers` and
+  `web/generic-local`, and `GET /api/v1/packages?repository=web/npm-customers` lists `@acme/sdk` with the
   versions 2.0.0 and 2.1.0 only.
-- A rule with `packages.include` on `generic-local` answers `422` `dimension_not_supported`.
+- A rule with `packages.include` on `web/generic-local` answers `422` `dimension_not_supported`.
 - With `files` on `customers` and the rule `acme-sdk` of R-EP-012, `GET
-  /files/npm-customers/@acme/sdk/-/sdk-1.9.0.tgz` answers a `404` byte-identical to a missing file
+  /files/web/npm-customers/@acme/sdk/-/sdk-1.9.0.tgz` answers a `404` byte-identical to a missing file
   (apart from the request's instance and ID), `…/sdk-2.1.0.tgz` answers `200`, and the listing of
-  `/files/npm-customers/@acme/sdk/-/` holds `sdk-2.0.0.tgz` and `sdk-2.1.0.tgz` only
+  `/files/web/npm-customers/@acme/sdk/-/` holds `sdk-2.0.0.tgz` and `sdk-2.1.0.tgz` only
   (`TestR_EP_014_FilesOnAnEndpointWithRules`).
 
 ### R-EP-015 · Rate-limit class per endpoint
@@ -1033,13 +1044,13 @@ Priority: **MVP** · Covers: trove-only
 |---|---|---|---|
 | GET | `/api/v1/endpoints` | The configured endpoints (name, port, base URL, hosts, wildcard host, host-root bindings, pool, surface, credential rules, exposure mode, cache-fill policy, rate-limit class) with their rule counts, plus the names of inert endpoints that still have rules | `endpoints:read` |
 | GET | `/api/v1/endpoints/{endpoint}` | One endpoint | `endpoints:read` |
-| GET | `/api/v1/endpoints/{endpoint}/exposure-rules` | Rules; filters `repository`, `package` (rules whose patterns admit the name) and `enabled`; cursor paging (R-API-010) | `endpoints:read` |
+| GET | `/api/v1/endpoints/{endpoint}/exposure-rules` | Rules; filters `repository` (a qualified name `<projectKey>/<repoKey>`), `project` (the rules of the project's repositories), `package` (rules whose patterns admit the name) and `enabled`; cursor paging (R-API-010) | `endpoints:read` |
 | POST | `/api/v1/endpoints/{endpoint}/exposure-rules` | Create a rule | `endpoints:write`; recent authentication (R-API-007) |
 | GET | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Read, with `ETag` | `endpoints:read` |
 | PUT | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Replace; `If-Match` required (`428` without it); `name` and `repository` are immutable | `endpoints:write`; recent authentication |
 | PATCH | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | JSON merge patch on the stored rule, with the rules of PUT ([Q-EP-18](#q-ep-18--writing-an-exposure-rule-put-merge-patch-and-the-immutable-repository)) | `endpoints:write`; recent authentication |
 | DELETE | `/api/v1/endpoints/{endpoint}/exposure-rules/{name}` | Delete | `endpoints:write`; recent authentication |
-| POST | `/api/v1/endpoints/{endpoint}/check-exposure` | Dry run for one repository and package, or for paths of a generic repository: exposed or not, the admitting rule or the reason, the exposed and hidden versions and paths and the visible tags; an optional draft `rule` is evaluated in place of the stored rule of its name ([Q-EP-19](#q-ep-19--what-check-exposure-checks-paths-and-the-editors-draft)) | `endpoints:read` and `read` on the repository |
+| POST | `/api/v1/endpoints/{endpoint}/check-exposure` | Dry run for one repository (its qualified name) and package, or for paths of a generic repository: exposed or not, the admitting rule or the reason, the exposed and hidden versions and paths and the visible tags; an optional draft `rule` is evaluated in place of the stored rule of its name ([Q-EP-19](#q-ep-19--what-check-exposure-checks-paths-and-the-editors-draft)) | `endpoints:read` and `read` on the repository |
 
 - Endpoints themselves are file configuration (INV-15) and have no write operation. `{endpoint}` is
   a configured endpoint or an inert name that still has rules, whose rules can be read and deleted.
@@ -1062,7 +1073,7 @@ Priority: **MVP** · Covers: trove-only
   the update and delete events carry the revocation-journal flag (R-EP-020).
 
 ```json
-{"repository": "npm-customers", "package": "@acme/sdk", "versions": ["1.9.0", "2.1.0"]}
+{"repository": "web/npm-customers", "package": "@acme/sdk", "versions": ["1.9.0", "2.1.0"]}
 ```
 
 *(example request of `check-exposure`)*
@@ -1070,7 +1081,7 @@ Priority: **MVP** · Covers: trove-only
 ```json
 {
   "endpoint": "customers",
-  "repository": "npm-customers",
+  "repository": "web/npm-customers",
   "package": "@acme/sdk",
   "packageExposed": true,
   "versions": [
@@ -1102,7 +1113,7 @@ Priority: **MVP** · Covers: trove-only
   name, repository, packages, version summary, pre-releases, enabled),
   `/admin/endpoints/{endpoint}/rules/new` and `/admin/endpoints/{endpoint}/rules/{name}`.
 - **Rule editor.** One page like the policy editor ([api-and-ui.md](api-and-ui.md) R-UI-027, Q-UI-4):
-  a repository picker of keys, include and exclude lists with syntax help, the version range checked
+  a repository picker of project and key (the rule stores the repository's qualified name), include and exclude lists with syntax help, the version range checked
   through the API, the pre-release switch, tag lists only for formats with tags, and `enabled`. For
   npm the range's help text says that a rule's range is evaluated with pre-releases included and the
   pre-release switch decides them, so it is wider for pre-releases than the same text in
@@ -1112,7 +1123,7 @@ Priority: **MVP** · Covers: trove-only
   tester, its exposed and hidden versions with their reasons. Saving shows a diff against the loaded
   revision and sends `PUT` with `If-Match`; recent authentication follows R-UI-042.
 - For each repository a rule exposes, the screen shows its client address on that endpoint
-  (`<base URL>/api/<format>/<key>/`, with a copy button) for handing to the consumers.
+  (`<base URL>/api/<format>/<projectKey>/<repoKey>/`, with a copy button) for handing to the consumers.
 - A banner warns when the endpoint's mode is `all`, because its rules have no effect there.
 - The navigation entry appears for holders of `endpoints:read` (R-UI-005). English and German
   (R-UI-045), accessibility as R-UI-044.
@@ -1228,7 +1239,7 @@ Acceptance criteria (fixture of R-EP-012):
   `endpoint_read_only` on a write, Q-EP-57), and a rule for its repository answers `422`
   `format_not_exposable`.
 - No response body or header captured on `customers` during the e2e run contains `trove.example.com`
-  or the key of a member of `npm-customers`.
+  or the key of a member of `web/npm-customers`.
 
 ### R-EP-019 · Cache-fill policy per endpoint
 Priority: **MVP** · Covers: trove-only
@@ -1256,7 +1267,7 @@ Priority: **MVP** · Covers: trove-only
 
 Acceptance criteria:
 
-- `npm-customers` gains the remote member `npmjs`, and a rule exposes `left-pad`. With
+- `web/npm-customers` gains the remote member `npmjs` (of project `web`), and a rule exposes `left-pad`. With
   `left-pad@1.3.0` not cached, `npm view left-pad@1.3.0` on `customers` gets `E404`, and the counting
   upstream records no request. After an internal `npm install left-pad@1.3.0` through `default`, the
   same command on `customers` succeeds.
@@ -1312,25 +1323,26 @@ that lists only what is released to them.
    `https://packages.example.com`, its own IngressClass `traefik-external`, a TLS Secret, and a pool.
    The rendered `trove.yaml` carries `server.endpoints.customers` and
    `server.endpoints.default.hosts: [trove.example.com]`.
-2. **Repositories.** Virtual repositories `npm-customers` and `nuget-customers` over the internal
-   local repositories; no remote member, so customers resolve public dependencies from the public
-   registries.
+2. **Repositories.** Virtual repositories `npm-customers` and `nuget-customers` of project `web` over
+   the project's internal local repositories; no remote member, so customers resolve public
+   dependencies from the public registries.
 3. **Exposure.** The rule `acme-sdk` of R-EP-012 on `customers`, and a NuGet rule exposing
    `Acme.Sdk` from 2.0.0, without pre-releases.
-4. **Principal.** A service account `customer-acme` with a policy that grants `read` on
-   `npm-customers`, `nuget-customers` and their members, and the bound token of R-EP-011.
+4. **Principal.** A service account `customer-acme` of project `web` (`sa:web/customer-acme`) with a
+   policy of the project that grants `read` on `npm-customers`, `nuget-customers` and their members,
+   and the bound token of R-EP-011, which an Owner of `web` issues.
 5. **Customer configuration** *(example)*:
 
 ```ini
 # .npmrc: only the @acme scope points at trove
-@acme:registry=https://packages.example.com/api/npm/npm-customers/
-//packages.example.com/api/npm/npm-customers/:_authToken=${ACME_TROVE_TOKEN}
+@acme:registry=https://packages.example.com/api/npm/web/npm-customers/
+//packages.example.com/api/npm/web/npm-customers/:_authToken=${ACME_TROVE_TOKEN}
 ```
 
 ```xml
 <!-- nuget.config -->
 <packageSources>
-  <add key="acme" value="https://packages.example.com/api/nuget/nuget-customers/v3/index.json" />
+  <add key="acme" value="https://packages.example.com/api/nuget/web/nuget-customers/v3/index.json" />
 </packageSources>
 <packageSourceCredentials>
   <acme>
@@ -1345,7 +1357,7 @@ that lists only what is released to them.
 | 1 | `npm view @acme/sdk versions` with the customer token | endpoint `customers` from the listener; host in the set; SAT bound to `customers`; grant `read`; rule `acme-sdk`; document filtered | `[ '2.0.0', '2.1.0' ]`, tarball URLs on `packages.example.com` |
 | 2 | `npm install @acme/sdk@1.9.0` | exposure: out of range | `E404`, as for a missing version |
 | 3 | `npm view @acme/billing` | no rule | `E404` |
-| 4 | The customer token against `https://trove.example.com/api/npm/npm-customers/` | default endpoint: the token is bound to `customers` | `E401` |
+| 4 | The customer token against `https://trove.example.com/api/npm/web/npm-customers/` | default endpoint: the token is bound to `customers` | `E401` |
 | 5 | An employee's PAT against `packages.example.com` | token type not accepted | `E401` |
 | 6 | `npm publish` with the customer token | endpoint is read only | `E403` `endpoint_read_only` |
 | 7 | `curl -H 'Host: trove.example.com'` to the customer Ingress address | effective host not in the set | `421` |
@@ -1483,7 +1495,7 @@ if the owner's customers depend on upstream packages that internal traffic never
 
 ### Q-EP-6 · How far wildcard hosts and host-root bindings go
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in part by [Q-EP-76](#q-ep-76--a-host-root-binds-a-repository-by-project-and-key-and-the-label-binding-goes): the wildcard label binds no repository, and a host-root binding names `<projectKey>/<repoKey>`.
 
 The owner suspected that some registries cannot work without a wildcard host. The analysis in
 [Host roots and wildcard hosts](#host-roots-and-wildcard-hosts) shows that no MVP format needs one,
@@ -2348,6 +2360,44 @@ agent would revisit this if the endpoint's certificate cannot carry the verifica
 
 **Applied in the spec:** R-EP-008 (the Service, Ingress and HTTPRoute rows and the criteria), R-EP-002 (which pods open the
 port); [ha-and-helm.md](ha-and-helm.md) R-HA-037 (further endpoints), R-HA-028.
+
+### Q-EP-76 · A host root binds a repository by project and key, and the label binding goes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a repository is addressed inside its project, and its key is unique only within the project
+([Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)).
+R-EP-006 bound hosts to repositories by key in two ways: `host_roots` maps an exact host to a repository key, and
+`wildcard_root: label` binds every host that `wildcard_host` matches to the repository whose key equals the host label. A
+repository key alone no longer names a repository. Nothing reads the binding today: no format uses a host root
+(R-EP-006, [Q-EP-6](#q-ep-6--how-far-wildcard-hosts-and-host-root-bindings-go)), so `endpoint.RootRepository` has no
+consumer, and its first consumers are P1 (R-EP-007). A host label is one DNS label, and a wildcard certificate covers one
+label (RFC 6125 §6.4.3), so the label of a wildcard host has room for one name, not for a project and a key.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `host_roots` values are `<projectKey>/<repoKey>`; `wildcard_root` goes (chosen) | An exact host names its repository by the qualified name of every instance context ([authorization.md](authorization.md) R-AUTHZ-004); a wildcard host only widens the host set | One name for a repository in every instance context; the bindings the known clients need (a Docker Engine mirror, a Terraform registry) are exact hosts; removes a mechanism without a consumer | The OCI subdomain mode (`docker-all.registry.example.com`) is not offered; one exact host per bound repository |
+| (b) The label carries both, `<repoKey>--<projectKey>` | `wildcard_root: label` splits the label at a separator | Keeps the subdomain mode across projects | `--` occurs in both key patterns (`^[a-z][a-z0-9-]{1,31}$`, `^[a-z0-9][a-z0-9._-]{1,63}$`), so the split is ambiguous unless the key rules forbid it; a repository key may hold `.` and `_`, which a host label cannot; a key of 64 characters with a project key exceeds the 63 octets of a label. It needs new key rules for a P1 mode |
+| (c) `wildcard_root: {project: <projectKey>}` | The label is a repository key of one project the endpoint names | Keeps the subdomain mode within one project; one wildcard certificate per endpoint | Only keys that are valid labels (no `.` or `_`, at most 63 characters) can be bound; a mechanism without a consumer until the OCI format exists |
+| (d) Two labels, `<repoKey>.<projectKey>.<domain>` | The project is a DNS level | Readable | A wildcard host matches one label (R-EP-003) and a certificate covers one, so every project needs its own wildcard host, DNS record and certificate; two wildcard hosts per endpoint break R-EP-003 |
+
+**Choice:** (a). `host_roots: {mirror.example.com: web/docker-hub}`; a value that is not a qualified name stops startup,
+whether the repository exists is decided per request, and a configuration that sets `wildcard_root` stops startup as an
+unknown key.
+
+**Rationale:** the qualified name is how every instance context names a repository now, and a binding is an instance
+context: the endpoint belongs to the installation, not to a project. The only consumer of the label binding was the OCI
+subdomain mode, a P1 format option; keeping a mechanism for it whose key rules no longer fit, without anything that reads
+it, is cost without use. The development agent would revisit this when the OCI format (P1) is specified and its
+subdomain mode is wanted: then (c) is the candidate, with the key restrictions it needs stated by the OCI format page.
+
+**Applied in the spec:** R-EP-001 (the configuration: no `wildcard_root`, the `host_roots` example; the chart values of
+R-EP-008), R-EP-003 (a wildcard host binds nothing), the section "Host roots and wildcard hosts" (the table and the
+addresses), R-EP-006 (qualified values, startup checks, a moved repository), R-EP-007 (no OCI subdomain mode; title),
+R-EP-012 (a rule names its repository by its qualified name), the terms; cross-page: [ha-and-helm.md](ha-and-helm.md)
+R-HA-041 (edited with the other platform pages). With the addresses of Q-REPO-212, in routes, examples and acceptance
+criteria: R-EP-002, R-EP-005, R-EP-010, R-EP-011, R-EP-013, R-EP-014, R-EP-016, R-EP-017, R-EP-018, R-EP-019 and the worked
+example.
 
 ## What this does not cover
 

@@ -1,7 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, input, model, output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
+import { Checkbox } from '../ui/checkbox';
 import { Token, TokenScope } from '../../api/tokens-api';
 import { DataTable, TableColumn } from '../ui/data-table';
 
@@ -41,7 +40,7 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
  */
 @Component({
   selector: 'trove-token-table',
-  imports: [DatePipe, DataTable, MatButtonModule, MatCheckboxModule],
+  imports: [DatePipe, DataTable, Checkbox],
   template: `
     <trove-data-table
       [caption]="caption"
@@ -58,10 +57,10 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
           @if (selectable()) {
             <td>
               @if (t.state === 'active') {
-                <mat-checkbox
+                <trove-checkbox
                   [checked]="selected().includes(t.id)"
-                  (change)="toggle(t.id, $event.checked)"
-                  [aria-label]="selectLabel(t)"
+                  (checkedChange)="toggle(t.id, $event)"
+                  [ariaLabel]="selectLabel(t)"
                 />
               }
             </td>
@@ -124,13 +123,13 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
           <td class="actions">
             @if (t.state === 'active') {
               @if (canRotate()) {
-                <button mat-button type="button" (click)="rotate.emit(t)">
+                <button class="btn btn-tertiary" type="button" (click)="rotate.emit(t)">
                   <ng-container i18n="@@token-table.rotate">Rotate</ng-container>
                   <span class="visually-hidden"> {{ t.description }}</span>
                 </button>
               }
               @if (canRevoke()) {
-                <button mat-button type="button" (click)="revoke.emit(t)">
+                <button class="btn btn-tertiary" type="button" (click)="revoke.emit(t)">
                   <ng-container i18n="@@token-table.revoke">Revoke</ng-container>
                   <span class="visually-hidden"> {{ t.description }}</span>
                 </button>
