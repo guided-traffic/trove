@@ -16,7 +16,7 @@ The management API (`/api/v1/…`, which the UI uses) and file transfer (`/files
   "title": "Not found",
   "status": 404,
   "detail": "The resource does not exist.",
-  "instance": "/files/generic-local/tools/app-1.2.0.tar.gz",
+  "instance": "/files/web/generic-local/tools/app-1.2.0.tar.gz",
   "code": "not_found",
   "requestId": "4bf92f3577b34da6a3ce929d0e0e4736"
 }
@@ -42,7 +42,7 @@ Every answer carries the header `X-Request-Id`, 32 hexadecimal digits; a problem
 |---|---|---|
 | `401` | No credential where one is needed (`credentials_required`), a token that is malformed, unknown, expired or revoked (`invalid_token`, the answer does not say which), a disabled owner (`principal_disabled`), or an ended session | Set the token, create a new one, or sign in again |
 | `403` | The credential is valid but lacks the permission for a write or an operation (`forbidden`), or a rule refuses it: package owners, the shadowing check, a read-only endpoint | Ask for the permission; the code names the rule |
-| `404` | The resource does not exist **or is hidden from you**. A refused read answers like a missing resource, so that nobody learns what exists, unless an administrator turned this off. On an endpoint with exposure rules, everything the rules do not expose is missing too | Check the address and the name; ask whoever manages the repository whether you may read it |
+| `404` | The resource does not exist **or is hidden from you**. A refused read answers like a missing resource, so that nobody learns what exists, unless an administrator turned this off. On an endpoint with exposure rules, everything the rules do not expose is missing too | Check the address, with the project key and the repository key, and the name; ask an Owner of the repository's project whether you may read it |
 | `405` | The repository class takes no writes: a remote repository (`npm_class_not_writable`) or a virtual repository without a deployment target (`no_deploy_target`) | Publish to a local repository or through a virtual one with a target |
 | `409` | A conflict with the current state: a version that exists or was unpublished, a stale revision, a path that is a folder, the token limit | Read the code; often publish a new version or retry |
 | `412` | A condition of the request does not hold: a resource changed since you loaded it (`If-Match`), or an upload with `If-None-Match: *` to a path that exists | In the UI, resolve the conflict dialog; elsewhere read again and decide |
@@ -78,6 +78,7 @@ A `404` with `not_found` has several causes, and trove does not say which, by de
 - The package lives in a member of the virtual repository that you cannot read. A token limited to the virtual repository reads none of its members.
 - An exposure rule of the endpoint you use hides the package or version, or the repository's name patterns refuse the name.
 - A remote repository is offline and the package is not cached (`not_cached_offline`).
+- The registry address lacks the project key (`/api/npm/<project>/<key>/`), or the repository was moved to another project and has a new address.
 - The command is not implemented: `npm deprecate`, npm's token and profile commands.
 
 ### E403 when publishing
@@ -94,7 +95,7 @@ When trove cannot ask the remote member whether it serves the name, the first pu
 
 ### A download is blocked (E403 on install or restore)
 
-When trove refuses to hand out a version it answers `403` and says why. npm prints the text after `E403`; `dotnet restore` shows the status of the `.nupkg` address, and `curl` on that address prints the one-line reason. The text names the package and version, the repository you used, the reason and a link to the page that explains it, for example `trove blocked trove-test-mal@1.0.0 in npm-all: malicious package (MAL-2026-1234). Details: https://trove.example.com/ui/vulnerabilities/findings/…`.
+When trove refuses to hand out a version it answers `403` and says why. npm prints the text after `E403`; `dotnet restore` shows the status of the `.nupkg` address, and `curl` on that address prints the one-line reason. The text names the package and version, the repository you used, the reason and a link to the page that explains it, for example `trove blocked trove-test-mal@1.0.0 in web/npm-all: malicious package (MAL-2026-1234). Details: https://trove.example.com/ui/vulnerabilities/findings/…`.
 
 | Code | Cause | Fix |
 |---|---|---|
@@ -182,7 +183,7 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `pat_not_allowed` | 403 | Personal tokens are restricted to members of certain groups |
 | `derivation_exceeds_parent` | 403 | A token created with a token would outlive or outrank it |
 | `not_found` | 404 | Does not exist, or is hidden from you |
-| `repository_not_found` | 404 | No repository has this key, or you may not see it |
+| `repository_not_found` | 404 | The project has no repository of this key, or you may not see it |
 | `repository_disabled` | 404 | The repository is disabled |
 | `not_cached_offline` | 404 | The remote repository is offline and the item is not cached |
 | `npm_class_not_writable` | 405 | A write to a remote npm repository |
