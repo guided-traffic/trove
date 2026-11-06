@@ -882,7 +882,7 @@ object-storage outage, and R-STOR-033 specifies the per-replica circuit breaker.
 this page requires the following:
 
 - An upload that sends `Expect: 100-continue` and is rejected because the circuit is open MUST be
-  rejected *before* the body is read (`503` with `Retry-After`), so clients that send it
+  rejected *before* the body is read, after authentication and authorization (`503` with `Retry-After`), so clients that send it
   (`dotnet nuget push`, `curl -T`) do not transfer the body at all. A write without `Expect` is read
   and a deduplicated upload succeeds ([Q-STOR-149](storage.md#q-stor-149--an-upload-that-waits-for-100-continue-is-refused-before-its-body-while-the-circuit-is-open)).
 - `Retry-After` on these `503` responses is `storage.s3.circuit_breaker.open_duration` rounded up to

@@ -4835,6 +4835,24 @@ keep the repository's read timeout.
 
 **Applied in the spec:** R-NPM-038 (the deadline bullet).
 
+### Q-NPM-78 · An exchange without a deadline gets the largest bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the exchange client of Q-NPM-77 has no overall timeout and no stall bound, so `Engine.Exchange` depended on the caller's deadline. The audit forward sets one
+(`npm.audit.timeout`), but a future caller might not (code review of 2026-11-06).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Exchange` bounds a context without a deadline by `upstream.ExchangeHeaderTimeout` (5 minutes, chosen) | The bound runs until the response body is closed | No caller can hold a request for good | A caller that reads a body for longer than 5 minutes sets its own deadline |
+| (b) Document the duty of the caller | Nothing in code | None | The duty is forgotten once |
+
+**Choice:** (a), `boundExchange` and `cancelOnClose` in [exchange.go](../../../internal/proxy/exchange.go), `TestBoundExchange`.
+
+**Rationale:** the largest bound a format sets is the safe default. The development agent would revisit it if a format needs an exchange with a body that streams for longer.
+
+**Applied in the spec:** R-NPM-038 reads unchanged (its forward sets its own deadline).
+
 ## What this does not cover
 
 

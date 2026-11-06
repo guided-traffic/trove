@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -265,6 +266,53 @@ func TestErrorMapping(t *testing.T) {
 			t.Fatalf("got %v", err)
 		}
 	})
+}
+
+// R-STOR-036: the caller's own deadline that expires while the store never answers is the caller's deadline, not a store
+// failure: it is no StoreError, so the circuit does not count it and mapStoreErr does not turn it into a 503.
+func TestCallerDeadlineWhileTheStoreNeverAnswers(t *testing.T) {
+	ln, lerr := net.Listen("tcp", "127.0.0.1:0")
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	var held []net.Conn
+	var mu sync.Mutex
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c) // accepted, never read, never answered
+			mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+	})
+	e := newEnv(t, func(c *config.StorageS3) {
+		c.Endpoint = "http://" + ln.Addr().String()
+		c.Retry.MaxAttempts = 1
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	body, _, err := e.client.Get(ctx, "k", nil)
+	if body != nil {
+		_ = body.Close()
+	}
+	if !errors.Is(err, context.DeadlineExceeded) || blob.IsTransient(err) || blob.IsConfig(err) {
+		t.Fatalf("got %v, want the caller's deadline and no store failure", err)
+	}
+	var se *blob.StoreError
+	if errors.As(err, &se) {
+		t.Fatalf("the caller's deadline arrived as a StoreError: %v", err)
+	}
 }
 
 func TestStalledTransfer(t *testing.T) {

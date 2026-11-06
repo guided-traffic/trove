@@ -470,35 +470,34 @@ func TestNoSniff(t *testing.T) {
 	})
 }
 
-func TestExpectGate(t *testing.T) {
-	gate := func(*http.Request) error {
-		return errs.E(errs.Unavailable, errs.CodeObjectStoreUnavail, "the object store is unavailable; retry", errs.WithRetryAfter(10*time.Second))
-	}
-	handled := 0
-	router := newTestRouter("PUT /files/x", func(w http.ResponseWriter, r *http.Request) { handled++ })
-	h := Chain{Router: router, ExpectGate: gate}.Handler()
+type expectKey struct{}
 
-	t.Run("R-HA-010 a write that waits for 100 Continue is refused by the gate before its body is read", func(t *testing.T) {
+func TestExpectMark(t *testing.T) {
+	var marked, handled int
+	router := newTestRouter("PUT /files/x", func(w http.ResponseWriter, r *http.Request) {
+		handled++
+		if r.Context().Value(expectKey{}) != nil {
+			marked++
+		}
+	})
+	h := Chain{Router: router, ExpectMark: func(ctx context.Context) context.Context { return context.WithValue(ctx, expectKey{}, true) }}.Handler()
+
+	t.Run("R-HA-010 a request with a body and Expect: 100-continue is marked and never refused by the chain", func(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/files/x", strings.NewReader("body"))
 		req.Header.Set("Expect", "100-continue")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req)
-		if w.Code != 503 || w.Header().Get("Retry-After") != "10" || handled != 0 {
-			t.Fatalf("status %d, Retry-After %q, handled %d", w.Code, w.Header().Get("Retry-After"), handled)
+		if w.Code != 200 || handled != 1 || marked != 1 {
+			t.Fatalf("status %d, handled %d, marked %d", w.Code, handled, marked)
 		}
 	})
-	t.Run("R-HA-010 a write without Expect and a request without a body go on", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("PUT", "/files/x", strings.NewReader("body")))
-		if w.Code != 200 || handled != 1 {
-			t.Fatalf("status %d, handled %d", w.Code, handled)
-		}
+	t.Run("R-HA-010 a request without Expect and one without a body are not marked", func(t *testing.T) {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PUT", "/files/x", strings.NewReader("body")))
 		req := httptest.NewRequest("PUT", "/files/x", nil)
 		req.Header.Set("Expect", "100-continue")
-		w = httptest.NewRecorder()
-		h.ServeHTTP(w, req)
-		if w.Code != 200 || handled != 2 {
-			t.Fatalf("status %d, handled %d", w.Code, handled)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		if handled != 3 || marked != 1 {
+			t.Fatalf("handled %d, marked %d", handled, marked)
 		}
 	})
 }

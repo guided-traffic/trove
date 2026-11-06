@@ -116,10 +116,10 @@ type Chain struct {
 	// RateLimit is stage 7.
 	RateLimit func(http.Handler) http.Handler
 
-	// ExpectGate runs after stage 7 for a request that waits for "100 Continue" before it sends its body (a write with
-	// Expect: 100-continue): an error answers the request, and the body is never asked for, so the client does not send
-	// it. R-HA-010 uses it for an upload while the object store's circuit is open. Nil means none.
-	ExpectGate func(*http.Request) error
+	// ExpectMark marks the context of a request that waits for "100 Continue" before it sends its body (a request with a
+	// body and Expect: 100-continue). It decides nothing: the upload entry point reads the mark after authorization and
+	// refuses before the first read of the body (R-HA-010, Q-STOR-149). Nil means none.
+	ExpectMark func(context.Context) context.Context
 
 	// Replica and ReplicaHeader implement X-Trove-Replica (R-OPS-002).
 	Replica       string
@@ -156,17 +156,14 @@ func (c Chain) Handler() http.Handler {
 	return c.recoverStage(h)
 }
 
-// expectStage refuses a request that announced a body with Expect: 100-continue before the body is read, when the gate says so.
+// expectStage marks a request that announced a body with Expect: 100-continue. It never refuses one.
 func (c Chain) expectStage(next http.Handler) http.Handler {
-	if c.ExpectGate == nil {
+	if c.ExpectMark == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ContentLength != 0 && strings.EqualFold(strings.TrimSpace(r.Header.Get("Expect")), "100-continue") {
-			if err := c.ExpectGate(r); err != nil {
-				Problem(w, r, err)
-				return
-			}
+			r = r.WithContext(c.ExpectMark(r.Context()))
 		}
 		next.ServeHTTP(w, r)
 	})

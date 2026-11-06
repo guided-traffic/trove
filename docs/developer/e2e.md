@@ -1249,8 +1249,8 @@ commands); a run on a CI runner.
 2. **Fixed in trove: `Retry-After` of an open circuit was always 5 s and uploads with `Expect: 100-continue` sent their whole body.** R-HA-010 states `open_duration` rounded up
    (at least 5) and a refusal before the body; the dev profile's 10 s showed `Retry-After: 5`, and `Guard.Open` had no caller, so `curl -T` of 64 MiB sent 64 MiB and then received the `503`.
    Now the failure that opens the circuit, a call on the open circuit and a failing probe carry the circuit's `Retry-After`, and a write with `Expect: 100-continue` is refused
-   by a stage of the client chain before its body ([Q-STOR-149](../spec/storage.md#q-stor-149--an-upload-that-waits-for-100-continue-is-refused-before-its-body-while-the-circuit-is-open)).
-   Unit tests `TestGuardRejecting`, `TestExpectGate`.
+   by `Store.Ingest` before its body (the chain only marks the request; the first version refused in the chain before authorization and was corrected after the code review) ([Q-STOR-149](../spec/storage.md#q-stor-149--an-upload-that-waits-for-100-continue-is-refused-before-its-body-while-the-circuit-is-open)).
+   Unit tests `TestGuardRejecting`, `TestExpectMark`, `TestIngestRefusesAnAwaitedBodyWhileTheCircuitIsOpen`.
 3. **Open: one `npm publish` of 273 commands in the 30 s run ended with `ECONNRESET` ("socket hang up") instead of the `503`** at 05:42:55, 8 s into the outage. The edge's log
    has two `503` for that package's `PUT` (04:42:55 and 04:43:05, UTC) and no third line, so the third attempt never reached the edge (it logs every connection, empty ones
    included): the class of F-50. The check requires the `503` (Q-STOR-148) and fails on a network error, so the next one stays visible with its artifact.

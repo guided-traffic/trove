@@ -97,12 +97,29 @@ func (s *Store) Spool() *Spool { return s.spool }
 // Ingest spools and hashes a body with the store's default maximum size
 // (R-STOR-004). The caller closes the result.
 func (s *Store) Ingest(ctx context.Context, body io.Reader, o IngestOptions) (*Spooled, error) {
+	if awaitedBody(ctx) {
+		// the client waits for "100 Continue": while the circuit is open it is told so before the first read of the body (R-HA-010)
+		if err := s.RejectUpload(); err != nil {
+			return nil, err
+		}
+	}
 	max := int64(s.cfg.Upload.MaxSize)
 	if o.MaxSize <= 0 || o.MaxSize > max {
 		o.MaxSize = max
 	}
 	return s.spool.Ingest(ctx, body, o)
 }
+
+type awaitedBodyKey struct{}
+
+// WithAwaitedBody marks ctx as the context of a request whose client waits for "100 Continue" before it sends its body.
+// [Store.Ingest] then refuses the upload before it reads the body while the object store's circuit is open; a context
+// without the mark is never refused early (a remote fill, an upload without Expect, a deduplicated one).
+func WithAwaitedBody(ctx context.Context) context.Context {
+	return context.WithValue(ctx, awaitedBodyKey{}, true)
+}
+
+func awaitedBody(ctx context.Context) bool { v, _ := ctx.Value(awaitedBodyKey{}).(bool); return v }
 
 // RejectUpload is the answer to an upload that has not sent its body yet, nil when it may go on: while the object
 // store's circuit is open a new blob cannot be stored, and a client that waits for "100 Continue" is told so before it

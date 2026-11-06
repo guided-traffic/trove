@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -248,5 +249,48 @@ func TestMapStoreErrTransportTimeout(t *testing.T) {
 	}
 	if err := blob.MapStoreErr(context.Canceled); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the caller's own cancellation mapped to %v", err)
+	}
+}
+
+// countingBody counts the bytes that were read from it.
+type countingBody struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingBody) Read(p []byte) (int, error) { n, err := c.r.Read(p); c.n += n; return n, err }
+
+// R-HA-010, Q-STOR-149: an upload whose client waits for "100 Continue" is refused before the first read of its body while the
+// circuit is open; the same upload without the mark, and a context of a remote fill, read their body.
+func TestIngestRefusesAnAwaitedBodyWhileTheCircuitIsOpen(t *testing.T) {
+	mem := blobtest.New()
+	g := blob.NewGuard(mem, config.StorageS3Breaker{FailureThreshold: 1, OpenDuration: time.Minute})
+	cfg := blobtest.Storage(t, t.TempDir())
+	st, err := blob.New(cfg, g, newFakeDB(), blob.WithRows(newFakeDB()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingest := func(ctx context.Context) (*countingBody, error) {
+		body := &countingBody{r: bytes.NewReader(make([]byte, 4096))}
+		sp, err := st.Ingest(ctx, body, blob.IngestOptions{ContentLength: 4096})
+		if err == nil {
+			sp.Close()
+		}
+		return body, err
+	}
+	if _, err := ingest(blob.WithAwaitedBody(context.Background())); err != nil {
+		t.Fatalf("a closed circuit refused an upload: %v", err)
+	}
+	mem.SetFault(func(op, _ string) error {
+		return &blob.StoreError{Op: op, Status: 503, Code: "SlowDown", Kind: blob.KindTransient}
+	})
+	_, _ = g.Head(context.Background(), "k") // opens the circuit
+	var e *errs.Error
+	body, err := ingest(blob.WithAwaitedBody(context.Background()))
+	if !errors.As(err, &e) || e.Kind != errs.Unavailable || e.RetryAfter != time.Minute || body.n != 0 {
+		t.Fatalf("an awaited body on an open circuit: %v after %d bytes read", err, body.n)
+	}
+	if body, err = ingest(context.Background()); err != nil || body.n == 0 {
+		t.Fatalf("an upload without the mark was refused or not read: %v, %d bytes", err, body.n)
 	}
 }

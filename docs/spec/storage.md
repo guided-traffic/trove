@@ -4259,17 +4259,19 @@ stored succeeds in an outage, which only the body can show. `Guard.Open` had no 
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) The spool refuses every new upload while the circuit is open | `Store.Ingest` checks the circuit before the first read | One place | A deduplicated upload of a client without announced digests fails in an outage, against R-STOR-036's second row; the check cannot tell the clients that wait for `100 Continue` from the others |
-| (b) A stage of the client chain refuses a write that carries `Expect: 100-continue`, after authentication and the rate limit (chosen) | `Chain.ExpectGate`, answered by `Store.RejectUpload` | Only the clients that gain from it are affected; the body of a client without `Expect` is read and a deduplicated upload succeeds; a refusal is never an answer to an unauthenticated request | A client that waits for `100 Continue` and sends content that is already stored is refused in an outage and succeeds when it retries |
+| (b) The chain only marks a request that carries a body and `Expect: 100-continue`; the upload entry point refuses it (chosen) | `Chain.ExpectMark` puts `blob.WithAwaitedBody` in the request context; `Store.Ingest` asks `RejectUpload` before its first read of the body | The refusal happens after authentication and authorization, at the one place that is about to read an upload: an API write, an exchange route, an anonymous route and a reader without permission are answered as they are without an outage (`403` stays `403`); a remote fill and an upload without `Expect` are never refused early, and a deduplicated upload of the latter succeeds | A client that waits for `100 Continue` and sends content that is already stored is refused in an outage and succeeds when it retries |
+| (b0) A stage of the chain refuses every request with `Expect: 100-continue` (the first version of (b)) | `Chain.ExpectGate` | Simple | It ran before authorization on every route and method: non-upload writes failed in an outage against R-HA-052, an unauthenticated exchange request revealed the replica's store state, and a reader got `503` instead of `403` (code review of 2026-11-06) |
 | (c) Leave it | The body is read, then refused | No code | The criterion of R-HA-010 fails |
 
-**Choice:** (b), [chain.go](../../internal/httpserver/chain.go) (`expectStage`), [store.go](../../internal/blob/store.go) (`RejectUpload`), wired in
+**Choice:** (b), [chain.go](../../internal/httpserver/chain.go) (`expectStage`, marks only), [store.go](../../internal/blob/store.go) (`WithAwaitedBody`, `Ingest`, `RejectUpload`), wired in
 [wire_endpoints.go](../../internal/app/wire_endpoints.go). The `Retry-After` of every `503` that the open circuit causes (the refusal, a call on the open circuit, the
 failure that opened it, a failing probe) is `storage.s3.circuit_breaker.open_duration` rounded up to whole seconds, at least 5, as R-HA-010 states; a failure before
 the circuit opened keeps 5. A call that timed out in the transport (a dial to a store that is gone) is a `503` like any other transient failure and was a `500`. Between the end of the open duration
 and the probe (the next call to the store: the readiness check makes one every 5 s) the circuit does not reject, so an upload that arrives in that gap sends its body and
-is answered `503` after it; the test requires three in five of the uploads of an outage to be refused before their body.
+is answered `503` after it; the test requires three in five of the uploads of an outage to be refused before their body. Tests: `TestExpectMark` (the chain refuses nothing),
+`TestIngestRefusesAnAwaitedBodyWhileTheCircuitIsOpen` (the `503` before the first read, none without the mark); that `403` precedes it is the order of `Service.Deploy` (the decision before `Spool`).
 
-**Rationale:** the sentence of R-HA-010 names `Expect: 100-continue` as the reason; a client without it sends its body anyway and keeps R-STOR-036's deduplication.
+**Rationale:** Go's server sends `100 Continue` when the handler first reads the body, so a refusal before that read means the client never sends it. The sentence of R-HA-010 names `Expect: 100-continue` as the reason; a client without it sends its body anyway and keeps R-STOR-036's deduplication.
 The development agent would revisit it if a client without `Expect` shows up that sends large bodies in outages.
 
 **Applied in the spec:** R-HA-010 (first bullet: a write that sends `Expect: 100-continue`).

@@ -3,12 +3,14 @@ package proxy
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/proxy/upstream"
 )
 
 // ErrOffline is the answer of [Engine.Exchange] for a repository that may not contact
@@ -37,6 +39,9 @@ func (e *Engine) Exchange(ctx context.Context, rem Remote, req *http.Request, ca
 	if err != nil {
 		return nil, err
 	}
+	// The exchange client has no overall timeout and no stall bound: a caller whose context has no deadline gets the longest
+	// bound a format sets, so a provider that stops answering cannot hold the request for good (Q-NPM-78).
+	ctx, cancel := boundExchange(ctx, upstream.ExchangeHeaderTimeout)
 	// No flight: flight_role stays empty in the upstream log record (Q-REPO-92).
 	rctx := outbound.WithCall(ctx, outbound.Call{OnBehalfOf: caller.Principal, Repo: rem.Repo.Key, Attempt: 1})
 	out := req.Clone(rctx)
@@ -44,12 +49,34 @@ func (e *Engine) Exchange(ctx context.Context, rem Remote, req *http.Request, ca
 	start := time.Now()
 	resp, err := cl.ExchangeHTTP().Do(out) //nolint:gosec // G704: the URL is the remote's upstream or its providerURL, which only repository configuration sets; the client checks every address against the egress policy (R-REPO-038)
 	if err != nil {
+		cancel()
 		e.m.request(rem.Repo.Key, 0)
 		return nil, e.exchangeFailure(ctx, rem, out, caller, err)
 	}
 	e.m.request(rem.Repo.Key, resp.StatusCode)
 	e.m.upstreamDur.WithLabelValues(rem.Repo.Key).Observe(time.Since(start).Seconds())
+	resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel} // the bound runs until the caller has read the body
 	return resp, nil
+}
+
+// boundExchange gives a context without a deadline the bound and leaves one that has a deadline as it is.
+func boundExchange(ctx context.Context, bound time.Duration) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, bound)
+}
+
+// cancelOnClose ends the context of an exchange when its body is closed.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
 }
 
 // exchangeFailure classifies a failed exchange. The circuit is not told.
