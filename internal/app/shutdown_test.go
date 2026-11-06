@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -221,23 +222,25 @@ func TestShutdownBudgetEndToEnd(t *testing.T) {
 
 // releasingComp models the job worker: it is quiesced first, its handlers end at once and
 // each settles with a release write that needs release to finish and, like Worker.Stop,
-// is waited for in the close phase until its context ends.
+// is waited for in the close phase until its context ends. Quiesce runs on the shutdown's
+// timer goroutine and Stop on the close phase's, so pending is made before the shutdown;
+// the harness shuts the app down again at cleanup, so the write closes it once.
 type releasingComp struct {
 	blockingComp
 	write    time.Duration
 	started  atomic.Int64 // unix nanos of the Quiesce call
 	finished atomic.Bool
-	pending  chan struct{}
+	pending  chan struct{} // closed when the release write ends; made by the caller
+	done     sync.Once
 }
 
 func (c *releasingComp) QuiescesFirst() {}
 func (c *releasingComp) Quiesce(context.Context) {
 	c.started.Store(time.Now().UnixNano())
-	c.pending = make(chan struct{})
 	go func() {
 		time.Sleep(c.write)
 		c.finished.Store(true)
-		close(c.pending)
+		c.done.Do(func() { close(c.pending) })
 	}()
 }
 func (c *releasingComp) Flush(context.Context) error { return nil }
@@ -262,7 +265,7 @@ func TestShutdownReleaseWrites(t *testing.T) {
 			t.Fatalf("derived timeout %s, want 3s", got)
 		}
 		h.app.budget = scaledBudget()
-		comp := &releasingComp{blockingComp: blockingComp{name: "jobs", release: make(chan struct{})}, write: h.app.budget.Release - 200*time.Millisecond}
+		comp := &releasingComp{blockingComp: blockingComp{name: "jobs", release: make(chan struct{})}, write: h.app.budget.Release - 200*time.Millisecond, pending: make(chan struct{})}
 		t.Cleanup(func() { close(comp.release) })
 		h.app.comps = append(h.app.comps, comp)
 
