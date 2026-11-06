@@ -5,6 +5,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "start:local": "NODE_EXTRA_CA_CERTS=../.dev/ui-dev/certs/ca.crt ng serve --configuration local",
     "build": "ng build",
     "extract-i18n": "ng extract-i18n --format xlf2 --output-path src/locale --out-file messages.xlf",
     "lint": "eslint . && node scripts/check-rules.mjs",

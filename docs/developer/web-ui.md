@@ -49,7 +49,8 @@ Run in `web/` after `nvm use` (or any Node matching `.nvmrc`).
 | Command | What it does |
 |---|---|
 | `npm ci` | Install exactly the lockfile |
-| `npm start` | Dev server, English only (the `development` configuration builds one locale) |
+| `npm start` | Dev server, English only (the `development` configuration builds one locale), without a backend |
+| `npm run start:local` | Dev server of the `local` configuration: HTTPS, and every path outside `/ui/` proxied to the trove of the [UI development profile](#local-ui-development) |
 | `npm run lint` | ESLint (including the four R-UI-046 rules) and `scripts/check-rules.mjs` |
 | `npm test` | Vitest through `@angular/build:unit-test`, jsdom, single run, headless; `src/test-setup.ts` raises the per-test timeout to 30 s, because the accessibility check of a large screen takes several seconds on a shared CI runner (the default of 5 s guards against hangs, it is no budget) |
 | `npm run test:coverage` | The same with a V8 coverage report (`src/app/**`, generated code excluded) |
@@ -59,8 +60,73 @@ Run in `web/` after `nvm use` (or any Node matching `.nvmrc`).
 | `npx playwright install --with-deps chromium` | The browser build of the locked Playwright version, outside the repository (needed for the journeys, not for `npm test`) |
 | `npm run build:embed` | `build`, the compressed-size budget check, then copy each locale to `internal/webui/dist/<locale>/` |
 
-`make web` is expected to chain `npm ci`, `lint`, `test` and `build:embed`; the Makefile is owned by
-the skeleton work package and was not checked from here.
+`make web` runs `make web-ci` (`npm ci`) and `make web-embed` (`npm run build:embed`); lint and the unit tests are
+`make web-lint` and `make web-test`.
+
+## Local UI development
+
+Hot reload against a real trove, without the kind cluster: the Angular dev server serves the UI from the
+working tree, and everything else goes to one trove replica on the host, backed by its own small set of
+containers ([deploy/ui-dev/](../../deploy/ui-dev/)). Containers, volumes and ports are its own, so it runs next to
+the integration stack (`trove-it-*`) and the [kind profile](local-profile.md) (cluster `trove`, edge on `:8080`)
+without touching either.
+
+```mermaid
+flowchart LR
+  browser["browser"] -- "https://localhost:4200" --> ng["ng serve (local)<br/>/ui/ from web/src, hot reload"]
+  ng -- "every other path, https,<br/>verified against the profile's CA" --> trove["trove serve --role all<br/>127.0.0.1:19080, ops :19081"]
+  trove -- "verify-full" --> pg[("PostgreSQL<br/>127.0.0.1:25432")]
+  trove -- "TLS" --> vk[("Valkey standalone<br/>127.0.0.1:26390")]
+  trove -- "https" --> s3[("SeaweedFS S3<br/>127.0.0.1:28333")]
+```
+
+```shell
+make web-ci            # once, and after a change of web/package-lock.json
+make ui-dev-up         # the containers, the buckets, .dev/ui-dev (certificates, secrets, key ring, trove.yaml)
+make ui-dev-backend    # terminal 1: builds trove, migrates, runs it in the foreground; prints the sign-in
+make ui-dev-web        # terminal 2: https://localhost:4200/ui/
+make ui-dev-down       # stops the containers, keeps the data; PURGE=1 removes the data and .dev/ui-dev
+```
+
+Sign in with `admin` and the password `make ui-dev-backend` prints (`.dev/ui-dev/secrets/break-glass-password`,
+random per checkout). A change under `web/src` reaches the open page at once; a change of the Go code needs
+Ctrl-C and `make ui-dev-backend` again, which rebuilds the binary and applies new migrations. Repositories,
+packages and users created in the UI stay in the volumes across restarts.
+
+**The dev server is the edge.** trove's `server.base_url` is `https://localhost:4200`, so the `__Host-` cookies,
+the origin check of R-AUTH-012 and trove's redirects work exactly as behind a real edge, and the proxy rewrites
+nothing: it keeps the Host header, adds `X-Forwarded-For` (trove trusts `127.0.0.1` as its edge) and verifies
+trove's certificate against the profile's CA, which `npm run start:local` hands to Node.js in
+`NODE_EXTRA_CA_CERTS`. The proxy is [web/proxy.conf.mjs](../../web/proxy.conf.mjs) (one rule, `^/(?!ui(/|$))`); the
+`local` configuration of the `serve` target in [web/angular.json](../../web/angular.json) sets it, HTTPS and the
+certificate. `TROVE_UI_DEV_BACKEND` points the proxy at another trove (default `https://localhost:19080`); a sign-in
+through the dev server works only against a trove whose base URL is `https://localhost:4200`.
+
+| Piece | Where | Set by |
+|---|---|---|
+| PostgreSQL, Valkey (standalone), SeaweedFS | containers `trove-ui-dev-*`, volumes `trove-ui-dev_*`; images `INTEGRATION_POSTGRES_IMAGE`, `VALKEY_91_IMAGE`, `SEAWEEDFS_IMAGE` of [tools/versions.env](../../tools/versions.env) | [compose.yaml](../../deploy/ui-dev/compose.yaml), [up.sh](../../deploy/ui-dev/up.sh) |
+| Certificates: a CA of its own, one certificate per service with the SANs `localhost` and `127.0.0.1` | `.dev/ui-dev/certs` | [test/integration/certs.sh](../../test/integration/certs.sh), called by `up.sh` |
+| Secret files, the key ring (`dev`), the break-glass password | `.dev/ui-dev/secrets`, written once | `up.sh` |
+| trove's configuration | `.dev/ui-dev/trove.yaml`, rewritten by every `up.sh` | `up.sh` |
+| trove binary | `.dev/ui-dev/bin/trove` | [serve.sh](../../deploy/ui-dev/serve.sh) |
+
+**Where it differs from an installation**, so a finding is checked in the embedded build before it is called a defect:
+
+- English only. The dev server builds one locale and serves it at `/ui/`, not `/ui/en/`. Choosing German in the user
+  menu stores the preference and loads `/ui/de/…`, which the dev server does not have; keep the language on English
+  here and check German with `make web` and the embedded build.
+- No Content Security Policy. The dev server sends `index.html` without trove's CSP header and leaves the nonce
+  placeholder in place, so a CSP or Trusted Types violation shows only in the embedded build.
+- Break-glass sessions last 8 h idle and 24 h absolute instead of 15 min and 1 h, so the session-expiry dialogs
+  do not appear during a normal working session; there is no OpenID provider, so the sign-in screen shows the
+  local form only.
+- The advisory sources (OSV, KEV) are off: the vulnerability screens stay empty.
+- A new installation is empty: repositories and packages are created through the UI or the API.
+
+The browser warns about the dev server's certificate until the CA is trusted. Trusting it system-wide is your choice,
+not something the scripts do (macOS: `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain .dev/ui-dev/certs/ca.crt`).
+The CA has no name constraints and its key lies in `.dev/ui-dev/certs/ca.key` (mode 0600): whoever can read that file
+can then issue certificates your machine trusts for any host. Remove the trust entry when you run `make ui-dev-down PURGE=1`.
 
 ## How the build reaches the binary
 

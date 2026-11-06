@@ -94,6 +94,13 @@
             },
             "development": {
               "buildTarget": "web:build:development"
+            },
+            "local": {
+              "buildTarget": "web:build:development",
+              "proxyConfig": "proxy.conf.mjs",
+              "ssl": true,
+              "sslCert": "../.dev/ui-dev/certs/server.crt",
+              "sslKey": "../.dev/ui-dev/certs/server.key"
             }
           },
           "defaultConfiguration": "development"

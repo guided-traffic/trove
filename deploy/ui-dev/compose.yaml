@@ -1,0 +1,118 @@
+# Backing services of the UI development profile (docs/developer/web-ui.md#local-ui-development): one
+# PostgreSQL, one standalone Valkey and SeaweedFS as the S3 store, each TLS only, with the certificates of
+# test/integration/certs.sh in .dev/ui-dev/certs. trove itself runs on the host (deploy/ui-dev/serve.sh), the
+# Angular dev server in front of it (make ui-dev-web).
+#
+# Its own project name, container names, volumes and host ports: it runs next to the integration stack
+# (trove-it) and the kind cluster (trove) without touching either. Unlike the integration stack the data is
+# kept in named volumes, so repositories and packages created while working on the UI survive a restart;
+# deploy/ui-dev/down.sh --purge removes them. Started by deploy/ui-dev/up.sh, which sets the variables below
+# from tools/versions.env.
+name: trove-ui-dev
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?set by deploy/ui-dev/up.sh}
+    container_name: trove-ui-dev-postgres
+    environment:
+      POSTGRES_USER: trove
+      POSTGRES_PASSWORD: trove-ui-dev
+      POSTGRES_DB: trove
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    # The integration stack's entrypoint and pg_hba.conf: the key is copied to a postgres-owned directory, and
+    # only hostssl connections are accepted.
+    entrypoint: ["/conf/postgres.sh"]
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ../../test/integration/conf/postgres.sh:/conf/postgres.sh:ro
+      - ../../test/integration/conf/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      # The PostgreSQL 18 image keeps its data under /var/lib/postgresql/18/docker.
+      - postgres:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:25432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trove -d trove -h /var/run/postgresql"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey:
+    image: ${VALKEY_IMAGE:?set by deploy/ui-dev/up.sh}
+    container_name: trove-ui-dev-valkey
+    command:
+      - valkey-server
+      - --port
+      - "0"
+      - --tls-port
+      - "6379"
+      - --tls-cert-file
+      - /certs/server.crt
+      - --tls-key-file
+      - /certs/server.key
+      - --tls-ca-cert-file
+      - /certs/ca.crt
+      - --tls-auth-clients
+      - "no"
+      - --requirepass
+      - trove-ui-dev-valkey
+      - --appendonly
+      - "yes"
+      - --dir
+      - /data
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - valkey:/data
+    ports:
+      - "127.0.0.1:26390:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 -p 6379 -a trove-ui-dev-valkey --no-auth-warning ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  seaweedfs:
+    image: ${SEAWEEDFS_IMAGE:?set by deploy/ui-dev/up.sh}
+    container_name: trove-ui-dev-seaweedfs
+    command:
+      - server
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -ip.bind=0.0.0.0
+      - -master.volumeSizeLimitMB=512
+      - -volume.max=100
+      - -filer
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3.json
+      - -s3.cert.file=/certs/s3.crt
+      - -s3.key.file=/certs/s3.key
+    volumes:
+      - ${CERT_DIR}:/certs:ro
+      - ../../test/integration/conf/s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweedfs:/data
+    ports:
+      - "127.0.0.1:28333:8333"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9333/cluster/status >/dev/null && curl -s -o /dev/null --cacert /certs/ca.crt https://127.0.0.1:8333/"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+volumes:
+  postgres:
+  valkey:
+  seaweedfs:

@@ -79,7 +79,7 @@ end-to-end wave's. No backup exists yet (phase 7: only the export classes of the
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
 | [formats.md](formats.md) | The format contract: `formats.Format`, the registry and its start-up checks, the `Host`, the storage hooks, the dispatcher for `/api/<format>/<repoKey>/`, content headers and error shapes, the wiring, how to add a format |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |
-| [web-ui.md](web-ui.md) | The Angular workspace, the embedded build, the budget and the UI tests |
+| [web-ui.md](web-ui.md) | The Angular workspace, the local UI development profile with hot reload, the embedded build, the budget and the UI tests |
 | [design-language.md](design-language.md) | The look of the UI: the measured colours of both schemes, what was adjusted for WCAG AA, where the values live and how to change one |
 | [manual.md](manual.md) | The user and administrator manual: embedding, rendering and link checks, the manual operations, the help area of the UI, how to add a page |
 

@@ -91,6 +91,24 @@ web-embed: ## Build the Angular workspace and embed it into internal/webui/dist 
 .PHONY: web
 web: web-ci web-embed ## web-ci, then web-embed (what a local build of the UI needs)
 
+# UI development profile (docs/developer/web-ui.md#local-ui-development): its own containers, volumes and
+# ports, so it runs next to the integration stack and the kind cluster without touching either.
+.PHONY: ui-dev-up
+ui-dev-up: ## PostgreSQL, Valkey and SeaweedFS (TLS) for UI work; writes .dev/ui-dev (deploy/ui-dev/up.sh)
+	deploy/ui-dev/up.sh
+
+.PHONY: ui-dev-backend
+ui-dev-backend: ## Build trove, migrate, run one replica of role all on https://127.0.0.1:19080 in the foreground (deploy/ui-dev/serve.sh)
+	deploy/ui-dev/serve.sh
+
+.PHONY: ui-dev-web
+ui-dev-web: ## Angular dev server with hot reload on https://localhost:4200/ui/, everything else proxied to ui-dev-backend (after web-ci)
+	cd web && npm run start:local
+
+.PHONY: ui-dev-down
+ui-dev-down: ## Stop the UI development services; PURGE=1 also removes their data and .dev/ui-dev (deploy/ui-dev/down.sh)
+	deploy/ui-dev/down.sh $(if $(PURGE),--purge)
+
 # The release image builds the Angular bundle itself (Containerfile, stage web); no Node.js is
 # needed on the host. The build arguments read the same pins as the rest of the repository.
 .PHONY: image
