@@ -38,7 +38,7 @@ func TestR_CI_020_TheIssuanceRecordsAndTheBulkRevoke(t *testing.T) {
 	e.stack.Bind("auditor", auditor)
 	auditorTok := e.stack.Token(auditor, scope.Scope{Inherit: true, System: []string{"tokens:read"}})
 	a := e.web("web-a")
-	publisher := e.issue(a, e.bundle("4711", "acme/web/frontend", rel.contribution(nil, grant([]string{"npm-internal"}, []string{"@acme/*"}, claims.Read, claims.Deploy))), job{"700", "9001"}, 10*time.Minute)
+	publisher := e.issue(a, e.bundle("4711", "acme/web/frontend", rel.contribution(nil, grant([]string{"it/npm-internal"}, []string{"@acme/*"}, claims.Read, claims.Deploy))), job{"700", "9001"}, 10*time.Minute)
 	time.Sleep(5 * time.Millisecond) // the records sort by issued_at
 	second := e.issue(a, e.bundle("4711", "acme/web/frontend", read.contribution(nil)), job{"700", "9002"}, 10*time.Minute)
 	time.Sleep(5 * time.Millisecond)
@@ -137,9 +137,9 @@ func TestR_CI_020_TheIssuanceRecordsAndTheBulkRevoke(t *testing.T) {
 	})
 }
 
-// Q-CI-26: a project administrator lists the records of tokens whose mappings include one of its project's, and
-// sees its project's mappings only; an administrator of another project sees none.
-func TestQ_CI_26_AProjectAdministratorListsTheTokensOfItsMappings(t *testing.T) {
+// Q-CI-26: a project Owner lists the records of tokens whose mappings include one of its project's, and
+// sees its project's mappings only; an Owner of another project sees none.
+func TestQ_CI_26_AProjectOwnerListsTheTokensOfItsMappings(t *testing.T) {
 	e := newCIEnv(t, false, "acme-read")
 	sys := e.maps["acme-read"]
 	carol := e.stack.User("carol")
@@ -147,17 +147,16 @@ func TestQ_CI_26_AProjectAdministratorListsTheTokensOfItsMappings(t *testing.T) 
 	a := e.web("web-a")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "web", "displayName": "Web"}), 201, "")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "data", "displayName": "Data"}), 201, "")
-	wantStatus(t, e.do(a, "PUT", "/api/v1/projects/web/admins/user%3Abob", nil), 201, "")
-	added := e.do(a, "PUT", "/api/v1/projects/data/admins/user%3Acarol", nil)
-	wantStatus(t, added, 201, "")
+	e.addOwner(a, "web", "user:bob")
+	added := e.addOwner(a, "data", "user:carol")
 	epoch := added.Header.Get("Trove-Authz-Epoch")
 	webID := e.text(`SELECT id::text FROM project WHERE key = 'web'`)
 	// The project mapping as W3's store writes one (tier project:web, its project's ID).
-	pid := e.text(`INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'ci_mapping', 'gitlab-main/web-publish') RETURNING id::text`)
+	pid := e.text(`INSERT INTO principal (id, kind, name) VALUES (gen_random_uuid(), 'ci_mapping', 'gitlab-main/web/web-publish') RETURNING id::text`)
 	mid := e.text(`INSERT INTO ci_mappings (id, issuer_id, principal_id, tier, project_id, name, priority, match, grants, created_by)
 	        VALUES (gen_random_uuid(), $1::uuid, $2::uuid, 'project:web', $3::uuid, 'web-publish', 1, '{}'::jsonb, '{}'::jsonb, 'test') RETURNING id::text`, e.issuerID, pid, webID)
-	web := ciMapping{id: mid, principalID: pid, name: "web-publish"}
-	e.maps[web.name] = web
+	web := ciMapping{id: mid, principalID: pid, name: "web-publish", project: "web"}
+	e.maps[web.project+"/"+web.name] = web
 	both := e.bundle("4711", "acme/web/frontend", sys.contribution(nil),
 		claims.FrozenMapping{Ref: web.ref(), ID: web.id, Tier: "project:web", Project: &claims.FrozenProject{Key: "web", ID: webID}})
 	tok := e.issue(a, both, job{"1", "77"}, 10*time.Minute)
@@ -174,7 +173,7 @@ func TestQ_CI_26_AProjectAdministratorListsTheTokensOfItsMappings(t *testing.T) 
 	}
 	names := got[0]["mappingNames"].([]any)
 	contributions := got[0]["grants"].(map[string]any)["contributions"].([]any)
-	if len(names) != 1 || names[0] != "web-publish" || len(contributions) != 1 {
+	if len(names) != 1 || names[0] != "web/web-publish" || len(contributions) != 1 {
 		t.Errorf("the record shows another tier's mappings: %v %v", names, contributions)
 	}
 	// Q-CI-52: the scope strings list every tier's items and the person and the client are not the project's business.
@@ -199,7 +198,7 @@ func TestQ_CI_26_AProjectAdministratorListsTheTokensOfItsMappings(t *testing.T) 
 		t.Errorf("the system view lost grantedScope: %v", full["grantedScope"])
 	}
 	if r := e.as(a, carolTok, "GET", "/api/v1/projects/web/ci/issuances", nil, "Trove-Authz-Min-Epoch", epoch); r.Status != 404 {
-		t.Errorf("another project's administrator got %d", r.Status)
+		t.Errorf("another project's Owner got %d", r.Status)
 	}
 	if r := e.as(a, carolTok, "GET", "/api/v1/projects/data/ci/issuances", nil, "Trove-Authz-Min-Epoch", epoch); r.Status != 200 || len(items(t, r.JSON(t))) != 0 {
 		t.Errorf("the other project lists %d %s", r.Status, r.Body)

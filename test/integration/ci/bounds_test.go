@@ -14,7 +14,7 @@ import (
 // The bounds of a save (R-CI-009, R-CI-010, R-CI-016, Q-CI-47, Q-CI-49, Q-CI-51): what a mapping may hold so that an
 // exchange stays cheap and a project administrator learns nothing outside its project's names.
 
-// boundsEnv is the issuer gitlab-main (private), the project web with web-npm, which bob administers, and the
+// boundsEnv is the issuer gitlab-main (private), the project web with web-npm, of which bob is Owner, and the
 // project data; ci.mappings.max_per_project 2 and max_per_issuer 4.
 type boundsEnv struct {
 	*env
@@ -29,11 +29,9 @@ func newBoundsEnv(t *testing.T) *boundsEnv {
 	b.issuer(t, b.a, "gitlab-main", false)
 	for _, key := range []string{"web", "data"} {
 		wantStatus(t, e.do(b.a, "POST", "/api/v1/projects", map[string]any{"key": key, "displayName": key}), 201, "")
-		e.stack.Repository(key+"-npm", "local", "npm", "{}")
-		e.exec("UPDATE repositories SET project_id = (SELECT id FROM project WHERE key = $1) WHERE key = $2", key, key+"-npm")
+		e.stack.Repository(key+"/"+key+"-npm", "local", "npm", "{}")
 	}
-	added := e.do(b.a, "PUT", "/api/v1/projects/web/admins/user%3Abob", nil)
-	wantStatus(t, added, 201, "")
+	added := e.addOwner(b.a, "web", "user:bob")
 	b.epoch = added.Header.Get("Trove-Authz-Epoch")
 	return b
 }
@@ -62,7 +60,7 @@ func TestR_CI_016_ABoundBelowTheFloorIsRefusedAtTheSave(t *testing.T) {
 	b := newBoundsEnv(t)
 	pinned := all(eq("project_id", "4242"))
 	below := map[string]any{"maxTtlSeconds": 29}
-	r := b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("sys-short", 10, pinned, grants(inline("web-npm", []string{"*"}, "read")), below))
+	r := b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("sys-short", 10, pinned, grants(inline("web/web-npm", []string{"*"}, "read")), below))
 	wantStatus(t, r, 422, "validation_failed")
 	wantField(t, r, "/maxTtlSeconds out_of_range")
 	r = b.bob("POST", projectMappings("web"), webReader("web-short", 10, below))
@@ -88,33 +86,55 @@ func TestR_CI_009_AProjectCannotFillTheIssuersLimit(t *testing.T) {
 	}
 	pinned := all(eq("project_id", "4242"))
 	for i := 1; i <= 2; i++ {
-		wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping(fmt.Sprintf("sys-%d", i), i, pinned, grants(inline("data-npm", []string{"*"}, "read")))), 201, "")
+		wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping(fmt.Sprintf("sys-%d", i), i, pinned, grants(inline("data/data-npm", []string{"*"}, "read")))), 201, "")
 	}
-	wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("sys-3", 3, pinned, grants(inline("data-npm", []string{"*"}, "read")))), 422, "mapping_limit_reached")
+	wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("sys-3", 3, pinned, grants(inline("data/data-npm", []string{"*"}, "read")))), 422, "mapping_limit_reached")
 }
 
 // R-CI-010, Q-CI-49: a literal and a whole condition are bounded at the save.
 func TestR_CI_010_TheSizeOfAConditionIsBoundedOverHTTP(t *testing.T) {
 	b := newBoundsEnv(t)
 	long := all(eq("project_id", "4242"), eq("ref", strings.Repeat("v", 1025)))
-	r := b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("too-long", 10, long, grants(inline("data-npm", []string{"*"}, "read"))))
+	r := b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("too-long", 10, long, grants(inline("data/data-npm", []string{"*"}, "read"))))
 	wantStatus(t, r, 422, "condition_invalid")
 	wantField(t, r, "/match/all/1/equals condition_invalid")
 }
 
-// H-413, Q-CI-51: a project administrator's create is refused for a name outside its prefix before the name is
-// looked up, so the 409 of a taken name answers only for names under the project's own prefix.
-func TestQ_CI_51_AProjectAdministratorProbesNoNameOutsideItsPrefix(t *testing.T) {
+// R-CI-009, Q-AUTHZ-214: a mapping's name is unique within the issuer's tier. The same name may be a system mapping and
+// a mapping of every project, and a taken name answers 409 only inside its own tier, so a project's Owner learns nothing
+// of the names of another tier.
+func TestR_CI_009_ANameIsUniqueWithinTheTierOfTheIssuer(t *testing.T) {
 	b := newBoundsEnv(t)
 	pinned := all(eq("project_id", "4242"))
-	wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("acme-release", 10, pinned, grants(inline("data-npm", []string{"*"}, "read")))), 201, "")
-	r := b.bob("POST", projectMappings("web"), webReader("acme-release", 10))
-	wantStatus(t, r, 422, "project_prefix_required")
-	r = b.bob("POST", projectMappings("web"), webReader("acme-unused", 10))
-	wantStatus(t, r, 422, "project_prefix_required")
-	t.Run("Q-AUTHZ-176 the keys of two projects never overlap, so a prefix names one project", func(t *testing.T) {
-		wantStatus(t, b.do(b.a, "POST", "/api/v1/projects", map[string]any{"key": "web-c", "displayName": "web-c"}), 409, "project_key_overlap")
-		wantStatus(t, b.do(b.a, "POST", "/api/v1/projects", map[string]any{"key": "ab-c", "displayName": "ab-c"}), 201, "")
-		wantStatus(t, b.do(b.a, "POST", "/api/v1/projects", map[string]any{"key": "ab", "displayName": "ab"}), 409, "project_key_overlap")
-	})
+	wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("release", 10, pinned, grants(inline("data/data-npm", []string{"*"}, "read")))), 201, "")
+	r := b.bob("POST", projectMappings("web"), webReader("release", 10))
+	wantStatus(t, r, 201, "")
+	if got := r.JSON(t); got["name"] != "release" || got["tier"] != "project:web" {
+		t.Errorf("the project's mapping = %v", got)
+	}
+	if b.number("SELECT count(*) FROM principal WHERE kind = 'ci_mapping' AND name IN ('gitlab-main/release', 'gitlab-main/web/release')") != 2 {
+		t.Error("the principals are gitlab-main/release and gitlab-main/web/release")
+	}
+	if b.number("SELECT count(*) FROM ci_mappings WHERE name = 'release'") != 2 {
+		t.Error("both rows hold the bare name")
+	}
+	wantStatus(t, b.bob("POST", projectMappings("web"), webReader("release", 20)), 409, "already_exists")
+	wantStatus(t, b.do(b.a, "POST", mappingsOf("gitlab-main"), mapping("release", 20, pinned, grants(inline("data/data-npm", []string{"*"}, "read")))), 409, "already_exists")
+	wantStatus(t, b.do(b.a, "POST", projectMappings("data"), mapping("release", 10, pinned, grants(inline("data-npm", []string{"*"}, "read")), map[string]any{"issuer": "gitlab-main"})), 201, "")
+	for path, want := range map[string]string{
+		mappingsOf("gitlab-main") + "/release":               "",
+		projectMappings("web") + "/gitlab-main/release":      "web",
+		projectMappings("data") + "/gitlab-main/release":     "data",
+		projectMappings("web") + "/gitlab-main/no-such-name": "-",
+	} {
+		r := b.do(b.a, "GET", path, nil)
+		if want == "-" {
+			wantStatus(t, r, 404, "not_found")
+			continue
+		}
+		wantStatus(t, r, 200, "")
+		if got, _ := r.JSON(t)["project"].(string); got != want {
+			t.Errorf("%s answers the mapping of project %q, want %q", path, got, want)
+		}
+	}
 }

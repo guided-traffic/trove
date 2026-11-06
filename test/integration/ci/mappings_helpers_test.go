@@ -4,6 +4,7 @@ package ci
 
 import (
 	"encoding/json"
+	"net/url"
 	"testing"
 
 	"github.com/guided-traffic/trove/test/integration/testenv"
@@ -26,6 +27,15 @@ func (e *env) issuer(t *testing.T, r *testenv.Replica, name string, public bool)
 }
 
 func mappingsOf(issuer string) string { return issuersPath + "/" + issuer + "/mappings" }
+
+// addOwner makes the principal (a reference such as "user:bob") an Owner of the project and returns the answer, whose
+// Trove-Authz-Epoch header names the index every replica must have reached before the owner's request.
+func (e *env) addOwner(r *testenv.Replica, project, principalRef string) testenv.Answer {
+	e.t.Helper()
+	a := e.do(r, "PUT", "/api/v1/projects/"+project+"/members/"+url.PathEscape(principalRef), map[string]any{"role": "owner"})
+	wantStatus(e.t, a, 201, "")
+	return a
+}
 
 func projectMappings(project string) string { return "/api/v1/projects/" + project + "/ci/mappings" }
 

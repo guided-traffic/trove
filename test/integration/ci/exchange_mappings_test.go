@@ -31,13 +31,13 @@ func mrClaims() map[string]any {
 // protectedPublish is R-CI-009's p20: protected refs of namespace 4711 publish their npm scope.
 func protectedPublish(name string, priority int) map[string]any {
 	return mapping(name, priority, all(eq("namespace_id", "4711"), eq("ref_protected", true)),
-		grants(inline("npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read", "deploy")))
+		grants(inline("it/npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read", "deploy")))
 }
 
 // mrReadOnly is R-CI-009's p10: merge request pipelines of namespace 4711 only read.
 func mrReadOnly(name string, priority int) map[string]any {
 	return mapping(name, priority, all(eq("namespace_id", "4711"), eq("pipeline_source", "merge_request_event")),
-		grants(inline("npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read")))
+		grants(inline("it/npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read")))
 }
 
 // TestR_CI_007_AReplicaWithALaggingCopyIssuesWhatIsCommitted is R-CI-007's three criteria with replica B's change-log
@@ -154,7 +154,7 @@ func TestR_CI_009_AnAbsentClaimFailsTheExchangeEvenIfALaterMappingMatches(t *tes
 	a := x.web("web-a")
 	x.issuer(a)
 	x.addMapping(a, mapping("by-environment", 10, all(eq("namespace_id", "4711")),
-		grants(inline("npm-internal", []string{"@{{ environment | slug }}/*"}, "read"))))
+		grants(inline("it/npm-internal", []string{"@{{ environment | slug }}/*"}, "read"))))
 	x.addMapping(a, releaseMapping("acme-release-publish", 100))
 	wantToken(t, x.exchange(a, x.mint(oidcstub.MintOptions{})))
 	r := x.exchange(a, x.mint(oidcstub.MintOptions{Remove: []string{"environment", "environment_protected", "deployment_tier", "environment_action"}}))
@@ -198,7 +198,7 @@ func TestR_CI_012_ForkPipelines(t *testing.T) {
 	})
 	t.Run("R-CI-012 with a matched mapping that opts in to read_only, the scope holds only read items", func(t *testing.T) {
 		x.addMapping(a, mapping("fork-read", 10, all(eq("job_project_id", "42")),
-			grants(inline("npm-internal", []string{"@acme-billing/*"}, "read")), map[string]any{"options": map[string]any{"crossProjectSource": "read_only"}}))
+			grants(inline("it/npm-internal", []string{"@acme-billing/*"}, "read")), map[string]any{"options": map[string]any{"crossProjectSource": "read_only"}}))
 		g := wantToken(t, x.exchange(a, x.mint(oidcstub.MintOptions{Claims: map[string]any{"project_id": "900", "job_project_id": "42"}})))
 		for _, it := range strings.Fields(g.Scope) {
 			if !strings.HasPrefix(it, "read:") {
@@ -212,7 +212,7 @@ func TestR_CI_012_ForkPipelines(t *testing.T) {
 	t.Run("R-CI-012 the recorded fork merge request pipeline run in the parent cannot publish to npm-internal", func(t *testing.T) {
 		// The parent's mapping pins the project the job runs in, the parent (job_project_id 1), and would publish.
 		x.addMapping(a, mapping("parent-publish", 20, all(eq("job_project_id", "1"), eq("ref_protected", false)),
-			grants(inline("npm-internal", []string{"*"}, "read", "deploy")), map[string]any{"options": map[string]any{"allowUnprotectedRefs": true}}))
+			grants(inline("it/npm-internal", []string{"*"}, "read", "deploy")), map[string]any{"options": map[string]any{"allowUnprotectedRefs": true}}))
 		tok := x.mint(oidcstub.MintOptions{RawPayload: x.forkInParent(t)})
 		wantOAuth(t, x.exchange(a, tok), 400, "invalid_request", "cross_project_source_denied")
 	})

@@ -33,11 +33,11 @@ func (e *env) acme(t *testing.T, r *testenv.Replica) {
 			"policies": []string{"ci-read-internal"},
 			"inline": []any{
 				map[string]any{
-					"repositories": []string{"npm-internal"}, "packages": map[string]any{"include": []string{"@{{ namespace_path | slug }}/*"}},
+					"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"@{{ namespace_path | slug }}/*"}},
 					"actions": []string{"read", "deploy"}, "ownership": "bind_project",
 				},
 				map[string]any{
-					"repositories": []string{"nuget-internal"}, "packages": map[string]any{"include": []string{
+					"repositories": []string{"it/nuget-internal"}, "packages": map[string]any{"include": []string{
 						`{{ project_path | replace "/" "." | replace "-" "" }}`, `{{ project_path | replace "/" "." | replace "-" "" }}.*`,
 					}},
 					"actions": []string{"read", "deploy"}, "ownership": "bind_project",
@@ -217,7 +217,7 @@ func TestR_CI_012_TheDryRunClassifiesAForkPipelineAndHonoursTheOptIn(t *testing.
 		wantStatus(t, r, 200, "")
 		return r.JSON(t)
 	}
-	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("first", 10, all(eq("pipeline_source", "merge_request_event")), "npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("first", 10, all(eq("pipeline_source", "merge_request_event")), "it/npm-internal")), 201, "")
 	got := evaluate()
 	if got["crossProject"] != true || got["failure"] != "cross_project_source_denied" {
 		t.Errorf("crossProject %v, failure %v, want the default deny", got["crossProject"], got["failure"])
@@ -229,7 +229,7 @@ func TestR_CI_012_TheDryRunClassifiesAForkPipelineAndHonoursTheOptIn(t *testing.
 	// An opt-in on the first match; the later mapping stays out of the evaluation (first match per tier).
 	body := e.do(a, "GET", path+"/first", nil).JSON(t)
 	body["options"] = map[string]any{"crossProjectSource": "read_only"}
-	body["grants"] = grants(inline("npm-internal", []string{"*"}, "read"))
+	body["grants"] = grants(inline("it/npm-internal", []string{"*"}, "read"))
 	wantStatus(t, e.do(a, "PUT", path+"/first", body, "If-Match", "*"), 200, "")
 	got = evaluate()
 	if got["failure"] != nil || got["scope"] != "read:npm-internal" {
@@ -244,8 +244,8 @@ func TestR_CI_009_ADisabledMappingIsNotEvaluated(t *testing.T) {
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	path := mappingsOf("gitlab-main")
 	wantStatus(t, e.do(a, "POST", path, mapping("narrow", 10, all(eq("project_id", "1")),
-		grants(inline("npm-internal", []string{"*"}, "read")), map[string]any{"enabled": false})), 201, "")
-	wantStatus(t, e.do(a, "POST", path, mapping("broad", 20, all(eq("project_id", "1")), grants(inline("npm-internal", []string{"*"}, "read", "annotate")))), 201, "")
+		grants(inline("it/npm-internal", []string{"*"}, "read")), map[string]any{"enabled": false})), 201, "")
+	wantStatus(t, e.do(a, "POST", path, mapping("broad", 20, all(eq("project_id", "1")), grants(inline("it/npm-internal", []string{"*"}, "read", "annotate")))), 201, "")
 	r := e.do(a, "POST", issuersPath+"/gitlab-main/evaluate", map[string]any{"claims": map[string]any{"project_id": "1"}})
 	wantStatus(t, r, 200, "")
 	got := r.JSON(t)

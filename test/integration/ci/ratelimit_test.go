@@ -115,7 +115,7 @@ func TestR_CI_021_AnExemptAddressIsBoundedByTheSubjectBudget(t *testing.T) {
 	a := x.web("web-a")
 	x.issuer(a)
 	x.addMapping(a, releaseMapping("acme-release-publish", 100))
-	x.addMapping(a, mapping("second-read", 200, all(eq("namespace_id", "4712")), grants(inline("npm-internal", []string{"*"}, "read"))))
+	x.addMapping(a, mapping("second-read", 200, all(eq("namespace_id", "4712")), grants(inline("it/npm-internal", []string{"*"}, "read"))))
 	const runner = "198.51.100.44"
 
 	t.Run("R-CI-021 the exempt address is never refused by the address limiter", func(t *testing.T) {

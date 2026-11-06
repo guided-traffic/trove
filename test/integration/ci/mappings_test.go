@@ -30,7 +30,7 @@ func TestR_CI_009_TheMappingLifecycle(t *testing.T) {
 
 	versionBefore := e.number("SELECT mappings_version FROM ci_issuers WHERE name = 'gitlab-main'")
 	epochBefore := e.epoch("ci_mappings")
-	r := e.do(a, "POST", path, publishMapping("publish", 100, "npm-internal"))
+	r := e.do(a, "POST", path, publishMapping("publish", 100, "it/npm-internal"))
 	wantStatus(t, r, 201, "")
 	if loc := r.Header.Get("Location"); !strings.HasSuffix(loc, path+"/publish") {
 		t.Errorf("Location = %q", loc)
@@ -61,15 +61,15 @@ func TestR_CI_009_TheMappingLifecycle(t *testing.T) {
 
 	t.Run("R-CI-009 a name that exists is 409 and nothing is written", func(t *testing.T) {
 		before := e.epoch("ci_mappings")
-		wantStatus(t, e.do(b, "POST", path, publishMapping("publish", 200, "npm-internal")), 409, "already_exists")
+		wantStatus(t, e.do(b, "POST", path, publishMapping("publish", 200, "it/npm-internal")), 409, "already_exists")
 		if e.epoch("ci_mappings") != before || e.number("SELECT count(*) FROM principal WHERE kind = 'ci_mapping'") != 1 {
 			t.Error("a refused create wrote")
 		}
 	})
 
 	t.Run("R-CI-019 the list is in evaluation order and a read answers its ETag", func(t *testing.T) {
-		wantStatus(t, e.do(a, "POST", path, readOnlyMapping("readers", 900, all(eq("project_id", "4242")), "npm-internal")), 201, "")
-		wantStatus(t, e.do(a, "POST", path, readOnlyMapping("urgent", 10, all(eq("project_id", "4242")), "npm-internal")), 201, "")
+		wantStatus(t, e.do(a, "POST", path, readOnlyMapping("readers", 900, all(eq("project_id", "4242")), "it/npm-internal")), 201, "")
+		wantStatus(t, e.do(a, "POST", path, readOnlyMapping("urgent", 10, all(eq("project_id", "4242")), "it/npm-internal")), 201, "")
 		l := e.do(b, "GET", path, nil)
 		wantStatus(t, l, 200, "")
 		if got := strings.Join(names(t, l), ","); got != "urgent,publish,readers" {
@@ -139,10 +139,10 @@ func TestR_CI_009_FirstMatchPerTier(t *testing.T) {
 	// p10: merge request pipelines read only. p20: protected refs publish.
 	wantStatus(t, e.do(a, "POST", path, mapping("p10", 10,
 		all(eq("project_id", "4242"), eq("pipeline_source", "merge_request_event")),
-		grants(inline("npm-internal", []string{"*"}, "read")))), 201, "")
+		grants(inline("it/npm-internal", []string{"*"}, "read")))), 201, "")
 	wantStatus(t, e.do(a, "POST", path, mapping("p20", 20,
 		all(eq("project_id", "4242"), eq("ref_protected", true)),
-		grants(inline("npm-internal", []string{"@acme/*"}, "read", "deploy")))), 201, "")
+		grants(inline("it/npm-internal", []string{"@acme/*"}, "read", "deploy")))), 201, "")
 
 	evaluate := func(claims map[string]any, scope ...string) map[string]any {
 		body := map[string]any{"claims": claims}
@@ -187,8 +187,8 @@ func TestR_CI_009_ARenderFailureDoesNotFallThrough(t *testing.T) {
 	match := all(eq("project_id", "4242"))
 	// p10's template names a claim the token does not carry; p20 would match and render.
 	wantStatus(t, e.do(a, "POST", path, mapping("p10", 10, match,
-		grants(inline("npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read")))), 201, "")
-	wantStatus(t, e.do(a, "POST", path, mapping("p20", 20, match, grants(inline("npm-internal", []string{"*"}, "read")))), 201, "")
+		grants(inline("it/npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read")))), 201, "")
+	wantStatus(t, e.do(a, "POST", path, mapping("p20", 20, match, grants(inline("it/npm-internal", []string{"*"}, "read")))), 201, "")
 	r := e.do(a, "POST", issuersPath+"/gitlab-main/evaluate", map[string]any{"claims": map[string]any{"project_id": "4242"}})
 	wantStatus(t, r, 200, "")
 	got := r.JSON(t)
@@ -207,11 +207,11 @@ func TestR_CI_009_EqualPriorityInATierIsRefused(t *testing.T) {
 	e.issuer(t, a, "gitlab-other", false)
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	path := mappingsOf("gitlab-main")
-	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("first", 100, all(eq("project_id", "1")), "npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("first", 100, all(eq("project_id", "1")), "it/npm-internal")), 201, "")
 	before := e.epoch("ci_mappings")
-	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("second", 100, all(eq("project_id", "2")), "npm-internal")), 409, "priority_taken")
-	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-other"), readOnlyMapping("second", 100, all(eq("project_id", "2")), "npm-internal")), 201, "")
-	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("second", 200, all(eq("project_id", "2")), "npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("second", 100, all(eq("project_id", "2")), "it/npm-internal")), 409, "priority_taken")
+	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-other"), readOnlyMapping("second", 100, all(eq("project_id", "2")), "it/npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("second", 200, all(eq("project_id", "2")), "it/npm-internal")), 201, "")
 	if e.epoch("ci_mappings") != before+2 {
 		t.Error("a refused create wrote a change")
 	}
@@ -238,7 +238,7 @@ func TestR_CI_009_TwoIssuersKeepTheirOwnPrincipals(t *testing.T) {
 		return mapping("release-publish", 100, all(eq("project_id", "4242")), map[string]any{"policies": []string{"ci-read"}})
 	}
 	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-com"), body()), 201, "")
-	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-internal"), mapping("release-publish", 100, all(eq("project_id", "4242")), grants(inline("npm-internal", []string{"*"}, "read")))), 201, "")
+	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-internal"), mapping("release-publish", 100, all(eq("project_id", "4242")), grants(inline("it/npm-internal", []string{"*"}, "read")))), 201, "")
 	for _, name := range []string{"gitlab-com/release-publish", "gitlab-internal/release-publish"} {
 		if e.number("SELECT count(*) FROM principal WHERE kind = 'ci_mapping' AND name = $1", name) != 1 {
 			t.Errorf("no principal %s", name)
@@ -261,7 +261,7 @@ func TestR_CI_009_TwoIssuersKeepTheirOwnPrincipals(t *testing.T) {
 	if got := entries(); len(got) != 0 {
 		t.Errorf("after the delete the policy still lists %v", got)
 	}
-	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-com"), mapping("release-publish", 100, all(eq("project_id", "4242")), grants(inline("npm-internal", []string{"*"}, "read")))), 201, "")
+	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-com"), mapping("release-publish", 100, all(eq("project_id", "4242")), grants(inline("it/npm-internal", []string{"*"}, "read")))), 201, "")
 	if got := entries(); len(got) != 0 {
 		t.Errorf("a mapping created under the same name inherited the entries %v", got)
 	}
@@ -279,7 +279,7 @@ func TestThePrincipalOfAMappingMirrorsEnabled(t *testing.T) {
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	path := mappingsOf("gitlab-main")
 	status := func() string { return e.text("SELECT status FROM principal WHERE name = 'gitlab-main/publish'") }
-	wantStatus(t, e.do(a, "POST", path, mapping("publish", 10, all(eq("project_id", "1")), grants(inline("npm-internal", []string{"*"}, "read")), map[string]any{"enabled": false})), 201, "")
+	wantStatus(t, e.do(a, "POST", path, mapping("publish", 10, all(eq("project_id", "1")), grants(inline("it/npm-internal", []string{"*"}, "read")), map[string]any{"enabled": false})), 201, "")
 	if status() != "disabled" {
 		t.Errorf("a mapping created disabled has a principal %q", status())
 	}
@@ -305,7 +305,7 @@ func TestR_CI_020_APutWritesExactlyOneEvent(t *testing.T) {
 	e.issuer(t, a, "gitlab-main", false)
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	path := mappingsOf("gitlab-main")
-	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("publish", 10, all(eq("project_id", "1")), "npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("publish", 10, all(eq("project_id", "1")), "it/npm-internal")), 201, "")
 	events := func() map[string]int64 {
 		out := map[string]int64{}
 		for _, n := range []string{"created", "updated", "disabled", "enabled", "deleted"} {
@@ -365,7 +365,7 @@ func TestR_CI_002_CascadeDeletesTheMappingsAndTheirPrincipals(t *testing.T) {
 	wantStatus(t, e.do(a, "POST", issuersPath, d.body("gitlab-main")), 201, "")
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	for i, name := range []string{"publish", "readers"} {
-		wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping(name, 10*(i+1), all(eq("project_id", "4242")), "npm-internal")), 201, "")
+		wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping(name, 10*(i+1), all(eq("project_id", "4242")), "it/npm-internal")), 201, "")
 	}
 	wantStatus(t, e.do(a, "DELETE", issuersPath+"/gitlab-main", nil), 409, "conflict")
 	wantStatus(t, e.do(a, "DELETE", issuersPath+"/gitlab-main?cascade=true", nil), 204, "")
@@ -392,7 +392,7 @@ func TestAMappingWithIssuanceRecordsIsDisabledAndDeletedThroughTheRevoker(t *tes
 	e.issuer(t, a, "gitlab-main", false)
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	path := mappingsOf("gitlab-main")
-	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("publish", 10, all(eq("project_id", "1")), "npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", path, readOnlyMapping("publish", 10, all(eq("project_id", "1")), "it/npm-internal")), 201, "")
 	e.seedMappingIssuance("gitlab-main", "publish")
 	body := e.do(a, "GET", path+"/publish", nil).JSON(t)
 	body["enabled"] = false
@@ -430,7 +430,7 @@ func TestR_CI_009_ACachedMappingSetFollowsTheChangeAreaOnEveryReplica(t *testing
 			var took []time.Duration
 			for i := 0; i < trials; i++ {
 				name := fmt.Sprintf("m%03d", i)
-				wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping(name, i+1, all(eq("project_id", "1")), "npm-internal")), 201, "")
+				wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping(name, i+1, all(eq("project_id", "1")), "it/npm-internal")), 201, "")
 				start := time.Now()
 				within(t, "B's cache holding "+name, 5*time.Second, func() bool {
 					set, err := b.App.CIMappings().Set(t.Context(), id)
@@ -468,7 +468,7 @@ func TestR_CI_009_TheSetTxReadsTheCommittedStateAndLabelsIt(t *testing.T) {
 	e.issuer(t, a, "gitlab-main", false)
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	id := e.text("SELECT id::text FROM ci_issuers WHERE name = 'gitlab-main'")
-	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping("one", 1, all(eq("project_id", "1")), "npm-internal")), 201, "")
+	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping("one", 1, all(eq("project_id", "1")), "it/npm-internal")), 201, "")
 	// The change message of the create evicts the issuer's set when it is applied, and the fill rule (R-ARCH-018)
 	// does not cache a set read while one is being applied: wait until A applied everything, then fill the copy.
 	within(t, "A applying the change of the create", 5*time.Second, func() bool {

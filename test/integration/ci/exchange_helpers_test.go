@@ -118,7 +118,7 @@ func releaseCondition() map[string]any {
 func releaseMapping(name string, priority int, extra ...map[string]any) map[string]any {
 	return mapping(name, priority, releaseCondition(), map[string]any{
 		"policies": []string{"ci-read-internal"},
-		"inline":   []any{inline("npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read", "deploy")},
+		"inline":   []any{inline("it/npm-internal", []string{"@{{ namespace_path | slug }}/*"}, "read", "deploy")},
 	}, extra...)
 }
 

@@ -48,10 +48,11 @@ type ciEnv struct {
 }
 
 // ciMapping is a mapping row the fixture wrote.
-type ciMapping struct{ id, principalID, name string }
+type ciMapping struct{ id, principalID, name, project string }
 
-// ref is the principal reference of the mapping, ci:<issuer>/<mapping> (R-AUTHZ-002).
-func (m ciMapping) ref() string { return claims.MappingRef(ciIssuerName, "", m.name) }
+// ref is the principal reference of the mapping, ci:<issuer>/<mapping>, or ci:<issuer>/<project>/<mapping> for a
+// mapping of a project's tier (R-AUTHZ-002, Q-AUTHZ-214).
+func (m ciMapping) ref() string { return claims.MappingRef(ciIssuerName, m.project, m.name) }
 
 func newCIEnv(t *testing.T, valkey bool, mappings ...string) *ciEnv {
 	t.Helper()
@@ -176,7 +177,16 @@ func (e *ciEnv) issueScoped(r *testenv.Replica, f claims.Frozen, j job, ttl time
 // attached, the package document and the tarball of an install.
 
 func npmPath(repo, name string) string {
-	return "/api/npm/" + repo + "/" + strings.ReplaceAll(name, "/", "%2f")
+	return npmBase(repo) + strings.ReplaceAll(name, "/", "%2f")
+}
+
+// npmBase is the protocol base path of a repository: "<project>/<key>", or a bare key of the default project.
+func npmBase(repo string) string {
+	project, key := testenv.DefaultProject, repo
+	if p, k, ok := strings.Cut(repo, "/"); ok {
+		project, key = p, k
+	}
+	return testenv.ProtocolURL("npm", project, key)
 }
 
 // npmBody is the publish request of a version; description makes two builds of one version differ, as two projects' builds do.
@@ -257,7 +267,7 @@ func TestR_CI_013_AJobInstallsThroughItsPolicyAndPublishesItsOwnPackage(t *testi
 	mustStatus(t, "seeding a dependency", e.publish(a, "npm-internal", opsTok, "@acme/base", "1.0.0"), 201)
 
 	// The inline grant of R-CI-013's example, rendered for acme/billing/invoice-api.
-	spec := claims.Spec{Inline: []claims.InlineGrant{grant([]string{"npm-internal"}, []string{"@{{ namespace_path | slug }}/*"}, claims.Read, claims.Deploy)}}
+	spec := claims.Spec{Inline: []claims.InlineGrant{grant([]string{"it/npm-internal"}, []string{"@{{ namespace_path | slug }}/*"}, claims.Read, claims.Deploy)}}
 	rendered, err := spec.Render(claims.Claims{"namespace_path": "acme/billing", "project_path": "acme/billing/invoice-api"})
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +284,7 @@ func TestR_CI_013_AJobInstallsThroughItsPolicyAndPublishesItsOwnPackage(t *testi
 		mustStatus(t, "publish", e.publish(a, "npm-internal", tok.secret, "@acme-shipping/x", "1.0.0"), 403)
 	})
 	t.Run("R-AUTHZ-014 the rendering of team/ui* matches the literal name only, so @acme/ui-kit is refused", func(t *testing.T) {
-		spec := claims.Spec{Inline: []claims.InlineGrant{grant([]string{"npm-internal"}, []string{"@acme/{{ project_path | segment -1 }}"}, claims.Read, claims.Deploy)}}
+		spec := claims.Spec{Inline: []claims.InlineGrant{grant([]string{"it/npm-internal"}, []string{"@acme/{{ project_path | segment -1 }}"}, claims.Read, claims.Deploy)}}
 		r, err := spec.Render(claims.Claims{"project_path": "team/ui*"})
 		if err != nil || r.Inline[0].Packages.Include[0] != `@acme/ui\*` {
 			t.Fatalf("rendered %v, %v", r, err)
@@ -295,11 +305,11 @@ func TestR_AUTHZ_002_ACITokenIsNeitherAuthenticatedNorInAnAutoJoinGroup(t *testi
 	reader := e.stack.User("reader")
 	readerTok := e.stack.Token(reader, scope.Default())
 	a := e.web("web-a")
-	tok := e.issue(a, e.bundle("4711", "acme/web/frontend", m.contribution(nil, grant([]string{"npm-internal"}, []string{"@acme/*"}, claims.Read))), job{"1", "2"}, 10*time.Minute)
-	if r := e.stack.Do(a, "GET", "/api/npm/npm-loose/-/whoami", readerTok, nil); r.Status != 200 {
+	tok := e.issue(a, e.bundle("4711", "acme/web/frontend", m.contribution(nil, grant([]string{"it/npm-internal"}, []string{"@acme/*"}, claims.Read))), job{"1", "2"}, 10*time.Minute)
+	if r := e.stack.Do(a, "GET", "/api/npm/it/npm-loose/-/whoami", readerTok, nil); r.Status != 200 {
 		t.Fatalf("the user cannot see npm-loose: %d", r.Status)
 	}
-	if r := e.stack.Do(a, "GET", "/api/npm/npm-loose/-/whoami", tok.secret, nil); r.Status != 404 {
+	if r := e.stack.Do(a, "GET", "/api/npm/it/npm-loose/-/whoami", tok.secret, nil); r.Status != 404 {
 		t.Fatalf("the CI token sees npm-loose: %d %s", r.Status, r.Body)
 	}
 }
@@ -357,7 +367,7 @@ func TestR_AUTHZ_014_RemovingAMappingFromAPolicyFailsTheNextInstall(t *testing.T
 			reps := []*testenv.Replica{e.web("web-a"), e.web("web-b"), e.web("web-c")}
 			mustStatus(t, "seeding", e.publish(reps[0], "npm-internal", opsTok, "@acme/base", "1.0.0"), 201)
 			created := e.do(reps[0], "POST", "/api/v1/permission-policies", map[string]any{
-				"name": "ci-read-internal", "resources": map[string]any{"repositories": []string{"npm-all", "npm-internal"}},
+				"name": "ci-read-internal", "resources": map[string]any{"repositories": []string{"it/npm-all", "npm-internal"}},
 				"entries": []any{map[string]any{"principal": m.ref(), "actions": []string{"read"}}},
 			})
 			wantStatus(t, created, 201, "")
@@ -390,11 +400,11 @@ func TestR_CI_017_TheTokenIsPresentedLikeEveryTroveToken(t *testing.T) {
 	m := e.maps["acme-release"]
 	a := e.web("web-a")
 	tok := e.issue(a, e.bundle("4711", "acme/web/frontend", m.contribution(nil,
-		grant([]string{"npm-internal"}, []string{"@acme/*"}, claims.Read, claims.Deploy),
-		grant([]string{"nuget-internal"}, []string{"Acme.*"}, claims.Read, claims.Deploy))), job{"5", "6"}, 10*time.Minute)
+		grant([]string{"it/npm-internal"}, []string{"@acme/*"}, claims.Read, claims.Deploy),
+		grant([]string{"it/nuget-internal"}, []string{"Acme.*"}, claims.Read, claims.Deploy))), job{"5", "6"}, 10*time.Minute)
 
 	t.Run("R-CI-017 npm whoami with Bearer", func(t *testing.T) {
-		r := e.stack.Do(a, "GET", "/api/npm/npm-internal/-/whoami", tok.secret, nil)
+		r := e.stack.Do(a, "GET", "/api/npm/it/npm-internal/-/whoami", tok.secret, nil)
 		mustStatus(t, "whoami", r, 200)
 		if got := r.JSON(t)["username"]; got != "ci:"+ciIssuerName+"/acme-release" {
 			t.Errorf("username %v", got)
@@ -402,11 +412,11 @@ func TestR_CI_017_TheTokenIsPresentedLikeEveryTroveToken(t *testing.T) {
 	})
 	t.Run("R-CI-017 a NuGet source with Basic credentials", func(t *testing.T) {
 		basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("gitlab-ci-token:"+tok.secret))
-		mustStatus(t, "service index", e.stack.Do(a, "GET", "/api/nuget/nuget-internal/v3/index.json", "", nil, "Authorization", basic), 200)
+		mustStatus(t, "service index", e.stack.Do(a, "GET", "/api/nuget/it/nuget-internal/v3/index.json", "", nil, "Authorization", basic), 200)
 	})
 	t.Run("R-CI-017 dotnet nuget push -k sends the token as X-NuGet-ApiKey", func(t *testing.T) {
 		body, ct := nugetForm(t, nupkg(t, "Acme.Widgets", "1.0.0"))
-		r := e.stack.Do(a, "PUT", "/api/nuget/nuget-internal/v3/package", "", body, "Content-Type", ct, "X-NuGet-ApiKey", tok.secret)
+		r := e.stack.Do(a, "PUT", "/api/nuget/it/nuget-internal/v3/package", "", body, "Content-Type", ct, "X-NuGet-ApiKey", tok.secret)
 		mustStatus(t, "push", r, 201)
 	})
 }

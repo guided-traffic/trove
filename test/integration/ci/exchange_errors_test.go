@@ -36,14 +36,14 @@ func TestR_CI_008_EveryReasonOfTheErrorTable(t *testing.T) {
 	x.issuer(a)
 	x.addMapping(a, releaseMapping("acme-release-publish", 100))
 	// A mapping whose grant renders the environment claim: a token without one fails to render (R-CI-014).
-	x.addMapping(a, mapping("env-read", 200, all(eq("project_id", "5555")), grants(inline("npm-internal", []string{"@{{ environment | slug }}/*"}, "read"))))
+	x.addMapping(a, mapping("env-read", 200, all(eq("project_id", "5555")), grants(inline("it/npm-internal", []string{"@{{ environment | slug }}/*"}, "read"))))
 	// The other issuers of the destructive cases, each of a double of its own.
 	other := startDouble(t, oidcstub.Config{Audience: troveAudience})
 	stale := startDouble(t, oidcstub.Config{Audience: troveAudience})
 	broken := startDouble(t, oidcstub.Config{Audience: troveAudience})
 	for name, d := range map[string]*double{"gitlab-other": other, "gitlab-stale": stale, "gitlab-broken": broken} {
 		wantStatus(t, x.do(a, "POST", issuersPath, d.body(name)), 201, "")
-		wantStatus(t, x.do(a, "POST", mappingsOf(name), readOnlyMapping("all-read", 1, releaseCondition(), "npm-internal")), 201, "")
+		wantStatus(t, x.do(a, "POST", mappingsOf(name), readOnlyMapping("all-read", 1, releaseCondition(), "it/npm-internal")), 201, "")
 	}
 	x.settled()
 	now := time.Now().Unix()

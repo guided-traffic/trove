@@ -21,7 +21,7 @@ func TestR_CI_010_TheSaveTimeRulesOverHTTP(t *testing.T) {
 	e.issuer(t, a, "gitlab-public", true) // public: pin_required applies
 	e.stack.Repository("npm-internal", "local", "npm", "{}")
 	pinned := all(eq("project_id", "4242"), eq("ref_protected", true))
-	read := grants(inline("npm-internal", []string{"*"}, "read"))
+	read := grants(inline("it/npm-internal", []string{"*"}, "read"))
 
 	for name, tc := range map[string]struct {
 		issuer string
@@ -39,23 +39,23 @@ func TestR_CI_010_TheSaveTimeRulesOverHTTP(t *testing.T) {
 			"gitlab-main", mapping("mm", 1, deepCondition(), read), "condition_invalid", "",
 		},
 		"R-CI-011 deploy needs ref_protected": {
-			"gitlab-main", mapping("mm", 1, all(eq("project_id", "4242")), grants(inline("npm-internal", []string{"@a/*"}, "deploy"))),
+			"gitlab-main", mapping("mm", 1, all(eq("project_id", "4242")), grants(inline("it/npm-internal", []string{"@a/*"}, "deploy"))),
 			"unprotected_write", "/match unprotected_write",
 		},
 		"R-CI-010 a write on a private issuer without a pin and without bind_project": {
 			"gitlab-main", mapping("mm", 1, all(eq("ref_protected", true)),
-				grants(map[string]any{"repositories": []string{"npm-internal"}, "packages": map[string]any{"include": []string{"@a/*"}}, "actions": []string{"deploy"}, "ownership": "none"})),
+				grants(map[string]any{"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"@a/*"}}, "actions": []string{"deploy"}, "ownership": "none"})),
 			"unpinned_write", "/match unpinned_write",
 		},
 		"R-CI-013 manage is never grantable": {
-			"gitlab-main", mapping("mm", 1, pinned, grants(inline("npm-internal", []string{"*"}, "manage"))),
+			"gitlab-main", mapping("mm", 1, pinned, grants(inline("it/npm-internal", []string{"*"}, "manage"))),
 			"action_not_allowed", "/grants/inline/0/actions/0 action_not_allowed",
 		},
 		"R-CI-013 an empty grant specification": {
 			"gitlab-main", mapping("mm", 1, pinned, map[string]any{}), "empty_grant", "/grants empty_grant",
 		},
 		"R-CI-014 a template with a syntax error": {
-			"gitlab-main", mapping("mm", 1, pinned, grants(inline("npm-internal", []string{"{{ namespace_path"}, "read"))),
+			"gitlab-main", mapping("mm", 1, pinned, grants(inline("it/npm-internal", []string{"{{ namespace_path"}, "read"))),
 			"template_invalid", "/grants/inline/0/packages/include/0 template_invalid",
 		},
 		"R-CI-014 a repositories template that a claim value alone can select": {
@@ -133,14 +133,14 @@ func TestR_CI_010_TheWarningsOfASave(t *testing.T) {
 	path := mappingsOf("gitlab-main")
 
 	t.Run("R-CI-010 a private issuer's mapping without a pin warns unpinned_condition", func(t *testing.T) {
-		r := e.do(a, "POST", path, readOnlyMapping("loose", 1, all(eq("namespace_path", "acme")), "npm-internal"))
+		r := e.do(a, "POST", path, readOnlyMapping("loose", 1, all(eq("namespace_path", "acme")), "it/npm-internal"))
 		wantStatus(t, r, 201, "")
 		if !contains(warningCodes(t, r), "unpinned_condition") {
 			t.Errorf("warnings = %v", warningCodes(t, r))
 		}
 	})
 	t.Run("R-CI-013 an explicit ownership none on a writing grant saves with shared_ownership", func(t *testing.T) {
-		g := grants(map[string]any{"repositories": []string{"npm-internal"}, "packages": map[string]any{"include": []string{"@a/*"}}, "actions": []string{"read", "deploy"}, "ownership": "none"})
+		g := grants(map[string]any{"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"@a/*"}}, "actions": []string{"read", "deploy"}, "ownership": "none"})
 		r := e.do(a, "POST", path, mapping("shared", 2, all(eq("project_id", "4242"), eq("ref_protected", true), map[string]any{"claim": "pipeline_source", "in": []string{"push"}}), g))
 		wantStatus(t, r, 201, "")
 		if !contains(warningCodes(t, r), "shared_ownership") {
@@ -152,7 +152,7 @@ func TestR_CI_010_TheWarningsOfASave(t *testing.T) {
 		}
 	})
 	t.Run("R-CI-011 and R-CI-012 the visible opt-ins and a write without a pipeline_source", func(t *testing.T) {
-		r := e.do(a, "POST", path, mapping("optin", 3, all(eq("project_id", "4242")), grants(inline("npm-internal", []string{"@a/*"}, "deploy")),
+		r := e.do(a, "POST", path, mapping("optin", 3, all(eq("project_id", "4242")), grants(inline("it/npm-internal", []string{"@a/*"}, "deploy")),
 			map[string]any{"options": map[string]any{"allowUnprotectedRefs": true, "crossProjectSource": "read_only"}}))
 		wantStatus(t, r, 201, "")
 		codes := warningCodes(t, r)
@@ -172,7 +172,7 @@ func TestR_CI_010_TheWarningsOfASave(t *testing.T) {
 		}
 	})
 	t.Run("R-CI-013 an inline grant with deploy and no ownership reads back bind_project", func(t *testing.T) {
-		wantStatus(t, e.do(a, "POST", path, publishMapping("bound", 5, "npm-internal")), 201, "")
+		wantStatus(t, e.do(a, "POST", path, publishMapping("bound", 5, "it/npm-internal")), 201, "")
 		got := e.do(a, "GET", path+"/bound", nil).JSON(t)["grants"].(map[string]any)["inline"].([]any)[0].(map[string]any)
 		if got["ownership"] != "bind_project" {
 			t.Errorf("ownership = %v", got["ownership"])
