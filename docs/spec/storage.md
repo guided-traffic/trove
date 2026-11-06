@@ -1231,6 +1231,9 @@ Specified now because the download path must leave room for it; implementation i
   R-STOR-012) and `response-content-type`, and `Cache-Control: no-store`.
 - A virtual repository redirects only when the member that serves the item has the switch on.
 - Authorization happens before the URL is issued; download statistics are counted at issuance.
+- An installation that encrypts its stored content on the client side ([R-STOR-048](#r-stor-048--client-side-encryption-of-stored-content))
+  cannot redirect: the object store holds only ciphertext, so every download is decrypted and streamed by trove, and
+  `presignedDownloads: true` is refused there.
 - URLs are signed against `storage.s3.presign.endpoint` when set (a public host name in front
   of an in-cluster object store), otherwise against the configured endpoint. With temporary
   credentials (R-STOR-031) a URL stops working when the signing credentials expire, whichever
@@ -1252,6 +1255,95 @@ Acceptance criteria:
 - With the switch on, `curl -sI …/files/docker-local/<layer>` answers `302`;
   `curl -L -o layer.bin …` downloads a file whose SHA-256 matches; the URL fails after `ttl`.
 - Files below `min_size` are streamed (`200`).
+
+### R-STOR-048 · Client-side encryption of stored content
+Priority: **P2** · Covers: trove-only
+
+Decided by the owner on 2026-11-06: trove will store the content of its blobs encrypted in the object store, in the
+storage format of [s3-encryption-proxy](https://github.com/guided-traffic/s3-encryption-proxy) (s3ep), with s3ep
+imported as a Go module. Not built. This block is the ticket for that work ([FULL.md](../projektplan/FULL.md), block E);
+the points under "Open before it is built" are decided when it is planned.
+
+Why: the object store, its operators, its backups and anybody who can read the bucket see only ciphertext, and the key
+encryption key stays with trove. An object trove writes is readable through s3ep with the same key and metadata prefix,
+and the other way round, so an operator can read a blob without trove.
+
+What it means:
+
+- trove is always the proxy: every download is decrypted and streamed by trove. Presigned redirects (R-STOR-014) are
+  refused while it is on. Server-side encryption (R-STOR-032) stays possible beneath it.
+- Each blob has one random 256-bit data key; the content is an AES-256-GCM segment chain closed by a sealed trailer (the
+  plaintext's length and CRC32C). The data key is wrapped by an AES-256 key encryption key and stored in four object
+  metadata keys under a prefix (s3ep's default `s3ep-`).
+- One key encryption key is active and wraps new objects; retired keys only open what they wrapped. A key is base64 of
+  32 random bytes; s3ep's rules refuse a passphrase or a low-entropy value.
+- Every byte handed out is authenticated; a whole-object read is verified when its body ends (the trailer), so the
+  hold-back of R-STOR-013 stays the gate of a complete response. Ranged reads are authenticated per segment, which narrows
+  H-11 for ranged responses.
+- An object that is not in the format is refused, never served.
+
+Reference: the owner's sketch `s3enc` of 2026-11-06, glue around s3ep's `pkg/encryption/...`: `New(api,
+Options{ActiveKey, RetiredKeys, MetadataPrefix, PartSize, Concurrency})`, `Put` (streamed, through
+`feature/s3/transfermanager`), `Get`, `GetRange` (a `HEAD` and one ranged `GET` pinned to the entity tag), `Stat` (the
+authenticated length and CRC32C from the last 40 stored bytes), `Copy` (re-encrypts, streamed) and `PlaintextSize`; the
+errors `ErrNotEncrypted`, `ErrUnknownKey`, `ErrKeyMaterialUnreadable`, `ErrCorrupt`, `ErrRangeNotSatisfiable`,
+`ErrReservedMetadata`; unit tests and an interoperability test against a running s3ep. It lives in the s3ep work area,
+not in this repository.
+
+Open before it is built, each a decision with the spec edits it causes:
+
+1. **Where the glue lives.** As a supported package of the s3ep repository that trove imports, with the
+   interoperability test in s3ep's CI; or as `internal/blob/s3enc` in trove, pinning s3ep's `pkg/encryption` by
+   pseudo-version (its module path carries no `/v5`, so a release tag cannot be required). s3ep's `pkg/` is not a
+   declared public API, and stored-data compatibility is not owed across its major releases, which favours the first.
+2. **The seam to `blob.ObjectStore`.** s3enc uploads from one stream; trove drives the multipart calls itself: parts
+   read from the spool with per-part checksums and retries (R-STOR-006), and upload sessions that append parts across
+   requests and replicas (R-STOR-011). Either an encrypting `ObjectStore` that maps trove's calls onto the segment chain
+   (a retried part must produce the same ciphertext, and a session's chain state, its segment index, running CRC32C and
+   wrapped data key, must live in PostgreSQL so that any replica continues it), or trove's upload path uses the stream
+   API for an encrypted installation and gives up its own part control there.
+3. **Server-side copies.** The segments are authenticated under the object key, so an object copied to another key
+   cannot be read. That hits the finalize of an upload session (R-STOR-011 copies `_uploads/<session-id>/data` to the
+   content address, "no byte passes through trove") and the backup copy from `<prefix>/sha256/…` to `pool/sha256/…`
+   ([backup-and-restore.md](backup-and-restore.md)) with its restore. Either re-encrypt, streamed through a replica (one
+   read and one write of the blob, multi-gigabyte blobs included), or bind the segments to a name that does not change
+   with the copy (the content address `sha256/<hex>`), which keeps server-side copies but loses reading through s3ep,
+   which binds the object key.
+4. **Confirming a file.** The object key is the plaintext's SHA-256 (R-STOR-001), so whoever can list the bucket can
+   confirm, without any key, that a known file (a public tarball, a leaked document) is stored. Either accept and
+   document it, or give an encrypted installation keyed object names (a MAC of the digest under a secret of the
+   installation), which changes R-STOR-001, the orphan sweep (R-STOR-026), the scrub (R-STOR-027) and the backup layout.
+5. **Scope.** Installation-wide, or per repository. Blobs are deduplicated across repositories and projects (INV-4), so
+   per repository needs one blob per setting and gives up that deduplication. The other key families of the bucket (the
+   UI's shared asset store, Q-HA-120; the tails of upload sessions) are either encrypted too, or read with the plain
+   client, because s3enc refuses plain objects.
+6. **Switching on and off.** An installation with plain objects cannot read them through s3enc. Before the first stable
+   release a fresh bucket is enough; after it, a resumable worker job that re-encrypts every blob (and one that reverses
+   it), or the switch only on an empty bucket.
+7. **Key custody and rotation.** The key encryption keys come from mounted files and change without a restart, as the
+   TLS certificates do. A retired key stays until every object it wrapped is moved onto the active key; whether s3ep
+   accepts a re-wrap that rewrites only the metadata (a copy of the object onto its own key) is not checked, the
+   alternative is s3enc's re-encrypting `Copy`. Losing the key encryption keys loses every blob, so they are backed up
+   apart from the bucket and its backups, and a restore (R-BAK) needs them.
+8. **Sizes.** A listing reports stored sizes (ciphertext, segment overhead and trailer); the orphan sweep, the storage
+   summary's physical figure (R-STOR-028) and the quotas convert them with `PlaintextSize` or read sizes from
+   PostgreSQL. A project is charged the logical size in any case (Q-STOR-155).
+9. **Cost.** AES-256-GCM on the `packages` pods for every upload and download; a ranged read costs a `HEAD` and a ranged
+   `GET` instead of one `GET`. The throughput targets are measured again with encryption on.
+10. **Dependencies.** The sketch requires newer patch releases of `aws-sdk-go-v2` than trove pins (`v1.47.8` against
+    `v1.47.5`, `service/s3` `v1.114.9` against `v1.114.6`) and adds `feature/s3/transfermanager` (v0.x): one version of
+    each, raised everywhere.
+11. **The Bastion.** Its cache backend is a store of its own (R-BAS-030); whether it encrypts too.
+
+Acceptance criteria, once built:
+
+- With encryption on, `aws s3api get-object` of a blob returns ciphertext whose metadata carries the four format keys;
+  a download through trove returns the original bytes (SHA-256 matches); the object read through s3ep with the same key
+  and prefix returns the same bytes, and an object written through s3ep is served by trove.
+- A blob whose stored bytes were altered fails authentication: the download is aborted (R-STOR-013) and the blob is
+  marked `corrupt`.
+- `presignedDownloads: true` is refused while encryption is on.
+- After a key rotation, objects wrapped by the retired key are still served until they are moved onto the active key.
 
 ### R-STOR-015 · Download statistics
 Priority: **P1** · Covers: ART-029
@@ -2388,9 +2480,10 @@ Priority: **P1** · Covers: STOR-022
   The mode is sent on every `PutObject` and `CreateMultipartUpload`.
 - With `kms`, the credentials need `kms:GenerateDataKey` (writes, multipart) and `kms:Decrypt`
   (reads, multipart completion, presigned downloads).
-- SSE with customer-provided keys and client-side encryption are not supported: the first would
-  make trove hold the data key and break presigned redirects, the second cannot coexist with
-  server-side payload checksums and ranged reads in the same way (Deferred).
+- SSE with customer-provided keys is not supported: it would make trove hold the data key and break
+  presigned redirects. Client-side encryption is planned as
+  [R-STOR-048](#r-stor-048--client-side-encryption-of-stored-content) (P2, not built), in the format of
+  s3-encryption-proxy.
 - Changing the mode affects new objects only; existing objects keep their encryption.
 
 Configuration:

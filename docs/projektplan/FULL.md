@@ -208,6 +208,8 @@ all four columns green.
 - ⚪ Push and pull replication between installations
 - ⚪ Query language for files, packages and properties
 - ⚪ Presigned download redirects for large artifacts
+- ⚪ Client-side encryption of the stored content in the format of s3-encryption-proxy, imported as a module; trove then always
+  streams downloads itself ([R-STOR-048](../spec/storage.md#r-stor-048--client-side-encryption-of-stored-content), the ticket with its open decisions)
 - ⚪ Further storage back ends (Google Cloud Storage, Azure Blob Storage), sharding over several buckets
 - ⚪ Email notice of expiring tokens
 - ⚪ TLS from the edge proxy to the pods

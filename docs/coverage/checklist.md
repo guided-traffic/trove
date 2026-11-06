@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 451 of 689 spec requirements are implemented: a passing test names them and no
+**Status.** 450 of 690 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (344 of them implemented), 1,535 open.
-689 spec requirements: 546 cover catalog features, 143 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (342 of them implemented), 1,535 open.
+690 spec requirements: 546 cover catalog features, 144 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -36,7 +36,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 25 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
-| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 14 |
+| [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 12 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 31 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 22 |
@@ -770,7 +770,7 @@ Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · sp
 Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specified by priority: MVP 12 of 12 · P1 7 of 7 · P2 2 of 20 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>41 features: 21 specified, 20 open, 14 implemented</summary>
+<summary>41 features: 21 specified, 20 open, 12 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -805,8 +805,8 @@ Catalog page: [storage-and-blobs.md](../features/storage-and-blobs.md) · specif
 | STOR-029 | Compatibility with S3-compatible object stores | MVP | implemented | [R-STOR-030](../spec/storage.md) (implemented), [R-STOR-035](../spec/storage.md) (implemented) |
 | STOR-030 | Google Cloud Storage | P2 | open | – |
 | STOR-031 | Azure Blob Storage | P2 | open | – |
-| STOR-032 | Download redirect to signed object-storage URLs | P2 | implemented | [R-STOR-014](../spec/storage.md) (implemented) |
-| STOR-033 | Minimum size for redirected downloads | P2 | implemented | [R-STOR-014](../spec/storage.md) (implemented) |
+| STOR-032 | Download redirect to signed object-storage URLs | P2 | specified | [R-STOR-014](../spec/storage.md) |
+| STOR-033 | Minimum size for redirected downloads | P2 | specified | [R-STOR-014](../spec/storage.md) |
 | STOR-034 | CDN-signed download URLs | P2 | open | – |
 | STOR-035 | Client choice of the redirect target | P2 | open | – |
 | STOR-036 | Garbage collection of unreferenced binaries | MVP | implemented | [R-STOR-024](../spec/storage.md) (implemented) |
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>143 requirements</summary>
+<summary>144 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3105,6 +3105,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-REPO-047 (implemented) | Proxy and resolution observability | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-STOR-011 | Multi-request upload sessions | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-013 (implemented) | Download integrity verification | MVP | [storage.md](../spec/storage.md) |
+| R-STOR-048 | Client-side encryption of stored content | P2 | [storage.md](../spec/storage.md) |
 | R-STOR-027 (implemented) | Integrity scrub | P1 | [storage.md](../spec/storage.md) |
 | R-STOR-036 (implemented) | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-046 (implemented) | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
