@@ -89,8 +89,9 @@ func (s *Server) BastionCheck(w http.ResponseWriter, r *http.Request, _ gen.Bast
 
 // checkRequest validates the semantics of a check body (R-BAS-011) and returns the client address.
 func (s *Server) checkRequest(req iface.CheckRequest) (netip.Addr, error) {
-	invalid := func(pointer, code, detail string) error {
-		return errs.E(errs.Invalid, errs.CodeInvalid, "The check request is not valid.", errs.WithFields(errs.FieldError{Pointer: pointer, Code: code, Detail: detail}))
+	invalid := func(pointer, code, detail string, opts ...errs.Option) error {
+		opts = append(opts, errs.WithFields(errs.FieldError{Pointer: pointer, Code: code, Detail: detail}))
+		return errs.E(errs.Invalid, errs.CodeInvalid, "The check request is not valid.", opts...)
 	}
 	addr, err := netip.ParseAddr(req.ClientAddress)
 	if err != nil {
@@ -102,7 +103,7 @@ func (s *Server) checkRequest(req iface.CheckRequest) (netip.Addr, error) {
 	}
 	for i, key := range req.Repositories {
 		if _, perr := qname.ParseRepo(key); perr != nil || len(key) > 255 {
-			return netip.Addr{}, invalid("/repositories/"+strconv.Itoa(i), "invalid_key", "must be a repository name <project>/<key> of at most 255 characters")
+			return netip.Addr{}, invalid("/repositories/"+strconv.Itoa(i), "invalid_key", "must be a repository name <project>/<key> of at most 255 characters", errs.WithBadRequest())
 		}
 	}
 	if req.Credential != nil && len(*req.Credential) > maxCredentialLen {
