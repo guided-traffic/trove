@@ -228,5 +228,17 @@ func ScopeOptions() scope.Options {
 	return scope.Options{
 		Endpoint:        func(n string) bool { _, ok := accepts[n]; return ok },
 		EndpointAccepts: func(n, t string) bool { return slices.Contains(accepts[n], t) },
+		// The patterns are judged by the rules that apply them (R-AUTH-024): a repository selector of a scope is an
+		// instance selector, so a bare key is invalid_scope.
+		Pattern: func(dimension, p string) error {
+			switch dimension {
+			case "repositories":
+				return authz.ValidateSelector(p)
+			case "packages":
+				return authz.ValidatePackagePattern(p)
+			default:
+				return authz.ValidatePathPattern(p)
+			}
+		},
 	}
 }

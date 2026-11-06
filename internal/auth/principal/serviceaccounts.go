@@ -89,7 +89,7 @@ func (m *Manager) checkNewServiceAccount(project string, in NewServiceAccount) e
 		return NotFound("The project")
 	}
 	if project != "" && in.Admin {
-		return errs.E(errs.Invalid, errs.CodeRoleNotAllowed, "A project service account holds no system role.")
+		return errs.E(errs.Unprocessable, errs.CodeRoleNotAllowed, "A project service account holds no system role.")
 	}
 	if in.Admin && m.admin == nil {
 		return ErrAdminBinding
@@ -359,7 +359,7 @@ func (m *Manager) deleteAccount(ctx context.Context, c Caller, o qname.Object) e
 		if err != nil {
 			return err
 		}
-		if _, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{PrincipalID: id, RevokedBy: c.Actor.ID, Reason: "principal_deleted"}); err != nil {
+		if _, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{PrincipalID: id, RevokedBy: c.Actor.ID, Reason: "principal_disabled"}); err != nil {
 			return err
 		}
 		memberships, err := qs.IdentityCountMembershipsOfMember(ctx, id)

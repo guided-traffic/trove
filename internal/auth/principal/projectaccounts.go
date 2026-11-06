@@ -30,6 +30,17 @@ func projectOnly(o qname.Object) (qname.Object, error) {
 	return o, nil
 }
 
+// ServiceAccountByRef reads the account a principal reference names: ref is what follows "sa:", the bare
+// name of an instance-wide account or "<project>/<name>" of a project's. 404 when there is none, and for a
+// text that is no name.
+func (m *Manager) ServiceAccountByRef(ctx context.Context, ref string) (ServiceAccount, error) {
+	o, err := qname.ParseObject(ref)
+	if err != nil {
+		return ServiceAccount{}, NotFound("The service account")
+	}
+	return m.getAccount(ctx, o)
+}
+
 // CreateProjectServiceAccount creates the service account in.Name of the project: unique within the
 // project (409 already_exists), no group member, no role holder (in.Admin: 422 role_not_allowed). The
 // project must exist (404).

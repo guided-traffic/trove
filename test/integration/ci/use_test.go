@@ -51,7 +51,7 @@ type ciEnv struct {
 type ciMapping struct{ id, principalID, name string }
 
 // ref is the principal reference of the mapping, ci:<issuer>/<mapping> (R-AUTHZ-002).
-func (m ciMapping) ref() string { return claims.MappingRef(ciIssuerName, m.name) }
+func (m ciMapping) ref() string { return claims.MappingRef(ciIssuerName, "", m.name) }
 
 func newCIEnv(t *testing.T, valkey bool, mappings ...string) *ciEnv {
 	t.Helper()

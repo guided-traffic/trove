@@ -545,7 +545,7 @@ func TestAPIOperations(t *testing.T) {
 			want(t, next().call(post, "/api/v1/tokens/"+own.Record.ID+"/rotate", alicePAT, map[string]any{"overlapSeconds": 100000}), 422, "validation_failed")
 			// The scope of a presenting token bounds a rotation.
 			narrow := a.pat(alice, func(r *token.CreateRequest) {
-				r.Scope = []byte(`{"inherit":false,"repositories":[{"repositories":["npm-local"],"actions":["read"]}]}`)
+				r.Scope = []byte(`{"inherit":false,"repositories":[{"repositories":["it/npm-local"],"actions":["read"]}]}`)
 			})
 			want(t, next().call(post, "/api/v1/tokens/"+rot["id"].(string)+"/rotate", narrow.Secret, nil), 403, "derivation_exceeds_parent")
 			// A token rotates itself only when it was created with selfRotatable.
