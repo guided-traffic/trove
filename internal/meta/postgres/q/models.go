@@ -839,6 +839,17 @@ type SystemState struct {
 	UpdatedBy pgtype.UUID
 }
 
+type UiAsset struct {
+	ID          pgtype.Int8
+	Locale      string
+	Path        string
+	BlobSha256  []byte
+	Size        int64
+	PublishedBy string
+	PublishedAt pgtype.Timestamptz
+	SeenAt      pgtype.Timestamptz
+}
+
 type UiSession struct {
 	ID                pgtype.UUID
 	SecretSha256      []byte

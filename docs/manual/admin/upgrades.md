@@ -70,6 +70,15 @@ kubectl -n trove rollout status deployment/trove-worker
 
 If the Job fails, `helm upgrade` fails and the Deployments stay as they were: the replicas of the previous version keep serving. The Job retries a failed run twice (`migrations.backoffLimit`) within 30 minutes (`migrations.activeDeadlineSeconds`); a run that a node drain evicts does not count as a failure, and a refusal (exit status 3) fails the Job at once because retrying cannot change it. The log of the Job names the cause.
 
+### The web UI during the rollout
+
+While the rollout runs, a browser's requests reach pods of both versions, and each version's UI consists of files named after their content. So that a page loads whichever pod answers, every `api` pod (and `web` pod of the bridge) stores the UI files of its version in the object store before it reports ready, and serves the files of the other version from there. You need to do nothing for it:
+
+- A new `api` pod logs `the UI's hashed files are in the shared asset store` with the number of files once it has stored them. The first pod of a new version stores about 270 files (about 5 MB in both languages); the pods after it find them there.
+- The files of a version stay in the object store for 7 days after its last pod stopped, so that a browser tab opened before the upgrade keeps working, and are then removed by the garbage collection of the object store. The database table `ui_assets` names them; it is not part of a backup, and the pods store their files again after a restore.
+- If the object store cannot be reached during the rollout, a page of one version can fail to load a file from a pod of the other one: the browser shows an empty page, the pod answers `503` and logs `a hashed file of another release could not be read from the shared asset store`. Reloading the page fixes it. A pod that cannot store its files within a minute starts anyway and logs an error; it tries again every minute.
+- The first version that has this store cannot serve the files of the version you upgrade from, which never stored them: during that one upgrade a browser can still show an empty page once, until it is reloaded. Upgrades from that version on are not affected.
+
 ### Without the migration hook
 
 With `migrations.mode: disabled` the chart renders no Job, and you run the migration yourself, with the new image and the same configuration and database credentials, before you roll the Deployments:
@@ -129,7 +138,7 @@ kubectl -n trove rollout restart deploy/trove-worker
 
 ## What is not verified yet
 
-- **Mixed versions during the rollout.** For the length of a rolling update, replicas of the old and the new version serve requests side by side. The schema check is built for that, but a rolling upgrade from the previous release under load has not been tested yet. If an interruption matters to you, upgrade in a maintenance window.
+- **Mixed versions during the rollout.** For the length of a rolling update, replicas of the old and the new version serve requests side by side. The schema check and the UI's shared files are built for that, and the rolling upgrade from the previous release is tested under npm, NuGet and browser load on a test cluster; it has not been run on other clusters. If an interruption matters to you, upgrade in a maintenance window.
 - **Skipping releases.** The runner applies every pending migration in order, so an upgrade across several releases is a single migration run. An upgrade path across several published releases is not covered by a test.
 - **Rollback**, as described above.
 

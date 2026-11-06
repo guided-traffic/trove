@@ -1640,8 +1640,8 @@ jobs:
         run: make dev-down
 
   # The upgrade leg (set upgrade, deploy/dev/e2e.sh; docs/developer/e2e.md): published releases of the chart (https://guided-traffic.github.io/trove/)
-  # and their images (guidedtraffic/trove:<x.y.z> on Docker Hub) are installed on a kind cluster and upgraded to the image built from the
-  # commit, under the npm and the NuGet client loops and with a browser journey. Both clients images are needed, so the job runs on a
+  # and their images (guidedtraffic/trove:<x.y.z> on Docker Hub), and the commit with its second UI bundle, are installed on a kind cluster
+  # and upgraded to the image built from the commit, under the npm and the NuGet client loops and with a browser journey. Both clients images are needed, so the job runs on a
   # GitHub-hosted runner with the disk space freed, as e2e-vuln does (Q-ARCH-326). Edge port 8101 is the first free one after ha-suite's 8100.
   # A red leg is a finding and holds nothing (owner, 2026-11-01).
   e2e-upgrade:
@@ -1746,6 +1746,10 @@ jobs:
 
       - name: make image
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      # TestUpgrade_R_HA_020_AcrossTwoBundles installs the commit with its second UI bundle and upgrades to the image above (Q-HA-124).
+      - name: make image-marked
+        run: make image-marked VERSION=dev
 
       - name: make dev-up
         timeout-minutes: 25

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
@@ -62,6 +63,9 @@ type ReplicaOptions struct {
 	// Database adds options to the replica's database pools (app.Options.Database), such as the tracer of a
 	// RequestTransactions counter.
 	Database []postgres.Option
+	// UI replaces the UI build the binary embeds (app.Options.UIAssets): two replicas with different trees stand for two
+	// releases with different bundles (R-HA-020). Nil serves the embedded build.
+	UI fs.FS
 }
 
 // Replica is one in-process replica started through app.New.
@@ -100,7 +104,7 @@ func (s *Stack) Start(tb testing.TB, o ReplicaOptions) *Replica {
 		tb.Fatalf("config: %v", err)
 	}
 	logs := &SyncBuffer{}
-	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror, DialOverride: o.DialOverride, Database: o.Database})
+	a, err := app.New(app.Options{Loaded: loaded, Role: o.Role, Environ: environ, LogWriter: logs, Extra: o.Extra, Vuln: o.Vuln, Mirror: o.Mirror, DialOverride: o.DialOverride, Database: o.Database, UIAssets: o.UI})
 	if err != nil {
 		tb.Fatalf("new %s: %v", o.Name, err)
 	}

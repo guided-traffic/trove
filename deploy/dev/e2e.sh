@@ -67,8 +67,9 @@
 #                       CI: job e2e-mirror (a change to the mirror)
 #   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
-#   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, and the rolling
-#                       upgrade and rollback from the latest release, each under npm, NuGet and browser loops; it replaces the
+#   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, the rolling
+#                       upgrade and rollback from the latest release, and the rolling upgrade of the working tree from its second UI
+#                       bundle (make image-marked) to the image under test, each under npm, NuGet and browser loops; it replaces the
 #                       installation and returns the cluster to the current dev release (nightly, dispatch, locally)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
@@ -174,8 +175,10 @@ case "$set_name" in
   # and Valkey are emptied, an older release is installed from the published chart and image (v0.16.0 for the cut into roles, the
   # latest release before the working tree for the rolling upgrade), upgraded to the chart of the working tree and the image under
   # test (and rolled back) under npm ci, npm publish and dotnet restore loops through a virtual repository over a remote and a local
-  # repository, and a browser journey; the cluster ends with the current dev release again. Two client pods of each kind, the two
-  # counting test upstreams, and the browser tier on the host (npm ci in web/, npx playwright install chromium). The release tags
+  # repository, and a browser journey; the cluster ends with the current dev release again. The test across two bundles installs
+  # the working tree with the image of `make image-marked` (TROVE_IMAGE_MARKED) instead of a release and upgrades it to the image
+  # under test (Q-HA-124). Two client pods of each kind, the two counting test upstreams, and the browser tier on the host (npm ci
+  # in web/, npx playwright install chromium). The release tags
   # must be in the checkout (git fetch --tags) and the cluster needs access to Docker Hub and https://guided-traffic.github.io/trove/.
   # A long leg: nightly, on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
   upgrade) run='^TestUpgrade_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;

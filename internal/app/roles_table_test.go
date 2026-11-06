@@ -20,7 +20,8 @@ func roleTable() map[string][]Area {
 	}
 	listener := []Area{AreaLimits, AreaVirtualEngine, AreaAuth, AreaEndpoints, AreaAPI}
 	filling := []Area{AreaProxyEngine, AreaFormatHost}
-	management := []Area{AreaPackagesAPI, AreaVulnAPI, AreaSessions, AreaLogin, AreaCIExchange}
+	// The shared asset store of the UI is where the UI is served (R-HA-020, Q-HA-120): api, the bridge web, and all.
+	management := []Area{AreaPackagesAPI, AreaVulnAPI, AreaSessions, AreaLogin, AreaUIAssets, AreaCIExchange}
 	// The background engine of the mirror's passes runs where jobs are claimed (R-REPO-053, Q-ARCH-316): worker and all.
 	jobs := []Area{AreaMirrorEngine}
 	join := func(parts ...[]Area) []Area {
@@ -51,7 +52,7 @@ func inStepOrder(want []Area) []Area {
 }
 
 // TestR_ARCH_001_RoleTableIsData is the architecture test of the role table (Q-ARCH-294, E6a.1): the areas of each role equal
-// its column of the table, in step order; packages has none of sessions, login, ci_exchange, packages-api and vuln-api; api has
+// its column of the table, in step order; packages has none of sessions, login, ci_exchange, packages-api, vuln-api and ui-assets; api has
 // neither proxy-engine nor formathost; web is the union of api and packages; and planSteps accepts every role.
 func TestR_ARCH_001_RoleTableIsData(t *testing.T) {
 	table := roleTable()
@@ -70,10 +71,10 @@ func TestR_ARCH_001_RoleTableIsData(t *testing.T) {
 		}
 	})
 
-	t.Run("R-ARCH-001 packages builds none of sessions, login, ci_exchange, packages-api and vuln-api; api builds neither proxy-engine nor formathost", func(t *testing.T) {
+	t.Run("R-ARCH-001 packages builds none of sessions, login, ci_exchange, packages-api, vuln-api and ui-assets; api builds neither proxy-engine nor formathost", func(t *testing.T) {
 		packages, _ := SubsystemsFor("packages")
 		api, _ := SubsystemsFor("api")
-		for _, a := range []Area{AreaSessions, AreaLogin, AreaCIExchange, AreaPackagesAPI, AreaVulnAPI} {
+		for _, a := range []Area{AreaSessions, AreaLogin, AreaCIExchange, AreaPackagesAPI, AreaVulnAPI, AreaUIAssets} {
 			if packages.Has(a) {
 				t.Errorf("packages builds %s", a)
 			}

@@ -42,6 +42,10 @@ TRIVY_DIR      := .bin/trivy-$(TRIVY_VERSION)
 TRIVY_BIN      := $(TRIVY_DIR)/trivy
 
 IMAGE       ?= guidedtraffic/trove:dev
+# The image of the working tree with the second UI bundle (make image-marked): the upgrade test across two bundles
+# installs it and upgrades to IMAGE (R-HA-020, Q-HA-124).
+IMAGE_MARKED ?= guidedtraffic/trove:dev-marked
+UI_BUNDLE_MARK ?=
 IMAGE_ARCH  ?= $(shell go env GOARCH)
 
 INTEGRATION_ENV := .dev/integration/env
@@ -102,7 +106,12 @@ image: ## Build the release image (IMAGE, VERSION, IMAGE_ARCH) for linux/IMAGE_A
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DATE=$(DATE) \
+		--build-arg UI_BUNDLE_MARK=$(UI_BUNDLE_MARK) \
 		-f Containerfile -t $(IMAGE) .
+
+.PHONY: image-marked
+image-marked: ## Build IMAGE_MARKED: make image with the second UI bundle (UI_BUNDLE_MARK=1), the same code under other hashed names, for the upgrade test across two bundles
+	$(MAKE) image IMAGE=$(IMAGE_MARKED) UI_BUNDLE_MARK=1
 
 ##@ Code generation
 

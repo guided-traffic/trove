@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -66,6 +67,10 @@ type Options struct {
 	// SkipInfrastructure starts the HTTP shell without PostgreSQL and Valkey. The
 	// shell tests use it; a production caller never sets it.
 	SkipInfrastructure bool
+	// UIAssets replaces the UI build embedded in the binary (webui.Options.Assets): the build the
+	// replica serves and publishes to the shared asset store. Tests only: two replicas of one test
+	// process stand for two releases with different builds (R-HA-020). Production passes nil.
+	UIAssets fs.FS
 }
 
 // App is one running replica.
@@ -474,10 +479,18 @@ func (a *App) startClient() error {
 	if err != nil {
 		return err
 	}
+	uiLog := a.log.With("component", "ui")
 	ui, err := webui.New(webui.Options{
 		Locales: uiLocales(), DefaultLocale: uiDefaultLocale, ImageOrigins: cfg.UI.Readme.ExternalImageOrigins,
 		// The saved language of a signed-in user beats Accept-Language (R-UI-001).
 		Preference: a.uiPreference(),
+		Assets:     a.o.UIAssets,
+		// A hashed file of the other release of a rolling upgrade (R-HA-020, Q-HA-120).
+		Shared: a.uiShared(),
+		OnSharedError: func(locale, path string, err error) {
+			uiLog.Warn("a hashed file of another release could not be read from the shared asset store; the request is answered 503",
+				"file", locale+"/"+path, "error", err)
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)

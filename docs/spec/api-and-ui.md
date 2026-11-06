@@ -2440,8 +2440,14 @@ Priority: **MVP** · Covers: UI-058
   uploads (R-UI-012). Checked on 2026-10-28 against v22 release coverage: `resource()` and
   `httpResource()`, Signal Forms and `@angular/aria` are stable or generally available in v22.
 - Serving (R-ARCH-004): hashed assets with `Cache-Control: public, max-age=31536000, immutable`,
-  `index.html` with `Cache-Control: no-cache` and the SPA fallback for every non-file path. This
-  page adds:
+  `index.html` with `Cache-Control: no-cache` and the SPA fallback for every non-file path. A hashed asset is a file named
+  `<name>-<8 characters of A–Z, a–z, 0–9, _ and ->.<extension>` in at most two plain directories below the locale
+  ([Q-UI-140](#q-ui-140--which-file-names-of-the-ui-build-are-hashed)); `build:embed` fails a build whose files do not follow
+  that rule. A hashed asset the replica's own build lacks, which during a rolling upgrade is one of the other release, is
+  served from the shared asset store that every replica serving the UI publishes its build to ([ha-and-helm.md](ha-and-helm.md)
+  R-HA-020, Q-HA-120); an unknown one is a `404`, and one the store cannot be asked for is a `503` with `Retry-After`
+  ([Q-UI-141](#q-ui-141--what-a-replica-answers-for-a-hashed-file-of-another-release)). Nothing else under `/ui/` is ever
+  served from the store. This page adds:
   - the UI lives under `/ui/{locale}/` (R-UI-045); `/` redirects to `/ui/`, and `/ui/` as well as
     any `/ui/<route>` without a locale redirects to the same route under the preferred locale, so
     links such as `/ui/login?local=1` of [identity-and-authentication.md](identity-and-authentication.md)
@@ -7705,6 +7711,55 @@ A refused test (403, 422) is an error notice.
 **Rationale:** the section is what the user is about to save; the test of the saved one is the API's. The development agent would revisit (b) for the edit form when the API's unsaved test accepts `{"set": true}` of a stored repository.
 
 **Applied in the spec:** R-UI-021. Code: `upstream-settings.ts` (`test`, `outcome`), `repository-model.ts` (`upstreamTestBody`). Tests: `upstream-settings.spec.ts`, journey `14-mirror.spec.ts` (F-54).
+
+### Q-UI-140 · Which file names of the UI build are hashed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-001 caches hashed assets as immutable, and the shared asset store of
+[ha-and-helm.md](ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) may serve nothing else. The
+server's pattern was `-[A-Z0-9]{8}.<ext>`, the names of esbuild (`main-6E6OBYEH.js`). The Angular 22 build names its chunks with
+eight base64url characters of either case (`chunk-Bo__WLzq.js`, `chunk-b3RHWPW-.js`): in a build of 2026-11-06 130 of the 131 chunks of a
+locale did not match, were served `no-cache` and would not have been published. The hash covers the code before the translations
+are inlined: the locales of one build share every name, and most of the files differ between them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One pattern for server and build, checked at build time (chosen) | `<name>-<8 of [A-Za-z0-9_-]>.<extension of 1 to 8>` in at most two plain directories ([hashed.go](../../internal/webui/hashed.go)); `build:embed` fails when a file other than `index.html` and the copies of `public/` does not match, or such a copy does ([hashed.mjs](../../web/scripts/hashed.mjs)); a unit test keeps the two patterns equal | The chunks are cached and shareable; a change of the builder's names fails the build instead of a rolling upgrade; a file is named by locale and path everywhere | The pattern is a contract with the builder that has to follow its next change |
+| (b) A manifest of hashed files written by the build | The server reads the list | Exact | Angular's builder writes none; it would be a second output to keep in sync |
+| (c) Keep the upper-case pattern | No change | — | The chunks stay `no-cache` and cannot be served across an upgrade |
+
+**Choice:** (a).
+
+**Rationale:** the server and the build agree on one rule, and the build is where a disagreement is found first. Revisit when the
+builder changes its hash format: `build:embed` says so.
+
+**Applied in the spec:** R-UI-001 (serving), [docs/developer/web-ui.md](../developer/web-ui.md). Tests: `TestIsHashed`,
+`TestChunkCaching`, `TestHashedPatternOfTheBuild`.
+
+### Q-UI-141 · What a replica answers for a hashed file of another release
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a request for a hashed file that the replica's build lacks is looked up in the shared asset store
+([ha-and-helm.md](ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release)). The answer has to be one a
+browser handles, for a file that exists, one that does not and a store that cannot be asked.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The file, `404`, or `503` (chosen) | A file from the store has the headers of the replica's own (type by extension, `nosniff`, immutable); a name no release published is `404` problem+json; a store that cannot be asked is `503` problem+json with `Retry-After: 1` and `Cache-Control: no-store`, logged. A replica keeps the files it read in memory (32 MiB at most, the oldest out first), remembers an unknown name for 10 s (4,096 names at most), and reads a file once for concurrent requests; a read is bounded by 10 s | A browser caches a found file as its own; the `503` says the file may exist and is never cached; repeated requests cost one read | Memory per replica for the files of the other release; a name published within 10 s of a miss is found 10 s later on that replica |
+| (b) `404` when the store cannot be asked | One answer for every miss | Simple | Says the file does not exist; a heuristic cache may keep it |
+| (c) Forward the request to a replica of the other release | A proxy hop | No store | Needs an address per release, a second hop, and nothing for a release whose replicas are gone (the open tab) |
+
+**Choice:** (a).
+
+**Rationale:** the answers say what is true about the file. A file of a hashed name never changes its code, so a kept copy is never
+stale, and the memory is the bound of a working set of one release's bundle (about 5 MB in two locales). Revisit if the files of
+more than one other release are read in one window.
+
+**Applied in the spec:** R-UI-001 (serving), [docs/developer/web-ui.md](../developer/web-ui.md). Code:
+[shared.go](../../internal/webui/shared.go). Tests: `TestSharedAssets`, `TestSharedCacheBound`, and
+`TestR_HA_020_SharedUIAssetsWithoutTheObjectStore`.
 
 ## What this does not cover
 

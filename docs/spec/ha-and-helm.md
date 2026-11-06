@@ -2324,9 +2324,15 @@ browser loops ([Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-old
 [Q-HA-97](#q-ha-97--the-loops-of-the-upgrade-tests)). The verification reads `GET /api/v1/system/migrations` from a replica of the
 release under test, waits for the background migrations to succeed and checks it against `trove migrate status`
 ([Q-HA-116](#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test), which supersedes Q-HA-96); the
-cut test runs the same check after its step 2. That read has not run on kind yet (2026-11-06: the e2e package compiles; the set
-`upgrade` ran last with the CLI read). The gate on the cluster minimum version
-(the second acceptance criterion) has no feature to gate yet and is not tested.
+cut test runs the same check after its step 2. Both upgrade tests passed with that read in the dispatched nightly run 42230022283. The gate on the cluster minimum version
+(the second acceptance criterion) has no feature to gate yet and is not tested. The UI's hashed files across the window (F-58) are
+tested by `TestUpgrade_R_HA_020_AcrossTwoBundles` ([upgrade_bundles_test.go](../../test/e2e/upgrade_bundles_test.go), the set
+`upgrade`): the working tree with its second UI bundle is upgraded to the image under test under the same loops, strict
+([Q-HA-124](#q-ha-124--how-the-upgrade-tests-prove-an-upgrade-between-two-bundles)); and by `TestR_HA_020_SharedUIAssets` and
+`TestR_HA_020_SharedUIAssetsWithoutTheObjectStore` ([test/integration/uiassets](../../test/integration/uiassets/uiassets_test.go)):
+two replicas with different builds on one database and object store, each file of one's `index.html` loaded from the other, an
+unknown name `404`, no unhashed path from the store, the renewal and the retention, and `503` for a file of the other build while
+the object store is away.
 
 - Every Deployment uses `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
   `minReadySeconds: 10`. Serving capacity never drops below the replica count during an upgrade,
@@ -2342,9 +2348,15 @@ cut test runs the same check after its step 2. That read has not run on kind yet
   workers may run jobs that N web replicas enqueued. Therefore:
   - Anything a client carries between requests MUST be understood by both releases: pagination
     cursors, `ETag` values, session cookies, CSRF tokens, upload session identifiers.
-  - The UI's assets are named after their content (R-ARCH-004), so the pods of release N do not serve those of N−1 and the
-    reverse: a page load that spans the window can meet a `404` for `main-<hash>.js` and stay blank until the user reloads.
-    This limit is open ([Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade)); the upgrade tests count it as a finding.
+  - The UI's hashed files are named after their content (R-ARCH-004, R-UI-001), so a replica of release N lacks those of N−1
+    and the reverse. Every replica that serves the UI publishes the hashed files of its build to the shared asset store before
+    it turns ready, renews them while it runs, and answers a hashed file its own build lacks from the store
+    ([Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) to
+    [Q-HA-123](#q-ha-123--when-a-replica-publishes-its-build)): a page whose `index.html` came from either release loads on the
+    replicas of both, and so do the lazy chunks of a tab that stays open after the upgrade, for 7 days after the last replica of
+    its release stopped. This holds between two releases that both have the store; an upgrade from a release before it can
+    still meet a `404` for a hashed file once ([Q-HA-125](#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)),
+    and the cut from v0.16.0 counts it as a finding ([Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade)).
   - Job payloads and change-log payloads are versioned. Older workers skip unknown job kinds
     (R-HA-005), and older replicas flush the area on an unknown change-log payload (R-HA-004).
   - Valkey keys and channels are versioned the same way: an incompatible change of an encoding
@@ -7387,6 +7399,13 @@ red until (c) is built. Revisited when (c) is built: the cut test keeps (b) for 
 `upCmd.Skew` and `requireClean` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),
 [web/e2e/upgrade/16-upgrade.spec.ts](../../web/e2e/upgrade/16-upgrade.spec.ts).
 
+**Built (2026-11-06):** option (c) is the shared asset store of
+[Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) to
+[Q-HA-123](#q-ha-123--when-a-replica-publishes-its-build), between releases that both have it. As decided above, the cut test keeps
+(b) for v0.16.0 only, whose pods cannot be changed; every other upgrade test stays strict, the upgrade across two bundles of
+[Q-HA-124](#q-ha-124--how-the-upgrade-tests-prove-an-upgrade-between-two-bundles) and the rolling upgrade from a release without the
+store ([Q-HA-125](#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)) among them.
+
 ### Q-HA-100 · The NuGet part of R-HA-059's load and how it runs beside npm's
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -7760,6 +7779,155 @@ its step 2. Revisited when every release an upgrade test starts from has the rou
 
 **Applied in the spec:** R-HA-020 (the status line), Q-HA-96 (superseded). Code: `upMigrations` and `requireMigrationsDone` in
 [upgrade_env_test.go](../../test/e2e/upgrade_env_test.go), [upgrade_test.go](../../test/e2e/upgrade_test.go),
+
+### Q-HA-120 · How a replica serves a hashed UI file of the other release
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Builds
+option (c) of [Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade).
+
+Context: finding F-58. During a rolling upgrade a page takes its `index.html` from a replica of one release and its scripts,
+stylesheets and fonts, one request each, from replicas of both. Every one of them is named after its content (R-UI-001), so the
+replicas of the other release answer `404` and the page stays blank. R-HA-020 asks that what a client carries between requests is
+understood by both releases; the names an `index.html` hands the browser are such a thing. A tab opened before the upgrade loads the
+lazy chunk of a route it opens later from the replicas that run then.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A shared, content-addressed asset store (chosen) | Every replica that serves the UI (`api`, `web` in the bridge, `all`) publishes the hashed files of its embedded build at start-up; a request for a hashed file its own build lacks is answered from the store with the headers of its own files | Both directions of the window, any number of releases inside the retention, the lazy chunks of a tab left open, independent of the edge | A table, a data path and a write at every start; a read of the store per foreign file; works only between releases that both have it ([Q-HA-125](#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)) |
+| (b) The image carries the previous release's bundle | The release pipeline adds the last release's build next to its own | No shared state | One direction only: the pods of N serve the files of N−1, the pods of N−1 still answer `404` for N's; a skipped release or a rollback is not covered; the pipeline fetches and embeds an older build |
+| (c) The edge keeps a browser on one release | Cookie affinity at the ingress controller | No change in trove | A feature of some controllers and not of others; a rolling upgrade deletes every pod, so the pinned pod goes away in the middle of a page and the next request lands on the other release anyway |
+| (d) A script that reloads on a failed load | `index.html` reloads once when a module fails to load | Small | A retry, not a fix: the reload can meet the same mix again; an inline script needs its own nonce in `script-src` (R-UI-001 allows `'self'` only); a lazy chunk of an open tab is not covered |
+
+**Choice:** (a).
+
+**Rationale:** it is the only option that removes the failure in both directions of the window and for the open tabs, and it needs
+nothing outside trove. The rest of the design follows in Q-HA-121 to Q-HA-123, the names in
+[Q-UI-140](api-and-ui.md#q-ui-140--which-file-names-of-the-ui-build-are-hashed) and the answers in
+[Q-UI-141](api-and-ui.md#q-ui-141--what-a-replica-answers-for-a-hashed-file-of-another-release). Revisit if the store's cost at start-up
+(Q-HA-123) is found to delay the readiness of an upgrade.
+
+**Applied in the spec:** R-HA-020 (the UI's files in the mixed-version list), R-UI-001 (serving), the area `ui-assets` of
+[architecture.md](architecture.md) (Q-ARCH-332). Code: [internal/webui/shared.go](../../internal/webui/shared.go),
+[internal/webui/shared/](../../internal/webui/shared/), [internal/app/wire_ui_assets.go](../../internal/app/wire_ui_assets.go).
+Tests: `TestSharedAssets` (internal/webui), `TestR_HA_020_SharedUIAssets` and `TestR_HA_020_SharedUIAssetsWithoutTheObjectStore`
+([test/integration/uiassets](../../test/integration/uiassets/uiassets_test.go)), `TestUpgrade_R_HA_020_AcrossTwoBundles`.
+
+### Q-HA-121 · Where the shared UI files live
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) needs a store that every replica reads and
+writes. A build has 135 hashed files per locale, 2.4 MB per locale, 4.8 MB for the two (a build of 2026-11-06); the scripts of
+the two locales share their names and differ in content where a translation is inlined.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The blob store, named by a table (chosen) | The content is a blob (R-STOR-002, spooled, hashed, committed by the protocol of R-STOR-005); a row of `ui_assets` (locale, path, blob, size, publisher, `seen_at`) names it and holds the reference that keeps the collector away (R-STOR-024); a read verifies the digest (R-STOR-013) | INV-4 holds; the files of both locales and of every release are stored once by content; deleting a row hands the blob to the collector; the replicas keep what they read in memory (Q-UI-141) | A file of the other release costs an object read on the first request a replica gets for it; while the object store is unavailable those files answer `503` |
+| (b) PostgreSQL rows with the content | A `bytea` column | One store, transactional | Contradicts INV-4 ("No binary content is stored in PostgreSQL") |
+| (c) Valkey | Keys with the content | Fast | INV-3: nothing trove serves to a client is read from Valkey, and losing Valkey must cost performance only |
+
+**Choice:** (a).
+
+**Rationale:** the blob store is where trove keeps content, with the deduplication, the collection and the verification it needs
+already; the table adds only the names. The table's export class is transient (R-BAK-004): a restore leaves it empty and the replicas
+publish again (Q-HA-123). Revisit if the object read of a foreign file is measured to slow a page during an upgrade.
+
+**Applied in the spec:** R-HA-020. Code: migration `00043_ui_assets.sql`, [tables_ui.go](../../internal/meta/postgres/tables_ui.go),
+[queries/ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql), [shared.go](../../internal/webui/shared/shared.go).
+
+### Q-HA-122 · How long the files of a release stay in the store
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the store must hold the files of every release whose pages may still be open, and must not grow with every build: a build is
+about 5 MB, and the dev profile builds several a day.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Renewed by the replicas that carry a file, removed 7 days after the last renewal (chosen) | Every replica whose build has a file renews its row at start-up and every hour (`seen_at`, rows renewed in the last half hour are left alone); every replica deletes the rows no replica renewed for 7 days, and the delete trigger queues their blobs | A release's files stay while one of its replicas runs and a week after; no build identity or ordering is needed; a file both releases have is kept by either | A file stays up to a week after it is needed; 7 days is a constant |
+| (b) The files of the last N builds | A build table ordered by publish time | A bounded count | Needs a build identity; a build whose replicas still run (a pool that rolls later, a rollback) loses its files once N newer builds were published |
+| (c) The versions of the replica registry | Keep the files of the versions the registry lists | Uses what exists | A version does not name a build (every dev build is `dev`), and a row leaves the registry with its replica, so the open tabs of that release lose their lazy chunks at once |
+| (d) Never removed | Write-once forever | Simple | Grows by a build at every upgrade, without bound |
+
+**Choice:** (a), with the retention of 7 days.
+
+**Rationale:** the renewal ties a file's life to the replicas that carry it, which is what an open page depends on, and a week covers
+a tab left open over a weekend. The constants are `shared.Retention` and `shared.RenewEvery`. Revisit if an operator needs another
+retention (a configuration key) or the store's size is a concern.
+
+**Applied in the spec:** R-HA-020. Code: [keeper.go](../../internal/webui/shared/keeper.go) (`Keeper`), the statements `TouchUIAssets`
+and `PruneUIAssets`. Test: `TestR_HA_020_SharedUIAssets` (renewal, a restore's empty table, the retention and the queued blobs).
+
+### Q-HA-123 · When a replica publishes its build
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a new replica's `index.html` names files that only its own build has. The replicas of the other release can serve them only
+once they are in the store.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Before the replica turns ready, for at most a minute (chosen) | The wiring step `ui-assets` (R-ARCH-024 step 8) publishes before the client listener opens; a store that does not take the build within `shared.PublishWait` (1 minute) is logged and the replica starts without it; the keeper tries again every minute | A page from a new replica finds every file it names on the old replicas from its first answer; a store that refuses writes does not take the UI and the management API down | The first replica of a build commits its files at start-up (about 200 objects, seconds against an in-cluster store); a store that fails delays the readiness by a minute |
+| (b) In the background after the replica is ready | No cost at start-up | Fast start | The first pages of a new replica can meet the `404`, and the old replicas remember the miss for 10 s (Q-UI-141) |
+| (c) Before ready, without a bound | The replica waits until it has published | The skew can never happen | An object store that passes the start-up check and refuses writes keeps every new `api` replica unready: an upgrade pauses, and a restart of all of them (a node drain) loses the UI and the management API for a convenience of the UI |
+| (d) In the migration Job | Once per upgrade | No cost per replica | The Job has no spool or blob store; a restore, a rollback and the role `all` would publish nothing |
+
+**Choice:** (a).
+
+**Rationale:** reliability first: the store serves the UI's pages of the other release; it must not decide whether trove serves at all.
+The object store's start-up check (R-STOR-035) runs before, so a publish that fails after it is the exception. Revisit if the
+publish is measured to take a large part of an upgrade.
+
+**Applied in the spec:** R-HA-020; the area table of [architecture.md](architecture.md) (`ui-assets`). Code: `wireUIAssets`,
+`Keeper.PublishAtStart`.
+
+### Q-HA-124 · How the upgrade tests prove an upgrade between two bundles
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-58 is done when a rolling upgrade passes across two releases with different bundles. The releases that exist do not have
+the store, and the rolling upgrade of R-HA-020 starts from a published release.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second image of the working tree with another bundle (chosen) | `make image-marked` builds the image with `UI_BUNDLE_MARK=1`: `build:embed` keeps the libraries' licence comments in the scripts (`--extract-licenses=false`), which renames 122 of the 135 hashed files of a locale (a build of 2026-11-06) and changes no behaviour; `TestUpgrade_R_HA_020_AcrossTwoBundles` installs the tree's chart with it and upgrades to the image under test, every loop strict, and a sampler reads the `index.html` through the edge and loads the main script it names | Two bundles with the store on both sides, now; the window and the bundles are measured, not assumed | A second image build in the leg (about 1.5 min); the variant differs in comments, not in code |
+| (b) Wait for the next release that changes the bundle | The rolling test from that release | No extra image | The proof comes a release later, and the test is red until then |
+| (c) A build-time constant or a replaced source file | `define` or `fileReplacements` in `angular.json` | A code change | A constant changes nothing unless `web/src` reads it; a replaced file is a copy that the UI work changes under it |
+| (d) Rename the files after the build | Rewrite the names | No second build | The names are referenced from `index.html` and from every chunk: a second bundler |
+
+**Choice:** (a).
+
+**Rationale:** it tests what F-58 asks with the code under test on both sides of the window, and nothing in the build or the product
+behaves differently. Both images report the version `dev`, so the test reads the bundles, not the registry's versions, to see the
+window. Revisit when the published releases have the store: the rolling test from the previous release then proves the same on
+every release that changes the bundle.
+
+**Applied in the spec:** R-HA-020 (status). Code: [build-embed.mjs](../../web/scripts/build-embed.mjs), the `Containerfile` (`UI_BUNDLE_MARK`),
+`make image-marked`, [upgrade_bundles_test.go](../../test/e2e/upgrade_bundles_test.go), the step `make image-marked` of the leg
+`e2e-upgrade`.
+
+### Q-HA-125 · The rolling upgrade from a release without the store stays strict
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first release with the store cannot serve the files of a release before it, which never published them, and that release's
+replicas cannot serve the new ones. `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` upgrades from the latest published release,
+which until the next release has no store: a change of the bundle on `main` before this change is released makes it red.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Strict, as it is (chosen) | A `404` for a hashed file fails the test | The test shows what that one upgrade does to a user; it is green with every bundle change once a release with the store is published | A run between a bundle change on `main` and the release of this change is red |
+| (b) Count the skew against a release without the store, as Q-HA-99 does for v0.16.0 | A tolerance keyed on the migration `00043` being newer than the release | Green at once | Widens a pass condition for a case that ends with the next release, and the tolerance has to be taken out again |
+| (c) The first release with the store also carries the previous bundle | [Q-HA-120](#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release) (b) for one release | No skew at all | A pipeline change for one release |
+
+**Choice:** (a).
+
+**Rationale:** the tolerance of Q-HA-99 exists because the pods of v0.16.0 can never be changed; a release without the store is
+followed by one with it at the next release. The order that keeps the leg green: this change is released before, or with, the next
+change of the bundle. Operators read the one-time limit on the manual's upgrade page. Revisit if a release with a bundle change is cut
+without the store.
+
+**Applied in the spec:** R-HA-020; [docs/manual/admin/upgrades.md](../manual/admin/upgrades.md).
 
 ### Q-HA-126 · The node clearance moves the primaries before the cordon, and failover.sh waits for what a switchover needs
 

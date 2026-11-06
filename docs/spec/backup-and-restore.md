@@ -305,6 +305,7 @@ moves one of its tables states it on its own page.
 | `vuln_pending_evaluation`, `vuln_claimed_match` | vulnerability-scanning.md R-VULN-026 (from M4b) | `transient` | Derived from the advisory data; the full evaluation after the first import recomputes them |
 | `mirror_state` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-058 (from phase 6b) | `data` | The cursor and summary of a mirror's last complete pass describe the cache of the same snapshot; R-BAK-022 clears the pass in progress (Q-REPO-147) |
 | `mirror_pending` | repositories-and-proxy.md R-REPO-058 (from phase 6b) | `transient` | The names an interrupted pass had pending; the first pass after the restore rediscovers them from the restored cursor |
+| `ui_assets` | [ha-and-helm.md](ha-and-helm.md) R-HA-020 (Q-HA-121) | `transient` | Names the UI files the replicas published to the blob store; every replica that serves the UI publishes its own build again at its next start or within the hour |
 | `schema_migration`, `schema_state` | [ha-and-helm.md](ha-and-helm.md) R-HA-018 | `schema` | Recreated by the migrations of R-BAK-023 |
 
 `ci_subject_token_uses` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)) stays `data` on purpose: it

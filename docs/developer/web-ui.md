@@ -57,7 +57,7 @@ Run in `web/` after `nvm use` (or any Node matching `.nvmrc`).
 | `npm run generate:api` | `openapi-typescript ../api/openapi.yaml` into `src/app/api/generated/schema.d.ts`, committed. Rerun it whenever `api/openapi.yaml` changes |
 | `npm run build` | Localized production build into `web/dist/web/browser/<locale>/` |
 | `npx playwright install --with-deps chromium` | The browser build of the locked Playwright version, outside the repository (needed for the journeys, not for `npm test`) |
-| `npm run build:embed` | `build`, the compressed-size budget check, then copy each locale to `internal/webui/dist/<locale>/` |
+| `npm run build:embed` | `build`, the compressed-size budget check, the check of the hashed names ([hashed.mjs](../../web/scripts/hashed.mjs)), then copy each locale to `internal/webui/dist/<locale>/`. `TROVE_UI_BUNDLE_MARK=1` builds the second bundle of the upgrade test (`--extract-licenses=false`: the same code under other hashed names, Q-HA-124) |
 
 `make web` is expected to chain `npm ci`, `lint`, `test` and `build:embed`; the Makefile is owned by
 the skeleton work package and was not checked from here.
@@ -79,6 +79,10 @@ internal/webui:  //go:embed all:dist
 - `webui.New` decides at start-up: no locale directory in the tree means placeholder mode (every
   configured locale serves the placeholder page, `Handler.Placeholder()` is true); every configured
   locale built means normal mode; a mix fails start-up, so a half-built UI cannot ship.
+- `build:embed` checks every locale directory against the hashed pattern of
+  [internal/webui/hashed.go](../../internal/webui/hashed.go) (Q-UI-140): every file but `index.html` and the copies of
+  `web/public` must match it, and no copy of `web/public` may. A change of the builder's names fails here, not in a rolling
+  upgrade; `TestHashedPatternOfTheBuild` keeps [hashed.mjs](../../web/scripts/hashed.mjs) equal to the Go pattern.
 - The Go package does not compress. Compression belongs to the edge or a middleware of the server
   shell.
 
@@ -92,6 +96,7 @@ internal/webui:  //go:embed all:dist
 | `/ui/<locale>` | `302` to `/ui/<locale>/` |
 | `/ui/<locale>/` and any path whose last segment has no `.` | The locale's `index.html` with nonce and document headers (SPA fallback) |
 | `/ui/<locale>/<file with extension>` | The file; `404` problem+json if missing or a directory. It never falls back to the index |
+| `/ui/<locale>/<hashed file>` the build lacks | From the shared asset store with the headers of the build's own files; `404` when no release published it, `503` with `Retry-After: 1` and `no-store` when the store cannot be asked ([The shared asset store](#the-shared-asset-store)) |
 | Method other than `GET`, `HEAD` | `405` with `Allow` |
 
 **Nonce.** `New` reads each `index.html` once. Per response it draws 128 bits from `crypto/rand`
@@ -102,11 +107,13 @@ Angular reads the nonce for styles it inserts. `New` refuses an `index.html` wit
 placeholder. The CSP is the one of R-UI-001; image origins come from `Options.ImageOrigins` and
 must be exact `https://host[:port]` values.
 
-**Caching.** Files whose name ends in `-<8 upper-case alphanumerics>.<ext>` (the build's content
-hash) get `Cache-Control: public, max-age=31536000, immutable`. `index.html` and other files
-(`favicon.ico`) get `no-cache`. The build runs with `outputHashing: all`, so every script,
-stylesheet and font is hashed. Unhashed files have no validator yet, so `no-cache` means a full
-download each time; that is acceptable for the favicon and revisited if the unhashed set grows.
+**Caching.** Hashed files get `Cache-Control: public, max-age=31536000, immutable`: a last segment
+`<name>-<8 characters of A–Z, a–z, 0–9, _ and ->.<extension>` in at most two plain directories (`webui.IsHashed`, Q-UI-140).
+esbuild names the entry files with eight upper-case base32 characters (`main-6E6OBYEH.js`), the chunk optimizer the chunks with
+eight base64url characters of either case (`chunk-Bo__WLzq.js`, `chunk-b3RHWPW-.js`); the earlier pattern took only the first, so
+the chunks were served `no-cache`. `index.html` and other files (`favicon.ico`) get `no-cache`. The build runs with
+`outputHashing: all`, so every script, stylesheet and font is hashed. Unhashed files have no validator yet, so `no-cache` means a
+full download each time; that is acceptable for the favicon and revisited if the unhashed set grows.
 
 Mount and options:
 
@@ -119,6 +126,57 @@ h, err := webui.New(webui.Options{
 })
 mux.Handle("/ui/", h) // do not strip the prefix
 ```
+
+The app sets two more: `Shared` (the shared asset store, `nil` on a replica without the area `ui-assets`) and `OnSharedError`
+(the log line of a `503`); `Assets` replaces the embedded build in tests (`app.Options.UIAssets`, `testenv.ReplicaOptions.UI`).
+
+## The shared asset store
+
+A rolling upgrade runs two releases side by side, and the edge spreads one page's requests over both: the `index.html` of one
+release names `main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js`, which the other release's build does not have (F-58,
+R-HA-020). Every replica that serves the UI therefore publishes the hashed files of its build to a store that every replica reads,
+and serves a hashed file its own build lacks from there ([Q-HA-120](../spec/ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release)
+to [Q-HA-125](../spec/ha-and-helm.md#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)).
+
+```text
+replica of release N (api, web, all)                         replica of release N-1
+  start-up: wireUIAssets ─ Publish(build of N) ─┐              GET /ui/en/main-<N>.js
+  hourly:   Keeper ─ renew, publish missing,    │                own build? no ─ hashed? yes
+            prune rows not renewed for 7 days   ▼                       │
+                                     blob store (content, INV-4)  ◄─────┤ Store.Asset: ui_assets (locale, path) → blob,
+                                     ui_assets  (locale, path,         │ read and verified, kept in memory
+                                                 blob, seen_at)  ──────┘ → 200 with the headers of its own files
+```
+
+| File | Responsibility |
+|---|---|
+| [internal/webui/hashed.go](../../internal/webui/hashed.go) | `IsHashed` (the pattern of R-UI-001, Q-UI-140), `HashedFiles` (a build's hashed files by locale and path), `Tree` (the embedded build or `Options.Assets`) |
+| [internal/webui/shared.go](../../internal/webui/shared.go) | The interface `Shared` and `ErrNotShared`; the replica's memory of the store (files up to 32 MiB, misses for 10 s, one read per name in flight, 10 s per read); `serveShared`: the file, `404` or `503` (Q-UI-141) |
+| [internal/webui/shared/shared.go](../../internal/webui/shared/shared.go) | `Store`: `Asset` (the row, then the blob read with the digest check), `Publish` (renew, read what is present, commit the missing files in batches of 32 through `blob.CommitAll`, rows write-once), `Prune` |
+| [internal/webui/shared/keeper.go](../../internal/webui/shared/keeper.go) | `Keeper`: `PublishAtStart` (retries for at most `PublishWait`, a minute), the hourly loop (`RenewEvery`), the retention (`Retention`, 7 days) |
+| [internal/app/wire_ui_assets.go](../../internal/app/wire_ui_assets.go) | The area `ui-assets` (`api`, `web`, `all`): the store over the `infra` area's database and blob store, the publish before ready, the keeper; `uiShared` for `startClient` |
+| [00043_ui_assets.sql](../../internal/meta/postgres/migrations/00043_ui_assets.sql), [ui_assets.sql](../../internal/meta/postgres/queries/ui_assets.sql) | The table (primary key `(locale, path)`, `blob_sha256` with the guard and release triggers of R-STOR-003, `seen_at`), export class transient ([tables_ui.go](../../internal/meta/postgres/tables_ui.go)); the statements `GetUIAsset`, `UIAssetsPresent`, `InsertUIAsset`, `TouchUIAssets`, `PruneUIAssets` |
+
+Rules the code keeps:
+
+- A file is named by its locale and its path. The name's hash covers the code before the translations are inlined, so the `en` and
+  `de` builds share every name and most of the files differ between them; a later release that changes only a translation keeps the
+  names too. A row is therefore write-once (the first publisher decides) and a replica always serves its own file first.
+- Only `IsHashed` paths are published and looked up; `index.html`, the routes and `favicon.ico` are always the replica's own.
+- The publish at start-up runs before the client listener opens, so the first `index.html` a new replica serves names only files the
+  old replicas can already serve. A store that does not take the build within a minute is logged and the replica starts anyway
+  (Q-HA-123).
+- The first release with the store cannot serve the files of a release before it (they were never published): an upgrade from such
+  a release can still meet the `404` once (Q-HA-125).
+
+Tests: `TestIsHashed`, `TestHashedFiles`, `TestSharedAssets`, `TestSharedCacheBound`, `TestChunkCaching` and
+`TestHashedPatternOfTheBuild` ([internal/webui](../../internal/webui/shared_test.go)); `TestAssetAsksOnlyForHashedNames`,
+`TestKeeperLifecycle` ([internal/webui/shared](../../internal/webui/shared/shared_test.go)); `TestR_HA_020_SharedUIAssets` and
+`TestR_HA_020_SharedUIAssetsWithoutTheObjectStore` ([test/integration/uiassets](../../test/integration/uiassets/uiassets_test.go)): two
+replicas with different builds on one database and object store, every file of one's `index.html` loaded from the other with its
+own bytes, a lazy chunk and a font, an unknown name `404`, an unhashed path never from the store, the rows put back after they were
+deleted, the retention and the queued blobs, and `503` while the object store is away; `TestUpgrade_R_HA_020_AcrossTwoBundles`
+([e2e.md](e2e.md#the-upgrade-tests)).
 
 ## Screens of the catalog area
 
@@ -351,7 +409,8 @@ journey is `09-guides.spec.ts` ([e2e.md](e2e.md#browser-journeys)).
 | Internationalization | In place as the production build itself; verified by removing one German unit, which fails the build |
 
 Go side: [webui_test.go](../../internal/webui/webui_test.go) covers nonces, headers, deep links,
-caching, 404s, locale redirects, placeholder mode and start-up validation. Subtest names carry the
+caching, 404s, locale redirects, placeholder mode and start-up validation; [shared_test.go](../../internal/webui/shared_test.go)
+the hashed pattern and the shared asset store. Subtest names carry the
 requirement ID (`R-ARCH-004`, `R-UI-001`, ...) for the coverage generator.
 
 ## Cross-cutting mechanisms

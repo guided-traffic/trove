@@ -10,7 +10,9 @@
 //     locale: Options.Preference, then Accept-Language, then Options.DefaultLocale.
 //   - /ui/<locale> redirects to /ui/<locale>/.
 //   - /ui/<locale>/<file> serves the file; hashed build output is cached as immutable, other
-//     files are revalidated. A missing path whose last segment has an extension is a 404.
+//     files are revalidated. A hashed file the bundle lacks is served from Options.Shared, the
+//     store every release's replicas publish their hashed files to (R-HA-020, Q-HA-120). Any
+//     other missing path whose last segment has an extension is a 404.
 //   - every other path under a locale is a client-side route and answers with the locale's
 //     index.html (SPA fallback), with a fresh CSP nonce and the document headers of R-UI-001.
 package webui
@@ -54,20 +56,29 @@ type Options struct {
 	// Assets replaces the embedded UI. It is rooted like dist/: <locale>/index.html per locale,
 	// or a single index.html as placeholder. Tests use it; production leaves it nil.
 	Assets fs.FS
+	// Shared is the shared asset store (R-HA-020, Q-HA-120): a hashed file the bundle lacks is
+	// looked up there. Optional; nil answers such a file 404, as a replica without the store did.
+	Shared Shared
+	// OnSharedError is told about a store that could not be asked, which the request answers 503.
+	// Optional; the app logs it.
+	OnSharedError func(locale, path string, err error)
 }
 
 // Handler serves the UI. It is safe for concurrent use.
 type Handler struct {
-	locales     []string
-	def         string
-	preference  func(*http.Request) string
-	cspFormat   string
-	bundles     map[string]*bundle
-	placeholder bool
+	locales       []string
+	def           string
+	preference    func(*http.Request) string
+	cspFormat     string
+	bundles       map[string]*bundle
+	placeholder   bool
+	shared        *sharedCache // nil without Options.Shared
+	onSharedError func(locale, path string, err error)
 }
 
 // bundle is one locale: the index.html template and, for a real build, the asset tree.
 type bundle struct {
+	locale string
 	index  []byte
 	assets fs.FS // nil in placeholder mode
 }
@@ -101,19 +112,21 @@ func New(opts Options) (*Handler, error) {
 		return nil, err
 	}
 
-	root := opts.Assets
-	if root == nil {
-		if root, err = embeddedRoot(); err != nil {
-			return nil, fmt.Errorf("webui: embedded UI: %w", err)
-		}
+	root, err := Tree(opts.Assets)
+	if err != nil {
+		return nil, fmt.Errorf("webui: embedded UI: %w", err)
 	}
 
 	h := &Handler{
-		locales:    append([]string(nil), opts.Locales...),
-		def:        opts.DefaultLocale,
-		preference: opts.Preference,
-		cspFormat:  csp,
-		bundles:    make(map[string]*bundle, len(opts.Locales)),
+		locales:       append([]string(nil), opts.Locales...),
+		def:           opts.DefaultLocale,
+		preference:    opts.Preference,
+		cspFormat:     csp,
+		bundles:       make(map[string]*bundle, len(opts.Locales)),
+		onSharedError: opts.OnSharedError,
+	}
+	if opts.Shared != nil {
+		h.shared = newSharedCache(opts.Shared)
 	}
 
 	var missing []string
@@ -133,7 +146,7 @@ func New(opts Options) (*Handler, error) {
 		if err := checkIndex(l, index); err != nil {
 			return nil, err
 		}
-		h.bundles[l] = &bundle{index: index, assets: sub}
+		h.bundles[l] = &bundle{locale: l, index: index, assets: sub}
 	}
 
 	switch {
@@ -146,7 +159,7 @@ func New(opts Options) (*Handler, error) {
 			return nil, err
 		}
 		for _, l := range h.locales {
-			h.bundles[l] = &bundle{index: index}
+			h.bundles[l] = &bundle{locale: l, index: index}
 		}
 		h.placeholder = true
 	case len(missing) > 0:
@@ -222,35 +235,57 @@ func (h *Handler) serveLocale(w http.ResponseWriter, r *http.Request, b *bundle,
 	}
 	// A path whose last segment has an extension names a file. It never falls back to the
 	// index, so a missing script or stylesheet is a 404 and not an HTML page.
-	if b.assets == nil || !fs.ValidPath(tail) {
+	if !fs.ValidPath(tail) {
 		problem(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	f, err := b.assets.Open(tail)
-	if err != nil {
-		problem(w, http.StatusNotFound, "Not Found")
+	if b.assets != nil {
+		if served := serveFrom(w, r, b.assets, tail); served {
+			return
+		}
+	}
+	// A hashed file of another release: during a rolling upgrade the page that asks for it got its
+	// index.html from a replica of that release (R-HA-020, Q-HA-120). Nothing else is ever looked up.
+	if h.shared != nil && IsHashed(tail) {
+		h.serveShared(w, r, b.locale, tail)
 		return
+	}
+	problem(w, http.StatusNotFound, "Not Found")
+}
+
+// serveFrom serves the file at tail of the bundle and reports whether it did: false for a path
+// that is missing or a directory, which the caller answers.
+func serveFrom(w http.ResponseWriter, r *http.Request, assets fs.FS, tail string) bool {
+	f, err := assets.Open(tail)
+	if err != nil {
+		return false
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil || info.IsDir() {
-		problem(w, http.StatusNotFound, "Not Found")
-		return
+		return false
 	}
 	rs, ok := f.(io.ReadSeeker)
 	if !ok {
 		data, err := io.ReadAll(f)
 		if err != nil {
 			problem(w, http.StatusInternalServerError, "Internal Server Error")
-			return
+			return true
 		}
 		rs = bytes.NewReader(data)
 	}
+	serveFile(w, r, tail, rs)
+	return true
+}
 
+// serveFile writes a file of a bundle or of the shared store with the headers of R-UI-001: its
+// content type, nosniff, and immutable caching for a hashed name, revalidation for any other.
+func serveFile(w http.ResponseWriter, r *http.Request, tail string, rs io.ReadSeeker) {
+	last := tail[strings.LastIndexByte(tail, '/')+1:]
 	hd := w.Header()
 	hd.Set("Content-Type", contentType(tail))
 	hd.Set("X-Content-Type-Options", "nosniff")
-	if hashed.MatchString(last) {
+	if IsHashed(tail) {
 		hd.Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		hd.Set("Cache-Control", "no-cache")
@@ -275,10 +310,6 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request, b *bundle) 
 		_, _ = w.Write(body)
 	}
 }
-
-// hashed matches the content-hashed file names of the Angular production build, for example
-// main-NBQ6SANY.js or material-icons-LEZCGFVT.woff2.
-var hashed = regexp.MustCompile(`-[A-Z0-9]{8}\.[A-Za-z0-9]+$`)
 
 func contentType(name string) string {
 	switch strings.ToLower(path.Ext(name)) {

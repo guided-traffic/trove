@@ -217,6 +217,7 @@ func wiringSteps() []step {
 		newStep(AreaVulnAPI, onManagement, (*App).wireVulnAPI),
 		newStep(AreaSessions, onManagement, (*App).wireSessions),
 		newStep(AreaLogin, onManagement, (*App).wireLogin),
+		newStep(AreaUIAssets, onManagement, (*App).wireUIAssets),
 		newStep(AreaAuth, withListener, (*App).wireAuth, withOptional(sessionsArea{})),
 		newStep(AreaEndpoints, withListener, (*App).wireEndpoints),
 		newStep(AreaAPI, withListener, (*App).wireAPI),

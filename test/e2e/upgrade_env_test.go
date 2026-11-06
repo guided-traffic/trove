@@ -129,12 +129,20 @@ func upChart() string { return filepath.Join(cfg.repo, "deploy", "helm", "trove"
 // profile, of the working tree (valuesDir "") or of the copy of an older release's files.
 func upReleaseValues(t testing.TB, valuesDir string) []string {
 	t.Helper()
+	return upReleaseValuesOf(t, valuesDir, upImage())
+}
+
+// upReleaseValuesOf is upReleaseValues for another image than the one under test: the pod annotation that rolls the pods
+// when the loaded image changes carries that image's ID.
+func upReleaseValuesOf(t testing.TB, valuesDir, image string) []string {
+	t.Helper()
 	args := []string{"scatter"}
 	if valuesDir != "" {
 		args = append(args, valuesDir)
 	}
 	cmd := exec.Command(filepath.Join(cfg.repo, "deploy", "dev", "release-values.sh"), args...)
 	cmd.Dir = cfg.repo
+	cmd.Env = append(os.Environ(), "TROVE_IMAGE="+image)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -154,9 +162,15 @@ func upImage() string {
 // upKindLoad puts the image under test onto the kind nodes, as up.sh does before its helm upgrade.
 func upKindLoad(t testing.TB) {
 	t.Helper()
-	out, err := exec.Command("kind", "load", "docker-image", upImage(), "--name", strings.TrimPrefix(cfg.kubeContext, "kind-")).CombinedOutput()
+	upKindLoadImage(t, upImage())
+}
+
+// upKindLoadImage puts an image of the local Docker onto the kind nodes.
+func upKindLoadImage(t testing.TB, image string) {
+	t.Helper()
+	out, err := exec.Command("kind", "load", "docker-image", image, "--name", strings.TrimPrefix(cfg.kubeContext, "kind-")).CombinedOutput()
 	if err != nil {
-		t.Fatalf("kind load docker-image %s: %v\n%s (run `make image` first)", upImage(), err, tail(string(out), 800))
+		t.Fatalf("kind load docker-image %s: %v\n%s (run `make image` first)", image, err, tail(string(out), 800))
 	}
 }
 

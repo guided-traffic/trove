@@ -2982,8 +2982,9 @@ The journey needs `npm ci` in `web/` and `npx playwright install chromium` (CI: 
 
 Exit criterion E6a.7 of the [roadmap](../coverage/roadmap.md#phase-6a--task-areas) (the upgrade across the cut), the acceptance criterion of
 [R-HA-020](../spec/ha-and-helm.md#r-ha-020--rolling-upgrade-and-mixed-version-operation) and the rows "Rolling upgrade" and "Rollback" of
-[R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) (E5.4). The set is `upgrade` (`make e2e SET=upgrade`), a long leg: nightly, on dispatch, locally. Decisions:
-Q-HA-95 to Q-HA-99, Q-HA-130 and Q-HA-131 in the [specification](../spec/ha-and-helm.md#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release).
+[R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) (E5.4), and the UI's hashed files across the window (F-58). The set is `upgrade` (`make e2e SET=upgrade`), a long leg: nightly, on dispatch, locally. Decisions:
+Q-HA-95 to Q-HA-99, Q-HA-130 and Q-HA-131 in the [specification](../spec/ha-and-helm.md#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release), and
+[Q-HA-124](../spec/ha-and-helm.md#q-ha-124--how-the-upgrade-tests-prove-an-upgrade-between-two-bundles) for the upgrade across two bundles.
 
 ```mermaid
 flowchart LR
@@ -3008,7 +3009,7 @@ flowchart LR
 
 ### What it does
 
-Both tests replace the installation, so they are a set of their own and end by putting the current dev release back.
+The tests replace the installation, so they are a set of their own and end by putting the current dev release back.
 
 1. **Reset** ([upgrade_env_test.go](../../test/e2e/upgrade_env_test.go) `resetInstallation`): `helm uninstall trove`, `DROP DATABASE trove WITH (FORCE)` and
    `CREATE DATABASE trove OWNER trove` on the primary of `trove-db`, and `FLUSHALL` on Valkey (`valkey-cli.sh`). There are no down migrations, and the upgrade is to run the
@@ -3043,6 +3044,14 @@ Both tests replace the installation, so they are a set of their own and end by p
 |---|---|---|
 | `TestUpgrade_R_HA_064_AcrossTheCut` | E6a.7, R-HA-064, R-HA-020 | `v0.16.0` installed. Guard (subtest): `helm upgrade` with the defaults (`web.enabled: false`) fails, its output names `web.enabled`, `--set web.enabled=true` and "three upgrades", the Deployments' UIDs and generations and the release revision are unchanged, the registry still lists only the old replicas; `helm template` with the same values renders `trove-api` and no `trove-web`. Then the fixtures and the loops, 45 s of the old release, step 1 (`--set web.enabled=true`): the registry lists the roles `api`, `packages`, `web`, `worker` of the version under test only. Guard after step 1 (subtest, Q-HA-130): `helm upgrade` with `web.enabled: false` fails because the Ingress `trove` still routes to the Service `trove`, names `--set web.enabled=true --set web.routed=false` and "three upgrades", and changes nothing; 45 s; step 2 (`--set web.enabled=true --set web.routed=false`): the Ingress `trove` routes to the role Services and no path to `trove`, `trove-web` and the Service `trove` still exist; 45 s; step 3 (`web.enabled: false`): the roles `api`, `packages`, `worker`, no `trove-web` Deployment, no Service `trove`; 45 s. After step 2 (subtest): `GET /api/v1/system/migrations` as for the rolling test below. No iteration of any loop failed (a journey iteration that met a `404` for a hashed asset of the other release and no answer of 500 or above is counted as a finding, Q-HA-99), every loop ran an iteration during each step, the edge answered no request with `503` for want of a backend while the loops ran (`requireEdgeServed`, Q-HA-131), every acknowledged publish installs and every listed tarball matches its integrity |
 | `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` | R-HA-020, R-HA-052 "Rolling upgrade" and "Rollback", E5.4 | the previous release installed, the fixtures and loops, `helm upgrade --wait` to the working tree (migration Job first). R-HA-020's verification (subtest): `kubectl rollout status` of every Deployment, the registry lists only the version under test, and `GET /api/v1/system/migrations` (`requireMigrationsDone`) answered by a replica of the version under test shows no pending step, the schema the binary requires, and every background migration the binary declares `succeeded` within 3 minutes (a `failed` one fails at once); `trove migrate status` in the worker must agree with it. Then `helm rollback` to the revision the upgrade started from under the same loops: the registry lists only the previous release, which serves the migrated schema (R-HA-019: no down migrations), read with `trove migrate status` in its worker, because the previous release has no such route. Both windows: zero failed iterations; the edge answered no request with `503` for want of a backend while the loops ran (Q-HA-131) |
+| `TestUpgrade_R_HA_020_AcrossTwoBundles` ([upgrade_bundles_test.go](../../test/e2e/upgrade_bundles_test.go)) | R-HA-020 (the UI's hashed files, Q-HA-120), F-58 | instead of a release, the chart of the working tree with the image of `make image-marked` (`guidedtraffic/trove:dev-marked`, `TROVE_IMAGE_MARKED`): the same code with the second UI bundle, nearly every hashed name different (Q-HA-124). The fixtures and loops, 45 s, `helm upgrade --wait` to the image under test, 45 s. A sampler reads `/ui/en/` through the edge twice a second during the upgrade and asks the edge three times for the `main-<hash>.js` that index names. Subtest: the rollout is complete, the index names another main script after the upgrade than before (two bundles), the sampler saw both, and every index and every main script it asked for answered `200`. Then zero failed iterations of every loop, strict (`requireClean` with no release named): a journey that meets a `404` for a hashed asset fails the test |
+
+**The UI's hashed files.** Between two releases that both have the shared asset store a page loads on the replicas of both
+([web-ui.md](web-ui.md#the-shared-asset-store)); the rolling test from the previous release stays strict also while that release
+has no store, which makes it red when the bundle changes before a release with the store is published
+([Q-HA-125](../spec/ha-and-helm.md#q-ha-125--the-rolling-upgrade-from-a-release-without-the-store-stays-strict)); the cut from
+v0.16.0 counts the skew as Q-HA-99 says. Both images of the test across two bundles report the version `dev`, so that test sees
+the window in the bundles the index names, not in the registry's versions.
 
 **A contract step.** R-HA-021 allows a contract step only one release at a time or with downtime. The rolling test reads the migrations added since the previous release (`git diff --diff-filter=A <tag> HEAD` on
 the migrations directory) and, when one carries `-- trove:phase contract`, fails with a message that names the step and the policy: the upgrade is not zero-downtime then, and a test that
@@ -3057,9 +3066,10 @@ up to 90 s. `trove migrate status` in the worker runs the same code (`postgres.R
 
 ```shell
 make image && make dev-up                  # the dev profile must be up; make image tags guidedtraffic/trove:dev
+make image-marked                          # guidedtraffic/trove:dev-marked, the second UI bundle of the test across two bundles
 git fetch --tags                           # the release tags are the test's input
 (cd web && npm ci && npx playwright install chromium)
-make e2e SET=upgrade                       # both tests, about 21 minutes
+make e2e SET=upgrade                       # the three tests
 TROVE_E2E_RUN='^TestUpgrade_R_HA_020' make e2e SET=upgrade     # one of them
 ```
 
@@ -3070,7 +3080,7 @@ The set builds the client images and starts two npm and two NuGet client pods an
 ### What the CI leg provides
 
 The CI leg of the set (HA and Performance, nightly and on dispatch; [performance.yml](../../.github/workflows/performance.yml)) must provide: a checkout with all tags (`fetch-depth: 0`); `make image` before the set (the
-tag `guidedtraffic/trove:dev`); Node from `web/.nvmrc`, `npm ci` in `web/` and `npx playwright install --with-deps chromium`; network access to Docker Hub and to `guided-traffic.github.io`; the dev profile
+tag `guidedtraffic/trove:dev`) and `make image-marked` (the tag `guidedtraffic/trove:dev-marked`); Node from `web/.nvmrc`, `npm ci` in `web/` and `npx playwright install --with-deps chromium`; network access to Docker Hub and to `guided-traffic.github.io`; the dev profile
 (`make dev-up`) as for every e2e leg; a step timeout above the measured duration of the set.
 
 ### Measured on the dev cluster
@@ -3099,7 +3109,7 @@ subtest passed in 0.9 s in every run.
 | Finding | Cause | Fix |
 |---|---|---|
 | Step 1 failed: the migration Job refused `the connection budget needs 403 connections but the server allows 400 (max_connections)` | the scatter profile has `api` 3, and the bridge in it holds 18 pods at their surge (20 connections each) beside `web`; the dev PostgreSQL was sized for `api` 2 (383) | `max_connections` 450 in [postgres.yaml](../../deploy/dev/postgres.yaml) ([Q-HA-98](../spec/ha-and-helm.md#q-ha-98--the-connection-budget-of-the-bridge-in-the-scatter-profile)); an existing cluster restarts its instances once when `make dev-up` applies it |
-| The journey stayed on a blank login page in 2 of 25 iterations during step 1 | **Open.** The UI's assets are named after their content: of the requests for `main-*.js`, `polyfills-*.js` and `chunk-*.js` that one page load makes, the ones that reach a pod of the other release answer `404` (`trove-web-5bb78c9659-*` of the image under test against `trove-web-59876cdf84-*` of v0.16.0 in the trace). The pods of v0.16.0 cannot be changed. The rolling upgrade from v0.19.0 meets no skew because the bundle did not change | none in the product. The test counts these iterations as a finding and gates every other failure ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade)); whether the product retains the previous bundle or the edge pins a browser to one release is the owner's decision |
+| The journey stayed on a blank login page in 2 of 25 iterations during step 1 | The UI's assets are named after their content: of the requests for `main-*.js`, `polyfills-*.js` and `chunk-*.js` that one page load makes, the ones that reach a pod of the other release answer `404` (`trove-web-5bb78c9659-*` of the image under test against `trove-web-59876cdf84-*` of v0.16.0 in the trace). The pods of v0.16.0 cannot be changed. The rolling upgrade from v0.19.0 meets no skew because the bundle did not change | the shared asset store (F-58, [Q-HA-120](../spec/ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release)) between releases that both have it, proved by `TestUpgrade_R_HA_020_AcrossTwoBundles`. The cut test still counts the skew against v0.16.0 as a finding and gates every other failure ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade)) |
 | `GET /api/v1/system/migrations` answered `404` (finding F-59) | the endpoint was specified (R-HA-018) and not built | built (`getMigrationStatus`, [Q-HA-114](../spec/ha-and-helm.md#q-ha-114--which-background-migrations-the-migration-report-lists-before-r-ha-022s-table-exists), [Q-HA-115](../spec/ha-and-helm.md#q-ha-115--how-a-contract-step-declares-the-background-migration-it-depends-on-and-what-the-guard-does-with-it)); the tests read it ([Q-HA-116](../spec/ha-and-helm.md#q-ha-116--the-upgrade-tests-read-get-apiv1systemmigrations-from-the-release-under-test)). The read of the endpoint has not run on kind yet |
 | One journey iteration of 14 failed in step 2 of the then two-step cut (nightly run 42194413882, F-64): `TimeoutError` waiting for the sign-in form, no `ASSET-SKEW` line | the edge answered `GET /ui/en/login?local=1` with `503` (`trove_trove_http/<NOSRV>`, `SC--`): Helm deleted the Service `trove` and moved the Ingress in one apply, HAProxy Ingress emptied the backend at once and took the new routes with its next reload, 1.4 s later; 509 requests met the gap, the npm clients repeated theirs | the cut takes three steps, each changing either the edge or the backends ([Q-HA-130](../spec/ha-and-helm.md#q-ha-130--the-cut-moves-the-edge-and-removes-the-bridge-in-two-separate-upgrades)); both tests read the edge's access lines for answers without a backend ([Q-HA-131](../spec/ha-and-helm.md#q-ha-131--the-upgrade-tests-read-the-edges-access-lines-for-answers-without-a-backend)); the trace of a failed iteration is kept per test |
 | The guard, the steps, the registry's roles and the rollback of a release (R-HA-064, R-HA-020, R-HA-052) | none: they behave as specified | |

@@ -156,6 +156,7 @@ routes read them. The areas of the client listener are split by route family:
 | `auth` | the authentication stage of the chain | with the session credential | tokens only: no session store, a session cookie is ignored as absent | no | with the session credential |
 | `endpoints` | the rate-limit classes of the endpoints (R-EP-015) | yes | yes | no | yes |
 | `api` | stage 7 of the chain: CORS and the request limits of R-API-016, applied on every endpoint chain despite the name | yes | yes | no | yes |
+| `ui-assets` | the shared asset store of the UI ([ha-and-helm.md](ha-and-helm.md) R-HA-020, Q-HA-120): the build's hashed files published before the replica turns ready and renewed hourly, the files of the other release read from it | yes | **no** | no | yes |
 | `ci_exchange` | the CI token exchange (`POST /api/v1/auth/oidc/token`, the npm exchange of R-NPM-022 at P1) | yes | **no** | no | yes |
 | `mirror` | the counters and the gauge source of R-REPO-057 (every role), the engine built at the first job of a process that claims one (R-REPO-053, Q-ARCH-312) | yes | yes | yes | yes |
 | `mirror-engine` | the remote engine and the format host behind `mirror.Host`: in `all` the engine and host of the client path, in `worker` an engine of its own for background requests (Q-ARCH-316, Q-ARCH-317) | **no** | **no** | yes | `all` only |
@@ -402,7 +403,7 @@ flowchart LR
 | dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
 | formathost | `internal/formathost` | The `Host` of the format contract and the adapters of the item store's hooks and the generic layer's seam; the data ports are bound by the composition root | R-ARCH-009, Q-ARCH-193, Q-ARCH-212 |
 | packages | `internal/packages` | The generic package rows: the package store and the package writer that raises `packages.rev_seq` | R-ARCH-009, Q-ARCH-212 |
-| webui | `internal/webui` | Embedded Angular build | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004 |
+| webui | `internal/webui`, `internal/webui/shared` | Embedded Angular build; the shared asset store of the UI's hashed files on the blob store, which the handler takes as an interface (Q-ARCH-332) | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004, [ha-and-helm.md](ha-and-helm.md) (R-HA-020, Q-HA-120) |
 | formats | `internal/formats`, `internal/formats/<id>` | Package protocols behind the plug-in contract | R-ARCH-008 to R-ARCH-010; [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
 | repository | `internal/repository` | Repository model and snapshot, request classification, caller-independent routing of virtual repositories (members, claims, pin rules) | [repositories-and-proxy.md](repositories-and-proxy.md) |
 | proxy | `internal/proxy`, `internal/proxy/{upstream,invalidation}` | Remote fetch engine, per-remote upstream clients, cache invalidation | [repositories-and-proxy.md](repositories-and-proxy.md) |
@@ -9062,6 +9063,28 @@ Context: the quiesce runs from a timer (`time.AfterFunc`) that was stopped only 
 **Rationale:** The plan is absolute (R-ARCH-024): the close phase starts when the server phase ends and nothing of step 4 may run in it. The development agent revisits this if a component's `Quiesce` is found to block past `ServerBy` in practice.
 
 **Applied in the spec:** R-ARCH-024 (step 4). Code: `Shutdown` in `internal/app/app.go`. Test: `TestShutdownQuiesceTimer`.
+
+### Q-ARCH-332 · Where the shared asset store of the UI sits in the code
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the shared asset store of [ha-and-helm.md](ha-and-helm.md#q-ha-120--how-a-replica-serves-a-hashed-ui-file-of-the-other-release)
+reads and writes PostgreSQL and the blob store, is used by the UI handler of `internal/webui`, and runs a publish at start-up and a loop.
+`internal/webui` imports no other package of the module (its package comment), so that it can be tested over an `fs.FS` alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An area `ui-assets` and a package `internal/webui/shared` (chosen) | The step `ui-assets` (`wireUIAssets`) on the roles that serve the UI (`api`, `web`, `all`) builds the store over the `infra` area's database and blob store, publishes, and starts the keeper; `internal/webui` defines the interface `Shared` and the hashed pattern; `internal/webui/shared` (layer edge) implements the store with the sqlc statements and the blob store | `internal/webui` stays free of the database and the blob store; the role table says where the store exists (`packages` serves no UI and builds none); `planSteps` proves the inputs | One more area and package |
+| (b) The store inside `internal/webui` | One package | Fewer files | The handler's package imports the blob store and the database, and its tests need them |
+| (c) The store in `internal/app` | The composition root holds it | No new package | The composition root would hold statements and logic of its own |
+
+**Choice:** (a).
+
+**Rationale:** it keeps each package's dependencies where they were and makes the roles that build the store data of the step list,
+like every other area. Revisit if another role starts serving the UI.
+
+**Applied in the spec:** the area table (`ui-assets`), the component table (webui). Code: [wire_ui_assets.go](../../internal/app/wire_ui_assets.go),
+[steps.go](../../internal/app/steps.go), [internal/webui/shared](../../internal/webui/shared/). Test: `TestR_ARCH_001_RoleTableIsData`.
 
 ## What this does not cover
 
