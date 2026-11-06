@@ -622,7 +622,8 @@ export interface paths {
          * Change a group
          * @description `description`, `autoJoin` and `name` (a rename). A group owned by the identity provider's SCIM client answers
          *     `409 managed_by_scim`; auto-join on a group with an administration role binding answers
-         *     `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019). JSON merge patch; read-only members are ignored.
+         *     `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019); auto-join on a group that is a member of a project answers
+         *     `409 auto_join_member_conflict` and names the projects (R-AUTHZ-026). JSON merge patch; read-only members are ignored.
          */
         patch: operations["updateGroup"];
         trace?: never;
