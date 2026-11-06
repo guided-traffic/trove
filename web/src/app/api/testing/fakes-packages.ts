@@ -98,8 +98,8 @@ function version(
       engines: { node: '>=22' },
     },
     repositories: [
-      { key: 'npm-local', project: 'web', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' },
-      { key: 'npm-all', project: 'web', class: 'virtual', publishedAt: '2026-10-20T09:12:44.512Z' },
+      { key: 'web/npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' },
+      { key: 'web/npm-all', class: 'virtual', publishedAt: '2026-10-20T09:12:44.512Z' },
     ],
     files: [
       {
@@ -162,7 +162,7 @@ function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
         { targetFramework: 'net462', dependencies: [] },
       ],
     },
-    repositories: [{ key: 'nuget-local', project: 'web', class: 'local', publishedAt: '2026-10-25T00:00:00.000Z' }],
+    repositories: [{ key: 'web/nuget-local', class: 'local', publishedAt: '2026-10-25T00:00:00.000Z' }],
     files: [
       {
         path: file,

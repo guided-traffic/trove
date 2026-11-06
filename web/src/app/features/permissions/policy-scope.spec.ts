@@ -45,7 +45,7 @@ describe('A policy is global unless it says otherwise (R-UI-041, R-AUTHZ-026)', 
           roles: [],
           capabilities: [],
           principals: ['user:alice'],
-          projects: [{ key: 'web', managePolicies: true, manageRepositories: true }],
+          projects: [{ key: 'web', role: 'owner' }],
         };
       },
     });

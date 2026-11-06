@@ -52,7 +52,7 @@ async function open(
           roles: [],
           capabilities: [],
           principals: ['user:alice'],
-          projects: [{ key: 'web', managePolicies: false, manageRepositories: true }],
+          projects: [{ key: 'web', role: 'owner' }],
         };
       }
     },

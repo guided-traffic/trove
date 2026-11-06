@@ -49,7 +49,7 @@ const PROJECT_ADMIN: Me = {
   roles: [],
   capabilities: [],
   principals: ['user:alice'],
-  projects: [{ key: 'web', managePolicies: true, manageRepositories: false }],
+  projects: [{ key: 'web', role: 'owner' }],
 };
 
 describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-181)', () => {

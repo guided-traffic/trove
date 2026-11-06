@@ -30,7 +30,7 @@ function projectAdmin(managePolicies = true, manageRepositories = true) {
       roles: [],
       capabilities: [],
       principals: ['user:alice'],
-      projects: [{ key: 'web', managePolicies, manageRepositories }],
+      projects: [{ key: 'web', role: 'owner' }],
     };
   };
 }
@@ -249,7 +249,7 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
     expect(session.isProjectOwner()).toBe(true);
     expect(session.hasAdminArea()).toBe(true);
     expect(session.isAdministrator()).toBe(false);
-    expect(session.projectRights('web')).toEqual({ key: 'web', managePolicies: true, manageRepositories: false });
+    expect(session.projectRights('web')).toEqual({ key: 'web', role: 'owner' });
     expect(session.projectRights('data')).toBeNull();
     expect(session.canWritePolicies('web')).toBe(true);
     expect(session.canWritePolicies('data')).toBe(false);

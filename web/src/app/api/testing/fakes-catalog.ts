@@ -204,13 +204,16 @@ export const NUGET_FORMAT: FormatDescriptor = {
   settingsSchema: NUGET_SETTINGS_SCHEMA,
 };
 
+/** A repository of the fake: the project is writable so that a test can move one. */
+export type FakeRepository = { -readonly [K in keyof Repository]: Repository[K] };
+
 export class FakeRepositoriesApi extends RepositoriesApi {
   formatsResult: readonly FormatDescriptor[] = [GENERIC_FORMAT];
   formatsError: ApiError | null = null;
   /** The `baseUrl` of the formats answer. */
   baseUrlResult: string | null = 'https://trove.example.net';
   baseUrlCalls = 0;
-  repositories: Repository[] = [
+  repositories: FakeRepository[] = [
     {
       key: 'generic-local',
       project: 'web',

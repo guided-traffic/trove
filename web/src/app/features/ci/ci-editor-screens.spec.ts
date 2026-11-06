@@ -35,7 +35,7 @@ function projectAdmin(managePolicies = true) {
       roles: [],
       capabilities: [],
       principals: ['user:alice'],
-      projects: [{ key: 'web', managePolicies, manageRepositories: false }],
+      projects: [{ key: 'web', role: 'owner' }],
     };
     (get(RepositoriesApi) as FakeRepositoriesApi).repositories.forEach((r) => (r.project = r.key === 'generic-local' ? 'web' : r.project));
   };

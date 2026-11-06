@@ -18,7 +18,7 @@ function asProjectAdministrator(managePolicies = true, manageRepositories = fals
       roles: [],
       capabilities: [],
       principals: ['user:alice'],
-      projects: [{ key: 'web', managePolicies, manageRepositories }],
+      projects: [{ key: 'web', role: 'owner' }],
     };
   };
 }
