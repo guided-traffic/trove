@@ -7375,7 +7375,7 @@ with the `503`. That is the loss of a dependency's operator, which the PostgreSQ
 
 **Rationale:** R-HA-052's rows are single failures. The development agent would revisit it if the local profile runs its operators with two replicas.
 
-**Applied in the spec:** R-HA-052, the node-loss row.
+**Applied in the spec:** R-HA-052, the node-loss row. The way the node is found was changed by [Q-HA-106](#q-ha-106--the-node-of-the-node-loss-scenario-is-chosen-first-and-cleared-not-searched-for); the precondition is the same.
 
 ### Q-HA-105 · What the npm loops may see of a lost node
 
@@ -7404,6 +7404,34 @@ chart sets only the toleration (Q-HA-103).
 agent would revisit it if the edge's handling of sessions to a pod that was marked down is configured (`on-marked-down shutdown-sessions` was not tried).
 
 **Applied in the spec:** R-HA-052, the node-loss row.
+
+### Q-HA-106 · The node of the node-loss scenario is chosen first and cleared, not searched for
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestHASuite_NodeLoss` failed in the nightly run 42192042297 after 42 s with "no node hosts an api, a packages and a worker pod without the
+PostgreSQL and Valkey primaries and the operators", on the same runner class on which it had passed the run before. Q-HA-104 searched for a clean node and moved the
+blocker it met first (the operators' pods, a Valkey failover or a PostgreSQL switchover), four attempts at most. On the three workers of the kind cluster the
+four blockers (two primaries, two operators) can leave no clean node, and every attempt re-places them: the log shows the Valkey failover, the PostgreSQL switchover, the
+deletion of the operators' pods (the scheduler put them on the same two nodes again) and a second PostgreSQL switchover, and then the fourth attempt was used up.
+Whether a clean node exists after one attempt depends on where the scheduler puts the operators, which the test did not control.
+A clean node is not enough: the first run of the new search chose the node of the standby (three blockers moved), and the survivors' `/readyz` answered non-200
+two or three times each (R-HA-008) and k6 saw 4,771 failures, because the primary's log shows `canceling wait for synchronous replication` for every commit from 10 s after the
+stop, until the operator dropped the standby. The standby is the primary's synchronous partner (`dataDurability: preferred`), so a node with an instance is not a node whose loss
+only costs trove its pods.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) More attempts | Raise the 4 | One line | Still a search whose outcome the scheduler decides; each attempt is a switchover and a rollout of about 30 s |
+| (b) Choose the node first, then clear it (chosen) | The node without a PostgreSQL instance that hosts an `api` and a `packages` pod (three workers, two instances: there is one), else the candidate with the fewest blockers. A `worker` pod is brought there if it has none (the other workers are cordoned, one worker pod is deleted). The node is cordoned; the operators' pods are deleted (the scheduler cannot put them back), the Valkey primary is failed over, the PostgreSQL primary switched over; the node is uncordoned and the result is checked | Terminates in one pass; the pods land where the rest of the cluster is; a node without an instance costs the database nothing | The cordons are a cluster change during the run, undone before the load starts |
+| (c) Run the operators with two replicas in the dev profile | Q-HA-104 (c) | Realistic | The chart under test does not change |
+
+**Choice:** (b). `clearNode` in `test/e2e/node_loss_test.go` serves this scenario and the node-loss subtests of the mirror's failure suite ([Q-REPO-200](repositories-and-proxy.md#q-repo-200--the-node-lost-under-a-pass-is-cleared-of-the-operators-and-the-primaries-first)).
+
+**Rationale:** R-HA-052's rows are single failures, so the precondition has to be made, not hoped for. The development agent would revisit it if the dev profile runs
+its operators with two replicas.
+
+**Applied in the spec:** R-HA-052, the node-loss row (unchanged text: the node still hosts no primary and no operator).
 
 ### Q-HA-110 · How the drain test measures the edge's endpoint-removal time
 

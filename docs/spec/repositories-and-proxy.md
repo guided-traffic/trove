@@ -6670,6 +6670,52 @@ revisit the retry count if a deletion job is seen to outlast five reads.
 **Applied in the spec:** none (test harness; the product behaves as R-API-012 and R-AUTHZ-028 say). Code: `test/e2e/mirror_env_test.go`
 (`drop`), `test/e2e/m1_env_test.go` (`ensurePolicy`), `test/e2e/mirror_long_fault_test.go` (`startHeldPass`).
 
+### Q-REPO-200 · The node lost under a pass is cleared of the operators and the primaries first
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: in the nightly run 42192042297 the node-loss subtest of `TestMirrorLong_R_REPO_053_WorkerLostMidPass` saw the pass progress again 6 min 51 s after the stop
+(bound 5 min) and three of four client installs through the remote answer `503`. The test had moved only the PostgreSQL primary off the node, by a switchover that ended
+2 s before the stop; the node then hosted the PostgreSQL standby (the primary's synchronous partner, announced in its configuration at 09:14:16) and the pod of the
+CloudNativePG operator. The primary's log shows `canceling wait for synchronous replication` for every commit from 09:14:18; the operator was replaced by Kubernetes
+after its toleration of 300 s and dropped the standby from the synchronous set at 09:20:16, and the pass progressed at 09:21:09. The frozen-node subtest, whose node hosted
+neither, progressed after 1 min 5 s. The pool's second process was on another node throughout, so the product did what the spec says; the database below it could not commit.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Widen the bound to the operator's replacement | 5 min becomes 10 | The test passes | The bound would measure Kubernetes' default toleration, and "the pass progresses within the lease and the dispatch tick" would no longer be checked |
+| (b) Clear the node as the HA suite does ([Q-HA-106](ha-and-helm.md#q-ha-106--the-node-of-the-node-loss-scenario-is-chosen-first-and-cleared-not-searched-for)): operators, Valkey primary and PostgreSQL primary are moved first (chosen) | `clearNode` before `docker stop` and `docker pause` | The subtest measures the pass; the PostgreSQL and operator rows of R-HA-052 stay their own scenarios | The standby may stay on the node (see below) |
+| (c) Also replace the standby | Delete the instance's pod and volume | A clean node | An instance rebuild of a minute inside every subtest; the loss of a standby is a row of its own |
+
+**Choice:** (b).
+
+**Rationale:** the pass condition is unchanged. The development agent would revisit the standby if the subtest is seen to fail on a stall that the operator's drop of the
+standby (one cluster detection time) explains.
+
+**Applied in the spec:** none (test harness). Code: `test/e2e/node_loss_test.go`, `test/e2e/mirror_long_fault_test.go` (`loseNode`).
+
+### Q-REPO-201 · A throttled answer is not a fetch: the per-name bound of the tarballs counts what the upstream served
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: both subtests of `TestMirrorLong_R_REPO_054_ThrottledUpstreamAcrossAMove` ended `complete`, with no request inside a wait and 3 and 8 throttled answers (limits 6 and 12),
+and failed on `assertFetchedOnce`: the tarball of one name was served 3 times (429 case), two names 4 and 6 times (503 case, `Count: 8`, the first eight tarball requests refused).
+The stub's counters count every request of a path, the refused ones too; the 503 throttle refuses the first eight requests, which the pass's two fetches in flight repeat on the same
+few names. The function's bound "no name more than twice" meant fetches and counted answers, and only the sum over names allowed the throttled ones (`throttled + concurrency`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Take the refused requests out of the per-name counts (chosen) | The request log's tarball requests with the throttle's status are subtracted by path; the sum is then bounded by the fetches in flight (`concurrency`) | "Served" means what the upstream delivered; R-REPO-054's bound on the throttled answers stays in its own check | The log must not have dropped requests (the helper already fails on that) |
+| (b) Allow `1 + throttled` per name | Loosens the bound | No log read | A name fetched five times for no reason passes |
+| (c) Throttle fewer requests | Count 2 | Fits "twice" | The scenario would no longer show a burst-free recovery |
+
+**Choice:** (a).
+
+**Rationale:** the condition of R-REPO-053 is that a lost process costs at most the fetches in flight; a throttled answer costs the upstream nothing. The development agent would revisit it if a
+throttled answer is ever seen to carry a body the pass stores.
+
+**Applied in the spec:** none (test harness). Code: `test/e2e/mirror_long_fault_test.go` (`assertFetchedOnce`).
+
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream

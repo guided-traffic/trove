@@ -152,9 +152,19 @@ func (e *mirrorEnv) install(t *testing.T, hp *heldPass, label, name string) stri
 // assertFetchedOnce checks the counters of the test upstream after a pass that was moved between processes: every tarball of the
 // range was served, none more than twice, and at most `longPassConcurrency` twice (the fetches in flight when the process was lost,
 // which the next attempt repeats, plus whatever the caller allows); the tarball of `exempt` (also fetched by a client) is not counted against that bound.
-func assertFetchedOnce(t *testing.T, hp *heldPass, exempt string, atMostTwice int) {
+// A request the upstream refused with `throttled` (0: none was) is an answer, not a fetch: the name it hit is asked again after the wait,
+// and a name can be refused several times when the throttle covers the first requests (Count), so the refusals are taken out of the
+// per-name counts, as they are out of the bound on the names served twice (Q-REPO-201).
+func assertFetchedOnce(t *testing.T, hp *heldPass, exempt string, atMostTwice, throttled int) {
 	t.Helper()
 	counts := tarballCounts(t, hp.names[0][:len(hp.names[0])-3])
+	if throttled != 0 {
+		for _, r := range stub(t).requests(t) {
+			if r.Kind == npmstub.KindTarball && r.Status == throttled {
+				counts[r.Path]--
+			}
+		}
+	}
 	twice, missing := 0, 0
 	for _, name := range hp.names {
 		n := counts["/"+name+"/-/"+name+"-1.0.0.tgz"]
@@ -246,10 +256,12 @@ func TestMirrorLong_R_REPO_053_WorkerLostMidPass(t *testing.T) {
 
 // loseNode stops or freezes the kind node (the container has the node's name) and returns the step that starts or thaws it again;
 // the step also runs at the end of the test, so that a failed test leaves the node running. The PostgreSQL primary is moved away
-// from the node first (its disruption budget and the loss of the primary are the scenarios of their own).
+// from the node first, and so are the Valkey primary and the pods of the two operators (clearNode, Q-REPO-200): their loss is
+// the scenario of its own, and the operator of PostgreSQL on the lost node keeps every commit waiting for the lost standby for
+// the 300 s of Kubernetes' toleration.
 func loseNode(t *testing.T, hp *heldPass, verb string, args ...string) func() {
 	t.Helper()
-	avoidPrimary(t, hp.node)
+	clearNode(t, hp.node)
 	undo := map[string]string{"stop": "start", "pause": "unpause"}[verb]
 	var once sync.Once
 	restore := func() {
@@ -358,7 +370,7 @@ func (e *mirrorEnv) runLostWorker(t *testing.T, l lossOf) {
 
 	done := e.awaitCompleteTolerant(t, hp.key, 10*time.Minute)
 	assertSummary(t, done)
-	assertFetchedOnce(t, hp, hp.unfilled, longPassConcurrency)
+	assertFetchedOnce(t, hp, hp.unfilled, longPassConcurrency, 0)
 	if len(jobs) < 2 {
 		t.Errorf("only job(s) %v ran the pass: it did not continue in a new job", keysOf(jobs))
 	}
@@ -475,8 +487,8 @@ func (e *mirrorEnv) runThrottled(t *testing.T, label string, digit int, th npmst
 	if throttled == 0 || throttled > atMostThrottled {
 		t.Errorf("R-REPO-054: %d throttled answers, want 1 to %d (a burst after the move would send more)", throttled, atMostThrottled)
 	}
-	// a throttled answer is a request for the tarball too: the name it hit is asked again after the wait
-	assertFetchedOnce(t, hp, "", throttled+longPassConcurrency)
+	// a throttled answer is no fetch: the name it hit is asked again after the wait (Q-REPO-201)
+	assertFetchedOnce(t, hp, "", longPassConcurrency, status)
 	waitPoolWhole(t)
 	e.jobs.check(t)
 }
@@ -532,7 +544,7 @@ func TestMirrorLong_R_REPO_053_PostgresSwitchoverAndValkeyFailoverDuringAPass(t 
 		script(t, "valkey-failover.sh")
 		done := e.awaitCompleteTolerant(t, hp.key, 10*time.Minute)
 		assertSummary(t, done)
-		assertFetchedOnce(t, hp, "", 0)
+		assertFetchedOnce(t, hp, "", 0, 0)
 		waitPoolWhole(t)
 		e.jobs.check(t)
 	})

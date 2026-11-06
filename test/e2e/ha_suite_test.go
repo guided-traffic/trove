@@ -21,7 +21,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -719,65 +718,33 @@ func TestHASuite_NodeLoss(t *testing.T) {
 // the PostgreSQL primary (the PostgreSQL row of R-HA-052), the Valkey primary (the Valkey row), the PostgreSQL standby
 // (the primary's commits wait for it until the operator drops it from the synchronous set, which needs the operator) and
 // the pods of the two operators, which the dev profile runs once and which Kubernetes replaces only after its default 300 s
-// toleration. An operator or a primary in the way is moved first, before the load starts; a node with the standby is taken
-// only when no other node qualifies, and the test then reports it.
+// toleration. The node with the fewest of them is taken (one without the standby first) and what is on it is moved first
+// (clearNode, Q-HA-106), before the load starts; the test reports a standby on it.
 func nodeLossNode(t *testing.T) string {
 	t.Helper()
-	podNodes := func(namespace, selector string) map[string]bool {
-		out := map[string]bool{}
-		for _, p := range podsOfIn(t, namespace, selector) {
-			out[p.Node] = true
-		}
-		return out
-	}
-	for attempt := 0; attempt < 4; attempt++ {
-		hosts := nodesHosting(t, selAPI, selPackages, selMainWorker)
-		pgNode := strings.TrimSpace(kn(t, "get", "pod", pgPrimary(t), "-o", "jsonpath={.spec.nodeName}"))
-		vkNode := strings.TrimSpace(kn(t, "get", "pod", valkeyPrimaryBySentinel(t), "-o", "jsonpath={.spec.nodeName}"))
-		standby := podNodes(cfg.namespace, "cnpg.io/cluster=trove-db,cnpg.io/instanceRole=replica")
-		cnpgOp := podNodes("cnpg-system", "app.kubernetes.io/name=cloudnative-pg")
-		vkOp := podNodes("valkey-operator-system", "app.kubernetes.io/component=operator")
-		var clean, withStandby []string
-		blocked := map[string][]string{}
-		for n := range hosts {
-			switch {
-			case n == pgNode:
-				blocked["pg"] = append(blocked["pg"], n)
-			case n == vkNode:
-				blocked["valkey"] = append(blocked["valkey"], n)
-			case cnpgOp[n] || vkOp[n]:
-				blocked["operator"] = append(blocked["operator"], n)
-			case standby[n]:
-				withStandby = append(withStandby, n)
-			default:
-				clean = append(clean, n)
-			}
-		}
-		sort.Strings(clean)
-		sort.Strings(withStandby)
-		switch {
-		case len(clean) > 0:
-			t.Logf("node %s: PostgreSQL primary on %s, Valkey primary on %s, standby on %v, operators on %v and %v", clean[0], pgNode, vkNode, sortedKeys(standby), sortedKeys(cnpgOp), sortedKeys(vkOp))
-			return clean[0]
-		case len(blocked["operator"]) > 0:
-			t.Logf("the only candidates host an operator (%v and %v); deleting the operators' pods so the scheduler places them again", sortedKeys(cnpgOp), sortedKeys(vkOp))
-			kubectlMust(t, "-n", "cnpg-system", "delete", "pod", "-l", "app.kubernetes.io/name=cloudnative-pg", "--wait=true")
-			kubectlMust(t, "-n", "valkey-operator-system", "delete", "pod", "-l", "app.kubernetes.io/component=operator", "--wait=true")
-			kubectlMust(t, "-n", "cnpg-system", "rollout", "status", "deployment", "--timeout=3m")
-			kubectlMust(t, "-n", "valkey-operator-system", "rollout", "status", "deployment", "--timeout=3m")
-		case len(blocked["valkey"]) > 0:
-			t.Logf("the candidates host the Valkey primary (%s); failing it over first", vkNode)
-			script(t, "valkey-failover.sh")
-		case len(blocked["pg"]) > 0:
-			t.Logf("the candidates host the PostgreSQL primary (%s); switching it over first", pgNode)
-			script(t, "failover.sh")
-		case len(withStandby) > 0:
-			t.Logf("node %s hosts the PostgreSQL standby (no other node qualifies): its loss stalls the primary's commits until the operator drops the synchronous standby", withStandby[0])
-			return withStandby[0]
+	deps := dependentsOn(t)
+	// the node without a PostgreSQL instance, if there is one (three workers, two instances): its loss costs the database nothing,
+	// where the loss of the standby's node stalls every commit until the operator drops the standby from the synchronous set
+	free := map[string]bool{}
+	for n := range nodesHosting(t, selAPI, selPackages) {
+		if !deps[n].Instance {
+			free[n] = true
 		}
 	}
-	t.Fatal("no node hosts an api, a packages and a worker pod without the PostgreSQL and Valkey primaries and the operators")
-	return ""
+	candidates := free
+	if len(candidates) == 0 {
+		candidates = nodesHosting(t, selAPI, selPackages, selMainWorker)
+	}
+	node := pickByLeastBlockers(candidates, deps)
+	if node == "" {
+		t.Fatal("no node hosts an api and a packages pod")
+	}
+	ensureMainWorkerOn(t, node)
+	clearNode(t, node)
+	if dependentsOn(t)[node].Standby {
+		t.Logf("node %s hosts the PostgreSQL standby (no node without an instance hosts an api and a packages pod): its loss stalls the primary's commits until the operator drops the synchronous standby", node)
+	}
+	return node
 }
 
 // kubectlMust runs kubectl without the release's namespace and fails the test on an error.
