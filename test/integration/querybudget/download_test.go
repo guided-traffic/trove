@@ -84,7 +84,7 @@ func TestR_ARCH_027_ADownloadCostsOneStatement(t *testing.T) {
 	e.push(r, rNuGet, "Budget.Local", "1.0.0")
 
 	// The remote hits are filled first, through the remote repository itself.
-	if a := e.do(r, "/api/npm/"+rNPMRem+"/"+e.pkg); a.Status != 200 {
+	if a := e.do(r, "/api/npm/it/"+rNPMRem+"/"+e.pkg); a.Status != 200 {
 		t.Fatalf("npm document: %d %s", a.Status, a.Body)
 	}
 	npmRemote := npmTarballPath(rNPMRem, e.pkg, e.ver)
@@ -105,7 +105,7 @@ func TestR_ARCH_027_ADownloadCostsOneStatement(t *testing.T) {
 		budget     int
 	}{
 		{"an npm tarball of a local repository", npmTarballPath(rNPM, local, "1.0.0"), 1},
-		{"the raw view of an npm tarball", "/files/" + rNPM + "/" + e.itemPath(rNPM, "-1.0.0.tgz"), 1},
+		{"the raw view of an npm tarball", "/files/it/" + rNPM + "/" + e.itemPath(rNPM, "-1.0.0.tgz"), 1},
 		{"an npm tarball of a remote repository (hit)", npmRemote, 1},
 		{"an npm tarball of the local member of a virtual repository", npmTarballPath(rNPMVirt, local, "1.0.0"), 1},
 		{"an npm tarball of the remote member of a virtual repository", npmTarballPath(rNPMVirt, e.pkg, e.ver), 2},

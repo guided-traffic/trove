@@ -8,7 +8,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth/principal"
-	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -244,12 +243,6 @@ func toServiceAccount(a principal.ServiceAccount) gen.ServiceAccount {
 	}
 	return gen.ServiceAccount{Id: uuidOf(a.ID), Name: name, Principal: ref, Description: a.Description, Status: gen.ServiceAccountStatus(a.Status), CreatedAt: utc(a.CreatedAt), Project: optString(a.Project)}
 }
-
-// The capabilities the service-account operations declare.
-const (
-	capabilityIdentitiesRead  = string(authz.IdentitiesRead)
-	capabilityIdentitiesWrite = string(authz.IdentitiesWrite)
-)
 
 // globalAccount reads the instance-wide service account a request addresses: the item routes of
 // /service-accounts address only accounts without a project, and an account of a project answers 404

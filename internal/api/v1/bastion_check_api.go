@@ -102,7 +102,7 @@ func (s *Server) checkRequest(req iface.CheckRequest) (netip.Addr, error) {
 	}
 	for i, key := range req.Repositories {
 		if _, perr := qname.ParseRepo(key); perr != nil || len(key) > 255 {
-			return netip.Addr{}, invalid("/repositories/"+strconv.Itoa(i), "invalid_key", "must be a repository name <project>/<key> of at most 255 characters")
+			return netip.Addr{}, errs.E(errs.Invalid, errs.CodeInvalid, "Repository "+strconv.Itoa(i)+" must be a repository name <project>/<key> of at most 255 characters.")
 		}
 	}
 	if req.Credential != nil && len(*req.Credential) > maxCredentialLen {

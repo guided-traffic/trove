@@ -258,23 +258,23 @@ func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 			{"GET", "/auth/oidc/corp/start"},
 			{"GET", "/api/v1/system/ping"},
 			{"GET", "/api/v1/repositories"},
-			{"POST", "/api/v1/repositories"},
+			{"POST", "/api/v1/projects/it/repositories"},
 			{"POST", "/api/v1/auth/oidc/token"},
 			{"GET", "/api/v1/auth/login-options"},
-			{"GET", "/api/v1/repositories/gen-local/content/x"},
-			{"PUT", "/api/v1/repositories/gen-local/content/x"},
+			{"GET", "/api/v1/projects/it/repositories/gen-local/content/x"},
+			{"PUT", "/api/v1/projects/it/repositories/gen-local/content/x"},
 			{"OPTIONS", "/api/v1/system/ping"},
 			{"OPTIONS", "/api/v1/repositories"},
 		},
 		"api": {
-			{"GET", "/api/npm/npm-all/" + "left-pad"},
-			{"GET", "/api/npm/npm-local/@acme%2fsdk"},
-			{"GET", "/files/gen-local/x"},
-			{"PUT", "/files/gen-local/x"},
-			{"DELETE", "/files/gen-local/x"},
+			{"GET", "/api/npm/it/npm-all/" + "left-pad"},
+			{"GET", "/api/npm/it/npm-local/@acme%2fsdk"},
+			{"GET", "/files/it/gen-local/x"},
+			{"PUT", "/files/it/gen-local/x"},
+			{"DELETE", "/files/it/gen-local/x"},
 			{"GET", "/v2/"},
 			{"GET", "/-/v1/login"},
-			{"OPTIONS", "/files/gen-local/x"},
+			{"OPTIONS", "/files/it/gen-local/x"},
 		},
 	}
 	compare := func(anonymous string) {
@@ -310,7 +310,7 @@ func TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath(t *testing.T) {
 	if got := in.probe(replicas["api"], http.MethodGet, "/api/v1/system/ping", in.admin); got.Header.Get("RateLimit-Policy") == "" || got.Header.Get("Content-Security-Policy") == "" {
 		t.Errorf("the management API on api carries no rate limit or API header: %v", got.Header)
 	}
-	if got := in.probe(replicas["packages"], http.MethodGet, "/files/gen-local/x", ""); got.Header.Get("Www-Authenticate") != `Basic realm="trove"` {
+	if got := in.probe(replicas["packages"], http.MethodGet, "/files/it/gen-local/x", ""); got.Header.Get("Www-Authenticate") != `Basic realm="trove"` {
 		t.Errorf("/files/ on packages without a credential: %d %v", got.Status, got.Header)
 	}
 	if got := in.probe(replicas["api"], http.MethodGet, "/api/v1/users/me/preferences", "", "Cookie", ended); got.Code(t) != "session_expired" {
@@ -358,7 +358,7 @@ func TestR_EP_010_PackagesIgnoresASessionCookie(t *testing.T) {
 		t.Fatalf("the session on api: %d %s", got.Status, got.Body)
 	}
 	// A file that does not exist, asked by a caller who is known: 404. Asked by none: 401.
-	const file = "/files/gen-local/x"
+	const file = "/files/it/gen-local/x"
 	if got := in.get(web, file, "", "Cookie", cookie); got.Status != http.StatusNotFound {
 		t.Errorf("the session on web: %d %s, want the 404 of a missing file", got.Status, got.Body)
 	}
@@ -386,7 +386,7 @@ func TestQ_ARCH_294_ApiExplainsAVirtualRepositoryWithoutContactingTheUpstream(t 
 	api, packages := in.start("api"), in.start("packages")
 	explain := func() map[string]string {
 		t.Helper()
-		a := in.get(api, "/api/v1/repositories/npm-all/resolution?path="+in.pkg.Name, in.admin)
+		a := in.get(api, "/api/v1/projects/it/repositories/npm-all/resolution?path="+in.pkg.Name, in.admin)
 		if a.Status != http.StatusOK {
 			t.Fatalf("explanation: %d %s", a.Status, a.Body)
 		}
@@ -411,7 +411,7 @@ func TestQ_ARCH_294_ApiExplainsAVirtualRepositoryWithoutContactingTheUpstream(t 
 		t.Fatalf("the explanation made the upstream see %d requests", n)
 	}
 
-	fill := in.get(packages, "/api/npm/npm-all/"+in.pkg.Name, in.admin)
+	fill := in.get(packages, "/api/npm/it/npm-all/"+in.pkg.Name, in.admin)
 	if fill.Status != http.StatusOK {
 		t.Fatalf("the fill through packages: %d %.300s", fill.Status, fill.Body)
 	}
@@ -429,7 +429,7 @@ func TestQ_ARCH_294_ApiExplainsAVirtualRepositoryWithoutContactingTheUpstream(t 
 	}
 	// The same read-only view is what the remote's state shows to the other operations of api: the API of the virtual
 	// repository's members works without any engine.
-	if a := in.get(api, "/api/v1/repositories/npm-all", in.admin); a.Status != http.StatusOK {
+	if a := in.get(api, "/api/v1/projects/it/repositories/npm-all", in.admin); a.Status != http.StatusOK {
 		t.Errorf("reading the repository on api: %d %s", a.Status, a.Body)
 	}
 }
@@ -463,7 +463,7 @@ func TestQ_UI_106_ContentRoutesAreOfTheApiFamily(t *testing.T) {
 	in := newInstallation(t)
 	api, packages, web := in.start("api"), in.start("packages"), in.start("web")
 	cookie, csrf := in.signIn(api)
-	const path = "/api/v1/repositories/gen-local/content/ui/a%20b.txt"
+	const path = "/api/v1/projects/it/repositories/gen-local/content/ui/a%20b.txt"
 
 	put := in.st.Do(api, http.MethodPut, path, "", "hello", "Cookie", cookie, "Origin", origin, session.HeaderCSRF, csrf, "Content-Type", "text/plain")
 	if put.Status != http.StatusCreated {
@@ -490,7 +490,7 @@ func TestQ_UI_106_ContentRoutesAreOfTheApiFamily(t *testing.T) {
 		t.Errorf("DELETE of the session on the content route of api: %d Allow %q %s", got.Status, got.Header.Get("Allow"), got.Body)
 	}
 	// What the content route stored is the file /files/ serves on packages, which has no content route.
-	if got := in.get(packages, "/files/gen-local/ui/a%20b.txt", in.admin); got.Status != http.StatusOK || string(got.Body) != "hello" {
+	if got := in.get(packages, "/files/it/gen-local/ui/a%20b.txt", in.admin); got.Status != http.StatusOK || string(got.Body) != "hello" {
 		t.Errorf("/files/ on packages: %d %q", got.Status, got.Body)
 	}
 	unknown := in.probe(packages, http.MethodGet, "/does-not-exist", in.admin)

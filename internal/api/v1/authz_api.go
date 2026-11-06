@@ -2,7 +2,6 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -127,6 +126,9 @@ func (s *Server) ListPermissionPolicies(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, errs.Wrap(err, "authz.listPolicies"))
 		return
 	}
+	for i := range page.Items {
+		page.Items[i] = viewPolicy(page.Items[i]) // a project's policy shows its name within the project
+	}
 	WritePage(w, r, page)
 }
 
@@ -135,15 +137,6 @@ const (
 	capPoliciesRead  = string(authz.PoliciesRead)
 	capPoliciesWrite = string(authz.PoliciesWrite)
 )
-
-// problemFields is the 422 validation_failed of the given fields.
-func problemFields(fields ...errs.FieldError) error {
-	detail := fields[0].Detail
-	if len(fields) > 1 {
-		detail = fmt.Sprintf("%d fields are invalid.", len(fields))
-	}
-	return errs.E(errs.Invalid, errs.CodeValidation, detail, errs.WithFields(fields...))
-}
 
 // policyFilter reads the filters of the list: expandGroups is a boolean that
 // defaults to true and only means something with a principal.
@@ -226,10 +219,7 @@ func (s *Server) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request,
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	var in authz.Policy
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
@@ -267,10 +257,7 @@ func (s *Server) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, n
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	var raw []byte
 	if err == nil {
 		raw, err = ReadMergePatch(w, r, s.bodyLimit())
@@ -315,10 +302,7 @@ func (s *Server) DeletePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -350,14 +334,20 @@ type policyProblem struct {
 }
 
 // ValidatePermissionPolicy implements POST /api/v1/authz/validate-policy.
-func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request, _ gen.ValidatePermissionPolicyParams) {
+func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request) {
 	svc, err := s.policies()
 	var in authz.Policy
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
 	}
+	if err == nil {
+		err = s.mayValidate(r, in.Project)
+	}
 	var rep authz.Report
 	if err == nil {
+		if in.Project != nil { // a policy of a project names it in the body; the store knows the stored name
+			in = storedPolicy(in, *in.Project)
+		}
 		rep, err = svc.Validate(r.Context(), in.PolicyInput)
 	}
 	if err != nil {
@@ -369,6 +359,29 @@ func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request
 		out.Errors = append(out.Errors, policyProblem{Pointer: p.Pointer, Code: p.Code, Detail: p.Detail})
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// mayValidate decides validate-policy, whose project is a member of the body: policies:read, or for a policy of a
+// project an Owner of it. A project the caller is no member of answers like a missing one (R-AUTHZ-016); a
+// member below Owner gets the 403 of the capability.
+func (s *Server) mayValidate(r *http.Request, projectKey *string) error {
+	ctx := r.Context()
+	if s.o.Access == nil {
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+	}
+	refusal := s.o.Access.Require(ctx, capPoliciesRead)
+	if refusal == nil {
+		return nil
+	}
+	if projectKey == nil || errs.KindOf(refusal) != errs.Forbidden {
+		return refusal
+	}
+	if pa, ok := s.o.Access.(ProjectAccess); ok {
+		if owns, err := pa.Owns(ctx, *projectKey); err == nil && owns {
+			return nil
+		}
+	}
+	return s.hideProject(r, *projectKey, refusal)
 }
 
 func nonNil(s []string) []string {
@@ -500,7 +513,7 @@ type authzMe struct {
 	Principals   []string `json:"principals"`
 	// Memberships are the projects the caller is a member of through this credential, with the role in
 	// force (Q-AUTHZ-207); [] for a caller that is a member of none.
-	Memberships []authz.Membership `json:"memberships"`
+	Memberships []authz.Membership `json:"projects"`
 	Scope       *scopeSummary      `json:"scope"`
 	Epoch       int64              `json:"epoch"`
 }

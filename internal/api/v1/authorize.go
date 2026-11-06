@@ -360,7 +360,11 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 		if q.ProjectRole != "" && s.projectRoleAdmits(r, q) {
 			return nil
 		}
-		return s.o.Access.Require(ctx, q.Permission)
+		err := s.o.Access.Require(ctx, q.Permission)
+		if err != nil && q.ProjectRole != "" && q.Project != "" && errs.KindOf(err) == errs.Forbidden {
+			return s.hideProject(r, valueOf(r, q.Project), err)
+		}
+		return err
 	case q.Role != "":
 		if s.o.Access == nil {
 			return refuse()
@@ -434,6 +438,27 @@ func (s *Server) switchOn(name string) bool {
 		return s.o.PublicVersion
 	}
 	return false
+}
+
+// hideProject turns the refusal of an operation on a project into the answer of a missing one when the
+// caller is no member of the project (R-AUTHZ-026, R-AUTHZ-016): a project the caller cannot see answers like
+// one that does not exist, and a member whose role is too low keeps its 403. The refusal (and its audit event)
+// was decided by Require; an Access that cannot list memberships leaves it as it is.
+func (s *Server) hideProject(r *http.Request, key string, refusal error) error {
+	pa, ok := s.o.Access.(ProjectAccess)
+	if !ok {
+		return refusal
+	}
+	members, err := pa.Memberships(r.Context())
+	if err != nil {
+		return refusal
+	}
+	for _, m := range members {
+		if m.Key == key {
+			return refusal
+		}
+	}
+	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", key))
 }
 
 // projectRoleAdmits is the extra way in of a declaration that names projectRole (Q-AUTHZ-207): the

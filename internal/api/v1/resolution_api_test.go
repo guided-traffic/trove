@@ -71,7 +71,7 @@ func resolutionSetup(t *testing.T, val *apitest.Validator, acc Access, ex *fakeE
 }
 
 func resolutionURL(key, path string) string {
-	return "/api/v1/repositories/" + key + "/resolution?path=" + url.QueryEscape(path)
+	return "/api/v1/projects/it/repositories/" + key + "/resolution?path=" + url.QueryEscape(path)
 }
 
 func TestResolutionAPI(t *testing.T) {

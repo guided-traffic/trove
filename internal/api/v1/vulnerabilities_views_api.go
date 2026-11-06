@@ -40,7 +40,7 @@ func (s *Server) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request,
 		httpserver.Problem(w, r, err)
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"repository", "format"}}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"project", "repository", "format"}}, s.o.API.Config)
 	if err == nil && (r.URL.Query().Has("limit") || r.URL.Query().Has("cursor")) {
 		err = badParam("limit", "is not known to this endpoint")
 	}
@@ -51,8 +51,11 @@ func (s *Server) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request,
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var f store.Filter
 	if err == nil {
-		repos, has := lq.Filter["repository"]
-		f = report.SummaryFilter(sn.ExpandFor(caller, splitValues(repos)), has, splitValues(lq.Filter["format"]))
+		var repos []string
+		var has bool
+		if repos, has, err = findingRepos(lq, sn, caller); err == nil {
+			f = report.SummaryFilter(repos, has, splitValues(lq.Filter["format"]))
+		}
 	}
 	var sc report.Scope
 	if err == nil {
@@ -112,7 +115,7 @@ func (s *Server) GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request, _
 		httpserver.Problem(w, r, err)
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"from", "to", "repository", "format", "kind"}}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"from", "to", "project", "repository", "format", "kind"}}, s.o.API.Config)
 	if err == nil && (r.URL.Query().Has("limit") || r.URL.Query().Has("cursor")) {
 		err = badParam("limit", "is not known to this endpoint")
 	}
@@ -134,8 +137,11 @@ func (s *Server) GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request, _
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var f store.Filter
 	if err == nil {
-		repos, has := lq.Filter["repository"]
-		f = store.Filter{Repos: sn.ExpandFor(caller, splitValues(repos)), HasRepos: has, Formats: splitValues(lq.Filter["format"]), Kind: kind}
+		var repos []string
+		var has bool
+		if repos, has, err = findingRepos(lq, sn, caller); err == nil {
+			f = store.Filter{Repos: repos, HasRepos: has, Formats: splitValues(lq.Filter["format"]), Kind: kind}
+		}
 	}
 	var sc report.Scope
 	if err == nil {

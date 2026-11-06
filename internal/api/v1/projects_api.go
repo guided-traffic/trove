@@ -22,8 +22,8 @@ import (
 //
 //   - listProjects: the declaration admits a member of any project (projectRole: reader);
 //     a caller without projects:read sees the projects it is a member of.
-//   - the member operations answer through the project service, which answers 501 until the
-//     member rules are built.
+//   - the member operations are the project service's (last Owner, group and user only, the audit event);
+//     the handler maps the body and the status (201 added, 200 role set).
 //   - the writes: the declaration is the capability or an Owner of the project. They answer
 //     Trove-Authz-Epoch; createProject is idempotent, replaceProject takes If-Match.
 
