@@ -464,3 +464,8 @@ func (Sync) TouchedClear(ctx context.Context, db q.DBTX, ecosystem string) error
 func (Sync) Orphans(ctx context.Context, db q.DBTX, ecosystem string) ([]string, error) {
 	return q.New(db).VulnAdvisoryOrphans(ctx, ecosystem)
 }
+
+// Analyze refreshes the planner statistics of the tables a large import fills (Q-VULN-96).
+func (Sync) Analyze(ctx context.Context, db q.DBTX) error {
+	return q.New(db).VulnSyncAnalyze(ctx)
+}

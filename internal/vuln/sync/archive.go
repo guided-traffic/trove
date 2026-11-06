@@ -236,6 +236,7 @@ func (s *Service) applyArchive(ctx context.Context, run Run, p Params, cp *check
 	}
 	s.count(store.SourceOSV, in.eco, "written", res.Written)
 	s.count(store.SourceOSV, in.eco, "skipped", res.Skipped)
+	s.analyzeAfterImport(ctx, in.eco, res.Written)
 
 	// What the archive no longer has is deleted and queued.
 	deleted, err := s.deleteIDs(ctx, in.eco, gone)
@@ -455,4 +456,26 @@ func (s *Service) recoverTouched(ctx context.Context, eco string, st store.SyncS
 		}
 		return s.enqueueEvaluate(ctx, tx)
 	})
+}
+
+// analyzeMinWritten is the number of records a run writes before it refreshes the planner statistics of the advisory tables: the
+// first import of an ecosystem and a resync after a long absence, not the few hundred records of a change file.
+const analyzeMinWritten = 10000
+
+// analyzeAfterImport refreshes the statistics of the tables the run filled, so that the rest of the run (the group recomputation, the
+// known-exploited flags) and the evaluation it requests are planned on what the tables hold and not on the estimates of a table
+// the autovacuum has not reached yet (Q-VULN-96). It is best effort: a failure is logged and the run goes on, because no statement of
+// the sync depends on statistics (Q-VULN-94, Q-VULN-95); a drain or a lost lease ends the run at its next step.
+func (s *Service) analyzeAfterImport(ctx context.Context, eco string, written int) {
+	if written < analyzeMinWritten {
+		return
+	}
+	start := s.now()
+	if err := s.o.DB.Read(ctx, func(db dbtx) error { return s.st.Analyze(ctx, db) }); err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("the statistics of the advisory tables were not refreshed after the import", "ecosystem", eco, "error", err)
+		}
+		return
+	}
+	s.log.Info("the statistics of the advisory tables were refreshed after the import", "ecosystem", eco, "records", written, "took", s.now().Sub(start).Round(time.Millisecond).String())
 }
