@@ -20,8 +20,8 @@ share the pod's budget, without `make` or a C compiler.
 | Class | Label | Pods | CPU request / limit | RAM request / limit (runner and dind together) | Disk: `_work` / Docker | Jobs |
 |---|---|---|---|---|---|---|
 | wds18-small | `runs-on: self-hosted` | 0–24 | 1 / 6 | 4 GiB / 10 GiB | 10 GiB / 15 GiB | every job of Test and Release except the kind legs, Release Docker & Helm, Renovate |
-| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-mirror` (the set mirror-long) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
-| GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget`, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, and the set `mirror` of `e2e-mirror`, in both workflows; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
+| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `e2e-mirror` (the set mirror-long) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
+| GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget` of Test and Release, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, and the set `mirror` of `e2e-mirror`, in both workflows; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
 
 The measured basis of the nightly assignment ([Q-ARCH-326](../spec/architecture.md#q-arch-326--which-runner-class-runs-which-leg-the-runner-review-of-the-nightly-run)):
 the six nightly runs of 2026-11-03 to 2026-11-05 (`gh run view <id> --json jobs`, the `runner_name` and the labels of each job), per leg the class that ran it and the
@@ -279,8 +279,10 @@ as `not measured` (V-2 and V-9 need V-1, V-3 to V-8 need V-1 and V-2; [perf/READ
 opens an issue ([Q-VULN-57](../spec/vulnerability-scanning.md#q-vuln-57--the-performance-run-is-a-test-package-on-the-integration-stack-gated-and-reported-by-the-nightly-workflow)).
 
 Job `e2e-nuget` runs `make e2e SET=nuget-ha` on a kind cluster (edge port 8090, cluster `trove-nuget-ha-<run id>`, reports
-`e2e-nuget-report-nuget-ha` and `e2e-nuget-artifacts-nuget-ha`, kept 14 days). No test is named `TestNuGetHA...` yet, so the set passes
-with a notice and the job checks nothing beyond the cluster coming up ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)).
+`e2e-nuget-report-nuget-ha` and `e2e-nuget-artifacts-nuget-ha`, kept 14 days): `TestNuGetHA`, drain variant A, the PostgreSQL switchover
+and the Valkey failover under the npm and NuGet load (R-HA-059, R-ARCH-024). It runs on the large class, because the load needs about 16 cores
+on the dev cluster ([Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)); the set loads the
+clients images into the control-plane node alone, so the 2.3 GB NuGet image no longer fills the Docker storage of a large pod four times over.
 The job builds both clients images in its own steps, `make npm-clients-image` and `make nuget-clients-image`, and the set loads them, because the set starts the npm
 client pods too ([Q-ARCH-327](../spec/architecture.md#q-arch-327--how-do-the-legs-that-load-both-client-images-get-them-and-who-builds-them)). The nightly run therefore
 costs a cluster bring-up and proves no NuGet behavior under load until the drain and failover tests land.

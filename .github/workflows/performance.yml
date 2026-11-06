@@ -6,8 +6,8 @@
 # (drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, E2.11) and ha-suite (the failure suite under the
 # npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
 # browser journey); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
-# (Q-HA-67); job e2e-nuget runs nuget-ha (the drain and failover under the NuGet load and the npm load, Q-ARCH-277; no test of that name
-# exists yet, so the set passes with a notice, Q-ARCH-276); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
+# (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
+# Q-HA-102); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln and vuln-long (R-VULN-029); job e2e-mirror runs mirror and mirror-long (R-REPO-059).
 # The perf jobs start after every kind leg of this workflow has finished, so they measure on the large VM without this workflow's
 # clusters beside them (Q-ARCH-325; a Test and Release run that starts meanwhile can still share the VM): job latency enforces the p99 bounds of P-13 (change propagation) and P-14 (job pick-up) with Valkey available, against
@@ -730,11 +730,13 @@ jobs:
   # cluster with the scatter profile and the counting NuGet test upstream. It left Test and Release with the npm-ha legs (owner,
   # 2026-11-01); its steps are those of the e2e-nuget job there. The set also starts the npm client pods and the npm test upstream
   # (the drain of R-HA-059 runs npm and NuGet load together), so the job builds both clients images in its own steps, as e2e-ci does,
-  # and the set loads them without building them again (Q-ARCH-327). No test is named TestNuGetHA yet, so the set passes with a notice
-  # (Q-ARCH-276) and this job checks nothing beyond the bring-up of the cluster until one lands. Edge port 8090 is the first free port of both workflows.
+  # and the set loads them without building them again (Q-ARCH-327). TestNuGetHA needs about 16 cores under its load (Q-HA-102), far more
+  # than a GitHub-hosted runner's 4, so the job runs on the large class; the set loads the 2.3 GB clients images into the control-plane
+  # node only (the node of the client pods), which keeps them inside a large pod's Docker storage. Edge port 8090 is the first free port of
+  # both workflows.
   e2e-nuget:
     name: e2e-nuget on kind (${{ matrix.set }})
-    runs-on: ubuntu-24.04
+    runs-on: large
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -766,12 +768,6 @@ jobs:
 
       # The GitHub-hosted runner's preinstalled SDKs (Android, .NET, Haskell, CodeQL) take the disk space that the kind
       # nodes, the images and the build caches need; no job here uses them.
-      - name: Free disk space (GitHub-hosted runner)
-        if: steps.leg.outputs.run == 'true'
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
-
       - name: Load the tool pins
         if: steps.leg.outputs.run == 'true'
         uses: ./.github/actions/load-pins
