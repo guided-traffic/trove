@@ -2,6 +2,7 @@ package virtual
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 	"time"
@@ -222,8 +223,8 @@ var _ Router = (*repository.Routing)(nil)
 
 // Decider is the decision point; authz.Decider implements it.
 type Decider interface {
-	MemberUsableOn(ctx context.Context, idx *authz.Index, sub authz.Subject, member string, c authz.Coordinate) (read, fill bool)
-	ReadableOn(ctx context.Context, idx *authz.Index, sub authz.Subject, keys []string) ([]string, error)
+	MemberUsableOn(ctx context.Context, idx *authz.Index, sub authz.Subject, member qname.Repo, c authz.Coordinate) (read, fill bool)
+	ReadableOn(ctx context.Context, idx *authz.Index, sub authz.Subject, keys []qname.Repo) ([]qname.Repo, error)
 	HoldsOn(idx *authz.Index, sub authz.Subject, permission string) bool
 	CheckOn(idx *authz.Index, sub authz.Subject, items []authz.CheckItem) ([]bool, error)
 }

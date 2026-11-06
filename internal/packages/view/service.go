@@ -3,6 +3,7 @@ package view
 import (
 	"context"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"math"
 	"slices"
 	"sort"
@@ -157,7 +158,7 @@ func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, 
 	}
 	var rowKeys []string
 	for _, k := range topo.Physical() {
-		switch shape := rs.Shape(k); {
+		switch shape := rs.Shape(nameOf(k)); {
 		case shape == authz.ReadAll && !topo.Restricts(k):
 			sc.whole = append(sc.whole, k)
 		case shape != authz.ReadNone:
@@ -187,7 +188,7 @@ func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, 
 		return Scope{}, tooBroad("The repositories you may read only in part")
 	}
 	for _, c := range cands {
-		if topo.Admits(c.RepoKey, c.Name) && (rs.Shape(c.RepoKey) == authz.ReadAll || rs.MayRead(c.RepoKey, c.Name, c.Version)) {
+		if topo.Admits(c.RepoKey, c.Name) && (rs.Shape(nameOf(c.RepoKey)) == authz.ReadAll || rs.MayRead(nameOf(c.RepoKey), c.Name, c.Version)) {
 			sc.rows = append(sc.rows, rowKey(c.RepoKey, c.Name, c.Version))
 		}
 	}
@@ -788,4 +789,11 @@ func (s *Service) oneVersion(ctx context.Context, sc Scope, format, name, versio
 		}
 	}
 	return versionGroup{}, nil, false, nil
+}
+
+// nameOf reads the qualified name "<project>/<key>" that the package statements and the topology use as the
+// repository key; a string that is none gives the zero name, which no scope admits.
+func nameOf(k string) qname.Repo {
+	r, _ := qname.ParseRepo(k)
+	return r
 }

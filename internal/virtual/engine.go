@@ -154,7 +154,7 @@ func (r *Resolver) plan(ctx context.Context, c Caller, v repository.Repository, 
 	coord := coordinate(v, d)
 	for _, m := range candidates {
 		read, fill := r.o.Decider.MemberUsableOn(ctx, c.Index, c.Subject, m.Name, coord)
-		p.usable[m.Name] = usable{read: read, fill: fill}
+		p.usable[m.Name.String()] = usable{read: read, fill: fill}
 		if !read {
 			p.Unreadable++
 		}
@@ -163,7 +163,7 @@ func (r *Resolver) plan(ctx context.Context, c Caller, v repository.Repository, 
 		return p, nil
 	}
 	for _, m := range route.Members {
-		u := p.usable[m.Name]
+		u := p.usable[m.Name.String()]
 		if !u.read {
 			continue
 		}

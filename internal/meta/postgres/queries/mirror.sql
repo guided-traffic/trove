@@ -365,7 +365,7 @@ SELECT COALESCE(u.logical_bytes, 0)::bigint AS logical_bytes,
 -- attempts below the limit), the end of the last pass that ended complete, partial or at its bound (0 when none did), the
 -- failures in a row, and when the mirror next acts: the time a due pass is due, or for a pass in progress the later of that and
 -- its last write (a pass that is worked on moves it forward, one that nobody runs does not).
-SELECT r.key,
+SELECT (rp.key || '/' || r.key)::text AS key,
        CASE WHEN s.pass_started_at IS NULL THEN 0
             ELSE (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = s.repo_id AND p.attempts < sqlc.arg(max_attempts)::int)
        END::bigint AS pending,
@@ -375,7 +375,8 @@ SELECT r.key,
                                ELSE greatest(COALESCE(s.next_pass_at, s.updated_at), s.updated_at) END)::float8 AS next_pass_s
   FROM mirror_state s
   JOIN repositories r ON r.id = s.repo_id
- ORDER BY r.key;
+  JOIN project rp ON rp.id = r.project_id
+ ORDER BY rp.key, r.key;
 
 -- name: MirrorRestoreClear :execrows
 -- R-REPO-058: what a restore does to the state. The pass in progress, the request, the rate-limit wait and the bound are

@@ -2,6 +2,7 @@ package virtual
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"sync"
 	"time"
 
@@ -86,7 +87,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		return ShadowOutcome{}, err
 	}
 	if len(set) == 0 {
-		r.m.checked(local.Name, OutcomeNoExposure)
+		r.m.checked(local.Name.String(), OutcomeNoExposure)
 		proceed.Outcome = OutcomeNoExposure
 		return proceed, nil
 	}
@@ -94,8 +95,8 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var remotes []Exposure
 	seen := map[string]bool{}
 	for _, x := range set {
-		if !seen[x.Remote.Name] {
-			seen[x.Remote.Name] = true
+		if !seen[x.Remote.Name.String()] {
+			seen[x.Remote.Name.String()] = true
 			remotes = append(remotes, x)
 		}
 	}
@@ -108,7 +109,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			defer wg.Done()
 			res := r.serves(ctx, c, x, name, docPath)
 			mu.Lock()
-			results[x.Remote.Name] = &res
+			results[x.Remote.Name.String()] = &res
 			mu.Unlock()
 		}()
 	}
@@ -117,7 +118,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var served, undetermined bool
 	var retry time.Duration
 	for _, x := range remotes {
-		res := results[x.Remote.Name]
+		res := results[x.Remote.Name.String()]
 		if res.err != nil {
 			return ShadowOutcome{}, res.err
 		}
@@ -130,7 +131,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		}
 	}
 	if !served && !undetermined {
-		r.m.checked(local.Name, OutcomeClear)
+		r.m.checked(local.Name.String(), OutcomeClear)
 		proceed.Outcome = OutcomeClear
 		return proceed, nil
 	}
@@ -140,7 +141,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	switch {
 	case served:
 		for _, x := range set {
-			if results[x.Remote.Name].outcome == Served {
+			if results[x.Remote.Name.String()].outcome == Served {
 				out.Shadowed = append(out.Shadowed, x)
 			}
 		}
@@ -162,7 +163,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			}
 		}
 	}
-	r.m.checked(local.Name, out.Outcome)
+	r.m.checked(local.Name.String(), out.Outcome)
 	return out, nil
 }
 
@@ -208,8 +209,8 @@ func (r *Resolver) holdsManage(c Caller, local repository.Repository, name strin
 // readableVirtuals are the keys of the virtual repositories of the pairs that the caller holds read
 // on (R-REPO-048 "The error body names the package and the virtual repositories").
 func (r *Resolver) readableVirtuals(ctx context.Context, c Caller, pairs []Exposure) []string {
-	var keys []string
-	seen := map[string]bool{}
+	var keys []qname.Repo
+	seen := map[qname.Repo]bool{}
 	for _, x := range pairs {
 		if !seen[x.Virtual.Name] {
 			seen[x.Virtual.Name] = true
@@ -220,8 +221,9 @@ func (r *Resolver) readableVirtuals(ctx context.Context, c Caller, pairs []Expos
 	if err != nil {
 		return []string{}
 	}
-	if readable == nil {
-		readable = []string{}
+	out := make([]string, len(readable))
+	for i, n := range readable {
+		out[i] = n.String()
 	}
-	return readable
+	return out
 }

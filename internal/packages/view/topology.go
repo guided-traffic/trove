@@ -33,17 +33,17 @@ func NewTopology(repos []repository.Repository) Topology {
 		containers: map[string][]string{},
 	}
 	for _, r := range repos {
-		t.class[r.Name] = r.Class
-		t.repos[r.Name] = r
+		t.class[r.Name.String()] = r.Class
+		t.repos[r.Name.String()] = r
 	}
 	for _, r := range repos {
 		if r.Class != repository.Virtual {
 			continue
 		}
 		phys := physicalMembers(r, 0)
-		t.members[r.Name] = phys
+		t.members[r.Name.String()] = phys
 		for _, k := range phys {
-			t.containers[k] = append(t.containers[k], r.Name)
+			t.containers[k] = append(t.containers[k], r.Name.String())
 		}
 	}
 	for k := range t.containers {
@@ -62,8 +62,8 @@ func physicalMembers(v repository.Repository, depth int) []string {
 			out = append(out, physicalMembers(m, depth+1)...)
 			continue
 		}
-		if !slices.Contains(out, m.Name) {
-			out = append(out, m.Name)
+		if !slices.Contains(out, m.Name.String()) {
+			out = append(out, m.Name.String())
 		}
 	}
 	return out

@@ -11,6 +11,7 @@ package report
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"sort"
 	"time"
@@ -108,7 +109,7 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 	}
 	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: make(map[string]repository.Repository, len(repos))}
 	for _, r := range repos {
-		sn.byKey[r.Name] = r
+		sn.byKey[r.Name.String()] = r
 	}
 	return sn, nil
 }
@@ -167,7 +168,7 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 		if len(formats) > 0 && !slices.Contains(formats, r.Format) {
 			continue
 		}
-		switch shape := c.Reads.Shape(k); {
+		switch shape := c.Reads.Shape(nameOf(k)); {
 		case shape == authz.ReadAll && !sn.Topo.Restricts(k):
 			sc.Whole = append(sc.Whole, k)
 			whole[k] = true
@@ -203,7 +204,7 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 			sc.Holders = append(sc.Holders, cd)
 			continue
 		}
-		ok := sn.Topo.Admits(cd.Repository, cd.Package) && (c.Reads.Shape(cd.Repository) == authz.ReadAll || c.Reads.MayRead(cd.Repository, cd.Package, cd.Version))
+		ok := sn.Topo.Admits(cd.Repository, cd.Package) && (c.Reads.Shape(nameOf(cd.Repository)) == authz.ReadAll || c.Reads.MayRead(nameOf(cd.Repository), cd.Package, cd.Version))
 		decided[cd] = ok
 		if ok {
 			sc.Rows = append(sc.Rows, cd.Repository+"\x1f"+cd.Package+"\x1f"+cd.Version)
@@ -225,7 +226,7 @@ func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadKeys []str
 		return Scope{}, tooBroad()
 	}
 	for _, p := range pairs {
-		if sn.Topo.Admits(p.Repository, p.Package) && (c.Reads.Shape(p.Repository) == authz.ReadAll || c.Reads.MayRead(p.Repository, p.Package, "")) {
+		if sn.Topo.Admits(p.Repository, p.Package) && (c.Reads.Shape(nameOf(p.Repository)) == authz.ReadAll || c.Reads.MayRead(nameOf(p.Repository), p.Package, "")) {
 			sc.Packages = append(sc.Packages, p.Repository+"\x1f"+p.Package)
 		}
 	}
@@ -338,4 +339,11 @@ func (s *Service) findings(sn *Snapshot, rows []store.Row) []Finding {
 		out = append(out, Finding{Row: r, Blocked: blocked, BlockReason: reason})
 	}
 	return out
+}
+
+// nameOf reads the qualified name "<project>/<key>" the findings statements use as the repository key; a string
+// that is none gives the zero name, which no scope admits.
+func nameOf(k string) qname.Repo {
+	r, _ := qname.ParseRepo(k)
+	return r
 }

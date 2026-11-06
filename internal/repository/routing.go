@@ -147,7 +147,7 @@ type RouteDecision struct {
 	// ClaimedBy lists the keys of the repositories whose claims are the most
 	// specific match, for a claim decision. A repository the virtual repository
 	// does not contain can be among them.
-	ClaimedBy []string
+	ClaimedBy []qname.Repo
 }
 
 // Route is the outcome of R-REPO-019 steps 2, 3 and 5 for one request.
@@ -180,11 +180,11 @@ func (rt *Routing) Route(ctx context.Context, virtual Repository, req RouteReque
 	if err != nil {
 		return Route{}, err
 	}
-	return routeOf(rt.cat, idx, snap.keyOf, virtual, req), nil
+	return routeOf(rt.cat, idx, snap.nameOf, virtual, req), nil
 }
 
 // routeOf is Route on explicit inputs.
-func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, virtual Repository, req RouteRequest) Route {
+func routeOf(cat *catalog.Registry, idx *claimIndex, nameOf func(int64) qname.Repo, virtual Repository, req RouteRequest) Route {
 	out := Route{Dropped: map[qname.Repo]string{}}
 	info, known := cat.Lookup(virtual.Format)
 	if !known || virtual.virt == nil {
@@ -212,7 +212,7 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 		} else if hits := mostSpecific(inEffect(idx.lookup(virtual.Format, name), virtual.virt)); len(hits) > 0 {
 			out.Decision = RouteDecision{Kind: DecidedByClaim, Pattern: hits[0].pattern.String()}
 			for _, h := range hits {
-				out.Decision.ClaimedBy = append(out.Decision.ClaimedBy, keyOf(h.repoID))
+				out.Decision.ClaimedBy = append(out.Decision.ClaimedBy, nameOf(h.repoID))
 			}
 			claimed = hits
 		}
@@ -373,7 +373,7 @@ func (rt *Routing) ClaimsFor(ctx context.Context, format, name string) ([]ClaimM
 	}
 	var out []ClaimMatch
 	for _, h := range idx.lookup(format, name) {
-		out = append(out, ClaimMatch{Repository: snap.keyOf(h.repoID), Pattern: h.pattern.String(), Scope: h.scope, Source: h.source})
+		out = append(out, ClaimMatch{Repository: snap.nameOf(h.repoID).String(), Pattern: h.pattern.String(), Scope: h.scope, Source: h.source})
 	}
 	return out, nil
 }
@@ -429,7 +429,7 @@ func (rt *Routing) ExposureSet(ctx context.Context, local Repository, name strin
 		if v.Disabled || v.Lifecycle != Active {
 			continue
 		}
-		route := routeOf(rt.cat, idx, snap.keyOf, v, RouteRequest{Name: name})
+		route := routeOf(rt.cat, idx, snap.nameOf, v, RouteRequest{Name: name})
 		if !route.Admitted || !slices.ContainsFunc(route.Members, func(m Repository) bool { return m.rid == local.rid }) {
 			continue
 		}

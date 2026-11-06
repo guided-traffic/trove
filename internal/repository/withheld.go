@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"slices"
 	"strings"
 )
@@ -69,7 +70,7 @@ func keepsAway(rt *Routing, idx *claimIndex, via *Repository, member Repository,
 // keptFromMember is the part of KeepsAway that depends on the virtual repository's pin rules and
 // the claims in effect in it.
 func keptFromMember(rt *Routing, idx *claimIndex, via *Repository, member Repository, name string, stems []string) bool {
-	r := routeOf(rt.cat, idx, func(int64) string { return "" }, *via, RouteRequest{Name: name})
+	r := routeOf(rt.cat, idx, func(int64) qname.Repo { return qname.Repo{} }, *via, RouteRequest{Name: name})
 	switch r.Dropped[member.Name] {
 	case DropPinnedOut, DropClaimedElsewhere:
 		return true

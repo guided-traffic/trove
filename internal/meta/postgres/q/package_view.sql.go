@@ -12,16 +12,17 @@ import (
 )
 
 const packageViewCandidates = `-- name: PackageViewCandidates :many
-SELECT r.key AS repo_key, p.name, pv.version
+SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY($1::text[])
+   AND (rp.key || '/' || r.key) = ANY($1::text[])
    AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
    AND ($3::text = '' OR starts_with(lower(p.name), lower($3::text)))
    AND ($4::text = '' OR p.name = $4::text)
- ORDER BY r.key, p.name, pv.version
+ ORDER BY (rp.key || '/' || r.key), p.name, pv.version
  LIMIT $5::int
 `
 
@@ -110,14 +111,15 @@ WITH vis AS (
     FROM package_versions pv
     JOIN packages p ON p.id = pv.package_id
     JOIN repositories r ON r.id = p.repo_id
+    JOIN project rp ON rp.id = r.project_id
    WHERE pv.trashed_at IS NULL
      AND NOT (pv.id = ANY($8::bigint[]))
      AND (cardinality($9::text[]) = 0 OR r.format = ANY($9::text[]))
-     AND (NOT $10::boolean OR r.key = ANY($11::text[]))
+     AND (NOT $10::boolean OR (rp.key || '/' || r.key) = ANY($11::text[]))
      AND ($12::text = '' OR starts_with(lower(p.name), lower($12::text)))
      AND ($13::text = '' OR (r.format = $14::text AND p.name = $13::text))
-     AND (r.key = ANY($15::text[])
-          OR concat_ws(chr(31), r.key, p.name, pv.version) = ANY($16::text[]))
+     AND ((rp.key || '/' || r.key) = ANY($15::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), p.name, pv.version) = ANY($16::text[]))
 ), grouped AS (
   SELECT v.format, v.name, min(v.display_name)::text AS display_name,
          min(v.created_at)::timestamptz AS created_at, max(v.created_at)::timestamptz AS updated_at,
@@ -199,7 +201,7 @@ type PackageViewListRow struct {
 //
 //	whole        keys of the repositories whose every package and version the caller
 //	             may read (authz.ReadAll);
-//	rows         one entry "<repository key>\x1f<package name>\x1f<version>" per
+//	rows         one entry "<project>/<repository key>\x1f<package name>\x1f<version>" per
 //	             version the caller may read in the other repositories
 //	             (authz.ReadRows), decided by the decision point row by row;
 //	withheld     ids of stored versions the format does not serve.
@@ -269,7 +271,7 @@ func (q *Queries) PackageViewList(ctx context.Context, arg PackageViewListParams
 
 const packageViewVersions = `-- name: PackageViewVersions :many
 SELECT pv.id AS version_id, r.format, p.name, p.display_name, pv.version, pv.created_at,
-       r.id AS repo_id, r.key AS repo_key, r.class AS repo_class,
+       r.id AS repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.class AS repo_class,
        CASE WHEN $1::boolean
             THEN COALESCE((SELECT sum(i.size) FROM items i WHERE i.version_id = pv.id AND i.kind = 'file' AND i.trashed_at IS NULL), 0)
             ELSE 0 END::bigint AS size_bytes,
@@ -277,12 +279,13 @@ SELECT pv.id AS version_id, r.format, p.name, p.display_name, pv.version, pv.cre
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
    AND NOT (pv.id = ANY($2::bigint[]))
    AND concat_ws(chr(31), r.format, p.name) = ANY($3::text[])
-   AND (NOT $4::boolean OR r.key = ANY($5::text[]))
-   AND (r.key = ANY($6::text[])
-        OR concat_ws(chr(31), r.key, p.name, pv.version) = ANY($7::text[]))
+   AND (NOT $4::boolean OR (rp.key || '/' || r.key) = ANY($5::text[]))
+   AND ((rp.key || '/' || r.key) = ANY($6::text[])
+        OR concat_ws(chr(31), (rp.key || '/' || r.key), p.name, pv.version) = ANY($7::text[]))
  ORDER BY pv.created_at, pv.id
 `
 

@@ -485,7 +485,7 @@ func (q *Queries) MirrorFailureWrite(ctx context.Context, arg MirrorFailureWrite
 }
 
 const mirrorGauges = `-- name: MirrorGauges :many
-SELECT r.key,
+SELECT (rp.key || '/' || r.key)::text AS key,
        CASE WHEN s.pass_started_at IS NULL THEN 0
             ELSE (SELECT count(*) FROM mirror_pending p WHERE p.repo_id = s.repo_id AND p.attempts < $1::int)
        END::bigint AS pending,
@@ -495,7 +495,8 @@ SELECT r.key,
                                ELSE greatest(COALESCE(s.next_pass_at, s.updated_at), s.updated_at) END)::float8 AS next_pass_s
   FROM mirror_state s
   JOIN repositories r ON r.id = s.repo_id
- ORDER BY r.key
+  JOIN project rp ON rp.id = r.project_id
+ ORDER BY rp.key, r.key
 `
 
 type MirrorGaugesRow struct {

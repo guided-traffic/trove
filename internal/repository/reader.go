@@ -69,8 +69,8 @@ type snapshot struct {
 	// <<< M2 virtual
 }
 
-// keyOf returns the qualified name "project/key" of a repository id, or "" for an id the snapshot lacks.
-func (s *snapshot) keyOf(id int64) string { return s.keys[id].String() }
+// nameOf returns the name of a repository id, the zero name for an id the snapshot lacks.
+func (s *snapshot) nameOf(id int64) qname.Repo { return s.keys[id] }
 
 // SnapshotReader answers [Reader] from a per-replica snapshot of the repository
 // table (R-REPO-049: an in-process copy of PostgreSQL rows). Every change of the

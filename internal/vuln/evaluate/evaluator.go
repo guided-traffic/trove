@@ -1,8 +1,8 @@
 package evaluate
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"

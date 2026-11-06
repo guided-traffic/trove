@@ -19,10 +19,11 @@
 -- decision point decides one by one; the request's filters narrow them. A triple repeats for each finding of the version, and
 -- the caller decides it once: sorting the triples apart in SQL would cost more than the repeat. At most max_rows findings; the
 -- caller asks for one more than it accepts.
-SELECT r.key AS repo_key, f.package_name AS name, f.version AS version
+SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name, f.version AS version
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE r.key = ANY(sqlc.arg(keys)::text[])
+  JOIN project rp ON rp.id = r.project_id
+ WHERE (rp.key || '/' || r.key) = ANY(sqlc.arg(keys)::text[])
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
@@ -39,10 +40,11 @@ SELECT r.key AS repo_key, f.package_name AS name, f.version AS version
 -- pair whose findings the list's own filters all exclude is decided for nothing. The statement does not group: with many distinct
 -- packages the planner sorts to group, and that costs more than the repeat it removes (Q-VULN-81). At most max_rows findings; the
 -- caller asks for one more than it accepts.
-SELECT r.key AS repo_key, f.package_name AS name
+SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE r.key = ANY(sqlc.arg(keys)::text[])
+  JOIN project rp ON rp.id = r.project_id
+ WHERE (rp.key || '/' || r.key) = ANY(sqlc.arg(keys)::text[])
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
@@ -55,16 +57,17 @@ SELECT r.key AS repo_key, f.package_name AS name
 -- name: VulnPackageCandidates :many
 -- The (repository, package, version) triples of one package in the given repositories, for the package views (the version
 -- report names every readable repository that holds the version, with or without a finding).
-SELECT r.key AS repo_key, p.name, pv.version
+SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY(sqlc.arg(keys)::text[])
+   AND (rp.key || '/' || r.key) = ANY(sqlc.arg(keys)::text[])
    AND r.format = sqlc.arg(format)::text
    AND p.name = sqlc.arg(name)::text
    AND (sqlc.arg(version)::text = '' OR pv.version = sqlc.arg(version)::text)
- ORDER BY r.key, pv.version
+ ORDER BY (rp.key || '/' || r.key), pv.version
  LIMIT sqlc.arg(max_rows)::int;
 
 -- name: VulnFindingsList :many
@@ -74,17 +77,18 @@ SELECT r.key AS repo_key, p.name, pv.version
 -- same expression, so a page reads the first rows of one index in order and stops (Q-VULN-68); a branch whose sort is not
 -- asked does not run. The advisory's columns are looked up for the rows of the page only.
 WITH base AS NOT MATERIALIZED (
-  SELECT f.id, r.key AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
+  SELECT f.id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
          f.severity_rank, f.cvss_score AS cvss_raw, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited, f.fix_available,
          f.fixed_versions, f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason,
          COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.comment, '')::text AS comment,
          f.revision, f.detected_at, f.resolved_at, f.status_changed_at, f.status_changed_by
     FROM vuln_finding f
     JOIN repositories r ON r.id = f.repo_id
-   WHERE (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
-     AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
+    JOIN project rp ON rp.id = r.project_id
+   WHERE ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+     AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
      AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
      AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
@@ -100,12 +104,12 @@ WITH base AS NOT MATERIALIZED (
      AND (sqlc.arg(kind)::text = '' OR f.kind = sqlc.arg(kind)::text)
      AND (NOT sqlc.arg(has_known_exploited)::boolean OR f.known_exploited = sqlc.arg(known_exploited)::boolean)
      AND (NOT sqlc.arg(has_fix_available)::boolean OR f.fix_available = sqlc.arg(fix_available)::boolean)
-     AND (NOT sqlc.arg(has_blocked)::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY(sqlc.arg(enabled_repos)::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
+     AND (NOT sqlc.arg(has_blocked)::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND (rp.key || '/' || r.key) = ANY(sqlc.arg(enabled_repos)::text[])
+          THEN CASE WHEN f.kind = 'malicious' AND (rp.key || '/' || r.key) = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) IS NOT NULL) = sqlc.arg(blocked)::boolean)
-     AND (sqlc.arg(block_reason)::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY(sqlc.arg(enabled_repos)::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
+     AND (sqlc.arg(block_reason)::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND (rp.key || '/' || r.key) = ANY(sqlc.arg(enabled_repos)::text[])
+          THEN CASE WHEN f.kind = 'malicious' AND (rp.key || '/' || r.key) = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) = sqlc.arg(block_reason)::text)
      AND (NOT sqlc.arg(has_from)::boolean OR f.detected_at >= NULLIF(sqlc.arg(detected_from)::text, '')::timestamptz)
@@ -211,10 +215,11 @@ SELECT count(*)::bigint AS n
   FROM (SELECT 1
           FROM vuln_finding f
           JOIN repositories r ON r.id = f.repo_id
-         WHERE (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
-           AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
+          JOIN project rp ON rp.id = r.project_id
+         WHERE ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+           AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
      AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
      AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest(sqlc.arg(packages)::text[]) AS x)))
@@ -230,12 +235,12 @@ SELECT count(*)::bigint AS n
      AND (sqlc.arg(kind)::text = '' OR f.kind = sqlc.arg(kind)::text)
      AND (NOT sqlc.arg(has_known_exploited)::boolean OR f.known_exploited = sqlc.arg(known_exploited)::boolean)
      AND (NOT sqlc.arg(has_fix_available)::boolean OR f.fix_available = sqlc.arg(fix_available)::boolean)
-     AND (NOT sqlc.arg(has_blocked)::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY(sqlc.arg(enabled_repos)::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
+     AND (NOT sqlc.arg(has_blocked)::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND (rp.key || '/' || r.key) = ANY(sqlc.arg(enabled_repos)::text[])
+          THEN CASE WHEN f.kind = 'malicious' AND (rp.key || '/' || r.key) = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) IS NOT NULL) = sqlc.arg(blocked)::boolean)
-     AND (sqlc.arg(block_reason)::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY(sqlc.arg(enabled_repos)::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
+     AND (sqlc.arg(block_reason)::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND (rp.key || '/' || r.key) = ANY(sqlc.arg(enabled_repos)::text[])
+          THEN CASE WHEN f.kind = 'malicious' AND (rp.key || '/' || r.key) = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) = sqlc.arg(block_reason)::text)
      AND (NOT sqlc.arg(has_from)::boolean OR f.detected_at >= NULLIF(sqlc.arg(detected_from)::text, '')::timestamptz)
@@ -254,15 +259,16 @@ SELECT count(*)::bigint AS n
 -- name: VulnFindingsLock :many
 -- The findings of the given ids the caller can read, locked for a status change, in id order so that two bulk changes
 -- never wait for each other in a circle. The ids are UUIDs the caller validated; the array compares against the primary key.
-SELECT f.id::text AS id, r.key AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
+SELECT f.id::text AS id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE f.id = ANY(sqlc.arg(ids)::text[]::uuid[])
-   AND (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
  ORDER BY f.id
    FOR UPDATE OF f;
 
@@ -335,12 +341,13 @@ SELECT rep.ecosystem, rep.canonical_id AS id, rep.kind, rep.summary, rep.details
 SELECT f.version, f.severity, count(*)::bigint AS n
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE r.format = sqlc.arg(format)::text
    AND f.package_name = sqlc.arg(name)::text
    AND f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
  GROUP BY f.version, f.severity
  ORDER BY f.version, f.severity;
 
@@ -351,11 +358,12 @@ SELECT f.severity, f.kind, count(*)::bigint AS total,
        (count(*) FILTER (WHERE f.fix_available))::bigint AS fix_available
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
-   AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
+   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+   AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
  GROUP BY f.severity, f.kind;
 
@@ -364,14 +372,15 @@ SELECT f.severity, f.kind, count(*)::bigint AS total,
 SELECT count(DISTINCT (f.repo_id, f.package_name, f.version))::bigint AS n
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY(sqlc.arg(enabled_repos)::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
+  JOIN project rp ON rp.id = r.project_id
+ WHERE (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND (rp.key || '/' || r.key) = ANY(sqlc.arg(enabled_repos)::text[])
+          THEN CASE WHEN f.kind = 'malicious' AND (rp.key || '/' || r.key) = ANY(sqlc.arg(malicious_repos)::text[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) IS NOT NULL
-   AND (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
-   AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
+   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+   AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]));
 
 -- name: VulnTrendDetected :many
@@ -381,11 +390,12 @@ SELECT to_char(GREATEST((f.detected_at AT TIME ZONE 'UTC')::date, sqlc.arg(from_
        f.severity, count(*)::bigint AS n
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE (f.detected_at AT TIME ZONE 'UTC')::date <= sqlc.arg(to_day)::text::date
-   AND (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
-   AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
+   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+   AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (sqlc.arg(kind)::text = '' OR f.kind = sqlc.arg(kind)::text)
  GROUP BY 1, 2;
@@ -397,12 +407,13 @@ SELECT to_char(GREATEST((f.resolved_at AT TIME ZONE 'UTC')::date, sqlc.arg(from_
        f.severity, count(*)::bigint AS n
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE f.status = 'resolved' AND f.resolved_at IS NOT NULL
    AND (f.resolved_at AT TIME ZONE 'UTC')::date <= sqlc.arg(to_day)::text::date
-   AND (r.key = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
-   AND (NOT sqlc.arg(has_repos)::boolean OR r.key = ANY(sqlc.arg(repos)::text[]))
+   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name, f.version) = ANY(sqlc.arg(rows)::text[])
+          OR concat_ws(chr(31), (rp.key || '/' || r.key), f.package_name) = ANY(sqlc.arg(package_rows)::text[]))
+   AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (sqlc.arg(kind)::text = '' OR f.kind = sqlc.arg(kind)::text)
  GROUP BY 1, 2;

@@ -1,8 +1,8 @@
 package vuln
 
 import (
-	"github.com/guided-traffic/trove/internal/qname"
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
@@ -28,7 +28,7 @@ type CommittedVersion struct {
 	// Repo is the repository's name; the evaluation reads the repository's snapshot with it, which costs no query.
 	Repo   qname.Repo
 	Format string
-	ItemID  int64
+	ItemID int64
 	// Trigger is TriggerPublish for an upload and TriggerFill for the fill of a remote cache.
 	Trigger Trigger
 }

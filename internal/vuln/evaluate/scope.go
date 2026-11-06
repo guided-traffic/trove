@@ -9,6 +9,7 @@ package evaluate
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/url"
 	"strconv"
 	"strings"
@@ -97,11 +98,15 @@ func (r ClaimRule) Claim(ctx context.Context, format, name string) (claimRepo st
 				return m.Repository, true, nil
 			}
 		} else {
-			repo, err := r.Repos.ByKey(ctx, m.Repository)
+			name, perr := qname.ParseRepo(m.Repository)
+			if perr != nil {
+				return m.Repository, true, nil // an unreadable holder still withholds
+			}
+			repo, err := r.Repos.ByName(ctx, name)
 			if err != nil {
 				return m.Repository, true, nil //nolint:nilerr // see above: an unreadable holder still withholds
 			}
-			h = ClaimHolder{Key: repo.Name, Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
+			h = ClaimHolder{Key: repo.Name.String(), Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
 		}
 		if h.counts(format) {
 			return h.Key, true, nil
@@ -150,7 +155,7 @@ func viewOf(repo repository.Repository) (repoView, bool) {
 	if err != nil {
 		return repoView{}, false
 	}
-	v := repoView{ID: id, Key: repo.Name, Format: repo.Format, Class: repo.Class, Ecosystem: eco, Settings: repo.VulnerabilitySettings()}
+	v := repoView{ID: id, Key: repo.Name.String(), Format: repo.Format, Class: repo.Class, Ecosystem: eco, Settings: repo.VulnerabilitySettings()}
 	if rs, ok := repo.Remote(); ok {
 		v.UpstreamHost = hostOf(rs.URL)
 	}

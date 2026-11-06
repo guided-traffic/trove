@@ -158,11 +158,10 @@ func (s *Service) Apply(ctx context.Context, tx meta.Tx, a Actor, sc store.Scope
 	if err != nil {
 		return nil, err
 	}
-	// The lock query names a finding's repository by its bare key (a stop-gap until WP3 returns the project
-	// key with it), so the policy is looked up by the bare key.
+	// The findings name their repository by its qualified name <project>/<key>.
 	policy := map[string]vuln.Policy{}
 	for _, r := range repos {
-		policy[r.Name.Key] = r.VulnerabilityPolicy(s.o.Enabled, s.o.Enforcement)
+		policy[r.Name.String()] = r.VulnerabilityPolicy(s.o.Enabled, s.o.Enforcement)
 	}
 	out := make([]Result, 0, len(ids))
 	for _, id := range ids {
