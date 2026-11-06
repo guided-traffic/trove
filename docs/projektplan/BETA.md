@@ -187,7 +187,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 
 **Carried over**
 - 🟢 Renovate pull request #42 (TypeScript 7, a major update): it cannot merge while `@angular/compiler-cli` 22.2 and typescript-eslint accept only `typescript <6.1`; a Renovate rule holds TypeScript below 6.1 until Angular's peer range admits 7 ([ADR-140](../decisions.md#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x))
-- 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`
+- 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`; switched off until the first stable release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), owner 2026-11-06)
 
 **NuGet v3**
 - 🟢 Local: service index, package content, registrations, search, push, unlist, relist, delete; search terms meet only the
@@ -407,7 +407,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 
 **The owner's requests during the run (2026-11-02)**
 - 🟢 Migrations are immutable once on `main`, released or not: a committed file is never edited, renamed or removed, and a
-  defect is fixed forward with a new migration of the class R-HA-018 gives it. `make compat-check` (job `compat`) reads the
+  defect is fixed forward with a new migration of the class R-HA-018 gives it. Switched off until the first stable release
+  ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), owner 2026-11-06):
+  a migration may be edited then, and a changed one needs a fresh database. `make compat-check` (job `compat`) reads the
   history of `main` and fails on a change, with the file, the commit and the rule in the message; its allowlist
   `historicalEdits` names the two commits from before the rule ([Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to),
   `TestR_ARCH_026_MigrationsOnMainAreNeverEdited`). The cause: the dev cluster had migrated from `main` before
@@ -1033,6 +1035,21 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   - ⚪ Node drain and PostgreSQL and Valkey failover under load
   - ⚪ Backup by the CronJob and restore into an empty namespace
 - ⚪ Objections from the walkthrough worked off
+  - ⚪ Every repository belongs to exactly one project and none is shared (owner, 2026-11-06,
+    [Q-AUTHZ-206](../spec/authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project), gap H-540); a
+    repository is addressed inside its project, `/api/<format>/<projectKey>/<repoKey>/…`
+    ([Q-REPO-212](../spec/repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
+    gap H-541); a virtual repository lists only repositories of its project; no compatibility path (CLAUDE.md)
+  - ⚪ Users and groups are members of a project with a role that grants its repositories (owner, 2026-11-06,
+    [Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
+    gap H-542); the project is the context of the content, chosen from your projects
+    ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap
+    H-543); four roles Reader, Developer, Maintainer, Owner
+    ([Q-AUTHZ-208](../spec/authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)), the Owner
+    administers the project on its own and the two switches go; `admin` and
+    `auditor` see every project, `admin` creates projects and assigns members; the auditor's instance-wide vulnerability
+    dashboard in the admin area ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area),
+    gap H-544)
 - ⚪ All exit checks green again
 - 🟡 Beta documentation: installation guide, configuration reference, known limitations. The first edition of the
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known

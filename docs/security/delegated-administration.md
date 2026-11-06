@@ -151,7 +151,11 @@ mechanisms only this page describes, and H-530, which lives on the page of the d
 - [H-405](../spec/authorization.md#h-405--a-global-policy-that-predates-a-project-keeps-the-projects-prefix) — a global policy that
   predates a project keeps the project's prefix;
 - [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
-  event of a refused project administrator does not name the project.
+  event of a refused project administrator does not name the project;
+- [H-540](../spec/authorization.md#h-540--a-repository-can-still-exist-without-a-project) — a repository can still exist
+  without a project or be listed by a virtual repository of another project, so no project's administrators see it and no
+  project policy can name it (the owner decided that every repository belongs to exactly one and none is shared,
+  Q-AUTHZ-206).
 - [H-530](data-and-secret-flow.md#h-530--the-mirror-status-shows-the-engines-failure-text-as-stored) — the status of a mirror shows the
   engine's failure text as stored, to the same readers.
 

@@ -6670,6 +6670,37 @@ revisit the retry count if a deletion job is seen to outlast five reads.
 **Applied in the spec:** none (test harness; the product behaves as R-API-012 and R-AUTHZ-028 say). Code: `test/e2e/mirror_env_test.go`
 (`drop`), `test/e2e/m1_env_test.go` (`ensurePolicy`), `test/e2e/mirror_long_fault_test.go` (`startHeldPass`).
 
+
+### Q-REPO-212 · A repository is addressed inside its project, and no repository is shared
+
+Status: **Decided by the development agent on 2026-11-06**, on the owner's instruction to address repositories the way that is
+technically best, without regard for existing clients ("mach es so wie es technisch am Sinnvollsten ist"). Not built yet
+([H-541](#h-541--repositories-are-addressed-by-a-global-key)).
+
+Context: every repository belongs to exactly one project, and no repository is shared
+([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project)). Today a repository has a key
+that is unique in the installation and is addressed by it alone: `/api/<format>/<repoKey>/…`, `/files/<repoKey>/…`,
+`/api/v1/repositories/<repoKey>…`; a repository a project administrator creates carries the project key as a prefix
+(`web-libs`, `422 project_prefix_required`, [Q-AUTHZ-176](authorization.md#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The project in the address, the key unique within the project (chosen) | `/api/<format>/<projectKey>/<repoKey>/…`, `/files/<projectKey>/<repoKey>/…`, `/api/v1/projects/<projectKey>/repositories/<repoKey>…`; `web` and `mobile` can each have `npm-remote` | The hierarchy is in the address and the schema, not in a naming rule; short keys; no prefix to reserve or check | Every route, client guide, endpoint and exposure rule, CI mapping and policy selector that names a repository changes |
+| (b) A global key with the project key as a required prefix | `/api/npm/web-npm-remote/`; today's rule for project administrators applied to everybody | Fewer route changes | The hierarchy lives in a naming convention; the prefix rules and their overlap checks stay (`project_key_overlap`, H-399) |
+| (c) A global key, the project only as a column | As today, project required | No route change | The address says nothing about where a repository belongs; two projects cannot both name a repository `npm-remote` |
+
+**Choice:** (a). No repository is shared: a virtual repository lists only repositories of its own project, a remote
+repository of a public registry exists in each project that needs it (the blob store is content-addressed and deduplicates,
+INV-4 of [storage.md](storage.md), so the same package fetched by two projects is stored once), a policy selector, a deployment
+target and a CI mapping name repositories of one project. A move to another project changes the repository's address.
+
+**Rationale:** the project is the container of its repositories; putting it in the address makes the address say what the
+data model says, and takes the prefix convention and its overlap rules out of the repository's name. Clients and existing
+data are not a cost before the first stable release ([CLAUDE.md](../../CLAUDE.md)). The same reasoning applies to the names of
+a project's permission policies and service accounts, which carry the project prefix today (Q-AUTHZ-176); that is the next
+question, not decided here.
+
+**Applied in the spec:** nothing yet; the routes of R-REPO, the format pages and R-AUTHZ-026 change when it is built.
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream
@@ -6823,3 +6854,11 @@ which names are asked for, and the byte bound what is stored, but not how many n
 prefix: an upstream that lists millions of names below `@acme/` makes each pass ask for each of their documents. The requests go to
 that upstream only, under the window of R-REPO-054. Dormant until R-REPO-053 is built. What makes it real: a mirror of an upstream
 that an attacker controls or has compromised, with a broad admitted prefix.
+
+### H-541 · Repositories are addressed by a global key
+
+A repository is addressed by a key unique in the installation, `/api/<format>/<repoKey>/…`, and a repository a project
+administrator creates carries the project key as a prefix; the decided address contains the project and the key is unique
+within it, and no repository is shared across projects
+([Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)). Live in every route
+that names a repository.

@@ -141,6 +141,9 @@ still arriving leaves nothing behind (the spool file is removed); one whose body
 
 ## What this does not cover
 
+The timing signal of a deduplication hit across projects is a gap of the storage spec:
+[H-545](../spec/storage.md#h-545--a-deduplication-hit-across-projects-can-be-told-apart-by-its-timing).
+
 ### H-154 · An insert that was in flight when the delete was checked is removed without a decision
 
 Component: the job `items-delete` (R-STOR-018, Q-STOR-143). Subject: `delete` on a subtree larger than `storage.delete.max_sync_items`.

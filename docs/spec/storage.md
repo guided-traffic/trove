@@ -147,8 +147,8 @@ Acceptance criteria:
 ### R-STOR-003 · PostgreSQL schema for repositories, items, packages, blobs, references and properties
 Priority: **MVP** · Covers: ART-001, STOR-001, STOR-002
 
-The tables below are the storage core. Other pages add tables and columns through expand/contract
-migrations (INV-3); they MUST follow the reference rules at the end of this entry.
+The tables below are the storage core. Other pages add tables and columns through migrations
+(INV-3, [architecture.md](architecture.md) R-ARCH-026); they MUST follow the reference rules at the end of this entry.
 
 - `repositories` holds identity and class; the configuration document `config` belongs to
   [repositories-and-proxy.md](repositories-and-proxy.md) except its `storage` member, which this
@@ -4297,6 +4297,48 @@ leaving pod) was counted as outside the outage because the k6 line carries the r
 
 **Applied in the spec:** R-HA-052 (the object-store row: the 30 s and 5 min count from the store being stopped).
 
+### Q-STOR-154 · Blobs are deduplicated across projects
+
+Status: **Decided by the owner on 2026-11-06.**
+
+Context: every repository belongs to exactly one project and no repository is shared
+([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project)); a public registry is proxied by
+a remote repository in each project that needs it
+([Q-REPO-212](repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared)).
+The blob store keys a blob by its SHA-256 alone (R-STOR-001) and the commit protocol finds an existing blob before writing one
+(R-STOR-005), so identical content is stored once whichever repository holds it. S3 itself keeps one object per key and does
+not deduplicate.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Global, as built (chosen) | One blob per content in the installation, referenced by any number of items in any number of projects | The largest saving: a public package that several projects proxy is stored once | A deduplication hit writes nothing to S3, so its answer can come sooner; who already holds a file can learn whether another project holds it too ([H-545](#h-545--a-deduplication-hit-across-projects-can-be-told-apart-by-its-timing)) |
+| (b) Per project | The digest of a blob is salted per project; identical content in two projects is two blobs | No signal across projects | Every public package is stored once per project that proxies it; the salt has to travel with every reference, backup and restore |
+
+**Choice:** (a), the owner's, as the store works today. Deploy by checksum keeps its rule: it creates an item from a stored
+blob only for a caller who may read an item that references it (R-STOR-008), so knowing a digest is never enough. The
+signal that remains concerns content the caller already has; for a public package it tells nothing.
+
+**Applied in the spec:** R-STOR-001 and R-STOR-005 unchanged; the gap H-545.
+
+### Q-STOR-155 · A project is charged the logical size of what it holds
+
+Status: **Decided by the owner on 2026-11-06.** Not built yet: no per-project figure exists ([H-547](#h-547--there-is-no-storage-figure-per-project)).
+
+Context: blobs are deduplicated across projects ([Q-STOR-154](#q-stor-154--blobs-are-deduplicated-across-projects)), so the bytes
+a project holds and the bytes the object store keeps for it differ. The project's dashboard and later quotas need one figure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Logical (chosen) | A project counts the full size of every file it holds, whether another project holds the same content | Stable: another project's upload or delete does not move it; easy to explain; a fair base for a quota | The projects' figures add up to more than the store keeps |
+| (b) A physical share | Each blob's size is split among the projects that reference it | The figures add up to the store's | A project's figure moves when others upload or delete; unpredictable as a quota |
+| (c) The first uploader | A blob counts for the project that stored it first | Adds up | Others get content free; the charge moves when the first one deletes |
+
+**Choice:** (a). The physical figure stays instance-wide: the admin dashboard shows what the store keeps (R-OPS-004's overview,
+from the maintained totals), the project shows the logical size of its files, versions in the trash can included until they are
+removed.
+
+**Applied in the spec:** nothing yet; R-STOR-028 (storage summary) and R-STOR-029 (quotas) change when it is built.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks
@@ -4341,3 +4383,19 @@ outside trove: per-client connection limits and request-body timeouts at the edg
 ([ha-and-helm.md](ha-and-helm.md) R-HA-039). A per-principal limit on bodies in flight would have
 to count across replicas and release the slots of a crashed replica; it is not specified on this
 page.
+
+### H-545 · A deduplication hit across projects can be told apart by its timing
+
+A blob is stored once for the whole installation ([Q-STOR-154](#q-stor-154--blobs-are-deduplicated-across-projects)). When an
+upload's content is already stored, the commit protocol (R-STOR-005) writes nothing to S3 and the answer can come sooner than
+for new content. A member of one project who uploads a file it already has can therefore learn whether some other repository,
+in any project, holds the same bytes. Live wherever content is uploaded; what makes it matter is a private file whose
+presence elsewhere is itself confidential, not a public package. Accepted by the owner on 2026-11-06: the caller needs the exact
+bytes already, and padding a hit to the time of a write would only narrow the signal. Revisit when an operator has to keep
+confidential files of projects apart; closing it then means answering a hit no sooner than a write of the same size would take.
+
+### H-547 · There is no storage figure per project
+
+The owner decided that a project is charged the logical size of the files it holds
+([Q-STOR-155](#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds)). Today the storage summary and the overview
+count the installation and its repositories; nothing sums per project, and no quota reads such a figure.
