@@ -292,7 +292,7 @@ config:
     trusted_proxies: []                 # no proxy is trusted, the TCP peer is the client; example: ["10.244.3.17", "10.244.5.9"] (the addresses of the ingress controller pods, never the whole pod CIDR; a prefix of length 0 is refused)
     forwarded_header: x-forwarded-for   # the one header the edge rewrites, x-forwarded-for | forwarded; the other is never read
   health:                               # operations-and-observability.md
-    shutdown_drain_delay: 5s            # must exceed the edge's endpoint removal time
+    shutdown_drain_delay: 5s            # default; must exceed the edge's endpoint removal time (0.2 to 1.8 s measured for HAProxy Ingress on the CI runners, R-HA-059)
   log:
     level: info
   database:                             # ha-and-helm.md

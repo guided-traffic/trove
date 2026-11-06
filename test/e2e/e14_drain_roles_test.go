@@ -106,6 +106,7 @@ func TestDrainRoles(t *testing.T) {
 
 		var ids []string
 		var evicted []pod
+		var streams []*podLogStream
 		var firstEviction time.Time
 		roleFrom, roleTo := map[string]time.Time{}, map[string]time.Time{}
 		for _, role := range drainRoles {
@@ -124,6 +125,7 @@ func TestDrainRoles(t *testing.T) {
 				time.Sleep(10 * time.Second) // the jobs are claimed
 			}
 			t.Logf("%s: evicting %v one after the other", role.name, names(victims))
+			streams = append(streams, streamPodLogs(t, "drain-roles-", victims)...)
 			for _, v := range victims {
 				evict(t, v.Name)
 				if firstEviction.IsZero() {
@@ -295,6 +297,7 @@ func TestDrainRoles(t *testing.T) {
 			t.Errorf("trove pod %s was Pending for %s", name, d.Round(time.Second))
 		}
 		checkEvents(t, evicted)
+		checkEndpointRemoval(t, "e14-drain-roles", streams)
 		checkReleaseServes(t, 3, 3, 4)
 	})
 }

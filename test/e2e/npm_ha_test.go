@@ -14,8 +14,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -246,13 +244,7 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 		}
 	}
 	t.Logf("draining %s, which hosts %v", node, podNames(onNode))
-	for _, p := range onNode {
-		f, _ := os.Create(filepath.Join(cfg.out, "npm-drain-"+p.Name+".log"))
-		c := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "logs", "-f", "--tail=-1", p.Name)
-		c.Stdout, c.Stderr = f, f
-		_ = c.Start()
-		t.Cleanup(func() { _ = c.Process.Kill(); _ = c.Wait(); _ = f.Close() })
-	}
+	streams := streamPodLogs(t, "npm-drain-", onNode)
 
 	watch := startPodWatch(t, selTrove)
 	load := startNPMLoad(t, h, "drain", haFullLoad())
@@ -351,6 +343,7 @@ func npmDrainVariantA(t *testing.T, h *npmHAFixture) {
 		t.Logf("longest Pending of a trove pod: %s (%s)", d.Round(100*time.Millisecond), name)
 	}
 	checkEvents(t, onNode)
+	checkEndpointRemoval(t, "npm-ha-drain", streams)
 	noteResult(t, "npm-ha-drain", map[string]any{
 		"node": node, "drain_seconds": drainTook.Seconds(), "first_eviction": firstEviction, "p99_warmup_ms": warm.Milliseconds(),
 		"p99_drain_ms": during.Milliseconds(), "k6": k6Summary(k), "moved_jobs": moved, "pending_pods": watch.pendFor,

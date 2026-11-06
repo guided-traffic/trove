@@ -104,8 +104,9 @@ config:
               - match_regex: "trove-(.+)"        # trove-team-web -> team-web, trove-platform-admins -> platform-admins
                 group: "$1"
             create_groups: true
-  # The dev cluster's edge took more than 5 s to drop a draining pod's endpoint on the CPU-limited runners, and the
-  # requests it still sent there got 502 (Actions run 41241903588, E2.11); the chart's grace period of 120 s leaves 100 s.
+  # The edge of the dev cluster needs 0.2 to 1.8 s to drop a draining pod's endpoint on the CI runners, and 13.4 s on a laptop
+  # whose CPUs are all taken (the drain tests measure it, docs/developer/e2e.md); the chart's 5 s fails on such a host, and
+  # the chart's grace period of 120 s leaves 100 s after the delay (Q-HA-112).
   health:
     shutdown_drain_delay: 15s           # default 5s; must exceed the edge's endpoint removal time (R-HA-059)
   # The dev pods have 1Gi: smaller caches leave the memory slots to requests (Q-ARCH-243), about 860 instead of 90.

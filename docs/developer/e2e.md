@@ -266,12 +266,55 @@ so the answer is the pod's own, not a Service's.
 6. k6: only 200, no connection error, no dropped iteration. No container with exit code 137 or
    `OOMKilled` since the watch started. The kubelet's events for the drained pods hold no SIGKILL, no
    `FailedKillPod`. No trove pod Pending longer than 60 s.
+7. The endpoint-removal time of the edge, measured and held to the drain delay ([below](#the-endpoint-removal-time-of-the-edge)).
 
 The dev profile gives the worker a `terminationGracePeriodSeconds` of 60 (the chart default is 300), so a
 worker whose job outlasts the shutdown budget releases it after about 45 s and the test does not wait 5
 minutes. The edge is not part of the system under test: HAProxy Ingress runs two replicas on the control-plane node, which
 no test drains. With one replica on a worker node, the drain reset the client connections of the evicted
 edge pod (25 connection errors in the first measured run, with the previous controller).
+
+### The endpoint-removal time of the edge
+
+R-HA-059 rule 4: `health.shutdown_drain_delay` must exceed the time the edge needs to stop sending requests to a pod whose readiness
+flipped. All three drain tests measure it with the helpers in [drain_measure_test.go](../../test/e2e/drain_measure_test.go)
+([Q-HA-110](../spec/ha-and-helm.md#q-ha-110--how-the-drain-test-measures-the-edges-endpoint-removal-time)):
+`TestE14Drain` (set `push`, `drain`; prefix `drain-`), `TestDrainRoles` (set `drain-roles`; prefix `drain-roles-`, a stream per pod
+of the role before its first eviction) and the drain of `TestNPMHA` (prefix `npm-drain-`).
+
+1. `streamPodLogs` starts a `kubectl logs -f --since=10m` per pod that will be evicted, into `<prefix><pod>.log` of the artifacts,
+   so that the log outlives the pod.
+2. After the drain, `checkEndpointRemoval` reads each log with one clock, the pod's own: the line `shutting down` is the readiness
+   flip (the process sets the drain state right after it), the line `draining` carries the delay it waits, and every
+   `"log":"request"` line of a client listener (not `ops`, the kubelet's probes) is a request whose arrival is its stamp minus its
+   `duration_ms`. The sample of a pod is the arrival of the last request after the flip, counted from the flip, and a count of the
+   arrivals per half second.
+3. The samples go to the test log (`endpoint removal of <pod> (<role>): the last of N requests after the readiness flip arrived
+   X after it, drain delay Y`) and to `<name>-endpoint-removal.json` (`e14-drain`, `e14-drain-roles`, `npm-ha-drain`) with the
+   samples, the pods without one and the longest time.
+4. The test fails when `delay < longest + 1 s` ([Q-HA-113](../spec/ha-and-helm.md#q-ha-113--what-the-drain-test-fails-on)): the
+   listener accepts until the delay ends, so a delay that is too short shows as requests until its last moment, and the second of
+   silence is what tells "the edge had stopped" from "the listener closed first". A pod without a request after the flip (workers,
+   which have no client listener; `packages` in `TestE14Drain`, which gets 4 requests/s) is no sample and no failure; a run in which
+   no pod has one fails, because then the rule was not tested.
+
+Measured (the longest time from the readiness flip to the last request that reached the pod, the dev profile's HAProxy Ingress):
+
+| Run | api | packages |
+|---|---|---|
+| Actions `e2e-artifacts-push`, `TestE14Drain`, the runs 42057547730, 42116230650, 42121742101, 42131510743 | 0.15, 0.15, 0.18, 0.16 s | 1.79 s (9 requests after the flip), no request after it in the other three |
+| Actions nightly dispatch 42126196109, drain variant A of `TestNPMHA` under 150 requests/s | no request after the flip | 0.98 s (54 requests) |
+| Local, idle host, `make e2e SET=drain` 2026-11-06 | 0.14 s (7 requests) | no request after the flip |
+| Local, CPU-starved host (load average 16 to 27 on 20 CPUs, kubectl answering `TLS handshake timeout`), `make e2e SET=drain-roles` 2026-11-06 | 13.4 s (the first pod: about 100 requests/s for 10 s, then 9 queued requests at 13.4 s), 1.3 s (the second) | not reached |
+
+The Actions rows come from the logs of the pods that the tests kept before this measurement existed (`--tail=-1`), read with the same
+rule. The chart default of 5 s ([Q-HA-111](../spec/ha-and-helm.md#q-ha-111--the-default-of-healthshutdown_drain_delay)) is 2.8
+times the longest time on the runners; the dev profile keeps 15 s for hosts like the last row
+([Q-HA-112](../spec/ha-and-helm.md#q-ha-112--whether-the-dev-profile-keeps-its-drain-delay-of-15-s)). The two local `drain-roles`
+runs of 2026-11-06 ended on the host's load before the measurement (`TestDrainRoles` calls `kubectl` for the pods of a role and a
+`TLS handshake timeout` ends it with `t.Fatal`), so `e14-drain-roles-endpoint-removal.json` has not been written by a green run yet; the
+nightly run is its first.
+
 
 ### E0.15
 

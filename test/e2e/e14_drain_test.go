@@ -235,14 +235,9 @@ func TestE14Drain(t *testing.T) {
 		if drainedWorker == "" {
 			t.Fatal("the chosen node has no main worker pod")
 		}
-		// The shutdown of the drained pods is logged by the pods themselves; the logs are streamed so they outlive the pods.
-		for _, p := range onNode {
-			f, _ := os.Create(filepath.Join(cfg.out, "drain-"+p.Name+".log"))
-			c := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "logs", "-f", "--tail=-1", p.Name)
-			c.Stdout, c.Stderr = f, f
-			_ = c.Start()
-			t.Cleanup(func() { _ = c.Process.Kill(); _ = c.Wait(); _ = f.Close() })
-		}
+		// The shutdown of the drained pods is logged by the pods themselves; the logs are streamed so they outlive the pods,
+		// and the requests in them after the readiness flip measure the edge's endpoint-removal time (drain_measure_test.go).
+		streams := streamPodLogs(t, "drain-", onNode)
 
 		watch := startPodWatch(t, selTrove)
 		drv := startDriverLoad(t, "drain", 20*time.Minute)
@@ -348,6 +343,7 @@ func TestE14Drain(t *testing.T) {
 			t.Logf("longest Pending of a trove pod: %s (%s)", d.Round(100*time.Millisecond), name)
 		}
 		checkEvents(t, onNode)
+		checkEndpointRemoval(t, "e14-drain", streams)
 		checkReleaseServes(t, 2, 3, 4)
 	})
 }

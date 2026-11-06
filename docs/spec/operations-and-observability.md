@@ -296,7 +296,7 @@ health:
   success_threshold: 1            # default (proposed)
   require_object_store: false     # default (proposed); true = object storage gates readiness continuously (Q-OPS-2)
   watchdog_timeout: 2m            # default (proposed); bound for the watched loops of liveness (Q-OPS-1)
-  shutdown_drain_delay: 5s        # default (proposed)
+  shutdown_drain_delay: 5s        # default; must exceed the edge's endpoint removal time (R-HA-059, Q-HA-111)
   database_outage_grace: 20s      # default (proposed); a ready replica tolerates a PostgreSQL outage this short (Q-OPS-31); 0 = off; below database.retry.max_elapsed
 ```
 
@@ -2838,7 +2838,7 @@ health:
   success_threshold: 1                             # default (proposed)
   require_object_store: false                      # default (proposed)
   watchdog_timeout: 2m                             # default (proposed)
-  shutdown_drain_delay: 5s                         # default (proposed)
+  shutdown_drain_delay: 5s                         # default; must exceed the edge's endpoint removal time (R-HA-059, Q-HA-111)
   database_outage_grace: 20s                       # default (proposed)
 log:
   format: json                                     # default (proposed)

@@ -1021,7 +1021,15 @@ what "sized for it" means.
    keeps serving for `health.shutdown_drain_delay` (R-HA-011). The delay MUST exceed the time the
    edge proxy needs to stop sending to an endpoint whose readiness flipped; otherwise the edge sends
    new requests to a closed listener, and clients see `502`. The drain test measures that time for
-   each edge of R-HA-039 and fails when the delay is shorter.
+   each edge of R-HA-039 and fails when the delay is shorter. It measures it from the log of every
+   evicted `api` and `packages` pod, under the load of the test: the time from the line "shutting down"
+   (the readiness flip) to the arrival of the last request of a client listener that came after it,
+   both stamped by the same pod's clock ([Q-HA-110](#q-ha-110--how-the-drain-test-measures-the-edges-endpoint-removal-time)).
+   The delay must exceed the longest time measured by at least 1 s of silence
+   ([Q-HA-113](#q-ha-113--what-the-drain-test-fails-on)); the test fails with both numbers otherwise. The default of 5 s
+   ([Q-HA-111](#q-ha-111--the-default-of-healthshutdown_drain_delay)) is almost three times the longest time measured on the
+   dev profile's HAProxy Ingress on the CI runners, and the drain test is how an installation finds out that its own edge needs
+   more. The dev profile runs 15 s ([Q-HA-112](#q-ha-112--whether-the-dev-profile-keeps-its-drain-delay-of-15-s)).
 5. **Dependencies drain by their own rules.** trove's guarantee holds only when the services on the
    drained node are drained safely as well:
 
@@ -3633,7 +3641,7 @@ config:
     additional_base_urls: []
   health:                               # operations-and-observability.md
     require_object_store: false         # object storage gates only the first readiness (R-HA-008, Q-HA-1)
-    shutdown_drain_delay: 5s            # must exceed the edge's endpoint removal time
+    shutdown_drain_delay: 5s            # default; must exceed the edge's endpoint removal time, measured at 0.2 to 1.8 s on the dev edge (Q-HA-111)
   metrics:                              # operations-and-observability.md
     enabled: true
     auth: none                          # none | static (needs secrets.metricsToken)
@@ -7082,6 +7090,117 @@ k6's NuGet share then join the drain per role.
 
 **Applied in the spec:** R-HA-059 ("A drain per role"); [e14_drain_roles_test.go](../../test/e2e/e14_drain_roles_test.go),
 [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `drain-roles`), [docs/developer/e2e.md](../developer/e2e.md).
+
+### Q-HA-110 · How the drain test measures the edge's endpoint-removal time
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-059 rule 4 asks the drain test to measure, for each edge, the time the edge needs to stop sending requests to a pod whose
+readiness flipped, and to fail when `health.shutdown_drain_delay` is shorter. The origin is the moment the pod flips (`SIGTERM`, the
+log line "shutting down"); the end is the last request that reaches the pod afterwards. The test runs in `TestE14Drain` (set `push`,
+every change), `TestDrainRoles` (nightly) and the drain of `TestNPMHA`, on a cluster whose edge, nodes and test process need not share
+a clock.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The pod's own log (chosen) | The line "shutting down" is the origin; the end is the latest arrival (the stamp of a `"log":"request"` line of a client listener minus its `duration_ms`) after it. Both come from one process, so one clock | No clock to align; needs nothing of the edge; counts exactly the requests that reached the pod, whichever edge pod or connection carried them; the kubelet's delay between the deletion and `SIGTERM` is excluded, as it is from the drain delay | Needs the pod's log to outlive the pod (a `kubectl logs -f` stream per victim, started before the eviction); a pod that gets no request after the flip yields no sample |
+| (b) The edge's access log | The last line that names the pod's backend server after the pod's deletion | Names the edge's own view | HAProxy Ingress names the server by an index (`srv001`), not by the pod; the stamps of the edge and of the pods must be aligned; an edge that is not HAProxy (R-HA-039) logs another format |
+| (c) The pod watch's deletion timestamp as origin | Requests in the pods' logs after the API server's `deletionTimestamp` | One origin for all pods | The origin is the API server's clock and precedes `SIGTERM` by the kubelet's delay, so the measured time is longer than the one the drain delay has to cover; needs the clocks of the test process, the API server and the pods to agree |
+| (d) A scrape of the request counter | Poll the pod's request metric every second | No log stream | A pod that is drained answers its scrape endpoint for the whole delay; a resolution of 1 s is as long as the margin it is supposed to check |
+
+**Choice:** (a).
+
+**Rationale:** it is the only option that needs no alignment of clocks, so it cannot fail falsely for a skew between the runner, the
+node and the edge. The streams are in the shared drain helpers ([drain_measure_test.go](../../test/e2e/drain_measure_test.go)), so
+the three drain tests measure alike. The ops listener is excluded (the kubelet's probes). Revisit when an edge other than HAProxy
+Ingress is part of the drain test (R-HA-039): its time is measured in the same way, since it only needs the pods' logs.
+
+**Applied in the spec:** R-HA-059 rule 4; [drain_measure_test.go](../../test/e2e/drain_measure_test.go),
+[e14_drain_test.go](../../test/e2e/e14_drain_test.go), [e14_drain_roles_test.go](../../test/e2e/e14_drain_roles_test.go),
+[npm_ha_test.go](../../test/e2e/npm_ha_test.go), [docs/developer/e2e.md](../developer/e2e.md).
+
+### Q-HA-111 · The default of health.shutdown_drain_delay
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the default was 5 s, proposed, and the dev profile raised it to 15 s after Actions run 41241903588 (the HAProxy Ingress of
+the kind cluster on a CPU-limited runner kept sending requests to a drained pod for more than 5 s and four documents and four
+tarballs got `502`). The drain tests now measure the time per evicted pod (Q-HA-110). The longest time between the readiness flip and
+the last request that reached the pod, on the dev profile's HAProxy Ingress under the load of the drain tests:
+
+| Where | Pods | Longest |
+|---|---|---|
+| Actions, `e2e-artifacts-push` of the runs 42057547730, 42116230650, 42121742101 and 42131510743 (`TestE14Drain`, 15 s delay) | 4 `api`, 4 `packages` | `api` 0.15 to 0.18 s; `packages` 1.79 s (9 requests after the flip), in the other three no request after it |
+| Actions, `e2e-npm-artifacts-npm-ha` of the dispatch 42126196109 (drain variant A under the npm load: 8 `npm ci` loops, k6) | 1 `api`, 1 `packages` | `api` no request after the flip; `packages` 0.98 s (54 requests after the flip) |
+| Local kind cluster, an idle host (`make e2e SET=drain`, 2026-11-06) | 1 `api`, 1 `packages` | `api` 0.14 s; `packages` no request after the flip |
+| Local kind cluster on a CPU-starved host: load average 16 to 27 on 20 CPUs, the API server answering `TLS handshake timeout` (`make e2e SET=drain-roles`, 2026-11-06, first eviction of `api`) | 2 `api` | 13.4 s (a flow of about 100 requests/s for 10 s, then a burst of 9 requests at 13.4 s); the second pod of the run 1.3 s |
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep 5 s (chosen) | The default stays; it is 2.8 times the longest time measured on the CI runners (1.79 s) | A drained pod waits 5 s only; the shutdown budget of R-HA-011 (grace period minus delay minus 5 s) loses little | A host that starves its edge (the last row) needs more: there the drain test fails and names both numbers |
+| (b) 15 s | The dev profile's value becomes the default | Covers the starved case | Every drain of every installation waits 15 s for an edge that needs under 2 s, and the shutdown budget shrinks by 10 s |
+| (c) 10 s | Between the two | Over five times the longest time on the runners | Neither measured nor derived: the starved case still exceeds it |
+| (d) Derive from the edge | The chart sets the delay from the Ingress class | Fits the edge | The chart cannot know an edge's propagation time; the measured times are of one controller |
+
+**Choice:** (a), 5 s.
+
+**Rationale:** the delay has to cover the edge's removal time, not the worst load a host can put on it, and the drain test is how an
+installation finds out that its own edge needs more: it fails with both numbers (Q-HA-113). The value is the longest time measured
+on the CI runners (1.79 s) with a margin of almost three, the margin an installation has before it must measure its own edge. The
+starved case is a property of a host without CPU for its edge, not of the edge, and the guidance for it is to raise the delay (the
+manual's limitations page says so). Revisit when a nightly run on a runner that is not starved measures more than 4 s (the bound of
+Q-HA-113 on 5 s), or when the owner's production controller is measured.
+
+**Applied in the spec:** R-HA-059 rule 4; the values of R-HA-031 and of the configuration in [operations-and-observability.md](operations-and-observability.md)
+(the "proposed" mark removed); [internal/config/health.go](../../internal/config/health.go), [values.yaml](../../deploy/helm/trove/values.yaml) and
+[values.schema.json](../../deploy/helm/trove/values.schema.json) keep 5 s and name the measurement; the manual's
+[limitations page](../manual/admin/limitations.md).
+
+### Q-HA-112 · Whether the dev profile keeps its drain delay of 15 s
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [values-dev.yaml](../../deploy/dev/values-dev.yaml) sets `health.shutdown_drain_delay: 15s` since run 41241903588. With the default
+at 5 s (Q-HA-111) the override is the only difference between the dev profile and the default on this value. The profile is used by
+CI and by a developer's laptop that also builds, runs the integration stack and other clusters.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep 15 s, say why (chosen) | The comment names the measurements instead of the run | The starved host of Q-HA-111 measured 13.4 s, and 15 s with the test's second of silence was just enough; the push leg does not turn red on a busy host | The dev profile does not run the default; the drain test cannot show the default failing |
+| (b) Remove the override | The dev profile runs 5 s | The profile tests the default; the drain test fails when the edge is slower than 4 s | A starved CI runner or laptop fails `TestE14Drain` (set `push`, every change) for a cause that is the host's |
+| (c) 10 s | Between | Halves the wait | A starved host measured 13.4 s: it would fail; chosen by feel |
+
+**Choice:** (a).
+
+**Rationale:** what the dev profile tests is that a drain under load loses no request; it needs a delay that holds on the hosts it
+runs on, and one of them was measured at 13.4 s. The default's own sufficiency is shown by the measurement, which every drain test
+logs and writes to `<name>-endpoint-removal.json` whatever the delay (the profile's 15 s does not change what is measured, only
+how long the edge may take). Revisit when the owner wants the profile to run the default: change the one line and read the
+`*-endpoint-removal.json` of several nightly runs first.
+
+**Applied in the spec:** [values-dev.yaml](../../deploy/dev/values-dev.yaml) (comment), [docs/developer/e2e.md](../developer/e2e.md).
+
+### Q-HA-113 · What the drain test fails on
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-059 rule 4 says the test fails when the delay is shorter than the measured time. The pod's listener accepts until the
+delay ends, so a delay that is too short shows as requests until its last moment, and a measured time can hardly exceed the delay.
+`TestE14Drain` is in the set that runs on every change.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Delay at least the measured maximum plus 1 s of silence; no sample is no failure, no sample at all is one (chosen) | Fails when the last request after the flip came less than 1 s before the delay ended | Can fail for a too-short delay, which "last request before the delay" cannot; a pod that no request reached after the flip (a low load on `packages`) is not a failure; a run that measured nothing is | 1 s is a fixed bound; a low load can understate the time |
+| (b) Last request later than the delay | Fails only when a request came after the delay | The literal rule | A request after the delay hits a closed listener or never arrives: the measure is capped by the delay and cannot fail |
+| (c) Every drained pod must show a sample | A missing sample fails | Strict | `packages` receives 4 requests/s in `TestE14Drain` and none after the flip in three of four CI runs: false failures in a per-change set |
+
+**Choice:** (a).
+
+**Rationale:** it can fail for the cause the rule names and not for the load being thin. The silence of 1 s is the smallest bound
+that separates "the edge stopped" from "the listener closed on the last request"; the measured times are 0.2 to 1.8 s. Revisit when
+the load of `TestE14Drain` on `packages` is raised so that every pod gets a sample.
+
+**Applied in the spec:** R-HA-059 rule 4; [drain_measure_test.go](../../test/e2e/drain_measure_test.go) (`drainSilence`).
 
 ## What this does not cover
 
