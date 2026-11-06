@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/observability/health"
 	"github.com/guided-traffic/trove/internal/secrets"
 )
@@ -119,21 +121,65 @@ func (a *App) registryOptions(db *postgres.DB, ring *secrets.KeyRing) cluster.Re
 	}
 }
 
-// replicaSnapshot is what each heartbeat writes: the state, every check and the
-// Valkey view, from the cached readiness results.
+// replicaSnapshot is what each heartbeat writes: the state, every check with the
+// duration of its last run and the Valkey view, from the cached readiness
+// results, and the runtime of the period since the previous heartbeat
+// (Q-OPS-175). Taking the runtime drains the request window: a heartbeat whose
+// write fails loses its period, and the next one covers only its own.
 func (a *App) replicaSnapshot() cluster.ReplicaSnapshot {
 	snap := a.health.Snapshot()
-	checks := make(map[string]cluster.ReplicaCheck, len(snap.Checks))
-	for _, c := range snap.Checks {
-		checks[c.Name] = cluster.ReplicaCheck{Status: string(c.Status), Reason: c.Reason, ConfigError: c.ConfigError}
-	}
-	out := cluster.ReplicaSnapshot{State: string(snap.State), Checks: checks}
+	out := cluster.ReplicaSnapshot{State: string(snap.State), Checks: a.replicaChecks(snap.Checks)}
 	if v := a.valkeyView(); v != nil {
 		if b, err := json.Marshal(v); err == nil {
 			out.Valkey = b
 		}
 	}
+	out.Runtime = replicaRuntime(a.tele.runtime.Sample())
 	return out
+}
+
+// replicaChecks renders the cached check results as the registry row stores them. The
+// `valkey` check reads the client's state and takes microseconds, so its duration is the
+// round trip of the client's last probe instead (Q-OPS-175); without a passed probe it has none.
+func (a *App) replicaChecks(results []health.CheckResult) map[string]cluster.ReplicaCheck {
+	checks := make(map[string]cluster.ReplicaCheck, len(results))
+	for _, c := range results {
+		took := c.Latency
+		if c.Name == "valkey" {
+			took = 0
+			if vk := a.valkey(); vk != nil {
+				took = vk.Status().ProbeLatency
+			}
+		}
+		checks[c.Name] = cluster.ReplicaCheck{
+			Status: string(c.Status), Reason: c.Reason, ConfigError: c.ConfigError, DurationMs: checkDurationMs(took),
+		}
+	}
+	return checks
+}
+
+// checkDurationMs is the duration of a check's last run in milliseconds, to the
+// microsecond; nil for a check without a finished run: one that has not run yet,
+// a run that was skipped because the previous one still hangs, and the
+// synthetic `draining` check.
+func checkDurationMs(d time.Duration) *float64 {
+	if d <= 0 {
+		return nil
+	}
+	ms := float64(d.Microseconds()) / 1000
+	return &ms
+}
+
+// replicaRuntime renders a sample as the registry row stores it.
+func replicaRuntime(s observability.RuntimeSample) *cluster.ReplicaRuntime {
+	limit := float64(s.GOMAXPROCS)
+	return &cluster.ReplicaRuntime{
+		SampledAt: s.SampledAt.UTC(), WindowSeconds: s.Window.Seconds(),
+		Requests: s.Requests, Errors: s.Errors, InFlight: s.InFlight,
+		LatencyMs: cluster.ReplicaLatency{P50: s.P50, P95: s.P95, P99: s.P99},
+		CPUCores:  s.CPUCores, CPULimitCores: &limit,
+		MemoryBytes: s.MemoryBytes, MemoryLimitBytes: s.MemoryLimitBytes, Goroutines: s.Goroutines,
+	}
 }
 
 // workerGroup is the lease manager and the job worker as one component: the

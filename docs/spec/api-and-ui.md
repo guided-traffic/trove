@@ -3809,6 +3809,18 @@ nested `valkey` view (R-OPS-003, adopted by R-API-038), the per-role counts and 
 of the system information (R-OPS-004), and the backup summary of R-API-050, which are MVP because
 INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
 
+- **Admin dashboard** (Q-OPS-175, owner 2026-11-06): the first screen of the admin area at
+  `/admin/dashboard`, where `/admin` and the Admin button of the top bar lead a holder of
+  `settings:read`. One page of cards: the instance bar (overall state, version, base URL, ready
+  replicas, a link to the status screen); one card per role with its ready and live replicas, nodes,
+  requests and server errors per second, the worst p95 latency, requests in flight, CPU and memory
+  against the limits, summed from the runtime snapshots of R-OPS-003 (lost replicas left out; a role
+  without a replica says so); PostgreSQL, Valkey and the object store with their readiness check over
+  the live replicas (connected with the slowest `durationMs`, or how many replicas fail), their facts
+  of R-OPS-004, and the stored content of the overview; the counts of the overview with links to
+  their screens and "New repository" for `repositories:write-config`; and the job queue with the
+  active key. It refreshes every 15 seconds with a pause control (WCAG 2.2.2), like the status screen,
+  and a failing overview leaves the rest readable with a retry.
 - Cards from `GET /api/v1/system/info` and `/system/replicas`: version and revision; base URL and
   source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a

@@ -93,6 +93,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The counts and the stored content of the installation
+         * @description What the admin dashboard shows besides the registry (Q-OPS-175): how many repositories, packages, principals,
+         *     tokens, projects, endpoints and Bastions exist, how much content the object store holds as the metadata records
+         *     it, and the state of the job queue. Counted from PostgreSQL by the replica that answers and cached there for
+         *     `cacheSeconds`, so a dashboard that refreshes does not count again on every request.
+         */
+        get: operations["getSystemOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/openapi.json": {
         parameters: {
             query?: never;
@@ -3847,6 +3870,58 @@ export interface components {
             /** @description Open enum, for example `static` or `workload-identity`. */
             credentialSource: string;
         };
+        SystemOverview: {
+            /**
+             * Format: date-time
+             * @description When the answering replica counted.
+             */
+            computedAt: string;
+            /** @description How long the answering replica reuses the counts. */
+            cacheSeconds: number;
+            counts: {
+                repositories: {
+                    total: number;
+                    /** @description Per repository class (`local`, `remote`, `virtual`). */
+                    byClass: {
+                        [key: string]: number;
+                    };
+                };
+                /** Format: int64 */
+                packages: number;
+                /** Format: int64 */
+                packageVersions: number;
+                /** @description Users, disabled ones included. */
+                users: number;
+                groups: number;
+                /** @description Service accounts, disabled ones included. */
+                serviceAccounts: number;
+                /** @description Tokens of every type neither expired nor revoked. */
+                activeTokens: number;
+                projects: number;
+                endpoints: number;
+                bastions: number;
+            };
+            /**
+             * @description The content of the object store as the metadata records it: one object per distinct content (deduplicated), not
+             *     what the store bills (object versions, incomplete uploads and the store's own overhead are not counted).
+             */
+            storage: {
+                /** Format: int64 */
+                blobs: number;
+                /** Format: int64 */
+                bytes: number;
+                /**
+                 * Format: int64
+                 * @description Objects queued for the garbage collection.
+                 */
+                pendingDeletion: number;
+            };
+            jobs: {
+                queued: number;
+                running: number;
+                failedLast24h: number;
+            };
+        };
         ReplicaList: {
             items: components["schemas"]["Replica"][];
         };
@@ -3892,6 +3967,50 @@ export interface components {
             /** @description The reported checks that fail. */
             degraded: string[];
             valkey: components["schemas"]["ValkeyView"] | null;
+            /** @description The replica's own measurements of its last heartbeat period (Q-OPS-175); `null` until its first heartbeat after the start, and for a replica of a release before them. */
+            runtime?: components["schemas"]["ReplicaRuntime"] | null;
+        };
+        /**
+         * @description Written with the replica's heartbeat (Q-OPS-175): the requests it finished on its client listener, its CPU and memory,
+         *     over the last heartbeat period. The percentiles are `null` when no request finished in the window.
+         */
+        ReplicaRuntime: {
+            /** Format: date-time */
+            sampledAt: string;
+            /** @description The period the counts, the rate and the percentiles cover. */
+            windowSeconds: number;
+            /**
+             * Format: int64
+             * @description Requests finished in the window.
+             */
+            requests: number;
+            /**
+             * Format: int64
+             * @description Of those, the ones answered with a 5xx status.
+             */
+            errors: number;
+            /** @description Requests being served when the snapshot was taken. */
+            inFlight: number;
+            latencyMs: {
+                p50: number | null;
+                p95: number | null;
+                p99: number | null;
+            };
+            /** @description CPU time used per second of the window; 1.0 is one core busy. */
+            cpuCores: number;
+            /** @description The cores the process may use (`GOMAXPROCS`, which follows the container's CPU limit); `null` when unknown. */
+            cpuLimitCores: number | null;
+            /**
+             * Format: int64
+             * @description The memory the Go runtime holds from the system (heap, stacks, runtime structures).
+             */
+            memoryBytes: number;
+            /**
+             * Format: int64
+             * @description The container memory limit; 0 when none is known.
+             */
+            memoryLimitBytes: number;
+            goroutines: number;
         };
         CheckResult: {
             /** @enum {string} */
@@ -3899,6 +4018,8 @@ export interface components {
             /** @description A short sanitised reason; never a host, address or error text. */
             reason?: string;
             configError?: boolean;
+            /** @description How long the check's last finished run took (Q-OPS-175); absent while the check has not finished a run (not run yet, a run skipped because the previous one still hangs, the synthetic `draining` check) and for a replica of a release before it. */
+            durationMs?: number;
         };
         /** @description The replica's view of Valkey. No credential, user name or key appears. */
         ValkeyView: {
@@ -7843,6 +7964,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReplicaList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getSystemOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The overview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemOverview"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

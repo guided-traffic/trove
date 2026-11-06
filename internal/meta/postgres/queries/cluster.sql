@@ -24,18 +24,19 @@ DELETE FROM cluster_change c
 -- name: UpsertReplica :exec
 -- Registration and heartbeat in one statement: a row deleted by the prune or by
 -- a restore comes back with the next heartbeat. heartbeat_at is the database's
--- clock; replica clocks are never compared (R-HA-003).
+-- clock; replica clocks are never compared (R-HA-003). runtime is the replica's
+-- measurement of the period since its previous heartbeat (Q-OPS-175).
 INSERT INTO replica (instance_uid, name, version, revision, roles, state, checks, leases,
-                     secret_key_ids, active_secret_key_id, node, valkey, pool, started_at, heartbeat_at)
+                     secret_key_ids, active_secret_key_id, node, valkey, pool, runtime, started_at, heartbeat_at)
 VALUES (sqlc.arg(instance_uid)::text::uuid, sqlc.arg(name)::text, sqlc.arg(version)::text, sqlc.arg(revision)::text,
         sqlc.arg(roles)::text[], sqlc.arg(state)::text, sqlc.arg(checks)::text::jsonb, sqlc.arg(leases)::text::jsonb,
         sqlc.arg(secret_key_ids)::text[], sqlc.arg(active_secret_key_id)::text,
         NULLIF(sqlc.arg(node)::text, ''), sqlc.arg(valkey)::text::jsonb, NULLIF(sqlc.arg(pool)::text, ''),
-        sqlc.arg(started_at)::timestamptz, now())
+        sqlc.arg(runtime)::text::jsonb, sqlc.arg(started_at)::timestamptz, now())
 ON CONFLICT (instance_uid) DO UPDATE
    SET state = EXCLUDED.state, checks = EXCLUDED.checks, leases = EXCLUDED.leases,
        secret_key_ids = EXCLUDED.secret_key_ids, active_secret_key_id = EXCLUDED.active_secret_key_id,
-       valkey = EXCLUDED.valkey, heartbeat_at = now();
+       valkey = EXCLUDED.valkey, runtime = EXCLUDED.runtime, heartbeat_at = now();
 
 -- name: SetReplicaState :execrows
 UPDATE replica SET state = sqlc.arg(state)::text, heartbeat_at = now()

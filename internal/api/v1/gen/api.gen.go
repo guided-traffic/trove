@@ -4064,6 +4064,9 @@ type CacheInvalidateResult struct {
 type CheckResult struct {
 	ConfigError *bool `json:"configError,omitempty"`
 
+	// DurationMs How long the check's last finished run took (Q-OPS-175); absent while the check has not finished a run (not run yet, a run skipped because the previous one still hangs, the synthetic `draining` check) and for a replica of a release before it.
+	DurationMs *float32 `json:"durationMs,omitempty"`
+
 	// Reason A short sanitised reason; never a host, address or error text.
 	Reason *string           `json:"reason,omitempty"`
 	Status CheckResultStatus `json:"status"`
@@ -6457,11 +6460,14 @@ type Replica struct {
 	// Roles The role class of the replica, in the vocabulary of the releases before the cut into task areas, which this enum
 	// keeps (R-ARCH-025): `web` for a replica that serves client endpoints, so for `api`, `packages` and the upgrade
 	// bridge `web` alike, `worker`, and `all` for the development role. `roleName` is the exact role.
-	Roles     []ReplicaRoles `json:"roles"`
-	StartedAt time.Time      `json:"startedAt"`
-	State     ReplicaState   `json:"state"`
-	Valkey    *ValkeyView    `json:"valkey"`
-	Version   string         `json:"version"`
+	Roles []ReplicaRoles `json:"roles"`
+
+	// Runtime The replica's own measurements of its last heartbeat period (Q-OPS-175); `null` until its first heartbeat after the start, and for a replica of a release before them.
+	Runtime   *ReplicaRuntime `json:"runtime,omitempty"`
+	StartedAt time.Time       `json:"startedAt"`
+	State     ReplicaState    `json:"state"`
+	Valkey    *ValkeyView     `json:"valkey"`
+	Version   string          `json:"version"`
 }
 
 // ReplicaRoles defines model for Replica.Roles.
@@ -6473,6 +6479,41 @@ type ReplicaState string
 // ReplicaList defines model for ReplicaList.
 type ReplicaList struct {
 	Items []Replica `json:"items"`
+}
+
+// ReplicaRuntime Written with the replica's heartbeat (Q-OPS-175): the requests it finished on its client listener, its CPU and memory,
+// over the last heartbeat period. The percentiles are `null` when no request finished in the window.
+type ReplicaRuntime struct {
+	// CpuCores CPU time used per second of the window; 1.0 is one core busy.
+	CpuCores float32 `json:"cpuCores"`
+
+	// CpuLimitCores The cores the process may use (`GOMAXPROCS`, which follows the container's CPU limit); `null` when unknown.
+	CpuLimitCores *float32 `json:"cpuLimitCores"`
+
+	// Errors Of those, the ones answered with a 5xx status.
+	Errors     int64 `json:"errors"`
+	Goroutines int   `json:"goroutines"`
+
+	// InFlight Requests being served when the snapshot was taken.
+	InFlight  int `json:"inFlight"`
+	LatencyMs struct {
+		P50 *float32 `json:"p50"`
+		P95 *float32 `json:"p95"`
+		P99 *float32 `json:"p99"`
+	} `json:"latencyMs"`
+
+	// MemoryBytes The memory the Go runtime holds from the system (heap, stacks, runtime structures).
+	MemoryBytes int64 `json:"memoryBytes"`
+
+	// MemoryLimitBytes The container memory limit; 0 when none is known.
+	MemoryLimitBytes int64 `json:"memoryLimitBytes"`
+
+	// Requests Requests finished in the window.
+	Requests  int64     `json:"requests"`
+	SampledAt time.Time `json:"sampledAt"`
+
+	// WindowSeconds The period the counts, the rate and the percentiles cover.
+	WindowSeconds float32 `json:"windowSeconds"`
 }
 
 // ReplicaSummary defines model for ReplicaSummary.
@@ -6939,6 +6980,51 @@ type SystemInfoAnsweredByRole string
 
 // SystemInfoBaseUrlSource `request` means `server.base_url` is unset and the origin was derived from the request (development only).
 type SystemInfoBaseUrlSource string
+
+// SystemOverview defines model for SystemOverview.
+type SystemOverview struct {
+	// CacheSeconds How long the answering replica reuses the counts.
+	CacheSeconds int `json:"cacheSeconds"`
+
+	// ComputedAt When the answering replica counted.
+	ComputedAt time.Time `json:"computedAt"`
+	Counts     struct {
+		// ActiveTokens Tokens of every type neither expired nor revoked.
+		ActiveTokens    int   `json:"activeTokens"`
+		Bastions        int   `json:"bastions"`
+		Endpoints       int   `json:"endpoints"`
+		Groups          int   `json:"groups"`
+		PackageVersions int64 `json:"packageVersions"`
+		Packages        int64 `json:"packages"`
+		Projects        int   `json:"projects"`
+		Repositories    struct {
+			// ByClass Per repository class (`local`, `remote`, `virtual`).
+			ByClass map[string]int `json:"byClass"`
+			Total   int            `json:"total"`
+		} `json:"repositories"`
+
+		// ServiceAccounts Service accounts, disabled ones included.
+		ServiceAccounts int `json:"serviceAccounts"`
+
+		// Users Users, disabled ones included.
+		Users int `json:"users"`
+	} `json:"counts"`
+	Jobs struct {
+		FailedLast24h int `json:"failedLast24h"`
+		Queued        int `json:"queued"`
+		Running       int `json:"running"`
+	} `json:"jobs"`
+
+	// Storage The content of the object store as the metadata records it: one object per distinct content (deduplicated), not
+	// what the store bills (object versions, incomplete uploads and the store's own overhead are not counted).
+	Storage struct {
+		Blobs int64 `json:"blobs"`
+		Bytes int64 `json:"bytes"`
+
+		// PendingDeletion Objects queued for the garbage collection.
+		PendingDeletion int64 `json:"pendingDeletion"`
+	} `json:"storage"`
+}
 
 // Task defines model for Task.
 type Task struct {
@@ -9659,6 +9745,9 @@ type ServerInterface interface {
 	// CancelJob Cancel a job
 	// (POST /api/v1/system/jobs/{id}/cancel)
 	CancelJob(w http.ResponseWriter, r *http.Request, id JobId)
+	// GetSystemOverview The counts and the stored content of the installation
+	// (GET /api/v1/system/overview)
+	GetSystemOverview(w http.ResponseWriter, r *http.Request)
 	// GetPing Check that this replica is ready to take work
 	// (GET /api/v1/system/ping)
 	GetPing(w http.ResponseWriter, r *http.Request)
@@ -16459,6 +16548,20 @@ func (siw *ServerInterfaceWrapper) CancelJob(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetSystemOverview operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemOverview(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemOverview(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPing operation middleware
 func (siw *ServerInterfaceWrapper) GetPing(w http.ResponseWriter, r *http.Request) {
 
@@ -18601,6 +18704,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/version", wrapper.GetVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/info", wrapper.GetSystemInfo)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/replicas", wrapper.ListReplicas)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/overview", wrapper.GetSystemOverview)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.json", wrapper.GetOpenApiJson)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/openapi.yaml", wrapper.GetOpenApiYaml)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/problems/{code}", wrapper.GetProblemType)

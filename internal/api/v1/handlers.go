@@ -223,6 +223,9 @@ type Options struct {
 type Server struct {
 	o    Options
 	idem *Idempotency
+	// overview is this replica's cache of GET /api/v1/system/overview
+	// (overview_api.go).
+	overview overviewCache
 }
 
 var _ gen.ServerInterface = (*Server)(nil)

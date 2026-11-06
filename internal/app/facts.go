@@ -155,15 +155,7 @@ func replicaOf(i cluster.ReplicaInfo) gen.Replica {
 		r.Pool = &i.Pool
 	}
 	for name, c := range i.Checks {
-		cr := gen.CheckResult{Status: gen.CheckResultStatus(c.Status)}
-		if c.Reason != "" {
-			cr.Reason = &c.Reason
-		}
-		if c.ConfigError {
-			t := true
-			cr.ConfigError = &t
-		}
-		r.Checks[name] = cr
+		r.Checks[name] = checkResultOf(c)
 	}
 	for _, ls := range i.Leases {
 		r.Leases = append(r.Leases, struct {
@@ -175,10 +167,53 @@ func replicaOf(i cluster.ReplicaInfo) gen.Replica {
 	if len(i.Valkey) > 2 && json.Unmarshal(i.Valkey, &vk) == nil {
 		r.Valkey = &vk
 	}
+	r.Runtime = runtimeOf(i.Runtime)
 	return r
 }
 
-// localReplicas lists only this replica, for a shell without a registry.
+// checkResultOf renders one check of a registry row (R-OPS-003): the reason and
+// the configuration flag only when set, the duration of the last run when the
+// row has it (Q-OPS-175).
+func checkResultOf(c cluster.ReplicaCheck) gen.CheckResult {
+	cr := gen.CheckResult{Status: gen.CheckResultStatus(c.Status)}
+	if c.Reason != "" {
+		cr.Reason = &c.Reason
+	}
+	if c.ConfigError {
+		t := true
+		cr.ConfigError = &t
+	}
+	cr.DurationMs = float32Of(c.DurationMs)
+	return cr
+}
+
+// runtimeOf renders the runtime of a registry row (Q-OPS-175); nil stays nil.
+func runtimeOf(rt *cluster.ReplicaRuntime) *gen.ReplicaRuntime {
+	if rt == nil {
+		return nil
+	}
+	out := &gen.ReplicaRuntime{
+		SampledAt: rt.SampledAt.UTC(), WindowSeconds: float32(rt.WindowSeconds),
+		Requests: rt.Requests, Errors: rt.Errors, InFlight: int(rt.InFlight),
+		CpuCores: float32(rt.CPUCores), CpuLimitCores: float32Of(rt.CPULimitCores),
+		MemoryBytes: rt.MemoryBytes, MemoryLimitBytes: rt.MemoryLimitBytes, Goroutines: rt.Goroutines,
+	}
+	out.LatencyMs.P50, out.LatencyMs.P95, out.LatencyMs.P99 = float32Of(rt.LatencyMs.P50), float32Of(rt.LatencyMs.P95), float32Of(rt.LatencyMs.P99)
+	return out
+}
+
+// float32Of narrows an optional number to the float32 the generated API types
+// use for `number`.
+func float32Of(v *float64) *float32 {
+	if v == nil {
+		return nil
+	}
+	f := float32(*v)
+	return &f
+}
+
+// localReplicas lists only this replica, for a shell without a registry. It
+// has no heartbeat, so it has no runtime either (Q-OPS-175).
 type localReplicas struct {
 	a *App
 }
@@ -188,16 +223,8 @@ func (l localReplicas) Replicas(context.Context) ([]gen.Replica, error) {
 	snap := a.health.Snapshot()
 	bi := buildinfo.Get()
 	checks := make(map[string]gen.CheckResult, len(snap.Checks))
-	for _, c := range snap.Checks {
-		r := gen.CheckResult{Status: gen.CheckResultStatus(c.Status)}
-		if c.Reason != "" {
-			r.Reason = &c.Reason
-		}
-		if c.ConfigError {
-			t := true
-			r.ConfigError = &t
-		}
-		checks[c.Name] = r
+	for name, c := range a.replicaChecks(snap.Checks) {
+		checks[name] = checkResultOf(c)
 	}
 	var node, pool *string
 	if a.id.Node != "" {

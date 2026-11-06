@@ -106,7 +106,7 @@ Every answer carries `X-Request-Id`. Problem answers repeat it as `requestId`, a
 
 ## System status
 
-**Admin area › System › System status** (capability `settings:read`: roles `admin`, `security-admin`, `auditor`) refreshes every 15 seconds; **Pause automatic refresh** stops that.
+**Admin area › System › System status** (capability `settings:read`: roles `admin`, `security-admin`, `auditor`) refreshes every 15 seconds; **Pause automatic refresh** stops that. The [Admin dashboard](dashboard.md) has the overview with the load of each role and the counts; this screen has every replica.
 
 - A summary line: **All ready**, **Degraded** or **Replicas unready**, and **Not drain-safe** when a role has fewer than two ready replicas or all of them on one node.
 - **Installation**: version, **Base URL** and its source, and **Answered by**, the replica that answered. **Database**: server and schema version, and whether this build supports the schema.

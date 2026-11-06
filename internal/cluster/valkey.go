@@ -63,8 +63,9 @@ type Valkey struct {
 	connectErr  string     // last failed connection attempt, for the status
 	connectCode ReasonCode // its code
 	startupErr  error
-	probeFailed string // reason of the last failed probe, empty when it passed
-	sentinels   int    // Sentinels that answered the last probe of all of them
+	probeFailed string        // reason of the last failed probe, empty when it passed
+	probeTook   time.Duration // round trip of the last probe that passed; 0 before the first
+	sentinels   int           // Sentinels that answered the last probe of all of them
 	lastAvail   bool
 	evaluated   bool
 	closed      bool
@@ -105,6 +106,11 @@ type ValkeyStatus struct {
 	// Subscribed is true while the Pub/Sub connection is subscribed on the
 	// current primary.
 	Subscribed bool
+	// ProbeLatency is the round trip of the last probe that passed (a write of
+	// the probe key, or PING without a keyspace); 0 before the first and after a
+	// failed one. The readiness check reads the client's state and does not
+	// reach Valkey itself, so this is the connection's latency (Q-OPS-175).
+	ProbeLatency time.Duration
 }
 
 // ValkeyOption configures [NewValkey].
@@ -281,6 +287,7 @@ func (v *Valkey) Status() ValkeyStatus {
 	st := ValkeyStatus{
 		Available: avail, Primary: v.primary, Version: v.version, DegradedReason: reason, ReasonCode: code,
 		Mode: v.cfg.Mode, SentinelsConfigured: len(v.cfg.Sentinel.Addresses), SentinelsReachable: v.sentinels,
+		ProbeLatency: v.probeTook,
 	}
 	v.mu.RUnlock()
 	st.CircuitOpen = v.br.isOpen()
@@ -608,16 +615,20 @@ func (v *Valkey) probe() {
 		return
 	}
 	var err error
+	start := time.Now()
 	if key, kerr := v.formKey(probeFamily, v.instance); kerr == nil {
 		err = v.set(v.ctx, key, "1")
 	} else {
 		err = v.ping(v.ctx)
 	}
+	took := time.Since(start)
 	v.mu.Lock()
 	if err != nil {
 		v.probeFailed = err.Error()
+		v.probeTook = 0
 	} else {
 		v.probeFailed = ""
+		v.probeTook = took
 	}
 	v.mu.Unlock()
 	v.reevaluate()

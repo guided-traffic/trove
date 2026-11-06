@@ -456,6 +456,19 @@ name `valkeyPrimary`, `valkeyPrimarySince` and `valkeySentinelsReachable` are `v
 vocabulary of R-OPS-001, so the status screen can name the cause (a timeout, a rejected
 credential, a missing primary) without a second call; the circuit state is `valkey.circuit` of
 the view above.
+Each check also carries `durationMs`, how long its last finished run took (Q-OPS-175), absent while
+the check has not finished a run; the admin dashboard shows the slowest run per dependency as its
+connection latency.
+
+**Runtime snapshot** (Q-OPS-175). Each heartbeat also writes the replica's own measurements of the
+time since its previous heartbeat into the column `runtime` (jsonb, `{}` until the first heartbeat
+after the start and for a replica of a release before it), published as `runtime` of the API: the
+requests it finished on its client listener and how many of them were answered with a `5xx`
+status, the 50th, 95th and 99th percentile of their duration, the requests in flight at the
+snapshot, the CPU time used per second of the window against `GOMAXPROCS`, the memory the Go runtime
+holds against the container's limit, and the number of goroutines. The replica measures these
+itself; no replica asks another, and no metrics system is needed. The figures are the current
+state, not a history: trends stay with the metrics of R-OPS-008.
 
 **Pool.** With the endpoint pools of [endpoints.md](endpoints.md) R-EP-008 (MVP) and the further
 splits of [ha-and-helm.md](ha-and-helm.md) R-HA-062 (P1), the column `pool` names the pool of the
@@ -474,6 +487,7 @@ start while they are not.
 ```sql
 CREATE TABLE replica (
   instance_uid  uuid        PRIMARY KEY,          -- random per process start
+  -- runtime    jsonb       NOT NULL DEFAULT '{}' (Q-OPS-175, migration 00042), the runtime snapshot above
   name          text        NOT NULL,             -- pod name (TROVE_POD_NAME), else host name
   version       text        NOT NULL,
   revision      text        NOT NULL,
@@ -676,6 +690,16 @@ arrives, and the screen of the system status shows no row for it while the value
   `stale`, `syncedAt` and `failures` (consecutive), read from `vuln_source_state` as the sources
   API of R-VULN-021 reads them. Advisory data is cluster-wide state, so it is here and not in the
   replica registry, and it never affects readiness.
+
+**Overview** (Q-OPS-175). `GET /api/v1/system/overview` (`settings:read`) answers what the admin
+dashboard counts besides the registry: repositories per class (`lifecycle` active), packages,
+package versions that are not in the trash, users, groups and service accounts (disabled ones
+included), active tokens of every type (neither revoked nor expired), projects, the endpoints of the configuration, Bastions; the stored
+content from the maintained totals `storage_usage_totals` of [storage.md](storage.md) R-STOR-003 (objects and bytes, one per
+distinct content, not what the object store bills) with the objects queued for deletion; and the
+job queue (queued, running, failed in the last 24 hours). The replica that answers counts with
+static queries and reuses the result for `cacheSeconds` (30), so a dashboard that refreshes does
+not count again on every request.
 
 **Acceptance criteria:** the response contains no field whose value is a password, key, token or
 presigned URL. `grep -iE 'secret|password|trv_'` over the response finds only key names, never
@@ -5792,6 +5816,33 @@ Q-REPO-185 counts the artifacts a host refuses; Q-OPS-158 fixes closed label set
 **Rationale:** Q-OPS-158's rule is one series per repository and label value. The development agent would revisit it if operators ask for the reasons.
 
 **Applied in the spec:** R-REPO-057, R-OPS-008 (the table). Code: `metrics.go`. Test: `TestR_REPO_057_TheSeriesExistAtZeroFromTheFirstAttempt`.
+
+### Q-OPS-175 · The admin dashboard's runtime figures come from a snapshot each replica writes with its heartbeat
+
+Status: **Decided by the owner on 2026-11-06.**
+
+The owner asked for an instance dashboard as the first screen of the admin area, modelled on the admin dashboard
+of the reference he showed: the replicas of each component, latencies, the connection to PostgreSQL and Valkey,
+the storage the object store holds, the load of the components. The registry of R-OPS-003 and the facts of
+R-OPS-004 had the replicas and the configuration, but no latency, no load, no check duration and no counts.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each replica measures itself over its heartbeat period and writes a small snapshot into the registry with its heartbeat; the API publishes it with the replica, the UI sums per role (chosen) | Current state everywhere | Works in every installation with what it already has; no replica asks another (R-OPS-003); one value per heartbeat interval; one added column | The current state only, no history |
+| (b) trove queries a configured Prometheus | Time series | Graphs and trends | Only where a Prometheus runs and is reachable; new configuration (address, credential, TLS) and a dependency |
+| (c) Both | Snapshot, plus graphs where Prometheus is configured | Most complete | Twice the work |
+
+**Choice:** (a). The snapshot (`replica.runtime`, an added jsonb column) holds the requests finished on the client
+listener and their `5xx` share, the p50, p95 and p99 of their duration, the requests in flight, CPU time per second of
+the window against `GOMAXPROCS`, memory held against the container limit, and the goroutines; each readiness check
+carries the duration of its last run (`durationMs`, inside the existing `checks`). The counts come from
+`GET /api/v1/system/overview` (R-OPS-004): static queries, the stored content from the maintained totals of
+R-STOR-003 rather than a sum over the blobs, cached by the answering replica for 30 seconds. Trends and alerts stay
+with the metrics of R-OPS-008.
+
+**Applied in the spec:** R-OPS-003 (runtime snapshot, check duration), R-OPS-004 (overview), R-UI-038 (dashboard).
+Code: `replica.runtime` (migration 00042), the heartbeat in `internal/cluster`, the snapshot in `internal/app`, the
+overview handler in `internal/api/v1`; `web/src/app/features/system/dashboard.*`. Manual: [Admin dashboard](../manual/admin/dashboard.md).
 
 ## What this does not cover
 

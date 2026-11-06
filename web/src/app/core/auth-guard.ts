@@ -4,14 +4,16 @@ import { LoginApi } from '../api/login-api';
 import { SessionStore } from './session-store';
 
 /**
- * `/admin` itself starts at the first screen the caller may use: the repositories, or the projects for
- * a project administrator without the repository capability (R-UI-041). It runs after `authGuard`, so
- * the session is known; a redirect function of the route would run before it.
+ * `/admin` itself starts at the first screen the caller may use: the dashboard for a caller who may read the
+ * installation's facts (Q-OPS-175), else the repositories, or the projects for a project administrator without the
+ * repository capability (R-UI-041). It runs after `authGuard`, so the session is known; a redirect function of the
+ * route would run before it.
  */
 export const adminHomeGuard: CanActivateFn = async () => {
   const session = inject(SessionStore);
   const router = inject(Router);
   await session.load();
+  if (session.has('settings:read')) return router.createUrlTree(['/admin', 'dashboard']);
   const projectsOnly =
     !session.has('repositories:read-config') && (session.has('projects:read') || session.isProjectAdministrator());
   return router.createUrlTree(['/admin', projectsOnly ? 'projects' : 'repositories']);

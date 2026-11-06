@@ -107,6 +107,7 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `getVersion` | `GET /api/v1/system/version` | authenticated, or anonymous with `system.public_version` |
 | `getSystemInfo` | `GET /api/v1/system/info` | `settings:read` |
 | `listReplicas` | `GET /api/v1/system/replicas` | `settings:read` |
+| `getSystemOverview` | `GET /api/v1/system/overview` | `settings:read`; not opened by `system.bootstrap_anonymous_read` ([System overview](#system-overview-r-ops-004-q-ops-175)) |
 | `getOpenApiJson` / `getOpenApiYaml` | `GET /api/v1/openapi.json`, `.yaml` | public; `servers[0].url` is the public base URL |
 | `getProblemType` | `GET /api/v1/problems/{code}` | public; resolves the `type` URI of a problem |
 | `listJobs` | `GET /api/v1/system/jobs` | authenticated; `settings:read` sees every job, any other caller the jobs it started (R-API-015) |
@@ -370,6 +371,34 @@ share one database and one Valkey.
   ring of this replica cannot open is left as it is), and fails permanently, naming the column, for a column registered later
   without a walk of its own. The first feature that registers another column writes its walk (the sealed counter in `listq`
   is the pattern).
+
+## System overview (R-OPS-004, Q-OPS-175)
+
+`GET /api/v1/system/overview` ([overview_api.go](../../internal/api/v1/overview_api.go)) is what the admin dashboard
+shows besides the replica registry. The answering replica counts on one connection of the request pool
+(`API.Store.Read`, which rides out a failover and ends as `503 database_unavailable`; a replica without the store
+answers 503 too) with the five static statements of [overview.sql](../../internal/meta/postgres/queries/overview.sql).
+`endpoints` is the number of configured endpoints (`EndpointServices.Endpoints`, filled with `cfg.Server.ResolveEndpoints()`
+in [wire_exposure.go](../../internal/app/wire_exposure.go)), not a count of the database.
+
+| Member | Statement | What counts | Cost |
+|---|---|---|---|
+| `counts.repositories` | `OverviewRepositories` | `lifecycle = 'active'`, grouped by `class`; `byClass` always holds `local`, `remote` and `virtual`, 0 for a class without a repository | a scan of `repositories`, one row per repository |
+| `counts.users`, `groups`, `serviceAccounts`, `bastions` | `OverviewPrincipals` | the principals of the kinds `user`, `group`, `service_account` and `bastion`, disabled ones included | the unique index on `principal (kind, name)` matches the predicate |
+| `counts.packages`, `packageVersions`, `activeTokens`, `projects` | `OverviewContent` | every package; versions with `trashed_at IS NULL`; tokens with `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, of every type; every project | linear in packages and in live versions (the predicate is that of `package_versions_live`); the token predicate lies within the partial index `api_token_expiry_active` (`WHERE revoked_at IS NULL`); `project` is small |
+| `storage.blobs`, `bytes` | `OverviewStorage` | the single row of `storage_usage_totals` that the usage fold maintains (live blobs, R-STOR-003), never a sum over `blobs`; it trails the deltas by the fold's interval | one row by primary key |
+| `storage.pendingDeletion` | `OverviewStorage` | the rows of `blob_gc_queue`, the candidates of the garbage collection | linear in the queue, which the collection empties |
+| `jobs.queued`, `running`, `failedLast24h` | `OverviewJobs` | `queued`; `running` and `cancelling`; `failed` with `finished_at` within 24 hours of PostgreSQL's clock | one scalar subquery per partial index whose predicate it repeats: `job_fetch`, `job_lease`, `job_finished` |
+
+Whether PostgreSQL picks those indexes, and whether the scans are index-only, depends on its statistics and the
+visibility map; the plans have not been measured on a seeded table. What bounds the cost is the cache: the replica keeps
+the answer for `cacheSeconds` (30, `overviewCacheSeconds`), so a dashboard that refreshes every few seconds counts once
+per period and replica. The cache is a field of the `Server` instance (`overviewCache`, no package-level state,
+R-ARCH-032): one count runs at a time, a request that finds the cache stale while a count runs waits for it (or for its
+own context), a failed count is never kept, and a count that panics still releases the waiting requests.
+`computedAt` is the start of the count. Tests: `TestR_OPS_004_SystemOverview` and `TestR_OPS_004_OverviewCache`
+([overview_api_test.go](../../internal/api/v1/overview_api_test.go), the statements answered by a fake connection), and
+against PostgreSQL `TestR_OPS_004_OverviewStatements` ([overview_test.go](../../test/integration/postgres/overview_test.go)).
 
 ## The Bastion interface (R-BAS-008)
 

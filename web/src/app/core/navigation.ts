@@ -58,6 +58,7 @@ export const NAV_AREAS: readonly NavArea[] = [
     id: 'admin',
     label: $localize`:@@nav.context.admin:Admin area`,
     entries: [
+      { kind: 'item', route: '/admin/dashboard', icon: 'dashboard', label: $localize`:@@nav.dashboard:Dashboard`, capability: 'settings:read' },
       { kind: 'item', route: '/admin/projects', icon: 'folder_shared', label: $localize`:@@nav.projects:Projects`, capability: 'projects:read', projectAdmin: true },
       { kind: 'item', route: '/admin/repositories', icon: 'inventory_2', label: $localize`:@@nav.repositories:Repositories`, capability: 'repositories:read-config' },
       { kind: 'item', route: '/admin/endpoints', icon: 'router', label: $localize`:@@nav.endpoints:Endpoints`, capability: 'endpoints:read' },
@@ -92,7 +93,7 @@ export const NAV_AREAS: readonly NavArea[] = [
       {
         kind: 'group',
         id: 'system',
-        icon: 'dashboard',
+        icon: 'dns',
         label: $localize`:@@nav.section.system:System`,
         items: [
           { route: '/admin/system', icon: 'speed', label: $localize`:@@nav.system:System status`, capability: 'settings:read' },

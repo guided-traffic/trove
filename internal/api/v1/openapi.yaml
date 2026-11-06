@@ -278,6 +278,35 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/system/overview:
+    get:
+      operationId: getSystemOverview
+      tags: [system]
+      summary: The counts and the stored content of the installation
+      description: |
+        What the admin dashboard shows besides the registry (Q-OPS-175): how many repositories, packages, principals,
+        tokens, projects, endpoints and Bastions exist, how much content the object store holds as the metadata records
+        it, and the state of the job queue. Counted from PostgreSQL by the replica that answers and cached there for
+        `cacheSeconds`, so a dashboard that refreshes does not count again on every request.
+      x-trove-permission:
+        permission: settings:read
+      responses:
+        "200":
+          description: The overview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemOverview"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /api/v1/openapi.json:
     get:
       operationId: getOpenApiJson
@@ -10651,6 +10680,82 @@ components:
         credentialSource:
           type: string
           description: Open enum, for example `static` or `workload-identity`.
+    SystemOverview:
+      type: object
+      required: [computedAt, cacheSeconds, counts, storage, jobs]
+      properties:
+        computedAt:
+          type: string
+          format: date-time
+          description: When the answering replica counted.
+        cacheSeconds:
+          type: integer
+          description: How long the answering replica reuses the counts.
+        counts:
+          type: object
+          required: [repositories, packages, packageVersions, users, groups, serviceAccounts, activeTokens, projects, endpoints, bastions]
+          properties:
+            repositories:
+              type: object
+              required: [total, byClass]
+              properties:
+                total:
+                  type: integer
+                byClass:
+                  type: object
+                  description: Per repository class (`local`, `remote`, `virtual`).
+                  additionalProperties:
+                    type: integer
+            packages:
+              type: integer
+              format: int64
+            packageVersions:
+              type: integer
+              format: int64
+            users:
+              type: integer
+              description: Users, disabled ones included.
+            groups:
+              type: integer
+            serviceAccounts:
+              type: integer
+              description: Service accounts, disabled ones included.
+            activeTokens:
+              type: integer
+              description: Tokens of every type neither expired nor revoked.
+            projects:
+              type: integer
+            endpoints:
+              type: integer
+            bastions:
+              type: integer
+        storage:
+          type: object
+          description: |
+            The content of the object store as the metadata records it: one object per distinct content (deduplicated), not
+            what the store bills (object versions, incomplete uploads and the store's own overhead are not counted).
+          required: [blobs, bytes, pendingDeletion]
+          properties:
+            blobs:
+              type: integer
+              format: int64
+            bytes:
+              type: integer
+              format: int64
+            pendingDeletion:
+              type: integer
+              format: int64
+              description: Objects queued for the garbage collection.
+        jobs:
+          type: object
+          required: [queued, running, failedLast24h]
+          properties:
+            queued:
+              type: integer
+            running:
+              type: integer
+            failedLast24h:
+              type: integer
     ReplicaList:
       type: object
       required: [items]
@@ -10744,6 +10849,61 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ValkeyView"
             - type: "null"
+        runtime:
+          description: "The replica's own measurements of its last heartbeat period (Q-OPS-175); `null` until its first heartbeat after the start, and for a replica of a release before them."
+          oneOf:
+            - $ref: "#/components/schemas/ReplicaRuntime"
+            - type: "null"
+    ReplicaRuntime:
+      type: object
+      description: |
+        Written with the replica's heartbeat (Q-OPS-175): the requests it finished on its client listener, its CPU and memory,
+        over the last heartbeat period. The percentiles are `null` when no request finished in the window.
+      required: [sampledAt, windowSeconds, requests, errors, inFlight, latencyMs, cpuCores, cpuLimitCores, memoryBytes, memoryLimitBytes, goroutines]
+      properties:
+        sampledAt:
+          type: string
+          format: date-time
+        windowSeconds:
+          type: number
+          description: The period the counts, the rate and the percentiles cover.
+        requests:
+          type: integer
+          format: int64
+          description: Requests finished in the window.
+        errors:
+          type: integer
+          format: int64
+          description: Of those, the ones answered with a 5xx status.
+        inFlight:
+          type: integer
+          description: Requests being served when the snapshot was taken.
+        latencyMs:
+          type: object
+          required: [p50, p95, p99]
+          properties:
+            p50:
+              type: [number, "null"]
+            p95:
+              type: [number, "null"]
+            p99:
+              type: [number, "null"]
+        cpuCores:
+          type: number
+          description: CPU time used per second of the window; 1.0 is one core busy.
+        cpuLimitCores:
+          type: [number, "null"]
+          description: The cores the process may use (`GOMAXPROCS`, which follows the container's CPU limit); `null` when unknown.
+        memoryBytes:
+          type: integer
+          format: int64
+          description: The memory the Go runtime holds from the system (heap, stacks, runtime structures).
+        memoryLimitBytes:
+          type: integer
+          format: int64
+          description: The container memory limit; 0 when none is known.
+        goroutines:
+          type: integer
     CheckResult:
       type: object
       required: [status]
@@ -10756,6 +10916,9 @@ components:
           description: A short sanitised reason; never a host, address or error text.
         configError:
           type: boolean
+        durationMs:
+          type: number
+          description: How long the check's last finished run took (Q-OPS-175); absent while the check has not finished a run (not run yet, a run skipped because the previous one still hangs, the synthetic `draining` check) and for a replica of a release before it.
     ValkeyView:
       type: object
       description: The replica's view of Valkey. No credential, user name or key appears.

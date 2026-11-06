@@ -64,6 +64,7 @@ type requestOptions struct {
 	records    bool
 	scrub      *Scrubber
 	remoteAddr func(*http.Request) string
+	window     *RequestWindow
 }
 
 // WithListener sets the listener label and field: "client" (default) or "ops".
@@ -85,6 +86,14 @@ func WithRequestRecords(enabled bool) RequestOption {
 
 // WithRequestScrubber sets the scrubber for the path field.
 func WithRequestScrubber(s *Scrubber) RequestOption { return func(o *requestOptions) { o.scrub = s } }
+
+// WithRequestWindow also counts every request in w, the window of the replica
+// registry's runtime snapshot (Q-OPS-175): in flight while it is served, then
+// its status and duration as the metrics see them. The composition root passes
+// it to the client listener's chains only.
+func WithRequestWindow(w *RequestWindow) RequestOption {
+	return func(o *requestOptions) { o.window = w }
+}
 
 // WithRemoteAddr sets the function that resolves the client address after the
 // trusted-proxy rule (R-OPS-005). A handler may also call RequestInfo.SetRemoteAddr.
@@ -123,6 +132,8 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 			g := m.inFlight.WithLabelValues(o.listener, m.endpointLabel(o.endpoint))
 			g.Inc()
 			defer g.Dec()
+			o.window.enter()
+			defer o.window.leave()
 
 			next.ServeHTTP(rec, r.WithContext(ctx))
 
@@ -131,6 +142,7 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 			facts := ri.get()
 			recv := requestBytes(r, body)
 			m.observeRequest(o.listener, o.endpoint, facts.handler, r.Method, status, dur, recv, rec.bytes, RequestID(ctx), Sampled(ctx))
+			o.window.observe(status, dur)
 			if !o.records {
 				return
 			}

@@ -271,8 +271,28 @@ A cache with `MaxBytes` needs `Weigh`. Metrics: `trove_cache_requests_total{cach
 ## Replica registry
 
 `cluster.Registry` (one per replica, of the roles `api`, `packages`, `worker`, `web` and `all`, the constants and `ValidRole` of [replica_roles.go](../../internal/cluster/replica_roles.go); `NewRegistry` refuses any other role, Q-OPS-161, Q-OPS-166): `Start` upserts the row (retrying until PostgreSQL answers), a loop on the control connection upserts again every
-`system.heartbeat_interval` with the snapshot from `RegistryOptions.Snapshot` (state, checks, Valkey view) and `RegistryOptions.Leases`. `Drain` writes `draining`; `Stop` deletes the row;
+`system.heartbeat_interval` with the snapshot from `RegistryOptions.Snapshot` (state, checks, Valkey view, runtime) and `RegistryOptions.Leases`. `Drain` writes `draining`; `Stop` deletes the row;
 `StopHeartbeat` leaves it (fault injection). The heartbeat is an upsert, so a row removed by the prune or a restore comes back.
+`upsertParams` renders one heartbeat's row; `replicaInfoOf` reads one back.
+
+What a heartbeat writes besides the identity (Q-OPS-175; the snapshot is `App.replicaSnapshot` in
+[wire_coordination.go](../../internal/app/wire_coordination.go)):
+
+| Column | Content |
+|---|---|
+| `checks` | every readiness check of R-OPS-001 as `cluster.ReplicaCheck`: `status`, `reason`, `configError` and `durationMs`, the duration of the check's last run (`health.CheckResult.Latency`) in milliseconds to the microsecond. A check without a finished run has no `durationMs`: one that has not run yet, a run skipped because the previous one still hangs (recorded with latency 0), and the synthetic `draining` check. The rows of a release before it have none either. The `valkey` check reads the client's state and takes microseconds, so `App.replicaChecks` takes the round trip of the client's last passed probe instead (`ValkeyStatus.ProbeLatency`, measured in `Valkey.probe` around the write of the probe key or the PING); without a passed probe it has none |
+| `valkey` | the replica's view of Valkey, rendered by the caller |
+| `runtime` (migration 00042, `jsonb NOT NULL DEFAULT '{}'`) | `cluster.ReplicaRuntime`: the requests the client listener finished since the previous heartbeat, their 5xx, the latency percentiles, the requests in flight, CPU and memory, goroutines, `sampledAt` and `windowSeconds`. What is measured where is in [observability.md](observability.md#runtime-snapshot-of-the-replica-registry-q-ops-175). The JSON names are those of the API's `ReplicaRuntime`; rows are read by replicas of other releases, so a field is added, never renamed (`TestR_OPS_003_RuntimeColumnNames`) |
+
+A release before the column neither writes nor reads `runtime`: its rows keep `'{}'`, which `ListReplicas` reads as no
+runtime, and so does a value this release cannot decode (the list does not fail for a display figure); the API then
+leaves `runtime` out. A heartbeat whose write fails has drained the sampler's window: the row keeps the previous
+snapshot, and the next heartbeat covers only its own period. Tests: `TestR_OPS_003_RuntimeAndCheckDurationsRoundTrip`
+and `TestR_OPS_003_RowsWithoutRuntime` ([replica_runtime_test.go](../../internal/cluster/replica_runtime_test.go)),
+`TestR_OPS_003_HeartbeatCarriesCheckDurations` and `TestR_OPS_003_RuntimeSnapshotReachesTheAPI`
+([runtime_snapshot_test.go](../../internal/app/runtime_snapshot_test.go)), `TestR_OPS_003_ReplicaRuntimeMatchesTheDocument`
+(the replica list with and without a runtime against the document, [overview_api_test.go](../../internal/api/v1/overview_api_test.go)); against PostgreSQL
+`TestR_OPS_003_ReplicaRuntimeColumn` ([overview_test.go](../../test/integration/postgres/overview_test.go)).
 
 `cluster.ListReplicas(ctx, db, cfg.System)` reads the table on the request pool (`DB.Main`; there is no `Registry.List`); a lost replica lists no leases, so a lease name appears on one live row only. `Lost` is `heartbeat_at < now() - system.heartbeat_stale_after` on PostgreSQL's clock. `PruneReplicas` and `jobs.KindReplicaRegistryPrune`
 delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its own type; `internal/cluster` imports no edge package. The role of a row is the exact

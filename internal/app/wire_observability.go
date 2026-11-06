@@ -26,6 +26,11 @@ type telemetry struct {
 	// tls holds the TLS material families (R-ARCH-035), shared by the listeners
 	// and every client.
 	tls *tlsfiles.Metrics
+	// window counts the requests of the client listener, and runtime samples the
+	// process with it, for the runtime snapshot each heartbeat writes into the
+	// replica registry (Q-OPS-175).
+	window  *observability.RequestWindow
+	runtime *observability.RuntimeSampler
 }
 
 func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, error) {
@@ -36,6 +41,8 @@ func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, err
 		observability.WithEndpointNames(endpointNames(cfg)...))
 	t.metrics.ExportEndpoints()
 	t.passing = t.metrics.NewGaugeVec("trove_health_check_passing", "1 while the readiness check passes, 0 while it fails.", "name")
+	t.window = observability.NewRequestWindow()
+	t.runtime = observability.NewRuntimeSampler(t.window, int64(cfg.Runtime.MemoryLimitBytes))
 	var err error
 	if t.tls, err = tlsfiles.NewMetrics(t.metrics.Registry()); err != nil {
 		return nil, err
@@ -61,10 +68,13 @@ func (t *telemetry) checkObserver(name string, passing bool) {
 }
 
 // clientStages returns the injected stages of the client chain: trace context,
-// request log and metrics (R-ARCH-005 steps 2 and 3).
+// request log and metrics (R-ARCH-005 steps 2 and 3). Every endpoint's chain
+// counts into the one request window of the runtime snapshot; the ops listener
+// does not.
 func (t *telemetry) clientStages(cfg *config.Config, endpoint string) (trace, reqLog func(http.Handler) http.Handler) {
 	reqLog = observability.RequestLog(t.log, t.metrics,
-		observability.WithListener("client"), observability.WithEndpoint(endpoint), observability.WithRequestRecords(cfg.Log.Request.Enabled))
+		observability.WithListener("client"), observability.WithEndpoint(endpoint), observability.WithRequestRecords(cfg.Log.Request.Enabled),
+		observability.WithRequestWindow(t.window))
 	return t.tracer.MiddlewareFor(endpoint), reqLog
 }
 

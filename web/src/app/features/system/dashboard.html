@@ -1,0 +1,427 @@
+<div class="page-header">
+  <h1 i18n="@@dashboard.title">Dashboard</h1>
+  <div class="refresh">
+    <button
+      type="button"
+      class="btn btn-default btn-sm"
+      [attr.aria-pressed]="paused()"
+      (click)="togglePause()"
+    >
+      @if (paused()) {
+        <ng-container i18n="@@dashboard.resume">Resume automatic refresh</ng-container>
+      } @else {
+        <ng-container i18n="@@dashboard.pause">Pause automatic refresh</ng-container>
+      }
+    </button>
+    <button
+      type="button"
+      class="btn btn-tertiary btn-sm"
+      (click)="reload()"
+      i18n="@@dashboard.refresh"
+    >
+      Refresh now
+    </button>
+  </div>
+</div>
+
+@if (failure(); as f) {
+  <trove-error-notice [error]="f" (retry)="reload()" />
+}
+
+<!-- The instance: overall state, version, address and replicas, with the way to the status screen. -->
+@if (valueOf(info); as i) {
+  <section class="instance-bar" aria-labelledby="dash-instance">
+    <h2 id="dash-instance" class="visually-hidden" i18n="@@dashboard.instance">Instance</h2>
+    @switch (state()) {
+      @case ('ready') {
+        <span class="state ok"
+          ><span class="material-icons" aria-hidden="true">check_circle</span
+          ><ng-container i18n="@@dashboard.state.ready">All roles ready</ng-container></span
+        >
+      }
+      @case ('degraded') {
+        <span class="state warn"
+          ><span class="material-icons" aria-hidden="true">warning</span
+          ><ng-container i18n="@@dashboard.state.degraded">Degraded</ng-container></span
+        >
+      }
+      @case ('unready') {
+        <span class="state bad"
+          ><span class="material-icons" aria-hidden="true">error</span
+          ><ng-container i18n="@@dashboard.state.unready">A role is not ready</ng-container></span
+        >
+      }
+    }
+    <span
+      ><span class="label" i18n="@@dashboard.version">Version</span>
+      <strong translate="no">{{ i.version.version }}</strong></span
+    >
+    <span
+      ><span class="label" i18n="@@dashboard.base-url">Base URL</span>
+      <strong translate="no">{{ i.baseUrl }}</strong></span
+    >
+    <span
+      ><span class="label" i18n="@@dashboard.replicas">Replicas</span>
+      <strong i18n="@@dashboard.replicas.value"
+        >{{ i.replicas.ready }} of {{ i.replicas.live }} ready</strong
+      ></span
+    >
+    <a class="btn btn-default btn-sm push" routerLink="/admin/system" i18n="@@dashboard.status-link"
+      >System status</a
+    >
+  </section>
+}
+
+<h2 i18n="@@dashboard.components">Components</h2>
+<div class="cards">
+  @for (l of loads(); track l.role) {
+    <section class="card" [attr.aria-labelledby]="'dash-role-' + l.role">
+      <div class="card-head">
+        <h3 [id]="'dash-role-' + l.role" translate="no">{{ l.role }}</h3>
+        <span class="count" i18n="@@dashboard.role.ready">{{ l.ready }} of {{ l.live }} ready</span>
+      </div>
+      @if (l.live === 0) {
+        <p class="note state bad">
+          <span class="material-icons" aria-hidden="true">error</span>
+          <ng-container i18n="@@dashboard.role.none"
+            >No replica of this role is running.</ng-container
+          >
+        </p>
+      } @else {
+        <dl class="kv">
+          <div>
+            <dt i18n="@@dashboard.role.nodes">Nodes</dt>
+            <dd>{{ l.nodes }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.role.requests">Requests</dt>
+            <dd i18n="@@dashboard.per-second">
+              {{ l.requestsPerSecond | number: '1.0-1' }} per second
+            </dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.role.latency">Latency p95</dt>
+            <dd>
+              @if (l.p95Ms === null) {
+                <span class="muted" i18n="@@dashboard.none">none in the last period</span>
+              } @else {
+                {{ l.p95Ms | number: '1.0-0' }} ms
+              }
+            </dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.role.errors">Server errors</dt>
+            <dd i18n="@@dashboard.per-second">
+              {{ l.errorsPerSecond | number: '1.0-1' }} per second
+            </dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.role.in-flight">In flight</dt>
+            <dd>{{ l.inFlight }}</dd>
+          </div>
+        </dl>
+        <div class="meter">
+          <span class="meter-label"
+            ><ng-container i18n="@@dashboard.cpu">CPU</ng-container>
+            <span class="muted">
+              @if (l.cpuLimitCores !== null) {
+                <ng-container i18n="@@dashboard.cpu.of"
+                  >{{ l.cpuCores | number: '1.1-2' }} of {{ l.cpuLimitCores }} cores</ng-container
+                >
+              } @else {
+                <ng-container i18n="@@dashboard.cpu.used"
+                  >{{ l.cpuCores | number: '1.1-2' }} cores</ng-container
+                >
+              }
+            </span></span
+          >
+          @if (percent(l.cpuCores, l.cpuLimitCores); as p) {
+            <span class="bar" aria-hidden="true"><span [style.inline-size.%]="p"></span></span>
+          }
+        </div>
+        <div class="meter">
+          <span class="meter-label"
+            ><ng-container i18n="@@dashboard.memory">Memory</ng-container>
+            <span class="muted">
+              @if (l.memoryLimitBytes !== null) {
+                <ng-container i18n="@@dashboard.memory.of"
+                  >{{ size(l.memoryBytes) }} of {{ size(l.memoryLimitBytes) }}</ng-container
+                >
+              } @else {
+                {{ size(l.memoryBytes) }}
+              }
+            </span></span
+          >
+          @if (percent(l.memoryBytes, l.memoryLimitBytes); as p) {
+            <span class="bar" aria-hidden="true"><span [style.inline-size.%]="p"></span></span>
+          }
+        </div>
+        @if (l.reporting < l.live) {
+          <p class="note" i18n="@@dashboard.role.reporting">
+            {{ l.reporting }} of {{ l.live }} replicas reported measurements.
+          </p>
+        }
+      }
+    </section>
+  }
+</div>
+
+<h2 i18n="@@dashboard.dependencies">Dependencies</h2>
+<div class="cards">
+  @if (valueOf(info); as i) {
+    <section class="card" aria-labelledby="dash-db">
+      <div class="card-head">
+        <h3 id="dash-db" i18n="@@dashboard.database">PostgreSQL</h3>
+        <ng-container *ngTemplateOutlet="check; context: { $implicit: checks().database }" />
+      </div>
+      @if (i.database; as db) {
+        <dl class="kv">
+          <div>
+            <dt i18n="@@dashboard.server-version">Server version</dt>
+            <dd translate="no">{{ db.serverVersion }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.schema">Schema version</dt>
+            <dd>{{ db.schemaVersion }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.pooler">Pooler</dt>
+            <dd translate="no">{{ db.poolerMode }}</dd>
+          </div>
+        </dl>
+        <div class="meter">
+          <span class="meter-label"
+            ><ng-container i18n="@@dashboard.pool">Connections of the answering replica</ng-container>
+            <span class="muted" i18n="@@dashboard.pool.of">{{ pool().inUse }} of {{ pool().max }}</span></span
+          >
+          @if (percent(pool().inUse, pool().max); as p) {
+            <span class="bar" aria-hidden="true"><span [style.inline-size.%]="p"></span></span>
+          }
+        </div>
+      } @else {
+        <p class="muted" i18n="@@dashboard.database.unknown">
+          The answering replica has not read the database facts yet.
+        </p>
+      }
+    </section>
+
+    <section class="card" aria-labelledby="dash-valkey">
+      <div class="card-head">
+        <h3 id="dash-valkey" i18n="@@dashboard.valkey">Valkey</h3>
+        <ng-container *ngTemplateOutlet="check; context: { $implicit: checks().valkey }" />
+      </div>
+      <dl class="kv">
+        <div>
+          <dt i18n="@@dashboard.valkey.mode">Mode</dt>
+          <dd translate="no">{{ i.valkey.mode }}</dd>
+        </div>
+        @if (i.valkey.mode === 'sentinel') {
+          <div>
+            <dt i18n="@@dashboard.valkey.sentinels">Sentinels</dt>
+            <dd>{{ i.valkey.sentinels }}</dd>
+          </div>
+        }
+        <div>
+          <dt i18n="@@dashboard.valkey.tls">TLS</dt>
+          <dd translate="no">{{ i.valkey.tls }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.valkey.degraded">Replicas with a degraded view</dt>
+          <dd>{{ i.valkey.degradedReplicas ?? '–' }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="card" aria-labelledby="dash-s3">
+      <div class="card-head">
+        <h3 id="dash-s3" i18n="@@dashboard.object-store">Object store</h3>
+        <ng-container *ngTemplateOutlet="check; context: { $implicit: checks().objectStore }" />
+      </div>
+      <dl class="kv">
+        <div>
+          <dt i18n="@@dashboard.bucket">Bucket</dt>
+          <dd translate="no">{{ i.objectStore.bucket }}</dd>
+        </div>
+        @if (valueOf(overview); as o) {
+          <div>
+            <dt i18n="@@dashboard.stored">Stored content</dt>
+            <dd>{{ size(o.storage.bytes) }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.objects">Objects</dt>
+            <dd>{{ o.storage.blobs | number }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@dashboard.pending-deletion">Queued for deletion</dt>
+            <dd>{{ o.storage.pendingDeletion | number }}</dd>
+          </div>
+        }
+      </dl>
+    </section>
+  }
+</div>
+
+<h2 i18n="@@dashboard.content-access">Content and access</h2>
+@if (overviewFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="overview.reload()" />
+}
+@if (valueOf(overview); as o) {
+  <div class="cards">
+    <section class="card" aria-labelledby="dash-repos">
+      <div class="card-head">
+        <h3 id="dash-repos" i18n="@@dashboard.repositories">Repositories</h3>
+        <span class="count">{{ o.counts.repositories.total }}</span>
+      </div>
+      <dl class="kv">
+        @for (c of classes; track c.key) {
+          <div>
+            <dt>{{ c.label }}</dt>
+            <dd>{{ o.counts.repositories.byClass[c.key] ?? 0 }}</dd>
+          </div>
+        }
+      </dl>
+      <div class="card-foot">
+        <a
+          class="btn btn-default btn-sm"
+          routerLink="/admin/repositories"
+          i18n="@@dashboard.repositories.view"
+          >View repositories</a
+        >
+        @if (session.has('repositories:write-config')) {
+          <a
+            class="btn btn-default btn-sm"
+            routerLink="/admin/repositories/new"
+            i18n="@@dashboard.repositories.new"
+            >New repository</a
+          >
+        }
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="dash-packages">
+      <div class="card-head">
+        <h3 id="dash-packages" i18n="@@dashboard.packages">Packages</h3>
+        <span class="count">{{ o.counts.packages | number }}</span>
+      </div>
+      <dl class="kv">
+        <div>
+          <dt i18n="@@dashboard.versions">Versions</dt>
+          <dd>{{ o.counts.packageVersions | number }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.endpoints">Endpoints</dt>
+          <dd>{{ o.counts.endpoints }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.bastions">Bastions</dt>
+          <dd>{{ o.counts.bastions }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.projects">Projects</dt>
+          <dd>{{ o.counts.projects }}</dd>
+        </div>
+      </dl>
+      <div class="card-foot">
+        <a class="btn btn-default btn-sm" routerLink="/packages" i18n="@@dashboard.packages.view"
+          >View packages</a
+        >
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="dash-identity">
+      <div class="card-head">
+        <h3 id="dash-identity" i18n="@@dashboard.identity">Identity</h3>
+      </div>
+      <dl class="kv">
+        <div>
+          <dt i18n="@@dashboard.users">Users</dt>
+          <dd>{{ o.counts.users }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.groups">Groups</dt>
+          <dd>{{ o.counts.groups }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.service-accounts">Service accounts</dt>
+          <dd>{{ o.counts.serviceAccounts }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.tokens">Active tokens</dt>
+          <dd>{{ o.counts.activeTokens }}</dd>
+        </div>
+      </dl>
+      <div class="card-foot">
+        <a class="btn btn-default btn-sm" routerLink="/admin/users" i18n="@@dashboard.users.view"
+          >View users</a
+        >
+        <a class="btn btn-default btn-sm" routerLink="/admin/tokens" i18n="@@dashboard.tokens.view"
+          >View tokens</a
+        >
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="dash-ops">
+      <div class="card-head">
+        <h3 id="dash-ops" i18n="@@dashboard.operations">Operations</h3>
+      </div>
+      <dl class="kv">
+        <div>
+          <dt i18n="@@dashboard.jobs.running">Jobs running</dt>
+          <dd>{{ o.jobs.running }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.jobs.queued">Jobs queued</dt>
+          <dd>{{ o.jobs.queued }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@dashboard.jobs.failed">Jobs failed in 24 hours</dt>
+          <dd [class.bad-text]="o.jobs.failedLast24h > 0">{{ o.jobs.failedLast24h }}</dd>
+        </div>
+        @if (valueOf(encryption); as e) {
+          <div>
+            <dt i18n="@@dashboard.key">Active key</dt>
+            <dd translate="no">{{ e.activeKeyId }}</dd>
+          </div>
+        }
+      </dl>
+      <div class="card-foot">
+        <a
+          class="btn btn-default btn-sm"
+          routerLink="/admin/system/jobs"
+          i18n="@@dashboard.jobs.view"
+          >View jobs</a
+        >
+      </div>
+    </section>
+  </div>
+  <p class="note" i18n="@@dashboard.counted">
+    Counted {{ o.computedAt | date: 'mediumTime' }}; the counts are reused for
+    {{ o.cacheSeconds }} seconds.
+  </p>
+}
+
+<!-- A dependency's readiness check over the live replicas: its state, and how long the slowest run took. -->
+<ng-template #check let-c>
+  @switch (checkState(c)) {
+    @case ('ok') {
+      <span class="state ok"
+        ><span class="material-icons" aria-hidden="true">check_circle</span
+        ><ng-container i18n="@@dashboard.check.ok">Connected</ng-container>
+        @if (c.maxMs !== null) {
+          <span class="muted">{{ c.maxMs | number: '1.0-1' }} ms</span>
+        }
+      </span>
+    }
+    @case ('bad') {
+      <span class="state bad"
+        ><span class="material-icons" aria-hidden="true">error</span
+        ><ng-container i18n="@@dashboard.check.bad"
+          >{{ c.failing }} of {{ c.reporting }} replicas fail</ng-container
+        ></span
+      >
+    }
+    @case ('none') {
+      <span class="muted" i18n="@@dashboard.check.none">No report</span>
+    }
+  }
+</ng-template>

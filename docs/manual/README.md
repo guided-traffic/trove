@@ -36,9 +36,10 @@ Readers on GitHub can browse the same files here.
 11. [GitLab CI federation](admin/gitlab-ci.md)
 12. [Managing repositories](admin/repositories.md)
 13. [Advisory sources](admin/vulnerability-sources.md)
-14. [Monitoring and operations](admin/operations.md)
-15. [Upgrades](admin/upgrades.md)
-16. [Known limitations](admin/limitations.md)
+14. [Admin dashboard](admin/dashboard.md)
+15. [Monitoring and operations](admin/operations.md)
+16. [Upgrades](admin/upgrades.md)
+17. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.

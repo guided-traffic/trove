@@ -52,6 +52,44 @@ type ReplicaCheck struct {
 	Status      string `json:"status"`
 	Reason      string `json:"reason,omitempty"`
 	ConfigError bool   `json:"configError,omitempty"`
+	// DurationMs is how long the check's last run took, in milliseconds
+	// (Q-OPS-175); nil for a check without a finished run, and in the rows of a
+	// release before it.
+	DurationMs *float64 `json:"durationMs,omitempty"`
+}
+
+// ReplicaRuntime is the replica's measurement of the period since its previous
+// heartbeat (Q-OPS-175), as the `runtime` column stores it. The JSON names are
+// those of the API's ReplicaRuntime, and a row is read by replicas of other
+// releases: a field is added, never renamed.
+type ReplicaRuntime struct {
+	SampledAt time.Time `json:"sampledAt"`
+	// WindowSeconds is the period the counts, the rate and the percentiles cover.
+	WindowSeconds float64 `json:"windowSeconds"`
+	// Requests and Errors are the requests the client listener finished in the
+	// window and those of them answered with a 5xx status.
+	Requests int64 `json:"requests"`
+	Errors   int64 `json:"errors"`
+	// InFlight is the requests being served when the snapshot was taken.
+	InFlight  int64          `json:"inFlight"`
+	LatencyMs ReplicaLatency `json:"latencyMs"`
+	// CPUCores is CPU time used per second of the window; CPULimitCores is
+	// GOMAXPROCS, nil when unknown.
+	CPUCores      float64  `json:"cpuCores"`
+	CPULimitCores *float64 `json:"cpuLimitCores"`
+	// MemoryBytes is what the Go runtime holds from the system; MemoryLimitBytes
+	// the container limit, 0 when none is known.
+	MemoryBytes      int64 `json:"memoryBytes"`
+	MemoryLimitBytes int64 `json:"memoryLimitBytes"`
+	Goroutines       int   `json:"goroutines"`
+}
+
+// ReplicaLatency holds the latency percentiles of a window in milliseconds; nil
+// when no request finished in it.
+type ReplicaLatency struct {
+	P50 *float64 `json:"p50"`
+	P95 *float64 `json:"p95"`
+	P99 *float64 `json:"p99"`
 }
 
 // ReplicaSnapshot is what each heartbeat writes besides the identity.
@@ -63,6 +101,9 @@ type ReplicaSnapshot struct {
 	// Valkey is the replica's view of Valkey (R-OPS-003), rendered by the
 	// caller; opaque here. No credential, ACL user name or key appears.
 	Valkey json.RawMessage
+	// Runtime is the replica's measurement of the period since the previous
+	// snapshot (Q-OPS-175); nil writes '{}', which reads back as no runtime.
+	Runtime *ReplicaRuntime
 }
 
 // RegistryOptions configure [NewRegistry].
@@ -164,7 +205,6 @@ func (r *Registry) loop(ctx context.Context) {
 func (r *Registry) beat(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout(r.o.WatchdogTimeout))
 	defer cancel()
-	id := r.o.Identity
 	snap := ReplicaSnapshot{State: ReplicaReady}
 	if r.o.Snapshot != nil {
 		snap = r.o.Snapshot()
@@ -174,34 +214,53 @@ func (r *Registry) beat(ctx context.Context) error {
 		snap.State = ReplicaDraining
 	}
 	r.mu.Unlock()
-	checks, err := json.Marshal(nonNilChecks(snap.Checks))
+	var held []HeldInfo
+	if r.o.Leases != nil {
+		held = r.o.Leases()
+	}
+	params, err := upsertParams(r.o.Identity, snap, held)
 	if err != nil {
 		return err
 	}
+	return q.New(r.o.DB).UpsertReplica(ctx, params)
+}
+
+// upsertParams renders the row of one heartbeat: the identity, the snapshot and
+// the held leases. The JSON columns are written as text and cast in the
+// statement; an absent Valkey view or runtime is '{}'.
+func upsertParams(id ReplicaIdentity, snap ReplicaSnapshot, held []HeldInfo) (q.UpsertReplicaParams, error) {
+	checks, err := json.Marshal(nonNilChecks(snap.Checks))
+	if err != nil {
+		return q.UpsertReplicaParams{}, err
+	}
 	leases := []byte("[]")
-	if r.o.Leases != nil {
-		if held := r.o.Leases(); len(held) > 0 {
-			sort.Slice(held, func(i, j int) bool { return held[i].Name < held[j].Name })
-			if leases, err = json.Marshal(held); err != nil {
-				return err
-			}
+	if len(held) > 0 {
+		sort.Slice(held, func(i, j int) bool { return held[i].Name < held[j].Name })
+		if leases, err = json.Marshal(held); err != nil {
+			return q.UpsertReplicaParams{}, err
 		}
 	}
 	valkey := string(snap.Valkey)
 	if valkey == "" {
 		valkey = "{}"
 	}
+	runtime := []byte("{}")
+	if snap.Runtime != nil {
+		if runtime, err = json.Marshal(snap.Runtime); err != nil {
+			return q.UpsertReplicaParams{}, err
+		}
+	}
 	keyIDs := id.SecretKeyIDs
 	if keyIDs == nil {
 		keyIDs = []string{}
 	}
-	return q.New(r.o.DB).UpsertReplica(ctx, q.UpsertReplicaParams{
+	return q.UpsertReplicaParams{
 		InstanceUid: id.UID, Name: id.Name, Version: id.Version, Revision: id.Revision,
 		Roles: []string{id.Role}, State: snap.State, Checks: string(checks), Leases: string(leases),
 		SecretKeyIds: keyIDs, ActiveSecretKeyID: id.ActiveSecretKeyID, Node: id.Node,
-		Valkey: valkey, Pool: id.Pool,
+		Valkey: valkey, Pool: id.Pool, Runtime: string(runtime),
 		StartedAt: pgtype.Timestamptz{Time: id.StartedAt, Valid: true},
-	})
+	}, nil
 }
 
 func nonNilChecks(m map[string]ReplicaCheck) map[string]ReplicaCheck {

@@ -10,7 +10,7 @@ import {
   SessionApi,
   Whoami,
 } from '../session-api';
-import { EncryptionApi, EncryptionStatus, Replica, SystemApi, SystemInfo } from '../system-api';
+import { EncryptionApi, EncryptionStatus, Replica, ReplicaRuntime, SystemApi, SystemInfo, SystemOverview } from '../system-api';
 // >>> M1 ui-b
 import { provideAccessFakes } from './access-fakes';
 // <<< M1 ui-b
@@ -271,9 +271,57 @@ export class FakeSystemApi extends SystemApi {
     return this.infoResult;
   }
 
+  overviewResult: SystemOverview | ApiError = sampleOverview();
+
   override async replicas(): Promise<readonly Replica[]> {
     return this.replicasResult;
   }
+
+  override async overview(): Promise<SystemOverview> {
+    if (this.overviewResult instanceof ApiError) throw this.overviewResult;
+    return this.overviewResult;
+  }
+}
+
+/** A replica's heartbeat measurements (Q-OPS-175). */
+export function sampleRuntime(over: Partial<ReplicaRuntime> = {}): ReplicaRuntime {
+  return {
+    sampledAt: '2026-11-06T10:00:00Z',
+    windowSeconds: 5,
+    requests: 120,
+    errors: 0,
+    inFlight: 3,
+    latencyMs: { p50: 4, p95: 18, p99: 40 },
+    cpuCores: 0.25,
+    cpuLimitCores: 2,
+    memoryBytes: 180 * 1024 * 1024,
+    memoryLimitBytes: 1024 * 1024 * 1024,
+    goroutines: 140,
+    ...over,
+  };
+}
+
+/** The counts and the stored content of the admin dashboard (Q-OPS-175). */
+export function sampleOverview(over: Partial<SystemOverview> = {}): SystemOverview {
+  return {
+    computedAt: '2026-11-06T10:00:00Z',
+    cacheSeconds: 30,
+    counts: {
+      repositories: { total: 7, byClass: { local: 3, remote: 3, virtual: 1 } },
+      packages: 412,
+      packageVersions: 1870,
+      users: 24,
+      groups: 5,
+      serviceAccounts: 3,
+      activeTokens: 11,
+      projects: 2,
+      endpoints: 2,
+      bastions: 1,
+    },
+    storage: { blobs: 5120, bytes: 9_126_805_504, pendingDeletion: 12 },
+    jobs: { queued: 1, running: 2, failedLast24h: 0 },
+    ...over,
+  };
 }
 
 /** Providers that replace every interface-backed service with its in-memory fake. */

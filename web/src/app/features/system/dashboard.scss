@@ -1,0 +1,173 @@
+// The admin dashboard (Q-OPS-175): an instance bar, then cards in a grid. Tokens only.
+.refresh {
+  display: flex;
+  gap: var(--trove-space-2);
+}
+
+h2 {
+  margin: var(--trove-space-6) 0 var(--trove-space-3);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.instance-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2) var(--trove-space-6);
+  padding: var(--trove-space-3) var(--trove-space-4);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-table-head-bg);
+  font-size: 0.875rem;
+
+  .label {
+    margin-inline-end: var(--trove-space-2);
+    color: var(--trove-text-muted);
+  }
+
+  .push {
+    margin-inline-start: auto;
+  }
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--trove-space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--trove-space-3);
+  padding: var(--trove-space-2) var(--trove-space-4);
+  border-block-end: 1px solid var(--trove-border);
+  background: var(--trove-table-head-bg);
+
+  h3 {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+}
+
+.count {
+  color: var(--trove-text-muted);
+  font-size: 0.8125rem;
+}
+
+.kv {
+  display: block;
+  margin: 0;
+  padding: var(--trove-space-1) var(--trove-space-4);
+
+  > div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--trove-space-3);
+    padding-block: var(--trove-space-2);
+    border-block-end: 1px solid var(--trove-border);
+    font-size: 0.875rem;
+
+    &:last-child {
+      border-block-end: 0;
+    }
+  }
+
+  dd {
+    margin: 0;
+    font-weight: 600;
+    text-align: end;
+  }
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  padding: var(--trove-space-1) var(--trove-space-4) var(--trove-space-2);
+  font-size: 0.875rem;
+}
+
+.meter-label {
+  display: flex;
+  justify-content: space-between;
+}
+
+.bar {
+  display: block;
+  block-size: 6px;
+  border-radius: 3px;
+  background: var(--trove-border);
+  overflow: hidden;
+
+  span {
+    display: block;
+    block-size: 100%;
+    background: var(--trove-accent-fill);
+  }
+}
+
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+  margin-block-start: auto;
+  padding: var(--trove-space-3) var(--trove-space-4);
+  border-block-start: 1px solid var(--trove-border);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-1);
+  font-size: 0.8125rem;
+  font-weight: 600;
+
+  .material-icons {
+    font-size: 1.125rem;
+  }
+
+  &.ok .material-icons {
+    color: var(--trove-status-ok);
+  }
+
+  &.warn .material-icons {
+    color: var(--trove-status-warn);
+  }
+
+  &.bad .material-icons,
+  &.bad {
+    color: var(--trove-status-bad);
+  }
+}
+
+.muted {
+  color: var(--trove-text-muted);
+  font-weight: 400;
+}
+
+.bad-text {
+  color: var(--trove-status-bad);
+}
+
+.note {
+  margin: var(--trove-space-2) var(--trove-space-4) var(--trove-space-3);
+  color: var(--trove-text-muted);
+  font-size: 0.8125rem;
+}
+
+.cards + .note {
+  margin-inline: 0;
+}

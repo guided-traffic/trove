@@ -552,6 +552,480 @@
         <target>Navigation schließen</target>
       </segment>
     </unit>
+    <unit id="route.dashboard.title">
+      <segment>
+        <source>Dashboard</source>
+        <target>Dashboard</target>
+      </segment>
+    </unit>
+    <unit id="nav.dashboard">
+      <segment>
+        <source>Dashboard</source>
+        <target>Dashboard</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.title">
+      <segment>
+        <source>Dashboard</source>
+        <target>Dashboard</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.resume">
+      <segment>
+        <source>Resume automatic refresh</source>
+        <target>Automatische Aktualisierung fortsetzen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.pause">
+      <segment>
+        <source>Pause automatic refresh</source>
+        <target>Automatische Aktualisierung anhalten</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.refresh">
+      <segment>
+        <source> Refresh now </source>
+        <target> Jetzt aktualisieren </target>
+      </segment>
+    </unit>
+    <unit id="dashboard.instance">
+      <segment>
+        <source>Instance</source>
+        <target>Instanz</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.state.ready">
+      <segment>
+        <source>All roles ready</source>
+        <target>Alle Rollen bereit</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.state.degraded">
+      <segment>
+        <source>Degraded</source>
+        <target>Eingeschränkt</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.state.unready">
+      <segment>
+        <source>A role is not ready</source>
+        <target>Eine Rolle ist nicht bereit</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.version">
+      <segment>
+        <source>Version</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.base-url">
+      <segment>
+        <source>Base URL</source>
+        <target>Basis-URL</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.replicas">
+      <segment>
+        <source>Replicas</source>
+        <target>Replicas</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.replicas.value">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ i.replicas.ready }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ i.replicas.live }}"/> ready</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ i.replicas.ready }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ i.replicas.live }}"/> bereit</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.status-link">
+      <segment>
+        <source>System status</source>
+        <target>Systemstatus</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.components">
+      <segment>
+        <source>Components</source>
+        <target>Komponenten</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.ready">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ l.ready }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ l.live }}"/> ready</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ l.ready }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ l.live }}"/> bereit</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.none">
+      <segment>
+        <source>No replica of this role is running.</source>
+        <target>Von dieser Rolle läuft keine Replica.</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.nodes">
+      <segment>
+        <source>Nodes</source>
+        <target>Knoten</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.requests">
+      <segment>
+        <source>Requests</source>
+        <target>Anfragen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.per-second">
+      <segment>
+        <source> <ph id="0" equiv="INTERPOLATION" disp="{{ l.requestsPerSecond | number: &apos;1.0-1&apos; }}"/> per second </source>
+        <target> <ph id="0" equiv="INTERPOLATION" disp="{{ l.requestsPerSecond | number: &apos;1.0-1&apos; }}"/> pro Sekunde </target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.latency">
+      <segment>
+        <source>Latency p95</source>
+        <target>Latenz p95</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.none">
+      <segment>
+        <source>none in the last period</source>
+        <target>keine in der letzten Periode</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.errors">
+      <segment>
+        <source>Server errors</source>
+        <target>Serverfehler</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.in-flight">
+      <segment>
+        <source>In flight</source>
+        <target>In Bearbeitung</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.cpu">
+      <segment>
+        <source>CPU</source>
+        <target>CPU</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.cpu.of">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ l.cpuCores | number: &apos;1.1-2&apos; }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ l.cpuLimitCores }}"/> cores</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ l.cpuCores | number: &apos;1.1-2&apos; }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ l.cpuLimitCores }}"/> Kernen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.cpu.used">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ l.cpuCores | number: &apos;1.1-2&apos; }}"/> cores</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ l.cpuCores | number: &apos;1.1-2&apos; }}"/> Kerne</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.memory">
+      <segment>
+        <source>Memory</source>
+        <target>Speicher</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.memory.of">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ size(l.memoryBytes) }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ size(l.memoryLimitBytes) }}"/></source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ size(l.memoryBytes) }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ size(l.memoryLimitBytes) }}"/></target>
+      </segment>
+    </unit>
+    <unit id="dashboard.role.reporting">
+      <segment>
+        <source> <ph id="0" equiv="INTERPOLATION" disp="{{ l.reporting }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ l.live }}"/> replicas reported measurements. </source>
+        <target> <ph id="0" equiv="INTERPOLATION" disp="{{ l.reporting }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ l.live }}"/> Replicas haben Messwerte gemeldet. </target>
+      </segment>
+    </unit>
+    <unit id="dashboard.dependencies">
+      <segment>
+        <source>Dependencies</source>
+        <target>Abhängigkeiten</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.database">
+      <segment>
+        <source>PostgreSQL</source>
+        <target>PostgreSQL</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.server-version">
+      <segment>
+        <source>Server version</source>
+        <target>Serverversion</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.schema">
+      <segment>
+        <source>Schema version</source>
+        <target>Schemaversion</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.pooler">
+      <segment>
+        <source>Pooler</source>
+        <target>Pooler</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.pool">
+      <segment>
+        <source>Connections of the answering replica</source>
+        <target>Verbindungen der antwortenden Replica</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.pool.of">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ pool().inUse }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ pool().max }}"/></source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ pool().inUse }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ pool().max }}"/></target>
+      </segment>
+    </unit>
+    <unit id="dashboard.database.unknown">
+      <segment>
+        <source> The answering replica has not read the database facts yet. </source>
+        <target> Die antwortende Replica hat die Datenbankangaben noch nicht gelesen. </target>
+      </segment>
+    </unit>
+    <unit id="dashboard.valkey">
+      <segment>
+        <source>Valkey</source>
+        <target>Valkey</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.valkey.mode">
+      <segment>
+        <source>Mode</source>
+        <target>Modus</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.valkey.sentinels">
+      <segment>
+        <source>Sentinels</source>
+        <target>Sentinels</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.valkey.tls">
+      <segment>
+        <source>TLS</source>
+        <target>TLS</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.valkey.degraded">
+      <segment>
+        <source>Replicas with a degraded view</source>
+        <target>Replicas mit eingeschränkter Sicht</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.object-store">
+      <segment>
+        <source>Object store</source>
+        <target>Objektspeicher</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.bucket">
+      <segment>
+        <source>Bucket</source>
+        <target>Bucket</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.stored">
+      <segment>
+        <source>Stored content</source>
+        <target>Gespeicherte Inhalte</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.objects">
+      <segment>
+        <source>Objects</source>
+        <target>Objekte</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.pending-deletion">
+      <segment>
+        <source>Queued for deletion</source>
+        <target>Zur Löschung vorgemerkt</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.content-access">
+      <segment>
+        <source>Content and access</source>
+        <target>Inhalte und Zugriff</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.repositories">
+      <segment>
+        <source>Repositories</source>
+        <target>Repositories</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.repositories.view">
+      <segment>
+        <source>View repositories</source>
+        <target>Repositories anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.repositories.new">
+      <segment>
+        <source>New repository</source>
+        <target>Neues Repository</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.packages">
+      <segment>
+        <source>Packages</source>
+        <target>Pakete</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.versions">
+      <segment>
+        <source>Versions</source>
+        <target>Versionen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.endpoints">
+      <segment>
+        <source>Endpoints</source>
+        <target>Endpunkte</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.bastions">
+      <segment>
+        <source>Bastions</source>
+        <target>Bastions</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.projects">
+      <segment>
+        <source>Projects</source>
+        <target>Projekte</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.packages.view">
+      <segment>
+        <source>View packages</source>
+        <target>Pakete anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.identity">
+      <segment>
+        <source>Identity</source>
+        <target>Identitäten</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.users">
+      <segment>
+        <source>Users</source>
+        <target>Benutzer</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.groups">
+      <segment>
+        <source>Groups</source>
+        <target>Gruppen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.service-accounts">
+      <segment>
+        <source>Service accounts</source>
+        <target>Service-Accounts</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.tokens">
+      <segment>
+        <source>Active tokens</source>
+        <target>Aktive Tokens</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.users.view">
+      <segment>
+        <source>View users</source>
+        <target>Benutzer anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.tokens.view">
+      <segment>
+        <source>View tokens</source>
+        <target>Tokens anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.operations">
+      <segment>
+        <source>Operations</source>
+        <target>Betrieb</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.jobs.running">
+      <segment>
+        <source>Jobs running</source>
+        <target>Laufende Jobs</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.jobs.queued">
+      <segment>
+        <source>Jobs queued</source>
+        <target>Wartende Jobs</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.jobs.failed">
+      <segment>
+        <source>Jobs failed in 24 hours</source>
+        <target>Fehlgeschlagene Jobs in 24 Stunden</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.key">
+      <segment>
+        <source>Active key</source>
+        <target>Aktiver Schlüssel</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.jobs.view">
+      <segment>
+        <source>View jobs</source>
+        <target>Jobs anzeigen</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.counted">
+      <segment>
+        <source> Counted <ph id="0" equiv="INTERPOLATION" disp="{{ o.computedAt | date: &apos;mediumTime&apos; }}"/>; the counts are reused for <ph id="1" equiv="INTERPOLATION_1" disp="{{ o.cacheSeconds }}"/> seconds. </source>
+        <target> Gezählt <ph id="0" equiv="INTERPOLATION" disp="{{ o.computedAt | date: &apos;mediumTime&apos; }}"/>; die Zahlen werden <ph id="1" equiv="INTERPOLATION_1" disp="{{ o.cacheSeconds }}"/> Sekunden lang wiederverwendet. </target>
+      </segment>
+    </unit>
+    <unit id="dashboard.check.ok">
+      <segment>
+        <source>Connected</source>
+        <target>Verbunden</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.check.bad">
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ c.failing }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ c.reporting }}"/> replicas fail</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ c.failing }}"/> von <ph id="1" equiv="INTERPOLATION_1" disp="{{ c.reporting }}"/> Replicas schlagen fehl</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.check.none">
+      <segment>
+        <source>No report</source>
+        <target>Keine Meldung</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.class.local">
+      <segment>
+        <source>Local</source>
+        <target>Lokal</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.class.remote">
+      <segment>
+        <source>Remote</source>
+        <target>Remote</target>
+      </segment>
+    </unit>
+    <unit id="dashboard.class.virtual">
+      <segment>
+        <source>Virtual</source>
+        <target>Virtuell</target>
+      </segment>
+    </unit>
     <unit id="login.or">
       <segment>
         <source>or sign in with</source>

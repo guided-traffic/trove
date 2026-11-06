@@ -534,3 +534,19 @@ Guards that the database enforces whatever the API checked. Together with the ea
 | `AI005` | `project_account_principal_guard` on `authz_role_binding`, `authz_policy_entry` and `authz_project_policy_entry` | a project service account as the principal of a role binding or of an entry of a global policy, and of an entry of a policy of another project (Q-AUTHZ-175, Q-AUTHZ-203); a global service account and the project's own accounts pass |
 
 Tested in [projects_test.go](../../test/integration/postgres/projects_test.go).
+
+## Replica runtime (00042) and the overview statements (Q-OPS-175)
+
+[00042_replica_runtime](../../internal/meta/postgres/migrations/00042_replica_runtime.sql) is an expand step that adds
+`replica.runtime jsonb NOT NULL DEFAULT '{}'`: the measurement each heartbeat writes of the period since the previous one
+([coordination.md](coordination.md#replica-registry)). A column with a constant default changes the catalog only and
+rewrites no row; the step runs under the runner's `lock_timeout` and retries like every step. A binary of the previous
+release neither writes nor reads the column (its `UpsertReplica` names the columns it knows, and sqlc expands the
+`r.*` of `ListReplicas` into the columns of its own schema), so its rows keep `'{}'`, which the new release lists as no
+runtime. `replica` is transient in backups ([replica_tables.go](../../internal/cluster/replica_tables.go)); the column changes no
+export class. Tested by `TestR_OPS_003_ReplicaRuntimeColumn` ([overview_test.go](../../test/integration/postgres/overview_test.go)).
+
+The counts of `GET /api/v1/system/overview` are five static statements in
+[overview.sql](../../internal/meta/postgres/queries/overview.sql); they add no table, column or index. What each counts and
+what it costs is in [http-api.md](http-api.md#system-overview-r-ops-004-q-ops-175); `TestR_OPS_004_OverviewStatements`
+runs them against a migrated schema.

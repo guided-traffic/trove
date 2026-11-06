@@ -2,7 +2,8 @@
 // replica (R-OPS-006 to R-OPS-013, R-OPS-018): the slog logger with its secret
 // redaction and ring buffer, the Prometheus registry with the trove_ naming
 // and label rules, the request log middleware, the W3C trace context and the
-// OpenTelemetry export.
+// OpenTelemetry export, and the runtime snapshot that the replica registry's
+// heartbeat writes (Q-OPS-175).
 //
 // It is a leaf package: every layer may import it, and it imports only
 // internal/config and internal/buildinfo.

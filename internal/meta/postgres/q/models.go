@@ -743,6 +743,7 @@ type Replica struct {
 	Pool              pgtype.Text
 	StartedAt         pgtype.Timestamptz
 	HeartbeatAt       pgtype.Timestamptz
+	Runtime           []byte
 }
 
 type Repository struct {

@@ -19,6 +19,7 @@ imports it, it imports only `internal/config` and `internal/buildinfo`.
 | [dbgauges.go](../../internal/observability/dbgauges.go) | background evaluation of gauges read from PostgreSQL |
 | [requestlog.go](../../internal/observability/requestlog.go), [requestinfo.go](../../internal/observability/requestinfo.go), [recorder.go](../../internal/observability/recorder.go) | request log middleware, the per-request facts handlers fill in |
 | [tracing.go](../../internal/observability/tracing.go), [otlp.go](../../internal/observability/otlp.go) | `Tracer`, trace middleware, OTLP export, bounded span queue, span scrubbing |
+| [runtime.go](../../internal/observability/runtime.go), [processcpu_unix.go](../../internal/observability/processcpu_unix.go), [processcpu_other.go](../../internal/observability/processcpu_other.go) | `RequestWindow` and `RuntimeSampler`: the runtime snapshot the replica registry's heartbeat writes ([below](#runtime-snapshot-of-the-replica-registry-q-ops-175)) |
 
 ## Logs
 
@@ -153,7 +154,8 @@ aggregate with `max`, not `sum`.
 
 `RequestLog(logger, m, opts...)` counts every request in `trove_http_*` and writes the R-OPS-010 record. Options:
 `WithListener("client"|"ops")`, `WithEndpoint(name)` (the listener's endpoint: label and the `endpoint` field; a client listener without it is `default`; `host` is the effective host set by the chain), `WithRequestRecords(false)` (metrics only, for the ops listener without
-`log.request.ops_listener`), `WithRemoteAddr(func)`, `WithRequestScrubber`. Absent values are JSON `null`,
+`log.request.ops_listener`), `WithRemoteAddr(func)`, `WithRequestScrubber`, `WithRequestWindow(w)` (also counts the
+request in the runtime snapshot's window, [below](#runtime-snapshot-of-the-replica-registry-q-ops-175)). Absent values are JSON `null`,
 an unknown request length is `-1`.
 
 The fields that come from the client are bounded (R-OPS-010): `user_agent` at 512 bytes
@@ -185,6 +187,31 @@ after a successful authentication, with the log vocabulary of R-OPS-010 (`princi
 
 A handler never name-builds the handler label from request data; the label set is capped at 1000 values and
 folds into `unmatched`.
+
+## Runtime snapshot of the replica registry (Q-OPS-175)
+
+Every heartbeat of the replica registry also writes the replica's own measurement of the period since its previous
+heartbeat into the row (the `runtime` column, [coordination.md](coordination.md#replica-registry)), which
+`GET /api/v1/system/replicas` returns as `runtime`. Replicas never ask each other and nothing reads Prometheus: the
+figures come from two instances the composition root owns per replica, on `telemetry` in
+[wire_observability.go](../../internal/app/wire_observability.go). No package-level state holds them (R-ARCH-032).
+
+| Figure | Where it is measured |
+|---|---|
+| `requests`, `errors`, `latencyMs.p50/p95/p99` | `RequestWindow`, fed by `RequestLog` with `WithRequestWindow` at the point where it observes `trove_http_request_duration_seconds`: the same status and duration. `clientStages` passes the one window to the chain of every client endpoint; `opsStages` passes none, so probes and scrapes do not count. `errors` is a status of 500 or more. The latencies go into 70 buckets, upper bounds 0.5 ms × 2^(i/4) up to 65.536 s and one above; a percentile is interpolated linearly inside its bucket, as `histogram_quantile` does, so it is off by at most the bucket's width (19 % of its upper bound), and a rank in the bucket above reads as 65.536 s. No request in the window: the percentiles are `null` |
+| `inFlight` | `RequestWindow`'s counter, raised and lowered around the handler like `trove_http_requests_in_flight`; read, not reset, by the sample |
+| `cpuCores` | the process's CPU time, user and system, from `getrusage(RUSAGE_SELF)` (`processCPUTime`, unix builds), divided by the window's wall time. Not `runtime/metrics`' `/cpu/classes/*`: the runtime refreshes those only at the end of a garbage collection (`cpuStatsAggregate.compute` reads the stop-the-world snapshot), so a period without a collection read as idle and the next as a burst. A build without getrusage falls back to that estimate (`processcpu_other.go`); the images are Linux |
+| `cpuLimitCores` | `runtime.GOMAXPROCS(0)`: the Go runtime derives it from the container's CPU limit; the chart sets `GOMAXPROCS` from the CPU request when a role has no CPU limit ([_deployment.tpl](../../deploy/helm/trove/templates/_deployment.tpl)) |
+| `memoryBytes` | `runtime/metrics`: `/memory/classes/total:bytes` minus `/memory/classes/heap/released:bytes`, read without stopping the world |
+| `memoryLimitBytes` | `runtime.memory_limit_bytes`, the value `GET /api/v1/system/info` reports as `runtime.memoryLimitBytes`; 0 when none is known |
+| `goroutines`, `sampledAt`, `windowSeconds` | `runtime.NumGoroutine()`, the time of the sample, and the time since the previous sample; the first sample covers the time since `newTelemetry` built the sampler, at the start of the replica |
+
+`RuntimeSampler.Sample` drains the window, so the heartbeat is its only caller (`App.replicaSnapshot` in
+[wire_coordination.go](../../internal/app/wire_coordination.go)). A heartbeat whose write fails has drained its
+period: the stored snapshot stays the previous one, and the next covers only its own period. Tests:
+`TestR_OPS_003_RequestWindowPercentiles`, `TestR_OPS_003_RequestLogFeedsTheWindow`, `TestR_OPS_003_RuntimeSampler`,
+`TestR_OPS_003_ProcessMeasurements` ([runtime_test.go](../../internal/observability/runtime_test.go)) and
+`TestR_OPS_003_OnlyTheClientListenerCountsIntoTheWindow` ([runtime_snapshot_test.go](../../internal/app/runtime_snapshot_test.go)).
 
 ## Tracing and request IDs
 

@@ -6,11 +6,17 @@ export type SystemInfo = Schema<'SystemInfo'>;
 export type Replica = Schema<'Replica'>;
 export type ValkeyView = Schema<'ValkeyView'>;
 export type RoleSummary = Schema<'RoleSummary'>;
+export type ReplicaRuntime = Schema<'ReplicaRuntime'>;
+export type SystemOverview = Schema<'SystemOverview'>;
 
-/** Replica registry and installation facts: `GET /api/v1/system/info` and `/system/replicas`. */
+/**
+ * Replica registry and installation facts: `GET /api/v1/system/info` and `/system/replicas`; the counts and the stored
+ * content of the admin dashboard: `/system/overview` (Q-OPS-175).
+ */
 export abstract class SystemApi {
   abstract info(): Promise<SystemInfo>;
   abstract replicas(): Promise<readonly Replica[]>;
+  abstract overview(): Promise<SystemOverview>;
 }
 
 @Injectable()
@@ -23,6 +29,10 @@ export class HttpSystemApi extends SystemApi {
 
   async replicas(): Promise<readonly Replica[]> {
     return (await this.client.get('/api/v1/system/replicas')).body.items;
+  }
+
+  async overview(): Promise<SystemOverview> {
+    return (await this.client.get('/api/v1/system/overview')).body;
   }
 }
 

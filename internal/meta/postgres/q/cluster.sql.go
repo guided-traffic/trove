@@ -105,7 +105,7 @@ func (q *Queries) ListClusterEpochs(ctx context.Context, areas []string) ([]Clus
 }
 
 const listReplicas = `-- name: ListReplicas :many
-SELECT r.instance_uid, r.name, r.version, r.revision, r.roles, r.state, r.checks, r.leases, r.secret_key_ids, r.active_secret_key_id, r.node, r.valkey, r.pool, r.started_at, r.heartbeat_at, (r.heartbeat_at < now() - make_interval(secs => $1::float8))::bool AS lost
+SELECT r.instance_uid, r.name, r.version, r.revision, r.roles, r.state, r.checks, r.leases, r.secret_key_ids, r.active_secret_key_id, r.node, r.valkey, r.pool, r.started_at, r.heartbeat_at, r.runtime, (r.heartbeat_at < now() - make_interval(secs => $1::float8))::bool AS lost
   FROM replica r
  ORDER BY r.roles, r.name
 `
@@ -126,6 +126,7 @@ type ListReplicasRow struct {
 	Pool              pgtype.Text
 	StartedAt         pgtype.Timestamptz
 	HeartbeatAt       pgtype.Timestamptz
+	Runtime           []byte
 	Lost              bool
 }
 
@@ -154,6 +155,7 @@ func (q *Queries) ListReplicas(ctx context.Context, staleSecs float64) ([]ListRe
 			&i.Pool,
 			&i.StartedAt,
 			&i.HeartbeatAt,
+			&i.Runtime,
 			&i.Lost,
 		); err != nil {
 			return nil, err
@@ -218,16 +220,16 @@ func (q *Queries) SetReplicaState(ctx context.Context, arg SetReplicaStateParams
 
 const upsertReplica = `-- name: UpsertReplica :exec
 INSERT INTO replica (instance_uid, name, version, revision, roles, state, checks, leases,
-                     secret_key_ids, active_secret_key_id, node, valkey, pool, started_at, heartbeat_at)
+                     secret_key_ids, active_secret_key_id, node, valkey, pool, runtime, started_at, heartbeat_at)
 VALUES ($1::text::uuid, $2::text, $3::text, $4::text,
         $5::text[], $6::text, $7::text::jsonb, $8::text::jsonb,
         $9::text[], $10::text,
         NULLIF($11::text, ''), $12::text::jsonb, NULLIF($13::text, ''),
-        $14::timestamptz, now())
+        $14::text::jsonb, $15::timestamptz, now())
 ON CONFLICT (instance_uid) DO UPDATE
    SET state = EXCLUDED.state, checks = EXCLUDED.checks, leases = EXCLUDED.leases,
        secret_key_ids = EXCLUDED.secret_key_ids, active_secret_key_id = EXCLUDED.active_secret_key_id,
-       valkey = EXCLUDED.valkey, heartbeat_at = now()
+       valkey = EXCLUDED.valkey, runtime = EXCLUDED.runtime, heartbeat_at = now()
 `
 
 type UpsertReplicaParams struct {
@@ -244,12 +246,14 @@ type UpsertReplicaParams struct {
 	Node              string
 	Valkey            string
 	Pool              string
+	Runtime           string
 	StartedAt         pgtype.Timestamptz
 }
 
 // Registration and heartbeat in one statement: a row deleted by the prune or by
 // a restore comes back with the next heartbeat. heartbeat_at is the database's
-// clock; replica clocks are never compared (R-HA-003).
+// clock; replica clocks are never compared (R-HA-003). runtime is the replica's
+// measurement of the period since its previous heartbeat (Q-OPS-175).
 func (q *Queries) UpsertReplica(ctx context.Context, arg UpsertReplicaParams) error {
 	_, err := q.db.Exec(ctx, upsertReplica,
 		arg.InstanceUid,
@@ -265,6 +269,7 @@ func (q *Queries) UpsertReplica(ctx context.Context, arg UpsertReplicaParams) er
 		arg.Node,
 		arg.Valkey,
 		arg.Pool,
+		arg.Runtime,
 		arg.StartedAt,
 	)
 	return err

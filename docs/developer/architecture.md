@@ -265,7 +265,8 @@ error (Q-HA-13). `/readyz?verbose=1` shows Valkey only through the fixed reason 
 `no_sentinel`, `timeout`, `auth_failed`, `circuit_open`, `probe_failed`, `unsupported`, `config_error`
 ([wire_valkey.go](../../internal/app/wire_valkey.go), `valkeyReasonCode`); the free text with addresses
 stays in the log and in the authenticated replica list. Checks are cached and debounced (`health.failure_threshold`, `health.success_threshold`); probes never
-run a check. `database` and `schema` carry `health.WithGrace(health.database_outage_grace)` and wrap their error with
+run a check. A cached result carries the duration of the check's last run (`health.CheckResult.Latency`), which the heartbeat of
+the replica registry stores as `durationMs` ([coordination.md](coordination.md#replica-registry), Q-OPS-175); for `valkey`, which reads the client's state, it is the round trip of the client's last probe. `database` and `schema` carry `health.WithGrace(health.database_outage_grace)` and wrap their error with
 `markOutage` ([wire_postgres.go](../../internal/app/wire_postgres.go)): once the replica has been ready, a failure
 that is `health.Transient` (a connectivity failure, `postgres.IsOutage`; a check that timed out counts) shows as
 `degraded` and does not gate until it has lasted the grace (Q-OPS-31); a schema that is behind gates after the debounce.
