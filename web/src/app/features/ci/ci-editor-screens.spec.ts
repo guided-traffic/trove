@@ -326,10 +326,10 @@ describe('The mapping editor keeps a draft across a re-authentication (R-UI-042)
 describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
   const inputs = { key: 'web', issuer: 'gitlab-com' };
 
-  it('Q-CI-26 starts with the name prefix, offers the project repositories and policies, and offers no groups', async () => {
+  it('Q-CI-26 R-CI-009 names the mapping within the project without a prefix, offers the project repositories and policies, and offers no groups', async () => {
     const { root } = await renderScreen(MappingEditor, { inputs, capabilities: [], setup: projectAdmin() });
-    expect(root.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('web-');
-    expect(text(root)).toContain('Starts with web- and cannot be changed later.');
+    expect(root.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('');
+    expect(text(root)).toContain('Unique within the project web and cannot be changed later.');
     expect(text(root)).toContain('Only the permission policies of this project can be named. Groups are global');
     expect(text(root)).not.toContain('Add a group');
     const policies = [...select(root).options].map((o) => o.value);

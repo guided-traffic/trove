@@ -262,7 +262,7 @@ export class MappingEditor implements HasUnsavedChanges {
       } else {
         this.loaded.set(null);
         const existing = issuer || project ? await this.api.listMappings(issuer, project).catch(() => []) : [];
-        this.form.set(emptyMappingForm(nextPriority(existing), project ? `${project}-` : ''));
+        this.form.set(emptyMappingForm(nextPriority(existing)));
       }
       this.baseline = JSON.stringify(inputFromForm(this.form(), project));
       this.jsonText.set(JSON.stringify(conditionFromNode(this.form().match), null, 2));

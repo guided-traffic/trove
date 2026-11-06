@@ -87,7 +87,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
       const tester = await open(h, '/web/ci/test?issuer=gitlab-com');
       expect(tester.querySelector('.subject')!.textContent).toContain('web');
       const created = await open(h, '/web/ci/mappings/new?issuer=gitlab-com');
-      expect(created.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('web-');
+      expect(created.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('');
       expect(created.querySelector('.subject')!.textContent).toContain('web');
       expect(text(created)).not.toContain('Add a group');
     });
