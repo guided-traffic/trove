@@ -196,7 +196,7 @@ func TestStorageSchema(t *testing.T) {
 			sum, make([]byte, 20), make([]byte, 16), make([]byte, 64), size, state)
 		return sum
 	}
-	exec(`INSERT INTO trove.repositories (key, format, class) VALUES ('raw-local', 'raw', 'local')`)
+	exec(`INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('raw-local', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it'))`)
 	repo := scalar[int64](t, admin, `SELECT id FROM trove.repositories WHERE key = 'raw-local'`)
 	file := func(path string, sha []byte, size int64) {
 		exec(`INSERT INTO trove.items (repo_id, path, parent_path, kind, blob_sha256, size) VALUES ($1, $2, '', 'file', $3, $4)`, repo, path, sha, size)
@@ -276,7 +276,7 @@ func TestStorageSchema(t *testing.T) {
 	})
 
 	t.Run("R-STOR-003 deleting a repository cascades to its items and queues their blobs", func(t *testing.T) {
-		exec(`INSERT INTO trove.repositories (key, format, class) VALUES ('doomed', 'raw', 'local')`)
+		exec(`INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('doomed', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it'))`)
 		doomed := scalar[int64](t, admin, `SELECT id FROM trove.repositories WHERE key = 'doomed'`)
 		b := blob(5, 7, "live")
 		exec(`INSERT INTO trove.items (repo_id, path, parent_path, kind, blob_sha256, size) VALUES ($1, 'f', '', 'file', $2, 7)`, doomed, b)

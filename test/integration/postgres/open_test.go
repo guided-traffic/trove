@@ -365,7 +365,7 @@ func TestInTx(t *testing.T) {
 		attempts := 0
 		err := db.InPgxTx(ctx, func(tx pgx.Tx) error {
 			attempts++
-			_, err := tx.Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('Bad Key', 'raw', 'local')`)
+			_, err := tx.Exec(ctx, `INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('Bad Key', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it'))`)
 			return err
 		})
 		var pe *pgconn.PgError
@@ -398,7 +398,7 @@ func TestInTx(t *testing.T) {
 				return err
 			})
 			order = append(order, "body")
-			_, err := unwrapTx(t, tx).Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('hooked', 'raw', 'local')`)
+			_, err := unwrapTx(t, tx).Exec(ctx, `INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('hooked', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it'))`)
 			return err
 		})
 		if err != nil || strings.Join(order, ",") != "body,before,after" {
@@ -415,7 +415,7 @@ func TestInTx(t *testing.T) {
 		err := db.InTx(ctx, func(tx meta.Tx) error {
 			tx.After(func() { after = true })
 			tx.Before(func(context.Context, meta.Tx) error { return boom })
-			_, err := unwrapTx(t, tx).Exec(ctx, `INSERT INTO trove.repositories (key, format, class) VALUES ('rolled-back', 'raw', 'local')`)
+			_, err := unwrapTx(t, tx).Exec(ctx, `INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('rolled-back', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it'))`)
 			return err
 		})
 		if !errors.Is(err, boom) || after {

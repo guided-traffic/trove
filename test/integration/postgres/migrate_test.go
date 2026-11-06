@@ -313,7 +313,7 @@ func TestMigrateNoTransactionStep(t *testing.T) {
 	t.Run("R-HA-018 a no-transaction step builds an index concurrently and an invalid leftover is dropped first", func(t *testing.T) {
 		cfg, _, admin := migrated(t, st)
 		// A failed CONCURRENTLY build leaves an INVALID index of the same name.
-		if _, err := admin.Exec(context.Background(), `INSERT INTO trove.repositories (key, format, class) VALUES ('r1', 'raw', 'local'), ('r1b', 'raw', 'local')`); err != nil {
+		if _, err := admin.Exec(context.Background(), `INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('r1', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it')), ('r1b', 'raw', 'local', (SELECT id FROM trove.project WHERE key = 'it'))`); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := admin.Exec(context.Background(), `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS repositories_format_idx ON trove.repositories (format)`); err == nil {

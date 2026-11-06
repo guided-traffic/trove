@@ -272,16 +272,16 @@ func TestBastionMigration(t *testing.T) {
 
 	t.Run("a content entry names the repository and every virtual repository that includes it, recursively", func(t *testing.T) { // R-BAS-015
 		qs := q.New(admin)
-		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class) VALUES ('npm-local', 'npm', 'local'), ('npm-all', 'npm', 'virtual'), ('npm-top', 'npm', 'virtual')")
+		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('npm-local', 'npm', 'local', (SELECT id FROM trove.project WHERE key = 'it')), ('npm-all', 'npm', 'virtual', (SELECT id FROM trove.project WHERE key = 'it')), ('npm-top', 'npm', 'virtual', (SELECT id FROM trove.project WHERE key = 'it'))")
 		mustExec(t, admin, "INSERT INTO trove.virtual_members (virtual_id, position, member_id) "+
 			"SELECT v.id, 0, m.id FROM trove.repositories v, trove.repositories m WHERE v.key = 'npm-all' AND m.key = 'npm-local'")
 		mustExec(t, admin, "INSERT INTO trove.virtual_members (virtual_id, position, member_id) "+
 			"SELECT v.id, 0, m.id FROM trove.repositories v, trove.repositories m WHERE v.key = 'npm-top' AND m.key = 'npm-all'")
-		keys, err := qs.BastionVirtualClosure(ctx, []string{"npm-local"})
-		if err != nil || strings.Join(keys, ",") != "npm-all,npm-local,npm-top" {
+		keys, err := qs.BastionVirtualClosure(ctx, []string{"it/npm-local"})
+		if err != nil || strings.Join(keys, ",") != "it/npm-all,it/npm-local,it/npm-top" {
 			t.Fatalf("BastionVirtualClosure: %v %v", keys, err)
 		}
-		if keys, err := qs.BastionVirtualClosure(ctx, []string{"unknown"}); err != nil || len(keys) != 0 {
+		if keys, err := qs.BastionVirtualClosure(ctx, []string{"it/unknown"}); err != nil || len(keys) != 0 {
 			t.Fatalf("BastionVirtualClosure of an unknown key: %v %v", keys, err)
 		}
 		kinds, err := qs.BastionPrincipalKinds(ctx, []string{bastionPrincipal, bastionOther, "bb000000-0000-0000-0000-0000000000ee"})

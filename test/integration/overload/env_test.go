@@ -23,6 +23,9 @@ import (
 
 const repo = "generic-local"
 
+// filesRoot is the file-access prefix of the repository, which lives in the default project.
+const filesRoot = "/files/" + testenv.DefaultProject + "/" + repo + "/"
+
 // install is one installation with a generic repository and a token that may
 // read and deploy it.
 type install struct {
@@ -124,7 +127,7 @@ func (in *install) deploy(t *testing.T, r *replica, path string, size int) [32]b
 	t.Helper()
 	data := make([]byte, size)
 	_, _ = rand.Read(data)
-	a := in.stack.DoAt(r.client, testenv.DefaultHost, http.MethodPut, "/files/"+repo+"/"+path, in.token, data,
+	a := in.stack.DoAt(r.client, testenv.DefaultHost, http.MethodPut, filesRoot+path, in.token, data,
 		"Content-Type", "application/octet-stream")
 	if a.Status != http.StatusCreated {
 		t.Fatalf("deploy %s: %d %s", path, a.Status, a.Body)
