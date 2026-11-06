@@ -520,7 +520,7 @@ func jsonOf(t testing.TB, r *formattest.Response) map[string]any {
 func TestR_NUGET_009_ARemoteRegistrationIsRenderedPerHiveWithTheDocumentsOfTheUpstream(t *testing.T) {
 	m := &formattest.MemRemote{Docs: registrationUpstream([]string{"1.0.0", "1.1.0", "2.0.0-rc.1", "2.0.0"}, 64, true)}
 	h := remoteHost(t, m)
-	const feed = "https://trove.example.com/api/nuget/main/v3/"
+	const feed = "https://trove.example.com/api/nuget/it/main/v3/"
 
 	semver2 := rget(t, h, "v3/registration-semver2/Acme.Widgets/index.json")
 	if semver2.Code != 200 {
@@ -611,7 +611,7 @@ func TestR_NUGET_015_TheRegistrationOfAnIDWithManyVersionsFollowsThePagesOfTheUp
 	total := 0
 	for _, p := range pages {
 		id := p.(map[string]any)["@id"].(string)
-		r := rget(t, h, strings.TrimPrefix(id, "https://trove.example.com/api/nuget/main/"))
+		r := rget(t, h, strings.TrimPrefix(id, "https://trove.example.com/api/nuget/it/main/"))
 		if r.Code != 200 {
 			t.Fatalf("%s: %d %s", id, r.Code, r.Body.String())
 		}
@@ -713,7 +713,7 @@ func TestR_NUGET_015_RewriteRendersTheSemVer2HiveOfTheServingRepository(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "https://trove.example.com/api/nuget/main/v3/registration-semver2/acme.widgets/index.json") || strings.Contains(string(out), "up.test") {
+	if !strings.Contains(string(out), "https://trove.example.com/api/nuget/it/main/v3/registration-semver2/acme.widgets/index.json") || strings.Contains(string(out), "up.test") {
 		t.Errorf("rewritten index: %s", out)
 	}
 	again, err := a.Rewrite(context.Background(), formats.RemoteContext{}, formats.Path{Path: RegistrationIndexPath("acme.widgets")}, out, ln)

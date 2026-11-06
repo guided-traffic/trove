@@ -108,7 +108,7 @@ func virtualHost(t *testing.T, r *mergeResolver, data any) *formattest.Host {
 	return formattest.NewHost(f, formattest.HostOptions{Class: formats.Virtual, RepoKey: "all", Data: data, Resolver: r})
 }
 
-const feedOfAll = "https://trove.test/api/nuget/all/v3/"
+const feedOfAll = "https://trove.test/api/nuget/it/all/v3/"
 
 // localPart is the document of a local member at the path of the registration entries.
 func localPart(t *testing.T, key string, position int, vs ...rows.RegistrationVersion) formats.MemberDocument {
