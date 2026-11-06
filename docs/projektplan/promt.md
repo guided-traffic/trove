@@ -208,11 +208,14 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
 
-- **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (read from
-  the job log, 2026-11-06, release v0.19.4, GitHub-hosted runner). `npm ci` with a pass running took 161 % of the best install without it
-  (22.6 s against 14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197); the run overlapped for 23 minutes with the dispatched run 42192042297
-  on the same runner classes, and the bound is a ratio of two timings on one runner. Done when the bound holds in nightly runs that do not
-  overlap another workflow, or a run without overlap misses it, which makes it a product finding.
+- **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
+  the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
+  14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197). Cause: the leg ran on a GitHub-hosted runner (4 vCPUs for the cluster, both stubs and the
+  clients); the upstream fetches took 122 ms at the median with and without a pass, and what grew in the two slow pairs was trove's own work around
+  them (storing and answering: 12 to 26 s against 82 s summed over 707 tarballs), the pass's CPU taken from the installs. The overlap with another
+  run that was suspected first does not apply to that class (each hosted job has its own VM). Fixed in CI: the nightly row `mirror` runs on
+  `large` since [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class).
+  Done when the nightly leg passes the bound on `large`; a miss there is a product finding (split the phases as Q-REPO-211 did).
 - **F-64 · One browser journey of `TestUpgrade_R_HA_064_AcrossTheCut` failed without the asset skew of Q-HA-99** (read from the job log of
   the scheduled nightly run 42194413882, release v0.19.4): iteration 11 of 14 exited 1 after 20.2 s at 10:03:10, no `ASSET-SKEW` line; two
   other iterations met the skew and were counted as Q-HA-99 allows; every client loop passed. The leg passed in the dispatched run

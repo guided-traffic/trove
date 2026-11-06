@@ -6507,7 +6507,7 @@ upstream's fetch slots; the CPU a pass spends on hashing, storing and verifying 
 **Rationale:** the bound on the upstream's open requests is what R-REPO-055 controls and what a defect would break (the stall of a
 client behind a background flight, Q-REPO-179, broke the ratio and is caught by it on any host). The development agent would
 revisit (a) when the e2e legs run on runners whose CPU the installs do not share, or if the nightly ratio stays above the bound,
-which then is a finding of its own.
+which then is a finding of its own. Revisited by [Q-REPO-211](#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class): the nightly ratio runs on `large`.
 
 **Applied in the spec:** R-REPO-055 (the e2e criterion's ratio enforced nightly). Code: `test/e2e/mirror_clients_test.go`,
 `.github/workflows/performance.yml` (`e2e-mirror`).
@@ -6715,6 +6715,36 @@ few names. The function's bound "no name more than twice" meant fetches and coun
 throttled answer is ever seen to carry a body the pass stores.
 
 **Applied in the spec:** none (test harness). Code: `test/e2e/mirror_long_fault_test.go` (`assertFetchedOnce`).
+
+### Q-REPO-211 · The nightly install-time ratio of clients first runs on the large class
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the scheduled nightly run 42194413882 failed `TestMirror_R_REPO_055_ClientsFirst/npm` on its ratio (F-63): the median install with a pass took
+161 % of the best install without one (pairs of 14.2/12.2 s, 14.0/22.6 s, 14.0/23.4 s), on the GitHub-hosted runner (4 vCPUs) that Q-REPO-197's gate runs on.
+The open requests stayed at 9 of 12 and the pre-emptions grew. The pod logs of the run (cluster-state artifact) split each client tarball request into its
+phases: the upstream fetch took 122 ms at the median in every pair, with and without a pass; what grew in the two slow pairs was trove's own work around it,
+the wait before the document fetch (p90 97 to 118 ms without a pass, 265 ms with), between the document and the tarball fetch (p90 168 to 211 ms, 451 to
+530 ms) and after the fetch, storing and answering (p90 35 to 93 ms, 326 to 380 ms; 12 to 26 s against 82 s summed over the 707 tarballs). That is the work
+the pass does itself, hashing, storing and verifying (CPU and the one object-store pod), taken from the installs on a machine that runs the cluster, both
+stubs and the clients on 4 vCPUs, the case Q-REPO-197 named as its reason to revisit. On a 17-CPU host the same test measured 97 % and 98 %. The leg ran on that runner class only because it loads the
+NuGet clients image, whose four copies outgrew a `large` pod's Docker storage; since Q-HA-102 the image goes into the control-plane node alone, for every set.
+The suspicion of F-63 that the miss came from another workflow running at the same time does not hold for this class: each GitHub-hosted job has its own VM.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Run the set `mirror` of the nightly job on `large` (limit 16 CPUs) (chosen) | `runs-on: large` for that matrix row; the gate stays as it is | The ratio then measures what clients first controls, the upstream's slots, as on the 17-CPU host; the disk reason for the hosted runner is gone | `large` pods share their nodes with other legs (F-37); a miss there needs the same phase split before it is called trove's |
+| (b) Keep the hosted runner and raise the bound | One number | Green | Hides a real regression; the number is the runner's (Q-REPO-197 (c)) |
+| (c) Keep the hosted runner and give the pass a lower CPU share in the product | A CPU priority between processes | Would help a small single node | trove's pass runs in its own pool of `worker` processes, normally on other nodes; R-REPO-055 is about the upstream's fetch budget, and CPU between pods is the platform's (requests and limits) |
+
+**Choice:** (a).
+
+**Rationale:** the requirement's ratio is a statement about the fetch budget, and its failure must point at the fetch budget: the phase split showed the
+upstream fetches unchanged and the local work slowed, which on 4 vCPUs is the pass's CPU. The bound and its estimator (the median with a pass against the best
+without) are unchanged. The development agent would revisit this if the ratio misses on `large`, where the phase split would then point at trove.
+
+**Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (`e2e-mirror`, the row `mirror`). Elsewhere:
+[releasing.md](../developer/releasing.md#ci).
 
 ## What this does not cover
 

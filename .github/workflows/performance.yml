@@ -20,9 +20,10 @@
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
 # Runners (owner, 2026-11-05; the assignment and its measured basis, Q-ARCH-326): the jobs run on the organisation's large runners (runs-on:
-# large), the class for kind, e2e and load tests, except the kind legs that load the NuGet clients image (e2e-nuget, e2e-ci, e2e-bastion,
-# e2e-vuln, e2e-upgrade, and the set mirror of e2e-mirror): they need more than a large pod's 30 GiB of Docker storage and run on GitHub-hosted
-# runners (runs-on: ubuntu-24.04). Sizes: docs/developer/releasing.md#ci.
+# large), the class for kind, e2e and load tests, except e2e-ci, e2e-bastion, e2e-vuln and e2e-upgrade, which run on GitHub-hosted runners
+# (runs-on: ubuntu-24.04). The legs with a CPU-bound condition that load the NuGet clients image moved to large once that image went into the
+# control-plane node only: nuget-ha (Q-HA-102) and the set mirror, whose install-time ratio is enforced here (Q-REPO-211).
+# Sizes: docs/developer/releasing.md#ci.
 name: HA and Performance (nightly)
 
 on:
@@ -1459,7 +1460,7 @@ jobs:
         include:
           - set: mirror
             port: "8098"
-            runner: ubuntu-24.04    # loads the NuGet clients image: it outgrows a large pod's Docker storage
+            runner: large           # the install-time ratio needs CPU the pass does not take from the installs (Q-REPO-211)
           - set: mirror-long
             port: "8099"
             runner: large
