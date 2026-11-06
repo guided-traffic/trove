@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/qname"
-	"github.com/guided-traffic/trove/internal/repository"
 
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
@@ -43,10 +42,7 @@ func (s *Server) TestUpstream(w http.ResponseWriter, r *http.Request, _ string) 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	var caller repository.Caller
-	if err == nil {
-		caller, err = s.writeCaller(r)
-	}
+	caller, err := s.writeCaller(r)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return

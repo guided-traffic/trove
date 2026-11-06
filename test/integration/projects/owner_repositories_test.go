@@ -125,8 +125,8 @@ func TestR_AUTHZ_026_AnOwnerWritesRemoteRepositoriesWithinTheRules(t *testing.T)
 	})
 	t.Run("Q-REPO-128 an administrator creates the same repositories", func(t *testing.T) {
 		wantStatus(t, f.do(f.admin, "POST", repos, remote("admin-ref", reference, nil)), 201, "")
-		wantStatus(t, f.do(f.admin, "POST", repos, remote("admin-net", map[string]any{
-			"url": upstream, "sourceNetwork": "10.99.0.0/24", "outboundProxy": map[string]any{"mode": "direct"}}, nil)), 201, "")
+		routed := map[string]any{"url": upstream, "sourceNetwork": "10.99.0.0/24", "outboundProxy": map[string]any{"mode": "direct"}}
+		wantStatus(t, f.do(f.admin, "POST", repos, remote("admin-net", routed, nil)), 201, "")
 		wantStatus(t, f.do(f.admin, "POST", repos, remote("admin-mirror", map[string]any{"url": upstream, "mode": "mirror"},
 			map[string]any{"includePatterns": []string{"@acme/*"}})), 201, "")
 	})
