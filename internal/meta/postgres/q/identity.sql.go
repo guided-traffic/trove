@@ -911,8 +911,8 @@ type IdentityInsertProjectServiceAccountParams struct {
 	ProjectID   string
 }
 
-// A service account of a project (Q-AUTHZ-169): the row's trigger refuses a name
-// that does not start with the project key and a hyphen.
+// A service account of a project (Q-AUTHZ-169, Q-AUTHZ-209): its principal's name is
+// <project key>/<name>; the row's trigger refuses any other name.
 func (q *Queries) IdentityInsertProjectServiceAccount(ctx context.Context, arg IdentityInsertProjectServiceAccountParams) error {
 	_, err := q.db.Exec(ctx, identityInsertProjectServiceAccount, arg.ID, arg.Description, arg.ProjectID)
 	return err

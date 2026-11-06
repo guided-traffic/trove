@@ -39,6 +39,8 @@ const (
 	CodeServerBusy          = "server_busy"
 	CodeDatabaseTimeout     = "database_timeout"
 	CodeMisdirectedRequest  = "misdirected_request"
+	// CodeNotImplemented answers a domain operation whose implementation is not written yet.
+	CodeNotImplemented = "not_implemented"
 )
 
 // Codes of the M1 areas. Each area adds its constants only inside its own
@@ -180,6 +182,12 @@ const (
 	// CodeProjectKeyOverlap: a project key that is another key's prefix up to a
 	// hyphen, or the prefix of the name of a global service account.
 	CodeProjectKeyOverlap = "project_key_overlap"
+	// CodeRepositoryExists: a repository key that is taken within the project, by a repository being deleted
+	// too; or the target project of a move already has the key (Q-REPO-212).
+	CodeRepositoryExists = "repository_exists"
+	// CodeRepositoryInUse: a move of a repository that an object of its project still references (a virtual
+	// repository's member list or pin rule, a project policy entry, a CI mapping grant, a deployment target).
+	CodeRepositoryInUse = "repository_in_use"
 	// CodeUnknownProject: a policy names a project that does not exist, or one the
 	// caller does not administer; the answer does not tell them apart.
 	CodeUnknownProject = "unknown_project"
@@ -465,7 +473,7 @@ const CodeContentRefused = "content_refused"
 // with them as well.
 const (
 	CodePackageOwnedByOtherOwner = "package_owned_by_other_owner"
-	CodeLastOwner                = "last_owner"
+	CodeLastOwner                = "last_owner" // also the last Owner of a project (Q-AUTHZ-208)
 	CodePopulateNotPermitted     = "populate_not_permitted"
 )
 
@@ -562,6 +570,7 @@ var registry = []CodeInfo{
 	{CodeInvalid, Invalid, "Malformed request", "The request cannot be parsed: unparsable JSON, wrong types, an unknown or duplicate field, or an unknown query parameter."},
 	{CodeValidation, Invalid, "Validation failed", "The request parsed but one or more fields are invalid; see errors."},
 	{CodeUnauthenticated, Unauthenticated, "Authentication required", "The request carries no valid credential."},
+	{CodeNotImplemented, NotImplemented, "Not implemented", "The operation is defined but not implemented by this build of trove yet."},
 	{CodeForbidden, Forbidden, "Forbidden", "The credential is valid but the operation is not permitted."},
 	{CodeNotFound, NotFound, "Not found", "The resource does not exist or is not visible to the caller."},
 	{CodeMethodNotAllowed, MethodNotAllowed, "Method not allowed", "The resource does not support the method; see the Allow header."},
@@ -668,6 +677,8 @@ var registry = []CodeInfo{
 	{CodeRepositoryAssigned, Conflict, "Repository assigned to another project", "The repository belongs to another project; send move=true to move it."},
 	{CodeProjectOwnerChanged, Conflict, "Project owner changed", "The repository belongs to another project than the request expected (from); the extension currentProject names it, null for none. Read it again and decide again."},
 	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},
+	{CodeRepositoryExists, Conflict, "Repository exists", "The project already has a repository with this key, one being deleted included."},
+	{CodeRepositoryInUse, Conflict, "Repository in use", "An object of the project still references the repository: a virtual repository's members, pin rules or deployment target, a project policy, or a CI mapping. Remove the references, then move it."},
 	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
 	{CodeProjectSwitchOff, Forbidden, "Project switch off", "The project's administrator right for this operation (managePolicies or manageRepositories) is switched off; an administrator turns it on."},
 	{CodeSecretValueRequired, Invalid, "Secret value required", "A project administrator gives an upstream secret as a value: a secret reference is the installation's, and a stored credential does not follow a change of url, of an extra host that receives credentials or of forwardAuthOnRedirect."},
@@ -808,7 +819,7 @@ var registry = []CodeInfo{
 	// <<< M2 untrusted
 	// >>> M2 ownership
 	{CodePackageOwnedByOtherOwner, Forbidden, "Package owned by another owner", "The action is granted, but the package name is owned and the caller is none of its owners and holds no manage on it; an owner or a holder of manage adds the caller as an owner."},
-	{CodeLastOwner, Conflict, "Last owner", "Removing the only owner of a package would leave it without one; add the new owner first, or release the name with release=true (needs manage)."},
+	{CodeLastOwner, Conflict, "Last owner", "Removing the only owner of a package would leave it without one; add the new owner first, or release the name with release=true (needs manage). The last Owner of a project cannot be removed or demoted either; make another member an Owner first (an administrator of trove may)."},
 	{CodePopulateNotPermitted, Forbidden, "Populate not permitted", "The caller may read the remote repository but not bring new content into its cache: the repository's cacheFillAction is not granted, the request came with the session cookie, or the endpoint does not fill caches. What the cache holds is still served."},
 	// <<< M2 ownership
 	// >>> M2 virtual

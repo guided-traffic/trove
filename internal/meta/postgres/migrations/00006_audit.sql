@@ -27,6 +27,7 @@ CREATE TABLE audit_event (
     resource_type  text,
     resource_id    text,
     repository     text,
+    project        text,
     path           text,
     reason         text,
     details        jsonb       NOT NULL DEFAULT '{}'::jsonb,
@@ -39,6 +40,7 @@ CREATE TABLE audit_event (
 CREATE INDEX audit_event_actor_idx      ON audit_event (actor_id, occurred_at DESC);
 CREATE INDEX audit_event_action_idx     ON audit_event (action, occurred_at DESC);
 CREATE INDEX audit_event_repository_idx ON audit_event (repository, occurred_at DESC) WHERE repository IS NOT NULL;
+CREATE INDEX audit_event_project_idx    ON audit_event (project, occurred_at DESC) WHERE project IS NOT NULL;
 CREATE INDEX audit_event_trace_idx      ON audit_event (trace_id) WHERE trace_id IS NOT NULL;
 
 -- Retention is owner data: trove migrate writes audit.retention_days into the

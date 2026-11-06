@@ -1,10 +1,11 @@
 -- trove:phase expand
 --
--- Projects (R-AUTHZ-026, Q-AUTHZ-174, Q-AUTHZ-175): the unique constraint of
--- authz_policy from the index of 00023, the table of the grants of project
+-- Projects (R-AUTHZ-026, Q-AUTHZ-174, Q-AUTHZ-175): the unique constraints of
+-- repositories (00020) and authz_policy (00023) from their indexes, the table of the grants of project
 -- policies, and the guards on principals of project service accounts.
 
 ALTER TABLE authz_policy ADD CONSTRAINT authz_policy_id_project UNIQUE USING INDEX authz_policy_id_project;
+ALTER TABLE repositories ADD CONSTRAINT repositories_project_key UNIQUE USING INDEX repositories_project_key;
 
 CREATE TABLE authz_project_policy_entry (
     policy_id     uuid   NOT NULL,
@@ -42,3 +43,29 @@ CREATE TRIGGER authz_policy_entry_project_account BEFORE INSERT OR UPDATE OF pri
     FOR EACH ROW EXECUTE FUNCTION project_account_principal_guard('global');
 CREATE TRIGGER authz_project_policy_entry_account BEFORE INSERT OR UPDATE OF principal_id, project_id ON authz_project_policy_entry
     FOR EACH ROW EXECUTE FUNCTION project_account_principal_guard('project');
+
+-- No repository is shared between projects (Q-AUTHZ-206, Q-REPO-212): a virtual
+-- repository lists members, pins rules to members and deploys into repositories of
+-- its own project only. The first argument names the column of the referenced
+-- repository, the second the column of the virtual repository. SQLSTATE AI006; the
+-- service answers 422 first, and a move of a repository that is still referenced
+-- answers 409 repository_in_use.
+CREATE FUNCTION virtual_same_project_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    other uuid;
+    own   uuid;
+BEGIN
+    SELECT project_id INTO other FROM repositories WHERE id = (to_jsonb(NEW) ->> TG_ARGV[0])::bigint;
+    SELECT project_id INTO own FROM repositories WHERE id = (to_jsonb(NEW) ->> TG_ARGV[1])::bigint;
+    IF other IS DISTINCT FROM own THEN
+        RAISE EXCEPTION '%.% must name a repository of the project of %.%',
+              TG_TABLE_NAME, TG_ARGV[0], TG_TABLE_NAME, TG_ARGV[1] USING ERRCODE = 'AI006';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER virtual_members_project BEFORE INSERT OR UPDATE OF member_id ON virtual_members
+    FOR EACH ROW EXECUTE FUNCTION virtual_same_project_guard('member_id', 'virtual_id');
+CREATE TRIGGER virtual_deploy_targets_project BEFORE INSERT OR UPDATE OF target_id ON virtual_deploy_targets
+    FOR EACH ROW EXECUTE FUNCTION virtual_same_project_guard('target_id', 'virtual_id');
+CREATE TRIGGER virtual_pin_members_project BEFORE INSERT OR UPDATE OF member_id ON virtual_pin_members
+    FOR EACH ROW EXECUTE FUNCTION virtual_same_project_guard('member_id', 'virtual_id');

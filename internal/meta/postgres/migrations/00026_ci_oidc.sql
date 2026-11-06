@@ -62,10 +62,11 @@ CREATE TABLE ci_issuer_keys (
 CREATE INDEX ci_issuer_keys_due ON ci_issuer_keys (next_refresh_at);
 
 -- Identity mappings (R-CI-009). The principal row of kind 'ci_mapping' (00007) is the mapping's
--- principal, name '<issuer>/<mapping>' (Q-CI-10); the service inserts both in one transaction and
+-- principal, name '<issuer>/<mapping>' (Q-CI-10), or '<issuer>/<project key>/<mapping>' for a project's mapping (Q-AUTHZ-209); the service inserts both in one transaction and
 -- deletes the principal with the mapping. A project administrator's mapping is of the tier
 -- 'project:<key>' and names its project in project_id, so a project with mappings cannot be deleted
--- (ON DELETE RESTRICT; the project service answers 409 project_not_empty first, Q-CI-26).
+-- (ON DELETE RESTRICT; the project service answers 409 project_not_empty first, Q-CI-26). The name
+-- column holds '<project key>/<name>' for such a mapping and the bare name otherwise.
 -- delegation_id has no foreign key: delegation to a group is P1 (R-CI-023) and adds its table.
 CREATE TABLE ci_mappings (
     id             uuid        PRIMARY KEY,
@@ -75,7 +76,9 @@ CREATE TABLE ci_mappings (
                                CHECK (tier = 'system' OR tier ~ '^delegation:[0-9a-f-]{36}$' OR tier ~ '^project:[a-z][a-z0-9-]{1,31}$'),
     project_id     uuid        REFERENCES project (id) ON DELETE RESTRICT,
     delegation_id  uuid,
-    name           text        NOT NULL CHECK (name ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),
+    -- A project mapping is named <project key>/<name> (Q-AUTHZ-209); a trigger below compares the
+    -- prefix with project_id.
+    name           text        NOT NULL CHECK (name ~ '^([a-z][a-z0-9-]{1,31}/)?[a-z0-9][a-z0-9._-]{1,63}$'),
     priority       integer     NOT NULL CHECK (priority BETWEEN 1 AND 1000000),
     enabled        boolean     NOT NULL DEFAULT true,
     subject_kinds  text[]      NOT NULL DEFAULT '{id_token}',
@@ -93,6 +96,30 @@ CREATE TABLE ci_mappings (
     CHECK ((tier LIKE 'project:%') = (project_id IS NOT NULL))
 );
 CREATE INDEX ci_mappings_project ON ci_mappings (project_id) WHERE project_id IS NOT NULL;
+-- The stored name carries the project key exactly when the mapping has a project, and the project of a
+-- mapping never changes (SQLSTATE AI003; the service answers 422 first). Q-AUTHZ-209.
+CREATE FUNCTION ci_mapping_project_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    k text;
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.project_id IS DISTINCT FROM OLD.project_id THEN
+        RAISE EXCEPTION 'the project of a mapping cannot change' USING ERRCODE = 'AI003';
+    END IF;
+    IF NEW.project_id IS NULL THEN
+        IF position('/' IN NEW.name) > 0 THEN
+            RAISE EXCEPTION 'the name of an instance-wide mapping has no project prefix' USING ERRCODE = 'AI003';
+        END IF;
+    ELSE
+        SELECT key INTO k FROM project WHERE id = NEW.project_id;
+        IF k IS NULL OR left(NEW.name, char_length(k) + 1) <> k || '/' OR char_length(NEW.name) = char_length(k) + 1
+           OR position('/' IN substr(NEW.name, char_length(k) + 2)) > 0 THEN
+            RAISE EXCEPTION 'the name of a project mapping is <project key>/<name>' USING ERRCODE = 'AI003';
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER ci_mappings_project_name BEFORE INSERT OR UPDATE OF project_id, name ON ci_mappings
+    FOR EACH ROW EXECUTE FUNCTION ci_mapping_project_guard();
 CREATE TRIGGER ci_mappings_kind BEFORE INSERT OR UPDATE OF principal_id ON ci_mappings
     FOR EACH ROW EXECUTE FUNCTION principal_kind_guard('principal_id', 'ci_mapping');
 

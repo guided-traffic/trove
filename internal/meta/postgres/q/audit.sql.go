@@ -30,7 +30,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
        COALESCE(host(source_ip), '')::text AS source_ip, COALESCE(user_agent, '')::text AS user_agent,
        COALESCE(trace_id, '')::text AS trace_id, COALESCE(replica, '')::text AS replica,
        COALESCE(endpoint, '')::text AS endpoint, COALESCE(resource_type, '')::text AS resource_type,
-       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository,
+       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository, COALESCE(project, '')::text AS project,
        COALESCE(path, '')::text AS path, COALESCE(reason, '')::text AS reason, details
   FROM audit_event
  WHERE id = $1::text::uuid
@@ -64,6 +64,7 @@ type GetAuditEventRow struct {
 	ResourceType string
 	ResourceID   string
 	Repository   string
+	Project      string
 	Path         string
 	Reason       string
 	Details      []byte
@@ -99,6 +100,7 @@ func (q *Queries) GetAuditEvent(ctx context.Context, arg GetAuditEventParams) ([
 			&i.ResourceType,
 			&i.ResourceID,
 			&i.Repository,
+			&i.Project,
 			&i.Path,
 			&i.Reason,
 			&i.Details,
@@ -128,13 +130,13 @@ const insertAuditEvents = `-- name: InsertAuditEvents :many
 
 INSERT INTO audit_event (id, occurred_at, action, category, outcome, actor_type, actor_id, actor_name,
                          token_id, auth_method, source_ip, user_agent, trace_id, replica, endpoint,
-                         resource_type, resource_id, repository, path, reason, details)
+                         resource_type, resource_id, repository, project, path, reason, details)
 SELECT (e ->> 'id')::uuid, COALESCE(NULLIF(e ->> 'at', '')::timestamptz, now()), e ->> 'action',
        e ->> 'category', e ->> 'outcome', e ->> 'actor_type', NULLIF(e ->> 'actor_id', '')::uuid,
        NULLIF(e ->> 'actor_name', ''), NULLIF(e ->> 'token_id', '')::uuid, NULLIF(e ->> 'auth_method', ''),
        NULLIF(e ->> 'source_ip', '')::inet, NULLIF(e ->> 'user_agent', ''), NULLIF(e ->> 'trace_id', ''),
        NULLIF(e ->> 'replica', ''), NULLIF(e ->> 'endpoint', ''), NULLIF(e ->> 'resource_type', ''),
-       NULLIF(e ->> 'resource_id', ''), NULLIF(e ->> 'repository', ''), NULLIF(e ->> 'path', ''),
+       NULLIF(e ->> 'resource_id', ''), NULLIF(e ->> 'repository', ''), NULLIF(e ->> 'project', ''), NULLIF(e ->> 'path', ''),
        NULLIF(e ->> 'reason', ''), e -> 'details'
   FROM jsonb_array_elements($1::text::jsonb) AS e
 ON CONFLICT (occurred_at, id) DO NOTHING
@@ -209,7 +211,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
        COALESCE(host(source_ip), '')::text AS source_ip, COALESCE(user_agent, '')::text AS user_agent,
        COALESCE(trace_id, '')::text AS trace_id, COALESCE(replica, '')::text AS replica,
        COALESCE(endpoint, '')::text AS endpoint, COALESCE(resource_type, '')::text AS resource_type,
-       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository,
+       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository, COALESCE(project, '')::text AS project,
        COALESCE(path, '')::text AS path, COALESCE(reason, '')::text AS reason, details
   FROM audit_event
  WHERE occurred_at >= $1::text::timestamptz
@@ -220,13 +222,14 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
    AND ($6::text = '' OR outcome = $6::text)
    AND ($7::text = '' OR actor_id = $8::text::uuid OR actor_name = $7::text)
    AND ($9::text = '' OR repository = $9::text)
-   AND ($10::text = '' OR resource_type = $10::text)
-   AND ($11::text = '' OR resource_id = $11::text)
-   AND ($12::text = '' OR trace_id = $12::text)
-   AND (NOT $13::bool
-        OR (occurred_at, id) < ($14::text::timestamptz, $15::text::uuid))
+   AND ($10::text = '' OR project = $10::text)
+   AND ($11::text = '' OR resource_type = $11::text)
+   AND ($12::text = '' OR resource_id = $12::text)
+   AND ($13::text = '' OR trace_id = $13::text)
+   AND (NOT $14::bool
+        OR (occurred_at, id) < ($15::text::timestamptz, $16::text::uuid))
  ORDER BY occurred_at DESC, id DESC
- LIMIT $16::int
+ LIMIT $17::int
 `
 
 type ListAuditEventsNewestParams struct {
@@ -239,6 +242,7 @@ type ListAuditEventsNewestParams struct {
 	Actor        string
 	ActorID      string
 	Repository   string
+	Project      string
 	ResourceType string
 	ResourceID   string
 	TraceID      string
@@ -267,11 +271,13 @@ type ListAuditEventsNewestRow struct {
 	ResourceType string
 	ResourceID   string
 	Repository   string
+	Project      string
 	Path         string
 	Reason       string
 	Details      []byte
 }
 
+// repository is the qualified name <project>/<key> and project the project key (Q-AUTHZ-209).
 // Newest first, keyset after (cursor_at, cursor_id) when has_cursor. The empty
 // string is "no filter". actor_id is a UUID or the nil UUID when the actor was
 // given as a name; the action prefix is matched literally.
@@ -286,6 +292,7 @@ func (q *Queries) ListAuditEventsNewest(ctx context.Context, arg ListAuditEvents
 		arg.Actor,
 		arg.ActorID,
 		arg.Repository,
+		arg.Project,
 		arg.ResourceType,
 		arg.ResourceID,
 		arg.TraceID,
@@ -320,6 +327,7 @@ func (q *Queries) ListAuditEventsNewest(ctx context.Context, arg ListAuditEvents
 			&i.ResourceType,
 			&i.ResourceID,
 			&i.Repository,
+			&i.Project,
 			&i.Path,
 			&i.Reason,
 			&i.Details,
@@ -341,7 +349,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
        COALESCE(host(source_ip), '')::text AS source_ip, COALESCE(user_agent, '')::text AS user_agent,
        COALESCE(trace_id, '')::text AS trace_id, COALESCE(replica, '')::text AS replica,
        COALESCE(endpoint, '')::text AS endpoint, COALESCE(resource_type, '')::text AS resource_type,
-       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository,
+       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository, COALESCE(project, '')::text AS project,
        COALESCE(path, '')::text AS path, COALESCE(reason, '')::text AS reason, details
   FROM audit_event
  WHERE occurred_at >= $1::text::timestamptz
@@ -352,13 +360,14 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
    AND ($6::text = '' OR outcome = $6::text)
    AND ($7::text = '' OR actor_id = $8::text::uuid OR actor_name = $7::text)
    AND ($9::text = '' OR repository = $9::text)
-   AND ($10::text = '' OR resource_type = $10::text)
-   AND ($11::text = '' OR resource_id = $11::text)
-   AND ($12::text = '' OR trace_id = $12::text)
-   AND (NOT $13::bool
-        OR (occurred_at, id) > ($14::text::timestamptz, $15::text::uuid))
+   AND ($10::text = '' OR project = $10::text)
+   AND ($11::text = '' OR resource_type = $11::text)
+   AND ($12::text = '' OR resource_id = $12::text)
+   AND ($13::text = '' OR trace_id = $13::text)
+   AND (NOT $14::bool
+        OR (occurred_at, id) > ($15::text::timestamptz, $16::text::uuid))
  ORDER BY occurred_at ASC, id ASC
- LIMIT $16::int
+ LIMIT $17::int
 `
 
 type ListAuditEventsOldestParams struct {
@@ -371,6 +380,7 @@ type ListAuditEventsOldestParams struct {
 	Actor        string
 	ActorID      string
 	Repository   string
+	Project      string
 	ResourceType string
 	ResourceID   string
 	TraceID      string
@@ -399,6 +409,7 @@ type ListAuditEventsOldestRow struct {
 	ResourceType string
 	ResourceID   string
 	Repository   string
+	Project      string
 	Path         string
 	Reason       string
 	Details      []byte
@@ -416,6 +427,7 @@ func (q *Queries) ListAuditEventsOldest(ctx context.Context, arg ListAuditEvents
 		arg.Actor,
 		arg.ActorID,
 		arg.Repository,
+		arg.Project,
 		arg.ResourceType,
 		arg.ResourceID,
 		arg.TraceID,
@@ -450,6 +462,7 @@ func (q *Queries) ListAuditEventsOldest(ctx context.Context, arg ListAuditEvents
 			&i.ResourceType,
 			&i.ResourceID,
 			&i.Repository,
+			&i.Project,
 			&i.Path,
 			&i.Reason,
 			&i.Details,

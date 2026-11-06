@@ -10,6 +10,8 @@ const bastionRoot = "internal/bastion"
 //
 //   - internal/errs, internal/config, internal/buildinfo: error kinds, the configuration trees (the Bastion's
 //     is config.BastionConfig) and the version;
+//   - internal/qname: the address of a repository (project and key) and the one parser of the protocol paths, standard
+//     library only (Q-REPO-212, R-BAS-018);
 //   - internal/observability and its health package: logs, metrics, traces and the probes;
 //   - internal/tlsfiles and internal/httpserver (with its content wrapper): the TLS reloader, the listeners,
 //     the client address and the problem rendering the role shares with the others;
@@ -28,7 +30,7 @@ const bastionRoot = "internal/bastion"
 // bastionTransitive, so the Bastion's dependency closure is these lists and nothing else.
 func bastionAllowed() []string {
 	return []string{
-		"internal/errs", "internal/config", "internal/buildinfo",
+		"internal/errs", "internal/config", "internal/buildinfo", "internal/qname",
 		"internal/observability", "internal/observability/health",
 		"internal/tlsfiles", "internal/outbound",
 		"internal/httpserver", "internal/httpserver/content",

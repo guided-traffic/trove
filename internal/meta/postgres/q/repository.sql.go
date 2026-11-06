@@ -96,14 +96,21 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 	return items, nil
 }
 
-const getRepositoryByKey = `-- name: GetRepositoryByKey :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
-  FROM repositories
- WHERE key = $1::text
+const getRepositoryByName = `-- name: GetRepositoryByName :many
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = $2::text
 `
 
-func (q *Queries) GetRepositoryByKey(ctx context.Context, key string) ([]Repository, error) {
-	rows, err := q.db.Query(ctx, getRepositoryByKey, key)
+type GetRepositoryByNameParams struct {
+	Project string
+	Key     string
+}
+
+// A repository is named by its project key and its key (Q-REPO-212).
+func (q *Queries) GetRepositoryByName(ctx context.Context, arg GetRepositoryByNameParams) ([]Repository, error) {
+	rows, err := q.db.Query(ctx, getRepositoryByName, arg.Project, arg.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -140,8 +147,8 @@ func (q *Queries) GetRepositoryByKey(ctx context.Context, key string) ([]Reposit
 const insertRepository = `-- name: InsertRepository :many
 INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
 VALUES ($1::text, $2::text, $3::text, $4::text::jsonb,
-        NULLIF($5::text, '')::uuid, NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
-ON CONFLICT (key) DO NOTHING
+        $5::text::uuid, NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
+ON CONFLICT (project_id, key) DO NOTHING
 RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
 `
 
@@ -154,11 +161,10 @@ type InsertRepositoryParams struct {
 	Actor     string
 }
 
-// A key that is taken (also by a repository being deleted) conflicts on the
-// unique index; ON CONFLICT DO NOTHING returns no row and the caller answers
-// repository_exists. project_id is empty for a repository without a project; a
-// project administrator's repository is assigned in this statement, in the
-// transaction that creates it (R-AUTHZ-026).
+// A key that is taken in the project (also by a repository being deleted) conflicts
+// on the unique constraint repositories_project_key; ON CONFLICT DO NOTHING returns
+// no row and the caller answers repository_exists. The project is required
+// (Q-AUTHZ-206): the repository is created in it, in this statement.
 func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryParams) ([]Repository, error) {
 	rows, err := q.db.Query(ctx, insertRepository,
 		arg.Key,
@@ -201,11 +207,56 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 	return items, nil
 }
 
+const listProjectRepositories = `-- name: ListProjectRepositories :many
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text
+ ORDER BY r.key COLLATE "C"
+`
+
+// The repositories of one project by key in byte order (Q-REPO-212).
+func (q *Queries) ListProjectRepositories(ctx context.Context, project string) ([]Repository, error) {
+	rows, err := q.db.Query(ctx, listProjectRepositories, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Repository{}
+	for rows.Next() {
+		var i Repository
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Format,
+			&i.Class,
+			&i.Config,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Lifecycle,
+			&i.ConfigVersion,
+			&i.CreatedBy,
+			&i.UpdatedBy,
+			&i.LastActivityAt,
+			&i.ClaimsVersion,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepositories = `-- name: ListRepositories :many
 
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
-  FROM repositories
- ORDER BY key COLLATE "C"
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ ORDER BY p.key COLLATE "C", r.key COLLATE "C"
 `
 
 // Queries of the repository model (R-REPO-001 to R-REPO-013). The repository
@@ -215,7 +266,8 @@ SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config
 // package reads its pgtype fields through their methods and never imports the
 // driver. Statements that return at most one row are :many, so the caller never
 // meets the driver's no-rows error.
-// Byte order, whatever the database's collation: the list's cursor is the last key
+// Every repository of the installation, by project key and key in byte order,
+// whatever the database's collation: the list's cursor is the last (project, key)
 // of a page compared in Go, byte by byte (R-REPO-012). Under en_US.UTF-8 the hyphen
 // weighs nothing at the first level, so `weba` sorted before `web-b` and the page
 // after `weba` skipped `web-b`.
@@ -254,16 +306,22 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 	return items, nil
 }
 
-const lockRepositoryByKey = `-- name: LockRepositoryByKey :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
-  FROM repositories
- WHERE key = $1::text
-   FOR UPDATE
+const lockRepositoryByName = `-- name: LockRepositoryByName :many
+SELECT r.id, r.key, r.format, r.class, r.config, r.created_at, r.updated_at, r.lifecycle, r.config_version, r.created_by, r.updated_by, r.last_activity_at, r.claims_version, r.project_id
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = $2::text
+   FOR UPDATE OF r
 `
 
+type LockRepositoryByNameParams struct {
+	Project string
+	Key     string
+}
+
 // The row lock serialises the writers of one repository; a reader needs none.
-func (q *Queries) LockRepositoryByKey(ctx context.Context, key string) ([]Repository, error) {
-	rows, err := q.db.Query(ctx, lockRepositoryByKey, key)
+func (q *Queries) LockRepositoryByName(ctx context.Context, arg LockRepositoryByNameParams) ([]Repository, error) {
+	rows, err := q.db.Query(ctx, lockRepositoryByName, arg.Project, arg.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +407,69 @@ func (q *Queries) MarkRepositoryDeleting(ctx context.Context, arg MarkRepository
 	return items, nil
 }
 
+const moveRepository = `-- name: MoveRepository :many
+UPDATE repositories
+   SET project_id = $1::text::uuid, updated_at = now(),
+       config_version = config_version + 1,
+       updated_by = NULLIF($2::text, '')::uuid
+ WHERE id = $3::bigint AND project_id = $4::text::uuid AND lifecycle = 'active'
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
+`
+
+type MoveRepositoryParams struct {
+	ProjectID     string
+	Actor         string
+	ID            int64
+	FromProjectID string
+}
+
+// Moves a repository to another project (Q-REPO-212); its address changes, its id
+// and its content do not. The condition names the source project so that two
+// concurrent moves cannot both win; the callers hold ProjectLock of both projects
+// and the row lock. No row back: the repository is gone or no longer in `from`. A
+// target that has the key answers SQLSTATE 23505 on repositories_project_key (409
+// repository_exists). config_version moves on: the project is a member of the
+// repository's document.
+func (q *Queries) MoveRepository(ctx context.Context, arg MoveRepositoryParams) ([]Repository, error) {
+	rows, err := q.db.Query(ctx, moveRepository,
+		arg.ProjectID,
+		arg.Actor,
+		arg.ID,
+		arg.FromProjectID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Repository{}
+	for rows.Next() {
+		var i Repository
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Format,
+			&i.Class,
+			&i.Config,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Lifecycle,
+			&i.ConfigVersion,
+			&i.CreatedBy,
+			&i.UpdatedBy,
+			&i.LastActivityAt,
+			&i.ClaimsVersion,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const repositoryProjectKeys = `-- name: RepositoryProjectKeys :many
 SELECT id::text AS id, key FROM project
 `
@@ -359,7 +480,7 @@ type RepositoryProjectKeysRow struct {
 }
 
 // Every project's id and key: the readers resolve project_id of the rows they hold
-// to the key (R-AUTHZ-026).
+// to the key (Q-REPO-212).
 func (q *Queries) RepositoryProjectKeys(ctx context.Context) ([]RepositoryProjectKeysRow, error) {
 	rows, err := q.db.Query(ctx, repositoryProjectKeys)
 	if err != nil {
@@ -389,9 +510,9 @@ type RepositoryProjectShareRow struct {
 	Key string
 }
 
-// The project a repository is created in, locked FOR SHARE: a concurrent delete of
-// the project (FOR UPDATE, which counts the repositories under that lock) waits for
-// this transaction, so the new repository is counted or the project is gone.
+// The project a repository is created in or moved into, locked FOR SHARE: a concurrent
+// delete of the project (FOR UPDATE, which counts the repositories under that lock)
+// waits for this transaction, so the new repository is counted or the project is gone.
 func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]RepositoryProjectShareRow, error) {
 	rows, err := q.db.Query(ctx, repositoryProjectShare, key)
 	if err != nil {
@@ -412,39 +533,36 @@ func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]Rep
 	return items, nil
 }
 
-const repositoryProjectsByKeys = `-- name: RepositoryProjectsByKeys :many
-SELECT r.key, COALESCE(p.key, '')::text AS project
-  FROM repositories r
-  LEFT JOIN project p ON p.id = r.project_id
- WHERE r.key = ANY($1::text[])
+const repositoryReferences = `-- name: RepositoryReferences :one
+SELECT (SELECT count(*) FROM virtual_members WHERE member_id = $1::bigint)::bigint AS virtual_members,
+       (SELECT count(*) FROM virtual_pin_members WHERE member_id = $1::bigint)::bigint AS pin_members,
+       (SELECT count(*) FROM virtual_deploy_targets WHERE target_id = $1::bigint)::bigint AS deploy_targets,
+       (SELECT count(*) FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+         WHERE s.repository_id = $1::bigint AND a.project_id IS NOT NULL)::bigint AS policy_selectors
 `
 
-type RepositoryProjectsByKeysRow struct {
-	Key     string
-	Project string
+type RepositoryReferencesRow struct {
+	VirtualMembers  int64
+	PinMembers      int64
+	DeployTargets   int64
+	PolicySelectors int64
 }
 
-// The project key of each named repository, empty for one that belongs to none;
-// an unknown key has no row. A project administrator's virtual repository checks
-// its new members and its deploy target with it (Q-AUTHZ-178).
-func (q *Queries) RepositoryProjectsByKeys(ctx context.Context, keys []string) ([]RepositoryProjectsByKeysRow, error) {
-	rows, err := q.db.Query(ctx, repositoryProjectsByKeys, keys)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RepositoryProjectsByKeysRow{}
-	for rows.Next() {
-		var i RepositoryProjectsByKeysRow
-		if err := rows.Scan(&i.Key, &i.Project); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+// What references a repository of the project and blocks its move (409
+// repository_in_use): the virtual repositories that list it as a member, pin rules
+// that name it, virtual repositories that deploy into it, and policy selectors of the
+// project's policies that name it. The CI mappings of the project name
+// repositories inside their grants document and are checked by the caller.
+func (q *Queries) RepositoryReferences(ctx context.Context, id int64) (RepositoryReferencesRow, error) {
+	row := q.db.QueryRow(ctx, repositoryReferences, id)
+	var i RepositoryReferencesRow
+	err := row.Scan(
+		&i.VirtualMembers,
+		&i.PinMembers,
+		&i.DeployTargets,
+		&i.PolicySelectors,
+	)
+	return i, err
 }
 
 const updateRepositoryConfig = `-- name: UpdateRepositoryConfig :many

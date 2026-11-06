@@ -20,7 +20,9 @@ INSERT INTO cluster_epoch (area) VALUES ('authz');
 -- expand step.
 CREATE TABLE authz_policy (
     id             uuid        PRIMARY KEY,
-    name           text        NOT NULL UNIQUE CHECK (name ~ '^[a-z0-9][a-z0-9._-]{0,127}$'),
+    -- A project policy is named <project key>/<name> (Q-AUTHZ-209); a trigger of 00019
+    -- compares the prefix with project_id.
+    name           text        NOT NULL UNIQUE CHECK (name ~ '^([a-z][a-z0-9-]{1,31}/)?[a-z0-9][a-z0-9._-]{0,127}$'),
     description    text        NOT NULL DEFAULT '' CHECK (char_length(description) <= 1024),
     resource_type  text        NOT NULL DEFAULT 'repository' CHECK (resource_type IN ('repository', 'build')),
     version        bigint      NOT NULL DEFAULT 1,

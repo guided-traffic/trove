@@ -312,8 +312,8 @@ SELECT (SELECT count(*) FROM principal p
 INSERT INTO service_account (principal_id, description) VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text);
 
 -- name: IdentityInsertProjectServiceAccount :exec
--- A service account of a project (Q-AUTHZ-169): the row's trigger refuses a name
--- that does not start with the project key and a hyphen.
+-- A service account of a project (Q-AUTHZ-169, Q-AUTHZ-209): its principal's name is
+-- <project key>/<name>; the row's trigger refuses any other name.
 INSERT INTO service_account (principal_id, description, project_id)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text, sqlc.arg(project_id)::text::uuid);
 
