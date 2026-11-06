@@ -22,7 +22,7 @@ import (
 // this few versions).
 func registrationVersions(t testing.TB, a *api, repo, hive, id string) []string {
 	t.Helper()
-	r := a.get("/api/nuget/"+repo+"/v3/"+hive+"/"+strings.ToLower(id)+"/index.json").want(t, hive+" index", 200)
+	r := a.get(nugetBase+repo+"/v3/"+hive+"/"+strings.ToLower(id)+"/index.json").want(t, hive+" index", 200)
 	var doc struct {
 		Items []struct {
 			Items []struct {
@@ -49,7 +49,7 @@ func registrationVersions(t testing.TB, a *api, repo, hive, id string) []string 
 // searchVersions returns the versions of every hit of a search, keyed by the lower-case ID of the hit.
 func searchVersions(t testing.TB, a *api, repo, q string) map[string][]string {
 	t.Helper()
-	r := a.get("/api/nuget/"+repo+"/v3/search?prerelease=true&take=50&q="+q).want(t, "search", 200)
+	r := a.get(nugetBase+repo+"/v3/search?prerelease=true&take=50&q="+q).want(t, "search", 200)
 	var doc struct {
 		Data []struct {
 			ID       string `json:"id"`
@@ -88,7 +88,7 @@ func TestNuGetEndpoint(t *testing.T) {
 	// the rule: the package from 2.0 on (the bare notation: 2.0 or higher), no pre-releases
 	ruleName := "nuget-sdk-" + fx.run
 	rule := map[string]any{
-		"name": ruleName, "repository": nugetCustKey, "enabled": true,
+		"name": ruleName, "repository": qn(nugetCustKey), "enabled": true,
 		"packages":    map[string]any{"include": []string{sdk}, "exclude": []string{}},
 		"versions":    map[string]any{"include": []string{}, "exclude": []string{}, "range": "2.0"},
 		"prereleases": false,
@@ -109,7 +109,7 @@ func TestNuGetEndpoint(t *testing.T) {
 	defer stop()
 	for i, p := range pods {
 		waitFor(t, fmt.Sprintf("replica %d to serve exactly the exposed versions", i), 15*time.Second, 200*time.Millisecond, func() bool {
-			r := p.get("/api/nuget/" + nugetCustKey + "/v3/flatcontainer/" + lower + "/index.json")
+			r := p.get(nugetBase + nugetCustKey + "/v3/flatcontainer/" + lower + "/index.json")
 			return r.Status == 200 && strings.Contains(string(r.Body), "2.0.0") && !strings.Contains(string(r.Body), "1.9.0")
 		})
 	}
@@ -119,7 +119,7 @@ func TestNuGetEndpoint(t *testing.T) {
 		var list struct {
 			Versions []string `json:"versions"`
 		}
-		api.get("/api/nuget/"+nugetCustKey+"/v3/flatcontainer/"+lower+"/index.json").want(t, "version list", 200).JSON(t, &list)
+		api.get(nugetBase+nugetCustKey+"/v3/flatcontainer/"+lower+"/index.json").want(t, "version list", 200).JSON(t, &list)
 		if !slices.Equal(list.Versions, exposed) {
 			t.Fatalf("version list = %v, want %v", list.Versions, exposed)
 		}
@@ -136,19 +136,19 @@ func TestNuGetEndpoint(t *testing.T) {
 			t.Fatalf("search lists %s, which no rule exposes", internal)
 		}
 		// a hidden version is a missing one: its .nupkg is the 404 of R-EP-013, an exposed one downloads
-		api.get("/api/nuget/"+nugetCustKey+"/v3/flatcontainer/"+lower+"/1.9.0/"+lower+".1.9.0.nupkg").want(t, "the .nupkg of a hidden version", 404)
-		api.get("/api/nuget/"+nugetCustKey+"/v3/flatcontainer/"+lower+"/2.1.0/"+lower+".2.1.0.nupkg").want(t, "the .nupkg of an exposed version", 200)
+		api.get(nugetBase+nugetCustKey+"/v3/flatcontainer/"+lower+"/1.9.0/"+lower+".1.9.0.nupkg").want(t, "the .nupkg of a hidden version", 404)
+		api.get(nugetBase+nugetCustKey+"/v3/flatcontainer/"+lower+"/2.1.0/"+lower+".2.1.0.nupkg").want(t, "the .nupkg of an exposed version", 200)
 	})
 
 	t.Run("R-NUGET-034 E3.7 the service index lists no publish resource and a push answers 403", func(t *testing.T) {
-		idx := api.get("/api/nuget/"+nugetCustKey+"/v3/index.json").want(t, "service index on customers", 200)
+		idx := api.get(nugetBase+nugetCustKey+"/v3/index.json").want(t, "service index on customers", 200)
 		if strings.Contains(string(idx.Body), "PackagePublish") {
 			t.Fatalf("the index on customers lists a publish resource:\n%s", idx)
 		}
-		if def := fx.adm.get("/api/nuget/"+nugetCustKey+"/v3/index.json").want(t, "service index on the default endpoint", 200); !strings.Contains(string(def.Body), "PackagePublish") {
+		if def := fx.adm.get(nugetBase+nugetCustKey+"/v3/index.json").want(t, "service index on the default endpoint", 200); !strings.Contains(string(def.Body), "PackagePublish") {
 			t.Fatalf("the index on the default endpoint lists no publish resource, so the comparison proves nothing:\n%s", def)
 		}
-		push := api.do(http.MethodPut, "/api/nuget/"+nugetCustKey+"/v3/package", "x", "X-NuGet-ApiKey", bound)
+		push := api.do(http.MethodPut, nugetBase+nugetCustKey+"/v3/package", "x", "X-NuGet-ApiKey", bound)
 		if push.Status != 403 || !strings.Contains(push.String(), "endpoint_read_only") {
 			t.Fatalf("push on customers answered %s, want 403 endpoint_read_only", push)
 		}

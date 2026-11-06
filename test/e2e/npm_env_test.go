@@ -83,7 +83,7 @@ func buildNPMFixture(t testing.TB) (*npmFixture, error) {
 	fx := &npmFixture{adm: adm, run: hex.EncodeToString(b), stubHost: os.Getenv("TROVE_E2E_NPMSTUB_HOST")}
 
 	create := func(body map[string]any) (reply, error) {
-		return adm.send(http.MethodPost, "/api/v1/repositories", body)
+		return adm.send(http.MethodPost, reposRoute, body)
 	}
 	r, err := create(map[string]any{"key": npmLocalKey, "class": "local", "format": "npm", "requireAuthentication": true})
 	if err != nil {
@@ -149,7 +149,7 @@ func (fx *npmFixture) registry() string { return npmAllKey }
 
 // registryURL is the base URL of a repository as the setup snippets print it (R-NPM-041): the edge's address.
 func registryURL(t testing.TB, host, key string) string {
-	return "https://" + host + ":" + edgePort(t) + "/api/npm/" + key + "/"
+	return "https://" + host + ":" + edgePort(t) + npmBase + key + "/"
 }
 
 // pkgName is a package name of this run: unique per row and run, so a rerun on the same cluster never meets

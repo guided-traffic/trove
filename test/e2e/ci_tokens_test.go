@@ -52,12 +52,12 @@ func TestCITokens(t *testing.T) {
 		pod := npmClientPod(t, 1)
 		root := "/work/ci-client-npm-" + fx.run
 		_, _ = podExec(t, pod, "", time.Minute, "rm", "-rf", root)
-		putTree(t, pod, root, map[string]string{".npmrc": fmt.Sprintf("registry=%s/api/npm/%s/\n//%s/api/npm/%s/:_authToken=${TROVE_TOKEN}\n", fx.base, ciNpmAll, fx.host, ciNpmAll)})
+		putTree(t, pod, root, map[string]string{".npmrc": fmt.Sprintf("registry=%s%s%s/\n//%s%s%s/:_authToken=${TROVE_TOKEN}\n", fx.base, npmBase, ciNpmAll, fx.host, npmBase, ciNpmAll)})
 		npmEnv := []string{
 			"env", "-C", root, "HOME=" + root + "/home", "NODE_EXTRA_CA_CERTS=/etc/trove-ca/ca.crt", "TROVE_TOKEN=" + tok,
 			"npm_config_update_notifier=false", "npm_config_cache=" + root + "/cache",
 		}
-		out, code := podExec(t, pod, "", 2*time.Minute, append(append([]string{}, npmEnv...), "npm11", "whoami", "--registry", fx.base+"/api/npm/"+ciNpmAll+"/")...)
+		out, code := podExec(t, pod, "", 2*time.Minute, append(append([]string{}, npmEnv...), "npm11", "whoami", "--registry", fx.base+npmBase+ciNpmAll+"/")...)
 		if code != 0 || strings.TrimSpace(out) == "" {
 			t.Errorf("npm whoami with the CI token exited %d: %s", code, out)
 		}
@@ -81,7 +81,7 @@ func TestCITokens(t *testing.T) {
 		if out, code := run("dotnet", "pack", "src/Acme.Billing.InvoiceApi/Acme.Billing.InvoiceApi.csproj", "-c", "Release", "-o", "out", "--no-restore", "-p:PackageVersion=1.5.0"); code != 0 {
 			t.Fatalf("dotnet pack exited %d:\n%s", code, tailLines(out, 30))
 		}
-		if out, code := run("dotnet", "nuget", "push", "out/"+nugetPackageID+".1.5.0.nupkg", "-s", fx.base+"/api/nuget/"+ciNugetInt+"/v3/index.json", "-k", tok); code != 0 || !pushedRE.MatchString(out) {
+		if out, code := run("dotnet", "nuget", "push", "out/"+nugetPackageID+".1.5.0.nupkg", "-s", fx.base+nugetBase+ciNugetInt+"/v3/index.json", "-k", tok); code != 0 || !pushedRE.MatchString(out) {
 			t.Errorf("dotnet nuget push -k exited %d:\n%s", code, tailLines(out, 30))
 		}
 		if !contains(fx.versionsOfNuGet(t, ciNugetInt, nugetPackageID), "1.5.0") {
@@ -92,7 +92,7 @@ func TestCITokens(t *testing.T) {
 		cur := newAPI(t).withToken(tok)
 		cur.do(http.MethodGet, "/api/v1/tokens/current", nil).want(t, "GET /api/v1/tokens/current with a CI token", 200)
 		cur.do(http.MethodDelete, "/api/v1/tokens/current", nil).want(t, "DELETE /api/v1/tokens/current with a CI token", 204)
-		out, code = podExec(t, pod, "", 2*time.Minute, append(append([]string{}, npmEnv...), "npm11", "view", npmPackageName, "--registry", fx.base+"/api/npm/"+ciNpmAll+"/")...)
+		out, code = podExec(t, pod, "", 2*time.Minute, append(append([]string{}, npmEnv...), "npm11", "view", npmPackageName, "--registry", fx.base+npmBase+ciNpmAll+"/")...)
 		if code == 0 || !strings.Contains(out, "401") {
 			t.Errorf("npm view with the revoked token: exit %d, want a failure with 401:\n%s", code, tailLines(out, 20))
 		}

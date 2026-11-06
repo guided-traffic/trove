@@ -88,11 +88,11 @@ func buildUpgradeFixture(t *testing.T) *upgradeFx {
 	fx.nugetRemote = "nuget-upgrade-" + fx.nuget.run + "-remote"
 	fx.nugetAll = "nuget-upgrade-" + fx.nuget.run + "-all"
 	adm := fx.nuget.adm
-	adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+	adm.do(http.MethodPost, reposRoute, map[string]any{
 		"key": fx.nugetRemote, "class": "remote", "format": "nuget", "requireAuthentication": true,
 		"remote": map[string]any{"url": "https://" + apiHost + "/v3/index.json", "extraHosts": []map[string]any{{"pattern": contentHost, "sendCredentials": false}}},
 	}).want(t, "create "+fx.nugetRemote, 201)
-	adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+	adm.do(http.MethodPost, reposRoute, map[string]any{
 		"key": fx.nugetAll, "class": "virtual", "format": "nuget", "requireAuthentication": true,
 		"virtual": map[string]any{"members": []string{nugetAuthKey, fx.nugetRemote}, "deployTarget": nugetAuthKey},
 	}).want(t, "create "+fx.nugetAll, 201)
@@ -102,7 +102,7 @@ func buildUpgradeFixture(t *testing.T) *upgradeFx {
 	waitFor(t, "the NuGet publisher to read the virtual repository on at least two replicas", 60*time.Second, 500*time.Millisecond, func() bool {
 		seen := map[string]bool{}
 		for range 12 {
-			r := newAPI(t).withToken(fx.nuget.token).get("/api/nuget/" + fx.nugetAll + "/v3/index.json")
+			r := newAPI(t).withToken(fx.nuget.token).get(nugetBase + fx.nugetAll + "/v3/index.json")
 			if r.Status != 200 {
 				return false
 			}

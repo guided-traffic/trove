@@ -50,7 +50,7 @@ func TestNPMProjectPartner(t *testing.T) {
 		pub := fx.clientOn(t, "npm11", 0, local, "projpub")
 		pub.token = tok.Token
 		pub.publish(name, "1.0.0")
-		r := fx.adm.withToken(tok.Token).get("/api/npm/"+local+"/"+url.PathEscape(name)).want(t, "the package document in the project's repository", 200)
+		r := fx.adm.withToken(tok.Token).get(npmBase+local+"/"+url.PathEscape(name)).want(t, "the package document in the project's repository", 200)
 		if !strings.Contains(string(r.Body), `"1.0.0"`) {
 			t.Fatalf("the document of %s in %s does not list 1.0.0:\n%s", name, local, r)
 		}
@@ -75,7 +75,7 @@ func TestNPMProjectPartner(t *testing.T) {
 
 	t.Run("R-AUTHZ-026 what lies outside the project is a 404 for the partner", func(t *testing.T) {
 		api := fx.adm.withToken(tok.Token)
-		api.get("/api/npm/"+npmLocalKey+"/"+url.PathEscape(outside)).want(t, "a package of a repository outside the project", 404)
+		api.get(npmBase+npmLocalKey+"/"+url.PathEscape(outside)).want(t, "a package of a repository outside the project", 404)
 		c := fx.clientOn(t, "npm11", 2, npmLocalKey, "projout404")
 		c.token = tok.Token
 		d := c.project("consume", nil)
@@ -83,7 +83,7 @@ func TestNPMProjectPartner(t *testing.T) {
 		r := c.run(d, c.addCmd(outside)...)
 		c.expectRefusal(t, "the install of a package outside the project", r, "E404", 30*time.Second)
 		// the project's own repositories and the partner's read-only rights: nothing is writable but the local repository
-		push := api.do(http.MethodPut, "/api/npm/"+remote+"/"+url.PathEscape(name), map[string]any{"name": name}).want(t, "a publish into the remote member", 403)
+		push := api.do(http.MethodPut, npmBase+remote+"/"+url.PathEscape(name), map[string]any{"name": name}).want(t, "a publish into the remote member", 403)
 		t.Logf("a publish into the project's remote repository answers %s", push)
 	})
 

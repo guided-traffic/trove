@@ -96,7 +96,7 @@ func (p *partnerProject) repository(body map[string]any, suffix string) string {
 	p.t.Helper()
 	key := p.key + "-" + suffix
 	body["key"], body["project"] = key, p.key
-	p.bob.do(http.MethodPost, "/api/v1/repositories", body).want(p.t, "the project administrator creates "+key, 201)
+	p.bob.do(http.MethodPost, reposRoute, body).want(p.t, "the project administrator creates "+key, 201)
 	p.repos = append(p.repos, key)
 	return key
 }

@@ -45,14 +45,14 @@ func TestNPMPerf(t *testing.T) {
 		// R-API-016's package_read budget is per token: twenty tokens carry P-7's 2,000 requests/s
 		tokens := pacedSATokens(t, adm, perfSA, 20, 3600)
 		local := func(p string) string {
-			return strings.Replace(p, "/api/npm/"+npmAllKey+"/", "/api/npm/"+npmLocalKey+"/", 1)
+			return strings.Replace(p, npmBase+npmAllKey+"/", npmBase+npmLocalKey+"/", 1)
 		}
 		var localDocs, virtualDocs []string
 		for _, name := range append(append([]string{}, h.locals...), h.blobPkg, h.smallPkg) {
-			localDocs = append(localDocs, "/api/npm/"+npmLocalKey+"/"+pathEscapeName(name))
+			localDocs = append(localDocs, npmBase+npmLocalKey+"/"+pathEscapeName(name))
 		}
 		for _, name := range h.remoteRoots {
-			virtualDocs = append(virtualDocs, "/api/npm/"+npmAllKey+"/"+pathEscapeName(name))
+			virtualDocs = append(virtualDocs, npmBase+npmAllKey+"/"+pathEscapeName(name))
 		}
 		fixture, _ := json.Marshal(map[string]any{
 			"tarball_1mib": local(h.blob1MiB), "tarball_50kib": local(h.small50KiB),

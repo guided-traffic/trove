@@ -100,7 +100,7 @@ func requireTroveAddresses(t *testing.T, what string, raw []byte, prefix string)
 
 // repoPrefix is the start of every address a repository's documents may name: <base>/api/nuget/<key>/v3/.
 func repoPrefix(key string) string {
-	return strings.TrimRight(cfg.edgeURL, "/") + "/api/nuget/" + key + "/v3/"
+	return strings.TrimRight(cfg.edgeURL, "/") + nugetBase + key + "/v3/"
 }
 
 // registrationLeaves reads the SemVer 2.0.0 registration of an ID through a repository the way a client finds it (the
@@ -109,7 +109,7 @@ func repoPrefix(key string) string {
 func registrationLeaves(t *testing.T, a *api, key, lowerID string) []string {
 	t.Helper()
 	prefix := repoPrefix(key)
-	idx := a.get("/api/nuget/"+key+"/v3/index.json").want(t, "the service index of "+key, 200)
+	idx := a.get(nugetBase+key+"/v3/index.json").want(t, "the service index of "+key, 200)
 	requireTroveAddresses(t, "the service index of "+key, idx.Body, prefix)
 	var service struct {
 		Resources []struct {
@@ -188,12 +188,12 @@ func TestNuGetClosingPublic(t *testing.T) {
 	remote, all := "nuget-public-"+fx.run+"-remote", "nuget-public-"+fx.run+"-all"
 	// No extraHosts: a remote of nuget.org's index admits *.nuget.org by default, where nuget.org serves its search and
 	// its package content (R-NUGET-014).
-	fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
 		"key": remote, "class": "remote", "format": "nuget", "requireAuthentication": true,
 		"remote": map[string]any{"url": nugetOrgIndex},
 	}).want(t, "create "+remote, 201)
 	t.Cleanup(func() { deleteRepository(t, fx.adm, remote) })
-	fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
 		"key": all, "class": "virtual", "format": "nuget", "requireAuthentication": true,
 		"virtual": map[string]any{"members": []string{nugetAuthKey, remote}, "deployTarget": nugetAuthKey},
 	}).want(t, "create "+all, 201)
@@ -219,7 +219,7 @@ func TestNuGetClosingPublic(t *testing.T) {
 			t.Errorf("%s is listed with %d downloads, want nuget.org's count (R-NUGET-016 keeps the download counts)", nugetOrgOne, downloads)
 		}
 		a := newAPI(t).withToken(fx.token)
-		r := a.get("/api/nuget/"+remote+"/v3/search?q=newtonsoft&take=20&semVerLevel=2.0.0").want(t, "search through "+remote, 200)
+		r := a.get(nugetBase+remote+"/v3/search?q=newtonsoft&take=20&semVerLevel=2.0.0").want(t, "search through "+remote, 200)
 		requireTroveAddresses(t, "the search answer of "+remote, r.Body, repoPrefix(remote))
 	})
 

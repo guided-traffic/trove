@@ -451,12 +451,12 @@ func buildCIFixture(t testing.TB) (*ciFixture, error) {
 			"virtual": map[string]any{"members": []string{ciNugetInt}, "deployTarget": ciNugetInt},
 		},
 	} {
-		adm.do(http.MethodPost, "/api/v1/repositories", body).want(t, fmt.Sprint("create ", body["key"]), 201)
+		adm.do(http.MethodPost, reposRoute, body).want(t, fmt.Sprint("create ", body["key"]), 201)
 	}
 	// the policy of the mapping: no entry yet, the save of a mapping that lists it adds its own (R-CI-013)
 	adm.do(http.MethodPost, "/api/v1/permission-policies", map[string]any{
 		"name": ciPolicyName, "description": "end-to-end tests: read on the internal repositories",
-		"resources": map[string]any{"repositories": []string{ciNpmInt, ciNpmAll, ciNugetInt, ciNugetAll}}, "entries": []any{},
+		"resources": map[string]any{"repositories": qualifyAll([]string{ciNpmInt, ciNpmAll, ciNugetInt, ciNugetAll})}, "entries": []any{},
 	}).want(t, "create the policy "+ciPolicyName, 201)
 	// the setup account publishes the packages that the reference projects depend on
 	ensureSA(t, adm, ciSetupSA)
@@ -504,7 +504,7 @@ func ciCleanSlate(t testing.TB, adm *api) {
 	}
 	for _, key := range []string{ciNpmAll, ciNugetAll, ciNpmInt, ciNugetInt} {
 		waitFor(t, "the repository key "+key+" to be free", 3*time.Minute, 2*time.Second, func() bool {
-			return adm.get("/api/v1/repositories/"+key).Status == 404
+			return adm.get(reposBase+key).Status == 404
 		})
 	}
 }
@@ -852,7 +852,7 @@ func (fx *ciFixture) publishDependencies(t testing.TB) error {
 	root := "/work/ci-setup-" + fx.run
 	_, _ = podExec(t, pod, "", time.Minute, "rm", "-rf", root)
 	rc := func(key string) string {
-		return fmt.Sprintf("registry=%s/api/npm/%s/\n//%s/api/npm/%s/:_authToken=${TROVE_TOKEN}\n", fx.base, key, fx.host, key)
+		return fmt.Sprintf("registry=%s%s%s/\n//%s%s%s/:_authToken=${TROVE_TOKEN}\n", fx.base, npmBase, key, fx.host, npmBase, key)
 	}
 	putTree(t, pod, root, map[string]string{
 		"lib/package.json": `{"name": "` + npmDependency + `", "version": "1.0.0", "main": "index.js"}` + "\n",
@@ -891,7 +891,7 @@ func (fx *ciFixture) publishDependencies(t testing.TB) error {
 		"nuget.config": `<?xml version="1.0" encoding="utf-8"?><configuration><packageSources><clear /></packageSources></configuration>` + "\n",
 		// the push source needs credentials of its own: the service index is fetched before the API key is sent
 		"push/nuget.config": `<?xml version="1.0" encoding="utf-8"?><configuration><packageSources><clear />
-<add key="trove-internal" value="` + fx.base + `/api/nuget/` + ciNugetInt + `/v3/index.json" /></packageSources>
+<add key="trove-internal" value="` + fx.base + nugetBase + ciNugetInt + `/v3/index.json" /></packageSources>
 <packageSourceCredentials><trove-internal><add key="Username" value="ci" /><add key="ClearTextPassword" value="%TROVE_TOKEN%" /></trove-internal></packageSourceCredentials></configuration>` + "\n",
 	})
 	nenv := []string{
@@ -901,7 +901,7 @@ func (fx *ciFixture) publishDependencies(t testing.TB) error {
 	if out, code := podExec(t, pod, "", 10*time.Minute, append(append([]string{}, nenv...), "dotnet", "pack", "lib.csproj", "-c", "Release", "-o", "out", "--nologo")...); code != 0 {
 		return fmt.Errorf("dotnet pack of %s: %d\n%s", nugetDependency, code, tailLines(out, 30))
 	}
-	source := fx.base + "/api/nuget/" + ciNugetInt + "/v3/index.json"
+	source := fx.base + nugetBase + ciNugetInt + "/v3/index.json"
 	if out, code := podExec(t, pod, "", 5*time.Minute, append(append([]string{}, nenv...), "sh", "-c", `cd push && dotnet nuget push ../out/`+nugetDependency+`.1.0.0.nupkg --source "$1" --api-key "$TROVE_TOKEN"`, "sh", source)...); code != 0 || !pushedRE.MatchString(out) {
 		return fmt.Errorf("push %s 1.0.0: %d\n%s", nugetDependency, code, tailLines(out, 30))
 	}

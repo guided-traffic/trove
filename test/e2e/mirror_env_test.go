@@ -138,7 +138,7 @@ func (e *mirrorEnv) removeStaleMirrors(t testing.TB) {
 			Key string `json:"key"`
 		} `json:"items"`
 	}
-	e.adm.get("/api/v1/repositories?limit=500").want(t, "list the repositories", 200).JSON(t, &l)
+	e.adm.get(reposRoute + "?limit=500").want(t, "list the repositories", 200).JSON(t, &l)
 	for _, it := range l.Items {
 		if strings.HasPrefix(it.Key, "npm-mirror-") || strings.HasPrefix(it.Key, "nuget-mirror-") {
 			deleteRepository(t, e.adm, it.Key)
@@ -180,7 +180,7 @@ func (e *mirrorEnv) create(t testing.TB, body map[string]any) string {
 	t.Helper()
 	key, _ := body["key"].(string)
 	body["class"], body["requireAuthentication"] = "remote", true
-	e.adm.do(http.MethodPost, "/api/v1/repositories", body).want(t, "create "+key, 201)
+	e.adm.do(http.MethodPost, reposRoute, body).want(t, "create "+key, 201)
 	e.mu.Lock()
 	e.repos = append(e.repos, key)
 	e.mu.Unlock()
@@ -198,7 +198,7 @@ func (e *mirrorEnv) drop(t testing.TB, keys ...string) {
 	}
 	for _, key := range keys {
 		deadline := time.Now().Add(3 * time.Minute)
-		for e.adm.get("/api/v1/repositories/"+key).Status != http.StatusNotFound {
+		for e.adm.get(reposBase+key).Status != http.StatusNotFound {
 			if time.Now().After(deadline) {
 				t.Errorf("the repository %s is still there 3 minutes after its deletion", key)
 				break
@@ -307,7 +307,7 @@ type mirrorStatus struct {
 // status reads the status through the API at a (the edge, or one api pod).
 func mirrorStatusAt(t testing.TB, a *api, key string) mirrorStatus {
 	t.Helper()
-	r := a.get("/api/v1/repositories/"+key+"/mirror").want(t, "status of the mirror of "+key, 200)
+	r := a.get(reposBase+key+"/mirror").want(t, "status of the mirror of "+key, 200)
 	var s mirrorStatus
 	r.JSON(t, &s)
 	s.Raw = r.Body
@@ -322,7 +322,7 @@ func (e *mirrorEnv) status(t testing.TB, key string) mirrorStatus {
 func (e *mirrorEnv) run_(t testing.TB, key string, full bool) {
 	t.Helper()
 	for range 20 {
-		r := e.adm.do(http.MethodPost, "/api/v1/repositories/"+key+"/mirror/run", map[string]any{"full": full})
+		r := e.adm.do(http.MethodPost, reposBase+key+"/mirror/run", map[string]any{"full": full})
 		if r.Status == http.StatusTooManyRequests {
 			time.Sleep(2 * time.Second)
 			continue
@@ -389,7 +389,7 @@ func preempted(t testing.TB, key string) float64 {
 	var sum float64
 	for _, p := range readyPodsOf(t, selMirrorPool) {
 		for s, v := range metricsOf(t, p) {
-			if strings.HasPrefix(s, "trove_mirror_preempted_total{") && strings.Contains(s, `repo="`+key+`"`) {
+			if strings.HasPrefix(s, "trove_mirror_preempted_total{") && strings.Contains(s, `repo="`+qn(key)+`"`) {
 				sum += v
 			}
 		}
@@ -677,7 +677,7 @@ func mirrorTeardown() {
 		// a mirror that stays behind keeps dispatching passes in the cluster's next run
 		for _, key := range e.repos {
 			for range 10 {
-				r, err := e.adm.send(http.MethodDelete, "/api/v1/repositories/"+key, nil)
+				r, err := e.adm.send(http.MethodDelete, reposBase+key, nil)
 				if err != nil || r.Status != http.StatusTooManyRequests {
 					break
 				}
@@ -704,7 +704,7 @@ func npmReference(t testing.TB, key string) (pkg, lock string) {
 		t.Fatal(err)
 	}
 	// the lockfile names the repository npm-all on the edge's default port; the same prefix of the repository of this test
-	const committed = "https://localhost:8080/api/npm/npm-all/"
+	const committed = "https://localhost:8080/api/npm/e2e/npm-all/"
 	if !strings.Contains(string(l), committed) {
 		t.Fatalf("perf/npm/reference/package-lock.json no longer resolves from %s", committed)
 	}

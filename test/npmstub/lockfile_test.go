@@ -14,7 +14,7 @@ import (
 const lockfileDir = "../../perf/npm/reference/"
 
 // lockBase is where the lockfile's tarball addresses point: npm-all of the dev profile.
-const lockBase = "https://localhost:8080/api/npm/npm-all/"
+const lockBase = "https://localhost:8080/api/npm/e2e/npm-all/"
 
 func TestReferenceLockfileMatchesTheCorpus(t *testing.T) {
 	// E2.2: the reference lockfile has at least 500 packages, all from the corpus, with the

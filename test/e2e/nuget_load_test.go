@@ -133,7 +133,7 @@ func buildNuGetHAFixture(t *testing.T, fx *nugetFixture) *nugetHAFixture {
 			"virtual": map[string]any{"members": []string{nugetHALocal, nugetHARemote}, "deployTarget": nugetHALocal},
 		},
 	} {
-		r, err := adm.send(http.MethodPost, "/api/v1/repositories", body)
+		r, err := adm.send(http.MethodPost, reposRoute, body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -192,7 +192,7 @@ func buildNuGetHAFixture(t *testing.T, fx *nugetFixture) *nugetHAFixture {
 		ETags        map[string]string `json:"etags"`
 		Nupkgs       []map[string]any  `json:"nupkgs"`
 	}{ETags: map[string]string{}}
-	base := "/api/nuget/" + nugetHAAll + "/v3/"
+	base := nugetBase + nugetHAAll + "/v3/"
 	ids := append(append([]string{}, h.locals...), closure[:min(17, len(closure))]...)
 	for i, id := range ids {
 		lower := strings.ToLower(id)

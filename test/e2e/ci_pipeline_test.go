@@ -67,7 +67,7 @@ func (fx *ciFixture) tokenGets(t testing.TB, token, path string) int {
 // does not exist).
 func (fx *ciFixture) versionsOfNPM(t testing.TB, repo, name string) []string {
 	t.Helper()
-	r, err := newAPI(t).withToken(fx.setupTok).send(http.MethodGet, "/api/npm/"+repo+"/"+strings.Replace(name, "/", "%2F", 1), nil)
+	r, err := newAPI(t).withToken(fx.setupTok).send(http.MethodGet, npmBase+repo+"/"+strings.Replace(name, "/", "%2F", 1), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func (fx *ciFixture) versionsOfNPM(t testing.TB, repo, name string) []string {
 // versionsOfNuGet lists the versions of a package in a repository (flat container).
 func (fx *ciFixture) versionsOfNuGet(t testing.TB, repo, id string) []string {
 	t.Helper()
-	r, err := newAPI(t).withToken(fx.setupTok).send(http.MethodGet, "/api/nuget/"+repo+"/v3/flatcontainer/"+strings.ToLower(id)+"/index.json", nil)
+	r, err := newAPI(t).withToken(fx.setupTok).send(http.MethodGet, nugetBase+repo+"/v3/flatcontainer/"+strings.ToLower(id)+"/index.json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestCIPipeline(t *testing.T) {
 			if !strings.HasPrefix(r.Token, "trv_cit_") {
 				t.Fatalf("%s: the harness did not capture the job's CI token", what)
 			}
-			if got := fx.tokenGets(t, r.Token, "/api/npm/"+ciNpmAll+"/-/whoami"); got != 401 {
+			if got := fx.tokenGets(t, r.Token, npmBase+ciNpmAll+"/-/whoami"); got != 401 {
 				t.Errorf("%s: the revoked token answered %d, want 401", what, got)
 			}
 			// R-CI-020: the publish's audit entry in the repository carries the same token_id; the revocation is audited with reason owner
@@ -174,7 +174,7 @@ func TestCIPipeline(t *testing.T) {
 				repo = ciNugetInt
 			}
 			waitFor(t, what+": the audit entry of the publish in "+repo, 30*time.Second, time.Second, func() bool {
-				for _, e := range fx.audit(t, "repository="+repo) {
+				for _, e := range fx.audit(t, "repository="+qn(repo)) {
 					if e.Actor.TokenID == rec.TokenID && e.Outcome == "success" && writeAction.MatchString(e.Action) {
 						t.Logf("%s: audit entry %s of token %s", what, e.Action, rec.TokenID)
 						return true

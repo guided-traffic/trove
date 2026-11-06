@@ -279,7 +279,7 @@ func TestBastion_R_BAS_049_ReadOnly(t *testing.T) {
 			if after-before >= 64*1024 {
 				t.Errorf("the Bastion read %v bytes of an upload of 1.5 MB, want less than 64 KiB", after-before)
 			}
-			if r := env.adm.get("/api/npm/" + basNPMRepo + "/" + name); r.Status != 404 {
+			if r := env.adm.get(npmBase + basNPMRepo + "/" + name); r.Status != 404 {
 				t.Errorf("the refused package exists on the main installation: %s", r)
 			}
 		})
@@ -294,7 +294,7 @@ func TestBastion_R_BAS_049_ReadOnly(t *testing.T) {
 			if err == nil || pushedRE.MatchString(out) || !strings.Contains(out, "403") {
 				t.Fatalf("dotnet nuget push against the Bastion: err %v, want a failure with 403:\n%s", err, tailLines(out, 20))
 			}
-			if r := env.adm.get("/api/nuget/" + basNuGetRepo + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"); r.Status != 404 {
+			if r := env.adm.get(nugetBase + basNuGetRepo + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"); r.Status != 404 {
 				t.Errorf("the refused package exists on the main installation: %s", r)
 			}
 		})
@@ -308,7 +308,7 @@ func (e *basEnv) narrowPart(t testing.TB, include ...string) {
 	t.Helper()
 	body := map[string]any{
 		"name": basPartSA, "description": "end-to-end tests",
-		"resources": map[string]any{"repositories": []string{basNPMRepo}, "packages": map[string]any{"include": include}},
+		"resources": map[string]any{"repositories": qualifyAll([]string{basNPMRepo}), "packages": map[string]any{"include": include}},
 		"entries":   []map[string]any{{"principal": "sa:" + basPartSA, "actions": []string{"read"}}},
 	}
 	g := e.adm.get("/api/v1/permission-policies/"+basPartSA).want(t, "read the policy of $PART", 200)
