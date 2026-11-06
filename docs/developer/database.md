@@ -95,7 +95,7 @@ runner compares it with `max_connections` when `database.preflight.expected_*_re
 Files: `internal/meta/postgres/migrations/NNNNN_<name>.sql`, embedded. Numbers run 1..N without a gap. Until the first
 stable release there is no backward compatibility ([Q-ARCH-340](../spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): a migration file may be edited, a step
 may drop, rename or tighten anything, and nothing has to keep the previous release working against the new schema. The
-expand/contract rules of the files are switched off for that (`enforceMigrationPhases = false` in
+expand/contract rules of the files are switched off for that (`EnforceMigrationPhases = false` in
 [steps.go](../../internal/meta/postgres/steps.go); how to switch them on: [Switched off until the first stable release](releasing.md#switched-off-until-the-first-stable-release)), and so is the
 CI check that no migration on `main` changes (the job `compat`). A file may start with header comments, each of them optional
 while the rules are off:

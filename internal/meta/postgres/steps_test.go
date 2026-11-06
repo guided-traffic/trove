@@ -44,7 +44,7 @@ func TestEmbeddedSteps(t *testing.T) {
 }
 
 // TestParseSteps holds the expand/contract rules of R-HA-018 (strict), which are switched off until the first stable
-// release (enforceMigrationPhases, Q-ARCH-340): it runs them on, so they are ready when the switch is set again.
+// release (EnforceMigrationPhases, Q-ARCH-340): it runs them on, so they are ready when the switch is set again.
 func TestParseSteps(t *testing.T) {
 	ok := "-- trove:phase expand\nCREATE TABLE a (id int);\n"
 	cases := []struct {
@@ -279,10 +279,10 @@ func TestParseStepsRelaxed(t *testing.T) {
 			t.Fatalf("step = phase %q, requires-app %q, no-transaction %v", s.Phase, s.RequiresApp, s.NoTx)
 		}
 	})
-	t.Run("R-ARCH-026 ParseSteps applies the switch enforceMigrationPhases", func(t *testing.T) {
+	t.Run("R-ARCH-026 ParseSteps applies the switch EnforceMigrationPhases", func(t *testing.T) {
 		_, err := ParseSteps(files(map[string]string{"00001_a.sql": "CREATE TABLE a (id int);\n"}))
-		if (err == nil) == enforceMigrationPhases {
-			t.Fatalf("a file without a phase header: error %v with enforceMigrationPhases = %v", err, enforceMigrationPhases)
+		if (err == nil) == EnforceMigrationPhases {
+			t.Fatalf("a file without a phase header: error %v with EnforceMigrationPhases = %v", err, EnforceMigrationPhases)
 		}
 	})
 }
@@ -312,7 +312,7 @@ func TestRequiredSchemaBothModes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := RequiredSchema(), requiredSchema(embedded, enforceMigrationPhases); got != want {
+		if got, want := RequiredSchema(), requiredSchema(embedded, EnforceMigrationPhases); got != want {
 			t.Fatalf("RequiredSchema() = %d, want %d", got, want)
 		}
 	})

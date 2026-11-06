@@ -448,12 +448,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
   and the coverage evidence of the new named tests. Watch the `Test and Release` run of the push and fix what it finds
   (step 5). The branch `ui-review` and its worktree `/Users/hfi/repos/trove-ui-review` stay until the owner says to delete
   them.
-- **T-2 · Check the switched-off compatibility checks.** A background agent switched the checks off (not removed them) on
-  2026-11-06, uncommitted when this section was written: `make compat-check` and its CI job off and out of the release's `needs:`, `test/compat/` kept and
-  compiling, the migration phase rules behind `enforceMigrationPhases = false` with their strict-mode tests still running, the
-  nightly `upgrade` set only by dispatch (`-f sets=upgrade`), and one checklist "Switched off until the first stable release" in
-  [releasing.md](../developer/releasing.md). Its checks passed except `make versions-check` (the local buildx, F-17); it could not run the
-  integration tier, the `upgrade` set or `make compat-check` itself. Confirm each switch against the code and the checklist.
 
 ### Build what the owner decided (spec first, then code)
 

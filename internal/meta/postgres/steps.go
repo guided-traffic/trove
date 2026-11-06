@@ -21,14 +21,14 @@ const (
 	phaseContract = "contract"
 )
 
-// enforceMigrationPhases switches on the expand/contract rules of R-HA-018 for
+// EnforceMigrationPhases switches on the expand/contract rules of R-HA-018 for
 // the migration files: every file carries -- trove:phase, an expand step holds
 // no contract-class statement, and requiredSchema is the newest expand step.
 // Switched off until the first stable release (Q-ARCH-340): a file needs no
 // header, any step may drop, rename or tighten, and requiredSchema is the
 // highest number. Set it to true to switch the rules on again; the embedded
 // files must then pass them (TestEmbeddedSteps).
-const enforceMigrationPhases = false
+const EnforceMigrationPhases = false
 
 // Step is one migration file. The runner compares its checksum with the one
 // recorded in schema_migration, so a database that applied another version of
@@ -36,7 +36,7 @@ const enforceMigrationPhases = false
 type Step struct {
 	Version     int
 	Name        string // file name without ".sql", e.g. 00004_coordination
-	Phase       string // expand or contract; expand without a header while enforceMigrationPhases is off
+	Phase       string // expand or contract; expand without a header while EnforceMigrationPhases is off
 	NoTx        bool   // -- trove:no-transaction
 	RequiresApp string // contract steps: the oldest release allowed to serve afterwards
 	// RequiresBackground are the background data migrations a contract step depends on (-- trove:requires-background
@@ -63,7 +63,7 @@ func EmbeddedSteps() ([]Step, error) { return ParseSteps(EmbeddedFS()) }
 
 // RequiredSchema is the schema step this binary needs (R-HA-018): a replica
 // serves only once schema_state.applied reaches it. It is the newest expand step
-// while enforceMigrationPhases is on, and the newest step of any phase while it
+// while EnforceMigrationPhases is on, and the newest step of any phase while it
 // is off. It panics if the embedded migrations are invalid, which the unit tests
 // prevent.
 func RequiredSchema() int {
@@ -71,7 +71,7 @@ func RequiredSchema() int {
 	if err != nil {
 		panic("postgres: invalid embedded migrations: " + err.Error())
 	}
-	return requiredSchema(steps, enforceMigrationPhases)
+	return requiredSchema(steps, EnforceMigrationPhases)
 }
 
 // requiredSchema is the newest expand step under the expand/contract rules, so
@@ -90,8 +90,8 @@ func requiredSchema(steps []Step, strict bool) int {
 // ParseSteps reads every NNNNN_<name>.sql file in the root of fsys, checks the
 // headers of R-ARCH-026 and returns the steps in order. The numbers must run
 // 1..N without a gap, so a file that went missing is an error, not a silently
-// skipped step. The expand/contract rules apply while enforceMigrationPhases is on.
-func ParseSteps(fsys fs.FS) ([]Step, error) { return parseSteps(fsys, enforceMigrationPhases) }
+// skipped step. The expand/contract rules apply while EnforceMigrationPhases is on.
+func ParseSteps(fsys fs.FS) ([]Step, error) { return parseSteps(fsys, EnforceMigrationPhases) }
 
 // parseSteps is ParseSteps with the expand/contract rules on (strict) or off.
 func parseSteps(fsys fs.FS, strict bool) ([]Step, error) {

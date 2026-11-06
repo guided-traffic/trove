@@ -2069,7 +2069,7 @@ Priority: **MVP** · Covers: HA-066, OPS-074
 (owner, 2026-11-06, `CLAUDE.md`, [Q-ARCH-340](architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release)). N and N−1 need not run side by side against
 one schema, and an upgrade may need a new database; no rollback is supported. The rules of the
 migration files are switched off, ready to be switched on at the first stable release
-([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): with `enforceMigrationPhases = false` in
+([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): with `EnforceMigrationPhases = false` in
 `internal/meta/postgres/steps.go` every file header is optional, a step's phase does not restrict
 its statements, and `requiredSchema` is the highest migration number the binary embeds; with the job
 `compat` switched off, a migration file may be edited. The runner, the checksum check, the gate and

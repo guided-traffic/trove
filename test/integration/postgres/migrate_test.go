@@ -438,7 +438,6 @@ func TestContractGuard(t *testing.T) {
 		if got := scalar[string](t, admin, fmt.Sprintf("SELECT requires_app FROM trove.schema_migration WHERE version = %d", postgres.RequiredSchema()+2)); got != "0.4.0" {
 			t.Fatalf("requires_app = %q", got)
 		}
-		// requiredSchema counts expand steps only: the binary with these files needs one more than the embedded steps.
 		steps, _ := postgres.ParseSteps(stepsWith(t, contract(t)))
 		if len(steps) != postgres.RequiredSchema()+2 {
 			t.Fatalf("steps = %d", len(steps))
@@ -450,9 +449,15 @@ func TestContractGuard(t *testing.T) {
 		if rep.Servable || !strings.Contains(rep.Verdict, "schema requires trove >= 0.4.0") {
 			t.Fatalf("an N-2 binary must be refused: %+v", rep)
 		}
+		// The binary with these files needs the scratch expand step; with the phase rules on it does not need the contract
+		// step it ships, with them off (Q-ARCH-340) it needs the newest step of any phase.
+		wantRequired := postgres.RequiredSchema() + 2
+		if postgres.EnforceMigrationPhases {
+			wantRequired = postgres.RequiredSchema() + 1
+		}
 		rep, err = postgres.Status(ctxT(t, 30*time.Second), cfg, func() postgres.MigrateOptions { o := opts(stepsWith(t, contract(t))); o.Version = "0.4.0"; return o }())
-		if err != nil || !rep.Servable || rep.Binary.RequiredSchema != postgres.RequiredSchema()+1 {
-			t.Fatalf("0.4.0 must serve: %+v, %v", rep, err)
+		if err != nil || !rep.Servable || rep.Binary.RequiredSchema != wantRequired {
+			t.Fatalf("0.4.0 must serve and require step %d: %+v, %v", wantRequired, rep, err)
 		}
 	})
 

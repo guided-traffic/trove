@@ -223,7 +223,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if err := CheckBackgroundDependencies(steps, opts.Background); err != nil {
 		return res, err
 	}
-	res.RequiredSchema = requiredSchema(steps, enforceMigrationPhases)
+	res.RequiredSchema = requiredSchema(steps, EnforceMigrationPhases)
 
 	conn, err := sessionConn(ctx, cfg, opts, classMigrate)
 	if err != nil {
@@ -712,7 +712,7 @@ func Report(ctx context.Context, db q.DBTX, opts MigrateOptions) (StatusReport, 
 		return rep, err
 	}
 	rep.Schema.Applied, rep.Schema.CompatFloor = st.schemaApplied, st.compatFloor
-	rep.Binary.Version, rep.Binary.RequiredSchema = opts.Version, requiredSchema(steps, enforceMigrationPhases)
+	rep.Binary.Version, rep.Binary.RequiredSchema = opts.Version, requiredSchema(steps, EnforceMigrationPhases)
 	rep.Applied = appliedInfos(st.applied)
 	rep.Pending = []StepInfo{}
 	for _, s := range steps {

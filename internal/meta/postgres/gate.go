@@ -32,7 +32,7 @@ func (e *FloorError) Error() string { return "schema requires trove >= " + e.Flo
 // Gate is the compatibility gate of R-HA-018: a binary of version V serves iff
 // applied >= requiredSchema and compat_floor <= V. There is no upper bound on
 // applied: under the expand/contract rules newer expand steps do not make an
-// older binary incompatible; while they are switched off (enforceMigrationPhases,
+// older binary incompatible; while they are switched off (EnforceMigrationPhases,
 // Q-ARCH-340) nothing promises that an older binary works on a newer schema.
 // Below requiredSchema it returns an error wrapping ErrSchemaBehind; above the
 // floor a *FloorError. The floor is checked first, because a binary that is too

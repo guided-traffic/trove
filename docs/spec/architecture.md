@@ -4216,7 +4216,7 @@ Priority: **MVP** · Covers: OPS-073, OPS-074, HA-066, HA-069
 `CLAUDE.md`, [Q-ARCH-340](#q-arch-340--no-backward-compatibility-until-the-first-stable-release)): N and N-1 need not run against one schema, a migration file may be edited, renamed or
 removed, and a step may drop, rename or tighten whatever its phase. An upgrade may need a new database, and no rollback
 is supported. Two mechanisms are switched off, ready to be switched on at the first stable release ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): the
-CI checks of the migration files (job `compat`) and the expand/contract rules of the parser (`enforceMigrationPhases` in
+CI checks of the migration files (job `compat`) and the expand/contract rules of the parser (`EnforceMigrationPhases` in
 `internal/meta/postgres/steps.go`). The runner and the gates below stay on, because they protect the database a binary
 runs against, not an older version: the checksum check refuses a database that applied another version of a file (it is then
 recreated), a replica serves only once the schema reaches its `requiredSchema`, a half-restored database is refused,
@@ -4239,7 +4239,7 @@ Files:
   be edited, renamed or removed, and a database that applied an earlier version of an edited file
   fails step 3 below and is recreated.
 - A file starts with trove's header comments. While the expand/contract rules are switched off
-  (`enforceMigrationPhases = false`), every one of them is optional:
+  (`EnforceMigrationPhases = false`), every one of them is optional:
   - `-- trove:phase expand` or `-- trove:phase contract`, which is R-HA-018's class. With the rules
     on every file has exactly one; with them off, a file without it is an expand step;
   - `-- trove:no-transaction` on a step that cannot run in a transaction block, such as
@@ -9143,7 +9143,7 @@ blocks a change the rule asks for, or reports it as a failure.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Switch the machinery off until the first stable release (chosen) | The job `compat` gets `if: false` and leaves the needs of Semantic Release; the parser's expand/contract rules sit behind `enforceMigrationPhases = false`, under which every header is optional, a step's phase does not restrict its statements and `requiredSchema` is the highest step; the nightly run skips the set `upgrade`, which a dispatch still runs. `make compat-check`, `test/compat`, the oasdiff pin, the strict parser and its tests stay, built, linted and pinned. The runtime checks stay on: the checksum check, the gate on `requiredSchema` and `compat_floor`, the half-restored refusal, the contract guard of a step that declares itself a contract step. The format-contract freeze and the Bastion interface version stay on | A breaking change costs only the spec, the documentation and the tests that change with it; a defect in a migration is fixed in its file; each check returns with a one-line edit, and its code and tests do not rot meanwhile | A database that applied an edited file is refused by the checksum check and has to be recreated; switched-off code is carried along until the first stable release |
+| (a) Switch the machinery off until the first stable release (chosen) | The job `compat` gets `if: false` and leaves the needs of Semantic Release; the parser's expand/contract rules sit behind `EnforceMigrationPhases = false`, under which every header is optional, a step's phase does not restrict its statements and `requiredSchema` is the highest step; the nightly run skips the set `upgrade`, which a dispatch still runs. `make compat-check`, `test/compat`, the oasdiff pin, the strict parser and its tests stay, built, linted and pinned. The runtime checks stay on: the checksum check, the gate on `requiredSchema` and `compat_floor`, the half-restored refusal, the contract guard of a step that declares itself a contract step. The format-contract freeze and the Bastion interface version stay on | A breaking change costs only the spec, the documentation and the tests that change with it; a defect in a migration is fixed in its file; each check returns with a one-line edit, and its code and tests do not rot meanwhile | A database that applied an edited file is refused by the checksum check and has to be recreated; switched-off code is carried along until the first stable release |
 | (b) Keep the checks running and override them per breaking change | Every breaking change carries a waiver: an allowlist entry for an edited migration, an exception for an OpenAPI change | The checks guard every change that is not waived | Every change the rule expects pays a waiver, and the lists grow with every change; `historicalEdits` of Q-ARCH-283 already shows that cost with two entries |
 | (c) Dismantle the machinery | Remove the job, the target, `test/compat`, the pin and the strict rules | No switched-off code in the tree | The checks come back at the first stable release, and then have to be rebuilt or restored from the history and brought up to date with everything that changed meanwhile |
 
@@ -9164,7 +9164,7 @@ Files, the paragraph on squashing, the acceptance criteria), [ha-and-helm.md](ha
 compatibility window, the immutability bullet, the acceptance criteria), R-HA-019 (Rollback), R-HA-020, R-HA-021 and R-HA-064 (the
 notes). Code: the job `compat` of `.github/workflows/release.yml` (`if: false`, out of the needs of `semantic-release`, its
 constant condition ignored in `.github/actionlint.yaml`), the job `e2e-upgrade` of `.github/workflows/performance.yml` (a dispatch
-with `sets=upgrade` only), `enforceMigrationPhases` in `internal/meta/postgres/steps.go` (`parseSteps`, `parseStep` and
+with `sets=upgrade` only), `EnforceMigrationPhases` in `internal/meta/postgres/steps.go` (`parseSteps`, `parseStep` and
 `requiredSchema` take the mode), the message of `verifyApplied` in `internal/meta/postgres/migrate.go`. Tests: `TestParseSteps`
 (the rules on), `TestParseStepsRelaxed` (off), `TestRequiredSchemaBothModes`, `TestEmbeddedSteps`, `TestGate`.
 
