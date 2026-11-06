@@ -108,6 +108,6 @@ func (p *pass) record(ctx context.Context, typ string, outcome audit.Outcome, re
 	d, _ := json.Marshal(details)
 	p.e.o.Audit.Record(context.WithoutCancel(ctx), audit.Event{
 		Type: typ, Actor: audit.Actor{Kind: "system", Name: "mirror"}, Outcome: outcome, Reason: reason,
-		Subject: audit.Subject{Kind: "repository", Name: p.key}, Repository: p.key, Details: d,
+		Subject: audit.Subject{Kind: "repository", Name: p.key.String()}, Repository: p.key.String(), Project: p.key.Project, Details: d,
 	})
 }

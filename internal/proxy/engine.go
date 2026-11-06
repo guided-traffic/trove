@@ -335,7 +335,7 @@ func (e *Engine) denyFill(ctx context.Context, rq Request) error {
 		}
 	}
 	return errs.E(errs.Forbidden, errs.CodePopulateNotPermitted,
-		"The caller may read "+rq.Remote.Repo.Name+" but not bring new content into its cache.")
+		"The caller may read "+rq.Remote.Repo.Name.String()+" but not bring new content into its cache.")
 }
 
 func notStored(m Mode) error {
@@ -347,7 +347,7 @@ func notStored(m Mode) error {
 
 func offlineMiss(rem Remote) error {
 	return errs.E(errs.NotFound, errs.CodeNotCachedOffline,
-		rem.Repo.Name+" is offline and the item is not in its cache.")
+		rem.Repo.Name.String()+" is offline and the item is not in its cache.")
 }
 
 func assumedOffline(retry time.Duration) *errs.Error {
@@ -376,15 +376,15 @@ func (e *Engine) event(rq Request, typ string, details map[string]any) audit.Eve
 	rem := rq.Remote
 	return audit.Event{
 		Type: typ, Actor: auditActor(rq.Caller), Outcome: audit.Failure, Source: rq.Caller.Source,
-		Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Name},
-		Repository: rem.Repo.Name, Path: rq.Path, Endpoint: rq.Caller.Endpoint, Details: mustJSON(details),
+		Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Name.String()},
+		Repository: rem.Repo.Name.String(), Path: rq.Path, Endpoint: rq.Caller.Endpoint, Details: mustJSON(details),
 	}
 }
 
 // securityEvent writes a security event about a broken upstream at most once a
 // minute per repository, kind and host: a broken upstream fails every request.
 func (e *Engine) securityEvent(ctx context.Context, rq Request, typ, host string, details map[string]string) {
-	if !e.throttle(rq.Remote.Repo.Name+"\x00"+typ+"\x00"+host, time.Minute) {
+	if !e.throttle(rq.Remote.Repo.Name.String()+"\x00"+typ+"\x00"+host, time.Minute) {
 		return
 	}
 	d := make(map[string]any, len(details))

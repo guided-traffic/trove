@@ -85,6 +85,13 @@ func toRow(t EventType, ev Event, id string, at time.Time, replica string) (row,
 	if r.Repository == "" && ev.Subject.Kind == "repository" {
 		r.Repository = clip(firstNonEmpty(ev.Subject.Name, ev.Subject.ID), maxText)
 	}
+	if r.Project == "" {
+		// A repository is recorded by its qualified name <project>/<key>: the project column follows it
+		// (Q-AUTHZ-209).
+		if project, _, ok := strings.Cut(r.Repository, "/"); ok {
+			r.Project = clip(project, maxText)
+		}
+	}
 	if r.ActorType == "" {
 		return r, fmt.Errorf("%w: %s has no actor kind", ErrInvalidEvent, t.Name)
 	}

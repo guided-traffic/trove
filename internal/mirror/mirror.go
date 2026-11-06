@@ -16,6 +16,10 @@
 // package C.
 package mirror
 
+import (
+	"github.com/guided-traffic/trove/internal/qname"
+)
+
 import "strconv"
 
 // The job kinds and the queue of the mirror (architecture.md R-ARCH-016, Q-REPO-131, Q-ARCH-285).
@@ -42,7 +46,7 @@ func PassKey(repoID int64) string { return KindPass + ":" + strconv.FormatInt(re
 // state from the mirror's tables when it starts, because an exclusive enqueue that finds a queued pass drops its own
 // arguments.
 type PassArgs struct {
-	Repository   string `json:"repository"`
-	RepositoryID int64  `json:"repositoryId"`
-	Full         bool   `json:"full,omitempty"`
+	Repository   qname.Repo `json:"repository"`
+	RepositoryID int64      `json:"repositoryId"`
+	Full         bool       `json:"full,omitempty"`
 }

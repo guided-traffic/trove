@@ -201,33 +201,37 @@ func GaugeSource(read func(ctx context.Context) ([]GaugeRow, error), repos repos
 			if err != nil {
 				return nil, err
 			}
+			// The mirror rows name a repository by its bare key until WP3 gives them the project (a
+			// stop-gap: the lookups below are by the bare key, the label is the qualified name).
 			active := map[string]repository.RemoteSettings{}
+			label := map[string]string{}
 			for _, repo := range list {
 				if s, ok := repo.Remote(); ok && s.Mirrored() && repo.Lifecycle != repository.Deleting {
-					active[repo.Name] = s
+					active[repo.Name.Key] = s
+					label[repo.Name.Key] = repo.Name.String()
 				}
 			}
 			var out []prometheus.Metric
 			for key, s := range active {
-				out = append(out, gauge(interval, float64(s.Mirror.IntervalSeconds), key))
+				out = append(out, gauge(interval, float64(s.Mirror.IntervalSeconds), label[key]))
 			}
 			disabled := map[string]bool{}
 			for _, repo := range list {
-				disabled[repo.Name] = repo.Disabled
+				disabled[repo.Name.Key] = repo.Disabled
 			}
 			for _, r := range rows {
 				s, ok := active[r.Key]
 				if !ok {
 					continue
 				}
-				out = append(out, gauge(pending, float64(r.Pending), r.Key))
+				out = append(out, gauge(pending, float64(r.Pending), label[r.Key]))
 				if !r.LastComplete.IsZero() {
-					out = append(out, gauge(last, float64(r.LastComplete.UnixMicro())/1e6, r.Key))
+					out = append(out, gauge(last, float64(r.LastComplete.UnixMicro())/1e6, label[r.Key]))
 				}
 				if s.Mirror.Paused || disabled[r.Key] {
 					continue
 				}
-				out = append(out, gauge(failures, float64(r.ConsecutiveFailures), r.Key), gauge(next, float64(r.NextPass.UnixMicro())/1e6, r.Key))
+				out = append(out, gauge(failures, float64(r.ConsecutiveFailures), label[r.Key]), gauge(next, float64(r.NextPass.UnixMicro())/1e6, label[r.Key]))
 			}
 			return out, nil
 		},

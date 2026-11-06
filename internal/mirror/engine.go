@@ -186,10 +186,10 @@ func (e *Engine) Dispatch(ctx context.Context) (DispatchResult, error) {
 		}
 		out, err := e.o.Queue.EnqueueNow(ctx, jobs.EnqueueSpec{
 			Kind: KindPass, DedupKey: PassKey(id), Args: PassArgs{Repository: r.Name, RepositoryID: id},
-			TargetKind: "repository", TargetKey: r.Name,
+			TargetKind: "repository", TargetKey: r.Name.String(),
 		})
 		if err != nil {
-			return res, fmt.Errorf("mirror: enqueue the pass of %s: %w", r.Name, err)
+			return res, fmt.Errorf("mirror: enqueue the pass of %s: %w", r.Name.String(), err)
 		}
 		if out.Created {
 			res.Enqueued++

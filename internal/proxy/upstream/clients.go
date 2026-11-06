@@ -181,7 +181,7 @@ func (c *Clients) For(ctx context.Context, r repository.Repository, s repository
 		if cl, ok := c.cache.Get(k); ok {
 			return cl, nil
 		}
-		cl, err := c.buildSaved(ctx, id, r.Name, s)
+		cl, err := c.buildSaved(ctx, id, r.Name.String(), s)
 		if err != nil {
 			return nil, err
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"log/slog"
 	"net/url"
 	"strconv"
@@ -45,7 +46,7 @@ type pass struct {
 	m   repoMetrics
 
 	id    int64
-	key   string
+	key   qname.Repo
 	fence Fence
 	args  PassArgs
 
@@ -105,7 +106,7 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 		// The host cannot serve passes: the job fails with the cause and the dispatch tries again (Q-ARCH-312).
 		return nil, "", fmt.Errorf("mirror: the host is not ready: %w", err)
 	}
-	repo, err := e.o.Repos.ByKey(ctx, a.Repository)
+	repo, err := e.o.Repos.ByName(ctx, a.Repository)
 	switch {
 	case err != nil && notFound(err):
 		return nil, "repository_gone", nil
@@ -161,7 +162,7 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 		e: e, res: res, id: fence.RepoID, key: repo.Name, fence: fence, args: a, repo: repo, settings: rs, state: st,
 		fingerprint: fp, kind: st.PassKind, method: st.PassMethod, done: st.PassDiscoveryDone, deferred: map[string]time.Time{},
 		c: counters{names: st.PassNames, done: st.PassPackagesDone, failed: st.PassPackagesFailed, items: st.PassItemsStored, bytes: st.PassBytesStored},
-		m: e.o.Metrics.of(repo.Name),
+		m: e.o.Metrics.of(repo.Name.String()),
 	}
 	p.log = e.o.Log.With("component", "mirror", "repository", repo.Name, "job", jobID)
 	p.m.touch()
@@ -394,7 +395,7 @@ func (p *pass) checkStop(ctx context.Context) bool {
 	if p.isHalted() {
 		return true
 	}
-	repo, err := p.e.o.Repos.ByKey(ctx, p.key)
+	repo, err := p.e.o.Repos.ByName(ctx, p.key)
 	switch {
 	case err != nil && notFound(err):
 		p.setHalt(haltMode, nil)

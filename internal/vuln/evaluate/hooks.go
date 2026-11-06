@@ -37,7 +37,7 @@ func (h *hooks) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEvent) e
 		trigger = vuln.TriggerFill
 	}
 	return h.ev.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{
-		RepoID: e.Repo.ID, RepoKey: e.Repo.Name, Format: e.Repo.Format, ItemID: e.Item.ID, Trigger: trigger,
+		RepoID: e.Repo.ID, Repo: e.Repo.Name, Format: e.Repo.Format, ItemID: e.Item.ID, Trigger: trigger,
 	})
 }
 

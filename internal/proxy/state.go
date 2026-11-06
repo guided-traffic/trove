@@ -367,8 +367,8 @@ func (e *Engine) markGone(ctx context.Context, rq Request) (bool, error) {
 		}
 		return e.o.Audit.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventProxyUpstreamGone, Actor: auditActor(rq.Caller), Outcome: audit.Success, Source: rq.Caller.Source,
-			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Name},
-			Repository: rem.Repo.Name, Path: rq.Path, Endpoint: rq.Caller.Endpoint,
+			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Name.String()},
+			Repository: rem.Repo.Name.String(), Path: rq.Path, Endpoint: rq.Caller.Endpoint,
 			Details: mustJSON(map[string]string{"path": rq.Path, "variant": rq.Variant}),
 		})
 	})

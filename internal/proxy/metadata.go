@@ -69,7 +69,7 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 		found = false
 	}
 	if found && e.fresh(rem, rq.Path, en, restoredAt) {
-		e.m.lookup(rem.Repo.Name, Metadata, resultHit)
+		e.m.lookup(rem.Repo.Name.String(), Metadata, resultHit)
 		return e.storedDocument(rq, restoredAt, en, hitStatus(en.TTL)), nil
 	}
 	st := &reqState{role: roleLeader, restoredAt: restoredAt}
@@ -81,19 +81,19 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	switch rq.Mode {
 	case CacheView, OnlyIfCached:
 		if found {
-			e.m.lookup(rem.Repo.Name, Metadata, resultStale)
+			e.m.lookup(rem.Repo.Name.String(), Metadata, resultStale)
 			return e.storedDocument(rq, restoredAt, en, e.storedStatus(en)), nil
 		}
-		e.m.lookup(rem.Repo.Name, Metadata, resultMiss)
+		e.m.lookup(rem.Repo.Name.String(), Metadata, resultMiss)
 		return nil, lostOr(rq, lost, "this request is answered from the cache alone", notStored(rq.Mode))
 	}
 	// Step 6: offline.
 	if e.offline(rem) {
 		if found {
-			e.m.lookup(rem.Repo.Name, Metadata, resultStale)
+			e.m.lookup(rem.Repo.Name.String(), Metadata, resultStale)
 			return e.storedDocument(rq, restoredAt, en, servedStale()), nil
 		}
-		return nil, lostOr(rq, lost, rem.Repo.Name+" is offline", offlineMiss(rem))
+		return nil, lostOr(rq, lost, rem.Repo.Name.String()+" is offline", offlineMiss(rem))
 	}
 	// Step 7: the circuit.
 	open, retry, err := e.circuitPeek(ctx, rem)
@@ -102,7 +102,7 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 	}
 	if open {
 		if found && e.withinMaxStale(rem, en) {
-			e.m.lookup(rem.Repo.Name, Metadata, resultStale)
+			e.m.lookup(rem.Repo.Name.String(), Metadata, resultStale)
 			return e.storedDocument(rq, restoredAt, en, servedStale()), nil
 		}
 		return nil, withStatus(lostOr(rq, lost, "the upstream is assumed to be offline", circuitOpenError(rq, retry)), CacheStatus{})
@@ -114,7 +114,7 @@ func (e *Engine) metadata(ctx context.Context, rq Request, restoredAt time.Time)
 		return doc, err
 	}
 	// Step 10: the collapsing protocol and the fetch.
-	e.m.lookup(rem.Repo.Name, Metadata, resultMiss)
+	e.m.lookup(rem.Repo.Name.String(), Metadata, resultMiss)
 	if found && !rq.background() { // a pass waits for the refresh: it has no client to answer with the stored copy
 		st.refresh = time.Duration(rem.Settings.Cache.MetadataRefreshTimeoutSeconds) * time.Second
 	}
@@ -137,7 +137,7 @@ func (e *Engine) beforeFetch(ctx context.Context, rq Request, held heldCopy) (do
 	rem := rq.Remote
 	// Step 8: the negative entry, the replica's L1 first and then Valkey.
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
-		e.m.lookup(rem.Repo.Name, Metadata, resultNegative)
+		e.m.lookup(rem.Repo.Name.String(), Metadata, resultNegative)
 		if held.lost && !rq.background() {
 			// The entry is stored, not gone, and lost, and a negative entry stands for the path (a 404 of another flight
 			// that did not see the entry): the item exists, so its loss is the answer, not the 404 (Q-REPO-205).
@@ -148,11 +148,11 @@ func (e *Engine) beforeFetch(ctx context.Context, rq Request, held heldCopy) (do
 	// Step 9: the cache-fill check.
 	if !e.mayFill(ctx, rq) {
 		if held.found {
-			e.m.lookup(rem.Repo.Name, Metadata, resultStale)
+			e.m.lookup(rem.Repo.Name.String(), Metadata, resultStale)
 			return held.doc(servedStale()), true, nil
 		}
 		if held.lost && !rq.background() {
-			return nil, true, lostContent("the caller may not fill the cache of "+rem.Repo.Name, nil)
+			return nil, true, lostContent("the caller may not fill the cache of "+rem.Repo.Name.String(), nil)
 		}
 		return nil, true, e.denyFill(ctx, rq)
 	}
@@ -202,18 +202,18 @@ func (e *Engine) metadataAnswer(ctx context.Context, rq Request, st *reqState, h
 		return nil, ctx.Err()
 	case endTimeout:
 		// The refresh runs on, detached; the client gets what is stored (R-REPO-027).
-		e.m.lookup(rem.Repo.Name, Metadata, resultStale)
+		e.m.lookup(rem.Repo.Name.String(), Metadata, resultStale)
 		return held.doc(staleAfterFailure(0)), nil
 	}
 	if st.collapsed {
-		e.m.collapsed.WithLabelValues(rem.Repo.Name).Inc()
+		e.m.collapsed.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
 	switch {
 	case res.own != nil:
 		return nil, res.own // a background request's own outcome: pre-empted, the circuit is open, the spool is busy, rate-limited
 	case res.err != nil:
 		if held.found && e.withinMaxStale(rem, held.en) {
-			e.m.lookup(rem.Repo.Name, Metadata, resultStale)
+			e.m.lookup(rem.Repo.Name.String(), Metadata, resultStale)
 			return held.doc(staleAfterFailure(res.status)), nil
 		}
 		return nil, withStatus(lostOr(rq, held.lost, "the upstream could not serve it again", res.err), CacheStatus{Forwarded: "uri-miss", FwdStatus: res.status})

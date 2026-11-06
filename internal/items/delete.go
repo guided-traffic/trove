@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/guided-traffic/trove/internal/qname"
 	"sort"
 	"strconv"
 
@@ -31,8 +32,8 @@ func DeleteJobSpec(h jobs.Handler) jobs.KindSpec {
 // DeleteArgs are the arguments of a deletion job. The actor is kept so that the
 // events name who asked.
 type DeleteArgs struct {
-	RepoID int64  `json:"repoId"`
-	Key    string `json:"key"`
+	RepoID int64      `json:"repoId"`
+	Key    qname.Repo `json:"key"`
 	// Class and Format are what a storage hook dispatches on; empty in a job
 	// queued before they were recorded.
 	Class  string      `json:"class,omitempty"`
@@ -250,14 +251,14 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 	return nil
 }
 
-func (s *Store) recordDeleted(ctx context.Context, tx meta.Tx, w who, repoKey, path string, digest []byte, size int64) error {
+func (s *Store) recordDeleted(ctx context.Context, tx meta.Tx, w who, repoKey qname.Repo, path string, digest []byte, size int64) error {
 	raw, err := json.Marshal(map[string]any{"path": path, "sha256": hex.EncodeToString(digest), "size": size})
 	if err != nil {
 		return err
 	}
 	return s.rec.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventArtifactDeleted, Actor: w.actor, Outcome: audit.Success, Source: w.source, Endpoint: w.endpoint,
-		Subject: audit.Subject{Kind: "repository", Name: repoKey}, Repository: repoKey, Path: path, Details: raw,
+		Subject: audit.Subject{Kind: "repository", Name: repoKey.String()}, Repository: repoKey.String(), Project: repoKey.Project, Path: path, Details: raw,
 	})
 }
 
@@ -338,7 +339,7 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 		job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
 			Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(repo.ID, 10) + ":" + spec.Path,
 			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Name, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID},
-			TargetKind: "item", TargetKey: repo.Name + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
+			TargetKind: "item", TargetKey: repo.Name.String() + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
 		})
 		if err != nil {
 			return err

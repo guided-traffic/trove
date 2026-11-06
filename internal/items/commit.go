@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"io"
 	"net/url"
 	"time"
@@ -461,7 +462,7 @@ func lockAncestors(ctx context.Context, qs *q.Queries, rid int64, path string) (
 // recordCommitted writes the audit row of a commit that changed a row. An upload
 // is artifact.deployed; a fill has no event of its own yet (the cache event is
 // webhook-only and the proxy raises it), so it writes none (Q-STOR-146).
-func (s *Store) recordCommitted(ctx context.Context, tx meta.Tx, repoKey string, spec CommitSpec, overwritten bool) error {
+func (s *Store) recordCommitted(ctx context.Context, tx meta.Tx, repoKey qname.Repo, spec CommitSpec, overwritten bool) error {
 	if spec.Origin != OriginUpload {
 		return nil
 	}
@@ -472,7 +473,7 @@ func (s *Store) recordCommitted(ctx context.Context, tx meta.Tx, repoKey string,
 	}
 	return s.rec.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventArtifactDeployed, Actor: spec.Actor, Outcome: audit.Success, Source: spec.Source, Endpoint: spec.Endpoint,
-		Subject: audit.Subject{Kind: "repository", Name: repoKey}, Repository: repoKey, Path: spec.Path.Path, Details: raw,
+		Subject: audit.Subject{Kind: "repository", Name: repoKey.String()}, Repository: repoKey.String(), Project: repoKey.Project, Path: spec.Path.Path, Details: raw,
 	})
 }
 

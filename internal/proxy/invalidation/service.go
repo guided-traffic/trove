@@ -78,7 +78,7 @@ func (s *Service) Invalidate(ctx context.Context, c repository.Caller, repo repo
 		return 0, err
 	}
 	if repo.Lifecycle != repository.Active {
-		return 0, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+strconv.Quote(repo.Name))
+		return 0, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository is named "+strconv.Quote(repo.Name.String()))
 	}
 	id, err := strconv.ParseInt(repo.ID, 10, 64)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s *Service) Invalidate(ctx context.Context, c repository.Caller, repo repo
 		return 0, s.virtual(ctx, c, repo, id, prefix, scope)
 	default:
 		return 0, errs.E(errs.Invalid, errs.CodeNotApplicable,
-			"A cache invalidation applies to remote and virtual repositories; "+strconv.Quote(repo.Name)+" is a "+string(repo.Class)+" repository.")
+			"A cache invalidation applies to remote and virtual repositories; "+strconv.Quote(repo.Name.String())+" is a "+string(repo.Class)+" repository.")
 	}
 	var count int64
 	err = s.o.Runner.InTx(ctx, func(tx meta.Tx) error {
@@ -175,8 +175,8 @@ func (s *Service) record(ctx context.Context, tx meta.Tx, c repository.Caller, r
 	}
 	return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventRepositoryCacheInvalidated, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject:    audit.Subject{Kind: "repository", ID: repo.ID, Name: repo.Name},
-		Repository: repo.Name, Path: prefix, Endpoint: c.Endpoint, Details: raw,
+		Subject:    audit.Subject{Kind: "repository", ID: repo.ID, Name: repo.Name.String()},
+		Repository: repo.Name.String(), Project: repo.Name.Project, Path: prefix, Endpoint: c.Endpoint, Details: raw,
 	})
 }
 
