@@ -162,7 +162,8 @@ packages:
 # Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases
 # before the cut. Every other key keeps its meaning and default of those releases; a fresh installation never sets it.
 web:
-  enabled: false                        # true for the first step only
+  enabled: false                        # true for steps 1 and 2 of the cut (R-HA-064)
+  routed: true                          # false in step 2: the edge moves to api and packages while the bridge still runs
   replicaCount: 3                       # ignored when autoscaling.enabled
   minReadySeconds: 10
   revisionHistoryLimit: 5

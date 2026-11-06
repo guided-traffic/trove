@@ -178,7 +178,7 @@ The split is no longer optional: it is an owner constraint since 2026-10-28, and
 
 **Status.** Built (phase 6a, WP6a.3): the chart renders `<fullname>-api`, `<fullname>-packages` and `<fullname>-worker`
 from the list of Deployments in [_units.tpl](../../deploy/helm/trove/templates/_units.tpl); `web.enabled: true` renders
-`<fullname>-web` (`--role web`) beside them for the first step of R-HA-064.
+`<fullname>-web` (`--role web`) beside them for the first two steps of R-HA-064.
 
 - The chart MUST always render three Deployments: `<fullname>-api`, whose container runs `trove serve --role api`,
   `<fullname>-packages`, whose container runs `trove serve --role packages`, and `<fullname>-worker`, whose container runs
@@ -1546,7 +1546,7 @@ Examples:
   (`serving_max` 3 + 4 = 7, `worker_max` 3): 10 × 20 + 3 × 4 + 2 + 4 + 10 + 3 = **231**, with no `serving_max × 1`
   term, because `api` and `packages` replicas hold no session connection. Before the cut, with `web` 3 and `worker` 2, it was
   171. The PostgreSQL default of 100 is too small, so the chart's NOTES print the computed budget.
-- During the first step of the upgrade across the cut (R-HA-064), the `web` Deployment runs beside `api` and `packages`:
+- During the first two steps of the upgrade across the cut (R-HA-064), the `web` Deployment runs beside `api` and `packages`:
   with the defaults `serving_max` is 4 + 3 + 4 = 11, and the budget **311**. The migration Job of that step checks it, so a
   server sized only for the target fails the step before anything changes.
 - Large profile (R-HA-050), `packages` up to 16, `api` up to 4 and `worker` up to 6, `max_conns: 30`: without a pooler
@@ -2317,7 +2317,7 @@ cut test runs the same check after its step 2. That read has not run on kind yet
 - **Order.** Helm runs the migration hook first (R-HA-019) and then applies the Deployments of every role and pool
   together; each rolls on its own.
   No order between them is needed, because every role tolerates the other roles in release N−1
-  (below). The upgrade from a release before the cut into roles takes the two steps of R-HA-064 instead, because a
+  (below). The upgrade from a release before the cut into roles takes the three steps of R-HA-064 instead, because a
   Deployment cannot be renamed. The backup CronJob takes the new image for its next run; a run already in progress
   finishes on the old one, which the expand-only window allows.
 - During the mixed-version window, release N and N−1 serve the same clients alternately, and N−1
@@ -2371,7 +2371,7 @@ fails (on its credential) leaves the replicas serving.
 |---|---|
 | Patch (x.y.z → x.y.z+1) | Rolling, zero downtime; patch releases contain no contract steps |
 | Next minor (x.y → x.y+1) | Rolling, zero downtime (R-HA-020) |
-| From a release before the cut into roles to the first release with `api` and `packages` | Two rolling steps with zero downtime, `web.enabled: true` and then `false` (R-HA-064); the release notes name them |
+| From a release before the cut into roles to the first release with `api` and `packages` | Three rolling steps with zero downtime: `web.enabled: true`, then `web.routed: false`, then `web.enabled: false` (R-HA-064); the release notes name them |
 | Skipping minors (x.y → x.y+2 or later) | Stepwise through each minor with zero downtime, or in one step with downtime: scale every role to zero, wait `system.heartbeat_stale_after`, then `helm upgrade`. The contract guard enforces this (R-HA-018, Q-HA-5) |
 | Major | As stated in the release notes; skipping a major is not supported |
 
@@ -2413,50 +2413,69 @@ Acceptance criteria:
 ### R-HA-064 · Upgrade across the cut into roles
 Priority: **MVP** · Covers: HA-069, OPS-073
 
-**Status.** Built (phase 6a, WP6a.3): the bridge, its edge and the guard
-([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusal reads the cluster and is
-verified by the upgrade e2e test, not by the chart test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
+**Status.** Built (phase 6a, WP6a.3; the third step since F-64, Q-HA-130): the bridge, its edge, step 2's value `web.routed`
+and the guard ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusals read the
+cluster and are verified by the upgrade e2e test, not by the chart test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
 ([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`, [Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release))
-installs v0.16.0, checks the refusal and that `helm template` renders, and runs both steps under client and browser loops. While the bridge runs, its `web` pods hold the secrets of both
+installs v0.16.0, checks both refusals and that `helm template` renders, and runs the three steps under client and browser
+loops, with the edge's access lines read for answers without a backend (Q-HA-131). The chart test `TestRolesBridge` checks
+that each step changes either the edge or the backends. While the bridge runs, its `web` pods hold the secrets of both
 roles ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
 
 The releases before the cut run `<fullname>-web` behind the Service `<fullname>` and route every host whole to it. A
 Deployment cannot be renamed, and Helm applies a release in one pass: it creates the new Deployments, repoints the edge and
 deletes `<fullname>-web` before a new pod is ready. One `helm upgrade` from the old shape to the cut would therefore leave the
-edge without a ready backend for the start time of the new pods. The upgrade takes two steps instead, joined by the bridge
-value `web.enabled` (Q-ARCH-295, Q-HA-73).
+edge without a ready backend for the start time of the new pods. An edge also applies a removed backend before a moved route:
+HAProxy Ingress empties the backend of a deleted Service at once and takes a changed Ingress with its next reload, about 1.5 s
+later (F-64), so an apply that both moves a route and removes the backend it pointed at answers `503` in between. The upgrade
+therefore takes three steps, each of which changes either the edge or the set of backends, never both, joined by the bridge
+values `web.enabled` and `web.routed` (Q-ARCH-295, Q-HA-73, Q-HA-130).
 
 - **`web.enabled: true` (the bridge).** The chart renders, besides everything of R-HA-002 and R-HA-062:
   - `<fullname>-web` with `--role web` from the `web` values, which keep every key of the releases before the cut, its
     disruption budget, autoscaler and ingress policy, and the endpoint pools of the old shape (`<fullname>-web-ep-<name>`,
     `--role web`, `TROVE_POOL_NAME=ep-<name>`);
-  - the endpoint pools of the target shape (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`) beside them, which no
-    Service selects yet, so that step 2 switches the endpoint's Service onto pods that are ready (Q-HA-90);
+  - the endpoint pools of the target shape (`<fullname>-packages-ep-<name>`, `<fullname>-api-ep-<name>`) beside them, so that
+    step 2 switches the endpoint's Service onto pods that are ready (Q-HA-90); for a surface with families of both roles the
+    Service `<fullname>-api-ep-<name>` already selects the `api` pods, without a route, so that step 2 routes to a Service
+    whose endpoints exist;
   - the Service `<fullname>` (port 8080, selecting the `web` pods of the main Deployment);
-  - the edge of the old shape: every rendered Ingress and HTTPRoute routes each host whole (`/`, `pathType: Prefix`) to
-    `<fullname>`, and each further endpoint's Service selects the `web` pods that served it before (the main `web`
-    Deployment or `<fullname>-web-ep-<name>`).
+  - with `web.routed: true` (the default), the edge of the old shape: every rendered Ingress routes each host whole (`/`,
+    `pathType: Prefix`) to `<fullname>`, and each further endpoint's Service selects the `web` pods that served it before
+    (the main `web` Deployment or `<fullname>-web-ep-<name>`); with `web.routed: false`, the edge of the target shape
+    (R-HA-037, R-EP-008) while everything above keeps running;
+  - one BackendTLSPolicy (R-HA-063) for `<fullname>` and one for each Service of the target shape, for the whole bridge: a
+    route kept outside the chart (a Gateway API HTTPRoute) moves between them at a time the chart does not know.
 
   The Deployments of `api`, `packages` and `worker`, their path pools and endpoint pools, and their Services run beside it;
-  `api` and `packages` receive no edge traffic, so their share of the fetch budget is unused during step 1 (below). `NOTES.txt` states that the cut is not complete and
-  names the second step.
+  until step 2, `api` and `packages` receive no edge traffic, so their share of the fetch budget is unused during step 1
+  (below). `NOTES.txt` names the step the release is at and the next one.
 - **Step 1.** `helm upgrade` with `--set web.enabled=true` and the values otherwise unchanged: `<fullname>-web` rolls to the
   new release by R-HA-020 with no gap, because the edge keeps its Service, and the new Deployments become ready meanwhile.
-  Between the steps, in-cluster callers move to `<fullname>-api` and `<fullname>-packages` (R-HA-002), and the values gain
+  Between steps 1 and 3, in-cluster callers move to `<fullname>-api` and `<fullname>-packages` (R-HA-002), and the values gain
   the `api.*` and `packages.*` sizing the installation wants. Before step 1, policies outside the chart that admit trove's pods by
   `app.kubernetes.io/component` (an ingress policy of PostgreSQL, Valkey or the Sentinels) must admit `api` and `packages` beside
   `web`, and the labels cluster-wide policies key on move from `web.podLabels` to `api.podLabels` and `packages.podLabels`; otherwise
   the new pods cannot reach their dependencies and stay not ready, which the guard of step 2 then reports. The upgrade guide
   ([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)) lists this as the first check (seen on the owner's cluster on
   2026-11-06, where the policies of the database and Valkey admitted `web`, `worker` and `migrate` only).
-- **Step 2.** `helm upgrade` with `web.enabled: false` (the default): the edge switches to the path routing of R-HA-037 onto
-  Services whose pods have been ready since step 1, and Helm deletes `<fullname>-web`, its endpoint pools and the Service
-  `<fullname>`; their pods drain by R-HA-011, so a request the edge still sends them is served.
-- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`), it
-  refuses to render with `web.enabled: false` while the release's namespace holds a Deployment `<fullname>-web` and a serving
-  Deployment of the target shape (`<fullname>-api`, `<fullname>-packages`, their path pools and their endpoint pools) does
-  not exist or has fewer ready replicas than its `spec.replicas`; the message names the Deployment and the two steps. Under `helm template` and other renderers without cluster access the guard has nothing to read, and
-  the release notes carry the two steps.
+- **Step 2.** `helm upgrade` with `--set web.enabled=true --set web.routed=false`: the edge switches to the path routing of
+  R-HA-037 onto Services whose pods have been ready since step 1, and each further endpoint's Service onto the pods of its role.
+  Nothing is deleted: `<fullname>-web`, its endpoint pools and the Service `<fullname>` keep running, so a request the edge
+  still sends by the old route until it has applied the new one is served. An edge outside the chart (an HTTPRoute) is moved to
+  the role Services now.
+- **Step 3.** `helm upgrade` with `web.enabled: false` (the default): Helm deletes `<fullname>-web`, its endpoint pools and the
+  Service `<fullname>`, which no route names any more; their pods drain by R-HA-011. No route changes.
+- **Guard.** Where the chart can read the cluster (`helm upgrade`, `helm install --dry-run=server`; Helm's `lookup`) and the
+  release's namespace holds a Deployment `<fullname>-web`, it refuses to render:
+  - the edge of the target shape (step 2 or step 3) while a serving Deployment of the target shape (`<fullname>-api`,
+    `<fullname>-packages`, their path pools and their endpoint pools) does not exist or has fewer ready replicas than its
+    `spec.replicas`; the message names the Deployment and the three steps;
+  - `web.enabled: false` while the chart's Ingress `<fullname>` still routes a path to the Service `<fullname>`, which is
+    step 3 without step 2; the message names the path and the three steps.
+
+  Under `helm template` and other renderers without cluster access the guard has nothing to read, and the release notes carry
+  the three steps. An edge outside the chart is not read: an operator who skips step 2 there meets the gap of F-64.
 - **Mixed versions.** During step 1 the replicas of the release before the cut (role `web`) and the new release (roles
   `web`, `api`, `packages`, `worker`) run side by side, and R-HA-020's rules hold unchanged: the registry and the status
   screen list the `web` replicas of both releases under the role `web`, and the new `api` and `packages` replicas as new rows
@@ -2467,24 +2486,32 @@ value `web.enabled` (Q-ARCH-295, Q-HA-73).
   and the `packages` pods of endpoint pools, which fill nothing when the endpoint has `cacheFill: false`. Each pod that serves
   holds fewer slots than it would without them: the budget is never exceeded, and the throughput of cache fills is lower until
   step 2.
-- **Left on.** The guard acts on step 2 only. An installation that stays at step 1 keeps every host on the `web` pods, which
-  hold the login secrets ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut));
-  the alert `TroveBridgeLeftOn` (Q-HA-92) reports a `web` replica registered for 24 hours.
-- **The way back** is a rollback of a release (R-ARCH-025) and is not covered by the zero-downtime promise: rolling back
-  from step 2 recreates `<fullname>-web` while the edge already points at `<fullname>`, so the host answers `503` for the
-  start time of the restored pods. Rolling back step 1 is a rollback of `<fullname>-web` alone and has no gap.
-- A fresh installation never renders `web`: `web.enabled` defaults to `false`, and the chart's `ci/` value sets render the
-  bridge only in the value set that tests it.
+- **Left on.** The guard acts on steps 2 and 3 only. An installation that stays at step 1 keeps every host on the `web` pods,
+  and one that stays at step 2 keeps them running beside the roles; both hold the login secrets
+  ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)),
+  and the alert `TroveBridgeLeftOn` (Q-HA-92) reports a `web` replica registered for 24 hours.
+- **The way back** is a rollback of a release (R-ARCH-025). Each step's rollback is the reverse of a step that changes one
+  kind of thing: rolling back step 3 recreates `<fullname>-web` and the Service `<fullname>` without a route to them, rolling
+  back step 2 moves the edge back onto `<fullname>`, whose pods still run, and rolling back step 1 is a rollback of
+  `<fullname>-web` alone. None of them leaves a route without a ready backend. Rolling back from step 3 straight to step 1
+  restores the edge and the backend in one apply and meets the gap of the restored pods' start time.
+- A fresh installation never renders `web`: `web.enabled` defaults to `false`, `web.routed` has no effect without it, and the
+  chart's `ci/` value sets render the bridge only in the value set that tests it.
 
 Acceptance criteria:
 
 - The upgrade e2e test installs the release before the cut, runs `npm ci` and `dotnet restore` loops and a browser journey of
-  the UI against it, runs step 1 and step 2 with `helm upgrade --wait`, and no iteration fails; between the steps,
-  `GET /api/v1/system/replicas` lists the roles `web`, `api`, `packages` and `worker`, and after step 2 no `web`.
+  the UI against it, runs steps 1, 2 and 3 with `helm upgrade --wait`, and no iteration fails and the edge answers no request
+  with `503` for want of a backend (Q-HA-131); between steps 1 and 3, `GET /api/v1/system/replicas` lists the roles `web`,
+  `api`, `packages` and `worker`, after step 2 the Ingress `trove` routes no path to the Service `trove` while `trove-web` and
+  the Service `trove` still exist, and after step 3 the registry lists no `web`.
 - `helm upgrade` with `web.enabled: false` against a namespace that holds `trove-web` and no ready `trove-api` fails before
-  anything changes, names `web.enabled` and the two steps; the same values under `helm template` render.
+  anything changes, names `web.enabled` and the three steps; the same values under `helm template` render.
+- `helm upgrade` with `web.enabled: false` after step 1, while the Ingress `trove` routes `/` to the Service `trove`, fails
+  before anything changes and names step 2.
 - `helm template … --set web.enabled=true` renders `trove-web` with `--role web`, the Service `trove` selecting its pods, an
-  Ingress whose every rule is `/` to `trove`, and the Deployments and Services of `api`, `packages` and `worker`.
+  Ingress whose every rule is `/` to `trove`, and the Deployments and Services of `api`, `packages` and `worker`; with
+  `--set web.routed=false` the same Deployments and Services and the Ingress of the target shape.
 
 ### R-HA-022 · Background data migrations
 Priority: **MVP** · Covers: OPS-074
@@ -3281,7 +3308,8 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
 | `restore.enabled` with a replica count above 0 or autoscaling enabled for any role or pool | `restore.enabled` and the value |
 | Two pools of a role with the same name, two pools with the same path prefix or queue, a pool path outside the families of its role or equal to one of the role's own prefixes of R-HA-037, a worker pool queue that does not exist, or a pool whose name starts with `ep-` (R-HA-062) | the pools |
-| `web.enabled: false` while the namespace holds `<fullname>-web` and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | `web.enabled` and the two steps |
+| The edge of the target shape (`web.enabled: false`, or `web.routed: false`) while the namespace holds `<fullname>-web` and a serving Deployment of the target shape (api, packages, path pools, endpoint pools) is missing or not fully ready, read through `lookup` where the chart can read the cluster (R-HA-064) | the Deployment and the three steps |
+| `web.enabled: false` while the namespace holds `<fullname>-web` and the chart's Ingress `<fullname>` still routes a path to the Service `<fullname>`, read through `lookup` (R-HA-064, Q-HA-130) | the path and the three steps |
 | Worker pools that claim every queue; a worker pool without a replica; an `endpoints.default.surface` without a family of a role that no further endpoint is served by (R-HA-062) | the pool or the surface |
 | A provider of `config.auth.oidc.providers` with a `client_auth_method` other than `none` and no entry in `secrets.oidc` (R-HA-030, Q-HA-93) | the provider |
 | An endpoint whose `port` equals 8080, 8081 or another endpoint's port; an invalid endpoint name or one for which `<fullname>-api-ep-<name>` (a surface with families of both roles) or `<fullname>-packages-ep-<name>` (a pool) exceeds 63 characters; a missing `baseUrl`; a host in two endpoints; `extraSecrets` or `clientCaSecret` with `tls.enabled: false`; an endpoint pool below two replicas with `highAvailability.enforce` ([endpoints.md](endpoints.md) R-EP-008) | the endpoint and the value |
@@ -3589,7 +3617,8 @@ packages:
 # Rendered only with web.enabled: trove serve --role web, the Service <fullname> and the edge of the releases
 # before the cut. Every other key keeps its meaning and default of those releases; a fresh installation never sets it.
 web:
-  enabled: false                        # true for the first step only
+  enabled: false                        # true for steps 1 and 2 of the cut (R-HA-064)
+  routed: true                          # false in step 2: the edge moves to api and packages while the bridge still runs
   replicaCount: 3                       # ignored when autoscaling.enabled
   minReadySeconds: 10
   revisionHistoryLimit: 5
@@ -6724,6 +6753,9 @@ this if Helm gains a wait between applying and deleting resources, which would m
 **Applied in the spec:** R-HA-064 (new), R-HA-020 (order), R-HA-021 (the row of the upgrade path), R-HA-029 (the guard),
 R-HA-031 (`web.enabled`).
 
+**Revised** by [Q-HA-130](#q-ha-130--the-cut-moves-the-edge-and-removes-the-bridge-in-two-separate-upgrades) (2026-11-06): the
+second step left the edge without a backend for about 1.5 s and is split into two.
+
 ### Q-HA-74 · Which client Services exist after the cut, and how in-cluster callers reach trove
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -7687,6 +7719,72 @@ its step 2. Revisited when every release an upgrade test starts from has the rou
 
 **Applied in the spec:** R-HA-020 (the status line), Q-HA-96 (superseded). Code: `upMigrations` and `requireMigrationsDone` in
 [upgrade_env_test.go](../../test/e2e/upgrade_env_test.go), [upgrade_test.go](../../test/e2e/upgrade_test.go),
+
+### Q-HA-130 · The cut moves the edge and removes the bridge in two separate upgrades
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-64. In the scheduled nightly run 42194413882 one browser journey of `TestUpgrade_R_HA_064_AcrossTheCut` failed at
+its first step: `GET /ui/en/login?local=1` at 10:03:15.255 was answered `503` by the edge (`trove_trove_http/<NOSRV>`,
+termination state `SC--`) during step 2 of the two-step cut (Q-HA-73), and the sign-in form never came. The edge's access lines
+of the cluster-state artifact show 509 such answers between 10:03:13.849 and 10:03:15.255, 508 of them to the npm client pods,
+which repeated them, so every `npm ci` passed. The controller's log names the order: Helm deleted the Service `trove` (13.144)
+and updated the Ingress `trove` (13.303) in one apply; HAProxy Ingress applied the empty backend at once as a dynamic update
+(13.85 to 13.90 on its two pods) and the moved routes with its next reload (15.35 and 15.47). An edge applies endpoint changes
+and route changes on separate paths, so an apply that both moves a route and removes the backend it pointed at leaves that route
+without a server until the route moves; draining the deleted pods (R-HA-011) does not help, because the Service went with them.
+The same holds for a new Service that a moved route names in the same apply (`<fullname>-api-ep-<name>` of a two-role endpoint).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three upgrades: step 2 (`web.enabled: true`, `web.routed: false`) moves the edge while the bridge keeps running, step 3 (`web.enabled: false`) removes the bridge, which no route names; the bridge renders every Service a later step routes to; the guard refuses step 3 while the chart's Ingress still routes to `<fullname>` (chosen) | Each apply changes either the edge or the set of backends | No gap whatever order or delay the edge applies changes in; every step's rollback is gap-free too; deterministic under every renderer; the value follows the pools' `routed` (Q-HA-90) | One more `helm upgrade` (or GitOps commit); an edge outside the chart is not read by the guard |
+| (b) Two upgrades; the bridge's Deployment and Service survive step 2 through `helm.sh/resource-policy: keep` and are deleted by hand | No new value | One command less | Leaves objects outside the release that `helm rollback` and `helm uninstall` do not manage; a manual deletion the guard cannot check |
+| (c) Two upgrades; step 2 keeps rendering the bridge while `lookup` finds the edge on it, and a later upgrade removes it | No new value | The operator runs the same command twice | The rendering depends on the cluster: `helm template` and GitOps renderers produce the gap (the argument of Q-HA-73 (b) and Q-HA-90 (a)) |
+| (d) Two upgrades; the edge keeps terminating endpoints (HAProxy Ingress `drain-support`) or a delay is inserted between the steps' changes | Controller settings | No chart change | Controller-specific (the chart supports HAProxy Ingress, ingress-nginx and Traefik); the deleted Service takes its endpoints with it, terminating or not |
+| (e) Two upgrades, the gap documented | Release notes | Nothing to build | Breaks R-HA-021's "zero downtime" for this path: a browser does not repeat a `503`, and F-64 is the evidence |
+
+**Choice:** (a).
+
+**Rationale:** the gap comes from one apply carrying two kinds of change that an edge applies at different times, so the fix is to
+never put both into one apply: expand (step 1), switch (step 2), contract (step 3). It does not depend on the controller's timing,
+which (d) would have to know for each controller. The value is in the values, so the three applies are three reviewable renders,
+which (c) gives up. The BackendTLSPolicies of both sets render for the whole bridge, because a Gateway API route is the
+operator's and switches whenever the operator moves it. The development agent would revisit this if Helm gains a wait between
+applying and deleting resources and the supported edges apply a Service deletion only after the routes that name it, which
+would make two steps safe.
+
+**Applied in the spec:** R-HA-064 (the steps, the bridge's Services and policies, the guard, the way back, the acceptance
+criteria), R-HA-020 (order), R-HA-021 (the row of the upgrade path), R-HA-029 (the guard's two refusals),
+[values.yaml](../../deploy/helm/trove/values.yaml) and [values.schema.json](../../deploy/helm/trove/values.schema.json)
+(`web.routed`), [_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl) (`trove.bridgeRouted`, `trove.edgeBackendServices`),
+[endpoint-services.yaml](../../deploy/helm/trove/templates/endpoint-services.yaml),
+[_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl), [_notes.tpl](../../deploy/helm/trove/templates/_notes.tpl),
+[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) (`TroveBridgeLeftOn`), the upgrade guide
+([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)), `TestRolesBridge` and `TestUpgrade_R_HA_064_AcrossTheCut`.
+
+### Q-HA-131 · The upgrade tests read the edge's access lines for answers without a backend
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-64's gap of 1.4 s answered 509 requests with `503`; the npm loops repeated every one and passed, and the browser
+journey met the gap in one iteration of 14 by chance. The loops alone detect an edge gap only when a client that does not repeat
+happens to fall into it, so the zero-downtime promise of R-HA-020 and R-HA-064 was checked by chance. Since F-50 the dev
+profile's edge writes one access line per request with its backend, server and termination state.
+
+| Option | For | Against |
+|---|---|---|
+| (a) After the loops stop, read the edge pods' lines of the loops' span and fail on any line `<backend>/<NOSRV> … 503` (chosen) | Counts every request the edge could not route, also those a client repeated; independent of chance; names the backend and the time | Bound to the access line format of the dev profile's edge (HAProxy Ingress) |
+| (b) Count the `503` answers in the clients' logs | Client-side | npm logs a repeated `503` only at verbose levels, the NuGet client not at all |
+| (c) Run the browser journey more often | No new check | Still chance: a journey every 20 s against a gap of 1.5 s |
+
+**Choice:** (a).
+
+**Rationale:** the edge is the one place every request passes, and its line distinguishes an answer without a server from a
+`503` of trove itself (which names its server) and from a request the client gave up on (status `-1`). Both upgrade tests use it
+(`requireEdgeServed` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go)), the cut and the rolling upgrade with its
+rollback. The development agent would revisit the format if the dev profile changes its edge.
+
+**Applied in the spec:** R-HA-064 (acceptance criteria), [upgrade_test.go](../../test/e2e/upgrade_test.go),
 [docs/developer/e2e.md](../developer/e2e.md#the-upgrade-tests).
 
 ## What this does not cover

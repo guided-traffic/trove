@@ -1056,8 +1056,8 @@ autoscaler and ingress policy; an installation of the previous shape upgrades wi
   `dotnet` loops, the long-transfer probes, the browser journey loop and the advisory sync per pod are not part of it; the sync's
   resume from its checkpoint stays with the node drain of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` (owner, 2026-11-05,
   [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)).
-- **E6a.7** The upgrade across the cut (R-HA-064): from the latest release before the cut through both steps with no failed
-  iteration of the client loops and the UI journey; the guard refuses a one-step upgrade. The one failure of the journey that the
+- **E6a.7** The upgrade across the cut (R-HA-064): from the latest release before the cut through its three steps (Q-HA-130) with no failed
+  iteration of the client loops and the UI journey and no answer of the edge without a backend; the guard refuses a one-step upgrade and a skipped second step. The one failure of the journey that the
   test counts instead of failing on is a `404` for a hashed asset of the other release
   ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade)). Test:
   `TestUpgrade_R_HA_064_AcrossTheCut` ([e2e.md](../developer/e2e.md#the-upgrade-tests)).

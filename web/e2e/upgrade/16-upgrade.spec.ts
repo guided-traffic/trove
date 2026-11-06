@@ -9,9 +9,13 @@ import { expect, signInLocal, signOut, test } from '../support';
 test('R-HA-020 R-HA-064 R-UI-047 the UI signs in, lists the repositories and the replicas, and signs out during an upgrade', async ({ page }) => {
   // A hashed asset of one release is not served by the pods of the other (Q-HA-99): a page load that spans the window of an
   // upgrade can meet a 404 for `main-<hash>.js` and stay blank. The journey names such an answer on its standard output,
-  // which is how the test tells that failure from any other.
+  // which is how the test tells that failure from any other. It names every answer of 500 or above the same way
+  // (SERVER-ERROR, with the replica when trove answered and none when the edge did): such an iteration fails whatever else
+  // it met, and the line keeps the cause in the job log when the trace is not at hand (F-64).
   page.on('response', (r) => {
-    if (r.status() === 404 && /\/ui\/[a-z]{2}(-[A-Z]{2})?\/[^?]*-[A-Za-z0-9_-]{8}\.(js|css)$/.test(r.url())) {
+    if (r.status() >= 500) {
+      console.log(`SERVER-ERROR ${r.status()} ${r.request().method()} ${r.url()} ${r.headers()['x-trove-replica'] ?? ''}`);
+    } else if (r.status() === 404 && /\/ui\/[a-z]{2}(-[A-Z]{2})?\/[^?]*-[A-Za-z0-9_-]{8}\.(js|css)$/.test(r.url())) {
       console.log(`ASSET-SKEW ${r.url()} ${r.headers()['x-trove-replica'] ?? ''}`);
     }
   });

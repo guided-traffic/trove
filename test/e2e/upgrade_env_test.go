@@ -215,7 +215,7 @@ func upgradeToTree(t testing.TB, label string, extra ...string) (from, to time.T
 	from = time.Now()
 	out, err = upHelm(t, label, 20*time.Minute, args...)
 	to = time.Now()
-	if err != nil && label != "guard" { // the guard refuses at render time, before any hook runs
+	if err != nil && !strings.HasPrefix(label, "guard") { // the guard refuses at render time, before any hook runs
 		collectMigrationEvidence(t, label)
 	}
 	return from, to, out, err

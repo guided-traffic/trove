@@ -115,21 +115,39 @@ than 64 requests cannot serve a handful of clients at once.
 {{- end -}}
 
 {{- /*
-The bridge guard (R-HA-064, Q-HA-73, Q-HA-90): with web.enabled false, a release whose namespace still holds
-<fullname>-web must see every serving Deployment of the target shape fully ready before the edge switches
-to them: the main api and packages Deployments, the path pools and the endpoint pools. lookup reads the
-cluster under helm upgrade and helm install --dry-run=server; under helm template it returns nothing and
-the guard is inert. It validates only and never changes what renders. The guard runs only while web.enabled
-is false; a release that stays at step 1 keeps the web pods (H-518), which the alert TroveBridgeLeftOn reports.
+The bridge guard (R-HA-064, Q-HA-73, Q-HA-90, Q-HA-130). The cut takes three upgrades, and each changes
+either the edge or the set of backends, never both: step 1 starts the target shape beside the bridge, step 2
+(web.routed false) moves the edge onto it while the bridge still runs, step 3 (web.enabled false) removes the
+bridge, which no route names any more. lookup reads the cluster under helm upgrade and helm install
+--dry-run=server; under helm template it returns nothing and the guard is inert. It validates only and never
+changes what renders. A release that stays at step 1 or 2 keeps the web pods (H-518), which the alert
+TroveBridgeLeftOn reports.
+- Whenever the rendered edge is the target shape's (step 2 or 3) and the namespace still holds <fullname>-web,
+  every serving Deployment of the target shape must be fully ready: the main api and packages Deployments,
+  the path pools and the endpoint pools.
+- With web.enabled false and <fullname>-web still there, the chart's Ingress must no longer route to the
+  Service <fullname>: step 3 would otherwise delete the backend in the apply that moves the edge, and an edge
+  applies the deletion before the new route (F-64: about 1.5 s of 503 at haproxy-ingress).
 */ -}}
-{{- if not $v.web.enabled -}}
+{{- $steps := printf "The cut takes three upgrades: 1. helm upgrade with --set web.enabled=true, then wait until every Deployment of the target shape (api, packages, their path pools and endpoint pools) is ready; 2. helm upgrade with --set web.enabled=true --set web.routed=false, which moves the edge onto them while %s-web still runs; 3. helm upgrade with web.enabled: false, which removes %s-web and the Service %s (R-HA-064)" $fullname $fullname $fullname -}}
+{{- if not (include "trove.bridgeRouted" .) -}}
 {{- $web := lookup "apps/v1" "Deployment" .Release.Namespace (printf "%s-web" $fullname) -}}
 {{- if $web -}}
 {{- range $u := include "trove.units" . | fromYamlArray -}}
-{{- if ne $u.role "worker" -}}
+{{- if not (has $u.role (list "worker" "web")) -}}
 {{- $d := lookup "apps/v1" "Deployment" $.Release.Namespace (printf "%s-%s" $fullname $u.name) -}}
 {{- if or (not $d) (lt (int (dig "status" "readyReplicas" 0 $d)) (int (dig "spec" "replicas" 0 $d))) -}}
-{{- fail (printf "trove: web.enabled is false while the namespace holds the Deployment %s-web of the releases before the cut and %s-%s is missing or not fully ready. The cut takes two upgrades: first helm upgrade with --set web.enabled=true and wait until every Deployment of the target shape (api, packages, their path pools and endpoint pools) is ready, then helm upgrade with web.enabled: false (R-HA-064)" $fullname $fullname $u.name) -}}
+{{- fail (printf "trove: the edge of the target shape is rendered (web.enabled false, or web.routed false) while the namespace holds the Deployment %s-web of the releases before the cut and %s-%s is missing or not fully ready. %s" $fullname $fullname $u.name $steps) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $v.web.enabled -}}
+{{- $ing := lookup "networking.k8s.io/v1" "Ingress" .Release.Namespace $fullname -}}
+{{- range $rule := dig "spec" "rules" (list) $ing -}}
+{{- range $p := dig "http" "paths" (list) $rule -}}
+{{- if eq (dig "backend" "service" "name" "" $p) $fullname -}}
+{{- fail (printf "trove: web.enabled is false while the Ingress %s still routes %s to the Service %s of the bridge: removing the bridge in the upgrade that moves the edge leaves the edge without a backend until it applies the new routes. Run step 2 first. %s" $fullname (dig "path" "/" $p) $fullname $steps) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

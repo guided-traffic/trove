@@ -58,7 +58,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
     severity: warning
   annotations:
     summary: A web replica of the upgrade bridge has been running for 24 hours.
-    description: web.enabled is still true, so the web pods stay registered, hold the login secrets and answer on every host (R-HA-064, H-518). Finish the cut with a second helm upgrade and web.enabled false, once api, packages and their pools are ready.
+    description: web.enabled is still true, so the web pods stay registered and hold the login secrets (R-HA-064, H-518). Finish the cut, once api, packages and their pools are ready; step 2 with web.routed false moves the edge onto them, step 3 with web.enabled false removes the bridge.
 {{- end -}}
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}

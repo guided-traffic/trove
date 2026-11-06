@@ -193,7 +193,7 @@ is on `localhost`.
 Stage: the role table of R-ARCH-001, the roles `web` and `all` ([roles.go](../../internal/app/roles.go)).
 
 Live as long as `web.enabled` stays true: the bridge Deployment of the upgrade across the cut (Q-ARCH-295, R-HA-064) runs until the
-operator takes the second step, and nothing in the chart ends it; dormant on an installation that runs `api` and `packages` only.
+operator takes the third step, and nothing in the chart ends it; dormant on an installation that runs `api` and `packages` only.
 `all` is live on a developer's machine. Subject: the session store, the OIDC client secrets and the break-glass password, together
 with the package protocols and the fill path.
 
@@ -203,12 +203,14 @@ fills caches.
 
 What makes it real: an exploitable flaw in a code path of the `packages` or `files` family while a `web` replica serves, and an
 operator who stops after the first step: with `web.enabled: true` every host stays on the `web` pods, which hold the login secrets and
-accept session cookies on package routes. The mitigation is the duration, and the chart bounds it by a signal, not by a refusal: the
+accept session cookies on package routes. After the second step (`web.routed: false`) the edge no longer sends requests to them, but
+the pods keep running behind the Service `<fullname>` and stay reachable inside the cluster wherever a NetworkPolicy admits their port,
+until the third step removes them. The mitigation is the duration, and the chart bounds it by a signal, not by a refusal: the
 alert `TroveBridgeLeftOn` (PrometheusRule, `metrics.prometheusRule.enabled`) fires when a `web` replica has been registered for 24
-hours, and `NOTES.txt` names the second step. The guard of R-HA-064 acts only on the second step: it refuses `web.enabled: false`
-while a Deployment of the target shape is not ready.
+hours, and `NOTES.txt` names the next step. The guard of R-HA-064 acts only on the second and third steps: it refuses them while a
+Deployment of the target shape is not ready, and refuses the third while the edge still routes to the bridge (Q-HA-130).
 
 In the chart the bridge is `web.enabled: true` ([_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl),
 [_units.tpl](../../deploy/helm/trove/templates/_units.tpl)): its pods mount the login secrets (`secrets.oidc[]`,
-`secrets.breakGlass`) while the edge sends every request to them. How long an installation stays on the first step the chart cannot
-tell; the alert and `NOTES.txt` are the only reminders.
+`secrets.breakGlass`) while the edge sends every request to them (step 1) or while they run unrouted (step 2). How long an
+installation stays on the first two steps the chart cannot tell; the alert and `NOTES.txt` are the only reminders.

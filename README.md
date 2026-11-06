@@ -1891,7 +1891,8 @@ packages:                               # the package protocols and raw files, t
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
   pools: []                             # default; example: [{name: npm, paths: [/api/npm], replicaCount: 4}]; paths below /api (not /api/v1), /files, /v2 or /.well-known; routed: false as for api.pools
 web:
-  enabled: false                        # default; true for the first of the two upgrade steps across the cut (R-HA-064); the keys of the releases before the cut stay as they were
+  enabled: false                        # default; true for steps 1 and 2 of the three upgrade steps across the cut (R-HA-064); the keys of the releases before the cut stay as they were
+  routed: true                          # default; false in step 2: the edge moves to api and packages while the bridge still runs (Q-HA-130)
 worker:
   replicaCount: 2                       # default; at least 1; ignored when autoscaling.enabled
   terminationGracePeriodSeconds: 300    # default
@@ -2218,7 +2219,7 @@ config:
 | `TroveVulnerabilityClaimedNameMalicious` | `max(trove_vuln_claimed_name_matches{kind="malicious"}) > 0` | critical |
 | `TroveMirrorFailing` | `max by (repo) (trove_mirror_consecutive_failures) >= 3`: three failed pass attempts in a row, the status's `failing`; a complete pass resets it | warning |
 | `TroveMirrorStale` | `time() - max by (repo) (trove_mirror_next_pass_timestamp_seconds) > 3600` for 30m: the next pass was due an hour ago and nothing started it (no process claims the queue, a lost job), or the pass in progress has not written for an hour; a mirror that never completed a pass fires too; a paused mirror has no series | warning |
-| `TroveBridgeLeftOn` | `count(trove_build_info{role="web"}) > 0` for 24h: `web.enabled` stayed true after the first step of the upgrade across the cut | warning |
+| `TroveBridgeLeftOn` | `count(trove_build_info{role="web"}) > 0` for 24h: `web.enabled` stayed true for a day: the third step of the upgrade across the cut has not run | warning |
 
 Every selector carries `namespace="<release namespace>"`, so one Prometheus that scrapes several installations does not blend them.
 The chart renders no ServiceMonitor; the scrape is the operator's.

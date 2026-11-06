@@ -4,6 +4,7 @@ package chart_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -45,9 +46,12 @@ func podsSelectedBy(docs []doc, selector any) []string {
 	return out
 }
 
-func deploymentNames(docs []doc) []string {
+func deploymentNames(docs []doc) []string { return names(docs, "Deployment") }
+
+// names lists the names of the rendered objects of a kind, sorted.
+func names(docs []doc, kind string) []string {
 	var out []string
-	for _, d := range ofKind(docs, "Deployment") {
+	for _, d := range ofKind(docs, kind) {
 		out = append(out, str(d, "metadata", "name"))
 	}
 	sort.Strings(out)
@@ -689,6 +693,112 @@ func TestRolesBridge(t *testing.T) {
 					t.Errorf("%s %s rendered without web.enabled", k, n)
 				}
 			}
+		}
+	})
+
+	t.Run("R-HA-064 Q-HA-130 each step of the cut changes either the edge or the backends, never both", func(t *testing.T) {
+		// step 1 (web.enabled), step 2 (web.routed false), step 3 (the target shape): an edge applies the removal of a
+		// backend before a new route (F-64), so the step that moves the edge keeps every backend, and the step that
+		// removes the bridge moves no route.
+		_, s1 := render(t, bridgeSet())
+		_, s2 := render(t, bridgeSet(), "web.routed=false")
+		_, s3 := render(t, bridgeSet(), "web.enabled=false")
+		for _, k := range []string{"Deployment", "Service"} {
+			if a, b := names(s1, k), names(s2, k); !equalStrings(a, b) {
+				t.Errorf("step 2 changes the %ss: %v -> %v", k, a, b)
+			}
+		}
+		for _, n := range []string{"trove", "trove-ep-customers"} {
+			if a, b := edgeRules(find(s2, "Ingress", n)), edgeRules(find(s3, "Ingress", n)); fmt.Sprint(a) != fmt.Sprint(b) {
+				t.Errorf("step 3 moves the routes of Ingress %s: %v -> %v", n, a, b)
+			}
+		}
+		for _, r := range edgeRules(find(s2, "Ingress", "trove")) {
+			if r == "trove" {
+				t.Errorf("step 2 still routes to the Service trove: %v", edgeRules(find(s2, "Ingress", "trove")))
+			}
+		}
+		// every Service the edge names in step 3 already selects the same pods in step 2
+		for _, ing := range ofKind(s3, "Ingress") {
+			for _, n := range edgeRules(ing) {
+				if got, want := podsSelectedBy(s2, at(find(s2, "Service", n), "spec", "selector")), podsSelectedBy(s3, at(find(s3, "Service", n), "spec", "selector")); len(want) == 0 || !equalStrings(got, want) {
+					t.Errorf("Service %s selects %v in step 2 and %v in step 3", n, got, want)
+				}
+			}
+		}
+		// step 2 keeps the bridge running behind its own Service, and the endpoint's Service on the pool of the role
+		if got := podsSelectedBy(s2, at(find(s2, "Service", "trove"), "spec", "selector")); !equalStrings(got, []string{"trove-web"}) {
+			t.Errorf("Service trove selects %v in step 2, want trove-web", got)
+		}
+		if got := podsSelectedBy(s2, at(find(s2, "Service", "trove-ep-customers"), "spec", "selector")); !equalStrings(got, []string{"trove-packages-ep-customers"}) {
+			t.Errorf("Service trove-ep-customers selects %v in step 2", got)
+		}
+		gone := []string{}
+		for _, n := range names(s2, "Deployment") {
+			if find(s3, "Deployment", n) == nil {
+				gone = append(gone, n)
+			}
+		}
+		if !equalStrings(gone, []string{"trove-web", "trove-web-ep-customers"}) {
+			t.Errorf("step 3 removes the Deployments %v, want the bridge's", gone)
+		}
+		// web.routed means nothing without the bridge
+		a, _ := render(t, required())
+		b, _ := render(t, required(), "web.routed=false")
+		if a != b {
+			t.Error("web.routed=false changes the rendering without web.enabled")
+		}
+	})
+
+	t.Run("R-HA-064 Q-HA-130 a Service that step 2 routes to is rendered in step 1, without a route", func(t *testing.T) {
+		// an endpoint whose surface holds families of both roles: step 2 splits its host between trove-ep-customers and
+		// trove-api-ep-customers, so the second exists since step 1 and has its endpoints when the route comes
+		both := "endpoints.customers.surface={packages,files,api}"
+		_, s1 := render(t, bridgeSet(), both)
+		_, s2 := render(t, bridgeSet(), both, "web.routed=false")
+		svc := find(s1, "Service", "trove-api-ep-customers")
+		if svc == nil {
+			t.Fatal("Service trove-api-ep-customers is not rendered in step 1")
+		}
+		if got := podsSelectedBy(s1, at(svc, "spec", "selector")); !equalStrings(got, []string{"trove-api-ep-customers"}) {
+			t.Errorf("Service trove-api-ep-customers selects %v in step 1", got)
+		}
+		if got := edgeRules(find(s1, "Ingress", "trove-ep-customers")); len(got) != 1 || got["/"] != "trove-ep-customers" {
+			t.Errorf("the endpoint Ingress of step 1 = %v, want / to trove-ep-customers", got)
+		}
+		if got := edgeRules(find(s2, "Ingress", "trove-ep-customers")); got["/api/v1"] != "trove-api-ep-customers" || got["/api"] != "trove-ep-customers" {
+			t.Errorf("the endpoint Ingress of step 2 = %v", got)
+		}
+	})
+
+	t.Run("R-HA-063 R-HA-064 the BackendTLSPolicies cover the Service trove and the role Services for the whole bridge", func(t *testing.T) {
+		// a route outside the chart (a Gateway API HTTPRoute) moves at a time the chart does not know
+		policy := []string{"tls.backendTLSPolicy.enabled=true", "tls.backendTLSPolicy.caConfigMapName=trove-tls-ca"}
+		for _, c := range []struct {
+			name string
+			sets []string
+			want []string
+		}{
+			{"step 1", nil, []string{"trove", "trove-api", "trove-packages"}},
+			{"step 2", []string{"web.routed=false"}, []string{"trove", "trove-api", "trove-packages"}},
+			{"step 3", []string{"web.enabled=false"}, []string{"trove-api", "trove-packages"}},
+		} {
+			_, docs := render(t, bridgeSet(), append(append([]string{}, policy...), c.sets...)...)
+			if got := names(docs, "BackendTLSPolicy"); !equalStrings(got, c.want) {
+				t.Errorf("%s: BackendTLSPolicies %v, want %v", c.name, got, c.want)
+			}
+		}
+	})
+
+	t.Run("R-HA-064 the notes name the step and the next one", func(t *testing.T) {
+		if got := notesOf(t, bridgeSet()); !strings.Contains(got, "step 1 of 3") || !strings.Contains(got, "--set web.enabled=true --set web.routed=false") {
+			t.Errorf("notes of step 1:\n%s", got)
+		}
+		if got := notesOf(t, bridgeSet(), "web.routed=false"); !strings.Contains(got, "step 2 of 3") || !strings.Contains(got, "web.enabled: false") {
+			t.Errorf("notes of step 2:\n%s", got)
+		}
+		if got := notesOf(t, bridgeSet(), "web.enabled=false"); strings.Contains(got, "not complete") {
+			t.Errorf("notes of step 3 still name the cut:\n%s", got)
 		}
 	})
 

@@ -216,11 +216,6 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   run that was suspected first does not apply to that class (each hosted job has its own VM). Fixed in CI: the nightly row `mirror` runs on
   `large` since [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class).
   Done when the nightly leg passes the bound on `large`; a miss there is a product finding (split the phases as Q-REPO-211 did).
-- **F-64 · One browser journey of `TestUpgrade_R_HA_064_AcrossTheCut` failed without the asset skew of Q-HA-99** (read from the job log of
-  the scheduled nightly run 42194413882, release v0.19.4): iteration 11 of 14 exited 1 after 20.2 s at 10:03:10, no `ASSET-SKEW` line; two
-  other iterations met the skew and were counted as Q-HA-99 allows; every client loop passed. The leg passed in the dispatched run
-  42177273488. Not known: which step of the journey failed (the Playwright trace is in the run's artifact `e2e-upgrade-playwright-upgrade`).
-  Done when the cause is named and fixed.
 - **F-65 · `failover.sh` failed inside the node clearance of the mirror's failure suite in CI** (read from the job log of the dispatched
   nightly run 42211913572, leg `e2e-mirror (mirror-long)`, 2026-11-06). `clearNode` (test/e2e/node_loss_test.go) deleted the operators'
   pods so that they start elsewhere, then switched the PostgreSQL primary off the node with `failover.sh`, which exited 1; the scenario that

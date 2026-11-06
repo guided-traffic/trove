@@ -864,7 +864,7 @@ areas.
 - 🟢 Specification rewritten: INV-2, R-ARCH-001, R-ARCH-016 (the queue `vuln`, `jobs.queues`, `jobs.exclude_queues`),
   R-HA-002, R-HA-037 (one host split by path prefix), R-HA-042 (one ingress policy per Deployment, each rule with its port; the
   egress part removed, Q-HA-10 superseded, the egress gap H-516, H-41 narrowed to the ingress enforcement), R-HA-062 (path
-  and worker pools), R-HA-064 (the upgrade across the cut in two steps through the bridge `web.enabled`), R-EP-008 (endpoint
+  and worker pools), R-HA-064 (the upgrade across the cut through the bridge `web.enabled`, three steps since Q-HA-130), R-EP-008 (endpoint
   pools by role), the UI's content routes on `api` (Q-UI-106); ADR-013, ADR-104 and ADR-105 revised; decisions Q-ARCH-294 to
   Q-ARCH-299, Q-HA-71 to Q-HA-79, Q-EP-70, Q-EP-71, Q-OPS-161, Q-UI-106, Q-UI-107; work packages WP6a.1 to WP6a.5
 - 🟢 The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
@@ -887,7 +887,14 @@ areas.
   depends on, which the guard enforces (Q-HA-115). `TestR_HA_021_UpgradePreparation` names R-HA-021 and passes against the local
   integration stack (step 4: report and guard agree for each state; the runner's part of both criteria); its CI run is pending, and
   the Helm level of the criteria (a real `helm upgrade` across a contract step) is not tested. The upgrade tests read the endpoint
-  (Q-HA-116, supersedes Q-HA-96); that change compiles and has not run on kind yet
+  (Q-HA-116, supersedes Q-HA-96); that change compiles and has not run on kind yet.
+  The scheduled nightly run 42194413882 showed a gap of the two-step cut (F-64): the edge answered 509 requests
+  with `503` during step 2, one journey met it. Since 2026-11-06 the cut takes three steps, each changing either the edge or the
+  backends (`web.routed`, [Q-HA-130](../spec/ha-and-helm.md#q-ha-130--the-cut-moves-the-edge-and-removes-the-bridge-in-two-separate-upgrades)),
+  the guard also refuses the last step while the edge still routes to the bridge, and both upgrade tests fail on any answer of the
+  edge without a backend ([Q-HA-131](../spec/ha-and-helm.md#q-ha-131--the-upgrade-tests-read-the-edges-access-lines-for-answers-without-a-backend));
+  verified by the chart test and against an API server for the guard, the three steps under the loops are left to the next nightly
+  run of the leg
 
 ## Phase 6b · Remote full mirror
 

@@ -2,7 +2,7 @@
 {{- define "trove.notes" -}}
 {{- $names := include "trove.endpointNames" . | fromYamlArray -}}
 {{- $fullname := include "trove.fullname" . -}}
-{{- $bridge := .Values.web.enabled -}}
+{{- $bridge := include "trove.bridgeRouted" . -}}
 {{- $counts := include "trove.connectionCounts" . | fromYaml -}}
 {{- $db := dig "database" (dict) .Values.config -}}
 {{- $maxConns := int (dig "pool" "max_conns" 20 $db) -}}
@@ -15,7 +15,10 @@
 trove is installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
 {{- if $bridge }}
 
-The cut into roles is not complete: web.enabled is true, so {{ $fullname }}-web and the Service {{ $fullname }} still carry every path, and {{ $fullname }}-api, {{ $fullname }}-packages and {{ $fullname }}-worker run beside them without edge traffic. Step 2: once they are ready, run helm upgrade again with web.enabled: false (the default). Before that, move in-cluster callers to the Services {{ $fullname }}-api and {{ $fullname }}-packages (R-HA-064).
+The cut into roles is not complete (step 1 of 3): web.enabled is true, so {{ $fullname }}-web and the Service {{ $fullname }} still carry every path, and {{ $fullname }}-api, {{ $fullname }}-packages and {{ $fullname }}-worker run beside them without edge traffic. Step 2: once they are ready, run helm upgrade with --set web.enabled=true --set web.routed=false, which moves the edge onto them while {{ $fullname }}-web keeps running. Step 3 removes the bridge (R-HA-064).
+{{- else if .Values.web.enabled }}
+
+The cut into roles is not complete (step 2 of 3): the edge routes to {{ $fullname }}-api and {{ $fullname }}-packages, and {{ $fullname }}-web and the Service {{ $fullname }} still run without edge traffic. Move in-cluster callers to the Services {{ $fullname }}-api and {{ $fullname }}-packages, then run step 3: helm upgrade with web.enabled: false (the default), which removes them (R-HA-064).
 {{- end }}
 
 Roles
@@ -44,7 +47,7 @@ Endpoints
 {{- range $name := $names }}
 {{- $e := include "trove.endpoint" (dict "root" $ "name" $name) | fromYaml }}
 {{- $hosts := include "trove.endpointHosts" $e | fromYamlArray }}
-{{- $roles := ternary (list "web") (include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray) $bridge }}
+{{- $roles := ternary (list "web") (include "trove.surfaceRoles" (dict "root" $ "name" $name) | fromYamlArray) (not (empty $bridge)) }}
   {{ $name }}   Service {{ $fullname }}-ep-{{ $name }}{{ if and (eq (len $roles) 2) (not $bridge) }}, {{ $fullname }}-api-ep-{{ $name }}{{ end }}:{{ $e.port }}   hosts: {{ join ", " $hosts }}{{ with $e.wildcardHost }}, {{ . }}{{ end }}   pods: {{ if $e.pool }}{{ range $i, $role := $roles }}{{ if $i }}, {{ end }}pool {{ $fullname }}-{{ $role }}-ep-{{ $name }}{{ end }}{{ else }}the main {{ join ", " $roles }} Deployment{{ if gt (len $roles) 1 }}s{{ end }}{{ end }}
 {{- end }}
 {{- range $name := $names }}
