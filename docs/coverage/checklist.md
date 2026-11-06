@@ -9,7 +9,7 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 446 of 689 spec requirements are implemented: a passing test names them and no
+**Status.** 447 of 689 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
@@ -884,7 +884,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-001 | Active-active cluster of identical nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) (implemented) |
 | HA-002 | Cluster-wide task execution without a primary node | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md), [R-HA-005](../spec/ha-and-helm.md) (implemented) |
 | HA-003 | Shared metadata database as the cluster backbone | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-013](../spec/ha-and-helm.md) (implemented) |
-| HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) |
+| HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) (implemented) |
 | HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md) (implemented), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md) (implemented), [R-HA-061](../spec/ha-and-helm.md) (implemented) |
 | HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-018](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) (implemented) |
 | HA-007 | Distributed locking through the database | MVP | implemented | [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-ARCH-033](../spec/architecture.md) (implemented), [R-HA-005](../spec/ha-and-helm.md) (implemented), [R-HA-006](../spec/ha-and-helm.md) (implemented) |
