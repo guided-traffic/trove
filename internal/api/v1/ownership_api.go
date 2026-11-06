@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"net/url"
 
@@ -55,7 +56,8 @@ func packageOwnerOf(o authz.Owner) gen.PackageOwner {
 }
 
 // GetPackageOwners implements GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners.
-func (s *Server) GetPackageOwners(w http.ResponseWriter, r *http.Request, repoKey, packageName string) {
+func (s *Server) GetPackageOwners(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText, packageName string) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx, svc, acc, err := s.ownership(r.Context(), repoKey)
 	var po authz.PackageOwners
 	if err == nil {
@@ -78,7 +80,8 @@ func (s *Server) GetPackageOwners(w http.ResponseWriter, r *http.Request, repoKe
 // AddPackageOwner implements POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners:
 // the owner and its audit event in the transaction of an Idempotency-Key
 // (R-API-014), so a replay answers the stored outcome.
-func (s *Server) AddPackageOwner(w http.ResponseWriter, r *http.Request, repoKey, packageName string, _ gen.AddPackageOwnerParams) {
+func (s *Server) AddPackageOwner(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText, packageName string, _ gen.AddPackageOwnerParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx, svc, acc, err := s.ownership(r.Context(), repoKey)
 	if err == nil && s.idem == nil {
 		err = unavailable("The idempotency store")
@@ -112,7 +115,8 @@ func (s *Server) AddPackageOwner(w http.ResponseWriter, r *http.Request, repoKey
 }
 
 // RemovePackageOwner implements DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}.
-func (s *Server) RemovePackageOwner(w http.ResponseWriter, r *http.Request, repoKey, packageName, owner string, params gen.RemovePackageOwnerParams) {
+func (s *Server) RemovePackageOwner(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText, packageName, owner string, params gen.RemovePackageOwnerParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx, svc, acc, err := s.ownership(r.Context(), repoKey)
 	if err == nil {
 		release := params.Release != nil && *params.Release

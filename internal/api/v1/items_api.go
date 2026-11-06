@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 
@@ -78,7 +79,8 @@ func itemPath(p *string) (string, error) {
 }
 
 // GetItem implements GET /api/v1/repositories/{repoKey}/items (R-STOR-016).
-func (s *Server) GetItem(w http.ResponseWriter, r *http.Request, repoKey string, params gen.GetItemParams) {
+func (s *Server) GetItem(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetItemParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.filesService()
 	var path string
 	if err == nil {
@@ -104,7 +106,8 @@ func (s *Server) GetItem(w http.ResponseWriter, r *http.Request, repoKey string,
 // removes items stored before a pattern change and items of a disabled
 // repository (R-REPO-005, Q-AUTHZ-162). Package ownership applies to every caller
 // alike; content:bypass passes it as it passes every ownership check.
-func (s *Server) DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params gen.DeleteItemParams) {
+func (s *Server) DeleteItem(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.DeleteItemParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.filesService()
 	var path string
 	if err == nil {
@@ -145,7 +148,8 @@ func boolParam(lq ListQuery, name string, def bool) (bool, error) {
 }
 
 // ListChildren implements GET /api/v1/repositories/{repoKey}/children (R-STOR-017).
-func (s *Server) ListChildren(w http.ResponseWriter, r *http.Request, repoKey string, _ gen.ListChildrenParams) {
+func (s *Server) ListChildren(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.ListChildrenParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.filesService()
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -211,7 +215,8 @@ func optional(v []string) *string {
 }
 
 // GetItemStats implements GET /api/v1/repositories/{repoKey}/stats (R-STOR-015).
-func (s *Server) GetItemStats(w http.ResponseWriter, r *http.Request, repoKey string, params gen.GetItemStatsParams) {
+func (s *Server) GetItemStats(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetItemStatsParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.filesService()
 	var path string
 	if err == nil {

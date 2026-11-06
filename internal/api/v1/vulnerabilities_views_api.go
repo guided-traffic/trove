@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -371,7 +372,8 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 // RescanRepositoryVulnerabilities implements POST /api/v1/repositories/{key}/vulnerabilities/rescan (R-VULN-011): it enqueues
 // a vuln-rescan job of the repository and answers 202 with the job, 409 with the running one. The caller holds manage on the
 // repository (declared, Q-VULN-27).
-func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, key string, _ gen.RescanRepositoryVulnerabilitiesParams) {
+func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.RescanRepositoryVulnerabilitiesParams) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	rep, err := s.vulnReport()
 	if err == nil && (s.idem == nil || s.o.API.Queue == nil) {
 		err = unavailable("The rescan")

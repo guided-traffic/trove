@@ -44,6 +44,9 @@ func (e *Engine) MembershipsOn(idx *Index, sub Subject) []Membership {
 	var out []Membership
 	for _, p := range idx.projects {
 		if role := p.roleOf(sub); role != ProjectRoleNone {
+			if role == ProjectRoleOwner && !mayAdminister(sub) {
+				role = ProjectRoleMaintainer // the administration needs a session or a token with admin: true (D2)
+			}
 			out = append(out, Membership{Key: p.key, Role: role})
 		}
 	}

@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"time"
 
@@ -67,7 +68,8 @@ func (b claimsBody) input() repository.ClaimInput {
 }
 
 // GetRepositoryClaims implements GET /api/v1/repositories/{repoKey}/claims.
-func (s *Server) GetRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, _ gen.GetRepositoryClaimsParams) {
+func (s *Server) GetRepositoryClaims(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.GetRepositoryClaimsParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.repositoryService()
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -87,7 +89,8 @@ func (s *Server) GetRepositoryClaims(w http.ResponseWriter, r *http.Request, rep
 }
 
 // PutRepositoryClaims implements PUT /api/v1/repositories/{repoKey}/claims.
-func (s *Server) PutRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, _ gen.PutRepositoryClaimsParams) {
+func (s *Server) PutRepositoryClaims(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.PutRepositoryClaimsParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.repositoryService()
 	var pre Precondition
 	if err == nil {

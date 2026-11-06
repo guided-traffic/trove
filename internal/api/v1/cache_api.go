@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 	"time"
@@ -62,7 +63,8 @@ type cacheInvalidateRequest struct {
 // InvalidateRepositoryCache implements POST /api/v1/repositories/{repoKey}/cache/invalidate
 // (R-OPS-021). manage on the repository, or the administrator role, was decided by
 // the shared step.
-func (s *Server) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, repoKey string) {
+func (s *Server) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	svc, err := s.cacheServices()
 	var in cacheInvalidateRequest
@@ -142,7 +144,8 @@ func (s *Server) requireCacheReader(ctx context.Context, svc CacheServices, key 
 
 // ListCacheEntries implements GET /api/v1/repositories/{repoKey}/cache/entries
 // (R-REPO-032).
-func (s *Server) ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKey string, _ gen.ListCacheEntriesParams) {
+func (s *Server) ListCacheEntries(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.ListCacheEntriesParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	svc, err := s.cacheServices()
 	var lq ListQuery

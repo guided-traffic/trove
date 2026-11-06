@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -456,7 +457,8 @@ func (s *Server) GetPackageVersionReadme(w http.ResponseWriter, r *http.Request,
 // GetClientSetup implements GET /api/v1/repositories/{repoKey}/client-setup
 // (R-API-030). The operation's declaration (read on the repository) has been
 // enforced by the time the handler runs.
-func (s *Server) GetClientSetup(w http.ResponseWriter, r *http.Request, repoKey string, params gen.GetClientSetupParams) {
+func (s *Server) GetClientSetup(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetClientSetupParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ps, err := s.packageServices()
 	if err != nil {
 		httpserver.Problem(w, r, err)

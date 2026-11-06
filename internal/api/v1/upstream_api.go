@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -23,7 +24,8 @@ import (
 // answer is 200 whatever the upstream does and the body says what happened.
 
 // TestRepositoryUpstream implements POST /api/v1/repositories/{key}/upstream-test.
-func (s *Server) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, key string) {
+func (s *Server) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	svc, err := s.repositoryService()
 	if err != nil {
 		httpserver.Problem(w, r, err)

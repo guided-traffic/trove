@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 
@@ -28,7 +29,8 @@ type ResolutionExplainer interface {
 var _ ResolutionExplainer = (*virtual.Resolver)(nil)
 
 // GetRepositoryResolution implements GET /api/v1/repositories/{repoKey}/resolution.
-func (s *Server) GetRepositoryResolution(w http.ResponseWriter, r *http.Request, repoKey string, params gen.GetRepositoryResolutionParams) {
+func (s *Server) GetRepositoryResolution(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetRepositoryResolutionParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ex, err := s.explainer()
 	if err != nil {
 		httpserver.Problem(w, r, err)

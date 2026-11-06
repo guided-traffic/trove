@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"slices"
 	"strings"
@@ -23,7 +24,8 @@ import (
 // GetRepositoryGuide implements GET /api/v1/repositories/{repoKey}/guide. The
 // operation's declaration (read on the repository) has been enforced by the time
 // the handler runs.
-func (s *Server) GetRepositoryGuide(w http.ResponseWriter, r *http.Request, repoKey string, params gen.GetRepositoryGuideParams) {
+func (s *Server) GetRepositoryGuide(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetRepositoryGuideParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ps, err := s.packageServices()
 	if err == nil && ps.Guides == nil {
 		err = unavailable("The guide renderer")

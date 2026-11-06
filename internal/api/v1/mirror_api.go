@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/guided-traffic/trove/internal/qname"
 	"net/http"
 	"strconv"
 	"time"
@@ -331,7 +332,8 @@ func (s *Server) mirrorRemote(ctx context.Context, key string) (MirrorTarget, er
 }
 
 // GetRepositoryMirror implements GET /api/v1/repositories/{key}/mirror (R-REPO-056).
-func (s *Server) GetRepositoryMirror(w http.ResponseWriter, r *http.Request, key string) {
+func (s *Server) GetRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	state, err := s.mirrorState()
 	if err == nil {
@@ -452,7 +454,8 @@ func decodeLastPass(raw []byte) *gen.MirrorPassSummary {
 }
 
 // RunRepositoryMirror implements POST /api/v1/repositories/{key}/mirror/run (R-REPO-056).
-func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key string, _ gen.RunRepositoryMirrorParams) {
+func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.RunRepositoryMirrorParams) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	state, err := s.mirrorState()
 	if err == nil && (s.idem == nil || s.o.API.Queue == nil) {
