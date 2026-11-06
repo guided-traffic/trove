@@ -6,6 +6,9 @@
 # App token steps of the workflows pass client-id and private-key, as the organisation's apps do.
 # Only these two messages are ignored, and only in the two files that mint the App token.
 #
+# The job compat of release.yml is switched off with `if: false` until the first stable release (Q-ARCH-332), and actionlint
+# reports that constant condition; the message is ignored in release.yml only, and the line goes when the job is switched on.
+#
 # large is the label of the organisation's runner class for kind, e2e and load tests (docs/developer/releasing.md#ci).
 self-hosted-runner:
   labels:
@@ -15,6 +18,7 @@ paths:
     ignore:
       - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
       - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
+      - 'constant expression "false" in condition\. remove the if: section'
   .github/workflows/renovate.yml:
     ignore:
       - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'

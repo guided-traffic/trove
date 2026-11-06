@@ -20,12 +20,22 @@ const (
 	phaseContract = "contract"
 )
 
-// Step is one migration file. Its SQL is never edited once applied: the runner
-// compares the checksum with the one recorded in schema_migration.
+// enforceMigrationPhases switches on the expand/contract rules of R-HA-018 for
+// the migration files: every file carries -- trove:phase, an expand step holds
+// no contract-class statement, and requiredSchema is the newest expand step.
+// Switched off until the first stable release (Q-ARCH-332): a file needs no
+// header, any step may drop, rename or tighten, and requiredSchema is the
+// highest number. Set it to true to switch the rules on again; the embedded
+// files must then pass them (TestEmbeddedSteps).
+const enforceMigrationPhases = false
+
+// Step is one migration file. The runner compares its checksum with the one
+// recorded in schema_migration, so a database that applied another version of
+// the file refuses to migrate (R-ARCH-026).
 type Step struct {
 	Version     int
 	Name        string // file name without ".sql", e.g. 00004_coordination
-	Phase       string // expand or contract
+	Phase       string // expand or contract; expand without a header while enforceMigrationPhases is off
 	NoTx        bool   // -- trove:no-transaction
 	RequiresApp string // contract steps: the oldest release allowed to serve afterwards
 	SQL         string
@@ -47,21 +57,26 @@ func EmbeddedFS() fs.FS {
 // EmbeddedSteps parses the migrations compiled into the binary.
 func EmbeddedSteps() ([]Step, error) { return ParseSteps(EmbeddedFS()) }
 
-// RequiredSchema is the number of the newest expand step this binary embeds
-// (R-HA-018): a replica serves only once schema_state.applied reaches it. It
-// panics if the embedded migrations are invalid, which the unit tests prevent.
+// RequiredSchema is the schema step this binary needs (R-HA-018): a replica
+// serves only once schema_state.applied reaches it. It is the newest expand step
+// while enforceMigrationPhases is on, and the newest step of any phase while it
+// is off. It panics if the embedded migrations are invalid, which the unit tests
+// prevent.
 func RequiredSchema() int {
 	steps, err := EmbeddedSteps()
 	if err != nil {
 		panic("postgres: invalid embedded migrations: " + err.Error())
 	}
-	return requiredSchema(steps)
+	return requiredSchema(steps, enforceMigrationPhases)
 }
 
-func requiredSchema(steps []Step) int {
+// requiredSchema is the newest expand step under the expand/contract rules, so
+// that a binary does not need the contract steps it ships, and the highest step
+// number without them, because a binary may then depend on every step it embeds.
+func requiredSchema(steps []Step, strict bool) int {
 	n := 0
 	for _, s := range steps {
-		if s.Phase == phaseExpand {
+		if !strict || s.Phase == phaseExpand {
 			n = max(n, s.Version)
 		}
 	}
@@ -71,8 +86,11 @@ func requiredSchema(steps []Step) int {
 // ParseSteps reads every NNNNN_<name>.sql file in the root of fsys, checks the
 // headers of R-ARCH-026 and returns the steps in order. The numbers must run
 // 1..N without a gap, so a file that went missing is an error, not a silently
-// skipped step.
-func ParseSteps(fsys fs.FS) ([]Step, error) {
+// skipped step. The expand/contract rules apply while enforceMigrationPhases is on.
+func ParseSteps(fsys fs.FS) ([]Step, error) { return parseSteps(fsys, enforceMigrationPhases) }
+
+// parseSteps is ParseSteps with the expand/contract rules on (strict) or off.
+func parseSteps(fsys fs.FS, strict bool) ([]Step, error) {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err
@@ -91,7 +109,7 @@ func ParseSteps(fsys fs.FS) ([]Step, error) {
 			return nil, err
 		}
 		v, _ := strconv.Atoi(m[1])
-		step, err := parseStep(strings.TrimSuffix(e.Name(), ".sql"), v, raw)
+		step, err := parseStep(strings.TrimSuffix(e.Name(), ".sql"), v, raw, strict)
 		if err != nil {
 			return nil, fmt.Errorf("migration file %s: %w", e.Name(), err)
 		}
@@ -106,10 +124,17 @@ func ParseSteps(fsys fs.FS) ([]Step, error) {
 	return steps, nil
 }
 
-// contractStatements are what an expand step must not contain (R-HA-018).
+// contractStatements are what an expand step must not contain (R-HA-018) while
+// the expand/contract rules are on.
 var contractStatements = regexp.MustCompile(`(?i)\bdrop\s+(table|column|index|constraint|function|type|trigger|view|schema|sequence|extension)\b|\brename\b|\bset\s+not\s+null\b`)
 
-func parseStep(name string, version int, raw []byte) (Step, error) {
+// parseStep reads the header of one file (R-ARCH-026). With strict, the rules of
+// R-HA-018 apply: the phase header is required, and an expand step holds no
+// contract-class statement. Without, a file without -- trove:phase is an expand
+// step and the phase does not restrict the SQL (Q-ARCH-332). Either way a contract
+// step names the release it requires, because the contract guard and compat_floor
+// read it, and requires-app stands on contract steps only.
+func parseStep(name string, version int, raw []byte, strict bool) (Step, error) {
 	s := Step{Version: version, Name: name, SQL: string(raw), Checksum: sha256.Sum256(raw)}
 	for _, line := range strings.Split(s.SQL, "\n") {
 		t := strings.TrimSpace(line)
@@ -152,7 +177,10 @@ func parseStep(name string, version int, raw []byte) (Step, error) {
 		}
 	}
 	if s.Phase == "" {
-		return s, fmt.Errorf("missing -- trove:phase expand|contract header")
+		if strict {
+			return s, fmt.Errorf("missing -- trove:phase expand|contract header")
+		}
+		s.Phase = phaseExpand
 	}
 	if s.Phase == phaseContract && s.RequiresApp == "" {
 		return s, fmt.Errorf("a contract step needs -- trove:requires-app >= <version>")
@@ -164,7 +192,7 @@ func parseStep(name string, version int, raw []byte) (Step, error) {
 	if strings.TrimSpace(body) == "" {
 		return s, fmt.Errorf("the file holds no statement")
 	}
-	if s.Phase == phaseExpand {
+	if strict && s.Phase == phaseExpand {
 		if m := contractStatements.FindString(body); m != "" {
 			return s, fmt.Errorf("an expand step must not contain %q: that is a contract-class statement (R-HA-018)", strings.TrimSpace(m))
 		}

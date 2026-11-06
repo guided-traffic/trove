@@ -29,7 +29,7 @@ This page lists what this version of trove does not do, and the known weak spots
 
 ## Upgrades and high availability
 
-- **Rolling upgrades with replicas of two versions running side by side are not verified yet.** The System status screen shows such a state, but it has not been tested under load.
+- **No backward compatibility before the first stable release.** An upgrade may require a fresh database, no rollback is supported, and replicas of two versions are not guaranteed to work side by side during a rolling update ([Upgrades](upgrades.md#before-the-first-stable-release)). The System status screen shows such a mixed state.
 - **Memory under drains.** In test runs of the releases before the split into roles, `web` pods with a 1 GiB memory limit were killed for exceeding it under heavy npm install load during a node drain. The cause is not fixed. Keep the chart's default limit of `packages` (2 GiB) or more.
 - **Drain delay.** The default `health.shutdown_drain_delay` of 5 s was measured against the HAProxy Ingress of the test cluster under load: its endpoint removal took at most 1.8 s. Other ingress controllers, and clusters with slow endpoint propagation, may need longer. If clients see connection errors during drains, raise it; the drain test of the development repository measures the time for an edge and fails when the delay is shorter.
 - **Chart gaps.** The chart renders no ServiceMonitor (see [Monitoring and operations](operations.md)), no HorizontalPodAutoscaler, no Gateway API route (only a `BackendTLSPolicy`), and no egress NetworkPolicy: the pods' outgoing traffic is not restricted by the chart. The same holds for the chart `trove-bastion` ([The trove Bastion](bastion.md)).

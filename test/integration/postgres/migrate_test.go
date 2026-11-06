@@ -129,8 +129,9 @@ func slowFirstStep(t testing.TB) map[string]string {
 		t.Fatal(err)
 	}
 	first := steps[0]
-	sql := strings.Replace(first.SQL, "-- trove:phase expand\n", "-- trove:phase expand\nSELECT pg_sleep(1.5);\n", 1)
-	return map[string]string{first.Name + ".sql": sql}
+	// Appended, not inserted after the phase header: step 1 may lose that header while the expand/contract rules are
+	// switched off (Q-ARCH-332), and a replacement that found nothing would drop the delay without a failure.
+	return map[string]string{first.Name + ".sql": first.SQL + "\nSELECT pg_sleep(1.5);\n"}
 }
 
 func TestMigrateConcurrentRunners(t *testing.T) {

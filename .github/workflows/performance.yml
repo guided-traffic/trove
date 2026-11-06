@@ -5,7 +5,7 @@
 # E1.8) and the drain per role (set drain-roles, E6a.6, under the npm load of npm-ha too, Q-HA-94); job e2e-npm runs the sets npm-ha
 # (drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, E2.11) and ha-suite (the failure suite under the
 # npm load); job e2e-upgrade runs the set upgrade (published releases upgraded to the commit's image under the npm and NuGet loads, with a
-# browser journey); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
+# browser journey; switched off in the nightly run until the first stable release, Q-ARCH-332, and run by a dispatch with sets=upgrade); job npm-ha-soak runs the 20-minute pod crash of R-HA-052 under the npm load and the npm load scripts of R-ARCH-027
 # (Q-HA-67); job e2e-nuget runs nuget-ha (TestNuGetHA: the drain and failover under the NuGet load and the npm load, on the large class,
 # Q-HA-102); job e2e-ci runs ci-ha (E4.7); job e2e-bastion runs the sets bastion and
 # bastion-long (R-BAS-049); job e2e-vuln runs vuln and vuln-long (R-VULN-029); job e2e-mirror runs mirror and mirror-long (R-REPO-059).
@@ -1643,9 +1643,11 @@ jobs:
   # commit, under the npm and the NuGet client loops and with a browser journey. Both clients images are needed, so the job runs on a
   # GitHub-hosted runner with the disk space freed, as e2e-vuln does (Q-ARCH-326). Edge port 8101 is the first free one after ha-suite's 8100.
   # A red leg is a finding and holds nothing (owner, 2026-11-01).
+  # Switched off in the nightly run until the first stable release (Q-ARCH-332): it runs only on a dispatch that names it
+  # (-f sets=upgrade). To switch it on, put `!inputs.sets || ` back in front of the contains() of the condition.
   e2e-upgrade:
     name: e2e-upgrade on kind (upgrade)
-    if: ${{ !inputs.sets || contains(format(',{0},', inputs.sets), ',upgrade,') }}
+    if: ${{ contains(format(',{0},', inputs.sets), ',upgrade,') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:

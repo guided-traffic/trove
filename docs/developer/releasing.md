@@ -92,7 +92,7 @@ at its pin (`make promtool`, below).
 | e2e-mirror on kind (mirror) | `make npm-clients-image`, `make nuget-clients-image`, `make image VERSION=dev`, `make dev-up`, `make e2e SET=mirror`, `make dev-down` | the remote full mirror on kind (R-REPO-059, E6b.6, R-REPO-055 and R-REPO-058's e2e criteria): the `mirror` profile (three `api` and three `packages` replicas, the scatter edge, the main worker and a worker pool of two processes that claim the queue `mirror` alone), npm and NuGet remotes in mode mirror over the counting test upstreams, `npm ci` of the reference project and `dotnet restore` of the reference solution through the same remotes while a pass runs (the install within 120 % of its time without the pass, the test upstream's open requests within `maxConcurrentFetches + n - 1 + B`), the status from every `api` pod, two processes that dispatch, a pass with Valkey stopped, a restore with the test upstreams stopped, and the browser journey of the Mirror tab with axe (the job installs Node.js and the browser); runs when the change touches the mirror (a scope step diffs against the base, the job is green after it otherwise, and Semantic Release needs it); own cluster name and edge port (8098). The drain is the set `mirror-long` of [HA and Performance (nightly)](#ha-and-performance-nightly); uploads `e2e-mirror-report-mirror`, `e2e-mirror-artifacts-mirror`, `e2e-mirror-playwright-mirror` and on failure the cluster state ([e2e.md](e2e.md#the-mirror-tests)) |
 | e2e on kind (push, access-long) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set, every change: `push` and `access-long` (E1.1, E1.11 with the Playwright journeys, E1.13; the only leg that installs Node.js and the browser). The set `failover` (E0.13, E1.8) left this job on 2026-11-01 (owner) and runs nightly and on dispatch in [HA and Performance (nightly)](#ha-and-performance-nightly); the legs and those of e2e-npm build their own image and wait for no other job; each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
-| compatibility (R-ARCH-025, R-ARCH-026) | `make compat-check` | the OpenAPI document against the latest `v0.*` release with the pinned oasdiff (`--fail-on ERR`), the migration files: only additions that continue the numbering, and no change of a migration that `main` has committed (the history of `main`); needs the history and the tags (`fetch-depth: 0`, `fetch-tags: true`); see [Compatibility](#compatibility) |
+| compatibility (R-ARCH-025, R-ARCH-026) | `make compat-check` | the OpenAPI document against the latest `v0.*` release with the pinned oasdiff (`--fail-on ERR`), the migration files: only additions that continue the numbering, and no change of a migration that `main` has committed (the history of `main`); needs the history and the tags (`fetch-depth: 0`, `fetch-tags: true`); see [Compatibility](#compatibility). Switched off until the first stable release (`if: false`, not among the needs of Semantic Release; [the switches](#switched-off-until-the-first-stable-release)) |
 | coverage generator (links and rules) | `go run ./internal/tools/coverage -check`, then `-links` | the generated pages match their rules; every relative link and anchor resolves |
 | coverage evidence (implemented.txt) | `go run ./internal/tools/coverage -check -tests …` over the reports of this run | [implemented.txt](../coverage/implemented.txt) equals what the reports imply; needs `unit`, both `integration` shards and `chart` |
 | Combined Coverage Report | `make coverage-report` | merges the unit and integration profiles; the job summary and the badge `coverage-badge` |
@@ -154,6 +154,12 @@ annotations, so the repository runs gosec through golangci-lint and has one gose
 
 ### Compatibility
 
+**Switched off until the first stable release** ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): the job `compat` has `if: false` and is not
+among the needs of Semantic Release, so neither a breaking change of `/api/v1` nor an edited migration fails CI. `make compat-check`
+and [test/compat](../../test/compat) stay: lint and vet build them with the tag `compat`, Renovate keeps `OASDIFF_VERSION` fresh,
+and the target runs by hand. The rest of this section describes the job as it runs once it is switched on
+([the switches](#switched-off-until-the-first-stable-release)).
+
 `make compat-check` runs the tests of [test/compat](../../test/compat) (build tag `compat`). They hold two promises of
 the specification to the latest release:
 
@@ -180,6 +186,35 @@ version with `go version -m` and compares it with the pin: a binary of another v
 
 Not covered by this job: the other surfaces of R-ARCH-025 (configuration keys, Helm values, metric names, error codes) and
 its acceptance test of a `helm upgrade` from N-1 to N and a `helm rollback`. Nothing in CI checks those.
+
+### Switched off until the first stable release
+
+trove keeps no backward compatibility until its first stable release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`). The mechanisms that hold
+compatibility are switched off, not removed, so that each comes back with the edit below. Their code and tests stay built,
+linted and run: `test/compat` under the tag `compat`, the strict migration rules in `TestParseSteps`.
+
+| Switch | Where | Off now | To switch on |
+|---|---|---|---|
+| The job `compat` (R-ARCH-025, R-ARCH-026) | [release.yml](../../.github/workflows/release.yml), job `compat` | `if: false` | Delete the line `if: false` and the comment above it that names Q-ARCH-332 |
+| `compat` among the needs of the release | [release.yml](../../.github/workflows/release.yml), job `semantic-release` | `compat` is missing from `needs:`, because a skipped need would skip the release | Put `compat` back into `needs:` after `workflows`, and delete the comment above the job that names Q-ARCH-332 |
+| actionlint's acceptance of `if: false` | [.github/actionlint.yaml](../../.github/actionlint.yaml) | the message `constant expression "false" in condition` is ignored in `release.yml` | Delete that ignore line and its comment paragraph |
+| The expand/contract rules of the migration files (R-HA-018) | [steps.go](../../internal/meta/postgres/steps.go), `enforceMigrationPhases` | `false`: every header optional, no statement check by phase, `RequiredSchema()` the highest step | Set it to `true`. Every embedded file must then carry one `-- trove:phase` header and no `DROP`, `RENAME` or `SET NOT NULL` in an expand step, or `TestEmbeddedSteps` fails and `RequiredSchema()` panics; `RequiredSchema()` becomes the newest expand step |
+| The nightly upgrade set (R-HA-020, R-HA-064) | [performance.yml](../../.github/workflows/performance.yml), job `e2e-upgrade` | runs only on a dispatch with `-f sets=upgrade` | Put `!inputs.sets \|\| ` back in front of the `contains(...)` of its `if:`, and delete the comment that names Q-ARCH-332 here and in the header of the file |
+
+Before the job `compat` is switched on, three things need a decision, because the checks read what happened while they were off:
+
+- The history check reads all of `main`: every migration edited while it was off fails it. Each such commit is named in
+  `historicalEdits` of [migrations_history_test.go](../../test/compat/migrations_history_test.go), or the check is anchored at
+  the first stable release's tag.
+- The baseline of both release checks is the newest `v0.*` tag whose commit is not HEAD's (`releaseTagPattern` in
+  [helpers_test.go](../../test/compat/helpers_test.go)). Switched on right after the first stable release, that release is the
+  baseline; if it leaves major version 0, the pattern names the new major.
+- The checksum message of `verifyApplied` in [migrate.go](../../internal/meta/postgres/migrate.go) names the remedy before the
+  first stable release, a new database; with the checks on, the remedy is a new step that fixes forward.
+
+The notes that say "before the first stable release" in R-ARCH-025, R-ARCH-026, R-HA-018 to R-HA-021, R-HA-064,
+[database.md](database.md#migrations), [upgrades.md](../manual/admin/upgrades.md#before-the-first-stable-release) and
+[limitations.md](../manual/admin/limitations.md) change with the switches, in the same change.
 
 ### Running a job locally
 
@@ -230,7 +265,7 @@ Test and Release runs `push` and `access-long` (job `e2e`), `npm` (job `e2e-npm`
 `failover` set (job `e2e`, E0.13 and E1.8), the drain per role (job `e2e`, set `drain-roles`, E6a.6, edge port 8097: the evictions run
 under the npm load of `npm-ha` too, so the set starts the npm client pods and the counting test upstream,
 [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)), the `npm-ha` leg (job `e2e-npm`, E2.11), `npm-ha-soak` and
-the `ha-suite` leg (job `e2e-npm`, the failure suite under the npm load), the `upgrade` leg (job `e2e-upgrade`, below), the `nuget-ha` leg (job `e2e-nuget`,
+the `ha-suite` leg (job `e2e-npm`, the failure suite under the npm load), the `upgrade` leg (job `e2e-upgrade`, below; switched off in the nightly run until the first stable release, [the switches](#switched-off-until-the-first-stable-release)), the `nuget-ha` leg (job `e2e-nuget`,
 Q-ARCH-277, which starts the npm client pods too), and last the perf jobs `latency` and `vuln-perf`, which start after every kind leg
 ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)). Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`, or one leg of it with `-f sets=` ([below](#dispatching-one-leg)).
 Locally, from the repository root, after `make image VERSION=dev` and `make dev-up`: `make e2e SET=failover`, `make e2e SET=drain-roles`, `make e2e SET=npm-ha`,
@@ -242,7 +277,9 @@ A red long leg does not hold the release: it is recorded as an open finding inst
 
 The input `sets` of a dispatch is a comma-separated list of set names or job keys, without spaces: `gh workflow run "HA and Performance (nightly)" --ref main -f sets=upgrade,ha-suite`
 runs the leg `upgrade` and the leg `ha-suite` and no other. A job key selects every leg of its job (`-f sets=e2e-npm` runs `npm-ha` and `ha-suite`), and the perf jobs are
-selected by their keys `latency` and `vuln-perf`. An empty list runs everything, as the schedule does. A matrix leg that the list does not name shows as green with its
+selected by their keys `latency` and `vuln-perf`. An empty list runs everything, as the schedule does, except the leg `upgrade`, which runs only when the
+list names it until the first stable release ([the switches](#switched-off-until-the-first-stable-release)); the perf jobs, which need it, run all the same,
+because their condition starts with `!cancelled()`. A matrix leg that the list does not name shows as green with its
 steps skipped, and its job summary says so; a job without a matrix that the list does not name is skipped. A list with a space fails every matrix leg with an error.
 The composite action [select-leg](../../.github/actions/select-leg/action.yml) decides for a matrix leg ([Q-ARCH-324](../spec/architecture.md#q-arch-324--how-is-one-leg-of-the-nightly-run-dispatched)).
 The input exists on `main` once the change is merged, because `gh` runs the workflow file of the ref.
@@ -287,7 +324,8 @@ The job builds both clients images in its own steps, `make npm-clients-image` an
 client pods too ([Q-ARCH-327](../spec/architecture.md#q-arch-327--how-do-the-legs-that-load-both-client-images-get-them-and-who-builds-them)). The nightly run therefore
 costs a cluster bring-up and proves no NuGet behavior under load until the drain and failover tests land.
 
-Job `e2e-upgrade` runs `make e2e SET=upgrade` on a kind cluster (edge port 8101, cluster `trove-upgrade-<run id>`, reports and artifacts `e2e-upgrade-report-upgrade`,
+Job `e2e-upgrade` runs only on a dispatch with `-f sets=upgrade` until the first stable release ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)):
+the set upgrades the latest release to the commit, which fails once the commit changes a migration the release applied. It runs `make e2e SET=upgrade` on a kind cluster (edge port 8101, cluster `trove-upgrade-<run id>`, reports and artifacts `e2e-upgrade-report-upgrade`,
 `e2e-upgrade-artifacts-upgrade` and `e2e-upgrade-playwright-upgrade`, kept 14 days; on failure `e2e-upgrade-cluster-state-upgrade`). The set installs published releases
 of the chart from <https://guided-traffic.github.io/trove/> and their images from Docker Hub, loads them into the cluster, upgrades to the image built from the commit, and
 runs the npm and NuGet client loops and a browser journey. The job runs on a GitHub-hosted runner with the disk space freed, because it loads both clients images; its

@@ -1553,11 +1553,13 @@ Priority: **MVP** · Covers: OPS-035, OPS-039
   its final `schema_state` update (R-BAK-021 step 2). It is not exposed as a CLI flag of
   `trove migrate`.
 - A binary older than the backup's schema step, or one whose migration files differ from the
-  backup's checksums, refuses (R-BAK-020 check 2). Applied migration files are checksummed and
-  never edited (R-HA-018, R-ARCH-026); this page adds that they are not squashed or removed within
-  a major, so every later release of a major can restore every earlier backup of it. A major
-  release that drops old steps names, in its release notes, the last release that restores older
-  backups.
+  backup's checksums, refuses (R-BAK-020 check 2). From the first stable release on, applied
+  migration files are checksummed and never edited (R-HA-018, R-ARCH-026); this page adds that
+  they are not squashed or removed within a major, so every later release of a major can restore
+  every earlier backup of it. A major release that drops old steps names, in its release notes,
+  the last release that restores older backups. Before the first stable release a migration file
+  may be edited or removed ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)), so a later build restores an earlier
+  backup only while the steps up to the backup's step are unchanged.
 - PostgreSQL: the table files are `COPY` text and the schema is built by trove's migrations, so a
   backup taken on one supported major version restores onto any other supported one
   ([ha-and-helm.md](ha-and-helm.md) R-HA-013).

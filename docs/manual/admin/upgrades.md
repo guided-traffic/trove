@@ -1,6 +1,6 @@
 # Upgrades
 
-This page explains how trove versions its releases, how to upgrade an installation with Helm, how the database migrations run during an upgrade, which corrections of stored data run afterwards, what to check afterwards, and which parts of the upgrade path are not verified yet.
+This page explains how trove versions its releases, what an upgrade can and cannot keep before the first stable release, how to upgrade an installation with Helm, how the database migrations run during an upgrade, which corrections of stored data run afterwards, what to check afterwards, and which parts of the upgrade path are not verified yet.
 
 ## Versions and release notes
 
@@ -15,6 +15,17 @@ trove is released from its main branch by an automated pipeline that derives the
 trove is pre-1.0 and stays on major version 0 until a 1.0 release is decided. Under major version 0 a minor release can contain a breaking change, such as a renamed configuration key or a changed default. The release notes, generated from the same commit messages, list breaking changes in a section of their own. Read the notes of every release between your version and the target on the [releases page](https://github.com/guided-traffic/trove/releases) before you upgrade. Automated dependency updates are released as patch releases.
 
 The image `docker.io/guidedtraffic/trove` and the Helm chart carry the same version as the release. A chart installs the image of its own version unless you set `image.tag` or `image.digest`, so upgrading the chart upgrades trove.
+
+## Before the first stable release
+
+trove is pre-alpha, and until its first stable release it keeps no backward compatibility. Plan every upgrade with this in mind:
+
+- **An upgrade may require a fresh database.** A release may change a migration that an earlier release already applied. The migration Job then refuses your database with `migration <name>.sql was changed after this database applied it (checksum mismatch)`, applies nothing, and `helm upgrade` fails while the old pods keep serving. The way forward is a new, empty database for the new release; the data of the old one is not carried over.
+- **No rollback is supported.** Once the migration Job of the new release has run, nothing guarantees that the previous release works against the schema it left. `helm rollback` is not a way back; the backup you took before the upgrade is (see [Rolling back](#rolling-back)).
+- **Old and new pods are not guaranteed to work side by side.** During the rolling update both versions serve requests, and a change between them may break requests for that time. Upgrade in a maintenance window if an interruption matters to you.
+- **Anything can change.** A release may rename or remove a configuration key or a chart value, change the Management API or change a stored format, without a deprecation period or an alias. Read the release notes, as above.
+
+This ends with the first stable release.
 
 ## Before you upgrade
 
@@ -74,9 +85,9 @@ A new replica that starts before the migration has run stays unready and waits u
 
 - The migrations are embedded in the binary and numbered. Each runs in its own transaction and is recorded with a checksum; a recorded migration whose file has changed is refused.
 - One run at a time: the migration lock is a PostgreSQL advisory lock, so a second Job or a manual run waits for the first.
-- Additive migrations never drop, rename or tighten anything; the runner rejects such statements in them. A replica of an older version stays ready after them, because it still finds everything it uses.
-- A migration that removes something carries the minimum trove version it needs. The runner refuses it (exit status 3, nothing applied) while a live replica runs an older version, and once it is applied, a replica of an older version exits with `schema requires trove >= <version>`. Every migration of this version is additive.
-- A replica checks the schema when it starts and keeps checking it: if the schema is behind the binary, the replica stays or becomes unready until the migration has run.
+- A migration may add, drop, rename or tighten anything. Before the first stable release nothing keeps a replica of the previous version working after it (see above).
+- A migration can carry the minimum trove version it needs. The runner refuses it (exit status 3, nothing applied) while a live replica runs an older version, and once it is applied, a replica of an older version exits with `schema requires trove >= <version>`. One migration of this version carries such a minimum, `0.1.0`, which every release meets.
+- A replica checks the schema when it starts and keeps checking it: if the schema is behind the newest migration its binary embeds, the replica stays or becomes unready until the migration has run.
 
 `trove migrate status` shows the state without taking the lock: the applied and pending migrations, the schema version this binary requires and whether it may serve.
 
@@ -104,7 +115,7 @@ A correction of stored data runs after the upgrade as a job on a worker, not in 
 
 ## Rolling back
 
-`helm rollback` runs no migration job: the migration hook runs on install and upgrade only. The schema therefore stays at the newer version, and the older pods start only if the compatibility check admits them, which it does after additive migrations. Rolling back is not tested in this version. If the older version must also run on the older schema, restore the database backup you took before the upgrade along with the rollback; everything written to trove since that backup is lost.
+Before the first stable release no rollback is supported. `helm rollback` runs no migration job: the migration hook runs on install and upgrade only. The schema therefore stays at the newer version, and the older pods start whenever the schema is at least the one their binary needs and no applied migration requires a newer trove, but nothing guarantees that they work against the newer schema. To go back, restore the database backup you took before the upgrade along with the rollback; everything written to trove since that backup is lost.
 
 After a rollback to 0.9.0 or older, NuGet versions pushed during the rollback are classified the old way again, and `data_migration_nuget_semver2` does not run again by itself when you upgrade once more. Remove its record, then restart a worker pod, which queues it:
 
@@ -115,8 +126,8 @@ kubectl -n trove rollout restart deploy/trove-worker
 
 ## What is not verified yet
 
-- **Mixed versions during the rollout.** For the length of a rolling update, replicas of the old and the new version serve requests side by side. The schema check is built for that, but a rolling upgrade from the previous release under load has not been tested yet. If an interruption matters to you, upgrade in a maintenance window.
-- **Skipping releases.** The runner applies every pending migration in order, so an upgrade across several releases is a single migration run. An upgrade path across several published releases is not covered by a test.
-- **Rollback**, as described above.
+- **Mixed versions during the rollout.** For the length of a rolling update, replicas of the old and the new version serve requests side by side. Before the first stable release this is not supported (see above); if an interruption matters to you, upgrade in a maintenance window.
+- **Skipping releases.** The runner applies every pending migration in order, so an upgrade across several releases is a single migration run. An upgrade path across several published releases is not covered by a test, and before the first stable release it may require a fresh database like any other upgrade.
+- **Rollback**, which is not supported before the first stable release, as described above.
 
 [Known limitations](limitations.md) lists the other gaps of this version.

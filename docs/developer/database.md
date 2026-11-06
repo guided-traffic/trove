@@ -92,34 +92,43 @@ runner compares it with `max_connections` when `database.preflight.expected_*_re
 
 ## Migrations
 
-Files: `internal/meta/postgres/migrations/NNNNN_<name>.sql`, embedded. Numbers run 1..N without a gap. A file starts
-with header comments:
+Files: `internal/meta/postgres/migrations/NNNNN_<name>.sql`, embedded. Numbers run 1..N without a gap. Until the first
+stable release there is no backward compatibility ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release), `CLAUDE.md`): a migration file may be edited, a step
+may drop, rename or tighten anything, and nothing has to keep the previous release working against the new schema. The
+expand/contract rules of the files are switched off for that (`enforceMigrationPhases = false` in
+[steps.go](../../internal/meta/postgres/steps.go); how to switch them on: [Switched off until the first stable release](releasing.md#switched-off-until-the-first-stable-release)), and so is the
+CI check that no migration on `main` changes (the job `compat`). A file may start with header comments, each of them optional
+while the rules are off:
 
 ```sql
--- trove:phase expand            (or contract; exactly one)
+-- trove:phase contract          (or expand; at most one; a file without it is an expand step)
 -- trove:no-transaction          (one statement, e.g. CREATE INDEX CONCURRENTLY; must be idempotent)
 -- trove:requires-app >= 0.4.0   (contract only, required there)
 ```
 
-`ParseSteps` (unit-tested) rejects a missing or duplicate phase, a contract step without `requires-app`,
-`requires-app` on an expand step, and `DROP`, `RENAME` or `SET NOT NULL` in an expand file.
+`ParseSteps` (unit-tested in [steps_test.go](../../internal/meta/postgres/steps_test.go)) applies the switch. In both modes it
+rejects an unknown or a second phase, a contract step without `requires-app`, `requires-app` without `-- trove:phase contract`,
+an unknown `trove:` header, a `no-transaction` file with more than one statement and a file without a statement. With the rules
+on it also rejects a file without a phase header and `DROP`, `RENAME` or `SET NOT NULL` in an expand file, and
+`RequiredSchema()` is the newest expand step; with them off, a file without a phase header is an expand step, the statements
+are not looked at by phase, and `RequiredSchema()` is the highest embedded number, so a replica serves only once every
+migration of its binary is applied. `TestParseSteps` runs the strict rules and `TestParseStepsRelaxed` the relaxed ones,
+whatever the switch says, so neither rots. A contract step is opt-in while the rules are off: the runner refuses it while a
+live replica runs a release below its `requires-app` (the contract guard), and once applied it raises `compat_floor`.
 
 ### How to add a migration
 
-1. Create the next number as an expand file. Unqualified names: the runner sets `search_path`. Until the file is on `main`
-   you may still change it on your branch. Once it is on `main` it is immutable (step 4). `make compat-check` accepts a new
-   file only as an addition that continues the numbering after the release's highest number, and it refuses a change of a
-   file that `main` has committed ([Compatibility](releasing.md#compatibility), R-ARCH-026, Q-ARCH-283).
+1. Create the next number. A header is needed only for `no-transaction` or a contract step. Unqualified names: the runner
+   sets `search_path`.
 2. New table: register its export class in the owning package (`tables.Register`); a `bigint` revision column
    (`rev_seq`, `revision`, `epoch`, `*_version`) needs `meta.RegisterRevisionColumn`. The integration tests
    `TestTableRegistry` and `TestRevisionColumns` fail otherwise.
 3. A table with a blob reference: column `blob_sha256`, FK to `blobs`, index, both triggers
    (`TestBlobReferenceRules`).
-4. Never edit a file that is on `main`, not even a comment or whitespace (the runner checksums the bytes), and never rename or
-   delete one. A defect is fixed forward, as the next section describes. Backfills are background data migrations (R-HA-022),
-   not migration steps; the first is `data_migration_nuget_semver2`
+4. Backfills are background data migrations (R-HA-022), not migration steps; the first is `data_migration_nuget_semver2`
    ([nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)).
-5. Contract steps ship one minor after the release that stopped using the object, with `requires-app`.
+5. A step may drop, rename or tighten what it needs; nothing has to stay for the previous release. Mark it
+   `-- trove:phase contract` with `requires-app` only when the runner shall refuse it while older replicas are live.
 6. Static queries for the new tables go to `queries/*.sql`, then `make generate`.
    A test that injects a migration of its own names it with `nextStep(n, name)`
    ([env_test.go](../../test/integration/postgres/env_test.go)), which numbers the file after the embedded ones, so
@@ -130,20 +139,25 @@ with header comments:
 
 ### How to fix a migration that is on `main`
 
-1. Do not touch the file. `make compat-check` fails on any change, deletion or rename of a migration that `main` has committed,
-   and names the file, the commit and the rule (`migrationHistoryProblems` in
-   [migrations_history_test.go](../../test/compat/migrations_history_test.go)).
-2. Add the next number, a new file that does what the change needs: an expand step for an addition, a contract step with
-   `requires-app` one minor later for a removal ([R-HA-018](../spec/ha-and-helm.md#r-ha-018--expandcontract-schema-migrations)).
-   Example: a step 00019 that is wrong is kept as it is, and 00029 corrects the object it created.
-3. A database that already applied the broken file keeps it. Until the beta plan is complete the installation is pre-alpha, and
-   a reset of a development database is an accepted cost; from then on the data of an installation is priority 1, and the
-   fix-forward step is the only way it changes ([Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to)).
-4. The history check reads the commits of `main`, so a clone needs them: `fetch-depth: 0` in CI, and a full clone locally.
-   The check of a file that exists only on your branch is skipped, so you may change a new file until it is merged.
+Until the first stable release, fix the file itself ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)). The CI checks that compare the migration files
+with a release and with the history of `main` are switched off with the job `compat`; `make compat-check` would still report
+the edit.
 
-The historical edits that predate the rule are named one by one in `historicalEdits`, each with its commit and the reason it
-is allowed. A new entry is never the way to get a change through: it is for a commit that already is on `main`.
+1. Edit the file so that it creates what the schema should be. Removing or renumbering a file renumbers every file after it:
+   the numbers must still run 1..N without a gap.
+2. Run `make generate` (sqlc reads the migration files as its schema) and the integration tier, which migrates an empty
+   database.
+3. A database that applied the earlier version of the file is refused by the runner's checksum check (`verifyApplied`:
+   `migration <name>.sql was changed after this database applied it (checksum mismatch)`, exit status 1, nothing applied), so
+   the migration Job fails and `helm upgrade` stops before the Deployments change. Recreate that database; the rule adds no
+   repair path (`CLAUDE.md`). A replica does not compare checksums: started on such a database by other means
+   (`migrations.mode: disabled`), it serves once `schema_state.applied` reaches its `RequiredSchema()`, whatever version of the
+   file the database applied.
+
+From the first stable release on, compatibility comes first again; with the job `compat` switched on, a migration on `main`
+is then fixed forward with a new file, as
+[Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to) decided
+before Q-ARCH-332 switched it off.
 
 `sqlc` reads the migration files as its schema. `job_state` is created inside a `DO` block on purpose: sqlc
 then maps it to a Go string instead of generating enum helpers that import `database/sql/driver` (forbidden,
@@ -171,7 +185,9 @@ Last, still under the migration lock and on the same connection, the runner call
 status 1; nil skips it.
 
 Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), and the restore mode of the runner (M5).
-The CI checks of the migration files are in place: against the latest release, and against the history of `main`, where a committed file may not change (R-ARCH-026, Q-ARCH-283, [Compatibility](releasing.md#compatibility)).
+The CI checks of the migration files, against the latest release and against the history of `main`, are in place and
+switched off until the first stable release with the job `compat` ([Compatibility](releasing.md#compatibility), Q-ARCH-332);
+`make compat-check` runs them by hand.
 
 ### Privileges of the runtime role
 

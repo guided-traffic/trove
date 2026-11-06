@@ -43,6 +43,8 @@ func TestEmbeddedSteps(t *testing.T) {
 	})
 }
 
+// TestParseSteps holds the expand/contract rules of R-HA-018 (strict), which are switched off until the first stable
+// release (enforceMigrationPhases, Q-ARCH-332): it runs them on, so they are ready when the switch is set again.
 func TestParseSteps(t *testing.T) {
 	ok := "-- trove:phase expand\nCREATE TABLE a (id int);\n"
 	cases := []struct {
@@ -139,7 +141,7 @@ func TestParseSteps(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := ParseSteps(files(c.files))
+			_, err := parseSteps(files(c.files), true)
 			switch {
 			case c.want == "" && err != nil:
 				t.Fatalf("unexpected error: %v", err)
@@ -149,10 +151,135 @@ func TestParseSteps(t *testing.T) {
 		})
 	}
 	t.Run("R-ARCH-026 the checksum covers the file bytes", func(t *testing.T) {
-		a, _ := ParseSteps(files(map[string]string{"00001_a.sql": ok}))
-		b, _ := ParseSteps(files(map[string]string{"00001_a.sql": ok + "-- edited\n"}))
+		a, _ := parseSteps(files(map[string]string{"00001_a.sql": ok}), true)
+		b, _ := parseSteps(files(map[string]string{"00001_a.sql": ok + "-- edited\n"}), true)
 		if a[0].Checksum == b[0].Checksum {
 			t.Fatal("an edited file keeps its checksum")
+		}
+	})
+}
+
+// TestParseStepsRelaxed holds the rules while the expand/contract rules are switched off (Q-ARCH-332): every header is
+// optional, a file without -- trove:phase is an expand step, and the phase does not restrict the SQL. The rules that do
+// not rest on expand/contract stay.
+func TestParseStepsRelaxed(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  string // substring of the error; empty means success
+	}{
+		{"R-ARCH-026 a file without a header is a valid step", map[string]string{"00001_a.sql": "CREATE TABLE a (id int);\n"}, ""},
+		{
+			"R-HA-018 DROP, RENAME and SET NOT NULL are allowed in a step without a phase header",
+			map[string]string{"00001_a.sql": "DROP TABLE a;\nALTER TABLE b RENAME TO c;\nALTER TABLE c ALTER COLUMN x SET NOT NULL;\n"},
+			"",
+		},
+		{
+			"R-HA-018 DROP, RENAME and SET NOT NULL are allowed in an expand step",
+			map[string]string{"00001_a.sql": "-- trove:phase expand\nDROP TABLE a;\nALTER TABLE b RENAME TO c;\nALTER TABLE c ALTER COLUMN x SET NOT NULL;\n"},
+			"",
+		},
+		{
+			"R-ARCH-026 requires-app without a phase header is refused",
+			map[string]string{"00001_a.sql": "-- trove:requires-app >= 0.2.0\nSELECT 1;\n"},
+			"contract steps only",
+		},
+		{
+			"R-ARCH-026 a contract step without requires-app is refused",
+			map[string]string{"00001_a.sql": "-- trove:phase contract\nDROP TABLE a;\n"},
+			"requires-app",
+		},
+		{
+			"R-ARCH-026 an unknown phase is refused",
+			map[string]string{"00001_a.sql": "-- trove:phase sideways\nSELECT 1;\n"},
+			"expand or contract",
+		},
+		{
+			"R-ARCH-026 two phase headers are refused",
+			map[string]string{"00001_a.sql": "-- trove:phase expand\n-- trove:phase contract\nSELECT 1;\n"},
+			"more than one",
+		},
+		{
+			"R-ARCH-026 an unknown trove header is refused",
+			map[string]string{"00001_a.sql": "-- trove:frobnicate\nSELECT 1;\n"},
+			"unknown header",
+		},
+		{
+			"R-HA-018 a no-transaction step holds exactly one statement",
+			map[string]string{"00001_a.sql": "-- trove:no-transaction\nCREATE INDEX CONCURRENTLY i ON a (x);\nCREATE INDEX CONCURRENTLY j ON a (y);\n"},
+			"exactly one statement",
+		},
+		{
+			"R-HA-018 semicolons in comments, strings and a dollar-quoted body do not count as statements",
+			map[string]string{"00001_a.sql": "-- trove:no-transaction\n-- one; two\nCREATE FUNCTION f() RETURNS text LANGUAGE plpgsql AS $body$ BEGIN PERFORM 1; RETURN 'a;b'; END $body$;\n"},
+			"",
+		},
+		{
+			"R-ARCH-026 a file of comments only holds no statement",
+			map[string]string{"00001_a.sql": "-- trove:no-transaction\n-- nothing here\n"},
+			"no statement",
+		},
+		{
+			"R-ARCH-026 a gap in the numbers is refused",
+			map[string]string{"00001_a.sql": "SELECT 1;\n", "00003_c.sql": "SELECT 1;\n"},
+			"without a gap",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := parseSteps(files(c.files), false)
+			switch {
+			case c.want == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+				t.Fatalf("error = %v, want it to contain %q", err, c.want)
+			}
+		})
+	}
+	t.Run("R-ARCH-026 a step without a phase header is an expand step without requires-app", func(t *testing.T) {
+		steps, err := parseSteps(files(map[string]string{"00001_a.sql": "-- trove:no-transaction\nCREATE INDEX CONCURRENTLY i ON a (x);\n"}), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := steps[0]; s.Phase != phaseExpand || s.RequiresApp != "" || !s.NoTx {
+			t.Fatalf("step = phase %q, requires-app %q, no-transaction %v", s.Phase, s.RequiresApp, s.NoTx)
+		}
+	})
+	t.Run("R-ARCH-026 ParseSteps applies the switch enforceMigrationPhases", func(t *testing.T) {
+		_, err := ParseSteps(files(map[string]string{"00001_a.sql": "CREATE TABLE a (id int);\n"}))
+		if (err == nil) == enforceMigrationPhases {
+			t.Fatalf("a file without a phase header: error %v with enforceMigrationPhases = %v", err, enforceMigrationPhases)
+		}
+	})
+}
+
+// TestRequiredSchemaBothModes: under the expand/contract rules a binary needs its newest expand step, not the contract
+// step it ships last; with the rules switched off (Q-ARCH-332) it needs the highest step it embeds.
+func TestRequiredSchemaBothModes(t *testing.T) {
+	steps, err := parseSteps(files(map[string]string{
+		"00001_a.sql": "-- trove:phase expand\nCREATE TABLE a (id int);\n",
+		"00002_b.sql": "-- trove:phase contract\n-- trove:requires-app >= 0.2.0\nDROP TABLE a;\n",
+	}), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("R-HA-018 with the rules on, requiredSchema is the newest expand step", func(t *testing.T) {
+		if got := requiredSchema(steps, true); got != 1 {
+			t.Fatalf("requiredSchema = %d, want 1", got)
+		}
+	})
+	t.Run("R-HA-018 with the rules off, requiredSchema is the highest step, a contract step included", func(t *testing.T) {
+		if got := requiredSchema(steps, false); got != 2 {
+			t.Fatalf("requiredSchema = %d, want 2", got)
+		}
+	})
+	t.Run("R-HA-018 RequiredSchema follows the switch", func(t *testing.T) {
+		embedded, err := EmbeddedSteps()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := RequiredSchema(), requiredSchema(embedded, enforceMigrationPhases); got != want {
+			t.Fatalf("RequiredSchema() = %d, want %d", got, want)
 		}
 	})
 }

@@ -9,10 +9,10 @@ import (
 
 // The role vocabulary of the contract (Q-API-194). The registry, trove_build_info{role} and the logs name the role a
 // replica runs in: api, packages, worker, web, all (Q-OPS-161). The three enums of the released contract that listed
-// roles (`answeredBy.role`, `Replica.roles`, `EncryptionReplica.role`) were closed at web, worker and all, and a value
-// added to a closed response enum fails the compatibility check (R-ARCH-025, oasdiff
-// response-property-enum-value-added). They keep their meaning of a role class: web is a replica that serves client
-// endpoints, which is what api, packages and the upgrade bridge are. The exact role is the new member roleName.
+// roles (`answeredBy.role`, `Replica.roles`, `EncryptionReplica.role`) were closed at web, worker and all, because a
+// value added to a closed response enum fails the OpenAPI breaking-change check of R-ARCH-025, which is switched off
+// until the first stable release (Q-ARCH-332). They keep their meaning of a role class: web is a replica that serves
+// client endpoints, which is what api, packages and the upgrade bridge are. The exact role is the new member roleName.
 
 // roleClass returns the value of the closed role enums for a role: web for every role that serves client endpoints.
 func roleClass(role string) string {

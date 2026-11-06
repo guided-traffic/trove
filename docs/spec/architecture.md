@@ -4128,6 +4128,16 @@ Acceptance criteria:
 ### R-ARCH-025 · Versioning and compatibility policy
 Priority: **MVP** · Covers: OPS-072, EVT-072
 
+**Before the first stable release the promises of this requirement do not apply** (owner, 2026-11-06, `CLAUDE.md`,
+[Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)). trove is pre-alpha: it has no users and no running installations. The Management API, URLs,
+configuration keys, Helm values, error codes, metric names, the database schema and stored formats change the way that
+is technically best, without a deprecation, an alias, a fallback or a migration path. The CI job that compares a change
+with the latest release is switched off, ready to be switched on at the first stable release ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)). A release
+may need a new database, and `helm rollback` is not supported. What stays on is what is not a promise to an older
+version: the format contract and its freeze (the rule below), and the Bastion interface version, which main installation
+and Bastion check against each other. The table, the paragraph on major version 0 and the sentence on `helm rollback`
+describe the policy from the first stable release on.
+
 | Surface | Version scheme | Promise |
 |---|---|---|
 | trove release | [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html); image tag = version | Any later minor of the same major can be installed directly. Rolling upgrades with no downtime work from the previous minor (N-1 → N) and between patches (R-ARCH-026). The two latest minors receive security fixes (to be stated in `SECURITY.md`). |
@@ -4188,7 +4198,8 @@ Acceptance criteria:
   checker (for example `oasdiff breaking`) and fails on a breaking change within v1. The checker is oasdiff at the pin
   of `tools/versions.env` (Q-ARCH-273), the baseline is the newest `v0.*` tag whose commit is not HEAD's (Q-ARCH-274),
   and the job is the `compat` job of `release.yml`, run by `make compat-check`; the tests are `TestR_ARCH_025_*` in
-  `test/compat`.
+  `test/compat`. Until the first stable release the job is switched off (`if: false`, [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)); the target
+  and the tests stay and run by hand.
 - The upgrade end-to-end test runs `helm upgrade` from N-1 to N and then `helm rollback`. Both
   versions pass the client suite against the same database.
 - A change of the exported surface of the format contract fails
@@ -4197,6 +4208,16 @@ Acceptance criteria:
 
 ### R-ARCH-026 · Schema migrations and the compatibility gate
 Priority: **MVP** · Covers: OPS-073, OPS-074, HA-066, HA-069
+
+**Before the first stable release the compatibility promises of this requirement do not apply** (owner, 2026-11-06,
+`CLAUDE.md`, [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): N and N-1 need not run against one schema, a migration file may be edited, renamed or
+removed, and a step may drop, rename or tighten whatever its phase. An upgrade may need a new database, and no rollback
+is supported. Two mechanisms are switched off, ready to be switched on at the first stable release ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): the
+CI checks of the migration files (job `compat`) and the expand/contract rules of the parser (`enforceMigrationPhases` in
+`internal/meta/postgres/steps.go`). The runner and the gates below stay on, because they protect the database a binary
+runs against, not an older version: the checksum check refuses a database that applied another version of a file (it is then
+recreated), a replica serves only once the schema reaches its `requiredSchema`, a half-restored database is refused,
+and a step that declares itself a contract step keeps its guard and its floor.
 
 [ha-and-helm.md](ha-and-helm.md) owns what a migration may do and how an upgrade is guarded: the
 step classes, the tables `schema_migration` and `schema_state`, checksums, lock timeouts and
@@ -4210,18 +4231,25 @@ Files:
 - A migration file is immutable once it is on `main`, released or not. It is never edited, not even
   in a comment or in whitespace (the runner checksums the bytes), and never renamed or removed. A
   defect is fixed forward with a new file of the next number, in one of the classes of R-HA-018
-  (Q-ARCH-283). The compat check reads `main`'s history for this (acceptance criteria below).
-- Each file starts with trove's header comments:
-  - `-- trove:phase expand` or `-- trove:phase contract`, which is R-HA-018's class;
+  ([Q-ARCH-283](#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to)). The compat check reads `main`'s history for this (acceptance criteria below).
+  Until the first stable release this rule and its check are switched off ([Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): a file may
+  be edited, renamed or removed, and a database that applied an earlier version of an edited file
+  fails step 3 below and is recreated.
+- A file starts with trove's header comments. While the expand/contract rules are switched off
+  (`enforceMigrationPhases = false`), every one of them is optional:
+  - `-- trove:phase expand` or `-- trove:phase contract`, which is R-HA-018's class. With the rules
+    on every file has exactly one; with them off, a file without it is an expand step;
   - `-- trove:no-transaction` on a step that cannot run in a transaction block, such as
     `CREATE INDEX CONCURRENTLY`. Such a file holds exactly one statement (R-HA-018);
-  - on a contract step, `-- trove:requires-app >= <version>`, the oldest release allowed to serve
-    once the step is applied. R-HA-018's `lastUsedBy` is the release before it, and `compat_floor`
-    is the highest `requires-app` of the applied contract steps.
+  - on a contract step, and required there, `-- trove:requires-app >= <version>`, the oldest release
+    allowed to serve once the step is applied. R-HA-018's `lastUsedBy` is the release before it, and
+    `compat_floor` is the highest `requires-app` of the applied contract steps.
 - Expand steps never break the previous minor: new tables, nullable or defaulted columns, indexes
   built `CONCURRENTLY`, new enum values (R-HA-018 lists the classes in full). Contract steps (drop,
   rename, tighten) ship at the earliest one minor after the release that stopped using the old
-  objects ([ha-and-helm.md](ha-and-helm.md) Q-HA-5).
+  objects ([ha-and-helm.md](ha-and-helm.md) Q-HA-5). While the rules are switched off (Q-ARCH-332),
+  the phase does not restrict a step's statements: `DROP`, `RENAME` and `SET NOT NULL` may stand in
+  an expand step.
 
 Runner. It is trove's own code in `internal/meta/postgres` on the native pgx API; no migration
 library and no `database/sql` are involved (Q-ARCH-3). `trove migrate up` runs these steps:
@@ -4272,10 +4300,12 @@ remaining steps ([backup-and-restore.md](backup-and-restore.md) R-BAK-021, R-BAK
 - During a restore no replica is registered (`replica` is a `transient` table, and the replicas
   wait at start-up step 3 of R-ARCH-024), so the contract guard has nothing to wait for.
 
-Migration files are not squashed or removed within a major, in addition to never being edited
-once applied (R-HA-018). Every later release of a major can therefore restore every earlier backup
-of it. A major release that drops old steps names, in its release notes, the last release that
-restores older backups (R-BAK-023).
+From the first stable release on, migration files are not squashed or removed within a major, in
+addition to never being edited once applied (R-HA-018). Every later release of a major can therefore
+restore every earlier backup of it. A major release that drops old steps names, in its release
+notes, the last release that restores older backups (R-BAK-023). While the immutability is switched
+off before the first stable release (Q-ARCH-332), a file may be edited or removed, so a later build
+restores an earlier backup only while the steps up to the backup's step are unchanged.
 
 Gates:
 - **Gate in `trove migrate`** (R-HA-018's contract guard). Before a contract step is applied, the
@@ -4319,9 +4349,15 @@ Acceptance criteria:
   commit, and an entry that names no edit of `main` fails (Q-ARCH-283). A file that only the checked-out branch
   has is not checked, because main does not hold it yet.
 - The tests are `TestR_ARCH_026_*` in `test/compat`; the history check runs in the same job and target as the release check.
+  Until the first stable release both checks are switched off with the job `compat` ([Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release)).
 - A unit test fails on a migration file without a valid `phase` header, on a contract step without
   `requires-app`, and on a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`) in an expand
-  file.
+  file, with the expand/contract rules on (`TestParseSteps` runs them on while the switch is off). With
+  them off, `TestParseStepsRelaxed` accepts a file without any header as an expand step and those
+  statements in any step, and still fails on an unknown or a second `phase` header, a contract step
+  without `requires-app`, `requires-app` without the contract phase and an unknown `trove:` header.
+  `requiredSchema` is the newest expand step with the rules on and the highest step with them off
+  (`TestRequiredSchemaBothModes`).
 - `internal/archtest` fails if any trove package imports `database/sql` or
   `github.com/jackc/pgx/v5/stdlib`.
 
@@ -7594,7 +7630,7 @@ Context: `formathost/virtual.go` derived the directory of a package's cached art
 
 ### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded until the first stable release by [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release): the job that runs the check is switched off; the checker, its pin and its tests stay.
 
 Context: R-ARCH-025 requires an OpenAPI breaking-change check of `api/openapi.yaml` against the latest release, with a pinned tool, one version of it (ADR-125). The repository runs its other Go-built tools (golangci-lint, gocyclo, actionlint) as binaries at a pin in `tools/versions.env`. The product module's `go.mod` must not take on the checker's requirements. A module install of oasdiff reports `main` from `--version`, so the version has to come from the build information.
 
@@ -7613,7 +7649,7 @@ Context: R-ARCH-025 requires an OpenAPI breaking-change check of `api/openapi.ya
 
 ### Q-ARCH-274 · What is the baseline, and what do the checks accept?
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded until the first stable release by [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release): the job that runs both checks is switched off; the checks and their tests stay.
 
 Context: R-ARCH-025 and R-ARCH-026 promise compatibility with what users installed, and what they installed is a release tag. The baseline has to be a release and not a moving commit. The CI check runs on the release commit too, where HEAD carries the tag. R-ARCH-025 promises additive changes only within `/api/v1`, so a breaking change has no exception.
 
@@ -7883,7 +7919,8 @@ Tests: `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache`, `TestR_
 Status: **Decided by the owner on 2026-11-02** — option (b). The owner's direction after the first message: the installation is
 pre-alpha, so a database reset before the beta is an accepted cost; from the completion of the beta plan
 ([BETA.md](../projektplan/BETA.md)) on, reliability of installed data is priority 1, and this rule enforces the part of it that
-costs nothing now.
+costs nothing now. Superseded until the first stable release by [Q-ARCH-332](#q-arch-332--no-backward-compatibility-until-the-first-stable-release) (owner, 2026-11-06): a migration file may be
+edited, and the job that runs the history check is switched off; the check and its tests stay.
 
 Context: on 2026-11-02 `00019_projects.sql`, first committed in `007c3dfc` and on `main`, was rewritten in `f5273866` into the
 expand steps 00019 to 00025. The owner's dev cluster had migrated from `main` before that rewrite. Its rollouts then failed with
@@ -9057,6 +9094,71 @@ Context: the quiesce runs from a timer (`time.AfterFunc`) that was stopped only 
 **Rationale:** The plan is absolute (R-ARCH-024): the close phase starts when the server phase ends and nothing of step 4 may run in it. The development agent revisits this if a component's `Quiesce` is found to block past `ServerBy` in practice.
 
 **Applied in the spec:** R-ARCH-024 (step 4). Code: `Shutdown` in `internal/app/app.go`. Test: `TestShutdownQuiesceTimer`.
+
+### Q-ARCH-332 · No backward compatibility until the first stable release
+
+Status: **Decided by the owner on 2026-11-06.** Option (a). Supersedes [Q-ARCH-273](#q-arch-273--how-is-the-openapi-breaking-change-checker-pinned-and-run), [Q-ARCH-274](#q-arch-274--what-is-the-baseline-and-what-do-the-checks-accept) and
+[Q-ARCH-283](#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to) until the first stable release.
+
+Context: trove is pre-alpha: it has no users and no running installations. The owner's rule (`CLAUDE.md`) is that until the
+first stable release there is no backward compatibility: an API, a URL, a configuration key, the database schema or a stored
+format changes the way that is technically best, and nothing is added that only an older version or an existing client would
+need. The repository enforced compatibility. `make compat-check` (the job `compat`, `test/compat`) compared
+`api/openapi.yaml` with the latest `v0.*` tag through a pinned oasdiff, accepted only additions to the migration directory
+since that tag, and refused any change of a migration file that `main` had committed, and Semantic Release needed the job. The
+migration runner refused a file without a `-- trove:phase` header and a `DROP`, `RENAME` or `SET NOT NULL` in an expand step,
+and `requiredSchema` was the newest expand step, so that a binary did not need the contract steps it shipped. The nightly e2e set
+`upgrade` upgraded the latest release to the commit, which fails once a migration the release applied is edited. Each of these
+blocks a change the rule asks for, or reports it as a failure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Switch the machinery off until the first stable release (chosen) | The job `compat` gets `if: false` and leaves the needs of Semantic Release; the parser's expand/contract rules sit behind `enforceMigrationPhases = false`, under which every header is optional, a step's phase does not restrict its statements and `requiredSchema` is the highest step; the nightly run skips the set `upgrade`, which a dispatch still runs. `make compat-check`, `test/compat`, the oasdiff pin, the strict parser and its tests stay, built, linted and pinned. The runtime checks stay on: the checksum check, the gate on `requiredSchema` and `compat_floor`, the half-restored refusal, the contract guard of a step that declares itself a contract step. The format-contract freeze and the Bastion interface version stay on | A breaking change costs only the spec, the documentation and the tests that change with it; a defect in a migration is fixed in its file; each check returns with a one-line edit, and its code and tests do not rot meanwhile | A database that applied an edited file is refused by the checksum check and has to be recreated; switched-off code is carried along until the first stable release |
+| (b) Keep the checks running and override them per breaking change | Every breaking change carries a waiver: an allowlist entry for an edited migration, an exception for an OpenAPI change | The checks guard every change that is not waived | Every change the rule expects pays a waiver, and the lists grow with every change; `historicalEdits` of Q-ARCH-283 already shows that cost with two entries |
+| (c) Dismantle the machinery | Remove the job, the target, `test/compat`, the pin and the strict rules | No switched-off code in the tree | The checks come back at the first stable release, and then have to be rebuilt or restored from the history and brought up to date with everything that changed meanwhile |
+
+**Choice:** (a), the owner's decision: the checks come back at the first stable release, so they are switched off, not
+dismantled.
+
+**Rationale:** each switched-off check guards a promise to someone with an installation or a client, and before the first stable
+release there is none. Switching off keeps the code compiling, linted and tested, and the pin fresh through Renovate, so switching
+on is an edit per switch, listed in [releasing.md](../developer/releasing.md#switched-off-until-the-first-stable-release). What
+stays on guards the database a binary runs against, not an older version: a replica serves only once the schema reaches the step
+its binary needs, and the runner refuses a database that applied a different version of a file instead of running on a schema it
+cannot vouch for. The format-contract freeze (ADR-141) is a discipline of the code, and the Bastion interface version is a check
+between two running programs, so neither is compatibility in the sense of the rule. The rule ends with the first stable release;
+from then on reliability and compatibility come first again.
+
+**Applied in the spec:** R-ARCH-025 (the note at the top, the acceptance bullet on the checker), R-ARCH-026 (the note at the top,
+Files, the paragraph on squashing, the acceptance criteria), [ha-and-helm.md](ha-and-helm.md) R-HA-018 (the note, the headers, the
+compatibility window, the immutability bullet, the acceptance criteria), R-HA-019 (Rollback), R-HA-020, R-HA-021 and R-HA-064 (the
+notes). Code: the job `compat` of `.github/workflows/release.yml` (`if: false`, out of the needs of `semantic-release`, its
+constant condition ignored in `.github/actionlint.yaml`), the job `e2e-upgrade` of `.github/workflows/performance.yml` (a dispatch
+with `sets=upgrade` only), `enforceMigrationPhases` in `internal/meta/postgres/steps.go` (`parseSteps`, `parseStep` and
+`requiredSchema` take the mode), the message of `verifyApplied` in `internal/meta/postgres/migrate.go`. Tests: `TestParseSteps`
+(the rules on), `TestParseStepsRelaxed` (off), `TestRequiredSchemaBothModes`, `TestEmbeddedSteps`, `TestGate`.
+
+### Q-ARCH-333 · Code shaped only by the compatibility rules is cleaned up, the cluster minimum version stays
+
+Status: **Decided by the owner on 2026-11-06.** Not built yet.
+
+Context: with the compatibility checks switched off (Q-ARCH-332), four places keep a shape that only the rules of R-ARCH-025
+and R-HA-020 gave them: (1) the replica list reports roles through a closed enum and maps every role that serves client
+endpoints to `web` (`roleClass`, `internal/api/v1/roles.go`); (2) a list cursor carries a version that older releases decode
+(`cursorVersion`, `decodableCursorVersions`, `internal/api/edge/list.go`, R-API-010); (3) the npm audit answers from trove's data
+through an extra boolean, because `npm.audit.mode` was a frozen enum
+([Q-VULN-74](vulnerability-scanning.md#q-vuln-74--the-audit-answers-from-troves-data-through-a-new-boolean-because-npmauditmode-is-a-frozen-enum));
+(4) features and background migrations wait for the cluster minimum version (R-HA-020, R-HA-022).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Clean up (1) to (3), keep (4) (chosen) | The replica list reports each replica's own role; a cursor has one format without a version; `local` becomes a value of `npm.audit.mode` and the boolean goes; the minimum-version gate stays | The API loses shapes that serve only a promise not given now; the gate works, costs nothing and is needed again at the first stable release | (4) keeps a mechanism a mixed-version cluster rarely meets before then |
+| (b) Clean up all four | The gate goes too | Consistent | A rolling update of the dev cluster can let old replicas meet data they cannot read; the gate has to be built again |
+| (c) Leave all four | Nothing now | No work | The API keeps its bent shapes until the first stable release |
+
+**Choice:** (a), the owner's.
+
+**Applied in the spec:** nothing yet; R-API-010, the replica schema of R-OPS-003, R-VULN-017 and Q-VULN-74 change when it is built.
 
 ## What this does not cover
 

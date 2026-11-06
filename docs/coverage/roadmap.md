@@ -243,7 +243,10 @@ Rules that hold across all milestones:
   affinity, or keeps request state in a package-level variable: R-HA-061's template check and
   R-ARCH-032's architecture test fail CI otherwise.
 - Migrations follow expand/contract from the first one (INV-3). The pre-releases of M2 to M4b are
-  real upgrade sources: M5 upgrades from the M4b pre-release (E5.4).
+  real upgrade sources: M5 upgrades from the M4b pre-release (E5.4). Switched off by the owner on
+  2026-11-06 until the first stable release: there is no backward compatibility until then, a
+  migration file may be edited, and an upgrade may need a new database
+  ([Q-ARCH-332](../spec/architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)).
 - A requirement counts as implemented when a test that names it passes on `main`
   ([Q-ROAD-4](#q-road-4--how-the-coverage-generator-learns-implementation-status)).
 - Each tool and dependency is pinned once, and local builds and CI read the same pin.

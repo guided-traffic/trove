@@ -204,7 +204,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if err != nil {
 		return res, err
 	}
-	res.RequiredSchema = requiredSchema(steps)
+	res.RequiredSchema = requiredSchema(steps, enforceMigrationPhases)
 
 	conn, err := sessionConn(ctx, cfg, opts, classMigrate)
 	if err != nil {
@@ -439,7 +439,9 @@ func loadState(ctx context.Context, db q.DBTX) (state, error) {
 
 // verifyApplied compares the checksum of every applied step this binary knows
 // with the embedded file (R-HA-018). Applied steps this binary does not know are
-// newer than it and are not its business.
+// newer than it and are not its business. A file may be edited before the first
+// stable release (Q-ARCH-332), and a database that applied its earlier version
+// is then refused here: it is recreated, not patched.
 func verifyApplied(steps []Step, applied map[int]q.SchemaMigration) error {
 	for _, s := range steps {
 		a, ok := applied[s.Version]
@@ -447,7 +449,7 @@ func verifyApplied(steps []Step, applied map[int]q.SchemaMigration) error {
 			continue
 		}
 		if !bytes.Equal(a.Checksum, s.Checksum[:]) {
-			return fmt.Errorf("migration %s.sql was changed after it was applied (checksum mismatch); applied steps are never edited, add a new step instead", s.Name)
+			return fmt.Errorf("migration %s.sql was changed after this database applied it (checksum mismatch); nothing was applied: before the first stable release a changed migration needs a new database", s.Name)
 		}
 		if a.Name != s.Name {
 			return fmt.Errorf("migration %05d was applied as %s but this binary embeds it as %s", s.Version, a.Name, s.Name)
@@ -682,7 +684,7 @@ func Status(ctx context.Context, cfg config.Database, opts MigrateOptions) (Stat
 		return rep, err
 	}
 	rep.Schema.Applied, rep.Schema.CompatFloor = st.schemaApplied, st.compatFloor
-	rep.Binary.Version, rep.Binary.RequiredSchema = opts.Version, requiredSchema(steps)
+	rep.Binary.Version, rep.Binary.RequiredSchema = opts.Version, requiredSchema(steps, enforceMigrationPhases)
 	rep.Applied = []AppliedInfo{}
 	versions := make([]int, 0, len(st.applied))
 	for v := range st.applied {

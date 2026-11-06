@@ -14,7 +14,8 @@ This page specifies how trove stays available, scales out and is deployed. It co
 - Leader-less scheduling and singleton work under advisory-lock leases.
 - Node drains without outage: the capacity rule, disruption budgets, spreading and the drain
   acceptance test under npm and NuGet load.
-- Rolling upgrades with expand/contract migrations and the migration Job.
+- Rolling upgrades with expand/contract migrations (promised from the first stable release on, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)),
+  and the migration Job.
 - PostgreSQL requirements: version floor, server settings, roles and privileges, TLS, connection
   budget, the optional transaction-mode pooler and credential rotation.
 - Valkey requirements: discovery through Sentinel, credentials and TLS, supported topologies and
@@ -2046,8 +2047,18 @@ k6 records only `2xx` and `304`:
 ### R-HA-018 · Expand/contract schema migrations
 Priority: **MVP** · Covers: HA-066, OPS-074
 
-Release N and release N−1 run side by side against one schema during every rolling upgrade
-(INV-3). Every migration step is classified, and the classes have rules:
+**Before the first stable release the compatibility promises of this requirement do not apply**
+(owner, 2026-11-06, `CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)). N and N−1 need not run side by side against
+one schema, and an upgrade may need a new database; no rollback is supported. The rules of the
+migration files are switched off, ready to be switched on at the first stable release
+([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)): with `enforceMigrationPhases = false` in
+`internal/meta/postgres/steps.go` every file header is optional, a step's phase does not restrict
+its statements, and `requiredSchema` is the highest migration number the binary embeds; with the job
+`compat` switched off, a migration file may be edited. The runner, the checksum check, the gate and
+the contract guard of a step that declares itself a contract step stay on, as described below.
+
+From the first stable release on, release N and release N−1 run side by side against one schema
+during every rolling upgrade (INV-3), and every migration step is classified by these rules:
 
 | Class | Allowed changes | Applied |
 |---|---|---|
@@ -2063,7 +2074,7 @@ Release N and release N−1 run side by side against one schema during every rol
 
   | Header | Meaning |
   |---|---|
-  | `-- trove:phase expand` or `-- trove:phase contract` | The step's class (table above); every file has exactly one |
+  | `-- trove:phase expand` or `-- trove:phase contract` | The step's class (table above); every file has exactly one. While the rules are switched off, at most one, and a file without it is an expand step |
   | `-- trove:no-transaction` | The step cannot run in a transaction block; the file holds exactly one statement |
   | `-- trove:requires-app >= <version>` | Contract steps only, and required there: the oldest release allowed to serve once the step is applied |
 
@@ -2083,7 +2094,8 @@ Release N and release N−1 run side by side against one schema during every rol
 
 **Schema compatibility window.**
 
-- Each binary embeds `requiredSchema`, the number of its newest expand step.
+- Each binary embeds `requiredSchema`, the number of its newest expand step. While the rules are
+  switched off ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)), it is the number of its newest migration, a contract step included.
 - Each contract step declares `requires-app` in its header: the oldest release allowed to serve
   once the step is applied. The release before it is the step's `lastUsedBy`, the newest release
   whose code still reads or writes the object the step removes. `requires-app` is the declared
@@ -2091,11 +2103,12 @@ Release N and release N−1 run side by side against one schema during every rol
 - The database records `compat_floor` = the highest `requires-app` of all applied contract steps,
   or `0.0.0` while none is applied. No version arithmetic is involved: the floor is a declared
   version, compared as a semantic version.
-- A binary of version V can serve iff `applied ≥ requiredSchema` and `compat_floor ≤ V`. Newer
-  expand steps do not make an older binary incompatible. The window has no upper bound on the
-  schema number, which keeps N−1 ready while N's expand steps are applied. The `schema` readiness
-  check of R-OPS-001 MUST implement exactly this rule: below `requiredSchema` the replica waits not
-  ready (R-HA-008), and with `compat_floor` above V it exits with
+- A binary of version V can serve iff `applied ≥ requiredSchema` and `compat_floor ≤ V`. The
+  window has no upper bound on the schema number. From the first stable release on, newer expand
+  steps do not make an older binary incompatible, which keeps N−1 ready while N's expand steps are
+  applied; before it nothing promises that an older binary works against a newer schema. The
+  `schema` readiness check of R-OPS-001 MUST implement exactly this rule: below `requiredSchema`
+  the replica waits not ready (R-HA-008), and with `compat_floor` above V it exits with
   `schema requires trove >= <compat_floor>` (R-ARCH-026).
 
 **Contract guard.** Before applying a contract step, `trove migrate` reads the live replicas
@@ -2128,12 +2141,13 @@ CREATE TABLE schema_state (
 
 - A checksum mismatch between an applied step and the embedded SQL (an edited migration) fails the
   Job.
-- A migration file is immutable once it is on `main`, released or not (R-ARCH-026, Q-ARCH-283). A
-  defect in a step is fixed forward with a new step of the class the change needs: expand for an
-  addition, contract one minor later for a removal (the table above). Editing an applied file is
-  never the fix.
-- There are no down migrations. Rolling back one release is supported without a database restore
-  (R-HA-019).
+- From the first stable release on, a migration file is immutable once it is on `main`
+  (R-ARCH-026, Q-ARCH-283), and a defect in a step is fixed forward with a new step of the class
+  the change needs: expand for an addition, contract one minor later for a removal (the table
+  above). Until then the check of this rule is switched off ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): a file may be edited,
+  and a database that applied the earlier version fails the checksum check above and is recreated.
+- There are no down migrations. From the first stable release on, rolling back one release is
+  supported without a database restore (R-HA-019); before it no rollback is supported.
 
 API (permission: `system.read`, [operations-and-observability.md](operations-and-observability.md)):
 
@@ -2170,9 +2184,12 @@ Acceptance criteria:
 
 - A CI check fails a change that adds a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`)
   to a file headed `-- trove:phase expand`, a file without a valid `phase` header, and a contract
-  file without `-- trove:requires-app` (R-ARCH-026).
-- Integration test: the previous release's binary passes its full API suite against a schema with
-  the current release's expand steps applied.
+  file without `-- trove:requires-app` (R-ARCH-026). While the rules are switched off
+  ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)), the unit tests hold both modes: `TestParseSteps` with the rules on,
+  `TestParseStepsRelaxed` with them off, where a file without any header and those statements in any
+  step pass.
+- From the first stable release on, an integration test: the previous release's binary passes its
+  full API suite against a schema with the current release's expand steps applied.
 - With a 0.3.x replica alive, a migration plan that contains a contract step with
   `-- trove:requires-app >= 0.4.0` makes `trove migrate` exit with status `3`, apply nothing and
   name that replica.
@@ -2247,10 +2264,13 @@ Priority: **MVP** · Covers: HA-066, HA-069
 - `migrations.mode: disabled` renders no Job. The operator runs `trove migrate up` by other
   means, for example `kubectl -n trove run trove-migrate --rm -i --restart=Never --image=… -- trove migrate up`
   with the same mounts. New pods stay not ready until the schema is sufficient (R-HA-008).
-- **Rollback.** `helm rollback` to release N−1 after an upgrade to N is supported. N's Job applied
-  only expand steps that N−1 tolerates, and contract steps whose objects N−1 no longer uses, which
-  declare `requires-app` N−1 or lower (R-HA-021). `compat_floor` is therefore ≤ N−1. Rolling back
-  further than one release requires a database restore.
+- **Rollback.** Before the first stable release no rollback is supported ([Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): N's
+  Job may have applied steps that N−1 does not work against, and the way back is the backup taken
+  before the upgrade (R-HA-021) or a new database. From the first stable release on, `helm rollback`
+  to release N−1 after an upgrade to N is supported. N's Job applied only expand steps that N−1
+  tolerates, and contract steps whose objects N−1 no longer uses, which declare `requires-app` N−1
+  or lower (R-HA-021). `compat_floor` is therefore ≤ N−1. Rolling back further than one release
+  requires a database restore.
 
 Acceptance criteria:
 
@@ -2270,6 +2290,13 @@ Acceptance criteria:
 
 ### R-HA-020 · Rolling upgrade and mixed-version operation
 Priority: **MVP** · Covers: HA-069, OPS-073
+
+**Before the first stable release this requirement is not a promise** (owner, 2026-11-06,
+`CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): N and N−1 need not serve side by side, and an upgrade may need
+downtime or a new database. The chart still rolls the Deployments as described below; the rules of
+the mixed-version window are promised from the first stable release on, and the status names the
+test that exists today. The nightly run skips its set `upgrade` until then; a dispatch with
+`sets=upgrade` runs it ([the switches](../developer/releasing.md#switched-off-until-the-first-stable-release)).
 
 **Status.** The rolling upgrade and its rollback are tested by `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
 ([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`): the latest release before the working tree is installed
@@ -2324,6 +2351,10 @@ Acceptance criteria:
 ### R-HA-021 · Upgrade policy and preparation
 Priority: **MVP** · Covers: OPS-072, HA-070
 
+**Before the first stable release the supported paths of the table do not apply** (owner,
+2026-11-06, `CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): any upgrade may need downtime or a new database, and no
+rollback is supported. The preparation below still applies; the backup it takes is the way back.
+
 | Upgrade | Supported path |
 |---|---|
 | Patch (x.y.z → x.y.z+1) | Rolling, zero downtime; patch releases contain no contract steps |
@@ -2369,6 +2400,9 @@ Acceptance criteria:
 
 ### R-HA-064 · Upgrade across the cut into roles
 Priority: **MVP** · Covers: HA-069, OPS-073
+
+**Before the first stable release its promise of no downtime does not apply** (owner, 2026-11-06,
+`CLAUDE.md`, [Q-ARCH-332](architecture.md#q-arch-332--no-backward-compatibility-until-the-first-stable-release)): it rests on the mixed-version operation of R-HA-020.
 
 **Status.** Built (phase 6a, WP6a.3): the bridge, its edge and the guard
 ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusal reads the cluster and is
