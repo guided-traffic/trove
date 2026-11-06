@@ -115,7 +115,7 @@ func ciAllows(e *Engine, idx *Index, sub Subject, c Coordinate) bool {
 }
 
 func npmRead(repo, pkg string) Coordinate {
-	return Coordinate{Repository: repo, Format: "npm", Kind: KindMetadata, Package: pkg, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Format: "npm", Kind: KindMetadata, Package: pkg, Actions: []Action{Read}}
 }
 
 // R-AUTHZ-014: the rights of a CI token are the union of the policies naming its mappings, the policies
@@ -155,7 +155,7 @@ func TestR_AUTHZ_014_TheRightsOfACITokenAreTheUnionOfItsThreeKinds(t *testing.T)
 		}
 	})
 	t.Run("R-AUTHZ-014 a CI token holds no capability and administers nothing", func(t *testing.T) {
-		if e.HoldsOn(idx, sub, "tokens:read") || len(e.ProjectsOn(idx, sub)) != 0 {
+		if e.HoldsOn(idx, sub, "tokens:read") || len(e.MembershipsOn(idx, sub)) != 0 {
 			t.Fatal("a CI token holds a capability or a project")
 		}
 	})
@@ -317,10 +317,10 @@ func TestR_AUTHZ_014_AListingFollowsTheInlineGrants(t *testing.T) {
 	e, idx := ciEngine(t)
 	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/none", nil, inline([]string{"npm-loose"}, []string{"@acme/*"}, "", claims.Read))))
 	st := e.newEvalState(idx, sub)
-	if got := e.readShape(st, sub, idx.repo("npm-loose"), true); got != ReadRows {
+	if got := e.readShape(st, sub, idx.repo(qr("npm-loose")), true); got != ReadRows {
 		t.Fatalf("shape %v, want rows", got)
 	}
-	if got := e.readShape(st, sub, idx.repo("npm-internal"), true); got != ReadNone {
+	if got := e.readShape(st, sub, idx.repo(qr("npm-internal")), true); got != ReadNone {
 		t.Fatalf("shape %v, want none", got)
 	}
 }
@@ -399,6 +399,6 @@ func TestR_CI_015_TheClaimOfACIPublish(t *testing.T) {
 }
 
 func projectRow(id, key string) (r q.AuthzBuildProjectsRow) {
-	r.ID, r.Key, r.ManagePolicies, r.ManageRepositories = id, key, true, true
+	r.ID, r.Key = id, key
 	return r
 }

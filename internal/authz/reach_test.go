@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -60,7 +61,7 @@ type leaf struct {
 }
 
 func leavesOf(idx *Index, key string, via []string, depth int) []leaf {
-	r := idx.repo(key)
+	r := idx.repo(qr(key))
 	if r == nil || depth > maxReachDepth {
 		return nil
 	}
@@ -71,9 +72,9 @@ func leavesOf(idx *Index, key string, via []string, depth int) []leaf {
 	for _, m := range r.members {
 		next := via
 		if mr := idx.repo(m); mr != nil && mr.Class == repository.Virtual {
-			next = append(append([]string(nil), via...), m)
+			next = append(append([]string(nil), via...), m.Key)
 		}
-		out = append(out, leavesOf(idx, m, next, depth+1)...)
+		out = append(out, leavesOf(idx, m.Key, next, depth+1)...)
 	}
 	return out
 }
@@ -107,16 +108,16 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 			for _, ep := range []string{"", "default", "customers"} {
 				sub := onEP(base, ep)
 				ctx := context.Background()
-				idx, err := e.Begin(ctx, sub, keys...)
+				idx, err := e.Begin(ctx, sub, qrs(keys)...)
 				if err != nil {
 					t.Fatal(err)
 				}
-				got, err := e.ReachOn(ctx, idx, sub, keys)
+				got, err := e.ReachOn(ctx, idx, sub, qrs(keys))
 				if err != nil {
 					t.Fatal(err)
 				}
 				for _, k := range keys {
-					res, ok := got[k]
+					res, ok := got[qr(k)]
 					if !ok {
 						t.Fatalf("%s on %q (anonymous %v): no answer for %s", name, ep, on, k)
 					}
@@ -131,14 +132,14 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 						t.Errorf("%s: reach none without a denial", where())
 					}
 					leaves := leavesOf(idx, k, nil, 0)
-					virtual := idx.repo(k) != nil && idx.repo(k).Class == repository.Virtual
+					virtual := idx.repo(qr(k)) != nil && idx.repo(qr(k)).Class == repository.Virtual
 					addressed := ""
 					if virtual {
 						addressed = k
 					}
 					// gate: the read of the repository itself, for a virtual one.
 					gateOK := func(kind RequestKind) bool {
-						return e.DecideOn(ctx, idx, sub, Coordinate{Repository: k, Kind: kind, Actions: []Action{Read}}).Outcome == Allow
+						return e.DecideOn(ctx, idx, sub, Coordinate{Repository: qr(k), Kind: kind, Actions: []Action{Read}}).Outcome == Allow
 					}
 					anyAllowed, allAllowed := false, len(leaves) > 0
 					for _, kind := range []RequestKind{KindMetadata, KindArtifact} {
@@ -151,15 +152,15 @@ func TestR_BAS_012_ShapeAgreesWithTheDecisionPoint(t *testing.T) {
 							// the gates of the nested virtual repositories, asked as the read of a member
 							nestedOK := true
 							for _, n := range lf.nested {
-								nc := Coordinate{Repository: n, Kind: kind, Actions: []Action{Read}, Addressed: addressed}
+								nc := Coordinate{Repository: qr(n), Kind: kind, Actions: []Action{Read}, Addressed: qr(addressed)}
 								nestedOK = nestedOK && e.DecideOn(ctx, idx, sub, nc).Outcome == Allow
 							}
 							for _, p := range pkgs {
 								for _, v := range versions {
 									for _, path := range paths {
-										c := Coordinate{Repository: leaf, Package: p, Version: v, Path: path, Kind: kind, Actions: []Action{Read}, Addressed: addressed}
+										c := Coordinate{Repository: qr(leaf), Package: p, Version: v, Path: path, Kind: kind, Actions: []Action{Read}, Addressed: qr(addressed)}
 										ok := nestedOK && e.DecideOn(ctx, idx, sub, c).Outcome == Allow
-										if ok && kind == KindArtifact && idx.repo(leaf).Class == repository.Remote {
+										if ok && kind == KindArtifact && idx.repo(qr(leaf)).Class == repository.Remote {
 											ok = e.MayPopulateOn(ctx, idx, sub, c).Outcome == Allow
 										}
 										anyAllowed = anyAllowed || ok
@@ -201,23 +202,23 @@ func TestR_BAS_012_Shapes(t *testing.T) {
 		o.AnonymousAccess = func(context.Context) (bool, error) { return false, nil }
 	}
 	keys := []string{"npm-a", "npm-strict", "npmjs", "npm-frozen", "npm-v", "npm-v2", "npm-empty", "ghost"}
-	reach := func(t *testing.T, mod func(*Options), sub Subject) map[string]ReachResult {
+	reach := func(t *testing.T, mod func(*Options), sub Subject) map[qname.Repo]ReachResult {
 		t.Helper()
 		e := newTestEngine(t, reachFixture(), mod)
-		idx, err := e.Begin(t.Context(), sub, keys...)
+		idx, err := e.Begin(t.Context(), sub, qrs(keys)...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := e.ReachOn(t.Context(), idx, sub, keys)
+		got, err := e.ReachOn(t.Context(), idx, sub, qrs(keys))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return got
 	}
-	want := func(t *testing.T, got map[string]ReachResult, key string, r Reach, denial Outcome) {
+	want := func(t *testing.T, got map[qname.Repo]ReachResult, key string, r Reach, denial Outcome) {
 		t.Helper()
-		if got[key].Reach != r || (r == ReachNone && got[key].Denial != denial) {
-			t.Errorf("%s: %s (denial %d), want %s (denial %d)", key, got[key].Reach, got[key].Denial, r, denial)
+		if got[qr(key)].Reach != r || (r == ReachNone && got[qr(key)].Denial != denial) {
+			t.Errorf("%s: %s (denial %d), want %s (denial %d)", key, got[qr(key)].Reach, got[qr(key)].Denial, r, denial)
 		}
 	}
 	t.Run("an unrestricted reader without the populate right of a frozen mirror is partial on the virtual repository over it", func(t *testing.T) {

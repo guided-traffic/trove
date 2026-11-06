@@ -111,11 +111,11 @@ func TestR_AUTHZ_005_Patterns(t *testing.T) {
 
 func TestR_AUTHZ_004_Selectors(t *testing.T) {
 	repos := []repoView{
-		{ID: 1, Name: "npm-internal", Class: "local", Format: "npm"},
-		{ID: 2, Name: "npm-team-web", Class: "local", Format: "npm"},
-		{ID: 3, Name: "npmjs", Class: "remote", Format: "npm"},
-		{ID: 4, Name: "npm-all", Class: "virtual", Format: "npm"},
-		{ID: 5, Name: "files-internal", Class: "local", Format: "generic"},
+		{ID: 1, Name: qr("npm-internal"), Class: "local", Format: "npm"},
+		{ID: 2, Name: qr("npm-team-web"), Class: "local", Format: "npm"},
+		{ID: 3, Name: qr("npmjs"), Class: "remote", Format: "npm"},
+		{ID: 4, Name: qr("npm-all"), Class: "virtual", Format: "npm"},
+		{ID: 5, Name: qr("files-internal"), Class: "local", Format: "generic"},
 	}
 	cases := []struct {
 		sel  string
@@ -136,14 +136,14 @@ func TestR_AUTHZ_004_Selectors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("R-AUTHZ-004 selector "+tc.sel, func(t *testing.T) {
-			s, err := parseSelector(tc.sel)
+			s, err := parseSelector(tc.sel, projectContext("it"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			s.repoID = 0
 			if s.kind == selKey {
 				for _, r := range repos {
-					if r.Name == s.key {
+					if r.Name.Key == s.key {
 						s.repoID = r.ID
 					}
 				}
@@ -151,7 +151,7 @@ func TestR_AUTHZ_004_Selectors(t *testing.T) {
 			var got []string
 			for _, r := range repos {
 				if s.matches(r) {
-					got = append(got, r.Name)
+					got = append(got, r.Name.Key)
 				}
 			}
 			if len(got) != len(tc.want) {
@@ -166,7 +166,7 @@ func TestR_AUTHZ_004_Selectors(t *testing.T) {
 	}
 	for _, bad := range []string{"", "@any-everything", "Npm-Internal", "npm-internal:npm", "npm-*:", "a b", "@any:"} {
 		t.Run("R-AUTHZ-004 selector "+bad+" is invalid", func(t *testing.T) {
-			if _, err := parseSelector(bad); err == nil {
+			if _, err := parseSelector(bad, projectContext("it")); err == nil {
 				t.Fatal("accepted")
 			}
 		})

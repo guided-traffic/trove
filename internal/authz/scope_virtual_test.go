@@ -41,7 +41,7 @@ func TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt
 	}
 	for _, tc := range cases {
 		t.Run("R-AUTHZ-013 Q-AUTHZ-163 "+tc.name, func(t *testing.T) {
-			got, _ := e.MemberUsableOn(t.Context(), idx, tc.sub, tc.member, read(tc.through, "left-pad", ""))
+			got, _ := e.MemberUsableOn(t.Context(), idx, tc.sub, qr(tc.member), read(tc.through, "left-pad", ""))
 			if got != tc.want {
 				t.Fatalf("usable %v, want %v", got, tc.want)
 			}
@@ -60,7 +60,7 @@ func TestR_AUTHZ_013_ThePopulateCheckOfARemoteMemberFollowsTheAddressedVirtualRe
 	}
 	sub := tokenScop(bearer(bobSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all"}, Actions: []string{"read"}}}})
 	through := read("npmjs", "left-pad", "")
-	through.Addressed = "npm-all"
+	through.Addressed = qr("npm-all")
 	if d := e.MayPopulateOn(t.Context(), idx, sub, through); !d.Allowed() {
 		t.Fatalf("through the virtual repository: %+v", d)
 	}

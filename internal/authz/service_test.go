@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -35,9 +36,9 @@ func (f fakePrincipals) Groups(context.Context, string) ([]principal.GroupRef, e
 
 type fakeRepos struct{ list []repository.Repository }
 
-func (f fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (f fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
 	for _, r := range f.list {
-		if r.Name == key {
+		if r.Name == name {
 			return r, nil
 		}
 	}
@@ -45,6 +46,16 @@ func (f fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, 
 }
 
 func (f fakeRepos) List(context.Context) ([]repository.Repository, error) { return f.list, nil }
+
+func (f fakeRepos) ListProject(_ context.Context, project string) ([]repository.Repository, error) {
+	var out []repository.Repository
+	for _, r := range f.list {
+		if r.Name.Project == project {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
 
 func testService() *Service {
 	p := fakePrincipals{}
@@ -58,11 +69,11 @@ func testService() *Service {
 	}
 	repos := fakeRepos{}
 	for i, r := range []repository.Repository{
-		{Name: "npm-internal", Class: repository.Local, Format: "npm"},
-		{Name: "npmjs", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"read"}}`)},
-		{Name: "npm-frozen", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"deploy"}}`)},
-		{Name: "npm-all", Class: repository.Virtual, Format: "npm"},
-		{Name: "files-internal", Class: repository.Local, Format: "generic"},
+		{Name: qr("npm-internal"), Class: repository.Local, Format: "npm"},
+		{Name: qr("npmjs"), Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"read"}}`)},
+		{Name: qr("npm-frozen"), Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"deploy"}}`)},
+		{Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
+		{Name: qr("files-internal"), Class: repository.Local, Format: "generic"},
 	} {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)

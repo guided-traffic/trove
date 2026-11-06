@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -50,24 +52,36 @@ func (f fakeProjects) AccountProject(_ context.Context, id string) (string, erro
 	return f.accounts[id], nil
 }
 
-// project adds a project and its administrators to the snapshot.
-func (f *fixture) project(id, key string, managePolicies, manageRepositories bool, admins ...string) *fixture {
-	f.s.Projects = append(f.s.Projects, q.AuthzBuildProjectsRow{ID: id, Key: key, ManagePolicies: managePolicies, ManageRepositories: manageRepositories})
-	for _, a := range admins {
-		kind := dbGroup
-		if strings.HasPrefix(a, "user-") {
-			kind = dbUser
-		}
-		f.s.ProjectAdmins = append(f.s.ProjectAdmins, q.AuthzBuildProjectAdminsRow{ProjectID: id, PrincipalID: a, PrincipalKind: kind, PrincipalName: a})
+// project adds a project and its Owners (users and groups) to the snapshot.
+func (f *fixture) project(id, key string, owners ...string) *fixture {
+	f.s.Projects = append(f.s.Projects, q.AuthzBuildProjectsRow{ID: id, Key: key})
+	for _, o := range owners {
+		f.member(id, o, "owner")
 	}
+	return f
+}
+
+// member adds a member with a role to a project of the snapshot.
+func (f *fixture) member(project, principal, role string) *fixture {
+	kind := dbGroup
+	if strings.HasPrefix(principal, "user-") {
+		kind = dbUser
+	}
+	f.s.ProjectMembers = append(f.s.ProjectMembers, q.AuthzBuildProjectMembersRow{ProjectID: project, PrincipalID: principal, PrincipalKind: kind, PrincipalName: principal, Role: role})
 	return f
 }
 
 // assign puts a repository into a project.
 func (f *fixture) assign(repo, project string) *fixture {
+	key := ""
+	for _, p := range f.s.Projects {
+		if p.ID == project {
+			key = p.Key
+		}
+	}
 	for i := range f.s.Repositories {
 		if f.s.Repositories[i].Key == repo {
-			f.s.Repositories[i].ProjectID = project
+			f.s.Repositories[i].ProjectID, f.s.Repositories[i].ProjectKey = project, key
 			return f
 		}
 	}
@@ -82,8 +96,8 @@ func projectFixture() *fixture {
 		repo("web-files", "local", "generic", "").
 		repo("shop-npm", "local", "npm", "").
 		repo("npm-internal", "local", "npm", "").
-		project(pWeb, "web", true, false, idAlice, idWeb).
-		project(pShop, "shop", false, true, idBob).
+		project(pWeb, "web", idAlice, idWeb).
+		project(pShop, "shop", idBob).
 		assign("web-npm", pWeb).assign("web-files", pWeb).assign("shop-npm", pShop)
 }
 
@@ -91,80 +105,40 @@ func allows(e *Engine, sub Subject, repo string, a ...Action) bool {
 	return e.Decide(context.Background(), sub, write(repo, "p", "", a...)).Outcome == Allow
 }
 
-func TestR_AUTHZ_026_ProjectAdministratorsHoldManageOnTheirRepositories(t *testing.T) {
-	e := newTestEngine(t, projectFixture(), nil)
-	for _, tc := range []struct {
-		name string
-		sub  Subject
-		repo string
-		want bool
-	}{
-		{"a user administrator holds manage on a project repository", aliceSub, "web-npm", true},
-		{"and on the other repository of the project", aliceSub, "web-files", true},
-		{"and nothing on another project's repository", aliceSub, "shop-npm", false},
-		{"and nothing on a repository without a project", aliceSub, "npm-internal", false},
-		{"a member of an administrator group holds manage", userSub("user-dave", "dave", idWeb), "web-npm", true},
-		{"a user that is neither listed nor in a listed group holds none", carolSub, "web-npm", false},
-		{"another project's administrator holds none here", bobSub, "web-npm", false},
-		{"the other project's administrator holds manage there", bobSub, "shop-npm", true},
-		{"a service account never administers", botSub, "web-npm", false},
-		{"a session of the administrator is a session", tokenScop(aliceSub, scope.Scope{Inherit: true, Admin: true}), "web-npm", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := allows(e, tc.sub, tc.repo, Manage); got != tc.want {
-				t.Fatalf("manage on %s = %v, want %v", tc.repo, got, tc.want)
-			}
-		})
-	}
-	t.Run("the grant is manage only: no deploy", func(t *testing.T) {
-		if allows(e, aliceSub, "web-npm", Deploy) {
-			t.Fatal("an administrator holds deploy without a policy")
-		}
-	})
-	t.Run("the decision names the project", func(t *testing.T) {
-		for _, sub := range []Subject{aliceSub, userSub("user-dave", "dave", idWeb)} {
-			d := e.Decide(t.Context(), sub, write("web-npm", "p", "", Manage))
-			if !slices.Equal(d.Sources, []string{"project:web"}) {
-				t.Fatalf("sources of %s: %v", sub.Name, d.Sources)
-			}
-		}
-	})
-}
-
-func TestR_AUTHZ_026_ProjectsOnAnswersForUsersAndGroupsThroughSessionsAndAdminTokens(t *testing.T) {
-	e := newTestEngine(t, projectFixture().project("project-api", "api", false, false, idAlice), nil)
+func TestR_AUTHZ_207_MembershipsOnAnswersForUsersAndGroupsThroughSessionsAndAdminTokens(t *testing.T) {
+	e := newTestEngine(t, projectFixture().project("project-api", "api").member("project-api", idAlice, "maintainer"), nil)
 	idx, err := e.Begin(t.Context(), aliceSub)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keys := func(sub Subject) string {
 		var out []string
-		for _, p := range e.ProjectsOn(idx, sub) {
-			out = append(out, p.Key)
+		for _, m := range e.MembershipsOn(idx, sub) {
+			out = append(out, m.Key+":"+m.Role.String())
 		}
 		return strings.Join(out, ",")
 	}
-	t.Run("a session lists its projects sorted by key, with the switches", func(t *testing.T) {
-		got := e.ProjectsOn(idx, aliceSub)
-		want := []AdministeredProject{{Key: "api"}, {Key: "web", ManagePolicies: true}}
+	t.Run("a session lists its projects sorted by key, with the role", func(t *testing.T) {
+		got := e.MembershipsOn(idx, aliceSub)
+		want := []Membership{{Key: "api", Role: ProjectRoleMaintainer}, {Key: "web", Role: ProjectRoleOwner}}
 		if !slices.Equal(got, want) {
 			t.Fatalf("%+v, want %+v", got, want)
 		}
 	})
-	t.Run("a group administrator administers through its group", func(t *testing.T) {
-		if got := keys(userSub("user-dave", "dave", idWeb)); got != "web" {
+	t.Run("a member of a group is a member through the group", func(t *testing.T) {
+		if got := keys(userSub("user-dave", "dave", idWeb)); got != "web:owner" {
 			t.Fatal(got)
 		}
 	})
-	t.Run("a token with admin: true exercises the right, one without does not", func(t *testing.T) {
-		if got := keys(tokenScop(aliceSub, scope.Scope{Admin: true})); got != "api,web" {
+	t.Run("a token with admin: true keeps the Owner role, one without holds what an Owner holds beyond the administration", func(t *testing.T) {
+		if got := keys(tokenScop(aliceSub, scope.Scope{Admin: true})); got != "api:maintainer,web:owner" {
 			t.Fatalf("admin token: %q", got)
 		}
-		if got := keys(tokenScop(aliceSub, scope.Scope{Inherit: true})); got != "" {
+		if got := keys(tokenScop(aliceSub, scope.Scope{Inherit: true})); got != "api:maintainer,web:maintainer" {
 			t.Fatalf("inherit token without admin: %q", got)
 		}
 	})
-	t.Run("a service account, a CI identity and anonymous never administer", func(t *testing.T) {
+	t.Run("a service account, a CI identity and anonymous are no members", func(t *testing.T) {
 		sa := botSub
 		sa.Scope = &scope.Scope{Admin: true}
 		for name, sub := range map[string]Subject{"service account": sa, "ci": ciSub, "anonymous": anonSub} {
@@ -172,59 +146,48 @@ func TestR_AUTHZ_026_ProjectsOnAnswersForUsersAndGroupsThroughSessionsAndAdminTo
 				t.Errorf("%s: %q", name, got)
 			}
 		}
-		// Even a service account whose own ID is listed as an administrator row.
-		e2 := newTestEngine(t, projectFixture().project("project-x", "x", true, true, idBot), nil)
+		// Even a service account whose own ID is listed as a member row.
+		e2 := newTestEngine(t, projectFixture().project("project-x", "x", idBot), nil)
 		idx2, _ := e2.Begin(t.Context(), botSub)
-		if got := e2.ProjectsOn(idx2, botSub); len(got) != 0 {
-			t.Fatalf("a service account administers: %+v", got)
+		if got := e2.MembershipsOn(idx2, botSub); len(got) != 0 {
+			t.Fatalf("a service account is a member: %+v", got)
 		}
 	})
-	t.Run("AdministersOn follows the switches and does not tell an unknown project from a foreign one", func(t *testing.T) {
+	t.Run("OwnsOn needs an Owner role through a session or an admin token, and does not tell an unknown project from a foreign one", func(t *testing.T) {
 		for _, tc := range []struct {
+			name    string
+			sub     Subject
 			project string
-			right   ProjectRight
 			want    bool
 		}{
-			{"web", ProjectAny, true},
-			{"web", ProjectManagePolicies, true},
-			{"web", ProjectManageRepositories, false},
-			{"api", ProjectManagePolicies, false},
-			{"shop", ProjectAny, false},
-			{"nothing", ProjectAny, false},
-			{"web", ProjectRight("bogus"), false},
+			{"session of an Owner", aliceSub, "web", true},
+			{"maintainer is no Owner", aliceSub, "api", false},
+			{"another project", aliceSub, "shop", false},
+			{"unknown project", aliceSub, "nothing", false},
+			{"token without admin", tokenScop(aliceSub, scope.Scope{Inherit: true}), "web", false},
+			{"token with admin", tokenScop(aliceSub, scope.Scope{Admin: true}), "web", true},
+			{"owner through a group", userSub("user-dave", "dave", idWeb), "web", true},
 		} {
-			if got := e.AdministersOn(idx, aliceSub, tc.project, tc.right); got != tc.want {
-				t.Errorf("%s/%s = %v, want %v", tc.project, tc.right, got, tc.want)
+			if got := e.OwnsOn(idx, tc.sub, tc.project); got != tc.want {
+				t.Errorf("%s: %s = %v, want %v", tc.name, tc.project, got, tc.want)
 			}
 		}
 	})
-	t.Run("AdministersRepositoryOn names the project of the repository", func(t *testing.T) {
-		if p, ok := e.AdministersRepositoryOn(idx, aliceSub, "web-npm", ProjectManagePolicies); !ok || p != "web" {
-			t.Fatalf("%q %v", p, ok)
-		}
-		for _, repo := range []string{"web-npm:manageRepositories", "shop-npm", "npm-internal", "unknown"} {
-			right := ProjectAny
-			if strings.HasSuffix(repo, ":manageRepositories") {
-				repo, right = "web-npm", ProjectManageRepositories
-			}
-			if p, ok := e.AdministersRepositoryOn(idx, aliceSub, repo, right); ok || p != "" {
-				t.Errorf("%s: %q %v", repo, p, ok)
-			}
-		}
-		if idx.ProjectOf("shop-npm") != "shop" || idx.ProjectOf("npm-internal") != "" || idx.ProjectOf("unknown") != "" {
+	t.Run("ProjectOf names the project of the repository", func(t *testing.T) {
+		if idx.ProjectOf(qname.Repo{Project: "shop", Key: "shop-npm"}) != "shop" || idx.ProjectOf(qname.Repo{Project: "it", Key: "unknown"}) != "" {
 			t.Fatal("ProjectOf")
 		}
 	})
-	t.Run("Effective lists the projects with their switches", func(t *testing.T) {
+	t.Run("Effective lists the memberships", func(t *testing.T) {
 		me, err := e.Effective(t.Context(), aliceSub)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(me.Projects) != 2 || me.Projects[1] != (AdministeredProject{Key: "web", ManagePolicies: true}) {
-			t.Fatalf("%+v", me.Projects)
+		if len(me.Memberships) != 2 || me.Memberships[1] != (Membership{Key: "web", Role: ProjectRoleOwner}) {
+			t.Fatalf("%+v", me.Memberships)
 		}
-		if me, _ = e.Effective(t.Context(), botSub); len(me.Projects) != 0 {
-			t.Fatalf("%+v", me.Projects)
+		if me, _ = e.Effective(t.Context(), botSub); len(me.Memberships) != 0 {
+			t.Fatalf("%+v", me.Memberships)
 		}
 	})
 }
@@ -304,7 +267,7 @@ func TestR_AUTHZ_026_MatchCacheKeyIncludesTheProject(t *testing.T) {
 			f := newFixture().
 				repo("npm-internal", "local", "npm", "").
 				repo("npm-web", "local", "npm", "").
-				project(pWeb, "web", true, false, idAlice).
+				project(pWeb, "web", idAlice).
 				assign("npm-web", pWeb).
 				policy(policyDef{name: tc.global, selectors: []string{"npm-*"}, entries: map[string][]string{idCarol: {"read"}}}).
 				policy(policyDef{name: tc.project, selectors: []string{"npm-*"}, entries: map[string][]string{idBob: {"read"}}, project: pWeb})
@@ -334,11 +297,11 @@ func projectService() *Service {
 	}
 	repos := fakeRepos{}
 	for i, r := range []repository.Repository{
-		{Name: "web-npm", Class: repository.Local, Format: "npm", ProjectID: pWeb},
-		{Name: "web-files", Class: repository.Local, Format: "generic", ProjectID: pWeb},
-		{Name: "shop-npm", Class: repository.Local, Format: "npm", ProjectID: pShop},
-		{Name: "npm-internal", Class: repository.Local, Format: "npm"},
-		{Name: "web-moved", Class: repository.Local, Format: "npm"},
+		{Name: qr("web-npm"), Class: repository.Local, Format: "npm", ProjectID: pWeb},
+		{Name: qr("web-files"), Class: repository.Local, Format: "generic", ProjectID: pWeb},
+		{Name: qr("shop-npm"), Class: repository.Local, Format: "npm", ProjectID: pShop},
+		{Name: qr("npm-internal"), Class: repository.Local, Format: "npm"},
+		{Name: qr("web-moved"), Class: repository.Local, Format: "npm"},
 	} {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)

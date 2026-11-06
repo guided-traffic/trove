@@ -25,15 +25,15 @@ type authzCase struct {
 }
 
 func read(repo, pkg, path string) Coordinate {
-	return Coordinate{Repository: repo, Package: pkg, Path: path, Kind: KindArtifact, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: KindArtifact, Actions: []Action{Read}}
 }
 
 func metadata(repo string) Coordinate {
-	return Coordinate{Repository: repo, Kind: KindMetadata, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Kind: KindMetadata, Actions: []Action{Read}}
 }
 
 func write(repo, pkg, path string, actions ...Action) Coordinate {
-	return Coordinate{Repository: repo, Package: pkg, Path: path, Kind: KindWrite, Actions: actions}
+	return Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: KindWrite, Actions: actions}
 }
 
 var (
@@ -150,8 +150,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"deploy inside the include", aliceSub, write("npm-internal", "@web/button", "", Deploy), Allow, "", ""},
 			{"deploy on an excluded name", aliceSub, write("npm-internal", "@web/internal-keys", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 			{"a raw file without a package name never matches a name include", aliceSub, read("npm-internal", "", "readme.txt"), DenyHidden, ReasonNoGrant, Read},
-			{"a repository-level search matches whatever the patterns say", aliceSub, Coordinate{Repository: "npm-internal", Kind: KindSearch, Actions: []Action{Read}}, Allow, "", ""},
-			{"a repository-level coordinate does not widen deploy for another principal", bobSub, Coordinate{Repository: "npm-internal", Kind: KindWrite, Actions: []Action{Deploy}}, DenyVisible, ReasonNoGrant, Deploy},
+			{"a repository-level search matches whatever the patterns say", aliceSub, Coordinate{Repository: qr("npm-internal"), Kind: KindSearch, Actions: []Action{Read}}, Allow, "", ""},
+			{"a repository-level coordinate does not widen deploy for another principal", bobSub, Coordinate{Repository: qr("npm-internal"), Kind: KindWrite, Actions: []Action{Deploy}}, DenyVisible, ReasonNoGrant, Deploy},
 			{"NuGet include matches in any spelling", bobSub, read("nuget-internal", "acme.core", ""), Allow, "", ""},
 			{"NuGet include matches upper case", bobSub, read("nuget-internal", "ACME.Core.Tests", ""), Allow, "", ""},
 			{"NuGet include needs the dot", bobSub, read("nuget-internal", "AcmeCore", ""), DenyHidden, ReasonNoGrant, Read},
@@ -475,7 +475,7 @@ func (stubCeiling) Admits(_ *Index, endpoint string, c Coordinate, a Action) Cei
 	if a != Read {
 		return CeilingReadOnly
 	}
-	if c.Repository == "npm-hidden" {
+	if c.Repository.Key == "npm-hidden" {
 		return CeilingHidesRead
 	}
 	return CeilingAdmits

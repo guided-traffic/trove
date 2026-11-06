@@ -535,11 +535,11 @@ func TestR_AUTHZ_016_ReadableFiltersListings(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("R-AUTHZ-016 "+tc.name, func(t *testing.T) {
-			got, err := tc.e.Readable(t.Context(), tc.sub, keys)
+			got, err := tc.e.Readable(t.Context(), tc.sub, qrs(keys))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			if strings.Join(qkeys(got), ",") != strings.Join(tc.want, ",") {
 				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
@@ -559,9 +559,9 @@ func TestR_AUTHZ_023_CheckForTheCaller(t *testing.T) {
 	f.policy(policyDef{name: "q", selectors: []string{"npm-internal"}, pkgInc: []string{"@web/*"}, entries: map[string][]string{idDevs: {"delete"}}})
 	e := newTestEngine(t, f, nil)
 	items := []CheckItem{
-		{Repository: "npm-internal", Package: "@web/button", Action: Deploy},
-		{Repository: "npm-internal", Path: "@web/button/-/button-1.2.0.tgz", Action: Delete},
-		{Repository: "npm-all", Action: Read},
+		{Repository: qr("npm-internal"), Package: "@web/button", Action: Deploy},
+		{Repository: qr("npm-internal"), Path: "@web/button/-/button-1.2.0.tgz", Action: Delete},
+		{Repository: qr("npm-all"), Action: Read},
 	}
 	t.Run("R-AUTHZ-023 the example returns the rights of the caller", func(t *testing.T) {
 		got, epoch, err := e.Check(t.Context(), aliceSub, items)
@@ -578,7 +578,7 @@ func TestR_AUTHZ_023_CheckForTheCaller(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-023 a caller with no grants gets false everywhere, also for a missing repository", func(t *testing.T) {
 		missing := append([]CheckItem(nil), items...)
-		missing[0].Repository = "does-not-exist"
+		missing[0].Repository = qr("does-not-exist")
 		for _, set := range [][]CheckItem{items, missing} {
 			got, _, err := e.Check(t.Context(), carolSub, set)
 			if err != nil {
@@ -598,7 +598,7 @@ func TestR_AUTHZ_023_CheckForTheCaller(t *testing.T) {
 		if _, _, err := e.Check(t.Context(), aliceSub, make([]CheckItem, 101)); err == nil {
 			t.Error("101 checks allowed")
 		}
-		if _, _, err := e.Check(t.Context(), aliceSub, []CheckItem{{Repository: "npm-internal", Action: "publish"}}); err == nil {
+		if _, _, err := e.Check(t.Context(), aliceSub, []CheckItem{{Repository: qr("npm-internal"), Action: "publish"}}); err == nil {
 			t.Error("unknown action allowed")
 		}
 	})

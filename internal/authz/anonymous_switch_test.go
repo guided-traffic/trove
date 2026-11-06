@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // TestR_AUTH_037_AnonymousSwitchIsReadOncePerRequest: the runtime switch is read
@@ -26,7 +28,7 @@ func TestR_AUTH_037_AnonymousSwitchIsReadOncePerRequest(t *testing.T) {
 	ctx := context.WithValue(t.Context(), ctxKey{}, "request")
 
 	t.Run("one read for a request with several coordinates, on the request's context", func(t *testing.T) {
-		idx, err := e.Begin(ctx, anonSub, "a-repo")
+		idx, err := e.Begin(ctx, anonSub, qr("a-repo"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +50,7 @@ func TestR_AUTH_037_AnonymousSwitchIsReadOncePerRequest(t *testing.T) {
 		if d.Status() != 503 {
 			t.Fatalf("decision = %+v, status %d", d, d.Status())
 		}
-		if _, err := e.Readable(ctx, anonSub, []string{"a-repo"}); err == nil {
+		if _, err := e.Readable(ctx, anonSub, []qname.Repo{qr("a-repo")}); err == nil {
 			t.Fatal("Readable answered without the switch")
 		}
 	})

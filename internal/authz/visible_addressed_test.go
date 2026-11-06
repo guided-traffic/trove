@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/auth/scope"
 )
 
@@ -27,11 +29,11 @@ func addressedFixture() *fixture {
 // scopeOn is ReadScopeOn on a fresh index of the subject.
 func scopeOn(t *testing.T, e *Engine, sub Subject, addressed string, keys ...string) ReadScope {
 	t.Helper()
-	idx, err := e.Begin(context.Background(), sub, append([]string{"npm-v"}, keys...)...)
+	idx, err := e.Begin(context.Background(), sub, append([]qname.Repo{qr("npm-v")}, qrs(keys)...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs, err := e.ReadScopeOn(context.Background(), idx, sub, addressed, keys)
+	rs, err := e.ReadScopeOn(context.Background(), idx, sub, qr(addressed), qrs(keys))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +48,7 @@ func TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryAppliesItsExposure(t *test
 	e := newTestEngine(t, addressedFixture(), func(o *Options) { o.Ceiling = exposureCeiling() })
 	sub := onEP(botSub, "customers")
 	through := scopeOn(t, e, sub, "npm-v", "npm-a")
-	if got := through.Shape("npm-a"); got != ReadRows {
+	if got := through.Shape(qr("npm-a")); got != ReadRows {
 		t.Fatalf("shape of the member through the virtual repository: %s", got)
 	}
 	for _, c := range []struct {
@@ -58,12 +60,12 @@ func TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryAppliesItsExposure(t *test
 		{"@acme/sdk", "3.0.0-beta", false},
 		{"other", "2.1.0", false},
 	} {
-		if got := through.MayRead("npm-a", c.pkg, c.version); got != c.want {
+		if got := through.MayRead(qr("npm-a"), c.pkg, c.version); got != c.want {
 			t.Errorf("through npm-v: %s@%s = %v, want %v", c.pkg, c.version, got, c.want)
 		}
 	}
 	direct := scopeOn(t, e, sub, "", "npm-a")
-	if direct.MayRead("npm-a", "@acme/sdk", "2.1.0") {
+	if direct.MayRead(qr("npm-a"), "@acme/sdk", "2.1.0") {
 		t.Error("a listing of the member on its own applies the rule of the virtual repository")
 	}
 }
@@ -75,10 +77,10 @@ func TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryLiftsATokenScopeThatNamesI
 	e := newTestEngine(t, addressedFixture(), func(o *Options) { o.Ceiling = exposureCeiling() })
 	sub := onEP(tokenScop(bearer(botSub), scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-v"}, Actions: []string{"read"}}}}), "default")
 	through := scopeOn(t, e, sub, "npm-v", "npm-a")
-	if through.Shape("npm-a") != ReadRows || !through.MayRead("npm-a", "left-pad", "1.0.0") {
-		t.Fatalf("through npm-v: shape %s, read %v", through.Shape("npm-a"), through.MayRead("npm-a", "left-pad", "1.0.0"))
+	if through.Shape(qr("npm-a")) != ReadRows || !through.MayRead(qr("npm-a"), "left-pad", "1.0.0") {
+		t.Fatalf("through npm-v: shape %s, read %v", through.Shape(qr("npm-a")), through.MayRead(qr("npm-a"), "left-pad", "1.0.0"))
 	}
-	if scopeOn(t, e, sub, "", "npm-a").MayRead("npm-a", "left-pad", "1.0.0") {
+	if scopeOn(t, e, sub, "", "npm-a").MayRead(qr("npm-a"), "left-pad", "1.0.0") {
 		t.Error("the scope on the virtual repository opened the member addressed on its own")
 	}
 }
@@ -90,12 +92,12 @@ func TestQ_AUTHZ_168_ARepositoryTheAddressedOneDoesNotReachIsNotListed(t *testin
 	sub := onEP(botSub, "default")
 	for _, addressed := range []string{"npm-v", "npm-a", "ghost"} {
 		rs := scopeOn(t, e, sub, addressed, "npm-b")
-		if rs.Shape("npm-b") != ReadNone || rs.MayRead("npm-b", "left-pad", "1.0.0") {
-			t.Errorf("addressed %s: npm-b is %s, read %v", addressed, rs.Shape("npm-b"), rs.MayRead("npm-b", "left-pad", "1.0.0"))
+		if rs.Shape(qr("npm-b")) != ReadNone || rs.MayRead(qr("npm-b"), "left-pad", "1.0.0") {
+			t.Errorf("addressed %s: npm-b is %s, read %v", addressed, rs.Shape(qr("npm-b")), rs.MayRead(qr("npm-b"), "left-pad", "1.0.0"))
 		}
 	}
-	if rs := scopeOn(t, e, sub, "npm-b", "npm-b"); rs.Shape("npm-b") != ReadAll {
-		t.Errorf("the addressed repository itself: %s", rs.Shape("npm-b"))
+	if rs := scopeOn(t, e, sub, "npm-b", "npm-b"); rs.Shape(qr("npm-b")) != ReadAll {
+		t.Errorf("the addressed repository itself: %s", rs.Shape(qr("npm-b")))
 	}
 }
 
@@ -114,22 +116,22 @@ func TestQ_AUTHZ_168_AReadScopeThroughAVirtualRepositoryAgreesWithTheDecisionPoi
 		for _, ep := range []string{"", "default", "customers"} {
 			sub := onEP(base, ep)
 			ctx := context.Background()
-			idx, err := e.Begin(ctx, sub, "npm-a", "npm-v")
+			idx, err := e.Begin(ctx, sub, qr("npm-a"), qr("npm-v"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			rs, err := e.ReadScopeOn(ctx, idx, sub, "npm-v", []string{"npm-a"})
+			rs, err := e.ReadScopeOn(ctx, idx, sub, qr("npm-v"), []qname.Repo{qr("npm-a")})
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, p := range []string{"@acme/sdk", "left-pad"} {
 				for _, v := range []string{"", "1.9.0", "2.1.0", "3.0.0-beta"} {
-					c := Coordinate{Repository: "npm-a", Package: p, Version: v, Kind: KindMetadata, Actions: []Action{Read}, Addressed: "npm-v"}
+					c := Coordinate{Repository: qr("npm-a"), Package: p, Version: v, Kind: KindMetadata, Actions: []Action{Read}, Addressed: qr("npm-v")}
 					decided := e.DecideOn(ctx, idx, sub, c).Outcome == Allow
-					if got := rs.MayRead("npm-a", p, v); got != decided {
+					if got := rs.MayRead(qr("npm-a"), p, v); got != decided {
 						t.Errorf("%s on %q reads npm-a %s@%s through npm-v: MayRead %v, DecideOn %v", name, ep, p, v, got, decided)
 					}
-					switch rs.Shape("npm-a") {
+					switch rs.Shape(qr("npm-a")) {
 					case ReadAll:
 						if !decided {
 							t.Errorf("%s on %q: ReadAll and %s@%s is refused", name, ep, p, v)

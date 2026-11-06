@@ -314,18 +314,18 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 		{"R-EP-013 exposure never grants", onEP(carolSub, "customers"), read("generic-local", "", "releases/a"), DenyHidden, ReasonNoGrant, Read},
 		{"R-EP-013 Q-EP-9 a write on customers is 403 read-only", onEP(aliceSub, "customers"), write("generic-local", "", "releases/a", Deploy), DenyVisible, ReasonEndpointReadOnly, Deploy},
 		{"R-EP-013 a write is read-only whether or not its target exists", onEP(aliceSub, "customers"), write("ghost", "", "x", Deploy, Overwrite), DenyVisible, ReasonEndpointReadOnly, Deploy},
-		{"R-EP-013 a write is read-only before a read is hidden", onEP(aliceSub, "customers"), Coordinate{Repository: "ghost", Path: "x", Kind: KindWrite, Actions: []Action{Read, Deploy}}, DenyVisible, ReasonEndpointReadOnly, Deploy},
+		{"R-EP-013 a write is read-only before a read is hidden", onEP(aliceSub, "customers"), Coordinate{Repository: qr("ghost"), Path: "x", Kind: KindWrite, Actions: []Action{Read, Deploy}}, DenyVisible, ReasonEndpointReadOnly, Deploy},
 		{"R-EP-013 R-AUTHZ-016 an anonymous request is 401 first", onEP(anonSub, "customers"), read("generic-local", "", "releases/a"), DenyUnauthenticated, ReasonUnauthenticated, ""},
-		{"R-EP-013 Q-EP-11 exposure is decided on the addressed virtual repository", onEP(botSub, "customers"), Coordinate{Repository: "generic-local", Addressed: "files-virtual", Path: "releases/a", Kind: KindArtifact, Actions: []Action{Read}}, Allow, ReasonAllowGrant, ""},
-		{"R-EP-013 Q-EP-11 a member coordinate outside the virtual repository's rule is hidden", onEP(botSub, "customers"), Coordinate{Repository: "generic-local", Addressed: "files-virtual", Path: "internal/x", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
+		{"R-EP-013 Q-EP-11 exposure is decided on the addressed virtual repository", onEP(botSub, "customers"), Coordinate{Repository: qr("generic-local"), Addressed: qr("files-virtual"), Path: "releases/a", Kind: KindArtifact, Actions: []Action{Read}}, Allow, ReasonAllowGrant, ""},
+		{"R-EP-013 Q-EP-11 a member coordinate outside the virtual repository's rule is hidden", onEP(botSub, "customers"), Coordinate{Repository: qr("generic-local"), Addressed: qr("files-virtual"), Path: "internal/x", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
 		{"R-EP-013 the virtual repository itself passes its gate on customers", onEP(botSub, "customers"), read("files-virtual", "", "releases/a"), Allow, "", ""},
 		{"R-EP-013 a path of the virtual repository outside its rule is hidden", onEP(botSub, "customers"), read("files-virtual", "", "internal/x"), DenyHidden, ReasonExposure, Read},
 		{"R-EP-013 an endpoint name the configuration does not hold is closed", onEP(botSub, "nowhere"), read("generic-local", "", "releases/a"), DenyHidden, ReasonExposure, Read},
 		{"R-EP-013 a coordinate without an endpoint has no ceiling (a job)", botSub, read("generic-local", "", "internal/x.bin"), Allow, ReasonAllowGrant, ""},
-		{"R-EP-018 a version of an npm-like format is decided by the rule's range", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
-		{"R-EP-018 a version below the range is hidden", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
-		{"R-EP-014 Q-EP-59 a raw file of the npm-like format is decided on the package and version the format gives it", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Path: "@acme/sdk/-/sdk-2.1.0.tgz", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
-		{"R-EP-014 Q-EP-59 a raw file of a version the rule hides is hidden", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Path: "@acme/sdk/-/sdk-1.9.0.tgz", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
+		{"R-EP-018 a version of an npm-like format is decided by the rule's range", onEP(botSub, "customers"), Coordinate{Repository: qr("npm-customers"), Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
+		{"R-EP-018 a version below the range is hidden", onEP(botSub, "customers"), Coordinate{Repository: qr("npm-customers"), Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
+		{"R-EP-014 Q-EP-59 a raw file of the npm-like format is decided on the package and version the format gives it", onEP(botSub, "customers"), Coordinate{Repository: qr("npm-customers"), Path: "@acme/sdk/-/sdk-2.1.0.tgz", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
+		{"R-EP-014 Q-EP-59 a raw file of a version the rule hides is hidden", onEP(botSub, "customers"), Coordinate{Repository: qr("npm-customers"), Path: "@acme/sdk/-/sdk-1.9.0.tgz", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
 		{"R-EP-014 Q-EP-59 a path of a format with package names that names no package is hidden", onEP(botSub, "customers"), read("npm-customers", "", "@acme/sdk/-/sdk-2.1.0.tgz"), DenyHidden, ReasonExposure, Read},
 		{"R-EP-014 Q-EP-59 a generic path without a package is decided by the paths as before", onEP(botSub, "customers"), read("generic-local", "", "releases/x"), Allow, ReasonAllowGrant, ""},
 	}, &n)
@@ -360,15 +360,15 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	})
 	t.Run("R-EP-014 listings on customers hold only repositories with an enabled rule", func(t *testing.T) {
 		keys := []string{"files-virtual", "generic-auth", "generic-local", "generic-other", "npm-customers"}
-		got, err := e.Readable(t.Context(), onEP(adminSub, "customers"), keys)
+		got, err := e.Readable(t.Context(), onEP(adminSub, "customers"), qrs(keys))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := []string{"files-virtual", "generic-local", "npm-customers"}; !slices.Equal(got, want) {
+		if want := []string{"files-virtual", "generic-local", "npm-customers"}; !slices.Equal(qkeys(got), want) {
 			t.Fatalf("customers lists %v, want %v", got, want)
 		}
-		all, _ := e.Readable(t.Context(), onEP(adminSub, "default"), keys)
-		if !slices.Equal(all, keys) {
+		all, _ := e.Readable(t.Context(), onEP(adminSub, "default"), qrs(keys))
+		if !slices.Equal(qkeys(all), keys) {
 			t.Fatalf("default lists %v", all)
 		}
 		if v := metricValue(t, e.m.hidden.WithLabelValues("customers", "item")); v != 2 {
@@ -412,8 +412,8 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	t.Run("R-EP-018 the fingerprint is read from the index", func(t *testing.T) {
 		cl := exposureCeiling()
 		x := e.Index()
-		a := cl.ExposureFingerprint(x, "customers", "generic-local")
-		if a == cl.ExposureFingerprint(x, "customers", "generic-other") || cl.ExposureFingerprint(x, "default", "generic-local") != fingerprint(ExposureModeAll, nil) {
+		a := cl.ExposureFingerprint(x, "customers", qr("generic-local"))
+		if a == cl.ExposureFingerprint(x, "customers", qr("generic-other")) || cl.ExposureFingerprint(x, "default", qr("generic-local")) != fingerprint(ExposureModeAll, nil) {
 			t.Fatal("fingerprints do not follow the rules")
 		}
 	})
@@ -434,7 +434,7 @@ func TestR_EP_018_ExposureView(t *testing.T) {
 	f.exposure(ruleDef{endpoint: "customers", name: "nuget", repo: "nuget-local", dims: ruleDims{}})
 	e := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling() })
 	cl, x := exposureCeiling(), e.Index()
-	v := cl.View(x, "customers", "npm-fixture")
+	v := cl.View(x, "customers", qr("npm-fixture"))
 	if v == nil {
 		t.Fatal("no view on an endpoint with rules")
 	}
@@ -444,7 +444,7 @@ func TestR_EP_018_ExposureView(t *testing.T) {
 			if got := v.Version("@acme/sdk", ver); got != exposed {
 				t.Errorf("@acme/sdk@%s exposed %v, want %v", ver, got, exposed)
 			}
-			c := Coordinate{Repository: "npm-fixture", Package: "@acme/sdk", Version: ver, Kind: KindArtifact, Actions: []Action{Read}}
+			c := Coordinate{Repository: qr("npm-fixture"), Package: "@acme/sdk", Version: ver, Kind: KindArtifact, Actions: []Action{Read}}
 			if d := e.Decide(t.Context(), onEP(botSub, "customers"), c); d.Allowed() != exposed {
 				t.Errorf("the ceiling decides @acme/sdk@%s %v, the view %v", ver, d.Allowed(), exposed)
 			}
@@ -467,13 +467,13 @@ func TestR_EP_018_ExposureView(t *testing.T) {
 		}
 	})
 	t.Run("R-EP-018 no view where the endpoint does not restrict", func(t *testing.T) {
-		if cl.View(x, "default", "npm-fixture") != nil || cl.View(x, "", "npm-fixture") != nil {
+		if cl.View(x, "default", qr("npm-fixture")) != nil || cl.View(x, "", qr("npm-fixture")) != nil {
 			t.Fatal("a view in mode all or without an endpoint")
 		}
 	})
 	t.Run("R-EP-018 fail closed: an unknown repository, a format that is not exposable, an unconfigured endpoint", func(t *testing.T) {
 		for _, c := range []struct{ endpoint, repo string }{{"customers", "ghost"}, {"customers", "nuget-local"}, {"nowhere", "npm-fixture"}, {"customers", "generic-auth"}} {
-			w := cl.View(x, c.endpoint, c.repo)
+			w := cl.View(x, c.endpoint, qr(c.repo))
 			if w == nil || w.Package("@acme/sdk") || w.Version("@acme/sdk", "2.1.0") || w.Tag("@acme/sdk", "latest", "2.1.0") {
 				t.Errorf("%s on %s exposes something", c.repo, c.endpoint)
 			}

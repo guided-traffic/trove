@@ -69,7 +69,7 @@ func (f *fixture) repo(key, class, format, cfg string) *fixture {
 	if doc.Virtual.DeployTarget != "" {
 		f.s.DeployTargets = append(f.s.DeployTargets, q.AuthzBuildDeployTargetsRow{VirtualID: f.next, TargetKey: doc.Virtual.DeployTarget})
 	}
-	f.s.Repositories = append(f.s.Repositories, q.AuthzBuildRepositoriesRow{ID: f.next, Key: key, Class: class, Format: format, Config: []byte(cfg)})
+	f.s.Repositories = append(f.s.Repositories, q.AuthzBuildRepositoriesRow{ID: f.next, Key: key, ProjectKey: testProject(key), Class: class, Format: format, Config: []byte(cfg)})
 	return f
 }
 
@@ -91,7 +91,18 @@ func (f *fixture) policy(d policyDef) *fixture {
 	id := "policy-" + d.name
 	f.s.Policies = append(f.s.Policies, q.AuthzBuildPoliciesRow{ID: id, Name: d.name, ResourceType: "repository", ProjectID: d.project})
 	for i, text := range d.selectors {
-		sel, err := parseSelector(text)
+		in := instanceContext
+		if d.project != "" {
+			in = projectContext(d.project) // a project the snapshot does not hold keeps its ID as the context
+			for _, p := range f.s.Projects {
+				if p.ID == d.project {
+					in = projectContext(p.Key)
+				}
+			}
+		} else {
+			text = qualifySelector(text)
+		}
+		sel, err := parseSelector(text, in)
 		if err != nil {
 			panic(err)
 		}
@@ -285,4 +296,20 @@ func userSub(id, name string, groups ...string) Subject {
 		s.Groups = append(s.Groups, principal.GroupRef{ID: g, Name: strings.TrimPrefix(g, "group-")})
 	}
 	return s
+}
+
+// qualifySelector turns the bare selector text of a global policy in a fixture into the form of an instance
+// context: a key into <project>/<key> of its project, a pattern into one over every project, a class stays.
+func qualifySelector(text string) string {
+	base, suffix, _ := strings.Cut(text, ":")
+	if suffix != "" {
+		suffix = ":" + suffix
+	}
+	switch {
+	case strings.HasPrefix(base, "@"), strings.Contains(base, "/"):
+		return text
+	case strings.ContainsAny(base, "*?"):
+		return "*/" + base + suffix
+	}
+	return testProject(base) + "/" + base + suffix
 }
