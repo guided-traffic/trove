@@ -1476,8 +1476,9 @@ export interface paths {
          * Validate a permission policy without storing it
          * @description Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the names of the
          *     repositories the selectors currently cover. A policy with problems is still a `200` answer with `valid: false`; the
-         *     editor shows the list. The name need not be unused. With `project=<key>` the policy is validated as a policy of that
-         *     project (bare keys; the caller is a member of the project with the role Owner, or holds `policies:read`); without,
+         *     editor shows the list. The name need not be unused. A policy that names a project in the body (`project`) is
+         *     validated as a policy of that project (bare keys, the name within the project); the caller holds `policies:read` or is
+         *     an Owner of the project, and a project the caller cannot see answers `404`. Without `project` the policy is validated
          *     as an instance-wide policy (qualified selectors; `policies:read`).
          */
         post: operations["validatePermissionPolicy"];
@@ -1856,13 +1857,13 @@ export interface paths {
          *     their defaults. The document is validated in one pass and every violation is reported (`422`,
          *     R-REPO-008); an unknown or duplicate member is `400 malformed_request` with its JSON pointer.
          *     Create is never an upsert: a key that is taken in the project, also by a repository being deleted,
-         *     answers `409 repository_exists`. The configuration, the audit event and the change-log row are one
+         *     answers `409 already_exists`. The configuration, the audit event and the change-log row are one
          *     transaction, so the repository is usable on every replica as soon as this answers
          *     (R-API-052). The body of the answer is the stored document plus `warnings`.
          *
          *     The repository is created in the project of the path and stays in it (Q-AUTHZ-206): `project` in the body, if
          *     present, must equal it (`422`). The key is unique within the project, not in the installation (Q-REPO-212): a
-         *     key that is taken in the project answers `409 repository_exists`. A caller who holds
+         *     key that is taken in the project answers `409 already_exists`. A caller who holds
          *     `repositories:write-config`, or is an Owner of the project, creates it. A virtual repository's members and
          *     deploy target are repositories of the same project, named by their bare keys (`422
          *     repository_outside_project`, Q-AUTHZ-178). A project the caller cannot see answers `404`.
@@ -1958,15 +1959,17 @@ export interface paths {
          * @description Moves the repository to the project named in the body (Q-AUTHZ-206, Q-REPO-212). Its content, statistics and
          *     id stay; its address changes, because the address contains the project: `/api/<format>/<projectKey>/<repoKey>/…`
          *     and `/files/<projectKey>/<repoKey>/…` answer `404` for the old project from the moment the move commits, on
-         *     every replica. The caller holds `repositories:write-config`, or is an Owner of both the source and the target
-         *     project; a target project the caller cannot see answers `404`.
+         *     every replica.
          *
          *     The move is refused with `409 repository_in_use` while an object of the source project references the
          *     repository: a virtual repository lists it as a member or pin-rule member or deploys into it, a project policy
          *     selects it by key, or a CI mapping of the project grants on it. The answer names the references; remove them,
-         *     then move. It is refused with `409 repository_exists` when the target project has a repository with the key.
-         *     The move records `repository.moved` with both projects, notifies `authz` and `repo_config`, and moves the
-         *     repository's `ETag`.
+         *     then move. It is refused with `409 already_exists` when the target project has a repository with the key,
+         *     also one being deleted. A target equal to the source changes nothing and answers `200`. The move needs no
+         *     `If-Match`: the path names the source. It records `repository.moved` with both projects, notifies `authz`
+         *     and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
+         *     Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
+         *     below Owner `403`.
          */
         post: operations["moveRepository"];
         delete?: never;
@@ -6107,7 +6110,7 @@ export interface components {
             /** @description The references the caller acts as; it never lists other principals. */
             principals: string[];
             /** @description The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it. */
-            memberships: components["schemas"]["Membership"][];
+            projects: components["schemas"]["Membership"][];
             scope: components["schemas"]["ScopeSummary"] | null;
             /** Format: int64 */
             epoch: number;
@@ -6548,7 +6551,7 @@ export interface components {
          * @example {
          *       "name": "acme-sdk",
          *       "description": "SDK releases for customers",
-         *       "repository": "npm-customers",
+         *       "repository": "web/npm-customers",
          *       "enabled": true,
          *       "packages": {
          *         "include": [
@@ -6812,7 +6815,7 @@ export interface components {
             endpointPath: string;
             /** @description The caller's name; null for an anonymous caller. */
             username: string | null;
-            /** @description The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target. */
+            /** @description The qualified name `<project>/<key>` of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target. */
             publishTarget: string | null;
             /**
              * Format: int64
@@ -6830,7 +6833,7 @@ export interface components {
             repository: string | null;
             /** @description The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format. */
             registryUrl: string;
-            /** @description The repository a publish through this one reaches, when the caller may deploy there; null otherwise. */
+            /** @description The qualified name `<project>/<key>` of the repository a publish through this one reaches, when the caller may deploy there; null otherwise. */
             publishTarget: string | null;
             /**
              * @description How the snippets reference the credential; `none` for an anonymous caller.
@@ -7540,7 +7543,8 @@ export interface components {
          *     the download agree.
          * @example {
          *       "id": "01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11",
-         *       "repository": "npm-remote",
+         *       "project": "web",
+         *       "repository": "web/npm-remote",
          *       "format": "npm",
          *       "package": "lodash",
          *       "version": "4.17.20",
@@ -7571,6 +7575,9 @@ export interface components {
         VulnerabilityFinding: {
             /** Format: uuid */
             id: string;
+            /** @description The key of the project of the repository. */
+            project: string;
+            /** @description The qualified name `<project>/<key>`. */
             repository: string;
             format: string;
             package: string;
@@ -11541,10 +11548,7 @@ export interface operations {
     };
     validatePermissionPolicy: {
         parameters: {
-            query?: {
-                /** @description A project key; validates the policy as a policy of that project. */
-                project?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -11794,7 +11798,7 @@ export interface operations {
                      *         "group:team-web",
                      *         "authenticated"
                      *       ],
-                     *       "memberships": [
+                     *       "projects": [
                      *         {
                      *           "key": "web",
                      *           "role": "developer"
@@ -11827,12 +11831,12 @@ export interface operations {
                  * @example {
                  *       "checks": [
                  *         {
-                 *           "repository": "npm-internal",
+                 *           "repository": "web/npm-internal",
                  *           "package": "@web/button",
                  *           "action": "deploy"
                  *         },
                  *         {
-                 *           "repository": "npm-all",
+                 *           "repository": "web/npm-all",
                  *           "action": "read"
                  *         }
                  *       ]
@@ -12724,12 +12728,7 @@ export interface operations {
     moveRepository: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
-                "If-Match"?: components["parameters"]["IfMatchOptional"];
-                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
-                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
@@ -12755,7 +12754,6 @@ export interface operations {
                     ETag: components["headers"]["ETag"];
                     Location: components["headers"]["Location"];
                     "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
-                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -12767,7 +12765,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -12901,7 +12898,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -12941,7 +12937,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -13143,7 +13138,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -13181,7 +13175,6 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -13628,7 +13621,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -13668,7 +13660,6 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -15326,14 +15317,14 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "repository": "npm-all",
+                     *       "repository": "web/npm-all",
                      *       "format": "npm",
                      *       "client": "npm",
                      *       "credentials": "placeholder",
                      *       "registryUrl": "https://trove.example.com/api/npm/web/npm-all/",
                      *       "endpointPath": "//trove.example.com/api/npm/web/npm-all/",
                      *       "username": "alice",
-                     *       "publishTarget": "npm-local",
+                     *       "publishTarget": "web/npm-local",
                      *       "tokenTtlSeconds": 2592000,
                      *       "snippets": [
                      *         {
@@ -15394,9 +15385,9 @@ export interface operations {
                      *       "format": "npm",
                      *       "class": "virtual",
                      *       "client": "npm",
-                     *       "repository": "npm-all",
+                     *       "repository": "web/npm-all",
                      *       "registryUrl": "https://trove.example.com/api/npm/web/npm-all/",
-                     *       "publishTarget": "npm-local",
+                     *       "publishTarget": "web/npm-local",
                      *       "credentials": "env",
                      *       "exposureRules": false,
                      *       "sections": [
@@ -15917,7 +15908,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "repository": "npm-all",
+                     *       "repository": "web/npm-all",
                      *       "descriptor": {
                      *         "path": "@acme/util/-/util-1.4.0.tgz",
                      *         "kind": "artifact",
@@ -15981,7 +15972,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "repository": "npm-internal",
+                     *       "repository": "web/npm-internal",
                      *       "domain": "npm-internal",
                      *       "format": "npm",
                      *       "package": "@acme/frontend",
@@ -16140,7 +16131,7 @@ export interface operations {
                      * @example {
                      *       "items": [
                      *         {
-                     *           "repository": "npm-internal",
+                     *           "repository": "web/npm-internal",
                      *           "format": "npm",
                      *           "package": "@acme/frontend",
                      *           "state": "claimed",
@@ -16568,6 +16559,8 @@ export interface operations {
     listVulnerabilityFindings: {
         parameters: {
             query?: {
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
                 /** @description A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID, for example npm or nuget. Repeat for several. */
@@ -16633,6 +16626,8 @@ export interface operations {
     exportVulnerabilityFindings: {
         parameters: {
             query?: {
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
                 /** @description A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID, for example npm or nuget. Repeat for several. */
@@ -16858,6 +16853,8 @@ export interface operations {
     getVulnerabilitySummary: {
         parameters: {
             query?: {
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
                 /** @description A repository name `<project>/<key>`. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID. Repeat for several. */
@@ -16893,6 +16890,8 @@ export interface operations {
                 from?: string;
                 /** @description Last day, inclusive (RFC 3339 date); default today. */
                 to?: string;
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
                 /** @description A repository name `<project>/<key>`. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID. Repeat for several. */
