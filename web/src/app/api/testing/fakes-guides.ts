@@ -1,6 +1,7 @@
 import { Provider } from '@angular/core';
 import { Guide, GuideSection, GuidesApi } from '../guides-api';
 import { ApiError } from '../problem';
+import { refOf } from '../repositories-api';
 import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES } from './fakes-packages';
 
 /*
@@ -30,8 +31,8 @@ export class FakeGuidesApi extends GuidesApi {
   override async repository(key: string, client: string): Promise<Guide> {
     this.calls.push({ repository: key, client });
     this.fail();
-    if (key === GENERIC_REPOSITORY.key) return this.buildGeneric(key, client);
-    const repo = NPM_REPOSITORIES.find((r) => r.key === key);
+    if (key === refOf(GENERIC_REPOSITORY)) return this.buildGeneric(key, client);
+    const repo = NPM_REPOSITORIES.find((r) => refOf(r) === key);
     if (!repo) throw new ApiError(400, { code: 'malformed_request', detail: 'no guide for this repository' }, null);
     return this.build(key, repo.class, client);
   }
@@ -57,12 +58,12 @@ export class FakeGuidesApi extends GuidesApi {
       throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
     }
     const credentials = this.anonymous ? 'none' : 'env';
-    const setup = await this.setup.get(key ?? 'npm-all', { client, credentials });
+    const setup = await this.setup.get(key ?? 'web/npm-all', { client, credentials });
     const registryUrl = `${BASE}/api/npm/${key ?? '<repository>'}/`;
     const of = (tab: string) =>
       setup.snippets
         .filter((s) => s.tab === tab)
-        .map((s) => ({ ...s, content: key ? s.content : s.content.replaceAll('/npm-all/', '/<repository>/') }));
+        .map((s) => ({ ...s, content: key ? s.content : s.content.replaceAll('/web/npm-all/', '/<repository>/') }));
     const sections: GuideSection[] = [
       section(`npm.${cls}.what`, 'what', `What a ${cls} repository is`, `<p>A ${cls} repository.</p><h3>Details</h3><p>More.</p>`),
       { ...section('npm.configure', 'configure', 'Point the client at the repository', '<p>Save the snippet.</p>'), snippets: of('configure') },
@@ -101,11 +102,11 @@ export class FakeGuidesApi extends GuidesApi {
       throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
     }
     const credentials = this.anonymous ? 'none' : 'env';
-    const setup = await this.setup.get(GENERIC_REPOSITORY.key, { client, credentials });
+    const setup = await this.setup.get(refOf(GENERIC_REPOSITORY), { client, credentials });
     const of = (tab: string) =>
       setup.snippets
         .filter((s) => s.tab === tab && (key !== null || tab !== 'publish'))
-        .map((s) => ({ ...s, content: key ? s.content : s.content.replaceAll(`/${GENERIC_REPOSITORY.key}/`, '/<repository>/') }));
+        .map((s) => ({ ...s, content: key ? s.content : s.content.replaceAll(`/${refOf(GENERIC_REPOSITORY)}/`, '/<repository>/') }));
     const sections: GuideSection[] = [
       section('generic.local.what', 'what', 'What a generic local repository is', '<p>Files at paths you choose.</p>'),
       { ...section('generic.configure', 'configure', 'Point curl at the repository', '<p>Paste the function.</p>'), snippets: of('configure') },

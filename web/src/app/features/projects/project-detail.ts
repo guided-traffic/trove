@@ -14,15 +14,17 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError } from '../../shared/paged-resource';
 import { ProjectDialog } from './project-dialog';
+import { ProjectMembers } from './project-members';
+import { projectRoleLabel } from './project-roles';
 import { ProjectPolicies } from './project-policies';
 import { ProjectRepositories } from './project-repositories';
 import { ProjectServiceAccounts } from './project-service-accounts';
 
 /**
- * One project (R-UI-041): the overview with its switches and administrators (read-only for a project
- * administrator; edit and delete for `projects:write`), then the project's repositories, permission
- * policies and service accounts. Delete is offered only for a project without repositories and service
- * accounts; its policies go with it, and a 409 `project_not_empty` that races it is explained.
+ * One project (R-UI-041): the overview with its Owners (edit for an Owner and `projects:write`, delete for
+ * `projects:write`), then the project's members with their roles, repositories, permission policies and service
+ * accounts. Delete is offered only for a project without repositories and service accounts; its policies go
+ * with it, and a 409 `project_not_empty` that races it is explained.
  */
 @Component({
   selector: 'trove-project-detail',
@@ -31,6 +33,7 @@ import { ProjectServiceAccounts } from './project-service-accounts';
     RouterLink,
     ErrorNotice,
     Needs,
+    ProjectMembers,
     ProjectPolicies,
     ProjectRepositories,
     ProjectServiceAccounts,
@@ -57,44 +60,32 @@ import { ProjectServiceAccounts } from './project-service-accounts';
           <dd>{{ p.displayName }}</dd>
           <dt i18n="@@project.description">Description</dt>
           <dd>{{ p.description || '–' }}</dd>
-          <dt i18n="@@project.switches">Administrators may</dt>
+          <dt i18n="@@project.owners">Owners</dt>
           <dd>
-            <ul class="plain">
-              <li>
-                <span class="material-icons" aria-hidden="true">{{ p.managePolicies ? 'check_circle' : 'block' }}</span>
-                <ng-container i18n="@@project.switch.policies">manage policies, service accounts and their tokens</ng-container>:
-                <strong>{{ p.managePolicies ? on : off }}</strong>
-              </li>
-              <li>
-                <span class="material-icons" aria-hidden="true">{{ p.manageRepositories ? 'check_circle' : 'block' }}</span>
-                <ng-container i18n="@@project.switch.repositories">create, change and delete repositories</ng-container>:
-                <strong>{{ p.manageRepositories ? on : off }}</strong>
-              </li>
-            </ul>
-          </dd>
-          <dt i18n="@@project.admins">Administrators</dt>
-          <dd>
-            @if (p.admins.length === 0) {
-              <span i18n="@@project.no-admins">None yet.</span>
+            @if (p.owners.length === 0) {
+              <span i18n="@@project.no-owners">None yet.</span>
             } @else {
               <ul class="plain">
-                @for (a of p.admins; track a) {
+                @for (a of p.owners; track a) {
                   <li translate="no">{{ a }}</li>
                 }
               </ul>
             }
           </dd>
+          <dt i18n="@@project.your-role">Your role</dt>
+          <dd>{{ p.role ? roleText(p.role) : '–' }}</dd>
           <dt i18n="@@project.counts">Contents</dt>
           <dd>
-            <ng-container i18n="@@project.counts-text">{{ p.repositories }} repositories, {{ p.policies }} policies, {{ p.serviceAccounts }} service accounts</ng-container>
+            <ng-container i18n="@@project.counts-text">{{ p.members }} members, {{ p.repositories }} repositories, {{ p.policies }} policies, {{ p.serviceAccounts }} service accounts</ng-container>
           </dd>
           <dt i18n="@@project.updated">Last changed</dt>
           <dd>{{ p.updatedAt | date: 'medium' }}</dd>
         </dl>
 
-        @if (canWrite()) {
+        @if (canEdit()) {
           <div class="row-actions">
             <button class="btn btn-confirm" type="button" [disabled]="busy()" (click)="edit()" i18n="@@project.edit">Edit project</button>
+            @if (canWrite()) {
             <button class="btn btn-tertiary"
               type="button"
               [disabled]="busy() || !empty()"
@@ -104,19 +95,27 @@ import { ProjectServiceAccounts } from './project-service-accounts';
             >
               Delete project
             </button>
-          </div>
-          <p id="project-delete-note" class="muted">
-            @if (empty()) {
-              <ng-container i18n="@@project.delete-note-empty">The project's policies are deleted with it.</ng-container>
-            } @else {
-              <ng-container i18n="@@project.delete-note"
-                >A project can be deleted when no repository and no service account belongs to it. Unassign the repositories and delete the service accounts first.</ng-container
-              >
             }
-          </p>
+          </div>
+          @if (canWrite()) {
+            <p id="project-delete-note" class="muted">
+              @if (empty()) {
+                <ng-container i18n="@@project.delete-note-empty">The project's policies are deleted with it.</ng-container>
+              } @else {
+                <ng-container i18n="@@project.delete-note"
+                  >A project can be deleted when no repository and no service account belongs to it. Move or delete the repositories and delete the service accounts first.</ng-container
+                >
+              }
+            </p>
+          }
         } @else {
           <trove-needs capability="projects:write" />
         }
+      </section>
+
+      <section class="card" aria-labelledby="project-members">
+        <h2 id="project-members" i18n="@@project.members">Members</h2>
+        <trove-project-members [project]="p.key" (changed)="load()" />
       </section>
 
       <section class="card" aria-labelledby="project-repositories">
@@ -179,8 +178,11 @@ export class ProjectDetail {
   protected readonly off = $localize`:@@project.off:off`;
 
   protected readonly canWrite = computed(() => this.session.has('projects:write'));
-  /** The CI screens of the project: the capability, or administration of the project (Q-CI-26). */
-  protected readonly canCi = computed(() => this.session.has('ci:read') || this.session.projectRights(this.key()) !== null);
+  /** Changing the display name and the description: `projects:write`, or the Owner role of the project (R-AUTHZ-026). */
+  protected readonly canEdit = computed(() => this.canWrite() || this.session.isOwnerOf(this.key()));
+  /** The CI screens of the project: the capability, or the Owner role of the project (Q-CI-26). */
+  protected readonly canCi = computed(() => this.session.has('ci:read') || this.session.isOwnerOf(this.key()));
+  protected readonly roleText = projectRoleLabel;
   protected readonly empty = computed(() => {
     const p = this.project();
     return p !== null && p.repositories === 0 && p.serviceAccounts === 0;
@@ -227,7 +229,7 @@ export class ProjectDetail {
     const answer = await this.confirmer.ask({
       title: $localize`:@@project.delete-title:Delete project ${p.key}:key:?`,
       lines: [
-        $localize`:@@project.delete-text:The project, its permission policies and its administrator entries are deleted. The policies stop granting at once on every replica. This cannot be undone.`,
+        $localize`:@@project.delete-text:The project, its permission policies and its member entries are deleted. The policies stop granting at once on every replica. This cannot be undone.`,
       ],
       confirmLabel: $localize`:@@project.delete-confirm:Delete project`,
       typeToConfirm: p.key,

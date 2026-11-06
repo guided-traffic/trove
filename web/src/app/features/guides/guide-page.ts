@@ -3,7 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Bastion, BastionsApi } from '../../api/bastions-api';
 import { GuidesApi } from '../../api/guides-api';
 import { ClientSetupApi } from '../../api/packages-api';
-import { FormatDescriptor, RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
+import { FormatDescriptor, RepositoriesApi, RepositorySummary, refOf } from '../../api/repositories-api';
 import { SessionStore } from '../../core/session-store';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -58,11 +58,17 @@ export class GuidePage {
   protected readonly repositoryOptions = computed<readonly RepositorySummary[]>(() =>
     (valueOf(this.allRepositories) ?? [])
       .filter((r) => r.format === this.activeFormat()?.name && !r.disabled)
-      .sort((a, b) => Number(b.class === 'virtual') - Number(a.class === 'virtual') || a.key.localeCompare(b.key)),
+      .sort((a, b) => Number(b.class === 'virtual') - Number(a.class === 'virtual') || refOf(a).localeCompare(refOf(b))),
   );
   protected readonly activeRepository = computed<RepositorySummary | null>(
-    () => this.repositoryOptions().find((r) => r.key === this.repository()) ?? null,
+    () => this.repositoryOptions().find((r) => refOf(r) === this.repository()) ?? null,
   );
+  /** The qualified name `<project>/<key>` of the chosen repository. */
+  protected readonly activeRef = computed<string | null>(() => {
+    const r = this.activeRepository();
+    return r ? refOf(r) : null;
+  });
+  protected readonly refOf = refOf;
   protected readonly classes = computed(() => this.activeFormat()?.classes ?? []);
   /** The class of the chosen repository; without one the class asked for, else virtual, the recommended address. */
   protected readonly activeClass = computed<string | null>(() => {
@@ -87,7 +93,7 @@ export class GuidePage {
   protected readonly bastionSetup = resource({
     params: () => {
       const bastion = this.activeBastion();
-      const repository = this.activeRepository()?.key;
+      const repository = this.activeRef();
       const client = this.activeClient();
       if (!bastion || !repository || !client) return undefined;
       return { bastion, repository, client, credentials: this.session.state() === 'anonymous' ? 'none' : 'env' } as const;
@@ -108,7 +114,7 @@ export class GuidePage {
       const client = this.activeClient();
       const cls = this.activeClass();
       if (!format || !client || !cls) return undefined;
-      return { format, client, cls, repository: this.activeRepository()?.key ?? null };
+      return { format, client, cls, repository: this.activeRef() ?? null };
     },
     loader: ({ params }) =>
       params.repository
@@ -123,7 +129,7 @@ export class GuidePage {
   protected readonly setupQuery = computed(() => ({
     format: this.activeFormat()?.name ?? null,
     client: this.activeClient(),
-    repository: this.activeRepository()?.key ?? null,
+    repository: this.activeRef() ?? null,
     bastion: this.activeBastion(),
   }));
 

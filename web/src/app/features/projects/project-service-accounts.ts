@@ -29,7 +29,7 @@ import { ProjectNeeds, createState } from './project-access';
         Create service account
       </button>
     </div>
-    <trove-project-needs id="needs-project-sas" [state]="state()" capability="identities:write" right="managePolicies" />
+    <trove-project-needs id="needs-project-sas" [state]="state()" capability="identities:write" />
 
     <trove-data-table
       [caption]="caption"
@@ -46,7 +46,7 @@ import { ProjectNeeds, createState } from './project-access';
     >
       @for (a of list.items(); track a.id) {
         <tr>
-          <th scope="row"><a [routerLink]="['/admin/service-accounts', a.name]" translate="no">{{ a.name }}</a></th>
+          <th scope="row"><a [routerLink]="['/admin/service-accounts', project(), a.name]" translate="no">{{ a.name }}</a></th>
           <td>{{ a.description }}</td>
           <td>
             @if (a.status === 'active') {
@@ -70,7 +70,7 @@ export class ProjectServiceAccounts {
   private readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<ServiceAccount>();
-  protected readonly state = computed(() => createState(this.session, this.project(), 'managePolicies', 'identities:write'));
+  protected readonly state = computed(() => createState(this.session, this.project(), 'identities:write'));
   protected readonly caption = $localize`:@@project-sas.caption:Service accounts of the project`;
   protected readonly columns: readonly TableColumn[] = [
     { id: 'name', label: $localize`:@@project-sas.col.name:Name` },
@@ -91,6 +91,6 @@ export class ProjectServiceAccounts {
       { data: { project: this.project() }, maxWidth: '36rem' },
     );
     const created = await firstValueFrom(ref.closed);
-    if (created) await this.router.navigate(['/admin/service-accounts', created.name]);
+    if (created) await this.router.navigate(['/admin/service-accounts', this.project(), created.name]);
   }
 }

@@ -106,6 +106,12 @@ export class MappingEditor implements HasUnsavedChanges {
   protected readonly policyOptions = signal<readonly string[] | null>(null);
   protected readonly groupOptions = signal<readonly string[] | null>(null);
   protected readonly projectRepositories = signal<readonly string[]>([]);
+  /** A project's mapping names bare keys, a system mapping `<project>/<key>` (R-AUTHZ-004). */
+  protected readonly repositoriesHint = computed(() =>
+    this.project()
+      ? $localize`:@@ci.editor.repositories-hint-project:One key or pattern per line. A template needs literal text next to the claim.`
+      : $localize`:@@ci.editor.repositories-hint:One project/key or pattern per line, or a class such as @any-local. A template needs literal text next to the claim.`,
+  );
   protected readonly publicIssuer = signal(false);
 
   protected readonly view = signal<'builder' | 'json'>('builder');
@@ -132,10 +138,10 @@ export class MappingEditor implements HasUnsavedChanges {
     { value: 'read_only', label: $localize`:@@ci.editor.cross.read-only:Read only (such a pipeline can read, never write)` },
   ];
 
-  /** The bounds of the screen: the system administrators', or the project's administrators' with the switch on. */
-  protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'managePolicies', 'ci:write'));
+  /** The bounds of the screen: the system administrators', or the Owners' of the project. */
+  protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'ci:write'));
   protected readonly writable = computed(() => (this.project() ? this.state() === 'enabled' : this.session.has('ci:write')));
-  /** The snippet is read by ci:read or, in a project, by its administrator whose managePolicies switch is on (`getProjectCiSnippet`). */
+  /** The snippet is read by ci:read or, in a project, by its Owner (`getProjectCiSnippet`). */
   protected readonly canSnippet = computed(
     () => !this.isNew() && (this.session.has('ci:read') || (this.project() !== null && this.state() === 'enabled')),
   );

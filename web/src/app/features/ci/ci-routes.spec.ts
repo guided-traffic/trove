@@ -25,7 +25,7 @@ async function harness(routes: typeof CI_ROUTES, capabilities: string[] = ['ci:r
     roles: [],
     capabilities,
     principals: ['user:alice'],
-    projects: [{ key: 'web', managePolicies: true, manageRepositories: false }],
+    projects: [{ key: 'web', role: 'owner' }],
   };
   await TestBed.inject(SessionStore).load();
   return RouterTestingHarness.create();

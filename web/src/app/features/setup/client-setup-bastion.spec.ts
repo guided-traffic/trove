@@ -42,7 +42,7 @@ const target = (root: HTMLElement, name: string, value: string) =>
 
 describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
   it('R-BAS-007 offers the Bastions that have reported a base URL as a target, and only those', async () => {
-    const r = await openSetup({ repository: 'npm-all', client: 'npm' });
+    const r = await openSetup({ repository: 'web/npm-all', client: 'npm' });
     const offered = [...r.root.querySelectorAll<HTMLInputElement>('input[name="target"]')].map((i) => i.value);
     expect(offered).toEqual(['', 'partners']);
     expect(target(r.root, 'target', '')?.checked).toBe(true);
@@ -53,11 +53,11 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
   });
 
   it('R-BAS-007 a Bastion target asks for the setup with bastion=<name> and shows its address, replace-registry-host and no publish snippet', async () => {
-    const r = await openSetup({ repository: 'npm-all', client: 'npm', bastion: 'partners' });
+    const r = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'partners' });
     expect(r.setup.calls.at(-1)?.query).toMatchObject({ client: 'npm', bastion: 'partners' });
     expect(target(r.root, 'target', 'partners')?.checked).toBe(true);
     const all = [...r.root.querySelectorAll('.snippet pre')].map((p) => p.textContent ?? '').join('\n');
-    expect(all).toContain('registry=https://packages.example.com/api/npm/npm-all/');
+    expect(all).toContain('registry=https://packages.example.com/api/npm/web/npm-all/');
     expect(all).toContain('replace-registry-host=always');
     expect(all).not.toContain('trove.example.net');
     expect(text(r.root)).toContain('makes npm fetch every package from this address');
@@ -70,7 +70,7 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
   });
 
   it('R-BAS-007 choosing the Bastion, and then this installation, puts the choice into the query', async () => {
-    const r = await openSetup({ repository: 'npm-all', client: 'npm' });
+    const r = await openSetup({ repository: 'web/npm-all', client: 'npm' });
     const navigate = vi.spyOn(r.get(Router), 'navigate');
     const choose = async (value: string) => {
       const input = target(r.root, 'target', value)!;
@@ -85,28 +85,28 @@ describe('Client setup for a Bastion (R-BAS-007, R-API-030)', () => {
   });
 
   it('R-BAS-007 a caller without endpoints:read gets no choice, and a Bastion named in the query still works', async () => {
-    const plain = await openSetup({ repository: 'npm-all', client: 'npm' }, ['repositories:read-config']);
+    const plain = await openSetup({ repository: 'web/npm-all', client: 'npm' }, ['repositories:read-config']);
     expect(plain.root.querySelector('input[name="target"]')).toBeNull();
     expect(plain.root.querySelectorAll('.step-no')[3]?.textContent?.trim()).toBe('4');
-    const linked = await openSetup({ repository: 'npm-all', client: 'npm', bastion: 'partners' }, ['repositories:read-config']);
+    const linked = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'partners' }, ['repositories:read-config']);
     expect(target(linked.root, 'target', 'partners')?.checked).toBe(true);
     expect(linked.setup.calls.at(-1)?.query.bastion).toBe('partners');
   });
 
   it('R-BAS-007 an address the installation does not list is explained, not shown as a bare 409', async () => {
-    const r = await openSetup({ repository: 'npm-all', client: 'npm', bastion: 'unlisted' });
+    const r = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'unlisted' });
     expect(text(r.root)).toContain('server.additional_base_urls');
     expect(r.root.querySelector('.snippet')).toBeNull();
   });
 
   it('R-BAS-007 a name that is no registration is a not-found notice', async () => {
-    const r = await openSetup({ repository: 'npm-all', client: 'npm', bastion: 'nobody' });
+    const r = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'nobody' });
     expect(r.root.querySelector('trove-error-notice')).toBeTruthy();
     expect(r.root.querySelector('.snippet')).toBeNull();
   });
 
   it('R-BAS-007 the guide link carries the Bastion', async () => {
-    const r = await openSetup({ repository: 'npm-all', client: 'npm', bastion: 'partners' });
+    const r = await openSetup({ repository: 'web/npm-all', client: 'npm', bastion: 'partners' });
     const link = [...r.root.querySelectorAll<HTMLAnchorElement>('a')].find((a) => text(a).startsWith('Read the guide'));
     expect(link?.getAttribute('href')).toContain('bastion=partners');
   });
@@ -128,20 +128,20 @@ describe('Guides with a Bastion target (R-BAS-007, R-UI-049)', () => {
   }
 
   it('R-UI-049 the guide offers the Bastion as a target when a registration has reported a base URL', async () => {
-    const r = await openGuide({ format: 'npm', client: 'npm', repository: 'npm-all' });
+    const r = await openGuide({ format: 'npm', client: 'npm', repository: 'web/npm-all' });
     expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="guide-target"]')].map((i) => i.value)).toEqual(['', 'partners']);
     expect(r.root.querySelector('[data-section]')).toBeTruthy();
-    const none = await openGuide({ format: 'npm', client: 'npm', repository: 'npm-all' }, ['repositories:read-config']);
+    const none = await openGuide({ format: 'npm', client: 'npm', repository: 'web/npm-all' }, ['repositories:read-config']);
     expect(none.root.querySelector('input[name="guide-target"]')).toBeNull();
   });
 
   it('R-UI-049 with the Bastion as the target the page shows the Bastion address and the read-only snippets, not the guide of this installation', async () => {
-    const r = await openGuide({ format: 'npm', client: 'npm', repository: 'npm-all', bastion: 'partners' });
+    const r = await openGuide({ format: 'npm', client: 'npm', repository: 'web/npm-all', bastion: 'partners' });
     expect(r.setup.calls.at(-1)?.query).toMatchObject({ bastion: 'partners', credentials: 'env' });
     expect(r.guides.calls).toEqual([]);
     expect(r.root.querySelector('[data-section]')).toBeNull();
     expect(text(r.root)).toContain('Install through the Bastion');
-    expect(text(r.root)).toContain('https://packages.example.com/api/npm/npm-all/');
+    expect(text(r.root)).toContain('https://packages.example.com/api/npm/web/npm-all/');
     const ids = [...r.root.querySelectorAll<HTMLElement>('[data-snippet]')].map((s) => s.dataset['snippet']);
     expect(ids).toContain('npm.configure.npmrc');
     expect(ids).toContain('npm.install');
@@ -158,7 +158,7 @@ describe('Guides with a Bastion target (R-BAS-007, R-UI-049)', () => {
   });
 
   it('R-UI-049 the link to the client setup carries the Bastion', async () => {
-    const r = await openGuide({ format: 'npm', client: 'npm', repository: 'npm-all', bastion: 'partners' });
+    const r = await openGuide({ format: 'npm', client: 'npm', repository: 'web/npm-all', bastion: 'partners' });
     const link = [...r.root.querySelectorAll<HTMLAnchorElement>('a')].find((a) => text(a).startsWith('Open the client setup'));
     expect(link?.getAttribute('href')).toContain('bastion=partners');
   });

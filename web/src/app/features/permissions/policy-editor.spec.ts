@@ -113,9 +113,10 @@ describe('Policy editor (R-UI-027)', () => {
     const { fixture, root, get } = await renderScreen(PolicyEditor, { inputs: { name: 'team-web-publish' } });
     const api = get(PolicyApi) as FakePolicyApi;
     // Someone else saves first: version 3 becomes 4 and the description differs.
-    const current = await api.load('team-web-publish');
+    const current = await api.load('team-web-publish', null);
     await api.replace(
       'team-web-publish',
+      null,
       { resourceType: 'repository', description: 'Changed by someone else', resources: current.policy.resources, entries: current.policy.entries },
       current.etag,
     );
@@ -142,8 +143,8 @@ describe('Policy editor (R-UI-027)', () => {
     await settle(fixture);
     // The write committed, but its answer was refused on a replica that did not know the epoch.
     const realReplace = api.replace.bind(api);
-    api.replace = async (name, input, etag) => {
-      await realReplace(name, input, etag);
+    api.replace = async (name, project, input, etag) => {
+      await realReplace(name, project, input, etag);
       throw problem(412, 'authz_epoch_unknown');
     };
     buttonByText(root, 'Review and save').click();

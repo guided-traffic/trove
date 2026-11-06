@@ -64,14 +64,15 @@ describe('TroveTitleStrategy', () => {
 describe('browseMatcher', () => {
   const seg = (...p: string[]) => p.map((x) => new UrlSegment(x, {}));
 
-  it('R-UI-003 takes the first segment as repository and joins the rest as the path', () => {
-    const m = browseMatcher(seg('npm-local', '@team-a', 'ui'), null as never, null as never);
-    expect(m?.posParams?.['repo']?.path).toBe('npm-local');
+  it('R-UI-003 takes the first two segments as project and key, qualified, and joins the rest as the path', () => {
+    const m = browseMatcher(seg('web', 'npm-local', '@team-a', 'ui'), null as never, null as never);
+    expect(m?.posParams?.['repo']?.path).toBe('web/npm-local');
     expect(m?.posParams?.['path']?.path).toBe('@team-a/ui');
   });
 
   it('R-UI-003 matches a repository root with an empty path and nothing without segments', () => {
-    expect(browseMatcher(seg('npm-local'), null as never, null as never)?.posParams?.['path']?.path).toBe('');
+    expect(browseMatcher(seg('web', 'npm-local'), null as never, null as never)?.posParams?.['path']?.path).toBe('');
+    expect(browseMatcher(seg('web'), null as never, null as never)).toBeNull();
     expect(browseMatcher([], null as never, null as never)).toBeNull();
   });
 });

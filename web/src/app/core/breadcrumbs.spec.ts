@@ -26,10 +26,11 @@ describe('Breadcrumbs', () => {
   });
 
   it('R-UI-002 a detail screen shows the parameter value, not the generic route title, and links the list', async () => {
-    expect(await trailAt('/admin/repositories/my-repo')).toEqual([
+    expect(await trailAt('/admin/repositories/web/my-repo')).toEqual([
       { label: 'Admin area', link: null, literal: false },
       { label: 'Repositories', link: '//admin/repositories', literal: false },
-      { label: 'my-repo', link: '//admin/repositories/my-repo', literal: true },
+      { label: 'web', link: '//admin/repositories/web', literal: true },
+      { label: 'my-repo', link: '//admin/repositories/web/my-repo', literal: true },
     ]);
   });
 

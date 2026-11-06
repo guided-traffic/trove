@@ -15,7 +15,7 @@ export const adminHomeGuard: CanActivateFn = async () => {
   await session.load();
   if (session.has('settings:read')) return router.createUrlTree(['/admin', 'dashboard']);
   const projectsOnly =
-    !session.has('repositories:read-config') && (session.has('projects:read') || session.isProjectAdministrator());
+    !session.has('repositories:read-config') && (session.has('projects:read') || session.isProjectOwner());
   return router.createUrlTree(['/admin', projectsOnly ? 'projects' : 'repositories']);
 };
 

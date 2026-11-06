@@ -32,11 +32,11 @@ describe('files API helpers', () => {
   });
 
   it('R-API-025 Q-UI-106 the upload goes to the content route of the repository, on the API origin, segment by segment', () => {
-    expect(contentPath('generic-local', 'releases/1.0/app.zip')).toBe(
-      '/api/v1/repositories/generic-local/content/releases/1.0/app.zip',
+    expect(contentPath('web/generic-local', 'releases/1.0/app.zip')).toBe(
+      '/api/v1/projects/web/repositories/generic-local/content/releases/1.0/app.zip',
     );
-    expect(contentPath('my repo', '@team-a/ui 1.0.tgz')).toBe(
-      '/api/v1/repositories/my%20repo/content/%40team-a/ui%201.0.tgz',
+    expect(contentPath('web/my repo', '@team-a/ui 1.0.tgz')).toBe(
+      '/api/v1/projects/web/repositories/my%20repo/content/%40team-a/ui%201.0.tgz',
     );
   });
 
@@ -46,7 +46,7 @@ describe('files API helpers', () => {
   });
 });
 
-describe('The upload during the upgrade across the cut (R-HA-064, R-API-025, Q-UI-111)', () => {
+describe('The upload (R-API-025, Q-UI-111)', () => {
   type Put = (options: object, url: string, body: Blob, headers: Record<string, string>) => Promise<unknown>;
 
   function setup(answer: (url: string) => Promise<unknown>) {
@@ -64,19 +64,14 @@ describe('The upload during the upgrade across the cut (R-HA-064, R-API-025, Q-U
   }
 
   const file = new File(['x'], 'app.zip', { type: 'application/zip' });
-  const request = { repository: 'generic-local', path: 'rel/app.zip', file, overwrite: false };
-  const content = '/api/v1/repositories/generic-local/content/rel/app.zip';
-  const legacy = '/files/generic-local/rel/app.zip';
+  const request = { repository: 'web/generic-local', path: 'rel/app.zip', file, overwrite: false };
+  const content = '/api/v1/projects/web/repositories/generic-local/content/rel/app.zip';
 
-  it('an old web replica answers the unknown-path 404: the PUT is repeated once on /files/ with the same headers', async () => {
-    const { api, put } = setup(async (url) => {
-      if (url === content) throw new ApiError(404, { code: 'not_found' }, null);
-      return { path: 'rel/app.zip' };
-    });
+  it('R-API-025 the upload goes to the content route of the project and carries the headers', async () => {
+    const { api, put } = setup(async () => ({ path: 'rel/app.zip' }));
     await expect(api.upload(request)).resolves.toEqual({ path: 'rel/app.zip' });
-    expect(put.mock.calls.map((c) => c[1])).toEqual([content, legacy]);
-    expect(put.mock.calls[1]![3]).toEqual(put.mock.calls[0]![3]);
-    expect(put.mock.calls[1]![3]['If-None-Match']).toBe('*');
+    expect(put.mock.calls.map((c) => c[1])).toEqual([content]);
+    expect(put.mock.calls[0]![3]['If-None-Match']).toBe('*');
   });
 
   it.each([
@@ -92,13 +87,5 @@ describe('The upload during the upgrade across the cut (R-HA-064, R-API-025, Q-U
     });
     await expect(api.upload(request)).rejects.toMatchObject({ status, problem: { code } });
     expect(put).toHaveBeenCalledTimes(1);
-  });
-
-  it('the fallback is tried once: a 404 on /files/ is the answer', async () => {
-    const { api, put } = setup(async () => {
-      throw new ApiError(404, { code: 'not_found' }, null);
-    });
-    await expect(api.upload(request)).rejects.toMatchObject({ status: 404 });
-    expect(put).toHaveBeenCalledTimes(2);
   });
 });

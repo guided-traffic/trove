@@ -1,4 +1,4 @@
-import { expect, expectAccessible, signInLocal, signOut, test, unique } from '../support';
+import { e2eProject, expect, expectAccessible, qualified, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
 // R-UI-047 journey "exposure rule" on the endpoint screens (R-UI-039, R-EP-017, R-EP-015, E1.11): an exposure rule is
 // created on the endpoint `customers` with the preview, and the rule shows up in the endpoint's table.
@@ -7,17 +7,17 @@ const repoKey = unique('ui-exposed');
 const ruleName = unique('ui-docs');
 
 test.beforeAll(async ({ admin }) => {
-  const created = await admin.post('/api/v1/repositories', { data: { key: repoKey, class: 'local', format: 'generic' } });
+  const created = await admin.post(repositories(), { data: { key: repoKey, class: 'local', format: 'generic' } });
   expect(created.status(), await created.text()).toBe(201);
   for (const path of ['docs/guide.txt', 'docs/faq.txt', 'private/plan.txt']) {
-    const put = await admin.put(`/files/${repoKey}/${path}`, { data: `${path}\n` });
+    const put = await admin.put(`/files/${e2eProject}/${repoKey}/${path}`, { data: `${path}\n` });
     expect(put.ok(), `PUT ${path}: ${put.status()}`).toBeTruthy();
   }
 });
 
 test.afterAll(async ({ admin }) => {
   await admin.delete(`/api/v1/endpoints/customers/exposure-rules/${ruleName}`);
-  await admin.delete(`/api/v1/repositories/${repoKey}`);
+  await admin.delete(repositoryApi(repoKey));
 });
 
 test('R-UI-039 R-EP-017 an exposure rule with its preview', async ({ page, replicas }) => {
@@ -35,7 +35,7 @@ test('R-UI-039 R-EP-017 an exposure rule with its preview', async ({ page, repli
   await expect(page.getByRole('heading', { name: 'New exposure rule', level: 1 })).toBeVisible();
   await expectAccessible(page, 'exposure rule editor, empty');
   await page.getByLabel('Name', { exact: true }).fill(ruleName);
-  await page.getByLabel('Repository', { exact: true }).selectOption({ label: `${repoKey} (generic)` });
+  await page.getByLabel('Repository', { exact: true }).selectOption({ label: `${qualified(repoKey)} (generic)` });
   await page.getByLabel('Include (one per line)').first().fill('docs/**');
 
   // The preview is the dry run of the endpoint with the rule as typed, before anything is saved.

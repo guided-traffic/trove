@@ -113,7 +113,7 @@ export class Navigation {
   readonly areas = computed<readonly NavArea[]>(() => {
     const capabilities = this.session.capabilities();
     const administrator = this.session.hasAdminArea();
-    const projectAdmin = this.session.isProjectAdministrator();
+    const projectAdmin = this.session.isProjectOwner();
     const allowed = (i: Pick<NavItem, 'capability' | 'projectAdmin'>) =>
       !i.capability || capabilities.includes(i.capability) || (!!i.projectAdmin && projectAdmin);
     return NAV_AREAS.filter((a) => a.id === 'content' || administrator)

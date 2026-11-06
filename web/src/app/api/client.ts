@@ -118,6 +118,11 @@ export class ApiClient {
     return this.send<T>('PATCH', url, body, {});
   }
 
+  /** PUT with a JSON body and no `ETag`: the idempotent member write of a project (Q-AUTHZ-207). */
+  putJson<T>(url: string, body: unknown): Promise<ApiResponse<T>> {
+    return this.send<T>('PUT', url, body, {});
+  }
+
   /** PUT of a resource that is its own representation and has no body or `ETag` (role bindings). */
   putBinding<T>(url: string): Promise<ApiResponse<T>> {
     return this.send<T>('PUT', url, undefined, {});

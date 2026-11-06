@@ -144,7 +144,7 @@ describe('Exposure rule editor', () => {
   it('R-EP-017 creating the rule through the editor stores the document the API takes, with the Idempotency-Key of the page', async () => {
     const r = await create();
     type(r.root.querySelector<HTMLInputElement>('#f-name')!, 'acme-releases');
-    type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'generic-local');
+    type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/generic-local');
     await settle(r.fixture);
     type(r.root.querySelector<HTMLTextAreaElement>('#f-paths-include')!, 'releases/**');
     await settle(r.fixture);
@@ -158,7 +158,7 @@ describe('Exposure rule editor', () => {
     expect(r.endpoints.created[0]?.rule).toEqual({
       name: 'acme-releases',
       description: '',
-      repository: 'generic-local',
+      repository: 'web/generic-local',
       enabled: true,
       packages: { include: [], exclude: [] },
       paths: { include: ['releases/**'], exclude: [] },
@@ -180,7 +180,7 @@ describe('Exposure rule editor', () => {
           ],
         } as never;
       });
-      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'generic-local');
+      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/generic-local');
       await settle(r.fixture);
       vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
       await settle(r.fixture);
@@ -215,7 +215,7 @@ describe('Exposure rule editor', () => {
     try {
       const r = await create((endpoints, repos) => {
         repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
-        repos.repositories.push({ key: 'npm-local', class: 'local', format: 'npm' });
+        repos.repositories.push({ key: 'npm-local', project: 'web', class: 'local', format: 'npm' });
         endpoints.checkResult = {
           ...(endpoints.checkResult as object),
           package: '@acme/sdk',
@@ -225,7 +225,7 @@ describe('Exposure rule editor', () => {
           ],
         } as never;
       });
-      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'npm-local');
+      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/npm-local');
       await settle(r.fixture);
       type(r.root.querySelector<HTMLInputElement>('#f-versions-range')!, '>=2.0.0');
       type(r.root.querySelector<HTMLInputElement>('#t-package')!, '@acme/sdk');
@@ -249,7 +249,7 @@ describe('Exposure rule editor', () => {
     try {
       const r = await create((endpoints, repos) => {
         repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
-        repos.repositories.push({ key: 'npm-virtual', class: 'virtual', format: 'npm' });
+        repos.repositories.push({ key: 'npm-virtual', project: 'web', class: 'virtual', format: 'npm' });
         endpoints.checkResult = {
           ...(endpoints.checkResult as object),
           package: '@acme/sdk',
@@ -258,7 +258,7 @@ describe('Exposure rule editor', () => {
           warnings: ['stored_versions_not_listed'],
         } as never;
       });
-      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'npm-virtual');
+      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/npm-virtual');
       await settle(r.fixture);
       type(r.root.querySelector<HTMLInputElement>('#t-package')!, '@acme/sdk');
       await settle(r.fixture);
@@ -320,7 +320,7 @@ describe('Exposure rule editor', () => {
   it('R-EP-017 a server field error is shown at its field and in the summary', async () => {
     const r = await create((endpoints, repos) => {
       repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
-      repos.repositories.push({ key: 'npm-local', class: 'local', format: 'npm' });
+      repos.repositories.push({ key: 'npm-local', project: 'web', class: 'local', format: 'npm' });
       endpoints.createRule = async () => {
         throw new ApiError(
           422,
@@ -333,7 +333,7 @@ describe('Exposure rule editor', () => {
       };
     });
     type(r.root.querySelector<HTMLInputElement>('#f-name')!, 'sdk');
-    type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'npm-local');
+    type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/npm-local');
     await settle(r.fixture);
     type(r.root.querySelector<HTMLInputElement>('#f-versions-range')!, '>>');
     await settle(r.fixture);
@@ -364,7 +364,7 @@ describe('Exposure rule editor', () => {
   it('R-EP-017 an invalid name is refused before any request', async () => {
     const r = await create();
     type(r.root.querySelector<HTMLInputElement>('#f-name')!, 'Not Valid');
-    type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'generic-local');
+    type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'web/generic-local');
     await settle(r.fixture);
     button(r.root, 'Create rule').click();
     await settle(r.fixture);

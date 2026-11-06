@@ -8,10 +8,9 @@ import { classLabel } from '../repositories/repository-wizard';
 import { ProjectNeeds, createState } from './project-access';
 
 /**
- * The repositories of a project (R-UI-041): the key links to the repository's own screen, which a
- * project administrator with `manageRepositories` may also edit. Creating one opens the wizard with the
- * project and the key prefix `<key>-` filled in (R-AUTHZ-026); assigning existing repositories stays
- * with the system administrators, in the project dialog.
+ * The repositories of a project (R-UI-041): the key links to the repository's own screen, which an Owner of the
+ * project may also edit. Creating one opens the wizard with the project filled in (R-REPO-001); moving one to
+ * another project is an action of the repository's settings (R-REPO-060).
  */
 @Component({
   selector: 'trove-project-repositories',
@@ -34,7 +33,7 @@ import { ProjectNeeds, createState } from './project-access';
         Open in the repository list
       </a>
     </div>
-    <trove-project-needs id="needs-project-repos" [state]="state()" capability="repositories:write-config" right="manageRepositories" />
+    <trove-project-needs id="needs-project-repos" [state]="state()" capability="repositories:write-config" />
 
     <trove-data-table
       [caption]="caption"
@@ -44,14 +43,14 @@ import { ProjectNeeds, createState } from './project-access';
       [error]="list.error()"
       [empty]="list.items().length === 0"
       i18n-emptyText="@@project-repos.empty"
-      emptyText="No repository is assigned to this project."
+      emptyText="The project has no repository yet."
       [hasMore]="list.hasMore()"
       (more)="list.more()"
       (retry)="list.reload()"
     >
       @for (r of list.items(); track r.key) {
         <tr>
-          <th scope="row"><a [routerLink]="['/admin/repositories', r.key]" translate="no">{{ r.key }}</a></th>
+          <th scope="row"><a [routerLink]="['/admin/repositories', project(), r.key]" translate="no">{{ r.key }}</a></th>
           <td translate="no">{{ r.format }}</td>
           <td>{{ classText(r.class) }}</td>
           <td>{{ r.description }}</td>
@@ -76,7 +75,7 @@ export class ProjectRepositories {
 
   protected readonly list = new PagedResource<RepositorySummary>();
   protected readonly state = computed(() =>
-    createState(this.session, this.project(), 'manageRepositories', 'repositories:write-config'),
+    createState(this.session, this.project(), 'repositories:write-config'),
   );
   protected readonly classText = classLabel;
   protected readonly caption = $localize`:@@project-repos.caption:Repositories of the project`;

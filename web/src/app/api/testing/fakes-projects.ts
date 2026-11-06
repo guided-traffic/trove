@@ -1,16 +1,23 @@
-import { Provider, inject } from '@angular/core';
+import { Provider } from '@angular/core';
 import { Page, PageFetcher } from '../pagination';
-import { Project, ProjectFilters, ProjectInput, ProjectPrincipal, ProjectsApi, PROJECT_KEY_PATTERN } from '../projects-api';
+import {
+  Project,
+  ProjectFilters,
+  ProjectInput,
+  ProjectMember,
+  ProjectPrincipal,
+  ProjectRole,
+  ProjectsApi,
+  PROJECT_KEY_PATTERN,
+} from '../projects-api';
 import { ApiError } from '../problem';
-import { RepositoriesApi, Versioned } from '../repositories-api';
-import { FakeRepositoriesApi } from './fakes-catalog';
+import { Versioned } from '../repositories-api';
 
 /*
  * In-memory fake of the projects service (R-UI-041, R-UI-047 component tier). It models what the
  * screens depend on: the key pattern, the `If-Match` of the replace (412 with the current tag), the
- * delete of an empty project only (409 `project_not_empty`), the administrators and the assignment
- * of repositories, which it mirrors onto the fake repository service so that the project filter of
- * the repository list sees it.
+ * delete of an empty project only (409 `project_not_empty`) and the members with their roles (409
+ * `last_owner` for the last Owner, Q-AUTHZ-217).
  */
 
 function problem(status: number, code: string, extra: Record<string, unknown> = {}): ApiError {
@@ -22,9 +29,8 @@ export function sampleProject(over: Partial<Project> = {}): Project {
     key: 'web',
     displayName: 'Web platform',
     description: "The web team's repositories and partners",
-    managePolicies: true,
-    manageRepositories: false,
-    admins: ['group:web-leads'],
+    owners: ['group:web-leads'],
+    members: 1,
     repositories: 0,
     serviceAccounts: 0,
     policies: 0,
@@ -38,11 +44,12 @@ export function sampleProject(over: Partial<Project> = {}): Project {
 }
 
 export class FakeProjectsApi extends ProjectsApi {
-  private readonly repos = inject(RepositoriesApi);
   /** Every mutating call, for assertions. */
   readonly calls: string[] = [];
-  /** The owner each assignment expected (`from`), in call order; null: none. */
-  readonly expectedOwners: (string | null)[] = [];
+  /** The members by project key. */
+  memberLists: Record<string, ProjectMember[]> = {
+    web: [{ project: 'web', principal: 'group:web-leads', kind: 'group', name: 'web-leads', role: 'owner' }],
+  };
   readonly keys: string[] = [];
   /** The `If-Match` of every replace, in order. */
   readonly ifMatch: string[] = [];
@@ -139,17 +146,16 @@ export class FakeProjectsApi extends ProjectsApi {
       });
     }
     if (this.projects.some((p) => p.key === key)) throw problem(409, 'already_exists');
-    if (this.projects.some((p) => key.startsWith(`${p.key}-`) || p.key.startsWith(`${key}-`))) {
-      throw problem(409, 'project_key_overlap');
-    }
+    const owners = [...(input.owners ?? [])];
     const created = sampleProject({
       key,
       displayName: input.displayName ?? key,
       description: input.description,
-      managePolicies: input.managePolicies ?? true,
-      manageRepositories: input.manageRepositories ?? false,
-      admins: [],
+      owners,
+      members: owners.length,
+      repositories: 0,
     });
+    this.memberLists[key] = owners.map((o) => memberOf(key, o, 'owner'));
     this.projects = [...this.projects, created];
     return { value: created, etag: this.etag(created) };
   }
@@ -166,8 +172,6 @@ export class FakeProjectsApi extends ProjectsApi {
       ...current,
       displayName: input.displayName ?? current.displayName,
       description: input.description,
-      managePolicies: input.managePolicies ?? current.managePolicies,
-      manageRepositories: input.manageRepositories ?? current.manageRepositories,
       version: current.version + 1,
     };
     this.put(next);
@@ -182,49 +186,47 @@ export class FakeProjectsApi extends ProjectsApi {
     this.projects = this.projects.filter((x) => x.key !== key);
   }
 
-  override async addAdmin(key: string, principal: string): Promise<void> {
-    this.fail();
-    this.calls.push(`addAdmin ${key} ${principal}`);
-    const p = this.find(key);
-    if (!/^(user|group):/.test(principal)) throw problem(422, 'invalid_member');
-    if (!p.admins.includes(principal)) this.put({ ...p, admins: [...p.admins, principal].sort() });
+  private refresh(key: string): void {
+    const list = this.memberLists[key] ?? [];
+    this.put({
+      ...this.find(key),
+      members: list.length,
+      owners: list.filter((m) => m.role === 'owner').map((m) => m.principal).sort(),
+    });
   }
 
-  override async removeAdmin(key: string, principal: string): Promise<void> {
-    this.fail();
-    this.calls.push(`removeAdmin ${key} ${principal}`);
-    const p = this.find(key);
-    if (!p.admins.includes(principal)) throw problem(404, 'not_found');
-    this.put({ ...p, admins: p.admins.filter((a) => a !== principal) });
+  override async members(key: string): Promise<readonly ProjectMember[]> {
+    this.find(key);
+    return structuredClone(this.memberLists[key] ?? []);
   }
 
-  override async assignRepository(key: string, repository: string, move: boolean, expected: string | null): Promise<void> {
+  override async setMember(key: string, principal: string, role: ProjectRole): Promise<ProjectMember> {
     this.fail();
-    this.calls.push(`assign ${key} ${repository}${move ? ' move' : ''}`);
-    this.expectedOwners.push(expected);
-    const target = this.find(key);
-    const repo = this.catalog().repositories.find((r) => r.key === repository);
-    if (!repo) throw problem(404, 'not_found');
-    const from = repo.project ?? null;
-    if (from !== expected) throw problem(409, 'project_owner_changed', { currentProject: from });
-    if (from === key) return;
-    if (from !== null && !move) throw problem(409, 'repository_assigned');
-    if (from !== null) {
-      const old = this.find(from);
-      this.put({ ...old, repositories: Math.max(0, old.repositories - 1) });
-    }
-    repo.project = key;
-    this.put({ ...target, repositories: target.repositories + 1 });
+    this.calls.push(`setMember ${key} ${principal} ${role}`);
+    this.find(key);
+    if (!/^(user|group):/.test(principal)) throw problem(422, 'principal_not_allowed');
+    const list = this.memberLists[key] ?? [];
+    const current = list.find((m) => m.principal === principal);
+    const owners = list.filter((m) => m.role === 'owner');
+    if (current?.role === 'owner' && role !== 'owner' && owners.length === 1) throw problem(409, 'last_owner');
+    const next = memberOf(key, principal, role);
+    this.memberLists[key] = [...list.filter((m) => m.principal !== principal), next].sort((a, b) =>
+      a.principal.localeCompare(b.principal),
+    );
+    this.refresh(key);
+    return next;
   }
 
-  override async unassignRepository(key: string, repository: string): Promise<void> {
+  override async removeMember(key: string, principal: string): Promise<void> {
     this.fail();
-    this.calls.push(`unassign ${key} ${repository}`);
-    const p = this.find(key);
-    const repo = this.catalog().repositories.find((r) => r.key === repository);
-    if (!repo || repo.project !== key) throw problem(404, 'not_found');
-    repo.project = null;
-    this.put({ ...p, repositories: Math.max(0, p.repositories - 1) });
+    this.calls.push(`removeMember ${key} ${principal}`);
+    this.find(key);
+    const list = this.memberLists[key] ?? [];
+    const current = list.find((m) => m.principal === principal);
+    if (!current) throw problem(404, 'not_found');
+    if (current.role === 'owner' && list.filter((m) => m.role === 'owner').length === 1) throw problem(409, 'last_owner');
+    this.memberLists[key] = list.filter((m) => m.principal !== principal);
+    this.refresh(key);
   }
 
   override async lookupPrincipals(
@@ -237,10 +239,11 @@ export class FakeProjectsApi extends ProjectsApi {
     if (q.length < 2) throw problem(422, 'invalid_request');
     return this.principals.filter((p) => p.name.startsWith(q) && (!kind || p.kind === kind)).slice(0, 20);
   }
+}
 
-  private catalog(): FakeRepositoriesApi {
-    return this.repos as FakeRepositoriesApi;
-  }
+function memberOf(project: string, principal: string, role: ProjectRole): ProjectMember {
+  const [kind, name] = principal.split(':') as ['user' | 'group', string];
+  return { project, principal, kind, name: name ?? '', role };
 }
 
 export function provideProjectFakes(): Provider[] {

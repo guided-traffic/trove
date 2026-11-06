@@ -15,15 +15,15 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 
-/** What the dialog is opened with: the project key to create a project service account (R-AUTHZ-026). */
+/** What the dialog is opened with: the project key to create a project service account, named within it (R-AUTHZ-026). */
 export interface ServiceAccountCreateData {
   readonly project?: string;
 }
 
 /**
  * "New service account" (R-UI-026). The idempotency key lives as long as the dialog (R-UI-042). Opened
- * with a project it creates a project service account: the name starts with the key and a hyphen
- * (`project_prefix_required` otherwise) and the account belongs to the project for good (R-UI-041).
+ * with a project it creates a project service account: the name is unique within the project and the account
+ * belongs to the project for good (R-UI-041).
  */
 @Component({
   selector: 'trove-service-account-create-dialog',
@@ -63,9 +63,9 @@ export class ServiceAccountCreateDialog {
 
   protected readonly project = this.data?.project;
   protected readonly nameHint = this.project
-    ? $localize`:@@sa-create.name-hint-project:Starts with ${this.project}:project:- and cannot be changed later. Lower-case letters, digits and -.`
+    ? $localize`:@@sa-create.name-hint-project:Unique within the project ${this.project}:project: and cannot be changed later. Lower-case letters, digits and -.`
     : $localize`:@@sa-create.name-hint:Lower-case letters, digits and -, two to 63 characters`;
-  protected readonly name = signal(this.project ? `${this.project}-` : '');
+  protected readonly name = signal('');
   protected readonly description = signal('');
   protected readonly busy = signal(false);
   protected readonly error = signal<ApiError | null>(null);
@@ -80,11 +80,8 @@ export class ServiceAccountCreateDialog {
     this.error.set(null);
     try {
       const created = await this.api.createServiceAccount(
-        {
-          name: this.name().trim(),
-          description: this.description().trim(),
-          ...(this.project ? { project: this.project } : {}),
-        },
+        this.project ?? null,
+        { name: this.name().trim(), description: this.description().trim() },
         this.key,
       );
       this.notifier.status($localize`:@@sa-create.created:Service account created.`);
@@ -137,7 +134,7 @@ export class ServiceAccountCreateDialog {
         >
           @for (a of list.items(); track a.id) {
             <tr>
-              <th scope="row"><a [routerLink]="['/admin/service-accounts', a.name]" translate="no">{{ a.name }}</a></th>
+              <th scope="row"><a [routerLink]="saLink(a)" translate="no">{{ a.name }}</a></th>
               <td>{{ a.description }}</td>
               <td>
                 @if (a.project) {
@@ -199,6 +196,11 @@ export class ServiceAccountList {
     void this.apply();
   }
 
+  /** `/admin/service-accounts/<project>/<name>` for a project's account, `/admin/service-accounts/<name>` otherwise. */
+  protected saLink(a: ServiceAccount): string[] {
+    return a.project ? ['/admin/service-accounts', a.project, a.name] : ['/admin/service-accounts', a.name];
+  }
+
   protected async apply(): Promise<void> {
     const q = this.q().trim() || undefined;
     this.activeCount.set(q ? 1 : 0);
@@ -222,6 +224,6 @@ export class ServiceAccountList {
       { maxWidth: '36rem' },
     );
     const created = await firstValueFrom(ref.closed);
-    if (created) await this.router.navigate(['/admin/service-accounts', created.name]);
+    if (created) await this.router.navigate(this.saLink(created));
   }
 }

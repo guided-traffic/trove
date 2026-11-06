@@ -16,7 +16,7 @@ describe('Repository list filter panel (R-UI-020)', () => {
     expect(root.querySelector('trove-filter-panel form')).toBeNull();
     await openFilters(fixture, root);
     const categories = [...root.querySelectorAll('button.category-toggle .category-label')].map((l) => l.textContent);
-    expect(categories).toEqual(['Key or description', 'Class', 'Format', 'State']);
+    expect(categories).toEqual(['Key or description', 'Project', 'Class', 'Format', 'State']);
     await expectAccessible(root);
   });
 
@@ -30,7 +30,7 @@ describe('Repository list filter panel (R-UI-020)', () => {
     button(root, 'Search').click();
     await settle(fixture);
     const [, extras] = (router.navigate as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
-    expect(extras.queryParams).toEqual({ q: 'npm', class: 'remote', format: null, state: 'inactive' });
+    expect(extras.queryParams).toEqual({ q: 'npm', class: 'remote', format: null, state: 'inactive', project: null });
     expect(extras.queryParamsHandling).toBe('merge');
   });
 
@@ -47,7 +47,7 @@ describe('Repository list filter panel (R-UI-020)', () => {
     button(root, 'Clear all').click();
     await settle(fixture);
     const [, extras] = (router.navigate as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
-    expect(extras.queryParams).toEqual({ q: null, class: null, format: null, state: null });
+    expect(extras.queryParams).toEqual({ q: null, class: null, format: null, state: null, project: null });
   });
 
   it('R-UI-020 the repository table has no sort control because the API takes no sort parameter, and explains three columns', async () => {
@@ -63,12 +63,12 @@ describe('Repository list filter panel (R-UI-020)', () => {
   it('R-REPO-002 R-UI-020 an absolute client address is shown and copied unchanged, without the origin of the page in front', async () => {
     const { root } = await open();
     const code = root.querySelector('tbody tr code')!;
-    expect(code.textContent?.trim()).toBe('https://trove.example.net/files/generic-local/');
-    expect(code.getAttribute('title')).toBe('https://trove.example.net/files/generic-local/');
+    expect(code.textContent?.trim()).toBe('https://trove.example.net/files/web/generic-local/');
+    expect(code.getAttribute('title')).toBe('https://trove.example.net/files/web/generic-local/');
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: write }, configurable: true });
     root.querySelector<HTMLButtonElement>('trove-copy-button button')!.click();
     await Promise.resolve();
-    expect(write).toHaveBeenCalledWith('https://trove.example.net/files/generic-local/');
+    expect(write).toHaveBeenCalledWith('https://trove.example.net/files/web/generic-local/');
   });
 });

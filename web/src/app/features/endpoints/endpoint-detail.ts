@@ -2,7 +2,7 @@ import { Component, computed, inject, input, resource, signal } from '@angular/c
 import { RouterLink } from '@angular/router';
 import { EndpointsApi, ExposureRule, ruleEtag } from '../../api/endpoints-api';
 import { ApiError } from '../../api/problem';
-import { RepositoriesApi } from '../../api/repositories-api';
+import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
@@ -65,7 +65,7 @@ export class EndpointDetail {
   protected addressOf(rule: ExposureRule): { url: string; served: boolean } | null {
     const configuration = valueOf(this.detail)?.configuration;
     if (!configuration) return null;
-    const summary = (valueOf(this.repos) ?? []).find((r) => r.key === rule.repository);
+    const summary = (valueOf(this.repos) ?? []).find((r) => refOf(r) === rule.repository);
     const format = (valueOf(this.formats) ?? []).find((f) => f.name === summary?.format);
     return endpointAddress(configuration, format, rule.repository);
   }

@@ -30,7 +30,7 @@ import { ProjectNeeds, createState } from './project-access';
         </button>
       }
     </div>
-    <trove-project-needs id="needs-project-policies" [state]="state()" capability="policies:write" right="managePolicies" />
+    <trove-project-needs id="needs-project-policies" [state]="state()" capability="policies:write" />
 
     <trove-data-table
       [caption]="caption"
@@ -48,7 +48,7 @@ import { ProjectNeeds, createState } from './project-access';
       @for (p of list.items(); track p.name) {
         <tr>
           <th scope="row">
-            <a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a>
+            <a [routerLink]="['/admin/permissions', project(), p.name]" translate="no">{{ p.name }}</a>
             @if (p.inert) {
               <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@project-policies.inert">Grants nothing</ng-container></span>
             }
@@ -69,7 +69,7 @@ export class ProjectPolicies {
   private readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<PermissionPolicy>();
-  protected readonly state = computed(() => createState(this.session, this.project(), 'managePolicies', 'policies:write'));
+  protected readonly state = computed(() => createState(this.session, this.project(), 'policies:write'));
   protected readonly principalSummary = principalSummary;
   protected readonly actionSummary = actionSummary;
   protected readonly caption = $localize`:@@project-policies.caption:Permission policies of the project`;

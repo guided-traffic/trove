@@ -33,7 +33,7 @@
     <ul>
       @for (key of recent.keys(); track key) {
         <li>
-          <a [routerLink]="['/admin/repositories', key]" translate="no">{{ key }}</a>
+          <a [routerLink]="['/admin/repositories', ...key.split('/')]" translate="no">{{ key }}</a>
         </li>
       }
     </ul>
@@ -61,12 +61,12 @@
       (more)="list.more()"
       (retry)="list.more()"
     >
-      @for (row of list.items(); track row.key) {
+      @for (row of list.items(); track refOf(row)) {
         <tr>
           <th scope="row">
             <a
-              [routerLink]="['/admin/repositories', row.key]"
-              (click)="visit(row.key)"
+              [routerLink]="['/admin/repositories', row.project, row.key]"
+              (click)="visit(refOf(row))"
               translate="no"
               >{{ row.key }}</a
             >
@@ -77,6 +77,7 @@
               <span class="badge" i18n="@@repo.badge.deleting">being deleted</span>
             }
           </th>
+          <td><a [routerLink]="['/admin/projects', row.project]" translate="no">{{ row.project }}</a></td>
           <td translate="no">{{ row.format }}</td>
           <td>
             <span class="type-cell">
@@ -99,22 +100,22 @@
           <td class="actions">
             <div class="row-actions">
               <a class="btn btn-tertiary"
-                [routerLink]="['/admin/repositories', row.key]"
-                (click)="visit(row.key)"
+                [routerLink]="['/admin/repositories', row.project, row.key]"
+                (click)="visit(refOf(row))"
                 i18n="@@repo.action.edit"
                 >Edit</a
               >
-              <a class="btn btn-tertiary" [routerLink]="['/browse', row.key]" i18n="@@repo.action.browse"
+              <a class="btn btn-tertiary" [routerLink]="['/browse', row.project, row.key]" i18n="@@repo.action.browse"
                 >Browse</a
               >
               <!-- >>> M4b vulnerabilities -->
               @if (row.format !== 'generic' && row.class !== 'virtual') {
-                <a class="btn btn-tertiary" routerLink="/vulnerabilities" [queryParams]="{ repository: row.key }" i18n="@@repo.action.vulnerabilities"
+                <a class="btn btn-tertiary" routerLink="/vulnerabilities" [queryParams]="{ repository: refOf(row) }" i18n="@@repo.action.vulnerabilities"
                   >Vulnerabilities</a
                 >
               }
               <!-- <<< M4b vulnerabilities -->
-              @if (canDeleteRow(row) && row.lifecycle !== 'deleting' && !deleting().has(row.key)) {
+              @if (canDeleteRow(row) && row.lifecycle !== 'deleting' && !deleting().has(refOf(row))) {
                 <button class="btn btn-tertiary"
                   type="button"
                   (click)="remove(row)"
@@ -124,13 +125,13 @@
                 </button>
               }
             </div>
-            @if (deleting().get(row.key); as job) {
+            @if (deleting().get(refOf(row)); as job) {
               <div class="deleting">
                 <span i18n="@@repo.deleting">Deleting</span>
                 <trove-job-progress
                   [jobId]="job.id"
                   [label]="deleteLabel"
-                  (finished)="jobEnded(row.key, $event.state)"
+                  (finished)="jobEnded(refOf(row), $event.state)"
                 />
               </div>
             }
@@ -158,6 +159,17 @@
         aria-label="Key or description"
         [value]="search()"
         (input)="search.set($any($event.target).value)"
+      />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@repo.col.project" label="Project" [active]="!!project()" [expanded]="!!project()">
+      <input
+        class="text-input"
+        type="text"
+        autocomplete="off"
+        i18n-aria-label="@@repo.col.project"
+        aria-label="Project"
+        [value]="stagedProject()"
+        (input)="stagedProject.set($any($event.target).value)"
       />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@repo.col.class" label="Class" [active]="!!class()" [expanded]="!!class()">

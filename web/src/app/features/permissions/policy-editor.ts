@@ -68,9 +68,12 @@ export const PREVIEW_DEBOUNCE_MS = 500;
   styleUrls: ['../../shared/access/access.scss', './policy-editor.scss'],
 })
 export class PolicyEditor {
-  /** Route parameter `:name`; absent on `/new`. */
+  /** Route parameter `:name`; absent on `/new`. Within the project for a project policy. */
   readonly name = input<string | undefined>();
-  /** Query parameter `project` of `/new`: the key of the project the new policy belongs to (R-AUTHZ-026). */
+  /**
+   * Route parameter `:project` of a project's policy, or the query parameter `project` of `/new`: the key of the
+   * project the policy belongs to (R-AUTHZ-026).
+   */
   readonly project = input<string | undefined>();
 
   private readonly api = inject(PolicyApi);
@@ -111,12 +114,12 @@ export class PolicyEditor {
   );
   protected readonly canWrite = computed(() => this.session.canWritePolicies(this.policyProject()));
   protected readonly canValidate = computed(
-    () => this.session.has('policies:read') || (this.session.projectRights(this.policyProject())?.managePolicies ?? false),
+    () => this.session.has('policies:read') || this.session.isOwnerOf(this.policyProject()),
   );
-  /** Why a project policy is read-only: its project's switch, or the capability (R-UI-041). */
+  /** Why a project policy is read-only: the missing capability or Owner role (R-UI-041). */
   protected readonly projectState = computed(() => {
     const key = this.policyProject();
-    return key ? createState(this.session, key, 'managePolicies', 'policies:write') : 'enabled';
+    return key ? createState(this.session, key, 'policies:write') : 'enabled';
   });
   /** Where "back" leads: the project's screen for a project policy, the policy list otherwise. */
   protected readonly backLink = computed(() => {
@@ -221,11 +224,10 @@ export class PolicyEditor {
     this.loaded.set(null);
     this.idempotencyKey = newIdempotencyKey();
     if (name === undefined) {
-      // A new project policy starts with the name prefix the server requires (R-AUTHZ-026).
-      this.setForm(this.project() ? { ...EMPTY_FORM, name: `${this.project()}-` } : EMPTY_FORM);
+      this.setForm(EMPTY_FORM);
     } else {
       try {
-        const l = await this.api.load(name);
+        const l = await this.api.load(name, this.project() ?? null);
         this.loaded.set(l);
         this.setForm(formFromPolicy(l.policy));
       } catch (e) {
@@ -262,9 +264,15 @@ export class PolicyEditor {
   protected readonly nameHint = computed(() => {
     const key = this.policyProject();
     return key
-      ? $localize`:@@policy.name-hint-project:Starts with ${key}:project:- and cannot be changed later.`
+      ? $localize`:@@policy.name-hint-project:Unique within the project ${key}:project: and cannot be changed later.`
       : $localize`:@@policy.name-hint:Cannot be changed later.`;
   });
+  /** A project policy names the repositories of its project by bare key; a global one names `<project>/<key>` patterns (R-AUTHZ-004). */
+  protected readonly selectorHint = computed(() =>
+    this.policyProject()
+      ? $localize`:@@policy.repositories-hint-project:One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).`
+      : $localize`:@@policy.repositories-hint:One per line: project/key (web/npm-internal), a pattern (web/npm-team-*, */npm-remote) or a class of every project (@any-local, @any), optionally with a format (@any-local:npm, */*:npm).`,
+  );
   protected readonly projectReposLabel = $localize`:@@policy.project-repos-label:Repositories of the project`;
 
   protected addSelector(key: string): void {
@@ -445,13 +453,14 @@ export class PolicyEditor {
   }
 
   private async create(): Promise<void> {
-    const saved = await this.api.create(this.body(), this.idempotencyKey);
+    const project = this.policyProject();
+    const saved = await this.api.create(project, this.body(), this.idempotencyKey);
     this.afterWrite(saved, $localize`:@@policy.created:Policy created.`);
-    await this.router.navigate(['/admin/permissions', saved.policy.name]);
+    await this.router.navigate(project ? ['/admin/permissions', project, saved.policy.name] : ['/admin/permissions', saved.policy.name]);
   }
 
   private async replace(l: LoadedPolicy): Promise<void> {
-    const saved = await this.api.replace(l.policy.name, this.inputOf(this.form(), false), l.etag);
+    const saved = await this.api.replace(l.policy.name, l.policy.project, this.inputOf(this.form(), false), l.etag);
     this.afterWrite(saved, $localize`:@@policy.saved:Policy saved.`);
   }
 
@@ -484,7 +493,7 @@ export class PolicyEditor {
     const name = this.loaded()?.policy.name ?? this.policyName().trim();
     if (!name) return;
     try {
-      const current = await this.api.load(name);
+      const current = await this.api.load(name, this.policyProject());
       const mineBody = JSON.stringify(this.inputOf(this.form(), false));
       const stored = JSON.stringify(this.inputOf(formFromPolicy(current.policy), false));
       this.loaded.set(current);
@@ -505,7 +514,7 @@ export class PolicyEditor {
   private async conflict(): Promise<void> {
     const l = this.loaded();
     if (!l) return;
-    const current = await this.api.load(l.policy.name);
+    const current = await this.api.load(l.policy.name, l.policy.project);
     const mine = this.inputOf(this.form(), false);
     const theirs = this.inputOf(formFromPolicy(current.policy), false);
     if (JSON.stringify(mine) === JSON.stringify(theirs)) {
@@ -515,7 +524,7 @@ export class PolicyEditor {
     }
     const decision = await this.conflicts.resolve({ mine: { ...mine }, theirs: { ...theirs } });
     if (decision === 'overwrite') {
-      this.afterWrite(await this.api.replace(l.policy.name, mine, current.etag), $localize`:@@policy.saved:Policy saved.`);
+      this.afterWrite(await this.api.replace(l.policy.name, l.policy.project, mine, current.etag), $localize`:@@policy.saved:Policy saved.`);
     } else {
       this.loaded.set(current);
       this.setForm(formFromPolicy(current.policy));
@@ -532,7 +541,7 @@ export class PolicyEditor {
     });
     if (answer === null) return;
     try {
-      await this.api.delete(l.policy.name, l.etag);
+      await this.api.delete(l.policy.name, l.policy.project, l.etag);
       this.notifier.status($localize`:@@policy.deleted:Policy deleted.`);
       void this.session.refreshCapabilities().catch(() => undefined);
       await this.router.navigate(this.backLink());

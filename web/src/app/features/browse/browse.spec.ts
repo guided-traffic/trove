@@ -69,7 +69,7 @@ describe('File tree', () => {
   });
 
   it('R-UI-010 a deep link expands the ancestors and selects the file; details show path, digests with copy buttons and the download link', async () => {
-    const { root, files } = await open({ repo: 'generic-local', path: 'releases/1.0/app.zip' });
+    const { root, files } = await open({ repo: 'web/generic-local', path: 'releases/1.0/app.zip' });
     const labels = items(root).map(labelOf);
     expect(labels).toEqual(
       expect.arrayContaining([
@@ -91,7 +91,7 @@ describe('File tree', () => {
       a.textContent?.includes('Download'),
     );
     expect(download?.getAttribute('href')).toBe(
-      '/api/v1/repositories/generic-local/content/releases/1.0/app.zip',
+      '/api/v1/projects/web/repositories/generic-local/content/releases/1.0/app.zip',
     );
     await expectAccessible(root);
   });
@@ -118,19 +118,19 @@ describe('File tree', () => {
     expect(root.ownerDocument.activeElement?.textContent).toContain('app.zip');
     await press('Enter');
     expect(router.navigate).toHaveBeenCalledWith(
-      ['/browse', 'generic-local', 'releases', '1.0', 'app.zip'],
+      ['/browse', 'web', 'generic-local', 'releases', '1.0', 'app.zip'],
       expect.anything(),
     );
   });
 
   it('R-UI-010 a folder with 450 entries shows the first page and "Load more" loads the rest', async () => {
-    const { root, fixture, files } = await open({ repo: 'big', path: '' }, (f) => {
+    const { root, fixture, files } = await open({ repo: 'web/big', path: '' }, (f) => {
       const nodes: FakeNode[] = Array.from({ length: 450 }, (_, i) => ({
         path: `f${String(i).padStart(3, '0')}.bin`,
         kind: 'file',
         size: 1,
       }));
-      f.tree.set('big', nodes);
+      f.tree.set('web/big', nodes);
     });
     const files1 = () => items(root).filter((i) => labelOf(i).includes('.bin')).length;
     expect(files1()).toBe(200);
@@ -142,12 +142,12 @@ describe('File tree', () => {
   });
 
   it('R-UI-010 and R-UI-005 a folder offers upload and new folder only to a caller who may deploy there', async () => {
-    const allowed = await open({ repo: 'generic-local', path: 'releases' });
+    const allowed = await open({ repo: 'web/generic-local', path: 'releases' });
     expect(text(allowed.root)).toContain('Upload files');
     expect(text(allowed.root)).toContain('New folder');
 
     const denied = await open(
-      { repo: 'generic-local', path: 'releases' },
+      { repo: 'web/generic-local', path: 'releases' },
       undefined,
       (c) => c.action !== 'deploy',
     );
@@ -157,7 +157,7 @@ describe('File tree', () => {
   });
 
   it('R-UI-012 uploads a file with progress, the SHA-256 in Repr-Digest and create-only unless "Replace" is ticked; a file above the limit is refused before any request', async () => {
-    const { root, fixture, files } = await open({ repo: 'generic-local', path: 'releases' });
+    const { root, fixture, files } = await open({ repo: 'web/generic-local', path: 'releases' });
     button(root, /Upload files/).click();
     await settle(fixture);
     const body = root.ownerDocument.body;
@@ -178,7 +178,7 @@ describe('File tree', () => {
     await sleep(fixture);
     expect(files.uploads).toHaveLength(1);
     expect(files.uploads[0]).toMatchObject({
-      repository: 'generic-local',
+      repository: 'web/generic-local',
       path: 'releases/hello.txt',
       overwrite: false,
     });
@@ -195,7 +195,7 @@ describe('File tree', () => {
   });
 
   it('R-UI-012 a refused upload names the reason and the file stays in the list as failed', async () => {
-    const { root, fixture } = await open({ repo: 'generic-local', path: 'releases' }, (f) => {
+    const { root, fixture } = await open({ repo: 'web/generic-local', path: 'releases' }, (f) => {
       f.uploadError = new ApiError(403, { code: 'not_admitted', detail: 'no' }, null);
     });
     button(root, /Upload files/).click();
@@ -214,7 +214,7 @@ describe('File tree', () => {
 
   it('R-UI-011 deleting a folder with more than 100 items requires typing its name and runs as a job whose progress is shown', async () => {
     const { root, fixture, files } = await open(
-      { repo: 'generic-local', path: 'releases' },
+      { repo: 'web/generic-local', path: 'releases' },
       (f) => {
         f.countResult = { count: 101, capped: true };
         f.deleteResult = {
@@ -242,14 +242,14 @@ describe('File tree', () => {
     expect(dialogConfirm.disabled).toBe(false);
     dialogConfirm.click();
     await settle(fixture);
-    expect(files.deleted).toEqual(['generic-local/releases']);
+    expect(files.deleted).toEqual(['web/generic-local/releases']);
     expect(text(root)).toContain('Deleting');
     expect(confirm).toBeTruthy();
   });
 
   it('R-UI-011 deleting a file asks for confirmation naming the path; the tree no longer shows it afterwards', async () => {
     const { root, fixture, files, router } = await open({
-      repo: 'generic-local',
+      repo: 'web/generic-local',
       path: 'readme.txt',
     });
     button(root, /Delete$/).click();
@@ -263,13 +263,13 @@ describe('File tree', () => {
       ) as HTMLButtonElement
     ).click();
     await settle(fixture);
-    expect(files.deleted).toEqual(['generic-local/readme.txt']);
-    expect(router.navigate).toHaveBeenCalledWith(['/browse', 'generic-local'], expect.anything());
+    expect(files.deleted).toEqual(['web/generic-local/readme.txt']);
+    expect(router.navigate).toHaveBeenCalledWith(['/browse', 'web', 'generic-local'], expect.anything());
   });
 
   it('R-UI-010 the statistics tab shows downloads, last download and downloader', async () => {
     const { root } = await open({
-      repo: 'generic-local',
+      repo: 'web/generic-local',
       path: 'releases/1.0/app.zip',
       tab: 'statistics',
     });
@@ -278,13 +278,13 @@ describe('File tree', () => {
   });
 
   it('R-UI-010 the API tab shows the item JSON and the equivalent curl command (INV-17)', async () => {
-    const { root } = await open({ repo: 'generic-local', path: 'readme.txt', tab: 'api' });
+    const { root } = await open({ repo: 'web/generic-local', path: 'readme.txt', tab: 'api' });
     expect(text(root)).toContain('curl');
     expect(text(root)).toContain('"kind": "file"');
   });
 
   it('R-UI-010 the curl commands quote the header in double quotes so the shell expands $TROVE_TOKEN', async () => {
-    const { root } = await open({ repo: 'generic-local', path: 'readme.txt', tab: 'api' });
+    const { root } = await open({ repo: 'web/generic-local', path: 'readme.txt', tab: 'api' });
     const blocks = Array.from(root.querySelectorAll('pre.code-block')).map((e) => e.textContent ?? '');
     const commands = blocks.filter((b) => b.startsWith('curl'));
     expect(commands.length).toBe(2);
@@ -292,18 +292,18 @@ describe('File tree', () => {
       expect(c).toContain('-H "Authorization: Bearer $TROVE_TOKEN"');
       expect(c).not.toContain("'Authorization: Bearer $TROVE_TOKEN'");
     }
-    expect(commands[0]).toMatch(/ 'https:\/\/trove\.example\.net\/api\/v1\/repositories\/generic-local\/items\?path=readme\.txt'$/);
+    expect(commands[0]).toMatch(/ 'https:\/\/trove\.example\.net\/api\/v1\/projects\/web\/repositories\/generic-local\/items\?path=readme\.txt'$/);
     expect(commands[1]).toMatch(/^curl -L -O -H /);
   });
 
   it('R-UI-010 an unknown repository or path shows the not-found error and passes the accessibility check', async () => {
-    const { root } = await open({ repo: 'nope', path: 'a/b.txt' });
+    const { root } = await open({ repo: 'web/nope', path: 'a/b.txt' });
     expect(text(root)).toContain('does not exist');
     await expectAccessible(root);
   });
 
   it('R-UI-010 the context-menu key on the tree moves focus to the actions', async () => {
-    const { root, fixture } = await open({ repo: 'generic-local', path: 'readme.txt' });
+    const { root, fixture } = await open({ repo: 'web/generic-local', path: 'readme.txt' });
     const tree = root.querySelector<HTMLElement>('[role="tree"]')!;
     tree.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }));
     await settle(fixture);
@@ -333,8 +333,8 @@ async function openWith(
       repos.repositories = repositories;
       repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
       const files = get(FilesApi) as FakeFilesApi;
-      const nodes = files.tree.get('generic-local')!;
-      for (const r of repositories) files.tree.set(r.key, nodes.map((n) => ({ ...n })));
+      const nodes = files.tree.get('web/generic-local')!;
+      for (const r of repositories) files.tree.set(`web/${r.key}`, nodes.map((n) => ({ ...n })));
       vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
     },
   });
@@ -342,10 +342,10 @@ async function openWith(
 }
 
 const MIXED = [
-  repo({ key: 'files', class: 'local', format: 'generic', description: 'Build outputs' }),
-  repo({ key: 'npm-local', class: 'local', format: 'npm' }),
-  repo({ key: 'npm-cache', class: 'remote', format: 'npm' }),
-  repo({ key: 'npm-all', class: 'virtual', format: 'npm', virtual: { members: ['npm-local', 'npm-cache'] } }),
+  repo({ key: 'files', project: 'web', class: 'local', format: 'generic', description: 'Build outputs' }),
+  repo({ key: 'npm-local', project: 'web', class: 'local', format: 'npm' }),
+  repo({ key: 'npm-cache', project: 'web', class: 'remote', format: 'npm' }),
+  repo({ key: 'npm-all', project: 'web', class: 'virtual', format: 'npm', virtual: { members: ['npm-local', 'npm-cache'] } }),
 ];
 
 describe('Browser panes', () => {
@@ -407,7 +407,7 @@ describe('Browser panes', () => {
   it('R-UI-010 the sort menu offers key and class order; the class order lists virtual before local before remote', async () => {
     const { root, fixture, router } = await openWith({ sort: 'class' }, MIXED);
     const names = items(root).map(labelOf);
-    expect(names).toEqual(['npm-all', 'files', 'npm-local', 'npm-cache']);
+    expect(names).toEqual(['web/npm-all', 'web/files', 'web/npm-local', 'web/npm-cache']);
     root.querySelector<HTMLButtonElement>('.sort-button')!.click();
     await settle(fixture);
     const entries = [...root.ownerDocument.querySelectorAll('[role="menuitemradio"]')];
@@ -419,8 +419,8 @@ describe('Browser panes', () => {
 
   it('R-UI-010 a virtual repository lists its members in resolution order labelled "resolves from"; a remote one is labelled cache', async () => {
     const { root, fixture } = await openWith({ sort: 'class' }, MIXED);
-    expect(text(items(root).find((i) => labelOf(i) === 'npm-cache')!)).toContain('cache');
-    const virtual = items(root).find((i) => labelOf(i) === 'npm-all')!;
+    expect(text(items(root).find((i) => labelOf(i) === 'web/npm-cache')!)).toContain('cache');
+    const virtual = items(root).find((i) => labelOf(i) === 'web/npm-all')!;
     virtual.focus();
     virtual.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     (root.ownerDocument.activeElement ?? virtual).dispatchEvent(
@@ -428,13 +428,13 @@ describe('Browser panes', () => {
     );
     await settle(fixture);
     const members = items(root).filter((i) => i.getAttribute('aria-level') === '2');
-    expect(members.map(labelOf)).toEqual(['npm-local', 'npm-cache']);
+    expect(members.map(labelOf)).toEqual(['web/npm-local', 'web/npm-cache']);
     for (const m of members) expect(text(m)).toContain('resolves from');
   });
 
   it('R-UI-010 a repository shows its summary, a link to its setup and its content as the shared table', async () => {
-    const { root } = await openWith({ repo: 'files', path: '' }, MIXED);
-    expect(text(root.querySelector('.path')!)).toBe('files');
+    const { root } = await openWith({ repo: 'web/files', path: '' }, MIXED);
+    expect(text(root.querySelector('.path')!)).toBe('web/files');
     expect(text(root)).toContain('Build outputs');
     expect(root.querySelector('a[href*="/setup"]')).toBeTruthy();
     const rows = [...root.querySelectorAll('trove-data-table tbody th')].map(text);
@@ -467,23 +467,23 @@ describe('Browser empty states and actions', () => {
   });
 
   it('R-UI-011 a file offers download and copy, a folder of a generic local repository offers upload and new folder, a package repository offers neither', async () => {
-    const file = await openWith({ repo: 'files', path: 'readme.txt' }, MIXED);
+    const file = await openWith({ repo: 'web/files', path: 'readme.txt' }, MIXED);
     expect(text(file.root.querySelector('#browse-actions')!)).toContain('Download');
     expect(text(file.root.querySelector('#browse-actions')!)).not.toContain('Upload');
     expect(file.root.querySelector('button[aria-label="Copy download URL"]')).toBeTruthy();
     expect(file.root.querySelector('button[aria-label="Copy path"]')).toBeTruthy();
 
-    const folder = await openWith({ repo: 'files', path: 'releases' }, MIXED);
+    const folder = await openWith({ repo: 'web/files', path: 'releases' }, MIXED);
     expect(text(folder.root.querySelector('#browse-actions')!)).toContain('Upload files');
     expect(text(folder.root.querySelector('#browse-actions')!)).toContain('New folder');
 
-    const npm = await openWith({ repo: 'npm-local', path: '' }, MIXED);
+    const npm = await openWith({ repo: 'web/npm-local', path: '' }, MIXED);
     expect(text(npm.root.querySelector('#browse-actions')!)).not.toContain('Upload');
     expect(text(npm.root.querySelector('#browse-actions')!)).toContain('Client setup');
   });
 
   it('R-HA-064 Q-UI-111 a listing of an old replica has no contentUrl: Download links the /files/ downloadUrl', async () => {
-    const old = await open({ repo: 'generic-local', path: 'readme.txt' }, (files) => {
+    const old = await open({ repo: 'web/generic-local', path: 'readme.txt' }, (files) => {
       const item = files.item.bind(files);
       files.item = async (repository, path) => {
         const { contentUrl: _dropped, ...rest } = await item(repository, path);
@@ -492,15 +492,15 @@ describe('Browser empty states and actions', () => {
       };
     });
     const link = [...old.root.querySelectorAll('#browse-actions a')].find((a) => a.textContent?.includes('Download'))!;
-    expect(link.getAttribute('href')).toBe('https://trove.example.net/files/generic-local/readme.txt');
+    expect(link.getAttribute('href')).toBe('https://trove.example.net/files/web/generic-local/readme.txt');
 
-    const current = await open({ repo: 'generic-local', path: 'readme.txt' });
+    const current = await open({ repo: 'web/generic-local', path: 'readme.txt' });
     const href = [...current.root.querySelectorAll('#browse-actions a')].find((a) => a.textContent?.includes('Download'))!;
-    expect(href.getAttribute('href')).toBe('/api/v1/repositories/generic-local/content/readme.txt');
+    expect(href.getAttribute('href')).toBe('/api/v1/projects/web/repositories/generic-local/content/readme.txt');
   });
 
   it('R-UI-011 without the delete permission there is no Delete; without deploy no upload', async () => {
-    const { root } = await openWith({ repo: 'files', path: 'releases' }, MIXED, {
+    const { root } = await openWith({ repo: 'web/files', path: 'releases' }, MIXED, {
       allow: (c) => c.action === 'read',
     });
     const actions = text(root.querySelector('#browse-actions')!);
@@ -509,7 +509,7 @@ describe('Browser empty states and actions', () => {
   });
 
   it('R-UI-010 on a narrow screen the details pane has a way back to the tree', async () => {
-    const { root, router, fixture } = await openWith({ repo: 'files', path: 'readme.txt' }, MIXED);
+    const { root, router, fixture } = await openWith({ repo: 'web/files', path: 'readme.txt' }, MIXED);
     expect(root.querySelector('.browse')?.classList.contains('has-selection')).toBe(true);
     button(root, /Back to the tree/).click();
     await settle(fixture);
@@ -517,11 +517,11 @@ describe('Browser empty states and actions', () => {
   });
 
   it('R-UI-010 a folder is browsed from the right pane: its children link to their own address', async () => {
-    const { root } = await openWith({ repo: 'files', path: 'releases' }, MIXED);
+    const { root } = await openWith({ repo: 'web/files', path: 'releases' }, MIXED);
     const link = [...root.querySelectorAll<HTMLAnchorElement>('trove-data-table a.entry')].find((a) =>
       text(a).includes('1.0'),
     );
-    expect(link?.getAttribute('href')).toContain('/browse/files/releases/1.0');
+    expect(link?.getAttribute('href')).toContain('/browse/web/files/releases/1.0');
   });
 });
 
@@ -529,7 +529,7 @@ describe('Browser empty states and actions', () => {
 describe('Browser tree nodes', () => {
   const big = (f: FakeFilesApi): void => {
     f.tree.set(
-      'big',
+      'web/big',
       Array.from({ length: 450 }, (_, i) => ({ path: `f${String(i).padStart(3, '0')}.bin`, kind: 'file' as const, size: 1 })),
     );
   };
@@ -539,7 +539,7 @@ describe('Browser tree nodes', () => {
   }
 
   it('R-UI-010 a selection revealed while "Load more" of the same folder is in flight waits for that load instead of looping', async () => {
-    const { root, fixture, files } = await open({ repo: 'big', path: '' }, big);
+    const { root, fixture, files } = await open({ repo: 'web/big', path: '' }, big);
     let release!: () => void;
     files.childGate = new Promise<void>((r) => (release = r));
     items(root).find((i) => labelOf(i) === 'Load more')!.click();
@@ -555,22 +555,22 @@ describe('Browser tree nodes', () => {
   });
 
   it('R-UI-010 a reloaded folder shows the new size of a file and a file that became a folder is a folder', async () => {
-    const { fixture, files } = await open({ repo: 'generic-local', path: 'releases/1.0/app.zip' });
+    const { fixture, files } = await open({ repo: 'web/generic-local', path: 'releases/1.0/app.zip' });
     const view = fixture.componentInstance as unknown as Internals;
-    expect(view.nodes.get('generic-local/readme.txt')?.meta().size).toBe(120);
-    expect(view.nodes.has('generic-local/releases/1.0/app.zip')).toBe(true);
-    const nodes = files.tree.get('generic-local')!;
+    expect(view.nodes.get('web/generic-local/readme.txt')?.meta().size).toBe(120);
+    expect(view.nodes.has('web/generic-local/releases/1.0/app.zip')).toBe(true);
+    const nodes = files.tree.get('web/generic-local')!;
     const replace = (path: string, node: FakeNode): void => void nodes.splice(nodes.findIndex((n) => n.path === path), 1, node);
     replace('readme.txt', { path: 'readme.txt', kind: 'file', size: 999 });
-    view.reload(view.nodes.get('generic-local')!);
+    view.reload(view.nodes.get('web/generic-local')!);
     await sleep(fixture, 60);
-    expect(view.nodes.get('generic-local/readme.txt')!.meta().size).toBe(999);
+    expect(view.nodes.get('web/generic-local/readme.txt')!.meta().size).toBe(999);
     replace('releases/1.0', { path: 'releases/1.0', kind: 'file', size: 7 });
-    view.reload(view.nodes.get('generic-local/releases')!);
+    view.reload(view.nodes.get('web/generic-local/releases')!);
     await sleep(fixture, 60);
-    expect(view.nodes.get('generic-local/releases/1.0')!.kind).toBe('file');
-    expect(view.nodes.get('generic-local/releases/1.0')!.meta().size).toBe(7);
+    expect(view.nodes.get('web/generic-local/releases/1.0')!.kind).toBe('file');
+    expect(view.nodes.get('web/generic-local/releases/1.0')!.meta().size).toBe(7);
     // The vanished subtree does not stay in the map for the life of the screen.
-    expect(view.nodes.has('generic-local/releases/1.0/app.zip')).toBe(false);
+    expect(view.nodes.has('web/generic-local/releases/1.0/app.zip')).toBe(false);
   });
 });

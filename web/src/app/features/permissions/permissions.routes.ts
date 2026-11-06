@@ -13,6 +13,12 @@ export const PERMISSIONS_ROUTES: Routes = [
     loadComponent: () => import('./policy-editor').then((m) => m.PolicyEditor),
   },
   {
+    // A project's policy: its name is unique within the project only (R-AUTHZ-026).
+    path: ':project/:name',
+    title: $localize`:@@route.permissions.detail.title:Permission policy`,
+    loadComponent: () => import('./policy-editor').then((m) => m.PolicyEditor),
+  },
+  {
     path: ':name',
     title: $localize`:@@route.permissions.detail.title:Permission policy`,
     loadComponent: () => import('./policy-editor').then((m) => m.PolicyEditor),

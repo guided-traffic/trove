@@ -87,16 +87,25 @@ export abstract class IdentityApi {
   abstract changeGroupMembers(name: string, change: GroupMembersChange): Promise<readonly GroupMember[]>;
 
   abstract serviceAccounts(filters: ServiceAccountFilters): PageFetcher<ServiceAccount>;
-  abstract serviceAccount(name: string): Promise<Versioned<ServiceAccount>>;
-  abstract createServiceAccount(body: NewServiceAccount, idempotencyKey: string): Promise<ServiceAccount>;
+  /**
+   * A service account is addressed by its bare name and its project, `null` for an instance-wide account
+   * (R-AUTHZ-026); so it is in every method below.
+   */
+  abstract serviceAccount(name: string, project: string | null): Promise<Versioned<ServiceAccount>>;
+  abstract createServiceAccount(
+    project: string | null,
+    body: NewServiceAccount,
+    idempotencyKey: string,
+  ): Promise<ServiceAccount>;
   abstract updateServiceAccount(
     name: string,
+    project: string | null,
     patch: { description?: string },
     etag: string,
   ): Promise<Versioned<ServiceAccount>>;
-  abstract deleteServiceAccount(name: string): Promise<void>;
-  abstract disableServiceAccount(name: string, options: DisableOptions): Promise<void>;
-  abstract enableServiceAccount(name: string): Promise<void>;
+  abstract deleteServiceAccount(name: string, project: string | null): Promise<void>;
+  abstract disableServiceAccount(name: string, project: string | null, options: DisableOptions): Promise<void>;
+  abstract enableServiceAccount(name: string, project: string | null): Promise<void>;
 }
 
 function versioned<T>(r: { readonly body: T; readonly etag: string | null }): Versioned<T> {
@@ -193,37 +202,44 @@ export class HttpIdentityApi extends IdentityApi {
     return this.client.page<ServiceAccount>('/api/v1/service-accounts', cleanQuery(filters));
   }
 
-  override async serviceAccount(name: string): Promise<Versioned<ServiceAccount>> {
-    return versioned(await this.client.getJson<ServiceAccount>(`/api/v1/service-accounts/${seg(name)}`));
+  override async serviceAccount(name: string, project: string | null): Promise<Versioned<ServiceAccount>> {
+    return versioned(await this.client.getJson<ServiceAccount>(serviceAccountUrl(name, project)));
   }
 
   override async createServiceAccount(
+    project: string | null,
     body: NewServiceAccount,
     idempotencyKey: string,
   ): Promise<ServiceAccount> {
-    return (await this.client.post<ServiceAccount>('/api/v1/service-accounts', body, { idempotencyKey }))
-      .body;
+    const url = project ? `/api/v1/projects/${seg(project)}/service-accounts` : '/api/v1/service-accounts';
+    return (await this.client.post<ServiceAccount>(url, body, { idempotencyKey })).body;
   }
 
   override async updateServiceAccount(
     name: string,
+    project: string | null,
     patch: { description?: string },
     etag: string,
   ): Promise<Versioned<ServiceAccount>> {
-    return versioned(
-      await this.client.patch<ServiceAccount>(`/api/v1/service-accounts/${seg(name)}`, patch, etag),
-    );
+    return versioned(await this.client.patch<ServiceAccount>(serviceAccountUrl(name, project), patch, etag));
   }
 
-  override async deleteServiceAccount(name: string): Promise<void> {
-    await this.client.delete(`/api/v1/service-accounts/${seg(name)}`);
+  override async deleteServiceAccount(name: string, project: string | null): Promise<void> {
+    await this.client.delete(serviceAccountUrl(name, project));
   }
 
-  override async disableServiceAccount(name: string, options: DisableOptions): Promise<void> {
-    await this.client.post(`/api/v1/service-accounts/${seg(name)}/disable`, options);
+  override async disableServiceAccount(name: string, project: string | null, options: DisableOptions): Promise<void> {
+    await this.client.post(`${serviceAccountUrl(name, project)}/disable`, options);
   }
 
-  override async enableServiceAccount(name: string): Promise<void> {
-    await this.client.post(`/api/v1/service-accounts/${seg(name)}/enable`);
+  override async enableServiceAccount(name: string, project: string | null): Promise<void> {
+    await this.client.post(`${serviceAccountUrl(name, project)}/enable`);
   }
+}
+
+/** `/api/v1/service-accounts/{name}` or, for a project's account, `/api/v1/projects/{project}/service-accounts/{name}`. */
+export function serviceAccountUrl(name: string, project: string | null): string {
+  return project
+    ? `/api/v1/projects/${seg(project)}/service-accounts/${seg(name)}`
+    : `/api/v1/service-accounts/${seg(name)}`;
 }

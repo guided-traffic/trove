@@ -18,7 +18,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/help', 'Documentation'],
   ['/help/user/getting-started', 'Getting started'],
   ['/browse', 'Browse'],
-  ['/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],
+  ['/browse/web/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],
   ['/profile', 'Profile'],
   ['/profile/tokens', 'Personal tokens'],
   ['/profile/sessions', 'Sessions'],
@@ -26,7 +26,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/admin/projects/web', 'Project'],
   ['/admin/repositories', 'Repositories'],
   ['/admin/repositories/new', 'New repository'],
-  ['/admin/repositories/npm-local', 'Repository'],
+  ['/admin/repositories/web/npm-local', 'Repository'],
   ['/admin/users', 'Users'],
   ['/admin/users/alice', 'User'],
   ['/admin/groups', 'Groups'],
@@ -86,9 +86,9 @@ describe('route map', () => {
   }
 
   it('R-UI-003 the file-tree route captures the repository and the slash-containing path', async () => {
-    await open('/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz');
+    await open('/browse/web/npm-local/@team-a/ui/-/ui-1.0.0.tgz');
     const route = TestBed.inject(Router).routerState.snapshot.root.firstChild?.firstChild?.firstChild;
-    expect(route?.params['repo']).toBe('npm-local');
+    expect(route?.params['repo']).toBe('web/npm-local');
     expect(route?.params['path']).toBe('@team-a/ui/-/ui-1.0.0.tgz');
   });
 

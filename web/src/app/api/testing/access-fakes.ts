@@ -188,6 +188,7 @@ export class FakeIdentityApi extends IdentityApi {
     {
       id: '00000000-0000-7000-8000-000000000021',
       name: 'ci-bot',
+      principal: 'sa:ci-bot',
       description: 'Deploy jobs',
       status: 'active',
       project: null,
@@ -428,28 +429,26 @@ export class FakeIdentityApi extends IdentityApi {
       );
   }
 
-  override async serviceAccount(name: string): Promise<Versioned<ServiceAccount>> {
-    const found = this.accounts.find((a) => a.name === name);
+  override async serviceAccount(name: string, project: string | null = null): Promise<Versioned<ServiceAccount>> {
+    const found = this.accounts.find((a) => a.name === name && a.project === project);
     if (!found) throw problem(404, 'not_found');
     return { value: found, etag: this.etagOf(`service-account:${name}`) };
   }
 
   override async createServiceAccount(
+    project: string | null,
     body: NewServiceAccount,
     idempotencyKey: string,
   ): Promise<ServiceAccount> {
     this.fail();
     this.keys.push(idempotencyKey);
-    this.calls.push(`createServiceAccount ${body.name}`);
-    if (body.project && !body.name.startsWith(`${body.project}-`)) {
-      throw problem(422, 'project_prefix_required', {
-        errors: [{ pointer: '/name', code: 'project_prefix_required', detail: 'prefix' }],
-      });
-    }
+    this.calls.push(`createServiceAccount ${project ? `${project}/` : ''}${body.name}`);
+    if (this.accounts.some((a) => a.name === body.name && a.project === project)) throw problem(409, 'already_exists');
     const created: ServiceAccount = {
-      id: `sa-${body.name}`,
+      id: `sa-${project ?? ''}-${body.name}`,
       name: body.name,
-      project: body.project ?? null,
+      principal: project ? `sa:${project}/${body.name}` : `sa:${body.name}`,
+      project,
       description: body.description ?? '',
       status: 'active',
       createdAt: '2026-10-29T10:00:00Z',
@@ -460,33 +459,34 @@ export class FakeIdentityApi extends IdentityApi {
 
   override async updateServiceAccount(
     name: string,
+    project: string | null,
     patch: { description?: string },
     etag: string,
   ): Promise<Versioned<ServiceAccount>> {
     this.fail();
     this.calls.push(`updateServiceAccount ${name}`);
-    const current = (await this.serviceAccount(name)).value;
+    const current = (await this.serviceAccount(name, project)).value;
     this.guard(`service-account:${name}`, etag);
     const next = { ...current, ...patch };
-    this.accounts = this.accounts.map((a) => (a.name === name ? next : a));
+    this.accounts = this.accounts.map((a) => (a.name === name && a.project === project ? next : a));
     return { value: next, etag: this.etagOf(`service-account:${name}`) };
   }
 
-  override async deleteServiceAccount(name: string): Promise<void> {
+  override async deleteServiceAccount(name: string, project: string | null = null): Promise<void> {
     this.fail();
     this.calls.push(`deleteServiceAccount ${name}`);
-    this.accounts = this.accounts.filter((a) => a.name !== name);
+    this.accounts = this.accounts.filter((a) => !(a.name === name && a.project === project));
   }
 
-  override async disableServiceAccount(name: string, options: DisableOptions): Promise<void> {
+  override async disableServiceAccount(name: string, project: string | null, options: DisableOptions): Promise<void> {
     this.fail();
     this.calls.push(`disableServiceAccount ${name} revokeTokens=${options.revokeTokens}`);
-    this.accounts = this.accounts.map((a) => (a.name === name ? { ...a, status: 'disabled' } : a));
+    this.accounts = this.accounts.map((a) => (a.name === name && a.project === project ? { ...a, status: 'disabled' } : a));
   }
 
-  override async enableServiceAccount(name: string): Promise<void> {
+  override async enableServiceAccount(name: string, project: string | null = null): Promise<void> {
     this.calls.push(`enableServiceAccount ${name}`);
-    this.accounts = this.accounts.map((a) => (a.name === name ? { ...a, status: 'active' } : a));
+    this.accounts = this.accounts.map((a) => (a.name === name && a.project === project ? { ...a, status: 'active' } : a));
   }
 }
 
@@ -564,6 +564,7 @@ export class FakeTokensApi extends TokensApi {
 
   override async createForServiceAccount(
     name: string,
+    _project: string | null,
     request: CreateTokenRequest,
     idempotencyKey: string,
   ): Promise<TokenCreated> {
@@ -782,24 +783,20 @@ export class FakePolicyApi extends PolicyApi {
     );
   }
 
-  override async load(name: string): Promise<LoadedPolicy> {
-    const p = this.policies.find((x) => x.name === name);
+  override async load(name: string, project: string | null = null): Promise<LoadedPolicy> {
+    const p = this.policies.find((x) => x.name === name && x.project === project);
     if (!p) throw problem(404, 'not_found');
     return { policy: p, etag: `"${p.version}"` };
   }
 
-  override async create(input: PermissionPolicyInput, idempotencyKey: string): Promise<LoadedPolicy> {
+  override async create(project: string | null, input: PermissionPolicyInput, idempotencyKey: string): Promise<LoadedPolicy> {
     this.fail();
     this.keys.push(idempotencyKey);
     this.calls.push(`create ${input.name}`);
-    if (input.project && !(input.name ?? '').startsWith(`${input.project}-`)) {
-      throw problem(422, 'project_prefix_required', {
-        errors: [{ pointer: '/name', code: 'project_prefix_required', detail: 'prefix' }],
-      });
-    }
+    if (this.policies.some((p) => p.name === input.name && p.project === project)) throw problem(409, 'already_exists');
     const policy = samplePolicy({
       name: input.name ?? '',
-      project: input.project ?? null,
+      project,
       description: input.description ?? '',
       resources: input.resources ?? {},
       entries: input.entries ?? [],
@@ -809,10 +806,10 @@ export class FakePolicyApi extends PolicyApi {
     return { policy, etag: '"1"' };
   }
 
-  override async replace(name: string, input: PermissionPolicyInput, etag: string): Promise<LoadedPolicy> {
+  override async replace(name: string, project: string | null, input: PermissionPolicyInput, etag: string): Promise<LoadedPolicy> {
     this.fail();
     this.calls.push(`replace ${name} ${etag}`);
-    const current = await this.load(name);
+    const current = await this.load(name, project);
     if (current.etag !== etag) {
       throw problem(412, 'precondition_failed', { currentEtag: current.etag });
     }
@@ -823,14 +820,14 @@ export class FakePolicyApi extends PolicyApi {
       entries: input.entries ?? [],
       version: current.policy.version + 1,
     });
-    this.policies = this.policies.map((p) => (p.name === name ? policy : p));
+    this.policies = this.policies.map((p) => (p.name === name && p.project === project ? policy : p));
     return { policy, etag: `"${policy.version}"` };
   }
 
-  override async delete(name: string, etag?: string): Promise<void> {
+  override async delete(name: string, project: string | null, etag?: string): Promise<void> {
     this.fail();
     this.calls.push(`delete ${name} ${etag ?? ''}`);
-    this.policies = this.policies.filter((p) => p.name !== name);
+    this.policies = this.policies.filter((p) => !(p.name === name && p.project === project));
   }
 
   override async validate(input: PermissionPolicyInput): Promise<PolicyValidation> {

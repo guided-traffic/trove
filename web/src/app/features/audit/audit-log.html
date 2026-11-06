@@ -129,14 +129,14 @@
           @if (e.repository) {
             <dt i18n="@@audit.filter.repository">Repository</dt>
             <dd>
-              <a [routerLink]="['/admin/repositories', e.repository]" translate="no">{{
+              <a [routerLink]="['/admin/repositories', ...e.repository.split('/')]" translate="no">{{
                 e.repository
               }}</a>
               @if (e.path) {
                 <ng-container>
                   /
                   <a
-                    [routerLink]="['/browse', e.repository].concat(e.path.split('/'))"
+                    [routerLink]="['/browse', ...e.repository.split('/')].concat(e.path.split('/'))"
                     translate="no"
                     >{{ e.path }}</a
                   ></ng-container

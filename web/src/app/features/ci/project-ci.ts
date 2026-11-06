@@ -10,11 +10,9 @@ import { MappingList } from './mapping-list';
 import { ErrorNotice } from '../../shared/error-notice';
 
 /**
- * The CI identity of one project (R-UI-035, Q-CI-26): for an administrator of the project with the
- * `managePolicies` switch on, the issuers the project may use (read-only: issuers are the system
+ * The CI identity of one project (R-UI-035, Q-CI-26): for an Owner of the project, the issuers the project may use (read-only: issuers are the system
  * administrators' and the Helm values'), the project's mappings with the editor bounded to the
  * project, the dry run over the project's tier and the tokens issued through the project's mappings.
- * A switch that is off answers `403 project_switch_off`, which shows as on the other project screens.
  */
 @Component({
   selector: 'trove-project-ci',

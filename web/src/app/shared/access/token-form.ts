@@ -101,7 +101,7 @@ export interface TokenDraft {
             [required]="true"
             [error]="fieldError('/scope/repositories', 'repositories')"
             i18n-hint="@@token-form.repositories-hint"
-            hint="One repository key or pattern per line, for example npm-internal or npm-team-*."
+            hint="One project/key or pattern per line, for example web/npm-internal or web/npm-team-*; or a class such as @any-local."
           />
           <trove-text-field
             i18n-label="@@token-form.packages"

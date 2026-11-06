@@ -125,6 +125,11 @@ export class PolicyList {
     void this.apply();
   }
 
+  /** `/admin/permissions/<project>/<name>` for a project's policy, `/admin/permissions/<name>` otherwise. */
+  protected policyLink(p: PermissionPolicy): string[] {
+    return p.project ? ['/admin/permissions', p.project, p.name] : ['/admin/permissions', p.name];
+  }
+
   protected repositorySummary(p: PermissionPolicy): string {
     const repos = p.resources.repositories ?? [];
     const shown = repos.slice(0, 3).join(', ');

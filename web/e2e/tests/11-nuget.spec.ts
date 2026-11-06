@@ -1,4 +1,4 @@
-import { expect, expectAccessible, signInLocal, signOut, test, unique } from '../support';
+import { e2eProject, expect, expectAccessible, qualified, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
 // R-UI-047 journey "nuget" (WP3.7; R-UI-007, R-UI-018, R-UI-019, R-UI-021): the repository wizard creates a local NuGet
 // repository and writes the one setting that differs from the default; the edit form reads it back; the client setup page
@@ -13,11 +13,11 @@ const virtualKey = unique('ui-nuget-all');
 const wizardKey = unique('ui-nuget-wizard');
 
 test.beforeAll(async ({ admin }) => {
-  const local = await admin.post('/api/v1/repositories', {
+  const local = await admin.post(repositories(), {
     data: { key: localKey, class: 'local', format: 'nuget' },
   });
   expect(local.status(), await local.text()).toBe(201);
-  const virtual = await admin.post('/api/v1/repositories', {
+  const virtual = await admin.post(repositories(), {
     data: {
       key: virtualKey,
       class: 'virtual',
@@ -29,9 +29,9 @@ test.beforeAll(async ({ admin }) => {
 });
 
 test.afterAll(async ({ admin }) => {
-  await admin.delete(`/api/v1/repositories/${virtualKey}`);
-  await admin.delete(`/api/v1/repositories/${localKey}`);
-  await admin.delete(`/api/v1/repositories/${wizardKey}`);
+  await admin.delete(repositoryApi(virtualKey));
+  await admin.delete(repositoryApi(localKey));
+  await admin.delete(repositoryApi(wizardKey));
 });
 
 test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json URL, and the guide, in both colour schemes', async ({
@@ -41,10 +41,10 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
 }) => {
   await signInLocal(page);
   const port = new URL(baseURL ?? '').port;
-  const feed = (key: string) => `https://localhost:${port}/api/nuget/${key}/v3/index.json`;
+  const feed = (key: string) => `https://localhost:${port}/api/nuget/${e2eProject}/${key}/v3/index.json`;
 
   await test.step('the client setup page offers NuGet with its three clients', async () => {
-    await page.goto(`/ui/en/setup?repository=${virtualKey}`);
+    await page.goto(`/ui/en/setup?repository=${qualified(virtualKey)}`);
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
     await expect(
       page
@@ -99,10 +99,10 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
   for (const scheme of ['light', 'dark'] as const) {
     await test.step(`axe on the setup page and the guide in the ${scheme} scheme`, async () => {
       await page.emulateMedia({ colorScheme: scheme });
-      await page.goto(`/ui/en/setup?repository=${virtualKey}&client=dotnet`);
+      await page.goto(`/ui/en/setup?repository=${qualified(virtualKey)}&client=dotnet`);
       await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
       await expectAccessible(page, `client setup, NuGet (${scheme})`);
-      await page.goto(`/ui/en/guides?format=nuget&client=dotnet&repository=${virtualKey}`);
+      await page.goto(`/ui/en/guides?format=nuget&client=dotnet&repository=${qualified(virtualKey)}`);
       await expect(page.getByRole('heading', { name: 'Guides', level: 1 })).toBeVisible();
       await expect(
         page
@@ -125,7 +125,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
   await signInLocal(page);
   const mode = page.getByRole('combobox', { name: 'deleteMode' });
   const nugetMember = async () => {
-    const res = await admin.get(`/api/v1/repositories/${wizardKey}`);
+    const res = await admin.get(repositoryApi(wizardKey));
     expect(res.status()).toBe(200);
     return ((await res.json()) as { nuget?: Record<string, unknown> }).nuget;
   };
@@ -136,6 +136,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
     await page.getByRole('button', { name: 'Next' }).click();
     await page.getByRole('radio', { name: /^Local/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByLabel('Project', { exact: true }).selectOption(e2eProject);
     await page.locator('#f-key').fill(wizardKey);
     await expect(page.getByText('The key is available.')).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
@@ -150,7 +151,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('deleteMode: delete')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${wizardKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${e2eProject}/${wizardKey}$`));
     expect(await nugetMember()).toEqual({ deleteMode: 'delete' });
   });
 

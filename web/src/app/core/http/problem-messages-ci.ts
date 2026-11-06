@@ -3,8 +3,8 @@
  * R-CI-010 to R-CI-014). `describeProblem` consults this table after the access table. The 422 codes
  * arrive as the `code` of the problem (an issuer's validation) or as `errors[].code` with the pointer
  * of the member (a mapping's save-time rules); both read from this one table. Returns null for a code
- * this table does not know. `action_not_allowed`, `repository_outside_project` and
- * `project_prefix_required` live in the access table.
+ * this table does not know. `action_not_allowed` and `repository_outside_project`
+ * are in the access table.
  */
 export function describeCiProblem(code: string | null): string | null {
   switch (code) {

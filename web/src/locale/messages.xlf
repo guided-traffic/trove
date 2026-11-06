@@ -843,25 +843,9 @@
         <source>A service account of a project can only be granted by the policies of its own project.</source>
       </segment>
     </unit>
-    <unit id="problem.project_prefix_required">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:100</note>
-      </notes>
-      <segment>
-        <source>The name must start with the key of the project and a hyphen.</source>
-      </segment>
-    </unit>
-    <unit id="problem.name_reserved_by_project">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:102</note>
-      </notes>
-      <segment>
-        <source>The name starts with the key of a project and a hyphen, which only that project&apos;s service accounts may use. Choose another name, or create the account in the project.</source>
-      </segment>
-    </unit>
     <unit id="problem.project_account_not_groupable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:104</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:100</note>
       </notes>
       <segment>
         <source>A service account of a project cannot be a member of a group.</source>
@@ -869,47 +853,23 @@
     </unit>
     <unit id="problem.project_not_empty">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:106</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:102</note>
       </notes>
       <segment>
-        <source>The project still has repositories or service accounts. Unassign the repositories and delete the service accounts first.</source>
+        <source>The project still has repositories or service accounts. Move or delete the repositories and delete the service accounts first.</source>
       </segment>
     </unit>
-    <unit id="problem.repository_assigned">
+    <unit id="problem.principal_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:108</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:104</note>
       </notes>
       <segment>
-        <source>The repository belongs to another project. Move it to take it over.</source>
-      </segment>
-    </unit>
-    <unit id="problem.project_owner_changed">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:110</note>
-      </notes>
-      <segment>
-        <source>The repository was moved to another project in the meantime. Read it again and decide again.</source>
-      </segment>
-    </unit>
-    <unit id="problem.project_key_overlap">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:112</note>
-      </notes>
-      <segment>
-        <source>The key overlaps another project&apos;s key (no key is another&apos;s key followed by a hyphen) or the start of a service account&apos;s name.</source>
-      </segment>
-    </unit>
-    <unit id="problem.project_switch_off">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:114</note>
-      </notes>
-      <segment>
-        <source>This is switched off for the project. An administrator of trove can switch it on.</source>
+        <source>Only users and groups can be members of a project. A service account, a CI mapping, anonymous and authenticated cannot.</source>
       </segment>
     </unit>
     <unit id="problem.secret_value_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:116</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:106</note>
       </notes>
       <segment>
         <source>Enter the password or token of this upstream again.</source>
@@ -917,7 +877,7 @@
     </unit>
     <unit id="problem.outbound_path_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:118</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:108</note>
       </notes>
       <segment>
         <source>The outbound path of this repository is set by an administrator of trove.</source>
@@ -2558,8 +2518,8 @@
         <note category="location">src/app/features/audit/audit-log.html:255,256</note>
         <note category="location">src/app/features/browse/browse.html:116,118</note>
         <note category="location">src/app/features/browse/browse.html:140,142</note>
-        <note category="location">src/app/features/repositories/repository-list.html:170,171</note>
-        <note category="location">src/app/features/repositories/repository-list.html:183,184</note>
+        <note category="location">src/app/features/repositories/repository-list.html:182,183</note>
+        <note category="location">src/app/features/repositories/repository-list.html:195,196</note>
       </notes>
       <segment>
         <source>Any</source>
@@ -2577,7 +2537,7 @@
     <unit id="repo.filter.apply">
       <notes>
         <note category="location">src/app/features/audit/audit-log.ts:80</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:123</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:127</note>
         <note category="location">src/app/features/system/jobs-page.ts:78,81</note>
       </notes>
       <segment>
@@ -3264,13 +3224,13 @@
         <note category="location">src/app/features/browse/browse.html:110</note>
         <note category="location">src/app/features/browse/browse.html:113</note>
         <note category="location">src/app/features/browse/browse.html:435,436</note>
-        <note category="location">src/app/features/browse/browse.ts:181</note>
+        <note category="location">src/app/features/browse/browse.ts:184</note>
         <note category="location">src/app/features/repositories/repository-detail.html:31,32</note>
         <note category="location">src/app/features/repositories/repository-detail.html:65,66</note>
-        <note category="location">src/app/features/repositories/repository-list.html:163</note>
-        <note category="location">src/app/features/repositories/repository-list.html:168</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:130</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:233,234</note>
+        <note category="location">src/app/features/repositories/repository-list.html:175</note>
+        <note category="location">src/app/features/repositories/repository-list.html:180</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:135</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:237,238</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -3281,13 +3241,13 @@
         <note category="location">src/app/features/browse/browse.html:134</note>
         <note category="location">src/app/features/browse/browse.html:137</note>
         <note category="location">src/app/features/browse/browse.html:442,443</note>
-        <note category="location">src/app/features/browse/browse.ts:189</note>
+        <note category="location">src/app/features/browse/browse.ts:192</note>
         <note category="location">src/app/features/repositories/repository-detail.html:33,34</note>
         <note category="location">src/app/features/repositories/repository-detail.html:71,72</note>
-        <note category="location">src/app/features/repositories/repository-list.html:176</note>
-        <note category="location">src/app/features/repositories/repository-list.html:181</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:127</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:235,236</note>
+        <note category="location">src/app/features/repositories/repository-list.html:188</note>
+        <note category="location">src/app/features/repositories/repository-list.html:193</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:132</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:239,240</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -3322,7 +3282,7 @@
     <unit id="browse.load-more">
       <notes>
         <note category="location">src/app/features/browse/browse.html:214,215</note>
-        <note category="location">src/app/features/browse/browse.ts:837</note>
+        <note category="location">src/app/features/browse/browse.ts:848</note>
       </notes>
       <segment>
         <source>Load more</source>
@@ -3479,8 +3439,8 @@
     <unit id="repo.deleting">
       <notes>
         <note category="location">src/app/features/browse/browse.html:371,372</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:243,244</note>
-        <note category="location">src/app/features/repositories/repository-list.html:129,130</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:262,263</note>
+        <note category="location">src/app/features/repositories/repository-list.html:130,131</note>
       </notes>
       <segment>
         <source>Deleting</source>
@@ -3555,8 +3515,8 @@
         <note category="location">src/app/features/browse/browse.html:444,445</note>
         <note category="location">src/app/features/repositories/repository-detail.html:35,36</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:18,20</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:237,238</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:491</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:241,242</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:512</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -3630,7 +3590,7 @@
     <unit id="browse.tab.contents">
       <notes>
         <note category="location">src/app/features/browse/browse.html:503,504</note>
-        <note category="location">src/app/features/browse/browse.ts:845</note>
+        <note category="location">src/app/features/browse/browse.ts:856</note>
       </notes>
       <segment>
         <source>Contents</source>
@@ -3671,7 +3631,7 @@
     <unit id="browse.fact.size">
       <notes>
         <note category="location">src/app/features/browse/browse.html:519,520</note>
-        <note category="location">src/app/features/browse/browse.ts:337</note>
+        <note category="location">src/app/features/browse/browse.ts:345</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -3697,7 +3657,7 @@
     <unit id="browse.fact.modified">
       <notes>
         <note category="location">src/app/features/browse/browse.html:533,534</note>
-        <note category="location">src/app/features/browse/browse.ts:338</note>
+        <note category="location">src/app/features/browse/browse.ts:346</note>
       </notes>
       <segment>
         <source>Last changed</source>
@@ -3745,7 +3705,7 @@
     </unit>
     <unit id="route.browse.title">
       <notes>
-        <note category="location">src/app/features/browse/browse.routes.ts:24</note>
+        <note category="location">src/app/features/browse/browse.routes.ts:25</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -3753,7 +3713,7 @@
     </unit>
     <unit id="route.browse.tree.title">
       <notes>
-        <note category="location">src/app/features/browse/browse.routes.ts:27</note>
+        <note category="location">src/app/features/browse/browse.routes.ts:28</note>
       </notes>
       <segment>
         <source>File tree</source>
@@ -3761,7 +3721,7 @@
     </unit>
     <unit id="browse.col.name">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:336</note>
+        <note category="location">src/app/features/browse/browse.ts:344</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -3769,11 +3729,11 @@
     </unit>
     <unit id="repo.class.local">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:344</note>
-        <note category="location">src/app/features/guides/guide-page.ts:133</note>
+        <note category="location">src/app/features/browse/browse.ts:352</note>
+        <note category="location">src/app/features/guides/guide-page.ts:139</note>
         <note category="location">src/app/features/packages/package-detail.ts:342</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:80</note>
-        <note category="location">src/app/features/setup/client-setup.ts:210</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:84</note>
+        <note category="location">src/app/features/setup/client-setup.ts:212</note>
       </notes>
       <segment>
         <source>Local</source>
@@ -3781,11 +3741,11 @@
     </unit>
     <unit id="repo.class.remote">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:346</note>
-        <note category="location">src/app/features/guides/guide-page.ts:135</note>
+        <note category="location">src/app/features/browse/browse.ts:354</note>
+        <note category="location">src/app/features/guides/guide-page.ts:141</note>
         <note category="location">src/app/features/packages/package-detail.ts:343</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:82</note>
-        <note category="location">src/app/features/setup/client-setup.ts:212</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:86</note>
+        <note category="location">src/app/features/setup/client-setup.ts:214</note>
       </notes>
       <segment>
         <source>Remote</source>
@@ -3793,11 +3753,11 @@
     </unit>
     <unit id="repo.class.virtual">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:348</note>
-        <note category="location">src/app/features/guides/guide-page.ts:137</note>
+        <note category="location">src/app/features/browse/browse.ts:356</note>
+        <note category="location">src/app/features/guides/guide-page.ts:143</note>
         <note category="location">src/app/features/packages/package-detail.ts:344</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:84</note>
-        <note category="location">src/app/features/setup/client-setup.ts:214</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:88</note>
+        <note category="location">src/app/features/setup/client-setup.ts:216</note>
       </notes>
       <segment>
         <source>Virtual</source>
@@ -3805,7 +3765,7 @@
     </unit>
     <unit id="browse.chip.remove">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:700</note>
+        <note category="location">src/app/features/browse/browse.ts:711</note>
       </notes>
       <segment>
         <source>Remove the filter <ph id="0" equiv="filter" disp="label"/></source>
@@ -3813,7 +3773,7 @@
     </unit>
     <unit id="browse.folder.created">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:763</note>
+        <note category="location">src/app/features/browse/browse.ts:774</note>
       </notes>
       <segment>
         <source>Folder <ph id="0" equiv="path" disp="created"/> created.</source>
@@ -3821,7 +3781,7 @@
     </unit>
     <unit id="browse.delete.folder-many">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:789</note>
+        <note category="location">src/app/features/browse/browse.ts:800</note>
       </notes>
       <segment>
         <source>The folder holds more than <ph id="0" equiv="limit" disp="TYPE_TO_CONFIRM_ABOVE"/> items. They are deleted for good.</source>
@@ -3829,7 +3789,7 @@
     </unit>
     <unit id="browse.delete.folder">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:790</note>
+        <note category="location">src/app/features/browse/browse.ts:801</note>
       </notes>
       <segment>
         <source>The folder holds <ph id="0" equiv="count" disp="count"/> items. They are deleted for good.</source>
@@ -3837,7 +3797,7 @@
     </unit>
     <unit id="browse.delete.file">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:798</note>
+        <note category="location">src/app/features/browse/browse.ts:809</note>
       </notes>
       <segment>
         <source>The file is deleted for good.</source>
@@ -3845,7 +3805,7 @@
     </unit>
     <unit id="browse.delete.title">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:801</note>
+        <note category="location">src/app/features/browse/browse.ts:812</note>
       </notes>
       <segment>
         <source>Delete <ph id="0" equiv="path" disp="sel.path"/>?</source>
@@ -3853,7 +3813,7 @@
     </unit>
     <unit id="browse.delete.confirm">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:803</note>
+        <note category="location">src/app/features/browse/browse.ts:814</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -3861,7 +3821,7 @@
     </unit>
     <unit id="browse.delete.failed">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:824</note>
+        <note category="location">src/app/features/browse/browse.ts:835</note>
       </notes>
       <segment>
         <source>The deletion failed. Some items may be gone.</source>
@@ -3869,7 +3829,7 @@
     </unit>
     <unit id="browse.deleted">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:833</note>
+        <note category="location">src/app/features/browse/browse.ts:844</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="path" disp="path"/> deleted.</source>
@@ -3877,7 +3837,7 @@
     </unit>
     <unit id="browse.copy-path">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:838</note>
+        <note category="location">src/app/features/browse/browse.ts:849</note>
       </notes>
       <segment>
         <source>Copy path</source>
@@ -3885,7 +3845,7 @@
     </unit>
     <unit id="browse.copy-url">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:839</note>
+        <note category="location">src/app/features/browse/browse.ts:850</note>
       </notes>
       <segment>
         <source>Copy download URL</source>
@@ -3893,7 +3853,7 @@
     </unit>
     <unit id="browse.copy-listing">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:840</note>
+        <note category="location">src/app/features/browse/browse.ts:851</note>
       </notes>
       <segment>
         <source>Copy listing URL</source>
@@ -3901,7 +3861,7 @@
     </unit>
     <unit id="browse.copy-digest">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:841</note>
+        <note category="location">src/app/features/browse/browse.ts:852</note>
       </notes>
       <segment>
         <source>Copy checksum</source>
@@ -3909,7 +3869,7 @@
     </unit>
     <unit id="browse.copy-curl">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:842</note>
+        <note category="location">src/app/features/browse/browse.ts:853</note>
       </notes>
       <segment>
         <source>Copy the curl command</source>
@@ -3917,7 +3877,7 @@
     </unit>
     <unit id="browse.delete.progress">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:843</note>
+        <note category="location">src/app/features/browse/browse.ts:854</note>
       </notes>
       <segment>
         <source>Deleting items</source>
@@ -3925,7 +3885,7 @@
     </unit>
     <unit id="browse.tab.general">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:846</note>
+        <note category="location">src/app/features/browse/browse.ts:857</note>
       </notes>
       <segment>
         <source>General</source>
@@ -3933,7 +3893,7 @@
     </unit>
     <unit id="browse.tab.statistics">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:847</note>
+        <note category="location">src/app/features/browse/browse.ts:858</note>
       </notes>
       <segment>
         <source>Statistics</source>
@@ -3941,7 +3901,7 @@
     </unit>
     <unit id="browse.tab.api">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:848</note>
+        <note category="location">src/app/features/browse/browse.ts:859</note>
       </notes>
       <segment>
         <source>API</source>
@@ -3949,7 +3909,7 @@
     </unit>
     <unit id="browse.folder-empty">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:850</note>
+        <note category="location">src/app/features/browse/browse.ts:861</note>
       </notes>
       <segment>
         <source>This folder is empty.</source>
@@ -3957,7 +3917,7 @@
     </unit>
     <unit id="browse.contents.caption">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:851</note>
+        <note category="location">src/app/features/browse/browse.ts:862</note>
       </notes>
       <segment>
         <source>Contents of the selected folder</source>
@@ -5978,7 +5938,7 @@
     <unit id="ci.yes">
       <notes>
         <note category="location">src/app/features/ci/issuer-form.ts:234</note>
-        <note category="location">src/app/features/ci/project-ci.ts:80</note>
+        <note category="location">src/app/features/ci/project-ci.ts:78</note>
       </notes>
       <segment>
         <source>yes</source>
@@ -5987,7 +5947,7 @@
     <unit id="ci.no">
       <notes>
         <note category="location">src/app/features/ci/issuer-form.ts:235</note>
-        <note category="location">src/app/features/ci/project-ci.ts:81</note>
+        <note category="location">src/app/features/ci/project-ci.ts:79</note>
       </notes>
       <segment>
         <source>no</source>
@@ -6593,17 +6553,9 @@
         <source>Repositories</source>
       </segment>
     </unit>
-    <unit id="ci.editor.repositories-hint">
-      <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:203,205</note>
-      </notes>
-      <segment>
-        <source>One key or pattern per line. A template needs literal text next to the claim.</source>
-      </segment>
-    </unit>
     <unit id="ci.editor.project-repos">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:206</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:205</note>
       </notes>
       <segment>
         <source>Repositories of the project</source>
@@ -6611,7 +6563,7 @@
     </unit>
     <unit id="ci.editor.kind">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:213</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:212</note>
       </notes>
       <segment>
         <source>Applies to</source>
@@ -6619,7 +6571,7 @@
     </unit>
     <unit id="ci.editor.include">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:217</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:216</note>
       </notes>
       <segment>
         <source>Include</source>
@@ -6627,7 +6579,7 @@
     </unit>
     <unit id="ci.editor.exclude">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:223</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:222</note>
       </notes>
       <segment>
         <source>Exclude</source>
@@ -6635,7 +6587,7 @@
     </unit>
     <unit id="ci.editor.actions">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:225,226</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:224,225</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -6643,7 +6595,7 @@
     </unit>
     <unit id="ci.editor.ownership">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:230</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:229</note>
       </notes>
       <segment>
         <source>Ownership of package names</source>
@@ -6651,7 +6603,7 @@
     </unit>
     <unit id="ci.editor.shared-ownership">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:234,237</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:233,236</note>
       </notes>
       <segment>
         <source>Without a binding the mapping owns the names it claims, so every project it matches co-owns them (shared_ownership).</source>
@@ -6659,7 +6611,7 @@
     </unit>
     <unit id="ci.editor.add-grant">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:240,242</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:239,241</note>
       </notes>
       <segment>
         <source>Add inline grant</source>
@@ -6667,7 +6619,7 @@
     </unit>
     <unit id="ci.editor.options">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:245,246</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:244,245</note>
       </notes>
       <segment>
         <source>Options and lifetime</source>
@@ -6675,7 +6627,7 @@
     </unit>
     <unit id="ci.editor.max-ttl">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:249,250</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:248,249</note>
       </notes>
       <segment>
         <source>Maximum token lifetime (seconds)</source>
@@ -6683,7 +6635,7 @@
     </unit>
     <unit id="ci.editor.max-ttl-hint">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:256,258</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:255,257</note>
       </notes>
       <segment>
         <source>Empty: the limit of the issuer and of the installation.</source>
@@ -6691,7 +6643,7 @@
     </unit>
     <unit id="ci.editor.cross">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:260,261</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:259,260</note>
       </notes>
       <segment>
         <source>Pipelines from other projects</source>
@@ -6699,7 +6651,7 @@
     </unit>
     <unit id="ci.editor.allow-unprotected">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:268,270</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:267,269</note>
       </notes>
       <segment>
         <source> Allow unprotected refs to use write grants </source>
@@ -6707,7 +6659,7 @@
     </unit>
     <unit id="ci.editor.allow-unprotected-warning">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:274,276</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:273,275</note>
       </notes>
       <segment>
         <source> Anyone who can push a branch of a matching project can run a pipeline on it and publish, overwrite or delete with these grants. Protected refs are the guard; use this only where every branch is trusted. The option is recorded in the audit log. </source>
@@ -6715,7 +6667,7 @@
     </unit>
     <unit id="ci.editor.create">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:286,287</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:285,286</note>
       </notes>
       <segment>
         <source>Create mapping</source>
@@ -6723,7 +6675,7 @@
     </unit>
     <unit id="ci.editor.save">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:288,290</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:287,289</note>
       </notes>
       <segment>
         <source>Save mapping</source>
@@ -6731,7 +6683,7 @@
     </unit>
     <unit id="ci.editor.test">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:293,294</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:292,293</note>
       </notes>
       <segment>
         <source>Test with claims</source>
@@ -6739,7 +6691,7 @@
     </unit>
     <unit id="ci.editor.snippet">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:295,298</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:294,297</note>
       </notes>
       <segment>
         <source>CI snippet</source>
@@ -6747,7 +6699,7 @@
     </unit>
     <unit id="ci.editor.test-stored">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:300,304</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:299,303</note>
       </notes>
       <segment>
         <source>Test with claims uses the saved mapping. Save your changes first to test them.</source>
@@ -6755,7 +6707,7 @@
     </unit>
     <unit id="ci.editor.snippet-title">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:306,307</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:305,306</note>
       </notes>
       <segment>
         <source>CI snippet</source>
@@ -6763,7 +6715,7 @@
     </unit>
     <unit id="ci.editor.snippet-hint">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:308,310</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:307,309</note>
       </notes>
       <segment>
         <source> A .gitlab-ci.yml fragment for this mapping: the ID token with the audience of the issuer, the exchange and the client configuration. It holds no secret. </source>
@@ -6771,7 +6723,7 @@
     </unit>
     <unit id="ci.editor.snippet-format">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:310</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:309</note>
       </notes>
       <segment>
         <source>Package client</source>
@@ -6779,7 +6731,7 @@
     </unit>
     <unit id="ci.editor.snippet-copy">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:316,317</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:315,316</note>
       </notes>
       <segment>
         <source>Copy the snippet</source>
@@ -6787,7 +6739,7 @@
     </unit>
     <unit id="ci.editor.snippet-copy-note">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:317,319</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:316,318</note>
       </notes>
       <segment>
         <source>Copy the snippet</source>
@@ -6795,15 +6747,31 @@
     </unit>
     <unit id="ci.editor.snippet-aria">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:319</note>
+        <note category="location">src/app/features/ci/mapping-editor.html:318</note>
       </notes>
       <segment>
         <source>CI snippet</source>
       </segment>
     </unit>
+    <unit id="ci.editor.repositories-hint-project">
+      <notes>
+        <note category="location">src/app/features/ci/mapping-editor.ts:112</note>
+      </notes>
+      <segment>
+        <source>One key or pattern per line. A template needs literal text next to the claim.</source>
+      </segment>
+    </unit>
+    <unit id="ci.editor.repositories-hint">
+      <notes>
+        <note category="location">src/app/features/ci/mapping-editor.ts:113</note>
+      </notes>
+      <segment>
+        <source>One project/key or pattern per line, or a class such as @any-local. A template needs literal text next to the claim.</source>
+      </segment>
+    </unit>
     <unit id="ci.editor.kind.packages">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:122</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:128</note>
       </notes>
       <segment>
         <source>Package names</source>
@@ -6811,7 +6779,7 @@
     </unit>
     <unit id="ci.editor.kind.paths">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:123</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:129</note>
       </notes>
       <segment>
         <source>File paths</source>
@@ -6819,7 +6787,7 @@
     </unit>
     <unit id="ci.editor.ownership.default">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:126</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:132</note>
       </notes>
       <segment>
         <source>Default (bind the project when the actions write)</source>
@@ -6827,7 +6795,7 @@
     </unit>
     <unit id="ci.editor.ownership.bind">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:127</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:133</note>
       </notes>
       <segment>
         <source>Bind the package name to the project</source>
@@ -6835,7 +6803,7 @@
     </unit>
     <unit id="ci.editor.ownership.none">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:128</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:134</note>
       </notes>
       <segment>
         <source>None (the mapping owns the names)</source>
@@ -6843,7 +6811,7 @@
     </unit>
     <unit id="ci.editor.cross.deny">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:131</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:137</note>
       </notes>
       <segment>
         <source>Deny (a fork or merge request from another project gets nothing)</source>
@@ -6851,7 +6819,7 @@
     </unit>
     <unit id="ci.editor.cross.read-only">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:132</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:138</note>
       </notes>
       <segment>
         <source>Read only (such a pipeline can read, never write)</source>
@@ -6859,7 +6827,7 @@
     </unit>
     <unit id="ci.editor.include-hint">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:172</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:178</note>
       </notes>
       <segment>
         <source>One pattern per line, for example <ph id="0" equiv="example" disp="&apos;@{{ namespace_path | slug }}/*&apos;"/></source>
@@ -6867,7 +6835,7 @@
     </unit>
     <unit id="ci.editor.grant-label">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:181</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:187</note>
       </notes>
       <segment>
         <source>Inline grant <ph id="0" equiv="number" disp="i + 1"/></source>
@@ -6875,7 +6843,7 @@
     </unit>
     <unit id="ci.editor.name-hint-project">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:186</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:192</note>
       </notes>
       <segment>
         <source>Starts with <ph id="0" equiv="project" disp="key"/>- and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.</source>
@@ -6883,7 +6851,7 @@
     </unit>
     <unit id="ci.editor.name-hint">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:187</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:193</note>
       </notes>
       <segment>
         <source>It cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.</source>
@@ -6891,7 +6859,7 @@
     </unit>
     <unit id="ci.editor.name-taken">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:233</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:239</note>
       </notes>
       <segment>
         <source>A mapping of this issuer has this name.</source>
@@ -6899,7 +6867,7 @@
     </unit>
     <unit id="ci.editor.draft-restored">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:278</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:284</note>
       </notes>
       <segment>
         <source>Your entries were restored. Save the mapping again.</source>
@@ -6907,7 +6875,7 @@
     </unit>
     <unit id="ci.editor.json-invalid">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:344</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:350</note>
       </notes>
       <segment>
         <source>This is not a JSON object. The condition keeps the last valid version until it is.</source>
@@ -6915,7 +6883,7 @@
     </unit>
     <unit id="ci.editor.created">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:423</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:429</note>
       </notes>
       <segment>
         <source>Mapping created.</source>
@@ -6923,7 +6891,7 @@
     </unit>
     <unit id="ci.editor.saved">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.ts:453</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:459</note>
       </notes>
       <segment>
         <source>Mapping saved.</source>
@@ -7155,7 +7123,7 @@
     </unit>
     <unit id="ci.project.heading">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:24,25</note>
+        <note category="location">src/app/features/ci/project-ci.ts:22,23</note>
       </notes>
       <segment>
         <source>CI identity</source>
@@ -7163,7 +7131,7 @@
     </unit>
     <unit id="ci.project.back">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:25,26</note>
+        <note category="location">src/app/features/ci/project-ci.ts:23,24</note>
       </notes>
       <segment>
         <source>Back to the project</source>
@@ -7171,7 +7139,7 @@
     </unit>
     <unit id="ci.project.test">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:26,28</note>
+        <note category="location">src/app/features/ci/project-ci.ts:24,26</note>
       </notes>
       <segment>
         <source>Test with claims</source>
@@ -7179,7 +7147,7 @@
     </unit>
     <unit id="ci.project.hint">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:30,33</note>
+        <note category="location">src/app/features/ci/project-ci.ts:28,31</note>
       </notes>
       <segment>
         <source> Jobs of your GitLab projects exchange their ID token for a short-lived token. The mappings below decide what such a job may do in the repositories of this project. They apply next to the administrators&apos; mappings; yours can never take anything away from theirs. </source>
@@ -7187,7 +7155,7 @@
     </unit>
     <unit id="ci.project.issuers">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:37,38</note>
+        <note category="location">src/app/features/ci/project-ci.ts:35,36</note>
       </notes>
       <segment>
         <source>Issuers you can use</source>
@@ -7195,7 +7163,7 @@
     </unit>
     <unit id="ci.project.issuers-hint">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:38,40</note>
+        <note category="location">src/app/features/ci/project-ci.ts:36,38</note>
       </notes>
       <segment>
         <source>Issuers are managed by the administrators of trove. A mapping names one of them.</source>
@@ -7203,7 +7171,7 @@
     </unit>
     <unit id="ci.project.issuers-empty">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:45,47</note>
+        <note category="location">src/app/features/ci/project-ci.ts:43,45</note>
       </notes>
       <segment>
         <source>No issuer is registered yet. Ask an administrator of trove.</source>
@@ -7211,7 +7179,7 @@
     </unit>
     <unit id="ci.project.mappings">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:59,60</note>
+        <note category="location">src/app/features/ci/project-ci.ts:57,58</note>
       </notes>
       <segment>
         <source>Mappings of the project</source>
@@ -7219,7 +7187,7 @@
     </unit>
     <unit id="ci.project.issuances">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:64,65</note>
+        <note category="location">src/app/features/ci/project-ci.ts:62,63</note>
       </notes>
       <segment>
         <source>Issued tokens</source>
@@ -7227,7 +7195,7 @@
     </unit>
     <unit id="ci.project.issuers-caption">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:83</note>
+        <note category="location">src/app/features/ci/project-ci.ts:81</note>
       </notes>
       <segment>
         <source>CI issuers</source>
@@ -7235,7 +7203,7 @@
     </unit>
     <unit id="ci.project.col.name">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:85</note>
+        <note category="location">src/app/features/ci/project-ci.ts:83</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -7243,7 +7211,7 @@
     </unit>
     <unit id="ci.project.col.kind">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:86</note>
+        <note category="location">src/app/features/ci/project-ci.ts:84</note>
       </notes>
       <segment>
         <source>Kind</source>
@@ -7251,7 +7219,7 @@
     </unit>
     <unit id="ci.project.col.issuer">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:87</note>
+        <note category="location">src/app/features/ci/project-ci.ts:85</note>
       </notes>
       <segment>
         <source>Issuer URL</source>
@@ -7259,7 +7227,7 @@
     </unit>
     <unit id="ci.project.col.public">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:88</note>
+        <note category="location">src/app/features/ci/project-ci.ts:86</note>
       </notes>
       <segment>
         <source>Public</source>
@@ -7267,7 +7235,7 @@
     </unit>
     <unit id="ci.project.col.public-help">
       <notes>
-        <note category="location">src/app/features/ci/project-ci.ts:88</note>
+        <note category="location">src/app/features/ci/project-ci.ts:86</note>
       </notes>
       <segment>
         <source>On a public issuer anyone can obtain tokens, so a mapping must pin the project or namespace by its ID.</source>
@@ -7482,7 +7450,7 @@
     <unit id="repo.col.actions">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:102,104</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:144</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:149</note>
         <note category="location">src/app/features/system/job-table.ts:31,33</note>
         <note category="location">src/app/features/system/tasks-card.ts:47,49</note>
       </notes>
@@ -7536,7 +7504,7 @@
     <unit id="repo.action.edit">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:170,171</note>
-        <note category="location">src/app/features/repositories/repository-list.html:106,107</note>
+        <note category="location">src/app/features/repositories/repository-list.html:107,108</note>
       </notes>
       <segment>
         <source>Edit</source>
@@ -7545,8 +7513,8 @@
     <unit id="repo.action.delete">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:177,178</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:237,239</note>
-        <note category="location">src/app/features/repositories/repository-list.html:123,124</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:238,240</note>
+        <note category="location">src/app/features/repositories/repository-list.html:124,125</note>
       </notes>
       <segment>
         <source> Delete </source>
@@ -7580,7 +7548,7 @@
     <unit id="ep.rule.delete.title">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:107</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:409</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:410</note>
       </notes>
       <segment>
         <source>Delete rule <ph id="0" equiv="name" disp="rule.name"/>?</source>
@@ -7589,7 +7557,7 @@
     <unit id="ep.rule.delete.text">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:109</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:411</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:412</note>
       </notes>
       <segment>
         <source>Content that only this rule exposes stops being retrievable on this endpoint.</source>
@@ -7598,7 +7566,7 @@
     <unit id="ep.rule.delete.confirm">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:111</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:413</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:414</note>
       </notes>
       <segment>
         <source>Delete rule</source>
@@ -7607,7 +7575,7 @@
     <unit id="ep.rule.deleted">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:117</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:419</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:420</note>
       </notes>
       <segment>
         <source>Rule <ph id="0" equiv="name" disp="rule.name"/> deleted.</source>
@@ -7624,7 +7592,7 @@
     <unit id="ep.copy-address">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:137</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:426</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:427</note>
       </notes>
       <segment>
         <source>Copy client address</source>
@@ -8052,7 +8020,7 @@
     <unit id="repo.edit.reset">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:417,418</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:228,229</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:229,230</note>
       </notes>
       <segment>
         <source> Discard changes </source>
@@ -8061,7 +8029,7 @@
     <unit id="repo.edit.unsaved">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:422,424</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:232,234</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:233,235</note>
       </notes>
       <segment>
         <source>You have unsaved changes.</source>
@@ -8368,7 +8336,7 @@
     </unit>
     <unit id="ep.save.diff.title">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:327</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:328</note>
       </notes>
       <segment>
         <source>Save changes to rule <ph id="0" equiv="name" disp="form.name"/>?</source>
@@ -8376,7 +8344,7 @@
     </unit>
     <unit id="ep.save.confirm">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:330</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:331</note>
       </notes>
       <segment>
         <source>Save</source>
@@ -8384,7 +8352,7 @@
     </unit>
     <unit id="ep.save.created">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:340</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:341</note>
       </notes>
       <segment>
         <source>Rule <ph id="0" equiv="name" disp="created.value.name"/> created.</source>
@@ -8392,8 +8360,8 @@
     </unit>
     <unit id="ep.save.saved">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:361</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:382</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:362</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:383</note>
       </notes>
       <segment>
         <source>Rule saved.</source>
@@ -9103,7 +9071,7 @@
     </unit>
     <unit id="guide.copy">
       <notes>
-        <note category="location">src/app/features/guides/guide-page.ts:102</note>
+        <note category="location">src/app/features/guides/guide-page.ts:108</note>
         <note category="location">src/app/features/guides/guide-view.ts:59</note>
       </notes>
       <segment>
@@ -10451,7 +10419,8 @@
     </unit>
     <unit id="route.permissions.detail.title">
       <notes>
-        <note category="location">src/app/features/permissions/permissions.routes.ts:17</note>
+        <note category="location">src/app/features/permissions/permissions.routes.ts:18</note>
+        <note category="location">src/app/features/permissions/permissions.routes.ts:23</note>
       </notes>
       <segment>
         <source>Permission policy</source>
@@ -10729,17 +10698,9 @@
         <source>Repository selectors</source>
       </segment>
     </unit>
-    <unit id="policy.repositories-hint">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:158,160</note>
-      </notes>
-      <segment>
-        <source>One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).</source>
-      </segment>
-    </unit>
     <unit id="policy.covers-checking">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:162,163</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:161,162</note>
       </notes>
       <segment>
         <source>Checking which repositories are covered.</source>
@@ -10747,7 +10708,7 @@
     </unit>
     <unit id="policy.covers">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:165,166</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:164,165</note>
       </notes>
       <segment>
         <source>Repositories covered now: <ph id="0" equiv="INTERPOLATION" disp="{{ covers().length }}"/></source>
@@ -10755,7 +10716,7 @@
     </unit>
     <unit id="policy.project-repos">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:171,172</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:170,171</note>
       </notes>
       <segment>
         <source>Repositories of the project:</source>
@@ -10763,7 +10724,7 @@
     </unit>
     <unit id="policy.add-selector">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:174</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:173</note>
       </notes>
       <segment>
         <source>Add selector</source>
@@ -10771,15 +10732,15 @@
     </unit>
     <unit id="policy.project-selectors">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:181,185</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:180,184</note>
       </notes>
       <segment>
-        <source> A project policy covers the repositories of its project only, whatever the selectors name. </source>
+        <source> A project policy covers the repositories of its project only; its selectors are bare keys, never project/key. </source>
       </segment>
     </unit>
     <unit id="policy.packages">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:185,186</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:184,185</note>
       </notes>
       <segment>
         <source>Package names</source>
@@ -10787,7 +10748,7 @@
     </unit>
     <unit id="policy.patterns-help">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:187,189</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:186,188</note>
       </notes>
       <segment>
         <source> One pattern per line. * is any run of characters except /, ** includes /, ? is one character, \ makes the next character literal. An empty include list is unrestricted; exclude always wins within this policy. </source>
@@ -10795,7 +10756,7 @@
     </unit>
     <unit id="policy.packages-include">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:190</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:189</note>
       </notes>
       <segment>
         <source>Include</source>
@@ -10803,7 +10764,7 @@
     </unit>
     <unit id="policy.packages-exclude">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:191</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:190</note>
       </notes>
       <segment>
         <source>Exclude</source>
@@ -10811,7 +10772,7 @@
     </unit>
     <unit id="policy.paths">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:193,194</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:192,193</note>
       </notes>
       <segment>
         <source>Paths</source>
@@ -10819,7 +10780,7 @@
     </unit>
     <unit id="policy.paths-include">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:195</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:194</note>
       </notes>
       <segment>
         <source>Include</source>
@@ -10827,7 +10788,7 @@
     </unit>
     <unit id="policy.paths-exclude">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:196</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:195</note>
       </notes>
       <segment>
         <source>Exclude</source>
@@ -10835,7 +10796,7 @@
     </unit>
     <unit id="policy.tester">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:199,200</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:198,199</note>
       </notes>
       <segment>
         <source>Pattern tester</source>
@@ -10843,7 +10804,7 @@
     </unit>
     <unit id="policy.tester-kind">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:201</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:200</note>
       </notes>
       <segment>
         <source>Test against</source>
@@ -10851,7 +10812,7 @@
     </unit>
     <unit id="policy.tester-value">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:202</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:201</note>
       </notes>
       <segment>
         <source>Does this match?</source>
@@ -10859,7 +10820,7 @@
     </unit>
     <unit id="policy.preview">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:214,215</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:213,214</note>
       </notes>
       <segment>
         <source>Preview</source>
@@ -10867,7 +10828,7 @@
     </unit>
     <unit id="policy.preview-hide">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:217,219</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:216,218</note>
       </notes>
       <segment>
         <source>Hide preview</source>
@@ -10875,7 +10836,7 @@
     </unit>
     <unit id="policy.preview-show">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:219,221</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:218,220</note>
       </notes>
       <segment>
         <source>Show preview</source>
@@ -10883,7 +10844,7 @@
     </unit>
     <unit id="policy.preview-denied">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:224,225</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:223,224</note>
       </notes>
       <segment>
         <source>The preview needs the permission to read policies.</source>
@@ -10891,7 +10852,7 @@
     </unit>
     <unit id="policy.valid">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:227,228</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:226,227</note>
       </notes>
       <segment>
         <source>No problems found.</source>
@@ -10899,7 +10860,7 @@
     </unit>
     <unit id="policy.invalid">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:229,230</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:228,229</note>
       </notes>
       <segment>
         <source>The policy has problems:</source>
@@ -10907,7 +10868,7 @@
     </unit>
     <unit id="policy.warnings">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:237,238</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:236,237</note>
       </notes>
       <segment>
         <source>Warnings</source>
@@ -10915,7 +10876,7 @@
     </unit>
     <unit id="policy.covered">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:244,245</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:243,244</note>
       </notes>
       <segment>
         <source>Covered repositories</source>
@@ -10923,7 +10884,7 @@
     </unit>
     <unit id="policy.covers-none">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:246,248</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:245,247</note>
       </notes>
       <segment>
         <source>No repository is covered.</source>
@@ -10931,7 +10892,7 @@
     </unit>
     <unit id="policy.preview-loading">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:255,258</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:254,257</note>
       </notes>
       <segment>
         <source>Checking the policy.</source>
@@ -10939,7 +10900,7 @@
     </unit>
     <unit id="policy.try">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:258,259</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:257,258</note>
       </notes>
       <segment>
         <source>Try it</source>
@@ -10947,7 +10908,7 @@
     </unit>
     <unit id="policy.try-help">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:259,260</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:258,259</note>
       </notes>
       <segment>
         <source>Ask why a principal can or cannot do something. Only this draft is evaluated.</source>
@@ -10955,7 +10916,7 @@
     </unit>
     <unit id="policy.try-principal">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:261</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:260</note>
       </notes>
       <segment>
         <source>Principal</source>
@@ -10963,7 +10924,7 @@
     </unit>
     <unit id="policy.try-principal-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:261,262</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:260,261</note>
       </notes>
       <segment>
         <source>for example user:alice</source>
@@ -10971,7 +10932,7 @@
     </unit>
     <unit id="policy.try-repository">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:262</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:261</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -10979,7 +10940,7 @@
     </unit>
     <unit id="policy.try-action">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:263</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:262</note>
       </notes>
       <segment>
         <source>Action</source>
@@ -10987,7 +10948,7 @@
     </unit>
     <unit id="policy.try-ask">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:264,266</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:263,265</note>
       </notes>
       <segment>
         <source>Explain</source>
@@ -10995,7 +10956,7 @@
     </unit>
     <unit id="policy.allowed">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:274,275</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:273,274</note>
       </notes>
       <segment>
         <source>Allowed by this draft</source>
@@ -11003,7 +10964,7 @@
     </unit>
     <unit id="policy.denied">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:276,278</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:275,277</note>
       </notes>
       <segment>
         <source>Not granted by this draft</source>
@@ -11011,7 +10972,7 @@
     </unit>
     <unit id="policy.mine-yes">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:290,291</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:289,290</note>
       </notes>
       <segment>
         <source>For comparison, you yourself may do this under the stored policies.</source>
@@ -11019,7 +10980,7 @@
     </unit>
     <unit id="policy.mine-no">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:292,293</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:291,292</note>
       </notes>
       <segment>
         <source>For comparison, you yourself may not do this under the stored policies.</source>
@@ -11027,7 +10988,7 @@
     </unit>
     <unit id="policy.create">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:305,306</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:304,305</note>
       </notes>
       <segment>
         <source>Create policy</source>
@@ -11035,7 +10996,7 @@
     </unit>
     <unit id="policy.review">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:307,309</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:306,308</note>
       </notes>
       <segment>
         <source>Review and save</source>
@@ -11043,7 +11004,7 @@
     </unit>
     <unit id="policy.delete">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:311,314</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:310,313</note>
       </notes>
       <segment>
         <source>Delete policy</source>
@@ -11051,7 +11012,7 @@
     </unit>
     <unit id="policy.fix-first">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:315,317</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:314,316</note>
       </notes>
       <segment>
         <source>Fix the problems in the preview first.</source>
@@ -11059,7 +11020,7 @@
     </unit>
     <unit id="policy.test.packages">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:173</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:176</note>
       </notes>
       <segment>
         <source>Package name</source>
@@ -11067,7 +11028,7 @@
     </unit>
     <unit id="policy.test.paths">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:174</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:177</note>
       </notes>
       <segment>
         <source>Path</source>
@@ -11075,7 +11036,7 @@
     </unit>
     <unit id="policy.preset">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:196</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:199</note>
       </notes>
       <segment>
         <source>Preset</source>
@@ -11083,7 +11044,7 @@
     </unit>
     <unit id="policy.draft-restored">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:240</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:242</note>
       </notes>
       <segment>
         <source>Your entries were restored. Save the policy again.</source>
@@ -11091,23 +11052,39 @@
     </unit>
     <unit id="policy.name-hint-project">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:265</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:267</note>
       </notes>
       <segment>
-        <source>Starts with <ph id="0" equiv="project" disp="key"/>- and cannot be changed later.</source>
+        <source>Unique within the project <ph id="0" equiv="project" disp="key"/> and cannot be changed later.</source>
       </segment>
     </unit>
     <unit id="policy.name-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:266</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:268</note>
       </notes>
       <segment>
         <source>Cannot be changed later.</source>
       </segment>
     </unit>
+    <unit id="policy.repositories-hint-project">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:273</note>
+      </notes>
+      <segment>
+        <source>One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).</source>
+      </segment>
+    </unit>
+    <unit id="policy.repositories-hint">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:274</note>
+      </notes>
+      <segment>
+        <source>One per line: project/key (web/npm-internal), a pattern (web/npm-team-*, */npm-remote) or a class of every project (@any-local, @any), optionally with a format (@any-local:npm, */*:npm).</source>
+      </segment>
+    </unit>
     <unit id="policy.project-repos-label">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:268</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:276</note>
       </notes>
       <segment>
         <source>Repositories of the project</source>
@@ -11115,7 +11092,7 @@
     </unit>
     <unit id="policy.test.unrestricted">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:371</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:379</note>
       </notes>
       <segment>
         <source>Matches: this list has no include pattern, so it is not restricted.</source>
@@ -11123,7 +11100,7 @@
     </unit>
     <unit id="policy.test.included">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:373</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:381</note>
       </notes>
       <segment>
         <source>Matches: included by <ph id="0" equiv="pattern" disp="v.pattern"/>.</source>
@@ -11131,7 +11108,7 @@
     </unit>
     <unit id="policy.test.excluded">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:375</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:383</note>
       </notes>
       <segment>
         <source>Does not match: excluded by <ph id="0" equiv="pattern" disp="v.pattern"/>.</source>
@@ -11139,7 +11116,7 @@
     </unit>
     <unit id="policy.test.not-included">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:377</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:385</note>
       </notes>
       <segment>
         <source>Does not match: no include pattern matches.</source>
@@ -11147,7 +11124,7 @@
     </unit>
     <unit id="policy.test.invalid">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:379</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:387</note>
       </notes>
       <segment>
         <source>The pattern <ph id="0" equiv="pattern" disp="v.pattern"/> is not valid.</source>
@@ -11155,7 +11132,7 @@
     </unit>
     <unit id="policy.created">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:449</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:458</note>
       </notes>
       <segment>
         <source>Policy created.</source>
@@ -11163,9 +11140,9 @@
     </unit>
     <unit id="policy.saved">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:455</note>
-        <note category="location">src/app/features/permissions/policy-editor.ts:513</note>
-        <note category="location">src/app/features/permissions/policy-editor.ts:518</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:464</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:522</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:527</note>
       </notes>
       <segment>
         <source>Policy saved.</source>
@@ -11173,7 +11150,7 @@
     </unit>
     <unit id="policy.epoch-stored">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:492</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:501</note>
       </notes>
       <segment>
         <source>The change is stored.</source>
@@ -11181,7 +11158,7 @@
     </unit>
     <unit id="policy.epoch-maybe">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:496</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:505</note>
       </notes>
       <segment>
         <source>Your change may not have been saved. The policy is shown as it is stored now.</source>
@@ -11189,7 +11166,7 @@
     </unit>
     <unit id="policy.delete-title">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:529</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:538</note>
       </notes>
       <segment>
         <source>Delete this policy?</source>
@@ -11197,7 +11174,7 @@
     </unit>
     <unit id="policy.delete-text">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:530</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:539</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="policy" disp="l.policy.name"/> stops granting access at once on every replica.</source>
@@ -11205,7 +11182,7 @@
     </unit>
     <unit id="policy.delete-confirm">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:531</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:540</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -11213,7 +11190,7 @@
     </unit>
     <unit id="policy.deleted">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:536</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:545</note>
       </notes>
       <segment>
         <source>Policy deleted.</source>
@@ -11407,7 +11384,7 @@
     </unit>
     <unit id="policies.sum.more">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:131</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:136</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="list" disp="shown"/> and <ph id="1" equiv="count" disp="repos.length - 3"/> more</source>
@@ -12053,25 +12030,9 @@
         <source>The search failed. Try again.</source>
       </segment>
     </unit>
-    <unit id="project-needs.switch-off">
-      <notes>
-        <note category="location">src/app/features/projects/project-access.ts:39</note>
-      </notes>
-      <segment>
-        <source>Switched off for this project:</source>
-      </segment>
-    </unit>
-    <unit id="project-needs.switch-off-hint">
-      <notes>
-        <note category="location">src/app/features/projects/project-access.ts:40,42</note>
-      </notes>
-      <segment>
-        <source>An administrator of trove can switch it on.</source>
-      </segment>
-    </unit>
     <unit id="project.heading">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:40,41</note>
+        <note category="location">src/app/features/projects/project-detail.ts:43,44</note>
       </notes>
       <segment>
         <source>Project</source>
@@ -12079,7 +12040,7 @@
     </unit>
     <unit id="project.back">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:41,43</note>
+        <note category="location">src/app/features/projects/project-detail.ts:44,46</note>
       </notes>
       <segment>
         <source>All projects</source>
@@ -12087,7 +12048,7 @@
     </unit>
     <unit id="project.general">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:54,55</note>
+        <note category="location">src/app/features/projects/project-detail.ts:57,58</note>
       </notes>
       <segment>
         <source>General</source>
@@ -12095,7 +12056,7 @@
     </unit>
     <unit id="project.display-name">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:56,57</note>
+        <note category="location">src/app/features/projects/project-detail.ts:59,60</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -12103,55 +12064,39 @@
     </unit>
     <unit id="project.description">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:58,59</note>
+        <note category="location">src/app/features/projects/project-detail.ts:61,62</note>
       </notes>
       <segment>
         <source>Description</source>
       </segment>
     </unit>
-    <unit id="project.switches">
+    <unit id="project.owners">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:60,62</note>
+        <note category="location">src/app/features/projects/project-detail.ts:63,65</note>
       </notes>
       <segment>
-        <source>Administrators may</source>
+        <source>Owners</source>
       </segment>
     </unit>
-    <unit id="project.switch.policies">
+    <unit id="project.no-owners">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:65,66</note>
-      </notes>
-      <segment>
-        <source>manage policies, service accounts and their tokens</source>
-      </segment>
-    </unit>
-    <unit id="project.switch.repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:70,71</note>
-      </notes>
-      <segment>
-        <source>create, change and delete repositories</source>
-      </segment>
-    </unit>
-    <unit id="project.admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:75,77</note>
-      </notes>
-      <segment>
-        <source>Administrators</source>
-      </segment>
-    </unit>
-    <unit id="project.no-admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:78,80</note>
+        <note category="location">src/app/features/projects/project-detail.ts:66,68</note>
       </notes>
       <segment>
         <source>None yet.</source>
       </segment>
     </unit>
+    <unit id="project.your-role">
+      <notes>
+        <note category="location">src/app/features/projects/project-detail.ts:75,76</note>
+      </notes>
+      <segment>
+        <source>Your role</source>
+      </segment>
+    </unit>
     <unit id="project.counts">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:87,89</note>
+        <note category="location">src/app/features/projects/project-detail.ts:77,79</note>
       </notes>
       <segment>
         <source>Contents</source>
@@ -12159,15 +12104,15 @@
     </unit>
     <unit id="project.counts-text">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:89,90</note>
+        <note category="location">src/app/features/projects/project-detail.ts:79,80</note>
       </notes>
       <segment>
-        <source><ph id="0" equiv="INTERPOLATION" disp="{{ p.repositories }}"/> repositories, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.policies }}"/> policies, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.serviceAccounts }}"/> service accounts</source>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ p.members }}"/> members, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.repositories }}"/> repositories, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.policies }}"/> policies, <ph id="3" equiv="INTERPOLATION_3" disp="{{ p.serviceAccounts }}"/> service accounts</source>
       </segment>
     </unit>
     <unit id="project.updated">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:91,92</note>
+        <note category="location">src/app/features/projects/project-detail.ts:81,82</note>
       </notes>
       <segment>
         <source>Last changed</source>
@@ -12175,7 +12120,7 @@
     </unit>
     <unit id="project.edit">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:97,98</note>
+        <note category="location">src/app/features/projects/project-detail.ts:87,88</note>
       </notes>
       <segment>
         <source>Edit project</source>
@@ -12183,7 +12128,7 @@
     </unit>
     <unit id="project.delete">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:105,106</note>
+        <note category="location">src/app/features/projects/project-detail.ts:96,97</note>
       </notes>
       <segment>
         <source> Delete project </source>
@@ -12191,7 +12136,7 @@
     </unit>
     <unit id="project.delete-note-empty">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:110,112</note>
+        <note category="location">src/app/features/projects/project-detail.ts:103,105</note>
       </notes>
       <segment>
         <source>The project&apos;s policies are deleted with it.</source>
@@ -12199,15 +12144,23 @@
     </unit>
     <unit id="project.delete-note">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:113,115</note>
+        <note category="location">src/app/features/projects/project-detail.ts:106,108</note>
       </notes>
       <segment>
-        <source>A project can be deleted when no repository and no service account belongs to it. Unassign the repositories and delete the service accounts first.</source>
+        <source>A project can be deleted when no repository and no service account belongs to it. Move or delete the repositories and delete the service accounts first.</source>
+      </segment>
+    </unit>
+    <unit id="project.members">
+      <notes>
+        <note category="location">src/app/features/projects/project-detail.ts:117,118</note>
+      </notes>
+      <segment>
+        <source>Members</source>
       </segment>
     </unit>
     <unit id="project.repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:123,124</note>
+        <note category="location">src/app/features/projects/project-detail.ts:122,123</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -12215,7 +12168,7 @@
     </unit>
     <unit id="project.policies">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:128,129</note>
+        <note category="location">src/app/features/projects/project-detail.ts:127,128</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -12223,7 +12176,7 @@
     </unit>
     <unit id="project.ci">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:135,136</note>
+        <note category="location">src/app/features/projects/project-detail.ts:134,135</note>
       </notes>
       <segment>
         <source>CI identity</source>
@@ -12231,7 +12184,7 @@
     </unit>
     <unit id="project.ci-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:137,139</note>
+        <note category="location">src/app/features/projects/project-detail.ts:136,138</note>
       </notes>
       <segment>
         <source> Let the GitLab jobs of your projects publish to and read from this project&apos;s repositories without a stored secret. A mapping states which jobs get which permissions. </source>
@@ -12239,7 +12192,7 @@
     </unit>
     <unit id="project.ci-open">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:139,141</note>
+        <note category="location">src/app/features/projects/project-detail.ts:138,140</note>
       </notes>
       <segment>
         <source>Open CI identity</source>
@@ -12247,7 +12200,7 @@
     </unit>
     <unit id="project.service-accounts">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:145,146</note>
+        <note category="location">src/app/features/projects/project-detail.ts:144,145</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -12255,7 +12208,7 @@
     </unit>
     <unit id="project.service-accounts-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:147,149</note>
+        <note category="location">src/app/features/projects/project-detail.ts:146,148</note>
       </notes>
       <segment>
         <source> A service account of the project acts for a pipeline or a partner. Only the project&apos;s own policies grant to it; open one to issue its tokens. </source>
@@ -12263,7 +12216,7 @@
     </unit>
     <unit id="project.on">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:178</note>
+        <note category="location">src/app/features/projects/project-detail.ts:177</note>
       </notes>
       <segment>
         <source>on</source>
@@ -12271,7 +12224,7 @@
     </unit>
     <unit id="project.off">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:179</note>
+        <note category="location">src/app/features/projects/project-detail.ts:178</note>
       </notes>
       <segment>
         <source>off</source>
@@ -12279,7 +12232,7 @@
     </unit>
     <unit id="project.saved">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:217</note>
+        <note category="location">src/app/features/projects/project-detail.ts:219</note>
       </notes>
       <segment>
         <source>Project saved.</source>
@@ -12287,7 +12240,7 @@
     </unit>
     <unit id="project.delete-title">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:228</note>
+        <note category="location">src/app/features/projects/project-detail.ts:230</note>
       </notes>
       <segment>
         <source>Delete project <ph id="0" equiv="key" disp="p.key"/>?</source>
@@ -12295,15 +12248,15 @@
     </unit>
     <unit id="project.delete-text">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:230</note>
+        <note category="location">src/app/features/projects/project-detail.ts:232</note>
       </notes>
       <segment>
-        <source>The project, its permission policies and its administrator entries are deleted. The policies stop granting at once on every replica. This cannot be undone.</source>
+        <source>The project, its permission policies and its member entries are deleted. The policies stop granting at once on every replica. This cannot be undone.</source>
       </segment>
     </unit>
     <unit id="project.delete-confirm">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:232</note>
+        <note category="location">src/app/features/projects/project-detail.ts:234</note>
       </notes>
       <segment>
         <source>Delete project</source>
@@ -12311,7 +12264,7 @@
     </unit>
     <unit id="project.deleted">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:240</note>
+        <note category="location">src/app/features/projects/project-detail.ts:242</note>
       </notes>
       <segment>
         <source>Project deleted.</source>
@@ -12319,7 +12272,7 @@
     </unit>
     <unit id="project-dialog.title-edit">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:43,44</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:35,36</note>
       </notes>
       <segment>
         <source>Edit project <ph id="0" equiv="INTERPOLATION" disp="{{ p.value.key }}"/></source>
@@ -12327,7 +12280,7 @@
     </unit>
     <unit id="project-dialog.title-new">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:45,48</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:37,40</note>
       </notes>
       <segment>
         <source>New project</source>
@@ -12335,7 +12288,7 @@
     </unit>
     <unit id="project-dialog.key">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:56,57</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:48,49</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -12343,7 +12296,7 @@
     </unit>
     <unit id="project-dialog.key-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:62,64</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:54,56</note>
       </notes>
       <segment>
         <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter. Cannot be changed later.</source>
@@ -12351,7 +12304,7 @@
     </unit>
     <unit id="project-dialog.display-name">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:66,68</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:58,60</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -12359,127 +12312,47 @@
     </unit>
     <unit id="project-dialog.description">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:74,76</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:66,68</note>
       </notes>
       <segment>
         <source>Description</source>
       </segment>
     </unit>
-    <unit id="project-dialog.switches">
+    <unit id="project-dialog.owners">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:82,83</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:75,76</note>
       </notes>
       <segment>
-        <source>What the administrators may do</source>
+        <source>First Owners</source>
       </segment>
     </unit>
-    <unit id="project-dialog.manage-policies">
+    <unit id="project-dialog.no-owners">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:84,86</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:78,80</note>
       </notes>
       <segment>
-        <source>Manage policies and service accounts</source>
+        <source> No Owner yet. Users and groups can own a project; members are added on the project&apos;s screen. </source>
       </segment>
     </unit>
-    <unit id="project-dialog.manage-policies-hint">
+    <unit id="project-dialog.remove-owner">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:87,89</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:87,88</note>
       </notes>
       <segment>
-        <source> Create and change the project&apos;s permission policies, create and enable its service accounts, issue their tokens and look up users and groups. </source>
+        <source>Remove owner</source>
       </segment>
     </unit>
-    <unit id="project-dialog.manage-repositories">
+    <unit id="project-dialog.find-owner">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:90,92</note>
-      </notes>
-      <segment>
-        <source>Manage repositories</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.manage-repositories-hint">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:93,97</note>
-      </notes>
-      <segment>
-        <source> Create, change and delete the project&apos;s repositories, also remote ones that reach other servers. Assigning repositories stays with you. </source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:98,99</note>
-      </notes>
-      <segment>
-        <source>Administrators</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.no-admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:100,102</note>
-      </notes>
-      <segment>
-        <source>No administrator yet. Users and groups can administer a project.</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.remove-admin">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:108,109</note>
-      </notes>
-      <segment>
-        <source>Remove administrator</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.find-admin">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:116,118</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:95,97</note>
       </notes>
       <segment>
         <source>Find a user or group</source>
       </segment>
     </unit>
-    <unit id="project-dialog.repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:125,126</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.no-repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:127,129</note>
-      </notes>
-      <segment>
-        <source>No repository is assigned.</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.moves">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:134,135</note>
-      </notes>
-      <segment>
-        <source>moves from <ph id="0" equiv="INTERPOLATION" disp="{{ from }}"/></source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.remove-repository">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:138,139</note>
-      </notes>
-      <segment>
-        <source>Remove repository</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.add-repository">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:146,148</note>
-      </notes>
-      <segment>
-        <source>Add a repository</source>
-      </segment>
-    </unit>
     <unit id="project-dialog.cancel">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:155,156</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:105,106</note>
       </notes>
       <segment>
         <source>Cancel</source>
@@ -12487,7 +12360,7 @@
     </unit>
     <unit id="project-dialog.save">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:158,159</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:108,109</note>
       </notes>
       <segment>
         <source>Save project</source>
@@ -12495,47 +12368,23 @@
     </unit>
     <unit id="project-dialog.create">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:160,162</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:110,112</note>
       </notes>
       <segment>
         <source>Create project</source>
       </segment>
     </unit>
-    <unit id="project-dialog.admins-label">
+    <unit id="project-dialog.owners-label">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:232</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:171</note>
       </notes>
       <segment>
-        <source>Administrators of the project</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.repositories-label">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:233</note>
-      </notes>
-      <segment>
-        <source>Repositories of the project</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.choose-repository">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:244</note>
-      </notes>
-      <segment>
-        <source>Choose a repository</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.repository-of">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:251</note>
-      </notes>
-      <segment>
-        <source><ph id="0" equiv="key" disp="r.key"/> (belongs to <ph id="1" equiv="project" disp="r.project"/>)</source>
+        <source>First Owners of the project</source>
       </segment>
     </unit>
     <unit id="project-dialog.key-invalid">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:290</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:190</note>
       </notes>
       <segment>
         <source>The key does not match the pattern.</source>
@@ -12543,34 +12392,10 @@
     </unit>
     <unit id="project-dialog.display-name-invalid">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:298</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:198</note>
       </notes>
       <segment>
         <source>The display name is required, 1 to 128 characters.</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.move-title">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:474</note>
-      </notes>
-      <segment>
-        <source>Move <ph id="0" equiv="repository" disp="repository"/> to <ph id="1" equiv="project" disp="key"/>?</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.move-line">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:476</note>
-      </notes>
-      <segment>
-        <source>The repository now belongs to project <ph id="0" equiv="owner" disp="owner"/>. Moving it takes it away from that project.</source>
-      </segment>
-    </unit>
-    <unit id="project-dialog.move-confirm">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:478</note>
-      </notes>
-      <segment>
-        <source>Move repository</source>
       </segment>
     </unit>
     <unit id="projects.heading">
@@ -12594,7 +12419,7 @@
         <note category="location">src/app/features/projects/project-list.ts:41,44</note>
       </notes>
       <segment>
-        <source> A project gives a team its own administrators: they manage the project&apos;s repositories, permission policies and service accounts without a system role. </source>
+        <source> A project holds a team&apos;s repositories. Its members have a role in it; its Owners manage the repositories, permission policies and service accounts without a system role. </source>
       </segment>
     </unit>
     <unit id="projects.empty">
@@ -12605,25 +12430,9 @@
         <source>There is no project yet.</source>
       </segment>
     </unit>
-    <unit id="projects.switch.policies">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:78,79</note>
-      </notes>
-      <segment>
-        <source>Policies</source>
-      </segment>
-    </unit>
-    <unit id="projects.switch.repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:83,84</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-      </segment>
-    </unit>
     <unit id="projects.edit">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:90,91</note>
+        <note category="location">src/app/features/projects/project-list.ts:80,81</note>
       </notes>
       <segment>
         <source>Edit</source>
@@ -12631,32 +12440,16 @@
     </unit>
     <unit id="projects.q">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:109</note>
-        <note category="location">src/app/features/projects/project-list.ts:110</note>
+        <note category="location">src/app/features/projects/project-list.ts:99</note>
+        <note category="location">src/app/features/projects/project-list.ts:100</note>
       </notes>
       <segment>
         <source>Key or name</source>
       </segment>
     </unit>
-    <unit id="projects.switch.on">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:140</note>
-      </notes>
-      <segment>
-        <source>on</source>
-      </segment>
-    </unit>
-    <unit id="projects.switch.off">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:141</note>
-      </notes>
-      <segment>
-        <source>off</source>
-      </segment>
-    </unit>
     <unit id="projects.caption">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:142</note>
+        <note category="location">src/app/features/projects/project-list.ts:121</note>
       </notes>
       <segment>
         <source>Projects</source>
@@ -12664,7 +12457,7 @@
     </unit>
     <unit id="projects.apply">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:143</note>
+        <note category="location">src/app/features/projects/project-list.ts:122</note>
       </notes>
       <segment>
         <source>Apply filter</source>
@@ -12672,7 +12465,7 @@
     </unit>
     <unit id="projects.col.key">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:145</note>
+        <note category="location">src/app/features/projects/project-list.ts:124</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -12680,50 +12473,178 @@
     </unit>
     <unit id="projects.col.name">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:146</note>
+        <note category="location">src/app/features/projects/project-list.ts:125</note>
       </notes>
       <segment>
         <source>Display name</source>
       </segment>
     </unit>
-    <unit id="projects.col.admins">
+    <unit id="projects.col.owners">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:147</note>
+        <note category="location">src/app/features/projects/project-list.ts:126</note>
       </notes>
       <segment>
-        <source>Administrators</source>
+        <source>Owners</source>
+      </segment>
+    </unit>
+    <unit id="projects.col.members">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:127</note>
+      </notes>
+      <segment>
+        <source>Members</source>
       </segment>
     </unit>
     <unit id="projects.col.repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:148</note>
+        <note category="location">src/app/features/projects/project-list.ts:128</note>
       </notes>
       <segment>
         <source>Repositories</source>
       </segment>
     </unit>
-    <unit id="projects.col.switches">
+    <unit id="projects.col.role">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:151</note>
+        <note category="location">src/app/features/projects/project-list.ts:131</note>
       </notes>
       <segment>
-        <source>Switches</source>
+        <source>Your role</source>
       </segment>
     </unit>
-    <unit id="projects.help.switches">
+    <unit id="projects.help.role">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:152</note>
+        <note category="location">src/app/features/projects/project-list.ts:132</note>
       </notes>
       <segment>
-        <source>What the administrators of the project may do. Policies: permission policies, service accounts and their tokens. Repositories: create, change and delete the project&apos;s repositories.</source>
+        <source>Your role in the project; empty when you see it through a system role and are no member.</source>
       </segment>
     </unit>
     <unit id="projects.col.actions">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:154</note>
+        <note category="location">src/app/features/projects/project-list.ts:134</note>
       </notes>
       <segment>
         <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="project-members.last-owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:28,31</note>
+      </notes>
+      <segment>
+        <source>A project keeps at least one Owner. Make another member an Owner first.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.empty">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:36,37</note>
+      </notes>
+      <segment>
+        <source>The project has no member yet.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.member">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:41,42</note>
+      </notes>
+      <segment>
+        <source>Member</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Role</source>
+      </segment>
+    </unit>
+    <unit id="project-members.col.actions">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:43,45</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
+    <unit id="project-members.remove">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:66,67</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+      </segment>
+    </unit>
+    <unit id="project-members.add">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:79,80</note>
+      </notes>
+      <segment>
+        <source>Add a member</source>
+      </segment>
+    </unit>
+    <unit id="project-members.find">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:82,84</note>
+      </notes>
+      <segment>
+        <source>Find a user or group</source>
+      </segment>
+    </unit>
+    <unit id="project-members.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:95,96</note>
+      </notes>
+      <segment>
+        <source>Role</source>
+      </segment>
+    </unit>
+    <unit id="project-members.add-confirm">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:102,105</note>
+      </notes>
+      <segment>
+        <source> Add member </source>
+      </segment>
+    </unit>
+    <unit id="project-members.caption">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:159</note>
+      </notes>
+      <segment>
+        <source>Members of the project</source>
+      </segment>
+    </unit>
+    <unit id="project-members.role-of">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:179</note>
+      </notes>
+      <segment>
+        <source>Role of <ph id="0" equiv="member" disp="m.principal"/></source>
+      </segment>
+    </unit>
+    <unit id="project-members.added">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:205</note>
+      </notes>
+      <segment>
+        <source>Member added.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.changed">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:213</note>
+      </notes>
+      <segment>
+        <source>Role changed.</source>
+      </segment>
+    </unit>
+    <unit id="project-members.removed">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:220</note>
+      </notes>
+      <segment>
+        <source>Member removed.</source>
       </segment>
     </unit>
     <unit id="project-policies.create">
@@ -12800,7 +12721,7 @@
     </unit>
     <unit id="project-repos.create">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:26,29</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:25,28</note>
       </notes>
       <segment>
         <source>Create repository</source>
@@ -12808,7 +12729,7 @@
     </unit>
     <unit id="project-repos.create-disabled">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:30,33</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:29,32</note>
       </notes>
       <segment>
         <source> Create repository </source>
@@ -12816,7 +12737,7 @@
     </unit>
     <unit id="project-repos.open-list">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:34,37</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:33,36</note>
       </notes>
       <segment>
         <source> Open in the repository list </source>
@@ -12824,15 +12745,15 @@
     </unit>
     <unit id="project-repos.empty">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:47,48</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:46,47</note>
       </notes>
       <segment>
-        <source>No repository is assigned to this project.</source>
+        <source>The project has no repository yet.</source>
       </segment>
     </unit>
     <unit id="project-repos.deleting">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:60,61</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:59,60</note>
       </notes>
       <segment>
         <source>being deleted</source>
@@ -12840,7 +12761,7 @@
     </unit>
     <unit id="project-repos.disabled">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:62,64</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:61,63</note>
       </notes>
       <segment>
         <source>disabled</source>
@@ -12848,7 +12769,7 @@
     </unit>
     <unit id="project-repos.caption">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:82</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:81</note>
       </notes>
       <segment>
         <source>Repositories of the project</source>
@@ -12856,7 +12777,7 @@
     </unit>
     <unit id="project-repos.col.key">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:84</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:83</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -12864,7 +12785,7 @@
     </unit>
     <unit id="project-repos.col.format">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:85</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:84</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -12872,7 +12793,7 @@
     </unit>
     <unit id="project-repos.col.class">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:86</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:85</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -12880,7 +12801,7 @@
     </unit>
     <unit id="project-repos.col.description">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:87</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:86</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -12888,10 +12809,74 @@
     </unit>
     <unit id="project-repos.col.state">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:88</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:87</note>
       </notes>
       <segment>
         <source>State</source>
+      </segment>
+    </unit>
+    <unit id="project-role.reader">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:7</note>
+      </notes>
+      <segment>
+        <source>Reader</source>
+      </segment>
+    </unit>
+    <unit id="project-role.developer">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:9</note>
+      </notes>
+      <segment>
+        <source>Developer</source>
+      </segment>
+    </unit>
+    <unit id="project-role.maintainer">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:11</note>
+      </notes>
+      <segment>
+        <source>Maintainer</source>
+      </segment>
+    </unit>
+    <unit id="project-role.owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:13</note>
+      </notes>
+      <segment>
+        <source>Owner</source>
+      </segment>
+    </unit>
+    <unit id="project-role.reader-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:21</note>
+      </notes>
+      <segment>
+        <source>Reads every repository of the project.</source>
+      </segment>
+    </unit>
+    <unit id="project-role.developer-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:23</note>
+      </notes>
+      <segment>
+        <source>Also annotates and deploys.</source>
+      </segment>
+    </unit>
+    <unit id="project-role.maintainer-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:25</note>
+      </notes>
+      <segment>
+        <source>Every action on the repositories, also overwrite and delete.</source>
+      </segment>
+    </unit>
+    <unit id="project-role.owner-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:27</note>
+      </notes>
+      <segment>
+        <source>Also administers the project: members, repositories, policies and service accounts.</source>
       </segment>
     </unit>
     <unit id="project-sas.create">
@@ -13027,7 +13012,7 @@
       <notes>
         <note category="location">src/app/features/repositories/mirror-settings.ts:37</note>
         <note category="location">src/app/features/repositories/mirror-settings.ts:93,94</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:269,271</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:273,275</note>
       </notes>
       <segment>
         <source>Mirror</source>
@@ -14016,7 +14001,7 @@
     <unit id="repo.action.browse">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:4,5</note>
-        <note category="location">src/app/features/repositories/repository-list.html:108,110</note>
+        <note category="location">src/app/features/repositories/repository-list.html:109,111</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -14025,7 +14010,7 @@
     <unit id="repo.action.vulnerabilities">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:8,11</note>
-        <note category="location">src/app/features/repositories/repository-list.html:113,116</note>
+        <note category="location">src/app/features/repositories/repository-list.html:114,117</note>
       </notes>
       <segment>
         <source>Vulnerabilities</source>
@@ -14043,7 +14028,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:37,39</note>
         <note category="location">src/app/features/repositories/repository-detail.html:76,78</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:136</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:141</note>
       </notes>
       <segment>
         <source>Client address</source>
@@ -14052,7 +14037,7 @@
     <unit id="repo.tab.guide">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:46,47</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:452</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:510</note>
       </notes>
       <segment>
         <source>How to use</source>
@@ -14093,7 +14078,7 @@
     <unit id="repo.col.activity">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:95,97</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:141</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:146</note>
       </notes>
       <segment>
         <source>Last activity</source>
@@ -14109,7 +14094,7 @@
     </unit>
     <unit id="mirror.status.unsaved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:172,173</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:173,174</note>
       </notes>
       <segment>
         <source> The status appears once the repository is saved in mode mirror. </source>
@@ -14117,7 +14102,7 @@
     </unit>
     <unit id="repo.detail.api.document">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:198,199</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:199,200</note>
       </notes>
       <segment>
         <source>Stored document</source>
@@ -14125,7 +14110,7 @@
     </unit>
     <unit id="repo.detail.api.patch">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:200,202</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:201,203</note>
       </notes>
       <segment>
         <source>Your change as a request</source>
@@ -14133,7 +14118,7 @@
     </unit>
     <unit id="repo.detail.api.nochange">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:205,207</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:206,208</note>
       </notes>
       <segment>
         <source> Change a setting to see the request that saves it. </source>
@@ -14141,16 +14126,48 @@
     </unit>
     <unit id="repo.edit.save">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:220,221</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:221,222</note>
       </notes>
       <segment>
         <source> Save changes </source>
       </segment>
     </unit>
+    <unit id="repo.move.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:243,244</note>
+      </notes>
+      <segment>
+        <source>Move to another project</source>
+      </segment>
+    </unit>
+    <unit id="repo.move.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:245,246</note>
+      </notes>
+      <segment>
+        <source> The repository keeps its key and its content; its address changes. You must be Owner of the target project too. </source>
+      </segment>
+    </unit>
+    <unit id="repo.move.target">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:249,250</note>
+      </notes>
+      <segment>
+        <source>Target project</source>
+      </segment>
+    </unit>
+    <unit id="repo.move.action">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:255,256</note>
+      </notes>
+      <segment>
+        <source> Move repository </source>
+      </segment>
+    </unit>
     <unit id="repo.edit.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:276</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:385</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:285</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:394</note>
       </notes>
       <segment>
         <source>Repository saved.</source>
@@ -14158,7 +14175,7 @@
     </unit>
     <unit id="mirror.paused-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:303</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:312</note>
       </notes>
       <segment>
         <source>Mirror paused.</source>
@@ -14166,7 +14183,7 @@
     </unit>
     <unit id="mirror.resumed-notice">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:304</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:313</note>
       </notes>
       <segment>
         <source>Mirror resumed.</source>
@@ -14174,17 +14191,17 @@
     </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:410</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:182</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:419</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:188</note>
       </notes>
       <segment>
-        <source>Delete repository <ph id="0" equiv="key" disp="this.key()"/>?</source>
+        <source>Delete repository <ph id="0" equiv="key" disp="this.ref()"/>?</source>
       </segment>
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:412</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:184</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:421</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:190</note>
       </notes>
       <segment>
         <source>The repository and everything in it are deleted for good. Deletion runs as a background job; the key stays taken until it has finished.</source>
@@ -14192,35 +14209,75 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:414</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:186</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:423</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:192</note>
       </notes>
       <segment>
         <source>Delete repository</source>
       </segment>
     </unit>
-    <unit id="repo.delete.failed">
+    <unit id="repo.move.choose">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:431</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:228</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:447</note>
       </notes>
       <segment>
-        <source>Deleting repository <ph id="0" equiv="key" disp="this.key()"/> failed. Its row is kept; try again.</source>
+        <source>Choose a project</source>
+      </segment>
+    </unit>
+    <unit id="repo.move.title">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:464</note>
+      </notes>
+      <segment>
+        <source>Move repository <ph id="0" equiv="key" disp="this.ref()"/> to project <ph id="1" equiv="project" disp="target"/>?</source>
+      </segment>
+    </unit>
+    <unit id="repo.move.text">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:466</note>
+      </notes>
+      <segment>
+        <source>The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.</source>
+      </segment>
+    </unit>
+    <unit id="repo.move.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:468</note>
+      </notes>
+      <segment>
+        <source>Move repository</source>
+      </segment>
+    </unit>
+    <unit id="repo.move.done">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:475</note>
+      </notes>
+      <segment>
+        <source>Repository moved to project <ph id="0" equiv="project" disp="target"/>.</source>
+      </segment>
+    </unit>
+    <unit id="repo.delete.failed">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:489</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:235</note>
+      </notes>
+      <segment>
+        <source>Deleting repository <ph id="0" equiv="key" disp="this.ref()"/> failed. Its row is kept; try again.</source>
       </segment>
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:436</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:218</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:494</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:225</note>
       </notes>
       <segment>
-        <source>Repository <ph id="0" equiv="key" disp="this.key()"/> deleted.</source>
+        <source>Repository <ph id="0" equiv="key" disp="this.ref()"/> deleted.</source>
       </segment>
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:441</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:151</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:499</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:156</note>
       </notes>
       <segment>
         <source>Repository deletion</source>
@@ -14228,8 +14285,8 @@
     </unit>
     <unit id="repo.copy-address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:442</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:150</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:500</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:155</note>
       </notes>
       <segment>
         <source>Copy client address</source>
@@ -14237,7 +14294,7 @@
     </unit>
     <unit id="repo.tab.general">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:443</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:501</note>
       </notes>
       <segment>
         <source>General</source>
@@ -14245,7 +14302,7 @@
     </unit>
     <unit id="repo.tab.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:444</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:502</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -14253,7 +14310,7 @@
     </unit>
     <unit id="repo.tab.format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:447</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:505</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/> settings</source>
@@ -14261,7 +14318,7 @@
     </unit>
     <unit id="repo.tab.upstream">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:449</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:507</note>
       </notes>
       <segment>
         <source>Upstream</source>
@@ -14269,7 +14326,7 @@
     </unit>
     <unit id="repo.tab.mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:450</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:508</note>
       </notes>
       <segment>
         <source>Mirror</source>
@@ -14277,7 +14334,7 @@
     </unit>
     <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:451</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:509</note>
       </notes>
       <segment>
         <source>API</source>
@@ -14294,7 +14351,7 @@
     <unit id="repo.field.notes">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:39,41</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:493</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:514</note>
       </notes>
       <segment>
         <source>Administrator notes</source>
@@ -14311,8 +14368,8 @@
     <unit id="repo.field.include">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:62,64</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:241,242</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:495</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:245,246</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:516</note>
       </notes>
       <segment>
         <source>Include patterns</source>
@@ -14321,8 +14378,8 @@
     <unit id="repo.field.exclude">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:80,82</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:243,244</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:497</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:247,248</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:518</note>
       </notes>
       <segment>
         <source>Exclude patterns</source>
@@ -14395,7 +14452,7 @@
     <unit id="repo.field.hide">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:149,151</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:499</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:520</note>
       </notes>
       <segment>
         <source>Hide existence from callers without access</source>
@@ -14515,16 +14572,27 @@
     </unit>
     <unit id="repo.filter.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:152</note>
-        <note category="location">src/app/features/repositories/repository-list.html:158,160</note>
+        <note category="location">src/app/features/repositories/repository-list.html:153</note>
+        <note category="location">src/app/features/repositories/repository-list.html:159,161</note>
       </notes>
       <segment>
         <source>Key or description</source>
       </segment>
     </unit>
+    <unit id="repo.col.project">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:164</note>
+        <note category="location">src/app/features/repositories/repository-list.html:171</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:131</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:233,234</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+      </segment>
+    </unit>
     <unit id="repo.filter.state">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:189</note>
+        <note category="location">src/app/features/repositories/repository-list.html:201</note>
       </notes>
       <segment>
         <source>State</source>
@@ -14532,7 +14600,7 @@
     </unit>
     <unit id="repo.filter.inactive">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:196,198</note>
+        <note category="location">src/app/features/repositories/repository-list.html:208,210</note>
       </notes>
       <segment>
         <source>Disabled only</source>
@@ -14540,7 +14608,7 @@
     </unit>
     <unit id="repo.list.caption">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:120</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:124</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -14548,7 +14616,7 @@
     </unit>
     <unit id="repo.list.empty">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:121</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:125</note>
       </notes>
       <segment>
         <source>There is no repository yet.</source>
@@ -14556,7 +14624,7 @@
     </unit>
     <unit id="repo.list.empty-filtered">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:122</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:126</note>
       </notes>
       <segment>
         <source>No repository matches the filters.</source>
@@ -14564,7 +14632,7 @@
     </unit>
     <unit id="repo.col.key">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:126</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:130</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -14572,7 +14640,7 @@
     </unit>
     <unit id="repo.help.class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:131</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:136</note>
       </notes>
       <segment>
         <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
@@ -14580,7 +14648,7 @@
     </unit>
     <unit id="repo.col.description">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:133</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:138</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -14588,7 +14656,7 @@
     </unit>
     <unit id="repo.help.address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:137</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:142</note>
       </notes>
       <segment>
         <source>The address that package managers and download tools use for this repository.</source>
@@ -14596,7 +14664,7 @@
     </unit>
     <unit id="repo.help.activity">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:142</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:147</note>
       </notes>
       <segment>
         <source>The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.</source>
@@ -14604,7 +14672,7 @@
     </unit>
     <unit id="repo.delete.detach">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:189</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:195</note>
       </notes>
       <segment>
         <source>Also remove it from the virtual repositories that include it</source>
@@ -14708,25 +14776,17 @@
     </unit>
     <unit id="repo.wizard.project">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:131,132</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:132,133</note>
       </notes>
       <segment>
-        <source>This repository is created in project</source>
-      </segment>
-    </unit>
-    <unit id="repo.wizard.project-hint">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:133,136</note>
-      </notes>
-      <segment>
-        <source>Its key starts with the project key and a hyphen.</source>
+        <source>Project</source>
       </segment>
     </unit>
     <unit id="repo.field.key">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:138,140</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:232</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:489</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:139,141</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:236</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:510</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -14734,15 +14794,15 @@
     </unit>
     <unit id="repo.field.key.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:154,156</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:155,157</note>
       </notes>
       <segment>
-        <source> 2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part of every address and cannot be changed later. </source>
+        <source> 2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part of every address and cannot be changed later. It is unique within the project. </source>
       </segment>
     </unit>
     <unit id="repo.key.checking">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:160,162</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:161,163</note>
       </notes>
       <segment>
         <source>Checking the key.</source>
@@ -14750,7 +14810,7 @@
     </unit>
     <unit id="repo.key.free">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:164,165</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:165,166</note>
       </notes>
       <segment>
         <source>The key is available.</source>
@@ -14758,7 +14818,7 @@
     </unit>
     <unit id="repo.key.unknown">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:168,169</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:169,170</note>
       </notes>
       <segment>
         <source>Availability could not be checked; the server decides when you create.</source>
@@ -14766,7 +14826,7 @@
     </unit>
     <unit id="repo.key.invalid">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:177,179</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:178,180</note>
       </notes>
       <segment>
         <source>The key does not match the pattern.</source>
@@ -14774,15 +14834,15 @@
     </unit>
     <unit id="repo.key.taken">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:183,185</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:184,186</note>
       </notes>
       <segment>
-        <source>A repository with this key already exists.</source>
+        <source>A repository with this key already exists in the project.</source>
       </segment>
     </unit>
     <unit id="repo.wizard.access.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:194,195</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:195,196</note>
       </notes>
       <segment>
         <source>Access settings</source>
@@ -14790,7 +14850,7 @@
     </unit>
     <unit id="repo.wizard.access.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:196,198</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:197,199</note>
       </notes>
       <segment>
         <source> Which paths the repository admits and who may see it. </source>
@@ -14798,8 +14858,8 @@
     </unit>
     <unit id="repo.format.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:208,210</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:247,249</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:210,212</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:251,253</note>
       </notes>
       <segment>
         <source><pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ formatLabel() }}"/></pc> settings </source>
@@ -14807,7 +14867,7 @@
     </unit>
     <unit id="repo.wizard.review.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:229,231</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:231,233</note>
       </notes>
       <segment>
         <source>Review</source>
@@ -14815,7 +14875,7 @@
     </unit>
     <unit id="repo.review.address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:239,240</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:243,244</note>
       </notes>
       <segment>
         <source>Client address</source>
@@ -14823,7 +14883,7 @@
     </unit>
     <unit id="repo.review.format-defaults">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:254,257</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:258,261</note>
       </notes>
       <segment>
         <source>The defaults of the format</source>
@@ -14831,7 +14891,7 @@
     </unit>
     <unit id="upstream.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:259,261</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:263,265</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:61</note>
         <note category="location">src/app/features/repositories/upstream-settings.ts:76,77</note>
       </notes>
@@ -14841,7 +14901,7 @@
     </unit>
     <unit id="upstream.review.default">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:264,267</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:268,271</note>
       </notes>
       <segment>
         <source>The format&apos;s well-known upstream</source>
@@ -14849,7 +14909,7 @@
     </unit>
     <unit id="mirror.review.on">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:272,273</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:276,277</note>
       </notes>
       <segment>
         <source>Mirror mode: a background pass stores what the upstream offers.</source>
@@ -14857,7 +14917,7 @@
     </unit>
     <unit id="mirror.review.defaults">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:276,278</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:280,282</note>
       </notes>
       <segment>
         <source>The defaults of the mirror</source>
@@ -14865,7 +14925,7 @@
     </unit>
     <unit id="mirror.review.off">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:279,281</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:283,285</note>
       </notes>
       <segment>
         <source>Pull-through (no mirror).</source>
@@ -14873,7 +14933,7 @@
     </unit>
     <unit id="repo.review.switches">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:283,285</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:287,289</note>
       </notes>
       <segment>
         <source>Switches</source>
@@ -14881,7 +14941,7 @@
     </unit>
     <unit id="repo.review.disabled">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:286,288</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:290,292</note>
       </notes>
       <segment>
         <source>Disabled.</source>
@@ -14889,7 +14949,7 @@
     </unit>
     <unit id="repo.review.require-auth">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:289,291</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:293,295</note>
       </notes>
       <segment>
         <source>Authentication required.</source>
@@ -14897,7 +14957,7 @@
     </unit>
     <unit id="repo.review.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:297,298</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:301,302</note>
       </notes>
       <segment>
         <source>Show as API request</source>
@@ -14905,7 +14965,7 @@
     </unit>
     <unit id="repo.review.api.json">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:298,299</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:302,303</note>
       </notes>
       <segment>
         <source>Request body</source>
@@ -14913,7 +14973,7 @@
     </unit>
     <unit id="repo.review.api.curl">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:300,301</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:304,305</note>
       </notes>
       <segment>
         <source>The same request with curl</source>
@@ -14921,7 +14981,7 @@
     </unit>
     <unit id="repo.wizard.back">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:313,315</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:317,319</note>
       </notes>
       <segment>
         <source> Back </source>
@@ -14929,7 +14989,7 @@
     </unit>
     <unit id="repo.wizard.next">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:322,324</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:326,328</note>
       </notes>
       <segment>
         <source> Next </source>
@@ -14937,7 +14997,7 @@
     </unit>
     <unit id="repo.wizard.create">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:331,334</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:335,338</note>
       </notes>
       <segment>
         <source> Create repository </source>
@@ -14945,7 +15005,7 @@
     </unit>
     <unit id="repo.class.local.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:93</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:97</note>
       </notes>
       <segment>
         <source>Holds content that is deployed to trove.</source>
@@ -14953,7 +15013,7 @@
     </unit>
     <unit id="repo.class.remote.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:95</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:99</note>
       </notes>
       <segment>
         <source>Caches content from an upstream registry.</source>
@@ -14961,15 +15021,23 @@
     </unit>
     <unit id="repo.class.virtual.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:97</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:101</note>
       </notes>
       <segment>
         <source>Presents several repositories under one address.</source>
       </segment>
     </unit>
+    <unit id="repo.wizard.project-choose">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:166</note>
+      </notes>
+      <segment>
+        <source>Choose a project</source>
+      </segment>
+    </unit>
     <unit id="repo.wizard.step.format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:162</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:192</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -14977,7 +15045,7 @@
     </unit>
     <unit id="repo.wizard.step.class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:163</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:193</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -14985,7 +15053,7 @@
     </unit>
     <unit id="repo.wizard.step.basic">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:164</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:194</note>
       </notes>
       <segment>
         <source>Basic settings</source>
@@ -14993,7 +15061,7 @@
     </unit>
     <unit id="repo.wizard.step.review">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:166</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:196</note>
       </notes>
       <segment>
         <source>Review</source>
@@ -15001,7 +15069,7 @@
     </unit>
     <unit id="repo.wizard.step.access-format-mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:173</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:203</note>
       </notes>
       <segment>
         <source>Access, upstream, <ph id="0" equiv="format" disp="this.formatLabel()"/> and mirror settings</source>
@@ -15009,7 +15077,7 @@
     </unit>
     <unit id="repo.wizard.step.access-mirror">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:174</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:204</note>
       </notes>
       <segment>
         <source>Access, upstream and mirror settings</source>
@@ -15017,7 +15085,7 @@
     </unit>
     <unit id="repo.wizard.step.access-upstream-format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:178</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:208</note>
       </notes>
       <segment>
         <source>Access, upstream and <ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
@@ -15025,7 +15093,7 @@
     </unit>
     <unit id="repo.wizard.step.access-upstream">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:179</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:209</note>
       </notes>
       <segment>
         <source>Access and upstream settings</source>
@@ -15033,7 +15101,7 @@
     </unit>
     <unit id="repo.wizard.step.access-format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:182</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:212</note>
       </notes>
       <segment>
         <source>Access and <ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
@@ -15041,7 +15109,7 @@
     </unit>
     <unit id="repo.wizard.step.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:183</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:213</note>
       </notes>
       <segment>
         <source>Access settings</source>
@@ -15049,7 +15117,7 @@
     </unit>
     <unit id="repo.class.unsupported">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:356</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:377</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="format" disp="this.formatLabel()"/> does not implement the class <ph id="1" equiv="class" disp="classLabel(cls)"/>.</source>
@@ -15057,7 +15125,7 @@
     </unit>
     <unit id="repo.wizard.created">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:460</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:481</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="created.value.key"/> created.</source>
@@ -15280,7 +15348,7 @@
     </unit>
     <unit id="upstream.test.accepted">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:346</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:348</note>
       </notes>
       <segment>
         <source>accepted</source>
@@ -15288,7 +15356,7 @@
     </unit>
     <unit id="upstream.test.refused">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:347</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:349</note>
       </notes>
       <segment>
         <source>refused</source>
@@ -15296,7 +15364,7 @@
     </unit>
     <unit id="upstream.test.unreachable">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:370</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:372</note>
       </notes>
       <segment>
         <source>The upstream could not be reached.</source>
@@ -15304,7 +15372,7 @@
     </unit>
     <unit id="upstream.test.denied">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:372</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:374</note>
       </notes>
       <segment>
         <source>The upstream answered and refused the credentials.</source>
@@ -15312,7 +15380,7 @@
     </unit>
     <unit id="upstream.test.ok">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:374</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:376</note>
       </notes>
       <segment>
         <source>The upstream answered.</source>
@@ -15320,7 +15388,7 @@
     </unit>
     <unit id="upstream.test.answered-error">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:375</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:377</note>
       </notes>
       <segment>
         <source>The upstream answered with an error.</source>
@@ -15328,7 +15396,7 @@
     </unit>
     <unit id="upstream.metadata-ttl.hint-none">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:382</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:384</note>
       </notes>
       <segment>
         <source>How long fetched metadata is served without asking the upstream again. Empty: the format&apos;s default.</source>
@@ -15336,7 +15404,7 @@
     </unit>
     <unit id="upstream.metadata-ttl.hint">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:383</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:385</note>
       </notes>
       <segment>
         <source>How long fetched metadata is served without asking the upstream again. Default: <ph id="0" equiv="seconds" disp="d"/>.</source>
@@ -15344,7 +15412,7 @@
     </unit>
     <unit id="upstream.notfound-ttl.hint-none">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:388</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:390</note>
       </notes>
       <segment>
         <source>How long &quot;not found&quot; answers are remembered. Empty: the format&apos;s default.</source>
@@ -15352,7 +15420,7 @@
     </unit>
     <unit id="upstream.notfound-ttl.hint">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:389</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:391</note>
       </notes>
       <segment>
         <source>How long &quot;not found&quot; answers are remembered. Default: <ph id="0" equiv="seconds" disp="d"/>.</source>
@@ -15360,7 +15428,7 @@
     </unit>
     <unit id="upstream.auth.basic">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:395</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:397</note>
       </notes>
       <segment>
         <source>Username and password</source>
@@ -15368,7 +15436,7 @@
     </unit>
     <unit id="upstream.auth.bearer">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:397</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:399</note>
       </notes>
       <segment>
         <source>Bearer token</source>
@@ -15376,7 +15444,7 @@
     </unit>
     <unit id="upstream.auth.none">
       <notes>
-        <note category="location">src/app/features/repositories/upstream-settings.ts:399</note>
+        <note category="location">src/app/features/repositories/upstream-settings.ts:401</note>
       </notes>
       <segment>
         <source>None</source>
@@ -15703,17 +15771,9 @@
         <source>Delete</source>
       </segment>
     </unit>
-    <unit id="sa.enable-note">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:88,89</note>
-      </notes>
-      <segment>
-        <source>Enabling needs the project&apos;s switch for policies and service accounts, which is off. An administrator of trove can switch it on.</source>
-      </segment>
-    </unit>
     <unit id="sa.tokens">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:98,99</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:92,93</note>
       </notes>
       <segment>
         <source>Tokens</source>
@@ -15721,7 +15781,7 @@
     </unit>
     <unit id="sa.tokens-denied">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:102,104</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:96,98</note>
       </notes>
       <segment>
         <source>You need the permission to read tokens to manage the tokens of this account.</source>
@@ -15729,7 +15789,7 @@
     </unit>
     <unit id="sa.saved">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:189</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:181</note>
       </notes>
       <segment>
         <source>Service account saved.</source>
@@ -15737,7 +15797,7 @@
     </unit>
     <unit id="sa.disable-title">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:199</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:191</note>
       </notes>
       <segment>
         <source>Disable this service account?</source>
@@ -15745,7 +15805,7 @@
     </unit>
     <unit id="sa.disable-text">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:200</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:192</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="account" disp="this.name()"/> can no longer authenticate.</source>
@@ -15753,7 +15813,7 @@
     </unit>
     <unit id="sa.disable-confirm">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:201</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:193</note>
       </notes>
       <segment>
         <source>Disable</source>
@@ -15761,7 +15821,7 @@
     </unit>
     <unit id="sa.disable-revoke">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:202</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:194</note>
       </notes>
       <segment>
         <source>Also revoke all tokens of this account</source>
@@ -15769,7 +15829,7 @@
     </unit>
     <unit id="sa.disabled-done">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:209</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:201</note>
       </notes>
       <segment>
         <source>Service account disabled.</source>
@@ -15777,7 +15837,7 @@
     </unit>
     <unit id="sa.enabled-done">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:216</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:208</note>
       </notes>
       <segment>
         <source>Service account enabled.</source>
@@ -15785,7 +15845,7 @@
     </unit>
     <unit id="sa.delete-title">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:221</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:213</note>
       </notes>
       <segment>
         <source>Delete this service account?</source>
@@ -15793,7 +15853,7 @@
     </unit>
     <unit id="sa.delete-text">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:222</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:214</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="account" disp="this.name()"/> and its tokens are removed. This cannot be undone.</source>
@@ -15801,7 +15861,7 @@
     </unit>
     <unit id="sa.delete-confirm">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:223</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:215</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -15809,7 +15869,7 @@
     </unit>
     <unit id="sa.deleted">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:229</note>
+        <note category="location">src/app/features/service-accounts/service-account-detail.ts:221</note>
       </notes>
       <segment>
         <source>Service account deleted.</source>
@@ -15860,7 +15920,7 @@
         <note category="location">src/app/features/service-accounts/service-account-list.ts:66</note>
       </notes>
       <segment>
-        <source>Starts with <ph id="0" equiv="project" disp="this.project"/>- and cannot be changed later. Lower-case letters, digits and -.</source>
+        <source>Unique within the project <ph id="0" equiv="project" disp="this.project"/> and cannot be changed later. Lower-case letters, digits and -.</source>
       </segment>
     </unit>
     <unit id="sa-create.name-hint">
@@ -15873,7 +15933,7 @@
     </unit>
     <unit id="sa-create.created">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:90</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:87</note>
       </notes>
       <segment>
         <source>Service account created.</source>
@@ -15881,7 +15941,7 @@
     </unit>
     <unit id="sas.heading">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:109,110</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:106,107</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -15889,7 +15949,7 @@
     </unit>
     <unit id="sas.add">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:110,111</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:107,108</note>
       </notes>
       <segment>
         <source>New service account</source>
@@ -15897,7 +15957,7 @@
     </unit>
     <unit id="sas.hint">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:114,117</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:111,114</note>
       </notes>
       <segment>
         <source> Use a service account for CI systems that cannot sign in through OpenID Connect and for long-running automation. Its tokens act as the account, not as a person. </source>
@@ -15905,7 +15965,7 @@
     </unit>
     <unit id="sas.empty">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:133,134</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:130,131</note>
       </notes>
       <segment>
         <source>No service account matches.</source>
@@ -15913,7 +15973,7 @@
     </unit>
     <unit id="sas.active">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:151,152</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:148,149</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -15921,7 +15981,7 @@
     </unit>
     <unit id="sas.disabled">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:153,154</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:150,151</note>
       </notes>
       <segment>
         <source>Disabled</source>
@@ -15929,8 +15989,8 @@
     </unit>
     <unit id="sas.q">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:170</note>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:171</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:167</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:168</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -15938,7 +15998,7 @@
     </unit>
     <unit id="sas.caption">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:189</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:186</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -15946,7 +16006,7 @@
     </unit>
     <unit id="sas.apply">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:190</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:187</note>
       </notes>
       <segment>
         <source>Apply filter</source>
@@ -15954,7 +16014,7 @@
     </unit>
     <unit id="sas.col.name">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:192</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:189</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -15962,7 +16022,7 @@
     </unit>
     <unit id="sas.col.description">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:193</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:190</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -15970,7 +16030,7 @@
     </unit>
     <unit id="sas.col.project">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:194</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:191</note>
       </notes>
       <segment>
         <source>Project</source>
@@ -15978,7 +16038,7 @@
     </unit>
     <unit id="sas.col.status">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:195</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:192</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -15986,7 +16046,8 @@
     </unit>
     <unit id="route.service-accounts.detail.title">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:12</note>
+        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:13</note>
+        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:18</note>
       </notes>
       <segment>
         <source>Service account</source>
@@ -16726,7 +16787,7 @@
     </unit>
     <unit id="setup.publish.read-only">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:220</note>
+        <note category="location">src/app/features/setup/client-setup.ts:222</note>
       </notes>
       <segment>
         <source>Read only</source>
@@ -16734,7 +16795,7 @@
     </unit>
     <unit id="setup.publish.by-target">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:222</note>
+        <note category="location">src/app/features/setup/client-setup.ts:224</note>
       </notes>
       <segment>
         <source>Publishing goes to its default deployment target</source>
@@ -16742,7 +16803,7 @@
     </unit>
     <unit id="setup.publish.yes">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:225</note>
+        <note category="location">src/app/features/setup/client-setup.ts:227</note>
       </notes>
       <segment>
         <source>You can publish</source>
@@ -16750,7 +16811,7 @@
     </unit>
     <unit id="setup.publish.no">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:226</note>
+        <note category="location">src/app/features/setup/client-setup.ts:228</note>
       </notes>
       <segment>
         <source>You cannot publish</source>
@@ -16758,7 +16819,7 @@
     </unit>
     <unit id="setup.bastion.replace-host">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:232</note>
+        <note category="location">src/app/features/setup/client-setup.ts:234</note>
       </notes>
       <segment>
         <source>replace-registry-host=always makes npm fetch every package from this address, also when a lockfile written against another host names that host.</source>
@@ -16766,7 +16827,7 @@
     </unit>
     <unit id="setup.token.description">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:271</note>
+        <note category="location">src/app/features/setup/client-setup.ts:273</note>
       </notes>
       <segment>
         <source>Client setup: <ph id="0" equiv="client" disp="setup.client"/>, <ph id="1" equiv="repository" disp="repository"/>, <ph id="2" equiv="date" disp="new Date().toISOString().slice(0, 10)"/></source>
@@ -22129,7 +22190,7 @@
         <note category="location">src/app/shared/access/token-form.ts:104,107</note>
       </notes>
       <segment>
-        <source>One repository key or pattern per line, for example npm-internal or npm-team-*.</source>
+        <source>One project/key or pattern per line, for example web/npm-internal or web/npm-team-*; or a class such as @any-local.</source>
       </segment>
     </unit>
     <unit id="token-form.packages">

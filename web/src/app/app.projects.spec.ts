@@ -49,7 +49,7 @@ const PROJECT_ADMIN: Me = {
   roles: [],
   capabilities: [],
   principals: ['user:alice'],
-  projects: [{ key: 'web', managePolicies: true, manageRepositories: false }],
+  projects: [{ key: 'web', role: 'owner' }],
 };
 
 describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-181)', () => {
@@ -137,12 +137,12 @@ describe('The project filter of the top bar (R-UI-041, R-API-021)', () => {
 
   it('R-UI-041 filters the repository list through project=', async () => {
     const { root } = await render('/admin/repositories', undefined, (api, prefs) => {
-      api.projects = [sampleProject()];
-      prefs.stored = { ...prefs.stored, projectFilter: 'web' };
+      api.projects = [sampleProject(), sampleProject({ key: 'data', displayName: 'Data' })];
+      prefs.stored = { ...prefs.stored, projectFilter: 'data' };
     });
     expect(root.querySelector('.project-note')?.textContent).toContain('Showing the repositories of project');
-    expect(root.querySelector('.project-note strong')?.textContent).toBe('web');
-    // The fake repositories belong to no project: the filtered list is empty.
+    expect(root.querySelector('.project-note strong')?.textContent).toBe('data');
+    // The fake repositories belong to the project web: the list of data is empty.
     expect(root.textContent).toContain('No repository matches the filters');
   });
 

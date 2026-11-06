@@ -5639,8 +5639,8 @@
         <note category="location">src/app/features/repositories/repository-list.ts:182</note>
       </notes>
       <segment>
-        <source>Delete repository <ph id="0" equiv="key" disp="this.key()"/>?</source>
-        <target>Repository <ph id="0" equiv="key" disp="this.key()"/> löschen?</target>
+        <source>Delete repository <ph id="0" equiv="key" disp="this.ref()"/>?</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> löschen?</target>
       </segment>
     </unit>
     <unit id="repo.delete.text">
@@ -5669,8 +5669,8 @@
         <note category="location">src/app/features/repositories/repository-list.ts:228</note>
       </notes>
       <segment>
-        <source>Deleting repository <ph id="0" equiv="key" disp="this.key()"/> failed. Its row is kept; try again.</source>
-        <target>Das Löschen von Repository <ph id="0" equiv="key" disp="this.key()"/> ist fehlgeschlagen. Die Zeile bleibt erhalten; versuchen Sie es erneut.</target>
+        <source>Deleting repository <ph id="0" equiv="key" disp="this.ref()"/> failed. Its row is kept; try again.</source>
+        <target>Das Löschen von Repository <ph id="0" equiv="key" disp="this.ref()"/> ist fehlgeschlagen. Die Zeile bleibt erhalten; versuchen Sie es erneut.</target>
       </segment>
     </unit>
     <unit id="repo.delete.done">
@@ -5679,8 +5679,8 @@
         <note category="location">src/app/features/repositories/repository-list.ts:218</note>
       </notes>
       <segment>
-        <source>Repository <ph id="0" equiv="key" disp="this.key()"/> deleted.</source>
-        <target>Repository <ph id="0" equiv="key" disp="this.key()"/> gelöscht.</target>
+        <source>Repository <ph id="0" equiv="key" disp="this.ref()"/> deleted.</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> gelöscht.</target>
       </segment>
     </unit>
     <unit id="repo.delete.progress">
@@ -6049,11 +6049,11 @@
     </unit>
     <unit id="repo.field.key.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:154,156</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:155,157</note>
       </notes>
       <segment>
-        <source> 2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part of every address and cannot be changed later. </source>
-        <target>2 bis 64 Zeichen: Kleinbuchstaben, Ziffern, Punkt, Unterstrich und Bindestrich. Er ist Teil jeder Adresse und lässt sich später nicht ändern.</target>
+        <source> 2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part of every address and cannot be changed later. It is unique within the project. </source>
+        <target> 2 bis 64 Zeichen: Kleinbuchstaben, Ziffern, Punkt, Unterstrich und Bindestrich. Er ist Teil jeder Adresse und lässt sich später nicht ändern. Er ist im Projekt eindeutig. </target>
       </segment>
     </unit>
     <unit id="repo.key.checking">
@@ -6094,11 +6094,11 @@
     </unit>
     <unit id="repo.key.taken">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:183,185</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:184,186</note>
       </notes>
       <segment>
-        <source>A repository with this key already exists.</source>
-        <target>Ein Repository mit diesem Schlüssel existiert bereits.</target>
+        <source>A repository with this key already exists in the project.</source>
+        <target>Im Projekt existiert bereits ein Repository mit diesem Schlüssel.</target>
       </segment>
     </unit>
     <unit id="repo.wizard.access.heading">
@@ -8348,11 +8348,11 @@
     </unit>
     <unit id="policy.repositories-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:158,160</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:274</note>
       </notes>
       <segment>
-        <source>One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).</source>
-        <target>Einer pro Zeile: ein Schlüssel (npm-internal), ein Muster (npm-team-*) oder eine Klasse (@any-local, @any-remote, @any-virtual, @any), optional mit einem Format (@any-local:npm).</target>
+        <source>One per line: project/key (web/npm-internal), a pattern (web/npm-team-*, */npm-remote) or a class of every project (@any-local, @any), optionally with a format (@any-local:npm, */*:npm).</source>
+        <target>Eine pro Zeile: Projekt/Schlüssel (web/npm-internal), ein Muster (web/npm-team-*, */npm-remote) oder eine Klasse aller Projekte (@any-local, @any), optional mit einem Format (@any-local:npm, */*:npm).</target>
       </segment>
     </unit>
     <unit id="policy.covers-checking">
@@ -12332,8 +12332,8 @@
         <note category="location">src/app/shared/access/token-form.ts:104,107</note>
       </notes>
       <segment>
-        <source>One repository key or pattern per line, for example npm-internal or npm-team-*.</source>
-        <target>Ein Repository-Schlüssel oder -Muster pro Zeile, zum Beispiel npm-internal oder npm-team-*.</target>
+        <source>One project/key or pattern per line, for example web/npm-internal or web/npm-team-*; or a class such as @any-local.</source>
+        <target>Ein Projekt/Schlüssel oder Muster pro Zeile, zum Beispiel web/npm-internal oder web/npm-team-*; oder eine Klasse wie @any-local.</target>
       </segment>
     </unit>
     <unit id="token-form.packages">
@@ -15362,24 +15362,6 @@
         <target>Ein Servicekonto eines Projekts kann nur durch die Berechtigungsrichtlinien des eigenen Projekts berechtigt werden.</target>
       </segment>
     </unit>
-    <unit id="problem.project_prefix_required">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:100</note>
-      </notes>
-      <segment>
-        <source>The name must start with the key of the project and a hyphen.</source>
-        <target>Der Name muss mit dem Schlüssel des Projekts und einem Bindestrich beginnen.</target>
-      </segment>
-    </unit>
-    <unit id="problem.name_reserved_by_project">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:102</note>
-      </notes>
-      <segment>
-        <source>The name starts with the key of a project and a hyphen, which only that project&apos;s service accounts may use. Choose another name, or create the account in the project.</source>
-        <target>Der Name beginnt mit dem Schlüssel eines Projekts und einem Bindestrich; den dürfen nur die Servicekonten dieses Projekts tragen. Wählen Sie einen anderen Namen oder legen Sie das Konto im Projekt an.</target>
-      </segment>
-    </unit>
     <unit id="problem.project_account_not_groupable">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:104</note>
@@ -15391,47 +15373,11 @@
     </unit>
     <unit id="problem.project_not_empty">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:106</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:102</note>
       </notes>
       <segment>
-        <source>The project still has repositories or service accounts. Unassign the repositories and delete the service accounts first.</source>
-        <target>Das Projekt hat noch Repositories oder Servicekonten. Entfernen Sie zuerst die Zuordnung der Repositories und löschen Sie die Servicekonten.</target>
-      </segment>
-    </unit>
-    <unit id="problem.repository_assigned">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:108</note>
-      </notes>
-      <segment>
-        <source>The repository belongs to another project. Move it to take it over.</source>
-        <target>Das Repository gehört zu einem anderen Projekt. Verschieben Sie es, um es zu übernehmen.</target>
-      </segment>
-    </unit>
-    <unit id="problem.project_owner_changed">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:110</note>
-      </notes>
-      <segment>
-        <source>The repository was moved to another project in the meantime. Read it again and decide again.</source>
-        <target>Das Repository wurde inzwischen in ein anderes Projekt verschoben. Lesen Sie es neu ein und entscheiden Sie erneut.</target>
-      </segment>
-    </unit>
-    <unit id="problem.project_key_overlap">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:112</note>
-      </notes>
-      <segment>
-        <source>The key overlaps another project&apos;s key (no key is another&apos;s key followed by a hyphen) or the start of a service account&apos;s name.</source>
-        <target>Der Schlüssel überschneidet sich mit dem Schlüssel eines anderen Projekts (kein Schlüssel ist der Schlüssel eines anderen gefolgt von einem Bindestrich) oder mit dem Anfang des Namens eines Servicekontos.</target>
-      </segment>
-    </unit>
-    <unit id="problem.project_switch_off">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:114</note>
-      </notes>
-      <segment>
-        <source>This is switched off for the project. An administrator of trove can switch it on.</source>
-        <target>Das ist für das Projekt ausgeschaltet. Ein Administrator von trove kann es einschalten.</target>
+        <source>The project still has repositories or service accounts. Move or delete the repositories and delete the service accounts first.</source>
+        <target>Das Projekt enthält noch Repositories oder Servicekonten. Verschieben oder löschen Sie zuerst die Repositories und löschen Sie die Servicekonten.</target>
       </segment>
     </unit>
     <unit id="problem.secret_value_required">
@@ -15526,20 +15472,20 @@
     </unit>
     <unit id="policy.project-selectors">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:181,185</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:180,184</note>
       </notes>
       <segment>
-        <source> A project policy covers the repositories of its project only, whatever the selectors name. </source>
-        <target> Eine Projekt-Richtlinie gilt nur für die Repositories ihres Projekts, was auch immer die Selektoren nennen. </target>
+        <source> A project policy covers the repositories of its project only; its selectors are bare keys, never project/key. </source>
+        <target> Eine Projekt-Richtlinie deckt nur die Repositories ihres Projekts ab; ihre Selektoren sind reine Schlüssel, nie Projekt/Schlüssel. </target>
       </segment>
     </unit>
     <unit id="policy.name-hint-project">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.ts:265</note>
+        <note category="location">src/app/features/permissions/policy-editor.ts:267</note>
       </notes>
       <segment>
-        <source>Starts with <ph id="0" equiv="project" disp="key"/>- and cannot be changed later.</source>
-        <target>Beginnt mit <ph id="0" equiv="project" disp="key"/>- und kann später nicht geändert werden.</target>
+        <source>Unique within the project <ph id="0" equiv="project" disp="key"/> and cannot be changed later.</source>
+        <target>Eindeutig im Projekt <ph id="0" equiv="project" disp="key"/> und später nicht änderbar.</target>
       </segment>
     </unit>
     <unit id="policy.project-repos-label">
@@ -15623,24 +15569,6 @@
         <target>Die Suche ist fehlgeschlagen. Versuchen Sie es erneut.</target>
       </segment>
     </unit>
-    <unit id="project-needs.switch-off">
-      <notes>
-        <note category="location">src/app/features/projects/project-access.ts:39</note>
-      </notes>
-      <segment>
-        <source>Switched off for this project:</source>
-        <target>Für dieses Projekt ausgeschaltet:</target>
-      </segment>
-    </unit>
-    <unit id="project-needs.switch-off-hint">
-      <notes>
-        <note category="location">src/app/features/projects/project-access.ts:40,42</note>
-      </notes>
-      <segment>
-        <source>An administrator of trove can switch it on.</source>
-        <target>Ein Administrator von trove kann es einschalten.</target>
-      </segment>
-    </unit>
     <unit id="project.heading">
       <notes>
         <note category="location">src/app/features/projects/project-detail.ts:40,41</note>
@@ -15686,51 +15614,6 @@
         <target>Beschreibung</target>
       </segment>
     </unit>
-    <unit id="project.switches">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:60,62</note>
-      </notes>
-      <segment>
-        <source>Administrators may</source>
-        <target>Administratoren dürfen</target>
-      </segment>
-    </unit>
-    <unit id="project.switch.policies">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:65,66</note>
-      </notes>
-      <segment>
-        <source>manage policies, service accounts and their tokens</source>
-        <target>Berechtigungsrichtlinien, Servicekonten und deren Token verwalten</target>
-      </segment>
-    </unit>
-    <unit id="project.switch.repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:70,71</note>
-      </notes>
-      <segment>
-        <source>create, change and delete repositories</source>
-        <target>Repositories anlegen, ändern und löschen</target>
-      </segment>
-    </unit>
-    <unit id="project.admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:75,77</note>
-      </notes>
-      <segment>
-        <source>Administrators</source>
-        <target>Administratoren</target>
-      </segment>
-    </unit>
-    <unit id="project.no-admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:78,80</note>
-      </notes>
-      <segment>
-        <source>None yet.</source>
-        <target>Noch keine.</target>
-      </segment>
-    </unit>
     <unit id="project.counts">
       <notes>
         <note category="location">src/app/features/projects/project-detail.ts:87,89</note>
@@ -15742,11 +15625,11 @@
     </unit>
     <unit id="project.counts-text">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:89,90</note>
+        <note category="location">src/app/features/projects/project-detail.ts:79,80</note>
       </notes>
       <segment>
-        <source><ph id="0" equiv="INTERPOLATION" disp="{{ p.repositories }}"/> repositories, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.policies }}"/> policies, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.serviceAccounts }}"/> service accounts</source>
-        <target><ph id="0" equiv="INTERPOLATION" disp="{{ p.repositories }}"/> Repositories, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.policies }}"/> Berechtigungsrichtlinien, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.serviceAccounts }}"/> Servicekonten</target>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ p.members }}"/> members, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.repositories }}"/> repositories, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.policies }}"/> policies, <ph id="3" equiv="INTERPOLATION_3" disp="{{ p.serviceAccounts }}"/> service accounts</source>
+        <target><ph id="0" equiv="INTERPOLATION" disp="{{ p.members }}"/> Mitglieder, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.repositories }}"/> Repositories, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.policies }}"/> Berechtigungsrichtlinien, <ph id="3" equiv="INTERPOLATION_3" disp="{{ p.serviceAccounts }}"/> Servicekonten</target>
       </segment>
     </unit>
     <unit id="project.updated">
@@ -15787,11 +15670,11 @@
     </unit>
     <unit id="project.delete-note">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:113,115</note>
+        <note category="location">src/app/features/projects/project-detail.ts:106,108</note>
       </notes>
       <segment>
-        <source>A project can be deleted when no repository and no service account belongs to it. Unassign the repositories and delete the service accounts first.</source>
-        <target>Ein Projekt kann gelöscht werden, wenn ihm kein Repository und kein Servicekonto angehört. Entfernen Sie zuerst die Zuordnung der Repositories und löschen Sie die Servicekonten.</target>
+        <source>A project can be deleted when no repository and no service account belongs to it. Move or delete the repositories and delete the service accounts first.</source>
+        <target>Ein Projekt kann gelöscht werden, wenn ihm kein Repository und kein Servicekonto mehr gehört. Verschieben oder löschen Sie zuerst die Repositories und löschen Sie die Servicekonten.</target>
       </segment>
     </unit>
     <unit id="project.repositories">
@@ -15868,11 +15751,11 @@
     </unit>
     <unit id="project.delete-text">
       <notes>
-        <note category="location">src/app/features/projects/project-detail.ts:230</note>
+        <note category="location">src/app/features/projects/project-detail.ts:232</note>
       </notes>
       <segment>
-        <source>The project, its permission policies and its administrator entries are deleted. The policies stop granting at once on every replica. This cannot be undone.</source>
-        <target>Das Projekt, seine Berechtigungsrichtlinien und seine Administratoreinträge werden gelöscht. Die Richtlinien berechtigen auf jedem Replikat sofort nicht mehr. Das lässt sich nicht rückgängig machen.</target>
+        <source>The project, its permission policies and its member entries are deleted. The policies stop granting at once on every replica. This cannot be undone.</source>
+        <target>Das Projekt, seine Berechtigungsrichtlinien und seine Mitgliedseinträge werden gelöscht. Die Richtlinien gewähren sofort auf jedem Replikat nichts mehr. Das lässt sich nicht rückgängig machen.</target>
       </segment>
     </unit>
     <unit id="project.delete-confirm">
@@ -15947,132 +15830,6 @@
         <target>Beschreibung</target>
       </segment>
     </unit>
-    <unit id="project-dialog.switches">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:82,83</note>
-      </notes>
-      <segment>
-        <source>What the administrators may do</source>
-        <target>Was die Administratoren dürfen</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.manage-policies">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:84,86</note>
-      </notes>
-      <segment>
-        <source>Manage policies and service accounts</source>
-        <target>Berechtigungsrichtlinien und Servicekonten verwalten</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.manage-policies-hint">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:87,89</note>
-      </notes>
-      <segment>
-        <source> Create and change the project&apos;s permission policies, create and enable its service accounts, issue their tokens and look up users and groups. </source>
-        <target> Berechtigungsrichtlinien des Projekts anlegen und ändern, seine Servicekonten anlegen und aktivieren, deren Token ausstellen und Benutzer und Gruppen nachschlagen. </target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.manage-repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:90,92</note>
-      </notes>
-      <segment>
-        <source>Manage repositories</source>
-        <target>Repositories verwalten</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.manage-repositories-hint">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:93,97</note>
-      </notes>
-      <segment>
-        <source> Create, change and delete the project&apos;s repositories, also remote ones that reach other servers. Assigning repositories stays with you. </source>
-        <target> Repositories des Projekts anlegen, ändern und löschen, auch Remote-Repositories, die andere Server erreichen. Repositories zuzuordnen bleibt bei Ihnen. </target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:98,99</note>
-      </notes>
-      <segment>
-        <source>Administrators</source>
-        <target>Administratoren</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.no-admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:100,102</note>
-      </notes>
-      <segment>
-        <source>No administrator yet. Users and groups can administer a project.</source>
-        <target>Noch kein Administrator. Benutzer und Gruppen können ein Projekt verwalten.</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.remove-admin">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:108,109</note>
-      </notes>
-      <segment>
-        <source>Remove administrator</source>
-        <target>Administrator entfernen</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.find-admin">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:116,118</note>
-      </notes>
-      <segment>
-        <source>Find a user or group</source>
-        <target>Benutzer oder Gruppe suchen</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:125,126</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-        <target>Repositories</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.no-repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:127,129</note>
-      </notes>
-      <segment>
-        <source>No repository is assigned.</source>
-        <target>Kein Repository zugeordnet.</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.moves">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:134,135</note>
-      </notes>
-      <segment>
-        <source>moves from <ph id="0" equiv="INTERPOLATION" disp="{{ from }}"/></source>
-        <target>wechselt von <ph id="0" equiv="INTERPOLATION" disp="{{ from }}"/></target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.remove-repository">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:138,139</note>
-      </notes>
-      <segment>
-        <source>Remove repository</source>
-        <target>Repository entfernen</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.add-repository">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:146,148</note>
-      </notes>
-      <segment>
-        <source>Add a repository</source>
-        <target>Repository hinzufügen</target>
-      </segment>
-    </unit>
     <unit id="project-dialog.cancel">
       <notes>
         <note category="location">src/app/features/projects/project-dialog.ts:155,156</note>
@@ -16100,42 +15857,6 @@
         <target>Projekt anlegen</target>
       </segment>
     </unit>
-    <unit id="project-dialog.admins-label">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:232</note>
-      </notes>
-      <segment>
-        <source>Administrators of the project</source>
-        <target>Administratoren des Projekts</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.repositories-label">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:233</note>
-      </notes>
-      <segment>
-        <source>Repositories of the project</source>
-        <target>Repositories des Projekts</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.choose-repository">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:244</note>
-      </notes>
-      <segment>
-        <source>Choose a repository</source>
-        <target>Repository wählen</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.repository-of">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:251</note>
-      </notes>
-      <segment>
-        <source><ph id="0" equiv="key" disp="r.key"/> (belongs to <ph id="1" equiv="project" disp="r.project"/>)</source>
-        <target><ph id="0" equiv="key" disp="r.key"/> (gehört zu <ph id="1" equiv="project" disp="r.project"/>)</target>
-      </segment>
-    </unit>
     <unit id="project-dialog.display-name-invalid">
       <notes>
         <note category="location">src/app/features/projects/project-dialog.ts:298</note>
@@ -16143,33 +15864,6 @@
       <segment>
         <source>The display name is required, 1 to 128 characters.</source>
         <target>Der Anzeigename ist erforderlich, 1 bis 128 Zeichen.</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.move-title">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:474</note>
-      </notes>
-      <segment>
-        <source>Move <ph id="0" equiv="repository" disp="repository"/> to <ph id="1" equiv="project" disp="key"/>?</source>
-        <target><ph id="0" equiv="repository" disp="repository"/> nach <ph id="1" equiv="project" disp="key"/> verschieben?</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.move-line">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:476</note>
-      </notes>
-      <segment>
-        <source>The repository now belongs to project <ph id="0" equiv="owner" disp="owner"/>. Moving it takes it away from that project.</source>
-        <target>Das Repository gehört jetzt zum Projekt <ph id="0" equiv="owner" disp="owner"/>. Beim Verschieben wird es diesem Projekt entzogen.</target>
-      </segment>
-    </unit>
-    <unit id="project-dialog.move-confirm">
-      <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:478</note>
-      </notes>
-      <segment>
-        <source>Move repository</source>
-        <target>Repository verschieben</target>
       </segment>
     </unit>
     <unit id="project-dialog.key-invalid">
@@ -16204,8 +15898,8 @@
         <note category="location">src/app/features/projects/project-list.ts:41,44</note>
       </notes>
       <segment>
-        <source> A project gives a team its own administrators: they manage the project&apos;s repositories, permission policies and service accounts without a system role. </source>
-        <target> Ein Projekt gibt einem Team eigene Administratoren: Sie verwalten die Repositories, Berechtigungsrichtlinien und Servicekonten des Projekts ohne Systemrolle. </target>
+        <source> A project holds a team&apos;s repositories. Its members have a role in it; its Owners manage the repositories, permission policies and service accounts without a system role. </source>
+        <target> Ein Projekt enthält die Repositories eines Teams. Seine Mitglieder haben darin eine Rolle; seine Eigentümer verwalten die Repositories, Berechtigungsrichtlinien und Servicekonten ohne Systemrolle. </target>
       </segment>
     </unit>
     <unit id="projects.empty">
@@ -16215,24 +15909,6 @@
       <segment>
         <source>There is no project yet.</source>
         <target>Es gibt noch kein Projekt.</target>
-      </segment>
-    </unit>
-    <unit id="projects.switch.policies">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:78,79</note>
-      </notes>
-      <segment>
-        <source>Policies</source>
-        <target>Richtlinien</target>
-      </segment>
-    </unit>
-    <unit id="projects.switch.repositories">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:83,84</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-        <target>Repositories</target>
       </segment>
     </unit>
     <unit id="projects.edit">
@@ -16252,24 +15928,6 @@
       <segment>
         <source>Key or name</source>
         <target>Schlüssel oder Name</target>
-      </segment>
-    </unit>
-    <unit id="projects.switch.on">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:140</note>
-      </notes>
-      <segment>
-        <source>on</source>
-        <target>an</target>
-      </segment>
-    </unit>
-    <unit id="projects.switch.off">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:141</note>
-      </notes>
-      <segment>
-        <source>off</source>
-        <target>aus</target>
       </segment>
     </unit>
     <unit id="projects.caption">
@@ -16308,15 +15966,6 @@
         <target>Anzeigename</target>
       </segment>
     </unit>
-    <unit id="projects.col.admins">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:147</note>
-      </notes>
-      <segment>
-        <source>Administrators</source>
-        <target>Administratoren</target>
-      </segment>
-    </unit>
     <unit id="projects.col.repositories">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:148</note>
@@ -16324,24 +15973,6 @@
       <segment>
         <source>Repositories</source>
         <target>Repositories</target>
-      </segment>
-    </unit>
-    <unit id="projects.col.switches">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:151</note>
-      </notes>
-      <segment>
-        <source>Switches</source>
-        <target>Schalter</target>
-      </segment>
-    </unit>
-    <unit id="projects.help.switches">
-      <notes>
-        <note category="location">src/app/features/projects/project-list.ts:152</note>
-      </notes>
-      <segment>
-        <source>What the administrators of the project may do. Policies: permission policies, service accounts and their tokens. Repositories: create, change and delete the project&apos;s repositories.</source>
-        <target>Was die Administratoren des Projekts dürfen. Richtlinien: Berechtigungsrichtlinien, Servicekonten und deren Token. Repositories: die Repositories des Projekts anlegen, ändern und löschen.</target>
       </segment>
     </unit>
     <unit id="projects.col.actions">
@@ -16463,11 +16094,11 @@
     </unit>
     <unit id="project-repos.empty">
       <notes>
-        <note category="location">src/app/features/projects/project-repositories.ts:47,48</note>
+        <note category="location">src/app/features/projects/project-repositories.ts:46,47</note>
       </notes>
       <segment>
-        <source>No repository is assigned to this project.</source>
-        <target>Diesem Projekt ist kein Repository zugeordnet.</target>
+        <source>The project has no repository yet.</source>
+        <target>Das Projekt hat noch kein Repository.</target>
       </segment>
     </unit>
     <unit id="project-repos.deleting">
@@ -16661,20 +16292,11 @@
     </unit>
     <unit id="repo.wizard.project">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:131,132</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:132,133</note>
       </notes>
       <segment>
-        <source>This repository is created in project</source>
-        <target>Dieses Repository wird angelegt im Projekt</target>
-      </segment>
-    </unit>
-    <unit id="repo.wizard.project-hint">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:133,136</note>
-      </notes>
-      <segment>
-        <source>Its key starts with the project key and a hyphen.</source>
-        <target>Sein Schlüssel beginnt mit dem Projektschlüssel und einem Bindestrich.</target>
+        <source>Project</source>
+        <target>Projekt</target>
       </segment>
     </unit>
     <unit id="sa.back-project">
@@ -16695,22 +16317,13 @@
         <target>Servicekonto des Projekts</target>
       </segment>
     </unit>
-    <unit id="sa.enable-note">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-detail.ts:88,89</note>
-      </notes>
-      <segment>
-        <source>Enabling needs the project&apos;s switch for policies and service accounts, which is off. An administrator of trove can switch it on.</source>
-        <target>Zum Aktivieren braucht es den Schalter des Projekts für Richtlinien und Servicekonten; er ist aus. Ein Administrator von trove kann ihn einschalten.</target>
-      </segment>
-    </unit>
     <unit id="sa-create.name-hint-project">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-list.ts:66</note>
       </notes>
       <segment>
-        <source>Starts with <ph id="0" equiv="project" disp="this.project"/>- and cannot be changed later. Lower-case letters, digits and -.</source>
-        <target>Beginnt mit <ph id="0" equiv="project" disp="this.project"/>- und kann später nicht geändert werden. Kleinbuchstaben, Ziffern und -.</target>
+        <source>Unique within the project <ph id="0" equiv="project" disp="this.project"/> and cannot be changed later. Lower-case letters, digits and -.</source>
+        <target>Eindeutig im Projekt <ph id="0" equiv="project" disp="this.project"/> und später nicht änderbar. Kleinbuchstaben, Ziffern und -.</target>
       </segment>
     </unit>
     <unit id="sas.col.project">
@@ -19811,11 +19424,11 @@
     </unit>
     <unit id="ci.editor.repositories-hint">
       <notes>
-        <note category="location">src/app/features/ci/mapping-editor.html:203,205</note>
+        <note category="location">src/app/features/ci/mapping-editor.ts:113</note>
       </notes>
       <segment>
-        <source>One key or pattern per line. A template needs literal text next to the claim.</source>
-        <target>Ein Schlüssel oder Muster pro Zeile. Eine Vorlage braucht festen Text neben dem Claim.</target>
+        <source>One project/key or pattern per line, or a class such as @any-local. A template needs literal text next to the claim.</source>
+        <target>Ein Projekt/Schlüssel oder Muster pro Zeile, oder eine Klasse wie @any-local. Eine Vorlage braucht festen Text neben dem Claim.</target>
       </segment>
     </unit>
     <unit id="ci.editor.project-repos">
@@ -25587,6 +25200,459 @@
       <segment>
         <source>None</source>
         <target>Keine</target>
+      </segment>
+    </unit>
+    <unit id="problem.principal_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:104</note>
+      </notes>
+      <segment>
+        <source>Only users and groups can be members of a project. A service account, a CI mapping, anonymous and authenticated cannot.</source>
+        <target>Nur Benutzer und Gruppen können Mitglieder eines Projekts sein. Ein Servicekonto, eine CI-Zuordnung, anonymous und authenticated können es nicht.</target>
+      </segment>
+    </unit>
+    <unit id="ci.editor.repositories-hint-project">
+      <notes>
+        <note category="location">src/app/features/ci/mapping-editor.ts:112</note>
+      </notes>
+      <segment>
+        <source>One key or pattern per line. A template needs literal text next to the claim.</source>
+        <target>Ein Schlüssel oder Muster pro Zeile. Eine Vorlage braucht festen Text neben dem Claim.</target>
+      </segment>
+    </unit>
+    <unit id="policy.repositories-hint-project">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.ts:273</note>
+      </notes>
+      <segment>
+        <source>One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).</source>
+        <target>Eine pro Zeile: ein Schlüssel (npm-internal), ein Muster (npm-team-*) oder eine Klasse (@any-local, @any-remote, @any-virtual, @any), optional mit einem Format (@any-local:npm).</target>
+      </segment>
+    </unit>
+    <unit id="project.owners">
+      <notes>
+        <note category="location">src/app/features/projects/project-detail.ts:63,65</note>
+      </notes>
+      <segment>
+        <source>Owners</source>
+        <target>Eigentümer</target>
+      </segment>
+    </unit>
+    <unit id="project.no-owners">
+      <notes>
+        <note category="location">src/app/features/projects/project-detail.ts:66,68</note>
+      </notes>
+      <segment>
+        <source>None yet.</source>
+        <target>Noch keine.</target>
+      </segment>
+    </unit>
+    <unit id="project.your-role">
+      <notes>
+        <note category="location">src/app/features/projects/project-detail.ts:75,76</note>
+      </notes>
+      <segment>
+        <source>Your role</source>
+        <target>Ihre Rolle</target>
+      </segment>
+    </unit>
+    <unit id="project.members">
+      <notes>
+        <note category="location">src/app/features/projects/project-detail.ts:117,118</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+        <target>Mitglieder</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.owners">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:75,76</note>
+      </notes>
+      <segment>
+        <source>First Owners</source>
+        <target>Erste Eigentümer</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.no-owners">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:78,80</note>
+      </notes>
+      <segment>
+        <source> No Owner yet. Users and groups can own a project; members are added on the project&apos;s screen. </source>
+        <target> Noch kein Eigentümer. Benutzer und Gruppen können ein Projekt besitzen; Mitglieder werden auf der Seite des Projekts hinzugefügt. </target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.remove-owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:87,88</note>
+      </notes>
+      <segment>
+        <source>Remove owner</source>
+        <target>Eigentümer entfernen</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.find-owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:95,97</note>
+      </notes>
+      <segment>
+        <source>Find a user or group</source>
+        <target>Benutzer oder Gruppe suchen</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.owners-label">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:171</note>
+      </notes>
+      <segment>
+        <source>First Owners of the project</source>
+        <target>Erste Eigentümer des Projekts</target>
+      </segment>
+    </unit>
+    <unit id="projects.col.owners">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:126</note>
+      </notes>
+      <segment>
+        <source>Owners</source>
+        <target>Eigentümer</target>
+      </segment>
+    </unit>
+    <unit id="projects.col.members">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:127</note>
+      </notes>
+      <segment>
+        <source>Members</source>
+        <target>Mitglieder</target>
+      </segment>
+    </unit>
+    <unit id="projects.col.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:131</note>
+      </notes>
+      <segment>
+        <source>Your role</source>
+        <target>Ihre Rolle</target>
+      </segment>
+    </unit>
+    <unit id="projects.help.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:132</note>
+      </notes>
+      <segment>
+        <source>Your role in the project; empty when you see it through a system role and are no member.</source>
+        <target>Ihre Rolle im Projekt; leer, wenn Sie es über eine Systemrolle sehen und kein Mitglied sind.</target>
+      </segment>
+    </unit>
+    <unit id="project-members.last-owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:28,31</note>
+      </notes>
+      <segment>
+        <source>A project keeps at least one Owner. Make another member an Owner first.</source>
+        <target>Ein Projekt behält mindestens einen Eigentümer. Machen Sie zuerst ein anderes Mitglied zum Eigentümer.</target>
+      </segment>
+    </unit>
+    <unit id="project-members.empty">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:36,37</note>
+      </notes>
+      <segment>
+        <source>The project has no member yet.</source>
+        <target>Das Projekt hat noch kein Mitglied.</target>
+      </segment>
+    </unit>
+    <unit id="project-members.col.member">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:41,42</note>
+      </notes>
+      <segment>
+        <source>Member</source>
+        <target>Mitglied</target>
+      </segment>
+    </unit>
+    <unit id="project-members.col.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:42,43</note>
+      </notes>
+      <segment>
+        <source>Role</source>
+        <target>Rolle</target>
+      </segment>
+    </unit>
+    <unit id="project-members.col.actions">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:43,45</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+        <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="project-members.remove">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:66,67</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+        <target>Entfernen</target>
+      </segment>
+    </unit>
+    <unit id="project-members.add">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:79,80</note>
+      </notes>
+      <segment>
+        <source>Add a member</source>
+        <target>Mitglied hinzufügen</target>
+      </segment>
+    </unit>
+    <unit id="project-members.find">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:82,84</note>
+      </notes>
+      <segment>
+        <source>Find a user or group</source>
+        <target>Benutzer oder Gruppe suchen</target>
+      </segment>
+    </unit>
+    <unit id="project-members.role">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:95,96</note>
+      </notes>
+      <segment>
+        <source>Role</source>
+        <target>Rolle</target>
+      </segment>
+    </unit>
+    <unit id="project-members.add-confirm">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:102,105</note>
+      </notes>
+      <segment>
+        <source> Add member </source>
+        <target> Mitglied hinzufügen </target>
+      </segment>
+    </unit>
+    <unit id="project-members.caption">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:159</note>
+      </notes>
+      <segment>
+        <source>Members of the project</source>
+        <target>Mitglieder des Projekts</target>
+      </segment>
+    </unit>
+    <unit id="project-members.role-of">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:179</note>
+      </notes>
+      <segment>
+        <source>Role of <ph id="0" equiv="member" disp="m.principal"/></source>
+        <target>Rolle von <ph id="0" equiv="member" disp="m.principal"/></target>
+      </segment>
+    </unit>
+    <unit id="project-members.added">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:205</note>
+      </notes>
+      <segment>
+        <source>Member added.</source>
+        <target>Mitglied hinzugefügt.</target>
+      </segment>
+    </unit>
+    <unit id="project-members.changed">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:213</note>
+      </notes>
+      <segment>
+        <source>Role changed.</source>
+        <target>Rolle geändert.</target>
+      </segment>
+    </unit>
+    <unit id="project-members.removed">
+      <notes>
+        <note category="location">src/app/features/projects/project-members.ts:220</note>
+      </notes>
+      <segment>
+        <source>Member removed.</source>
+        <target>Mitglied entfernt.</target>
+      </segment>
+    </unit>
+    <unit id="project-role.reader">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:7</note>
+      </notes>
+      <segment>
+        <source>Reader</source>
+        <target>Leser</target>
+      </segment>
+    </unit>
+    <unit id="project-role.developer">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:9</note>
+      </notes>
+      <segment>
+        <source>Developer</source>
+        <target>Entwickler</target>
+      </segment>
+    </unit>
+    <unit id="project-role.maintainer">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:11</note>
+      </notes>
+      <segment>
+        <source>Maintainer</source>
+        <target>Maintainer</target>
+      </segment>
+    </unit>
+    <unit id="project-role.owner">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:13</note>
+      </notes>
+      <segment>
+        <source>Owner</source>
+        <target>Eigentümer</target>
+      </segment>
+    </unit>
+    <unit id="project-role.reader-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:21</note>
+      </notes>
+      <segment>
+        <source>Reads every repository of the project.</source>
+        <target>Liest jedes Repository des Projekts.</target>
+      </segment>
+    </unit>
+    <unit id="project-role.developer-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:23</note>
+      </notes>
+      <segment>
+        <source>Also annotates and deploys.</source>
+        <target>Annotiert und veröffentlicht zusätzlich.</target>
+      </segment>
+    </unit>
+    <unit id="project-role.maintainer-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:25</note>
+      </notes>
+      <segment>
+        <source>Every action on the repositories, also overwrite and delete.</source>
+        <target>Jede Aktion auf den Repositories, auch Überschreiben und Löschen.</target>
+      </segment>
+    </unit>
+    <unit id="project-role.owner-hint">
+      <notes>
+        <note category="location">src/app/features/projects/project-roles.ts:27</note>
+      </notes>
+      <segment>
+        <source>Also administers the project: members, repositories, policies and service accounts.</source>
+        <target>Verwaltet zusätzlich das Projekt: Mitglieder, Repositories, Richtlinien und Servicekonten.</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:243,244</note>
+      </notes>
+      <segment>
+        <source>Move to another project</source>
+        <target>In ein anderes Projekt verschieben</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.hint">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:245,246</note>
+      </notes>
+      <segment>
+        <source> The repository keeps its key and its content; its address changes. You must be Owner of the target project too. </source>
+        <target> Das Repository behält seinen Schlüssel und seinen Inhalt; seine Adresse ändert sich. Sie müssen auch Eigentümer des Zielprojekts sein. </target>
+      </segment>
+    </unit>
+    <unit id="repo.move.target">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:249,250</note>
+      </notes>
+      <segment>
+        <source>Target project</source>
+        <target>Zielprojekt</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.action">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:255,256</note>
+      </notes>
+      <segment>
+        <source> Move repository </source>
+        <target> Repository verschieben </target>
+      </segment>
+    </unit>
+    <unit id="repo.move.choose">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:447</note>
+      </notes>
+      <segment>
+        <source>Choose a project</source>
+        <target>Projekt wählen</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.title">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:464</note>
+      </notes>
+      <segment>
+        <source>Move repository <ph id="0" equiv="key" disp="this.ref()"/> to project <ph id="1" equiv="project" disp="target"/>?</source>
+        <target>Repository <ph id="0" equiv="key" disp="this.ref()"/> in das Projekt <ph id="1" equiv="project" disp="target"/> verschieben?</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.text">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:466</note>
+      </notes>
+      <segment>
+        <source>The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.</source>
+        <target>Das Repository erhält eine neue Adresse; Clients müssen darauf umstellen. Richtlinien, Pins, Mitgliedschaften in virtuellen Repositories und CI-Zuordnungen, die es in diesem Projekt nennen, greifen nicht mehr, und die Verschiebung wird abgelehnt, solange eine davon besteht.</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.confirm">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:468</note>
+      </notes>
+      <segment>
+        <source>Move repository</source>
+        <target>Repository verschieben</target>
+      </segment>
+    </unit>
+    <unit id="repo.move.done">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:475</note>
+      </notes>
+      <segment>
+        <source>Repository moved to project <ph id="0" equiv="project" disp="target"/>.</source>
+        <target>Repository in das Projekt <ph id="0" equiv="project" disp="target"/> verschoben.</target>
+      </segment>
+    </unit>
+    <unit id="repo.col.project">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:164</note>
+        <note category="location">src/app/features/repositories/repository-list.html:171</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:131</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:233,234</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+        <target>Projekt</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.project-choose">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:166</note>
+      </notes>
+      <segment>
+        <source>Choose a project</source>
+        <target>Projekt wählen</target>
       </segment>
     </unit>
 </file>

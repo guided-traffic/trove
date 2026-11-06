@@ -116,7 +116,7 @@
                     }
                   </th>
                   <td>
-                    <a [routerLink]="['/admin/repositories', rule.repository]" translate="no">{{
+                    <a [routerLink]="['/admin/repositories', ...rule.repository.split('/')]" translate="no">{{
                       rule.repository
                     }}</a>
                   </td>

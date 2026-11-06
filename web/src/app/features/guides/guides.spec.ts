@@ -70,12 +70,12 @@ describe('Guides', () => {
   });
 
   it('R-UI-049 a repository in the query opens its guide; the setup link carries the same choice', async () => {
-    const r = await open({ format: 'npm', client: 'yarn', repository: 'npm-remote' });
-    expect(r.guides.calls.at(-1)).toEqual({ repository: 'npm-remote', client: 'yarn' });
+    const r = await open({ format: 'npm', client: 'yarn', repository: 'web/npm-remote' });
+    expect(r.guides.calls.at(-1)).toEqual({ repository: 'web/npm-remote', client: 'yarn' });
     expect(r.root.querySelector('input[name="guide-class"]')).toBeNull();
     expect(sections(r)).not.toContain('npm.publish');
     const link = [...r.root.querySelectorAll<HTMLAnchorElement>('a')].find((a) => text(a).startsWith('Open the client setup'));
-    expect(link?.getAttribute('href')).toBe('/setup?format=npm&client=yarn&repository=npm-remote');
+    expect(link?.getAttribute('href')).toBe('/setup?format=npm&client=yarn&repository=web%2Fnpm-remote');
   });
 
   it('R-UI-049 a class in the query opens the guide of that class', async () => {
@@ -85,15 +85,15 @@ describe('Guides', () => {
   });
 
   it('R-UI-049 R-API-053 the snippets of the guide are the client setup answer with the variable', async () => {
-    const r = await open({ format: 'npm', client: 'npm', repository: 'npm-all' });
-    const setup = await new FakeClientSetupApi().get('npm-all', { client: 'npm', credentials: 'env' });
+    const r = await open({ format: 'npm', client: 'npm', repository: 'web/npm-all' });
+    const setup = await new FakeClientSetupApi().get('web/npm-all', { client: 'npm', credentials: 'env' });
     const configure = [...r.root.querySelectorAll('[data-section="npm.configure"] .snippet pre')].map((p) => p.textContent);
     expect(configure).toEqual(setup.snippets.filter((s) => s.tab === 'configure').map((s) => s.content));
     expect(configure.join('')).toContain('${TROVE_TOKEN}');
   });
 
   it('R-UI-049 an anonymous reader gets snippets without a credential and no publishing section', async () => {
-    const r = await open({ format: 'npm', client: 'npm', repository: 'npm-all' }, (g) => (g.anonymous = true));
+    const r = await open({ format: 'npm', client: 'npm', repository: 'web/npm-all' }, (g) => (g.anonymous = true));
     const all = [...r.root.querySelectorAll('.snippet pre')].map((p) => p.textContent).join('\n');
     expect(all).not.toContain('TOKEN');
     expect(all).not.toContain('{{token}}');

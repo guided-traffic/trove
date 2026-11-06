@@ -16,7 +16,7 @@ import { newIdempotencyKey } from '../../api/client';
 import { Bastion, BastionsApi } from '../../api/bastions-api';
 import { ClientSetupApi, ClientSnippet } from '../../api/packages-api';
 import { ApiError } from '../../api/problem';
-import { RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
+import { RepositoriesApi, RepositorySummary, refOf } from '../../api/repositories-api';
 import { CreateTokenRequest, TokensApi } from '../../api/tokens-api';
 import { SessionStore } from '../../core/session-store';
 import { CopyButton } from '../../shared/copy-button';
@@ -94,7 +94,7 @@ export class ClientSetupPage {
     const names = this.formatOptions().map((f) => f.name);
     const given = this.format();
     if (given && names.includes(given)) return given;
-    const repoFormat = this.repositoryOptionsAll().find((r) => r.key === this.repository())?.format;
+    const repoFormat = this.repositoryOptionsAll().find((r) => refOf(r) === this.repository())?.format;
     if (repoFormat && names.includes(repoFormat)) return repoFormat;
     return names[0] ?? null;
   });
@@ -108,15 +108,15 @@ export class ClientSetupPage {
     this.repositoryOptionsAll()
       .filter((r) => r.format === this.activeFormat() && !r.disabled)
       // Virtual repositories first: they are the recommended address (R-UI-016).
-      .sort((a, b) => Number(b.class === 'virtual') - Number(a.class === 'virtual') || a.key.localeCompare(b.key)),
+      .sort((a, b) => Number(b.class === 'virtual') - Number(a.class === 'virtual') || refOf(a).localeCompare(refOf(b))),
   );
   protected readonly activeRepository = computed<string | null>(() => {
     const given = this.repository();
-    return given && this.repositoryOptions().some((r) => r.key === given) ? given : null;
+    return given && this.repositoryOptions().some((r) => refOf(r) === given) ? given : null;
   });
-  /** `deploy` per repository key, from one batched permission check. */
+  /** `deploy` per qualified repository name, from one batched permission check. */
   protected readonly deployable = resource({
-    params: () => this.repositoryOptions().map((r) => r.key),
+    params: () => this.repositoryOptions().map((r) => refOf(r)),
     loader: async ({ params }) => {
       if (params.length === 0 || this.anonymous()) return new Map<string, boolean>();
       const answers = await this.session.check(params.map((repository) => ({ repository, action: 'deploy' })));
@@ -177,7 +177,7 @@ export class ClientSetupPage {
   }));
   protected readonly canOfferPublish = computed(() => this.setup()?.publishTarget != null);
   protected readonly isVirtual = computed(
-    () => this.repositoryOptions().find((r) => r.key === this.activeRepository())?.class === 'virtual',
+    () => this.repositoryOptions().find((r) => refOf(r) === this.activeRepository())?.class === 'virtual',
   );
   protected readonly canReadConfig = computed(() => this.session.has('repositories:read-config'));
   protected readonly explanation = snippetExplanation;
@@ -204,6 +204,8 @@ export class ClientSetupPage {
     inject(DestroyRef).onDestroy(() => this.forgetToken());
   }
 
+  protected readonly refOf = refOf;
+
   protected labelOfClass(c: RepositorySummary['class']): string {
     switch (c) {
       case 'local':
@@ -221,7 +223,7 @@ export class ClientSetupPage {
     if (r.class === 'virtual') {
       return $localize`:@@setup.publish.by-target:Publishing goes to its default deployment target`;
     }
-    return valueOf(this.deployable)?.get(r.key)
+    return valueOf(this.deployable)?.get(refOf(r))
       ? $localize`:@@setup.publish.yes:You can publish`
       : $localize`:@@setup.publish.no:You cannot publish`;
   }

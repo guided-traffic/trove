@@ -8,6 +8,8 @@ import { HttpAuthSettingsApi } from './auth-settings-api';
 import { HttpPolicyApi, HttpRolesApi } from './authz-api';
 import { HttpIdentityApi } from './identity-api';
 import { HttpPreferencesApi } from './preferences-api';
+import { HttpProjectsApi } from './projects-api';
+import { HttpRepositoriesApi } from './repositories-api';
 import { HttpSessionApi } from './session-api';
 import { HttpSessionsApi } from './sessions-api';
 import { HttpTokensApi } from './tokens-api';
@@ -31,6 +33,8 @@ function setup() {
       HttpPolicyApi,
       HttpRolesApi,
       HttpIdentityApi,
+      HttpProjectsApi,
+      HttpRepositoriesApi,
       HttpTokensApi,
       HttpSessionsApi,
       HttpAuthSettingsApi,
@@ -47,7 +51,7 @@ describe('access services over HTTP', () => {
     const api = TestBed.inject(HttpPolicyApi);
     const body = { resourceType: 'repository', description: 'd' } as const;
 
-    const write = api.replace('team-web-publish', body, '"3"');
+    const write = api.replace('team-web-publish', null, body, '"3"');
     const put = http.expectOne('/api/v1/permission-policies/team-web-publish');
     expect(put.request.method).toBe('PUT');
     expect(put.request.headers.get('If-Match')).toBe('"3"');
@@ -60,7 +64,7 @@ describe('access services over HTTP', () => {
     expect(epoch.value()).toBe(1842);
 
     // The follow-up reads of the screen: the policy itself and the caller's capabilities.
-    const read = api.load('team-web-publish');
+    const read = api.load('team-web-publish', null);
     const get = http.expectOne('/api/v1/permission-policies/team-web-publish');
     expect(get.request.headers.get('Trove-Authz-Min-Epoch')).toBe('1842');
     get.flush({ name: 'team-web-publish', version: 4, resources: {}, entries: [] }, { headers: { ETag: '"4"' } });
@@ -96,7 +100,7 @@ describe('access services over HTTP', () => {
 
   it('R-API-014 a policy create sends the idempotency key of the form', async () => {
     const { http } = setup();
-    const created = TestBed.inject(HttpPolicyApi).create({ name: 'x', resourceType: 'repository' }, 'key-1');
+    const created = TestBed.inject(HttpPolicyApi).create(null, { name: 'x', resourceType: 'repository' }, 'key-1');
     const req = http.expectOne('/api/v1/permission-policies');
     expect(req.request.headers.get('Idempotency-Key')).toBe('key-1');
     req.flush({ name: 'x', version: 1, resources: {}, entries: [] }, { status: 201, statusText: 'Created' });
@@ -162,5 +166,62 @@ describe('access services over HTTP', () => {
     expect(req.request.params.has('type')).toBe(false);
     req.flush({ items: [], nextCursor: null });
     await page;
+  });
+});
+
+describe('project resources over HTTP (R-AUTHZ-026)', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('R-AUTHZ-026 a project policy and a project service account are addressed under the project, by their bare name', async () => {
+    const { http } = setup();
+    const policies = TestBed.inject(HttpPolicyApi);
+    const load = policies.load('web-publish', 'web');
+    http
+      .expectOne('/api/v1/projects/web/policies/web-publish')
+      .flush({ name: 'web-publish', project: 'web', version: 1, resources: {}, entries: [] }, { headers: { ETag: '"1"' } });
+    await load;
+    const create = policies.create('web', { name: 'x', resourceType: 'repository' }, 'key-1');
+    http
+      .expectOne('/api/v1/projects/web/policies')
+      .flush({ name: 'x', project: 'web', version: 1, resources: {}, entries: [] }, { status: 201, statusText: 'Created' });
+    await create;
+    const accounts = TestBed.inject(HttpIdentityApi);
+    const account = accounts.serviceAccount('ci', 'web');
+    http.expectOne('/api/v1/projects/web/service-accounts/ci').flush({ id: 'i', name: 'ci', principal: 'sa:web/ci', description: '', status: 'active', createdAt: '2026-11-01T00:00:00Z', project: 'web' });
+    await account;
+    const global = accounts.serviceAccount('ci-bot', null);
+    http.expectOne('/api/v1/service-accounts/ci-bot').flush({ id: 'j', name: 'ci-bot', principal: 'sa:ci-bot', description: '', status: 'active', createdAt: '2026-11-01T00:00:00Z', project: null });
+    await global;
+  });
+
+  it('Q-AUTHZ-207 a member is written with a plain PUT of the role and no ETag', async () => {
+    const { http } = setup();
+    const api = TestBed.inject(HttpProjectsApi);
+    const write = api.setMember('web', 'group:web-leads', 'maintainer');
+    const put = http.expectOne('/api/v1/projects/web/members/group%3Aweb-leads');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual({ role: 'maintainer' });
+    expect(put.request.headers.has('If-Match')).toBe(false);
+    put.flush({ project: 'web', principal: 'group:web-leads', kind: 'group', name: 'web-leads', role: 'maintainer' });
+    expect((await write).role).toBe('maintainer');
+    const remove = api.removeMember('web', 'group:web-leads');
+    http.expectOne('/api/v1/projects/web/members/group%3Aweb-leads').flush(null, { status: 204, statusText: 'No Content' });
+    await remove;
+  });
+
+  it('R-REPO-002 R-REPO-060 a repository is addressed inside its project and a move names the target', async () => {
+    const { http } = setup();
+    const api = TestBed.inject(HttpRepositoriesApi);
+    const get = api.get('web/npm-local');
+    http.expectOne('/api/v1/projects/web/repositories/npm-local').flush({ key: 'npm-local', project: 'web', class: 'local', format: 'npm' }, { headers: { ETag: '"1"' } });
+    await get;
+    const create = api.create('web', { key: 'npm-new', class: 'local', format: 'npm' }, 'k');
+    http.expectOne('/api/v1/projects/web/repositories').flush({ key: 'npm-new', project: 'web', class: 'local', format: 'npm' }, { status: 201, statusText: 'Created' });
+    await create;
+    const move = api.move('web/npm-local', 'data', 'k2');
+    const req = http.expectOne('/api/v1/projects/web/repositories/npm-local/move');
+    expect(req.request.body).toEqual({ project: 'data' });
+    req.flush({ key: 'npm-local', project: 'data', class: 'local', format: 'npm' });
+    expect((await move).value.project).toBe('data');
   });
 });

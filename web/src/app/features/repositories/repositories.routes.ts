@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 import { unsavedChangesGuard } from '../../shared/unsaved-guard';
 
-/** R-UI-020 (list), R-UI-021 (wizard and edit form). `new` precedes `:key`. */
+/** R-UI-020 (list), R-UI-021 (wizard and edit form). `new` precedes `:project/:key`; a repository is addressed inside its project (R-REPO-002). */
 export const REPOSITORIES_ROUTES: Routes = [
   {
     path: '',
@@ -15,7 +15,7 @@ export const REPOSITORIES_ROUTES: Routes = [
     canDeactivate: [unsavedChangesGuard],
   },
   {
-    path: ':key',
+    path: ':project/:key',
     title: $localize`:@@route.repositories.detail.title:Repository`,
     loadComponent: () => import('./repository-detail').then((m) => m.RepositoryDetail),
     canDeactivate: [unsavedChangesGuard],
