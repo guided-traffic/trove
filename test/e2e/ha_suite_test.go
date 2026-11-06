@@ -517,8 +517,6 @@ var networkFailure = regexp.MustCompile(`ECONNRESET|ETIMEDOUT|ECONNREFUSED|socke
 // haWindow is a span of time a fault is allowed to show in.
 type haWindow struct{ from, to time.Time }
 
-func (w haWindow) has(at time.Time) bool { return !at.Before(w.from) && at.Before(w.to) }
-
 // overlaps is whether a request that started at start and ended at end ran inside the window at any time: a k6 line carries
 // the start, and a request that began before the store went down is cut by the transport timeout after it did.
 func (w haWindow) overlaps(start, end time.Time) bool {
