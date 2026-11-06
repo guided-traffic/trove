@@ -129,7 +129,7 @@ func TestBastionLong_R_BAS_049_AnonymousMissFlood(t *testing.T) {
 	env := basFx(t)
 	site := env.bkt
 	const openRepo = "bas-npm-open"
-	env.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{"key": openRepo, "class": "local", "format": "npm"}).want(t, "create "+openRepo, 201, 409)
+	env.adm.do(http.MethodPost, reposRoute, map[string]any{"key": openRepo, "class": "local", "format": "npm"}).want(t, "create "+openRepo, 201, 409)
 	ensurePolicy(t, env.adm, "e2e-bas-anonymous", []string{openRepo}, [2]any{"anonymous", []string{"read"}})
 	setAnonymous := func(on bool) {
 		g := env.adm.get("/api/v1/settings/auth").want(t, "read the authentication settings", 200)
@@ -145,7 +145,7 @@ func TestBastionLong_R_BAS_049_AnonymousMissFlood(t *testing.T) {
 
 	anon := site.api(t, "")
 	waitFor(t, "the Bastion to admit an anonymous request", 90*time.Second, 2*time.Second, func() bool {
-		return anon.get("/api/npm/"+openRepo+"/"+known).Status == 200
+		return anon.get(npmAddr(openRepo)+"/"+known).Status == 200
 	})
 	window := openMainWindow(t)
 	inflightMax := int64(0)
@@ -170,7 +170,7 @@ func TestBastionLong_R_BAS_049_AnonymousMissFlood(t *testing.T) {
 			time.Sleep(300 * time.Millisecond)
 		}
 	}()
-	res := site.flood(t, 10000, 50, 90, func(i int) string { return "/api/npm/" + openRepo + "/nonexistent-" + env.run + "-" + itoa(i) }, func(int) string { return "" })
+	res := site.flood(t, 10000, 50, 90, func(i int) string { return npmAddr(openRepo) + "/nonexistent-" + env.run + "-" + itoa(i) }, func(int) string { return "" })
 	close(stop)
 	sampler.Wait()
 	reqs := window.done()

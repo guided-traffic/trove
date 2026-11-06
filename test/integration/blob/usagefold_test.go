@@ -126,11 +126,6 @@ func (p *pgEnv) deadlocks(tb testing.TB) int64 {
 	return p.scalarInt(tb, `SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()`)
 }
 
-func (p *pgEnv) newRepo(tb testing.TB, key string) int64 {
-	tb.Helper()
-	return p.scalarInt(tb, `INSERT INTO trove.repositories (key, format, class) VALUES ($1, 'generic', 'local') RETURNING id`, key)
-}
-
 // seedDeltas appends n synthetic delta rows spread over the repositories: one in eleven is a physical delta
 // (repo_id NULL, a blob of 100 bytes), the others are files of 1 to 13 bytes, every seventh with a folder.
 func (p *pgEnv) seedDeltas(tb testing.TB, n int, repos []int64) {

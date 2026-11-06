@@ -18,7 +18,7 @@ import (
 // flatVersions reads the version list of the flat container (R-NUGET-008) with the publisher's token.
 func (fx *nugetFixture) flatVersions(t testing.TB, repo, id string) []string {
 	t.Helper()
-	r := fx.adm.get("/api/nuget/"+repo+"/v3/flatcontainer/"+strings.ToLower(id)+"/index.json").want(t, "flat container list of "+id, 200)
+	r := fx.adm.get(nugetAddr(repo)+"/v3/flatcontainer/"+strings.ToLower(id)+"/index.json").want(t, "flat container list of "+id, 200)
 	var l struct {
 		Versions []string `json:"versions"`
 	}
@@ -30,7 +30,7 @@ func (fx *nugetFixture) flatVersions(t testing.TB, repo, id string) []string {
 // version it names.
 func (fx *nugetFixture) listedState(t testing.TB, repo, id string) map[string]bool {
 	t.Helper()
-	r := fx.adm.get("/api/nuget/"+repo+"/v3/registration/"+strings.ToLower(id)+"/index.json").want(t, "registration of "+id, 200)
+	r := fx.adm.get(nugetAddr(repo)+"/v3/registration/"+strings.ToLower(id)+"/index.json").want(t, "registration of "+id, 200)
 	var doc struct {
 		Items []struct {
 			Items []struct {
@@ -165,7 +165,7 @@ func TestNuGetPush(t *testing.T) {
 			file := c.place(id, "1.0.0", pkg)
 			c.mustRefuse("push "+tc.name, "401", "dotnet", "nuget", "push", file, "--source", tc.feed, "--api-key", tok.Token)
 		}
-		if got := fx.adm.get("/api/nuget/" + nugetAuthKey + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"); got.Status != 404 {
+		if got := fx.adm.get(nugetAddr(nugetAuthKey) + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"); got.Status != 404 {
 			t.Fatalf("the refused package is visible: %s", got)
 		}
 	})
@@ -359,7 +359,7 @@ func TestNuGetUnlistRelistDelete(t *testing.T) {
 	t.Run("R-NUGET-007 relist brings the version back into the search", func(t *testing.T) {
 		c := fx.client(t, 2, "relist")
 		c.config(auth, true)
-		path := "/api/nuget/" + nugetAuthKey + "/v3/package/" + strings.ToLower(id) + "/1.1.0"
+		path := nugetAddr(nugetAuthKey) + "/v3/package/" + strings.ToLower(id) + "/1.1.0"
 		for range 2 { // a second relist answers 200 again
 			fx.adm.do(http.MethodPost, path, nil, "X-NuGet-ApiKey", fx.token).want(t, "relist", 200)
 		}
@@ -381,7 +381,7 @@ func TestNuGetUnlistRelistDelete(t *testing.T) {
 			c.mustPush("push "+v, "nuget", "push", file, "-Source", hard, "-ApiKey", fx.token, "-ConfigFile", "nuget.config", "-NonInteractive")
 		}
 		c.exec("nuget", "delete", hid, "1.1.0", "-Source", hard, "-ApiKey", fx.token, "-ConfigFile", "nuget.config", "-NonInteractive")
-		nupkg := "/api/nuget/" + nugetHardKey + "/v3/flatcontainer/" + strings.ToLower(hid) + "/1.1.0/" + strings.ToLower(hid) + ".1.1.0.nupkg"
+		nupkg := nugetAddr(nugetHardKey) + "/v3/flatcontainer/" + strings.ToLower(hid) + "/1.1.0/" + strings.ToLower(hid) + ".1.1.0.nupkg"
 		if r := fx.adm.get(nupkg); r.Status != 404 {
 			t.Fatalf("the .nupkg of the deleted version: %s, want 404", r)
 		}

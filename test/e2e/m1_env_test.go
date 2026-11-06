@@ -599,12 +599,74 @@ func adminToken(t testing.TB) string {
 	return adminTok
 }
 
-func adminAPI(t testing.TB) *api { t.Helper(); return newAPI(t).withToken(adminToken(t)) }
+// e2eProject is the project every repository of the suite lives in (R-AUTHZ-026, Q-AUTHZ-206): the suite creates it once
+// (ensureE2EProject) and addresses its repositories as /api/<format>/e2e/<key>/, /files/e2e/<key>/ and
+// /api/v1/projects/e2e/repositories/<key>.
+const e2eProject = "e2e"
 
-// ensureRepo creates a repository of the key when it does not exist.
+// The address prefixes of the repositories of e2eProject; a repository key follows.
+const (
+	npmBase    = "/api/npm/" + e2eProject + "/"
+	nugetBase  = "/api/nuget/" + e2eProject + "/"
+	filesBase  = "/files/" + e2eProject + "/"
+	reposBase  = "/api/v1/projects/" + e2eProject + "/repositories/"
+	reposRoute = "/api/v1/projects/" + e2eProject + "/repositories"
+)
+
+// qn is the qualified name <projectKey>/<repoKey> of a repository of e2eProject: the form of policy and scope selectors, of
+// the exposure rule's repository, of the findings filter and of the authorization check.
+func qn(key string) string { return e2eProject + "/" + key }
+
+// repoRef is the qualified name <projectKey>/<repoKey> of a repository reference: a bare key is a repository of e2eProject, a
+// reference with a "/" (a repository of a partner project) is kept.
+func repoRef(ref string) string {
+	if strings.Contains(ref, "/") {
+		return ref
+	}
+	return qn(ref)
+}
+
+// npmAddr, nugetAddr and filesAddr are the address of a repository reference without the trailing slash.
+func npmAddr(ref string) string   { return "/api/npm/" + repoRef(ref) }
+func nugetAddr(ref string) string { return "/api/nuget/" + repoRef(ref) }
+func filesAddr(ref string) string { return "/files/" + repoRef(ref) }
+
+// repoAPI is the management path /api/v1/projects/<projectKey>/repositories/<repoKey> of a repository reference.
+func repoAPI(ref string) string {
+	project, key, _ := strings.Cut(repoRef(ref), "/")
+	return "/api/v1/projects/" + project + "/repositories/" + key
+}
+
+var (
+	projectMu   sync.Mutex
+	projectMade bool
+)
+
+// ensureE2EProject creates the project e2eProject unless it exists; it is idempotent over runs.
+func ensureE2EProject(t testing.TB, adm *api) {
+	t.Helper()
+	projectMu.Lock()
+	defer projectMu.Unlock()
+	if projectMade {
+		return
+	}
+	adm.do(http.MethodPost, "/api/v1/projects", map[string]any{"key": e2eProject, "displayName": "End-to-end tests"}).
+		want(t, "create the project "+e2eProject, 201, 409)
+	projectMade = true
+}
+
+// adminAPI is a client with the bootstrap administrator's token; the project of the suite exists when it returns.
+func adminAPI(t testing.TB) *api {
+	t.Helper()
+	a := newAPI(t).withToken(adminToken(t))
+	ensureE2EProject(t, a)
+	return a
+}
+
+// ensureRepo creates a repository of the key in e2eProject when it does not exist.
 func ensureRepo(t testing.TB, adm *api, key string) {
 	t.Helper()
-	r := adm.do(http.MethodPost, "/api/v1/repositories", map[string]string{"key": key, "class": "local", "format": "generic"})
+	r := adm.do(http.MethodPost, reposRoute, map[string]string{"key": key, "class": "local", "format": "generic"})
 	r.want(t, "create repository "+key, 201, 409)
 }
 
@@ -614,14 +676,28 @@ func ensureSA(t testing.TB, adm *api, name string) {
 	adm.do(http.MethodPost, "/api/v1/service-accounts", map[string]string{"name": name, "description": "end-to-end tests"}).want(t, "create service account "+name, 201, 409)
 }
 
-// ensurePolicy writes a policy (create or replace).
+// qualifyAll names the bare keys and key patterns of repository selectors in e2eProject: an instance-wide policy selects by
+// <projectGlob>/<keyGlob> (R-AUTHZ-004); a selector that has a "/" or starts with "@" is kept.
+func qualifyAll(repos []string) []string {
+	out := make([]string, len(repos))
+	for i, r := range repos {
+		if strings.Contains(r, "/") || strings.HasPrefix(r, "@") {
+			out[i] = r
+		} else {
+			out[i] = qn(r)
+		}
+	}
+	return out
+}
+
+// ensurePolicy writes an instance-wide policy (create or replace) over repositories of e2eProject, named by their bare keys.
 func ensurePolicy(t testing.TB, adm *api, name string, repos []string, entries ...[2]any) {
 	t.Helper()
 	var es []map[string]any
 	for _, e := range entries {
 		es = append(es, map[string]any{"principal": e[0], "actions": e[1]})
 	}
-	body := map[string]any{"name": name, "description": "end-to-end tests", "resources": map[string]any{"repositories": repos}, "entries": es}
+	body := map[string]any{"name": name, "description": "end-to-end tests", "resources": map[string]any{"repositories": qualifyAll(repos)}, "entries": es}
 	r := adm.do(http.MethodPost, "/api/v1/permission-policies", body)
 	// A policy that names a repository changes its version when the repository's deletion finishes (R-AUTHZ-028), which a deletion job
 	// does after the request that started it has answered. A 412 is the answer to a write on a version that moved since it was read
@@ -1086,7 +1162,7 @@ func awaitTokenRefusedOnPackagesPods(t testing.TB, token string) {
 	for i, addr := range addrs {
 		a := apiAtPod(t, addr, token)
 		waitFor(t, fmt.Sprintf("packages replica %d to refuse the revoked token", i), time.Minute, 500*time.Millisecond, func() bool {
-			return a.get("/api/npm/e2e-revoked/-/ping").Status == 401
+			return a.get(npmBase+"e2e-revoked/-/ping").Status == 401
 		})
 	}
 }

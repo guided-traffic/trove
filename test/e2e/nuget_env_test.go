@@ -76,7 +76,7 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 		{"key": nugetHardKey, "class": "local", "format": "nuget", "requireAuthentication": true, "nuget": map[string]any{"deleteMode": "delete"}},
 		{"key": nugetCustKey, "class": "local", "format": "nuget", "requireAuthentication": true},
 	} {
-		r, err := adm.send(http.MethodPost, "/api/v1/repositories", body)
+		r, err := adm.send(http.MethodPost, reposRoute, body)
 		if err != nil {
 			return nil, err
 		}
@@ -94,7 +94,7 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 // nugetFeed is the address of a repository as the setup snippets print it (R-NUGET-026): the edge's address and the
 // service index, never a v2 address.
 func nugetFeed(t testing.TB, host, key string) string {
-	return "https://" + host + ":" + edgePort(t) + "/api/nuget/" + key + "/v3/index.json"
+	return "https://" + host + ":" + edgePort(t) + "/api/nuget/" + repoRef(key) + "/v3/index.json"
 }
 
 // pkgID is a package ID of this run: unique per scenario group and run, so a rerun on the same cluster never meets a
@@ -121,7 +121,7 @@ func (fx *nugetFixture) withAnonymousRead(t *testing.T) {
 	set(true).want(t, "anonymous access on", 200)
 	t.Cleanup(func() { set(false).want(t, "anonymous access off", 200) })
 	// the switch is in force on every replica within the revocation bound: wait until all three answer the anonymous read
-	feed := "/api/nuget/" + nugetOpenKey + "/v3/index.json"
+	feed := nugetAddr(nugetOpenKey) + "/v3/index.json"
 	seen := map[string]bool{}
 	waitFor(t, "anonymous read of the open feed on every packages replica", time.Minute, time.Second, func() bool {
 		anon := newAPI(t)

@@ -50,11 +50,11 @@ func TestNPMClosing(t *testing.T) {
 	// registry serves, through a remote repository and a virtual one over it. Nothing is published, nothing changed.
 	t.Run("R-NPM-045 the read-only subset against the public registry", func(t *testing.T) {
 		remote, all := "npm-public-"+fx.run+"-remote", "npm-public-"+fx.run+"-all"
-		fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+		fx.adm.do(http.MethodPost, reposRoute, map[string]any{
 			"key": remote, "class": "remote", "format": "npm",
 			"remote": map[string]any{"url": "https://registry.npmjs.org/"},
 		}).want(t, "create "+remote, 201)
-		fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+		fx.adm.do(http.MethodPost, reposRoute, map[string]any{
 			"key": all, "class": "virtual", "format": "npm", "requireAuthentication": true,
 			"virtual": map[string]any{"members": []string{npmLocalKey, remote}, "deployTarget": npmLocalKey},
 		}).want(t, "create "+all, 201)

@@ -490,7 +490,7 @@ func (e *basEnv) publishNPM(t testing.TB, repo, name, version string, deps map[s
 	}
 	pub := newAPI(t).withToken(e.pub)
 	for range 20 {
-		r := pub.do(http.MethodPut, "/api/npm/"+repo+"/"+strings.ReplaceAll(name, "/", "%2f"), doc)
+		r := pub.do(http.MethodPut, npmAddr(repo)+"/"+strings.ReplaceAll(name, "/", "%2f"), doc)
 		if r.Status == http.StatusTooManyRequests {
 			time.Sleep(2 * time.Second)
 			continue
@@ -508,7 +508,7 @@ func (e *basEnv) buildContent(t testing.TB) {
 		{"key": basNPMRepo, "class": "local", "format": "npm", "requireAuthentication": true},
 		{"key": basNuGetRepo, "class": "local", "format": "nuget", "requireAuthentication": true},
 	} {
-		e.adm.do(http.MethodPost, "/api/v1/repositories", body).want(t, fmt.Sprintf("create %v", body["key"]), 201, 409)
+		e.adm.do(http.MethodPost, reposRoute, body).want(t, fmt.Sprintf("create %v", body["key"]), 201, 409)
 	}
 	for _, sa := range []string{basPubSA, basFullSA, basPartSA} {
 		ensureSA(t, e.adm, sa)
@@ -518,7 +518,7 @@ func (e *basEnv) buildContent(t testing.TB) {
 	// $PART reads the packages of this run whose name starts with "...-open" and nothing else of the repository
 	partPolicy := map[string]any{
 		"name": basPartSA, "description": "end-to-end tests",
-		"resources": map[string]any{"repositories": []string{basNPMRepo}, "packages": map[string]any{"include": []string{"bas" + e.run + "-open*"}}},
+		"resources": map[string]any{"repositories": qualifyAll([]string{basNPMRepo}), "packages": map[string]any{"include": []string{"bas" + e.run + "-open*"}}},
 		"entries":   []map[string]any{{"principal": "sa:" + basPartSA, "actions": []string{"read"}}},
 	}
 	r := e.adm.do(http.MethodPost, "/api/v1/permission-policies", partPolicy)
@@ -593,11 +593,11 @@ func (m mainReq) kind() string {
 	switch {
 	case strings.HasPrefix(p, "/api/v1/bastion"):
 		return "iface"
-	case strings.HasPrefix(p, "/api/npm/"+basNPMRepo+"/") && strings.HasSuffix(p, ".tgz"):
+	case strings.HasPrefix(p, npmAddr(basNPMRepo)+"/") && strings.HasSuffix(p, ".tgz"):
 		return "artifact"
-	case strings.HasPrefix(p, "/api/nuget/"+basNuGetRepo+"/") && strings.HasSuffix(p, ".nupkg"):
+	case strings.HasPrefix(p, nugetAddr(basNuGetRepo)+"/") && strings.HasSuffix(p, ".nupkg"):
 		return "artifact"
-	case strings.HasPrefix(p, "/api/npm/"+basNPMRepo+"/"), strings.HasPrefix(p, "/api/nuget/"+basNuGetRepo+"/"):
+	case strings.HasPrefix(p, npmAddr(basNPMRepo)+"/"), strings.HasPrefix(p, nugetAddr(basNuGetRepo)+"/"):
 		return "document"
 	}
 	return "other"

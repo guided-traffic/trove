@@ -20,9 +20,9 @@ import (
 
 const (
 	custHost = "packages.trove.localhost"
-	appZip1  = "/files/generic-local/releases/1.0/app.zip"
-	appZip2  = "/files/generic-local/releases/2.0/app.zip"
-	internal = "/files/generic-local/internal/x.bin"
+	appZip1  = filesBase + "generic-local/releases/1.0/app.zip"
+	appZip2  = filesBase + "generic-local/releases/2.0/app.zip"
+	internal = filesBase + "generic-local/internal/x.bin"
 )
 
 // customersAPI is a client of the endpoint through the edge (its own Ingress).
@@ -112,7 +112,7 @@ func seriesNow(t testing.TB, prefix string, parts ...string) float64 {
 func ensureRule(t testing.TB, adm *api, token string) {
 	t.Helper()
 	adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", map[string]any{
-		"name": "releases", "repository": "generic-local", "paths": map[string]any{"include": []string{"releases/**"}},
+		"name": "releases", "repository": qn("generic-local"), "paths": map[string]any{"include": []string{"releases/**"}},
 	}).want(t, "create the rule", 201, 409)
 	pods, stop := customersOnPods(t, token)
 	defer stop()
@@ -153,7 +153,7 @@ func TestE1_14Exposure(t *testing.T) {
 			t.Errorf("a write through the endpoint = %s, want 403 endpoint_read_only", w)
 		}
 		dim := adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", map[string]any{
-			"name": "bad", "repository": "generic-local", "packages": map[string]any{"include": []string{"@acme/*"}},
+			"name": "bad", "repository": qn("generic-local"), "packages": map[string]any{"include": []string{"@acme/*"}},
 		})
 		if dim.Status != 422 || dim.Code() != "validation_failed" || dim.FieldCode() != "dimension_not_supported" {
 			t.Errorf("a packages rule on a generic repository = %s, want 422 validation_failed with dimension_not_supported", dim)
@@ -189,7 +189,7 @@ func TestE1_14Exposure(t *testing.T) {
 		deleted0 := auditCount(t, adm, "endpoint.exposure.deleted", "releases")
 
 		adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", map[string]any{
-			"name": "releases", "repository": "generic-local", "paths": map[string]any{"include": []string{"releases/**"}},
+			"name": "releases", "repository": qn("generic-local"), "paths": map[string]any{"include": []string{"releases/**"}},
 		}).want(t, "create the rule", 201)
 		reach("releases/1.0/app.zip downloadable", within, status(appZip1))
 		reach("releases/2.0/app.zip downloadable", within, status(appZip2))
@@ -232,7 +232,7 @@ func TestE1_14Exposure(t *testing.T) {
 		if hiddenR.Status != 404 {
 			t.Fatalf("internal/x.bin = %s, want 404", hiddenR)
 		}
-		for _, p := range []string{"/files/generic-local/releases/9.9/none.zip", "/files/generic-local/internal/none.bin", "/files/ghost/releases/1.0/app.zip", "/files/generic-local/zzz"} {
+		for _, p := range []string{filesBase + "generic-local/releases/9.9/none.zip", filesBase + "generic-local/internal/none.bin", filesBase + "ghost/releases/1.0/app.zip", filesBase + "generic-local/zzz"} {
 			m := cust.get(p)
 			if m.Status != 404 || problemOf(t, m) != problemOf(t, hiddenR) {
 				t.Errorf("%s = %s, want the bytes of %s", p, m, hiddenR)
@@ -361,14 +361,14 @@ func TestE1_14Exposure(t *testing.T) {
 		if len(all) < 4 {
 			t.Errorf("the default endpoint lists %v: the comparison needs more repositories than the rules expose", all)
 		}
-		if r := a.get("/api/v1/repositories/generic-local/items?path=internal/x.bin"); r.Status != 404 {
+		if r := a.get(reposBase + "generic-local/items?path=internal/x.bin"); r.Status != 404 {
 			t.Errorf("GET items of internal/x.bin with the bound administrator token = %s, want 404", r)
 		}
 		// Capabilities of the administrator stay what the endpoint's credentials allow: the users list is not content.
 		if r := a.get("/api/v1/users?limit=1"); r.Status != 200 {
 			t.Logf("GET /api/v1/users on customers with the bound administrator token = %d (a capability operation, R-EP-014)", r.Status)
 		}
-		children := a.get("/api/v1/repositories/generic-local/children?path=").want(t, "children of the root", 200)
+		children := a.get(reposBase+"generic-local/children?path=").want(t, "children of the root", 200)
 		if strings.Contains(string(children.Body), "internal") {
 			t.Errorf("the listing of generic-local on customers shows the folder internal: %s", children.Body)
 		}

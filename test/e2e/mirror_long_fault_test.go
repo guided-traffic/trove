@@ -53,7 +53,7 @@ func (s *stubControl) requests(t testing.TB) []npmstub.RequestRecord {
 // tryStatus reads the status of a mirror once and reports whether the edge answered it: during the loss of a node the edge
 // still sends requests to the api pods on it for a while (R-HA-052 "node loss": tens of seconds), which is no failure of the pass.
 func (e *mirrorEnv) tryStatus(key string) (mirrorStatus, bool) {
-	r, err := e.adm.send(http.MethodGet, "/api/v1/repositories/"+key+"/mirror", nil)
+	r, err := e.adm.send(http.MethodGet, reposBase+key+"/mirror", nil)
 	if err != nil || r.Status != http.StatusOK {
 		return mirrorStatus{}, false
 	}

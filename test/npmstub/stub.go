@@ -33,7 +33,7 @@ type Config struct {
 	// filesystem for none.
 	Recorded fs.FS
 	// PublicURL is the base the dist.tarball addresses of documents point to, for example
-	// "https://localhost:8080/api/npm/npm-all". Empty: "https://" and the request's Host.
+	// "https://localhost:8080/api/npm/e2e/npm-all". Empty: "https://" and the request's Host.
 	PublicURL string
 	// ControlToken enables the control API under /-/stub/ for requests with this bearer token.
 	// Empty: the API does not exist (the in-process Go methods are always available).

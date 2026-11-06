@@ -260,7 +260,7 @@ func TestCIHASingleUse(t *testing.T) {
 				}
 				okCount.Add(1)
 				for range 2 {
-					p, err := newAPI(t).withToken(citoken).send(http.MethodGet, "/api/npm/"+ciNpmAll+"/-/ping", nil)
+					p, err := newAPI(t).withToken(citoken).send(http.MethodGet, npmAddr(ciNpmAll)+"/-/ping", nil)
 					if err != nil || p.Status != 200 {
 						fail("token %d: the package request answered %v %v", i, p, err)
 					}

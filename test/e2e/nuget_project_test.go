@@ -37,7 +37,7 @@ func TestNuGetProjectPartner(t *testing.T) {
 	}, "remote")
 	virtual := p.repository(map[string]any{
 		"class": "virtual", "format": "nuget", "requireAuthentication": true,
-		"virtual": map[string]any{"members": []string{local, remote}, "deployTarget": local},
+		"virtual": map[string]any{"members": []string{p.bare(local), p.bare(remote)}, "deployTarget": p.bare(local)},
 	}, "all")
 	p.serviceAccount()
 	p.policy("write", []string{local}, "read", "deploy")
@@ -82,7 +82,7 @@ func TestNuGetProjectPartner(t *testing.T) {
 
 	t.Run("R-AUTHZ-026 a feed outside the project refuses the partner", func(t *testing.T) {
 		api := fx.adm.withToken(tok.Token)
-		api.get("/api/nuget/"+nugetAuthKey+"/v3/flatcontainer/"+strings.ToLower(outside)+"/index.json").want(t, "a package of a repository outside the project", 404)
+		api.get(nugetAddr(nugetAuthKey)+"/v3/flatcontainer/"+strings.ToLower(outside)+"/index.json").want(t, "a package of a repository outside the project", 404)
 		c := fx.client(t, 0, "proj-outside-restore")
 		c.token = tok.Token
 		c.config(nugetAuth, true)
@@ -95,7 +95,7 @@ func TestNuGetProjectPartner(t *testing.T) {
 			t.Fatalf("the restore failed without a 404, NU1101 or NU1301:\n%s", out)
 		}
 		// nothing but the project's local repository takes a push
-		push := api.do(http.MethodPut, "/api/nuget/"+nugetAuthKey+"/v3/package/", nil).want(t, "a push into a repository outside the project", 403)
+		push := api.do(http.MethodPut, nugetAddr(nugetAuthKey)+"/v3/package/", nil).want(t, "a push into a repository outside the project", 403)
 		t.Logf("a push into a repository outside the project answers %s", push)
 	})
 

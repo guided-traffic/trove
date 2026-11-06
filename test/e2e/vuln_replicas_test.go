@@ -34,7 +34,7 @@ func maliciousRecord(id, name string) osvstub.Advisory {
 
 // tarballPath is the path of version 1.0.0 of an unscoped package below a repository.
 func tarballPath(repo, name string) string {
-	return "/api/npm/" + repo + "/" + name + "/-/" + name + "-1.0.0.tgz"
+	return npmAddr(repo) + "/" + name + "/-/" + name + "-1.0.0.tgz"
 }
 
 // replicaClients are the clients of the default endpoint, each dialing one replica's pod: the administrator's (triage), each
@@ -61,8 +61,8 @@ func (e *vulnEnv) replicaClients(t testing.TB) (replicaClients, func()) {
 // patchRepo applies a merge patch to a repository through the client.
 func patchRepo(t testing.TB, a *api, key string, patch map[string]any) {
 	t.Helper()
-	g := a.get("/api/v1/repositories/"+key).want(t, "read "+key, 200)
-	a.do(http.MethodPatch, "/api/v1/repositories/"+key, patch, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "patch "+key, 200)
+	g := a.get(reposBase+key).want(t, "read "+key, 200)
+	a.do(http.MethodPatch, reposBase+key, patch, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "patch "+key, 200)
 }
 
 // wantRefused checks the refusal of R-VULN-015 on the four kinds of request that must not differ: GET, HEAD, a conditional
@@ -132,7 +132,7 @@ func TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey(t *testing.T) {
 		// the api replica B, a different process with its own poll, so it is waited for within the same 2 s.
 		var f vulnFinding
 		waitFor(t, "the finding of "+name+" not blocking on the api replica B after blockMalicious: false through A", 2*time.Second, 100*time.Millisecond, func() bool {
-			got := e.findingsVia(t, rc.admin[b], url.Values{"repository": {npmRemoteKey}, "package": {name}, "version": {"1.0.0"}})
+			got := e.findingsVia(t, rc.admin[b], url.Values{"repository": {qn(npmRemoteKey)}, "package": {name}, "version": {"1.0.0"}})
 			if len(got) != 1 {
 				return false
 			}
@@ -200,7 +200,7 @@ func TestVuln_R_VULN_011_PublishEvaluatesInTheCommit(t *testing.T) {
 	// no waiting: the finding is written in the commit
 	seen := map[string]bool{}
 	for range 6 {
-		r := e.adm.get("/api/v1/vulnerabilities/findings?"+url.Values{"repository": {npmLocalKey}, "package": {name}, "version": {"1.0.0"}}.Encode()).want(t, "the findings of the published version", 200)
+		r := e.adm.get("/api/v1/vulnerabilities/findings?"+url.Values{"repository": {qn(npmLocalKey)}, "package": {name}, "version": {"1.0.0"}}.Encode()).want(t, "the findings of the published version", 200)
 		seen[r.Replica()] = true
 		var l struct {
 			Items []vulnFinding `json:"items"`
@@ -220,7 +220,7 @@ func TestVuln_R_VULN_011_PublishEvaluatesInTheCommit(t *testing.T) {
 func TestVuln_R_VULN_010_ClaimedNamesAreInternal(t *testing.T) {
 	e := vulnFx(t)
 	e.seedAuditContent(t)
-	if got := e.findings(t, url.Values{"repository": {vulnNPMInternal}}); len(got) != 0 {
+	if got := e.findings(t, url.Values{"repository": {qn(vulnNPMInternal)}}); len(got) != 0 {
 		t.Errorf("%s has findings %+v, want none: its names are internal", vulnNPMInternal, got)
 	}
 	r := e.adm.get("/api/v1/vulnerabilities/claimed-name-matches").want(t, "claimed-name matches", 200)
@@ -238,7 +238,7 @@ func TestVuln_R_VULN_010_ClaimedNamesAreInternal(t *testing.T) {
 	if !found {
 		t.Errorf("the claimed-name matches %s do not list %s with MAL-2026-1235", r.Body, vulnAcme)
 	}
-	e.adm.withToken(e.npm.token).get("/api/npm/"+vulnNPMInternal+"/"+vulnAcme+"/-/ui-1.0.0.tgz").want(t, "the download of the claimed package", 200)
+	e.adm.withToken(e.npm.token).get(npmAddr(vulnNPMInternal)+"/"+vulnAcme+"/-/ui-1.0.0.tgz").want(t, "the download of the claimed package", 200)
 }
 
 // TestVuln_R_VULN_011_R_VULN_018_AnAdvisoryAppearsLate: the test source publishes an advisory for a version npm-remote has cached
@@ -274,10 +274,10 @@ func TestVuln_R_VULN_011_R_VULN_018_AnAdvisoryAppearsLate(t *testing.T) {
 	t.Run("R-VULN-011 a cached version gets its finding", func(t *testing.T) {
 		const late = osvLate
 		stub(t).publish(t, late, "2.0.0", nil)
-		path := "/api/npm/" + npmRemoteKey + "/" + late + "/-/" + late + "-2.0.0.tgz"
+		path := npmAddr(npmRemoteKey) + "/" + late + "/-/" + late + "-2.0.0.tgz"
 		a := e.adm.withToken(e.npm.token)
 		a.get(path).want(t, "cache "+late, 200)
-		if got := e.findings(t, url.Values{"repository": {npmRemoteKey}, "package": {late}}); len(got) != 0 {
+		if got := e.findings(t, url.Values{"repository": {qn(npmRemoteKey)}, "package": {late}}); len(got) != 0 {
 			t.Fatalf("%s has findings %+v before its advisory exists", late, got)
 		}
 		before := pageETags(t)

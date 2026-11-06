@@ -103,7 +103,7 @@ func TestVulnMigration(t *testing.T) {
 	})
 
 	t.Run("R-VULN-012 a finding is unique by its identity, takes the statuses of the model and keeps its history", func(t *testing.T) {
-		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class) VALUES ('npm-vuln', 'npm', 'remote')")
+		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('npm-vuln', 'npm', 'remote', (SELECT id FROM trove.project WHERE key = 'it'))")
 		repo := scalar[int64](t, admin, "SELECT id FROM trove.repositories WHERE key = 'npm-vuln'")
 		const ins = `INSERT INTO trove.vuln_finding (id, repo_id, ecosystem, package_name, version, advisory_id, kind, severity, severity_rank, fix_available, advisory_modified%s)
 			VALUES ($1, $2, 'npm', 'lodash', $3, 'GHSA-35jh-r3h4-6jhm', 'vulnerability', 'high', 4, true, now()%s)`

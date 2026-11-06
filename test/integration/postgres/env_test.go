@@ -190,7 +190,8 @@ func nextStep(n int, name string) string {
 	return fmt.Sprintf("%05d_%s.sql", postgres.RequiredSchema()+n, name)
 }
 
-// migrated returns a database with the embedded migrations applied.
+// migrated returns a database with the embedded migrations applied and the project "it" created: every
+// repository belongs to a project (Q-AUTHZ-206), and the tests insert theirs into "it".
 func migrated(t testing.TB, st stack) (cfg config.Database, name string, admin *pgx.Conn) {
 	t.Helper()
 	name, admin = st.newDatabase(t)
@@ -198,6 +199,7 @@ func migrated(t testing.TB, st stack) (cfg config.Database, name string, admin *
 	if _, err := postgres.Migrate(ctxT(t, 60*time.Second), cfg, opts(nil)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	mustExec(t, admin, "INSERT INTO trove.project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it')")
 	return cfg, name, admin
 }
 

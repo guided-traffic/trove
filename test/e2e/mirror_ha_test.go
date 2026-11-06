@@ -68,8 +68,8 @@ func sameStatusOnEveryReplica(t *testing.T, e *mirrorEnv, key string) mirrorStat
 	paddrs, pstop := packagesForwards(t)
 	defer pstop()
 	if len(paddrs) > 0 {
-		r := apiAtPod(t, paddrs[0], adminToken(t)).getOverForward("/api/v1/repositories/" + key + "/mirror")
-		t.Logf("a packages pod answers GET /api/v1/repositories/%s/mirror with %d", key, r.Status)
+		r := apiAtPod(t, paddrs[0], adminToken(t)).getOverForward(reposBase + key + "/mirror")
+		t.Logf("a packages pod answers GET %s%s/mirror with %d", reposBase, key, r.Status)
 	}
 	return first
 }
@@ -113,7 +113,7 @@ func TestMirror_R_REPO_058_TwoClaimantsOneJobPerRepository(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					r, err := e.adm.send(http.MethodPost, "/api/v1/repositories/"+key+"/mirror/run", map[string]any{})
+					r, err := e.adm.send(http.MethodPost, reposBase+key+"/mirror/run", map[string]any{})
 					mu.Lock()
 					defer mu.Unlock()
 					if err != nil {

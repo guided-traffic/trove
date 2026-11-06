@@ -123,7 +123,7 @@ func TestVuln_R_VULN_017_NPMAuditThroughEveryRepository(t *testing.T) {
 		a := apiAtPod(t, addr, e.npm.token)
 		for _, key := range repos {
 			for _, name := range []string{vulnNPMVuln, vulnNPMAlias} {
-				a.getOverForward("/api/npm/" + key + "/" + name)
+				a.getOverForward(npmAddr(key) + "/" + name)
 			}
 		}
 	}
@@ -218,7 +218,7 @@ func TestVuln_R_VULN_017_NPMAuditBody(t *testing.T) {
 		var bodies [][]byte
 		for i, addr := range addrs[:2] {
 			a := apiAtPod(t, addr, e.npm.token)
-			r := a.do(http.MethodPost, "/api/npm/"+key+"/-/npm/v1/security/advisories/bulk", req, "Content-Type", "application/json", "Content-Encoding", "gzip")
+			r := a.do(http.MethodPost, npmAddr(key)+"/-/npm/v1/security/advisories/bulk", req, "Content-Type", "application/json", "Content-Encoding", "gzip")
 			r.want(t, fmt.Sprintf("audit of %s at replica %d", key, i), 200)
 			bodies = append(bodies, r.Body)
 			if i > 0 {
@@ -247,7 +247,7 @@ func TestVuln_R_VULN_017_NPMAuditBody(t *testing.T) {
 		// the legacy endpoints of npm 6 and pnpm 10 are answered 501 and are not translated
 		a := apiAtPod(t, addrs[0], e.npm.token)
 		for _, p := range []string{"/-/npm/v1/security/audits/quick", "/-/npm/v1/security/audits"} {
-			a.do(http.MethodPost, "/api/npm/"+key+p, "{}", "Content-Type", "application/json").want(t, "legacy audit endpoint "+p+" at "+key, 501)
+			a.do(http.MethodPost, npmBase+key+p, "{}", "Content-Type", "application/json").want(t, "legacy audit endpoint "+p+" at "+key, 501)
 		}
 	}
 	if got := stub(t).counts(t).Total(); got != 0 {
@@ -283,7 +283,7 @@ func TestVuln_R_VULN_015_NPMBlockedInstallMalicious(t *testing.T) {
 	})
 	t.Run("the refusal on the wire, no tarball request upstream, nothing stored", func(t *testing.T) {
 		a := e.adm.withToken(e.npm.token)
-		r := a.get("/api/npm/"+npmRemoteKey+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz").want(t, "tarball of the malicious version", 403)
+		r := a.get(npmAddr(npmRemoteKey)+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz").want(t, "tarball of the malicious version", 403)
 		if cc := r.Header.Get("Cache-Control"); !strings.Contains(cc, "no-store") {
 			t.Errorf("Cache-Control of the refusal = %q, want no-store", cc)
 		}
@@ -293,11 +293,11 @@ func TestVuln_R_VULN_015_NPMBlockedInstallMalicious(t *testing.T) {
 			Code    string `json:"code"`
 		}
 		r.JSON(t, &body)
-		if body.Code != "vulnerability_blocked" || !strings.Contains(body.Error, "trove blocked "+vulnNPMMal+"@1.0.0 in "+npmRemoteKey+": malicious package (MAL-2026-1234)") {
+		if body.Code != "vulnerability_blocked" || !strings.Contains(body.Error, "trove blocked "+vulnNPMMal+"@1.0.0 in "+qn(npmRemoteKey)+": malicious package (MAL-2026-1234)") {
 			t.Errorf("the refusal = %+v, want code vulnerability_blocked and trove's text", body)
 		}
 		for _, m := range []string{http.MethodHead} {
-			a.do(m, "/api/npm/"+npmAllKey+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz", nil).want(t, m+" of the malicious version", 403)
+			a.do(m, npmAddr(npmAllKey)+"/"+vulnNPMMal+"/-/"+vulnNPMMal+"-1.0.0.tgz", nil).want(t, m+" of the malicious version", 403)
 		}
 		if n := stub(t).counts(t).Tarballs(vulnNPMMal); n != 0 {
 			t.Errorf("the npm test upstream served the tarball of %s %d times, want none", vulnNPMMal, n)

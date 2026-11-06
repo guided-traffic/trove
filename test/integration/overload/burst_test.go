@@ -22,7 +22,7 @@ func TestBurstBesideEmptyCaches(t *testing.T) {
 	in := newInstall(t)
 	r := in.start(t, "burst", fmt.Sprintf("TROVE_RUNTIME_MEMORY_LIMIT_BYTES=%d", 1<<30))
 	big := in.deploy(t, r, "big.bin", 1<<20)
-	const path = "/files/" + repo + "/big.bin"
+	const path = filesRoot + "big.bin"
 	const n = 300
 
 	t.Run("R-ARCH-005 Q-ARCH-328 the slots are not reduced by the caches' budgets while the caches are empty", func(t *testing.T) {

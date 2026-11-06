@@ -102,8 +102,16 @@ func newPG(tb testing.TB) *pgEnv {
 	if _, err := p.admin.Exec(ctx, "SET search_path TO trove"); err != nil {
 		tb.Fatal(err)
 	}
-	p.repo = p.scalarInt(tb, "INSERT INTO trove.repositories (key, format, class) VALUES ('generic-local', 'generic', 'local') RETURNING id")
+	p.repo = p.newRepo(tb, "generic-local")
 	return p
+}
+
+// newRepo inserts a generic local repository into the project "it", which it creates first; every repository
+// belongs to a project (Q-AUTHZ-206).
+func (p *pgEnv) newRepo(tb testing.TB, key string) int64 {
+	tb.Helper()
+	p.exec(tb, `INSERT INTO trove.project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING`, testenv.DefaultProject)
+	return p.scalarInt(tb, `INSERT INTO trove.repositories (key, format, class, project_id) SELECT $1, 'generic', 'local', id FROM trove.project WHERE key = $2 RETURNING id`, key, testenv.DefaultProject)
 }
 
 func (p *pgEnv) exec(tb testing.TB, sql string, args ...any) {

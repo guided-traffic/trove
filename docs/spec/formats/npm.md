@@ -4070,7 +4070,7 @@ corpus with the corpus's integrity and the dev profile's `npm-all` address.
 
 **Rationale:**
 - The lockfile has one writer version: the npm of the Node every other tool in the repository uses.
-- The `resolved` addresses are those of the dev profile (`https://localhost:8080/api/npm/npm-all/`),
+- The `resolved` addresses are those of the dev profile (`https://localhost:8080/api/npm/e2e/npm-all/`),
   produced by the stub's `-public-url`, so the e2e suite installs the file unmodified.
 - The Go test makes every `make test` notice a drift between corpus and lockfile; the Docker check
   catches a different npm output and belongs in CI.

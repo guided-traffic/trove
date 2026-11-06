@@ -38,8 +38,8 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 	for k, v := range settings {
 		remote[k] = v
 	}
-	fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{"key": u.remote, "class": "remote", "format": "npm", "remote": remote}).want(t, "create "+u.remote, 201)
-	fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
+	fx.adm.do(http.MethodPost, reposRoute, map[string]any{"key": u.remote, "class": "remote", "format": "npm", "remote": remote}).want(t, "create "+u.remote, 201)
+	fx.adm.do(http.MethodPost, reposRoute, map[string]any{
 		"key": u.all, "class": "virtual", "format": "npm", "requireAuthentication": true,
 		"virtual": map[string]any{"members": []string{npmLocalKey, u.remote}, "deployTarget": npmLocalKey},
 	}).want(t, "create "+u.all, 201)
@@ -71,7 +71,7 @@ func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 		for _, key := range keys {
 			start := time.Now()
 			for {
-				r := a.getOverForward("/api/npm/" + key + "/-/ping") // action read: the repository and the grant on that replica
+				r := a.getOverForward("/api/npm/" + repoRef(key) + "/-/ping") // action read: the repository and the grant on that replica
 				if r.Status == 200 {
 					break
 				}
@@ -84,11 +84,11 @@ func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
 	}
 }
 
-// deleteRepository deletes a repository, waiting out the admin API's rate limit (R-API-016).
+// deleteRepository deletes a repository (a bare key of the suite's project or `<project>/<key>`), waiting out the admin API's rate limit (R-API-016).
 func deleteRepository(t testing.TB, adm *api, key string) {
 	t.Helper()
 	for i := 0; i < 20; i++ {
-		r, err := adm.send(http.MethodDelete, "/api/v1/repositories/"+key, nil)
+		r, err := adm.send(http.MethodDelete, repoAPI(key), nil)
 		if err != nil {
 			t.Errorf("delete %s: %v", key, err)
 			return
@@ -143,9 +143,9 @@ func referenceLockfile(t testing.TB, key string) (pkgJSON, lock string, packages
 			packages++
 		}
 	}
-	// the lockfile is resolved for https://localhost:8080/api/npm/npm-all/ (perf/README.md); the run's edge port and the
+	// the lockfile is resolved for https://localhost:8080/api/npm/e2e/npm-all/ (perf/README.md); the run's edge port and the
 	// repository of the test are the only things that change in it
-	return string(pj), strings.ReplaceAll(string(lk), "https://localhost:8080/api/npm/npm-all/", registryURL(t, "localhost", key)), packages
+	return string(pj), strings.ReplaceAll(string(lk), "https://localhost:8080/api/npm/e2e/npm-all/", registryURL(t, "localhost", key)), packages
 }
 
 // ── E2.2 ─────────────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ func TestNPMCollapse(t *testing.T) {
 		defer s.resetAll(t)
 		webs := packagesReplicas(t, 2)
 		const name, misses = "@cobalt/eager-lantern", 100
-		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		// the system is quiet when the flight starts: a replica that came up a moment ago (the profile switch) may still
 		// be settling its sessions, which is not what the criterion measures
 		waitFor(t, "no session idle in transaction", 60*time.Second, time.Second, func() bool {
@@ -290,7 +290,7 @@ func TestNPMCollapse(t *testing.T) {
 		defer s.resetAll(t)
 		webs := packagesReplicas(t, 2)
 		const name = "@cobalt/early-nozzle"
-		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		withValkeyStopped(t, func() {
 			servingReadyDegraded(t, true)
 			for i, st := range burstOver(t, webs, path, fx.token, 30) {
@@ -315,7 +315,7 @@ func TestNPMCollapse(t *testing.T) {
 		defer s.resetAll(t)
 		webs := packagesReplicas(t, 2)
 		const name = "@cobalt/lucid-dial"
-		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		var statuses []int
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -334,7 +334,7 @@ func TestNPMCollapse(t *testing.T) {
 		if got := s.counts(t).Documents(name); got < 1 || got > 2 {
 			t.Fatalf("the test upstream recorded %d document requests for %s, want at most 2 (the leader's and one duplicate)", got, name)
 		}
-		r := fx.adm.get("/api/v1/repositories/"+repos.remote+"/cache/entries?pathPrefix="+url.QueryEscape(name)).want(t, "cache entries", 200)
+		r := fx.adm.get(reposBase+repos.remote+"/cache/entries?pathPrefix="+url.QueryEscape(name)).want(t, "cache entries", 200)
 		var entries struct {
 			Items []json.RawMessage `json:"items"`
 		}
@@ -355,7 +355,7 @@ func TestNPMCollapse(t *testing.T) {
 		addrs, stop := packagesForwards(t)
 		defer stop()
 		const name = "@cobalt/ivory-ember"
-		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
+		path := npmAddr(repos.remote) + "/" + url.PathEscape(name)
 		held := make(chan reply, 1)
 		go func() { r, _ := apiAtPod(t, addrs[0], fx.token).send(http.MethodGet, path, nil); held <- r }()
 		time.Sleep(1200 * time.Millisecond) // the first replica holds the flight lock and waits for the upstream
@@ -413,7 +413,7 @@ func TestNPMUpstream(t *testing.T) {
 		s.resetAll(t)
 		defer s.resetAll(t)
 		name := "e2e-no-such-" + fx.run
-		path := "/api/npm/" + repos.remote + "/" + name
+		path := npmAddr(repos.remote) + "/" + name
 		for i := 0; i < 12; i++ { // scattered over the replicas by the edge
 			fx.publisherGet(t, path).want(t, "document of a missing name", 404)
 		}
@@ -501,7 +501,7 @@ func serviceToken(t *testing.T, fx *npmFixture, sa, virtualKey string, localActi
 // claims document the read returned.
 func setClaims(t *testing.T, adm *api, repo string, patterns ...string) {
 	t.Helper()
-	g := adm.get("/api/v1/repositories/"+repo+"/claims").want(t, "read claims", 200)
+	g := adm.get(reposBase+repo+"/claims").want(t, "read claims", 200)
 	var cur struct {
 		Claims []struct {
 			Pattern, Source, Scope string
@@ -517,7 +517,7 @@ func setClaims(t *testing.T, adm *api, repo string, patterns ...string) {
 	for _, p := range patterns {
 		all = append(all, map[string]string{"pattern": p, "scope": "members"})
 	}
-	adm.do(http.MethodPut, "/api/v1/repositories/"+repo+"/claims", map[string]any{"claims": all}, "If-Match", g.Header.Get("ETag")).want(t, "write claims", 200)
+	adm.do(http.MethodPut, reposBase+repo+"/claims", map[string]any{"claims": all}, "If-Match", g.Header.Get("ETag")).want(t, "write claims", 200)
 }
 
 // auditMentions says whether any recent audit event names the package.

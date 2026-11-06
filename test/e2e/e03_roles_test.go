@@ -153,7 +153,7 @@ func TestE03Roles(t *testing.T) {
 			}
 			api[h.Get("X-Trove-Replica")]++
 			// A package-family request without a credential is refused or not found; either way the pod names itself.
-			_, h, _, err = edge("/api/npm/e2e-roles-distribution/-/ping")
+			_, h, _, err = edge(npmBase + "e2e-roles-distribution/-/ping")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -171,8 +171,8 @@ func TestE03Roles(t *testing.T) {
 	t.Run("R-HA-037 R-ARCH-001 E6a.5 package traffic appears only in the access logs of the packages pods, and UI, sign-in and management traffic only in those of the api pods", func(t *testing.T) {
 		start := time.Now().Add(-5 * time.Second)
 		marker := fmt.Sprintf("e2e-roles-%d", time.Now().UnixNano())
-		pkgPaths := []string{"/api/npm/" + marker, "/api/nuget/" + marker + "/v3/index.json", "/files/" + marker + "/x", "/v2/" + marker + "/x", "/.well-known/" + marker}
-		apiPaths := []string{"/api/v1/repositories/" + marker, "/ui/" + marker, "/auth/oidc/" + marker + "/start", "/api/v1/system/ping"}
+		pkgPaths := []string{npmBase + marker, nugetAddr(marker) + "/v3/index.json", filesAddr(marker) + "/x", "/v2/" + marker + "/x", "/.well-known/" + marker}
+		apiPaths := []string{reposBase + marker, "/ui/" + marker, "/auth/oidc/" + marker + "/start", "/api/v1/system/ping"}
 		for i := 0; i < 24; i++ {
 			for _, p := range append(append([]string{}, pkgPaths...), apiPaths...) {
 				if _, _, _, err := edge(p); err != nil {
@@ -253,7 +253,7 @@ func TestE03Roles(t *testing.T) {
 				}
 			}
 		}
-		check(selAPI, "api", []string{"/api/npm/generic/-/ping", "/api/nuget/nuget-local/v3/index.json", "/files/generic-local/x", "/v2/", "/.well-known/x"})
+		check(selAPI, "api", []string{npmBase + "generic/-/ping", nugetBase + "nuget-local/v3/index.json", filesBase + "generic-local/x", "/v2/", "/.well-known/x"})
 		check(selPackages, "packages", []string{"/api/v1/system/ping", "/api/v1/auth/whoami", "/api/v1/repositories", "/ui/", "/auth/oidc/keycloak/start"})
 	})
 }

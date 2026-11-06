@@ -99,7 +99,7 @@ func TestNuGetClients(t *testing.T) {
 		if port == "" {
 			t.Fatal("TROVE_DEV_HTTP_PORT is not set")
 		}
-		source := fmt.Sprintf("https://localhost:%s/api/nuget/no-such-repository/v3/index.json", port)
+		source := fmt.Sprintf("https://localhost:%s%sno-such-repository/v3/index.json", port, nugetBase)
 		for name, argv := range map[string][]string{
 			// a restore reports the HTTP status of the source (dotnet package search hides it)
 			"dotnet": {

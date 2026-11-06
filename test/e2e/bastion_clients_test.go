@@ -37,7 +37,7 @@ func (e *basEnv) setupSnippets(t testing.TB, repo, client, bastion string) []cli
 		RegistryURL string          `json:"registryUrl"`
 		Snippets    []clientSnippet `json:"snippets"`
 	}
-	e.adm.get("/api/v1/repositories/"+repo+"/client-setup?"+q.Encode()).want(t, "client-setup of "+repo+" for "+client+" "+bastion, 200).JSON(t, &a)
+	e.adm.get(reposBase+repo+"/client-setup?"+q.Encode()).want(t, "client-setup of "+repo+" for "+client+" "+bastion, 200).JSON(t, &a)
 	var out []clientSnippet
 	for _, s := range a.Snippets {
 		if s.Tab == "configure" && s.FileName != "" {
@@ -212,7 +212,7 @@ func (e *basEnv) buildNuGet(t testing.TB) {
 	}
 	// every package that was pushed is listed by the flat container of the main installation
 	for _, id := range set.ids {
-		path := "/api/nuget/" + basNuGetRepo + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"
+		path := nugetAddr(basNuGetRepo) + "/v3/flatcontainer/" + strings.ToLower(id) + "/index.json"
 		waitFor(t, "the main installation to list "+id+" after its push", 30*time.Second, time.Second, func() bool {
 			return e.adm.get(path).Status == 200
 		})
@@ -223,7 +223,7 @@ func (e *basEnv) buildNuGet(t testing.TB) {
 
 // npmDocURL is the path of a package document at a Bastion.
 func npmDocPath(name string) string {
-	return "/api/npm/" + basNPMRepo + "/" + strings.ReplaceAll(name, "/", "%2f")
+	return npmAddr(basNPMRepo) + "/" + strings.ReplaceAll(name, "/", "%2f")
 }
 
 // getAt is a GET of the Bastion from this machine with a token; a transport error is a failure.

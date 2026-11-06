@@ -94,7 +94,7 @@ func TestE1_08RateLimits(t *testing.T) {
 
 	t.Run("R-API-016 E1.8 the write class answers 429 with Retry-After after its burst and is separate from the read class", func(t *testing.T) {
 		a := newToken(t, adm, "e2e-rl")
-		check := map[string]any{"checks": []map[string]string{{"repository": "generic-local", "action": "read"}}}
+		check := map[string]any{"checks": []map[string]string{{"repository": qn("generic-local"), "action": "read"}}}
 		rs, dur := blast(a, 120, 16, func(int) (string, string, any, []string) {
 			return http.MethodPost, "/api/v1/authz/check", check, nil
 		})

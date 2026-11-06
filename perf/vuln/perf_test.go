@@ -388,7 +388,7 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		off := in.web("web-off", "TROVE_VULNERABILITIES_ENABLED=false")
 		name := "perf-cached"
 		publish(t, in, web, repoNPMLocal, name, "1.0.0")
-		path := fmt.Sprintf("/api/npm/%s/%s/-/%s-1.0.0.tgz", repoNPMLocal, name, name)
+		path := fmt.Sprintf("/api/npm/%s/%s/%s/-/%s-1.0.0.tgz", testenv.DefaultProject, repoNPMLocal, name, name)
 		get := func(r *testenv.Replica) (time.Duration, string) {
 			start := time.Now()
 			a := in.st.Do(r, "GET", path, in.tokAdmin, nil)
@@ -440,7 +440,7 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 		var samples []time.Duration
 		for range auditRepeats {
 			start := time.Now()
-			a := in.st.Do(web, "POST", "/api/npm/"+repoNPMLocal+"/-/npm/v1/security/advisories/bulk", in.tokAdmin, raw)
+			a := in.st.Do(web, "POST", "/api/npm/"+testenv.DefaultProject+"/"+repoNPMLocal+"/-/npm/v1/security/advisories/bulk", in.tokAdmin, raw)
 			if a.Status != 200 {
 				t.Fatalf("audit: %d %s", a.Status, a.Body)
 			}
@@ -469,7 +469,7 @@ func TestR_VULN_028_PerformanceRun(t *testing.T) {
 	})
 
 	rep.scenario(t, "V-8 NuGet vulnerability page from the replica's cache", []string{"V-8"}, evaluated, func(t *testing.T) {
-		index := in.st.Do(web, "GET", "/api/nuget/"+repoNuGet+"/v3/vulnerabilities/index.json", in.tokAdmin, nil)
+		index := in.st.Do(web, "GET", "/api/nuget/"+testenv.DefaultProject+"/"+repoNuGet+"/v3/vulnerabilities/index.json", in.tokAdmin, nil)
 		if index.Status != 200 {
 			t.Fatalf("the vulnerability index: %d %s", index.Status, index.Body)
 		}
@@ -525,7 +525,7 @@ func (in *installation) fillFindings() {
 // publish publishes name@version to a local npm repository through the replica as the administrator and requires 201.
 func publish(t *testing.T, in *installation, r *testenv.Replica, repo, name, version string) {
 	t.Helper()
-	a := in.st.Do(r, "PUT", "/api/npm/"+repo+"/"+name, in.tokAdmin, publishDoc(t, name, version))
+	a := in.st.Do(r, "PUT", "/api/npm/"+testenv.DefaultProject+"/"+repo+"/"+name, in.tokAdmin, publishDoc(t, name, version))
 	if a.Status != 201 {
 		t.Fatalf("publish %s@%s: %d %s", name, version, a.Status, a.Body)
 	}
