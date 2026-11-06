@@ -20,7 +20,7 @@ spec:
   primaryUpdateStrategy: unsupervised
   postgresql:
     parameters:
-      max_connections: "400"      # the chart's budget (R-HA-016): 303 for api 2, packages 3, worker 2 and the vuln pool 2 with a surge of 1 each, 383 with the bridge
+      max_connections: "450"      # the chart's budget (R-HA-016): 303 for api 2, packages 3, worker 2 and the vuln pool 2 with a surge of 1 each, 383 with the bridge, 403 with the bridge in the scatter profile (api 3), which the upgrade tests run (Q-HA-98)
       tcp_keepalives_idle: "60"
       tcp_keepalives_interval: "10"
       tcp_keepalives_count: "6"

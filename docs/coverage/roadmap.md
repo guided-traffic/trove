@@ -1057,7 +1057,10 @@ autoscaler and ingress policy; an installation of the previous shape upgrades wi
   resume from its checkpoint stays with the node drain of `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` (owner, 2026-11-05,
   [Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)).
 - **E6a.7** The upgrade across the cut (R-HA-064): from the latest release before the cut through both steps with no failed
-  iteration of the client loops and the UI journey; the guard refuses a one-step upgrade.
+  iteration of the client loops and the UI journey; the guard refuses a one-step upgrade. The one failure of the journey that the
+  test counts instead of failing on is a `404` for a hashed asset of the other release
+  ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade)). Test:
+  `TestUpgrade_R_HA_064_AcrossTheCut` ([e2e.md](../developer/e2e.md#the-upgrade-tests)).
 - **E6a.8** Every requirement of the scope table has a passing test that names it (Q-ROAD-4); BETA.md's phase 6a items are 🟢.
 
 **Work packages** ([architecture.md](../spec/architecture.md) Q-ARCH-299). The packages meet at names the specification fixes:
@@ -1222,7 +1225,9 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   with Valkey down (P-17). The reference load test also runs once with Valkey stopped and records
   upstream request rates and PostgreSQL load (R-HA-057).
 - **E5.4** A rolling upgrade from the release that closed M4b to the beta candidate with the migration Job,
-  followed by `helm rollback`, shows zero failed iterations under R-HA-052's load (R-HA-020).
+  followed by `helm rollback`, shows zero failed iterations under R-HA-052's load (R-HA-020). Test:
+  `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` ([e2e.md](../developer/e2e.md#the-upgrade-tests)); it runs the loops of
+  [Q-HA-97](../spec/ha-and-helm.md#q-ha-97--the-loops-of-the-upgrade-tests), not k6's rate.
 - **E5.5** The values reference documents every chart value, and the values schema validates it
   (R-HA-031). Production example values render the PodDisruptionBudget, topology spreading,
   HorizontalPodAutoscaler and NetworkPolicy (R-HA-032, R-HA-042). R-HA-038's criteria pass through

@@ -64,8 +64,9 @@
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
 #   e2e.sh ha-suite     the failure suite's scenarios under the npm load that npm-ha does not run (R-HA-052: the object-store outage,
 #                       node loss, the PostgreSQL and Valkey primary loss, the drain criterion of R-NPM-038); nightly, dispatch, locally
-#   e2e.sh upgrade      the upgrade across the cut from the last release before it (R-HA-064, E6a.7) and the rolling upgrade and rollback
-#                       from the previous release (R-HA-020) under npm and NuGet loops and a browser journey; nightly, dispatch, locally
+#   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, and the rolling
+#                       upgrade and rollback from the latest release, each under npm, NuGet and browser loops; it replaces the
+#                       installation and returns the cluster to the current dev release (nightly, dispatch, locally)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -161,11 +162,19 @@ case "$set_name" in
   mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # <<< M6b mirror
   # The failure suite under the npm load (R-HA-052: the object-store outage, node loss, the PostgreSQL and Valkey primary loss, the
-  # drain criterion of R-NPM-038) and the upgrade tests (R-HA-064 across the cut, R-HA-020 from the previous release, with npm and
-  # NuGet loops and a browser journey). Both are nightly legs; until their tests land the sets name none and pass with a notice
-  # (Q-ARCH-276).
+  # drain criterion of R-NPM-038), a nightly leg; until its tests land the set names none and passes with a notice (Q-ARCH-276).
   ha-suite) run='^TestHASuite_'; empty_ok=1; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
-  upgrade) run='^TestUpgrade_'; empty_ok=1; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
+  # >>> M6a upgrade
+  # The upgrade tests (R-HA-020, R-HA-064, E6a.7, docs/developer/e2e.md#the-upgrade-tests): the release is removed, the database
+  # and Valkey are emptied, an older release is installed from the published chart and image (v0.16.0 for the cut into roles, the
+  # latest release before the working tree for the rolling upgrade), upgraded to the chart of the working tree and the image under
+  # test (and rolled back) under npm ci, npm publish and dotnet restore loops through a virtual repository over a remote and a local
+  # repository, and a browser journey; the cluster ends with the current dev release again. Two client pods of each kind, the two
+  # counting test upstreams, and the browser tier on the host (npm ci in web/, npx playwright install chromium). The release tags
+  # must be in the checkout (git fetch --tags) and the cluster needs access to Docker Hub and https://guided-traffic.github.io/trove/.
+  # A long leg: nightly, on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
+  upgrade) run='^TestUpgrade_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
+  # <<< M6a upgrade
   *) run="$set_name" ;;
 esac
 

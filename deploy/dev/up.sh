@@ -242,32 +242,8 @@ else
   kind load docker-image "$IMAGE" --name "$CLUSTER" > "$LOGS/image-load.log" 2>&1 \
     || { tail -20 "$LOGS/image-load.log" >&2; die "kind load docker-image failed"; }
 
-  # trusted_proxies of values-dev.yaml is the pod range of the control-plane node, where HAProxy Ingress runs.
-  cp_cidr="$(k get node "${CLUSTER}-control-plane" -o jsonpath='{.spec.podCIDR}')"
-  grep -q "\"$cp_cidr\"" "$DEV_DIR/values-dev.yaml" \
-    || die "the control-plane node's pod range is $cp_cidr; set config.server.trusted_proxies in deploy/dev/values-dev.yaml to it"
-  # Kubelet probes come from the node addresses, which are on the kind Docker network. A CNI that
-  # enforces the chart's NetworkPolicy for them needs the range in networkPolicy.probeCIDRs.
-  node_cidrs="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)"
-  probe_cidrs="["; sep=""
-  for c in $node_cidrs; do probe_cidrs="$probe_cidrs$sep\"$c\""; sep=","; done
-  probe_cidrs="$probe_cidrs]"
-  values=(-f "$DEV_DIR/values-dev.yaml" --set-json "networkPolicy.probeCIDRs=$probe_cidrs")
-  [ "$EDGE_PORT" = "8080" ] || values+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
-    --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
-  # The tag stays guidedtraffic/trove:dev while the image behind it changes, and kind load replaces the image on the nodes
-  # without touching the pod spec, so helm would find nothing to roll. The image ID in a pod annotation of every role
-  # changes the spec exactly when the loaded image changed; a second run with the same image changes nothing (the profile
-  # switches of the e2e suite run this script again and must not roll the pods).
-  image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
-  values+=(--set-string "api.podAnnotations.trove-dev/image-id=$image_id" --set-string "packages.podAnnotations.trove-dev/image-id=$image_id" --set-string "worker.podAnnotations.trove-dev/image-id=$image_id")
-  [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
-  [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")
-  [ "$PROFILE" = "vuln" ] && values+=(-f "$DEV_DIR/values-scatter.yaml" -f "$DEV_DIR/values-vuln.yaml")
-  [ "$PROFILE" = "mirror" ] && values+=(-f "$DEV_DIR/values-scatter.yaml" -f "$DEV_DIR/values-mirror.yaml")
-  # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
-  [ "$PROFILE" = "bastion" ] && values+=(-f "$DEV_DIR/values-bastion.yaml" \
-    --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
+  release_values "$DEV_DIR" "$PROFILE" 1
+  values=("${RELEASE_VALUES[@]}")
   log "installing the trove release (helm upgrade --install trove, migration Job first)"
   # shellcheck disable=SC2086
   helm --kube-context "$CTX" upgrade --install trove "$REPO_ROOT/deploy/helm/trove" -n "$NS" \

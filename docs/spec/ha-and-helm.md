@@ -2270,6 +2270,15 @@ Acceptance criteria:
 ### R-HA-020 · Rolling upgrade and mixed-version operation
 Priority: **MVP** · Covers: HA-069, OPS-073
 
+**Status.** The rolling upgrade and its rollback are tested by `TestUpgrade_R_HA_020_RollingFromThePreviousRelease`
+([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`): the latest release before the working tree is installed
+from the published chart and image and upgraded with `helm upgrade --wait` under `npm ci`, `npm publish`, `dotnet restore` and
+browser loops ([Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release),
+[Q-HA-97](#q-ha-97--the-loops-of-the-upgrade-tests)). `GET /api/v1/system/migrations` of the verification is specified but not
+built; the test reads `trove migrate status`, which prints its document
+([Q-HA-96](#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists)). The gate on the cluster minimum version
+(the second acceptance criterion) has no feature to gate yet and is not tested.
+
 - Every Deployment uses `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, plus
   `minReadySeconds: 10`. Serving capacity never drops below the replica count during an upgrade,
   so the replica counts of the drain rule (R-HA-059) suffice for a zero-downtime upgrade. The
@@ -2284,6 +2293,9 @@ Priority: **MVP** · Covers: HA-069, OPS-073
   workers may run jobs that N web replicas enqueued. Therefore:
   - Anything a client carries between requests MUST be understood by both releases: pagination
     cursors, `ETag` values, session cookies, CSRF tokens, upload session identifiers.
+  - The UI's assets are named after their content (R-ARCH-004), so the pods of release N do not serve those of N−1 and the
+    reverse: a page load that spans the window can meet a `404` for `main-<hash>.js` and stay blank until the user reloads.
+    This limit is open ([Q-HA-99](#q-ha-99--the-uis-hashed-assets-across-an-upgrade)); the upgrade tests count it as a finding.
   - Job payloads and change-log payloads are versioned. Older workers skip unknown job kinds
     (R-HA-005), and older replicas flush the area on an unknown change-log payload (R-HA-004).
   - Valkey keys and channels are versioned the same way: an incompatible change of an encoding
@@ -2359,7 +2371,9 @@ Priority: **MVP** · Covers: HA-069, OPS-073
 
 **Status.** Built (phase 6a, WP6a.3): the bridge, its edge and the guard
 ([_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl)). The guard's refusal reads the cluster and is
-verified by the upgrade e2e test, not by the chart test (Q-HA-86). While the bridge runs, its `web` pods hold the secrets of both
+verified by the upgrade e2e test, not by the chart test (Q-HA-86): `TestUpgrade_R_HA_064_AcrossTheCut`
+([upgrade_test.go](../../test/e2e/upgrade_test.go), the set `upgrade`, [Q-HA-95](#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release))
+installs v0.16.0, checks the refusal and that `helm template` renders, and runs both steps under client and browser loops. While the bridge runs, its `web` pods hold the secrets of both
 roles ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
 
 The releases before the cut run `<fullname>-web` behind the Service `<fullname>` and route every host whole to it. A
@@ -7097,6 +7111,142 @@ k6's NuGet share then join the drain per role.
 
 **Applied in the spec:** R-HA-059 ("A drain per role"); [e14_drain_roles_test.go](../../test/e2e/e14_drain_roles_test.go),
 [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `drain-roles`), [docs/developer/e2e.md](../developer/e2e.md).
+
+### Q-HA-95 · How the upgrade tests get and install the older release
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-020's and R-HA-064's acceptance criteria upgrade from a release that was published, not from a build of the working
+tree, so the test needs that release's chart, its image and the dev values it was installed with. Releases publish the chart to
+`https://guided-traffic.github.io/trove/` and the image to Docker Hub as `guidedtraffic/trove:<x.y.z>`; the release tags are in
+git, with `deploy/dev/values-dev.yaml` of that commit. The dev cluster holds a database that the working tree migrated; the
+upgrade is to run the migration Job on the schema of the older release, and there are no down migrations (R-HA-019).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The published artifacts, a reset installation (chosen) | `helm install trove trove --repo <repository> --version <x.y.z>` with the image `guidedtraffic/trove:<x.y.z>` (pulled by the kind nodes) and the dev values of the tag (`git show <tag>:deploy/dev/...`); before it the release is removed and the database and Valkey are emptied | The upgrade starts from what a user runs: the published chart, the published image; no build of an old tree; the old release is installed with the values its own repository used | Needs the tags in the checkout, network access to two registries, and a reset of the dev installation, whose data the set does not keep |
+| (b) Build the old release from its tag | `git worktree` of the tag, `make image`, `helm install` from the directory | Works offline | Builds a second tree with the toolchain of today (one version of every tool), and tests an artifact no user has |
+| (c) A second kind cluster or namespace for the old release | The old release in a namespace of its own, with its own database | Leaves the dev installation alone | The dependencies (PostgreSQL, Valkey, S3, the IdP, the edge) are cluster-wide singletons of the dev profile; a second set doubles the 17 GB the machine has, and the edge and the client pods would address two installations |
+| (d) Migrate the database back | Roll the schema back to the old release's | Keeps the data | There are no down migrations (R-HA-019) |
+
+**Choice:** (a).
+
+**Rationale:** the criterion is about the transition a user performs, so its input is the published release. The reset costs a few
+minutes and only the dev installation's rows, which every set builds again from its fixtures (they are idempotent); the object
+store keeps its blobs, which nothing references. The set ends by returning the cluster to the current dev release
+(`restoreCurrentRelease`), so the sets after it find what they expect. Revisited when a release stops being installable by the
+dev stack (a dependency that its dev values need and the stack no longer provides): then the oldest start is the oldest release
+the stack serves, and the cut test needs its own stack.
+
+**Applied in the spec:** R-HA-064 and R-HA-020 (the status lines). Code: [upgrade_env_test.go](../../test/e2e/upgrade_env_test.go),
+[release-values.sh](../../deploy/dev/release-values.sh) and `release_values` in [lib.sh](../../deploy/dev/lib.sh) (the values of
+up.sh, shared), [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (the set `upgrade`), [docs/developer/e2e.md](../developer/e2e.md#the-upgrade-tests).
+
+### Q-HA-96 · The migration check of the upgrade tests until the endpoint exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-020's upgrade verification reads `GET /api/v1/system/migrations`. The endpoint is specified (R-HA-018) and its
+document is the type `StatusReport` of [migrate.go](../../internal/meta/postgres/migrate.go), but no route answers it
+(`grep -rn system/migrations internal api cmd` finds the type's comment only), so the request answers `404 not_found`. The same
+document is what `trove migrate status` prints.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read `trove migrate status` in a worker pod (chosen) | The test runs the command in `deploy/trove-worker` and checks `pending`, `servable`, `binary.version` and that the schema the binary requires is applied | The same document, from the same code; no product change in a test task | It is the CLI, not the endpoint; the endpoint's authorization (`system.read`) is not exercised |
+| (b) Build the endpoint | A handler in the `api` role, the OpenAPI entry, the permission, tests | The criterion as written | A product feature with its own tests, API contract check and security review, outside the scope of an e2e work package |
+| (c) Leave the check out | The verification names two of three steps | Nothing to build | A pending step after an upgrade would go unseen |
+
+**Choice:** (a).
+
+**Rationale:** the check's value is the answer (no pending step, the binary can serve the schema), and the CLI gives it from the same
+code. The endpoint is reported as unbuilt in the status line of R-HA-020 so that it is not taken for built. Revisited when the
+endpoint is built: the test then reads it through the administrator's token and the CLI check stays as the cross-check.
+
+**Applied in the spec:** R-HA-020 (the status line). Code: `upMigrateStatus` in [upgrade_env_test.go](../../test/e2e/upgrade_env_test.go).
+
+### Q-HA-97 · The loops of the upgrade tests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-020's criterion names `npm ci` and `dotnet restore` loops against a remote and a local repository; E6a.7 adds the UI
+journey, R-HA-052 "Rolling upgrade" the load of its table. The drain tests already run the npm load of R-HA-059 with k6 and
+eight loops ([Q-HA-94](#q-ha-94--the-load-of-the-drain-per-role)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The full load of R-HA-059 | Eight `npm ci` loops, `dotnet` loops, publishes, k6 at 150 requests/s, the 1 GiB probes | The strongest statement | The upgrade replaces every pod of an installation that has to carry that load on a laptop (the bridge doubles the pods); the loops would fail for lack of CPU, which is not the upgrade |
+| (b) Client loops through one virtual repository over a remote and a local member, the browser journey, no k6 (chosen) | Three `npm ci` loops of the 400-package lockfile, one `npm publish` every 10 s, two `dotnet restore` loops, one browser journey per iteration; every iteration is recorded and must exit 0 with the client's own retries | Each iteration reads a local and a remote package; the write path (publish) and the session across releases (the browser) are covered; the number of loops fits the dev cluster during the bridge | Not the load of the acceptance table; the throughput and latency bounds are the drain tests' |
+| (c) Loops against the remote and against the local repository separately | Two repositories per loop kind | Literal reading of the criterion | A lockfile names its registry in every `resolved` URL, so a second registry needs a second lockfile; the virtual repository makes the same requests of both members |
+
+**Choice:** (b).
+
+**Rationale:** the question an upgrade asks is whether a client command or a page load meets a moment without a backend, a session
+or a document the other release cannot read; that needs clients of every kind running through the whole window and every
+iteration counted, not a high rate. The drain tests carry the rate. Each loop must have an iteration inside each step's window, so a
+loop that stalled outside the window cannot pass the step. Revisited when the upgrade runs on a larger machine in CI: the
+`allDocuments` k6 load of the drain per role can join.
+
+**Applied in the spec:** R-HA-020 and R-HA-052 "Rolling upgrade" (the status line). Code: [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),
+[web/e2e/upgrade](../../web/e2e/upgrade), [web/e2e/playwright.upgrade.config.ts](../../web/e2e/playwright.upgrade.config.ts).
+
+### Q-HA-98 · The connection budget of the bridge in the scatter profile
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first run of the upgrade test failed at step 1: the migration Job of `helm upgrade --set web.enabled=true` refused with
+`the connection budget needs 403 connections but the server allows 400 (max_connections)` (R-HA-016: main pools 360 for the 18
+Deployments' pods at their surge, lease pools 24, migration 2, backup 4, reserved 10, superuser reserved 3). The upgrade tests run in
+the `scatter` profile, which has `api` 3 (a third replica to tell the scatter from an alternation), so the bridge there holds `web` 3,
+`api` 3, `packages` 3, `worker` 2 and the pool `vuln` 2, each with a surge of 1. [Q-HA-87](#q-ha-87--the-dev-profiles-sizing-of-the-roles-and-its-postgresql-connection-budget)
+sized the server for `api` 2: 383 with the bridge.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `max_connections` 450 on the profile's CloudNativePG cluster (chosen) | The server allows the 403 of the bridge in the scatter profile and 47 more | The refusal is the chart's own check, working as specified; the profile's values stay the ones of every other set | A change of the parameter restarts the instances once on an existing cluster (`make dev-up` applies it; a new cluster starts with it) |
+| (b) Run the bridge steps with `api.replicaCount=2` | One pod fewer | No change of the server | The steps would run with values that differ from the profile's, and the third `api` replica of the scatter profile is gone for the part of the test that needs it |
+| (c) Turn the check off for the test (`database.preflight.connection_budget: warn`) | The Job logs the shortfall | No restart | The test would stop exercising the check that a user meets; a shortfall that is real would go unseen |
+
+**Choice:** (a).
+
+**Rationale:** the profile's server was sized for the pods it runs at their surge; the scatter profile with the bridge needs three
+more pods' budget than the number of Q-HA-87 counted. The check refused for the right reason, and the fix is the number it printed.
+Revisited when the sizing of a role or `database.pool.max_conns` of the profile changes.
+
+**Applied in the spec:** [deploy/dev/postgres.yaml](../../deploy/dev/postgres.yaml) (`max_connections: "450"`),
+[local-profile.md](../developer/local-profile.md), [e2e.md](../developer/e2e.md).
+
+### Q-HA-99 · The UI's hashed assets across an upgrade
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first complete run of `TestUpgrade_R_HA_064_AcrossTheCut` (E6a.7) failed two iterations of the browser journey, both
+inside step 1: the login page stayed blank. The trace shows why: `index.html` came from a pod of one release and the requests for
+`main-<hash>.js`, `polyfills-<hash>.js` and `chunk-<hash>.js` went, one by one, to pods of both releases
+(`trove-web-59876cdf84-*` of v0.16.0 and `trove-web-5bb78c9659-*` of the image under test) and answered `404` on the pods of the
+other one, because Angular names every asset after its content and the two releases built different bundles. R-ARCH-004 serves them
+`immutable` and `index.html` `no-cache`, which is right for one release and says nothing about two that run side by side. Every
+other loop of the test (141 `npm ci`, 27 publishes, 186 `dotnet restore`) passed, and the rolling upgrade from v0.19.0, whose bundle
+is the working tree's, ran 71 journey iterations without a failure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the criterion and the test strict | Any failed journey iteration fails the test | The criterion as written | It cannot pass for the cut: the pods of v0.16.0 cannot be changed, and a page that starts on a new `index.html` meets them for as long as the window lasts; the test would be red for every release that changes the bundle |
+| (b) Count the failure of the asset skew as a finding, gate every other failure (chosen) | The journey prints `ASSET-SKEW <url> <replica>` for each `404` of a hashed asset under `/ui/<locale>/`; an iteration that failed with such a line is logged and counted, one that failed without it fails the test | The finding stays visible in every run (a count and the URLs); sign-in, session, the management API and the screens are still gated across the releases | A real failure of the user's page load is let through the test |
+| (c) Make the product serve the other release's assets | The image carries the previous bundle, or the edge pins a browser to one release (cookie affinity) | Removes the failure for a user | Needs a release pipeline step, or an edge feature that not every ingress controller has, and it cannot reach the pods of releases that are already published; an owner decision about the UI's serving (R-ARCH-004), outside this work package |
+| (d) Retry the page load in the journey | The journey reloads on a blank page | Green | Hides the finding and tests a journey no user has |
+
+**Choice:** (b), with (c) as the open design question for the owner.
+
+**Rationale:** the test's job is to find what an upgrade breaks, and it found this; hiding it (d) or leaving a test red that nothing
+in this repository can turn green (a) would both cost more than counting it. What does not change is every other pass condition:
+sign-in across releases, the replica registry, the local and the remote repositories, publishes. A user who meets the skew presses
+reload, which fetches a consistent set from whichever pods answer. Revisited when the owner decides (c): the test then returns to (a)
+for the releases that carry it.
+
+**Applied in the spec:** R-HA-020 (the sentence on the UI in the mixed-version list), R-HA-064 and the roadmap's E6a.7. Code:
+`upCmd.Skew` and `requireClean` in [upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go),
+[web/e2e/upgrade/16-upgrade.spec.ts](../../web/e2e/upgrade/16-upgrade.spec.ts).
 
 ### Q-HA-110 · How the drain test measures the edge's endpoint-removal time
 

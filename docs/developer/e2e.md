@@ -138,6 +138,7 @@ make e2e SET=bastion         # the short scenarios of R-BAS-049 with npm, pnpm, 
 make e2e SET=bastion-long    # the drain, the failure suite under client load (replica lost, main installation failing over, rolling upgrade of either side) and the anonymous miss flood (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
 make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages, and the failure suite on a pass of 100 (a process lost, a throttling upstream, a switchover and a failover) (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
+make e2e SET=upgrade         # the upgrade across the cut from v0.16.0 (E6a.7) and the rolling upgrade with its rollback from the latest release (R-HA-020), under npm, NuGet and browser loops; replaces the installation and puts the current dev release back (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -368,8 +369,8 @@ nightly run is its first.
 The dev profile runs every role ([values-dev.yaml](../../deploy/dev/values-dev.yaml)): `api` 2 replicas, `packages` 3, `worker` 2 and a
 worker pool `vuln` of 2 (the Deployments `trove-api`, `trove-packages`, `trove-worker`, `trove-worker-vuln`; the Services `trove-api` and
 `trove-packages`; the endpoint `customers` has `trove-ep-customers` for the packages pods and `trove-api-ep-customers` for the api pods). The scatter
-profile makes `api` 3 as well. There is no Deployment `trove-web` and no Service `trove` (the bridge `web.enabled` of R-HA-064 is not used
-by the suite). The sizing and the PostgreSQL `max_connections` of 400 (the chart's budget is 303, 383 with the bridge) are
+profile makes `api` 3 as well. There is no Deployment `trove-web` and no Service `trove` (the bridge `web.enabled` of R-HA-064 is used only by the [upgrade tests](#the-upgrade-tests), which install the old shape themselves and put the dev release back)
+The sizing and the PostgreSQL `max_connections` of 450 (the chart's budget is 303, 383 with the bridge, 403 with the bridge in the scatter profile) are
 [Q-HA-87](../spec/ha-and-helm.md#q-ha-87--the-dev-profiles-sizing-of-the-roles-and-its-postgresql-connection-budget).
 
 **How a test names a role** ([Q-HA-89](../spec/ha-and-helm.md#q-ha-89--how-the-end-to-end-harness-addresses-the-roles)). A request of the other role's
@@ -2676,6 +2677,136 @@ The journey needs `npm ci` in `web/` and `npx playwright install chromium` (CI: 
 - A drain of a `packages` replica during a pass: the drains of R-HA-059 variant A and the roles (`drain-roles`) run clients, not a pass. The pool's process lost and the throttled pass moving are covered by `mirror-long` (above); the loss of the Valkey primary and the outage of Valkey during a pass are not (a pass with Valkey stopped is `TestMirror_R_REPO_058_ValkeyStoppedForAWholePass`).
 - The status through a `packages` pod: the management API is the `api` role's.
 - `maxBytes`, quota and capacity bounds ([H-506](../spec/repositories-and-proxy.md)) are the integration tier's.
+
+## The upgrade tests
+
+Exit criterion E6a.7 of the [roadmap](../coverage/roadmap.md#phase-6a--task-areas) (the upgrade across the cut), the acceptance criterion of
+[R-HA-020](../spec/ha-and-helm.md#r-ha-020--rolling-upgrade-and-mixed-version-operation) and the rows "Rolling upgrade" and "Rollback" of
+[R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) (E5.4). The set is `upgrade` (`make e2e SET=upgrade`), a long leg: nightly, on dispatch, locally. Decisions:
+Q-HA-95 to Q-HA-99 in the [specification](../spec/ha-and-helm.md#q-ha-95--how-the-upgrade-tests-get-and-install-the-older-release).
+
+```mermaid
+flowchart LR
+  subgraph host["host"]
+    t["go test<br/>helm, kubectl, kind"]
+    b["Playwright loop<br/>web/e2e/upgrade"]
+  end
+  subgraph trove["namespace trove"]
+    c["client pods x2 per kind<br/>npm ci / npm publish<br/>dotnet restore loops"]
+    r["release: old, then new<br/>web | api, packages, worker"]
+    pg[("PostgreSQL<br/>dropped and created")]
+    s["npmstub, nugetstub<br/>the remote members"]
+  end
+  t -- "helm install / upgrade / rollback" --> r
+  c -- "https, localhost:edge port" --> h["HAProxy Ingress"]
+  b --> h
+  h --> r
+  r --> pg
+  r --> s
+  repo[("guided-traffic.github.io/trove<br/>docker.io/guidedtraffic/trove")] -. "old chart, old image" .-> r
+```
+
+### What it does
+
+Both tests replace the installation, so they are a set of their own and end by putting the current dev release back.
+
+1. **Reset** ([upgrade_env_test.go](../../test/e2e/upgrade_env_test.go) `resetInstallation`): `helm uninstall trove`, `DROP DATABASE trove WITH (FORCE)` and
+   `CREATE DATABASE trove OWNER trove` on the primary of `trove-db`, and `FLUSHALL` on Valkey (`valkey-cli.sh`). There are no down migrations, and the upgrade is to run the
+   migration Job on the schema of the older release, so the older release gets an empty database and migrates it itself. The object store keeps its blobs; they are addressed by content and nothing
+   references them. PostgreSQL, Valkey, S3, the IdP, the test upstreams and the Secrets of the dev profile stay.
+2. **The old release** (`installPrior`): the chart `trove` at the version of the tag from the Helm repository the release pipeline publishes to
+   (`https://guided-traffic.github.io/trove/`), the image `guidedtraffic/trove:<version>` (the kind nodes pull it from Docker Hub themselves), and the dev values of that
+   tag's own checkout (`git show <tag>:deploy/dev/values-dev.yaml` and `values-scatter.yaml`), with the node ranges and the edge port that
+   [release-values.sh](../../deploy/dev/release-values.sh) adds. The tags must be in the checkout (`git fetch --tags`; a shallow clone needs `fetch-depth: 0`); a missing
+   tag fails the test with that hint. `TestUpgrade_R_HA_064_AcrossTheCut` starts from `v0.16.0`, the last release before the cut (its chart has no `packages:` key and renders one
+   `web` Deployment); `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` starts from the highest `vX.Y.Z` tag that is an ancestor of `HEAD` and does not point at it, resolved at run time.
+3. **The fixtures** (`buildUpgradeFixture`) are made through the API of the old release and are served by the new one: the administrator `e2e-admin` (`trove admin` in
+   the worker pod, which every release has), the npm repositories `npm-local`, `npm-remote` (over the counting npm test upstream) and `npm-all` (virtual, deploy target `npm-local`) with the
+   400-package lockfile of the HA load ([npm_load_test.go](../../test/e2e/npm_load_test.go) `buildNPMHAFixture`), the NuGet repositories `nuget-e2e` (local), a remote over the counting NuGet
+   test upstream and a virtual repository over both, and one NuGet package pushed through the virtual repository into the local one.
+4. **The loops** ([upgrade_loops_test.go](../../test/e2e/upgrade_loops_test.go)) start and run through the whole upgrade, each iteration recorded in a file of its pod (or, for the browser, in the
+   test): three `npm ci` loops of the 400-package lockfile with an empty client cache (`ciLoopScript`; the packages come from `npm-local` and from the remote member of `npm-all`), one
+   `npm publish` of a new version to `npm-local` every 10 s (`publishLoopScript`), two `dotnet restore --no-cache` loops with an empty package cache of a project that references the local
+   package and the remote's `Contoso.Core.Extensions` and its dependency through the virtual repository (`nugetRestoreLoopScript`; an iteration counts only when both packages were extracted,
+   because `dotnet restore` exits 0 on some failures), and one loop of the browser journey [web/e2e/upgrade/16-upgrade.spec.ts](../../web/e2e/upgrade/16-upgrade.spec.ts) on the host (one
+   Playwright run per iteration, [playwright.upgrade.config.ts](../../web/e2e/playwright.upgrade.config.ts): the break-glass sign-in, the repository list, the status screen, a reload, sign-out, with the CSP watch of `support.ts`).
+   The clients run with their default retries; a record is written per iteration, so a `kubectl exec` that breaks never counts as a failed iteration.
+5. **The steps** (`upgradeToTree`): `helm upgrade --wait --timeout 15m` of the chart of the working tree with the image `guidedtraffic/trove:dev` (loaded into the nodes first) and the values of
+   `release-values.sh scatter` (the dev values, the scatter profile and the image ID annotation of up.sh), plus the step's own arguments. A sampler reads `GET /api/v1/system/replicas` every 2 s during
+   a step: the distinct version sets are the proof that the step ran in the mixed-version window, and its request outcomes are logged (not gated; the clients' iterations are the pass condition).
+6. **The end** (`restoreCurrentRelease`, a `t.Cleanup` that runs also after a failure): a release of the old shape (`trove-web` present) or one that helm does not know is reset; then
+   `up.sh` in the default profile upgrades or installs the current dev release, which later sets expect.
+
+### The tests
+
+| Test | Criterion | What it does |
+|---|---|---|
+| `TestUpgrade_R_HA_064_AcrossTheCut` | E6a.7, R-HA-064, R-HA-020 | `v0.16.0` installed. Guard (subtest): `helm upgrade` with the defaults (`web.enabled: false`) fails, its output names `web.enabled`, `--set web.enabled=true` and "two upgrades", the Deployments' UIDs and generations and the release revision are unchanged, the registry still lists only the old replicas; `helm template` with the same values renders `trove-api` and no `trove-web`. Then the fixtures and the loops, 45 s of the old release, step 1 (`--set web.enabled=true`): the registry lists the roles `api`, `packages`, `web`, `worker` of the version under test only; 45 s; step 2 (`web.enabled: false`): the roles `api`, `packages`, `worker`, no `trove-web` Deployment, no Service `trove`; 45 s. No iteration of any loop failed (a journey iteration that met a `404` for a hashed asset of the other release is counted as a finding, Q-HA-99), every loop ran an iteration during each step, every acknowledged publish installs and every listed tarball matches its integrity |
+| `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` | R-HA-020, R-HA-052 "Rolling upgrade" and "Rollback", E5.4 | the previous release installed, the fixtures and loops, `helm upgrade --wait` to the working tree (migration Job first). R-HA-020's verification (subtest): `kubectl rollout status` of every Deployment, the registry lists only the version under test, `trove migrate status` shows no pending step and a schema the binary requires. Then `helm rollback` to the revision the upgrade started from under the same loops: the registry lists only the previous release, which serves the migrated schema (R-HA-019: no down migrations). Both windows: zero failed iterations |
+
+**A contract step.** R-HA-021 allows a contract step only one release at a time or with downtime. The rolling test reads the migrations added since the previous release (`git diff --diff-filter=A <tag> HEAD` on
+the migrations directory) and, when one carries `-- trove:phase contract`, fails with a message that names the step and the policy: the upgrade is not zero-downtime then, and a test that
+cannot assert it says so instead of skipping. Today none is added.
+
+**`GET /api/v1/system/migrations`.** R-HA-020's verification names it, and it is specified (R-HA-018) but not built: no route answers it. The test reads `trove migrate status` in the worker pod, which prints
+the document the endpoint documents ([Q-HA-96](../spec/ha-and-helm.md#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists)).
+
+### Running it
+
+```shell
+make image && make dev-up                  # the dev profile must be up; make image tags guidedtraffic/trove:dev
+git fetch --tags                           # the release tags are the test's input
+(cd web && npm ci && npx playwright install chromium)
+make e2e SET=upgrade                       # both tests, about 21 minutes
+TROVE_E2E_RUN='^TestUpgrade_R_HA_020' make e2e SET=upgrade     # one of them
+```
+
+The set builds the client images and starts two npm and two NuGet client pods and both counting test upstreams, as the other sets do. It needs the cluster to reach `docker.io` and
+`guided-traffic.github.io`. Artifacts in `.out/e2e/`: `upgrade-<label>.log` (the helm output of every step), `upgrade-loops-<name>.json` (every iteration of every loop with the tail of a failed one),
+`npm-load-<name>.json`, `profile-default.log` (the return to the dev release); the traces of a failed browser iteration are in `.out/playwright/upgrade/<n>/` (a passed iteration's directory is removed).
+
+### What the CI leg provides
+
+The CI leg of the set (HA and Performance, nightly and on dispatch; [performance.yml](../../.github/workflows/performance.yml)) must provide: a checkout with all tags (`fetch-depth: 0`); `make image` before the set (the
+tag `guidedtraffic/trove:dev`); Node from `web/.nvmrc`, `npm ci` in `web/` and `npx playwright install --with-deps chromium`; network access to Docker Hub and to `guided-traffic.github.io`; the dev profile
+(`make dev-up`) as for every e2e leg; a step timeout above the measured duration of the set.
+
+### Measured on the dev cluster
+
+2026-11-06, linux/arm64 kind on a 20-CPU developer machine (3 workers; the scatter profile with the bridge: 3 `web`, 3 `api`, 3 `packages`, 2 `worker`, 2 `worker-vuln`).
+
+| What | `TestUpgrade_R_HA_064_AcrossTheCut` (v0.16.0) | `TestUpgrade_R_HA_020_RollingFromThePreviousRelease` (v0.19.0) |
+|---|---|---|
+| install of the old release (`--wait`) | 20 s | 29 s |
+| the fixture (400-package lockfile, 475 locked, 22 documents; 20 tokens) | 19 s | 20 s |
+| step 1 / the upgrade (`--wait`, migration Job included) | 1 min 24 s | 56 s |
+| step 2 / the rollback (`--wait`) | 7 s | 39 s |
+| registry samples while the step ran | 16 old only, 21 both versions; the roles `web, worker` before, `api, packages, web, worker` after the bridge came up | 4 old only, 22 both; 19 both and 1 new only while rolling back |
+| `npm ci` iterations, failed | 141, 0 | 447, 0 |
+| `npm publish` iterations, failed (every one installs with its content, every tarball matches its integrity) | 27, 0 | 47, 0 |
+| `dotnet restore` iterations (two loops), failed | 186, 0 | 545, 0 |
+| browser journey iterations, failed | 25, 2 (the asset skew, below) | 71, 0 |
+| slowest iteration | 23.3 s (a blank page that waited out the journey's 15 s) | 14.4 s (an `npm ci`) |
+| test duration | 515 s | 721 s |
+
+The set took 20 min 36 s with both tests, the return to the dev release after each included. Before the fix of Q-HA-98 the first run ended at step 1 after 5 minutes; the guard
+subtest passed in 0.9 s in every run.
+
+### Findings of the upgrade tests
+
+| Finding | Cause | Fix |
+|---|---|---|
+| Step 1 failed: the migration Job refused `the connection budget needs 403 connections but the server allows 400 (max_connections)` | the scatter profile has `api` 3, and the bridge in it holds 18 pods at their surge (20 connections each) beside `web`; the dev PostgreSQL was sized for `api` 2 (383) | `max_connections` 450 in [postgres.yaml](../../deploy/dev/postgres.yaml) ([Q-HA-98](../spec/ha-and-helm.md#q-ha-98--the-connection-budget-of-the-bridge-in-the-scatter-profile)); an existing cluster restarts its instances once when `make dev-up` applies it |
+| The journey stayed on a blank login page in 2 of 25 iterations during step 1 | **Open.** The UI's assets are named after their content: of the requests for `main-*.js`, `polyfills-*.js` and `chunk-*.js` that one page load makes, the ones that reach a pod of the other release answer `404` (`trove-web-5bb78c9659-*` of the image under test against `trove-web-59876cdf84-*` of v0.16.0 in the trace). The pods of v0.16.0 cannot be changed. The rolling upgrade from v0.19.0 meets no skew because the bundle did not change | none in the product. The test counts these iterations as a finding and gates every other failure ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade)); whether the product retains the previous bundle or the edge pins a browser to one release is the owner's decision |
+| `GET /api/v1/system/migrations` answers `404` | the endpoint is specified (R-HA-018) and not built | the tests read `trove migrate status` ([Q-HA-96](../spec/ha-and-helm.md#q-ha-96--the-migration-check-of-the-upgrade-tests-until-the-endpoint-exists)); the endpoint is a product task |
+| The guard, the two steps, the registry's roles and the rollback of a release (R-HA-064, R-HA-020, R-HA-052) | none: they behave as specified | |
+
+### Not covered by the upgrade tests
+
+- A downgrade across the cut: R-HA-064 states that the way back is a rollback of a release and is not covered by the zero-downtime promise.
+- A rolling restart of the Deployments (R-HA-052's first row) is the drain tests'; the upgrade of the dependencies (PostgreSQL, Valkey) is not part of trove's release.
+- The cluster-minimum-version gate of R-HA-020 (a feature answers `503 cluster_upgrade_in_progress` while an older replica lives) has no feature to gate yet.
+- The k6 load of the drain tests and the 1 GiB transfers do not run under the upgrade; the loops are the clients' (Q-HA-97).
 
 ## Extension checklist
 

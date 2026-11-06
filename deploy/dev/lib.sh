@@ -97,6 +97,43 @@ check_tools() {
   [ "$failed" = 0 ] || exit 1
 }
 
+# release_values <values dir> <profile> <annotate> fills the array RELEASE_VALUES with the helm arguments of the dev
+# release: the values files of the directory (deploy/dev, or the copy of an older release's files that the upgrade tests
+# install), the node ranges, the edge port and, with annotate=1, the image ID of $IMAGE. EDGE_PORT, POOLER and IMAGE come
+# from the caller.
+release_values() {
+  local dir="$1" profile="$2" annotate="$3" cp_cidr node_cidrs probe_cidrs sep c image_id
+  # trusted_proxies of values-dev.yaml is the pod range of the control-plane node, where HAProxy Ingress runs.
+  cp_cidr="$(k get node "${CLUSTER}-control-plane" -o jsonpath='{.spec.podCIDR}')"
+  grep -q "\"$cp_cidr\"" "$dir/values-dev.yaml" \
+    || die "the control-plane node's pod range is $cp_cidr; set config.server.trusted_proxies in $dir/values-dev.yaml to it"
+  # Kubelet probes come from the node addresses, which are on the kind Docker network. A CNI that
+  # enforces the chart's NetworkPolicy for them needs the range in networkPolicy.probeCIDRs.
+  node_cidrs="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)"
+  probe_cidrs="["; sep=""
+  for c in $node_cidrs; do probe_cidrs="$probe_cidrs$sep\"$c\""; sep=","; done
+  probe_cidrs="$probe_cidrs]"
+  RELEASE_VALUES=(-f "$dir/values-dev.yaml" --set-json "networkPolicy.probeCIDRs=$probe_cidrs")
+  [ "$EDGE_PORT" = "8080" ] || RELEASE_VALUES+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
+    --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
+  if [ "$annotate" = 1 ]; then
+    # The tag stays guidedtraffic/trove:dev while the image behind it changes, and kind load replaces the image on the nodes
+    # without touching the pod spec, so helm would find nothing to roll. The image ID in a pod annotation of every role
+    # changes the spec exactly when the loaded image changed; a second run with the same image changes nothing (the profile
+    # switches of the e2e suite run this script again and must not roll the pods).
+    image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+    RELEASE_VALUES+=(--set-string "api.podAnnotations.trove-dev/image-id=$image_id" --set-string "packages.podAnnotations.trove-dev/image-id=$image_id" --set-string "worker.podAnnotations.trove-dev/image-id=$image_id")
+  fi
+  [ "$POOLER" = "1" ] && RELEASE_VALUES+=(-f "$dir/values-pooler.yaml")
+  [ "$profile" = "scatter" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml")
+  [ "$profile" = "vuln" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-vuln.yaml")
+  [ "$profile" = "mirror" ] && RELEASE_VALUES+=(-f "$dir/values-scatter.yaml" -f "$dir/values-mirror.yaml")
+  # The Bastions' base URLs (deploy/dev/bastion.sh) carry the edge port the cluster was created with.
+  [ "$profile" = "bastion" ] && RELEASE_VALUES+=(-f "$dir/values-bastion.yaml" \
+    --set-json "config.server.additional_base_urls=[\"https://trove-api.trove.svc:8080\",\"https://trove-packages.trove.svc:8080\",\"https://bastion-volume.trove.localhost:$EDGE_PORT\",\"https://bastion-bucket.trove.localhost:$EDGE_PORT\"]")
+  return 0
+}
+
 # require_cluster fails with a hint when the kind cluster is not there.
 require_cluster() {
   kind get clusters 2>/dev/null | grep -qx "$CLUSTER" \
