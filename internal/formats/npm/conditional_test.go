@@ -173,13 +173,13 @@ func TestR_ARCH_012_RenditionCache(t *testing.T) {
 		}
 		rq.Subject = alice()
 		body := rf.h.ServeRequest(rq, false).Body.String()
-		if !strings.Contains(body, "https://trove.example.com/api/npm/main/lodash/-/lodash-1.1.0.tgz") {
+		if !strings.Contains(body, "https://trove.example.com/api/npm/it/main/lodash/-/lodash-1.1.0.tgz") {
 			t.Fatalf("links %s", body)
 		}
 		// the same package on a Host with another base URL: no entry is shared
 		other := newRepo(t, func(o *formattest.HostOptions) { o.BaseURL = "https://mirror.example.org" })
 		other.publish("lodash", "1.0.0")
-		if got := other.get("lodash").Body.String(); strings.Contains(got, "trove.example.com") || !strings.Contains(got, "https://mirror.example.org/api/npm/main/lodash/-/") {
+		if got := other.get("lodash").Body.String(); strings.Contains(got, "trove.example.com") || !strings.Contains(got, "https://mirror.example.org/api/npm/it/main/lodash/-/") {
 			t.Fatalf("links %s", got)
 		}
 	})

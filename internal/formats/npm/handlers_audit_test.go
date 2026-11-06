@@ -262,7 +262,7 @@ func TestR_NPM_038_TheBodyIsBounded(t *testing.T) {
 }
 
 func TestR_NPM_038_WhereTheAuditIsNotAvailable(t *testing.T) {
-	text := "security audit is not available on repository main; it is disabled or no upstream provides advisories"
+	text := "security audit is not available on repository it/main; it is disabled or no upstream provides advisories"
 	cases := []struct {
 		name   string
 		class  formats.Class

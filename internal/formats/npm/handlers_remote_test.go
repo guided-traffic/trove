@@ -58,7 +58,7 @@ func TestR_NPM_025_ARemoteServesTheStoredDocumentWithTarballsOnTheBaseURL(t *tes
 		t.Fatal(err)
 	}
 	for v, e := range d.Versions {
-		if want := formattest.DefaultBaseURL + "/api/npm/main/@acme/ui/-/ui-" + v + ".tgz"; e.Dist.Tarball != want {
+		if want := formattest.DefaultBaseURL + "/api/npm/it/main/@acme/ui/-/ui-" + v + ".tgz"; e.Dist.Tarball != want {
 			t.Errorf("%s: tarball %q, want %q", v, e.Dist.Tarball, want)
 		}
 		if e.Dist.Integrity != sriOf("@acme/ui"+v) {
@@ -152,7 +152,7 @@ func TestR_REPO_032_TheCacheViewNamesItselfInTheTarballAddresses(t *testing.T) {
 	rq.CacheView = true
 	w := httpRecorder()
 	formats.ServeRoute(f, w, rq, false)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "/api/npm/main~cache/lodash/-/lodash-4.17.21.tgz") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "/api/npm/it/main~cache/lodash/-/lodash-4.17.21.tgz") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 	normal := get(t, h, "lodash")
@@ -235,7 +235,7 @@ func TestR_NPM_030_AVirtualDocumentIsRewrittenAfterTheMergeForTheVirtualReposito
 		t.Fatalf("%d %v\n%s", r.Code, r.Header(), r.Body)
 	}
 	for _, v := range []string{"1.0.0", "1.1.0"} {
-		if !strings.Contains(r.Body.String(), formattest.DefaultBaseURL+"/api/npm/npm-all/lodash/-/lodash-"+v+".tgz") {
+		if !strings.Contains(r.Body.String(), formattest.DefaultBaseURL+"/api/npm/it/npm-all/lodash/-/lodash-"+v+".tgz") {
 			t.Errorf("%s is not under the virtual repository's URL: %s", v, r.Body)
 		}
 	}
@@ -260,7 +260,7 @@ func TestR_NPM_030_AVirtualDocumentIsRewrittenAfterTheMergeForTheVirtualReposito
 
 	t.Run("the abbreviated form, the version and the merged tags", func(t *testing.T) {
 		ab := get(t, h, "lodash", "Accept", "application/vnd.npm.install-v1+json")
-		if ab.Code != 200 || !strings.Contains(ab.Body.String(), "/api/npm/npm-all/lodash/-/lodash-1.1.0.tgz") {
+		if ab.Code != 200 || !strings.Contains(ab.Body.String(), "/api/npm/it/npm-all/lodash/-/lodash-1.1.0.tgz") {
 			t.Errorf("%d %s", ab.Code, ab.Body)
 		}
 		v := get(t, h, "lodash/latest")

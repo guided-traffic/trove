@@ -22,12 +22,12 @@ func TestR_AUTHZ_013_TheAuditForwarderAsksForTheMemberOnBehalfOfTheAddressedVirt
 	}
 	var seen bool
 	for _, c := range h.Authorizations() {
-		if c.Repo != "up" {
+		if c.Repo != "it/up" {
 			continue
 		}
 		seen = true
-		if c.Addressed != "main" {
-			t.Errorf("the read of the member %q was decided with the addressed repository %q, want main", c.Repo, c.Addressed)
+		if c.Addressed != "it/main" {
+			t.Errorf("the read of the member %q was decided with the addressed repository %q, want it/main", c.Repo, c.Addressed)
 		}
 	}
 	if !seen {
