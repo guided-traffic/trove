@@ -45,7 +45,8 @@
 #   e2e.sh bastion      the short scenarios of R-BAS-049: the chart trove-bastion (volume backend; bucket backend with Valkey) in
 #                       front of the main installation, npm, pnpm, Yarn 4 and dotnet restore from the client pods; CI: job
 #                       e2e-bastion (a change to the Bastion) and the nightly HA and Performance workflow
-#   e2e.sh bastion-long the long scenarios of R-BAS-049: the drain, the flood and the anonymous flood (nightly, dispatch, locally)
+#   e2e.sh bastion-long the long scenarios of R-BAS-049: the drain, the failure suite under client load (a replica lost, the main
+#                       installation failing over, a rolling upgrade of either side), the flood and the anonymous flood (nightly, dispatch, locally)
 #   e2e.sh vuln         the short scenarios of R-VULN-029: the chart in the `vuln` profile (three api and three packages replicas, the main worker and the pool vuln with two replicas each, the scatter
 #                       edge, the scanning reading the test advisory source) with the npm, pnpm, Yarn 4 and dotnet clients, the audits,
 #                       the blocked installs and restores, the replicas with Valkey stopped and the browser journeys; CI: job e2e-vuln
@@ -138,8 +139,8 @@ case "$set_name" in
   # The Bastions of R-BAS-049 (docs/developer/e2e.md#the-bastion-tests): the main installation in the `bastion` profile, the
   # chart trove-bastion twice in the namespace trove-bastion (deploy/dev/bastion.sh), and the npm and NuGet client pods
   # outside it. `bastion` is the short scenarios (CI: job e2e-bastion on a change to the Bastion, and nightly);
-  # `bastion-long` the drain, the flood and the anonymous flood (nightly, on dispatch, locally: a red long leg is a finding,
-  # not a blocker, owner 2026-11-01). TROVE_E2E_BASTION_KEEP=1 leaves the Bastions installed.
+  # `bastion-long` the drain, the failure suite under client load, the flood and the anonymous flood (nightly, on dispatch,
+  # locally: a red long leg is a finding, not a blocker, owner 2026-11-01). TROVE_E2E_BASTION_KEEP=1 leaves the Bastions installed.
   bastion) run='^TestBastion_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2 ;;
   bastion-long) run='^TestBastionLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2 ;;
   # <<< M5b bastion

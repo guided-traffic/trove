@@ -135,7 +135,7 @@ make nuget-clients-image     # only build the NuGet clients image into the local
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
 make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
 make e2e SET=bastion         # the short scenarios of R-BAS-049 with npm, pnpm, Yarn 4 and dotnet restore (CI job e2e-bastion, when the change touches the Bastion; nightly)
-make e2e SET=bastion-long    # the drain, and the anonymous miss flood (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
+make e2e SET=bastion-long    # the drain, the failure suite under client load (replica lost, main installation failing over, rolling upgrade of either side) and the anonymous miss flood (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
 make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages, and the failure suite on a pass of 100 (a process lost, a throttling upstream, a switchover and a failover) (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
@@ -2302,7 +2302,8 @@ their forwarders), and the first test calls `basFx` ([bastion_env_test.go](../..
 | [test/e2e/bastion_clients_test.go](../../test/e2e/bastion_clients_test.go) | the clients: the snippets of `client-setup?bastion=` written into the pods, lockfiles, `dotnet restore` |
 | [test/e2e/bastion_scenarios_test.go](../../test/e2e/bastion_scenarios_test.go), `bastion_scx_checks_test.go`, `bastion_unreachable_test.go`, `bastion_upgrade_test.go`, `bastion_zflood_test.go` | the short scenarios, in the order of their file names (the destructive ones last) |
 | [test/e2e/bastion_journey_test.go](../../test/e2e/bastion_journey_test.go), [web/e2e/bastion/14-bastions.spec.ts](../../web/e2e/bastion/14-bastions.spec.ts), `web/e2e/playwright.bastion.config.ts` | the browser journey of R-BAS-007 |
-| [test/e2e/bastion_long_test.go](../../test/e2e/bastion_long_test.go) | the long scenarios |
+| [test/e2e/bastion_long_test.go](../../test/e2e/bastion_long_test.go) | the drain and the anonymous flood |
+| [test/e2e/bastion_load_test.go](../../test/e2e/bastion_load_test.go), [bastion_failure_long_test.go](../../test/e2e/bastion_failure_long_test.go) | the client load and the fault harness (`underLoad`), and the failure scenarios that use it |
 
 ### How a scenario measures
 
@@ -2335,7 +2336,30 @@ their forwarders), and the first test calls `basFx` ([bastion_env_test.go](../..
 | `TestBastion_R_BAS_049_FloodingAddress` | flooding address | 2,000 requests from one address, paced at 80 a second (below the ingress's limit, above the Bastion's), block it (`trove_bastion_blocks_total`), then 60 requests answer `429 address_blocked`, both replicas count `blocked` refusals, a client pod's address is served |
 | `TestBastion_R_BAS_007_Journey` | R-BAS-007 | the browser journey: the card of `partners` shows both replicas' last contact; a registration is created, a token of 20 days issued, copied once (clipboard compared), gone after a reload, with the warning mark |
 | `TestBastionLong_R_BAS_049_Drain` | drain | `kubectl drain` of a replica's node (not the PostgreSQL primary's) two minutes into a ten-minute loop of `npm ci` and `dotnet restore`: zero failed runs, the replica is rescheduled |
+| `TestBastionLong_R_BAS_049_ReplicaLost` | replica lost | per backend (volume, bucket), a replica is force-deleted (`--grace-period=0 --force`) 30 s into the load of Q-BAS-142; no command of the three loops fails after the client's own retries, the pair is ready again, the surviving replica's `result=hit` counter for artifacts rises, and the main installation sends the warm artifacts again not at all (bucket) or at most once per replica (volume, Q-BAS-143) |
+| `TestBastionLong_R_BAS_049_MainFailover` | main installation failing over | under the load through the bucket Bastion, one after the other: `failover.sh` (PostgreSQL switchover), `valkey-failover.sh`, a `packages` pod of the main installation force-deleted; no command fails, the three loops each had a command during every fault, the interface never mismatched, the replicas were never all unreachable for two minutes (Q-BAS-141, Q-BAS-144) |
+| `TestBastionLong_R_BAS_049_RollingUpgradeMain` | rolling upgrade, main installation | under the same load: `kubectl rollout restart` of `trove-packages`, of `trove-api`, and `up.sh` (`helm upgrade` with the migration Job) with a changed pod annotation `e2e-roll` of both Deployments; the same conditions |
+| `TestBastionLong_R_BAS_049_RollingUpgradeBastion` | rolling upgrade, Bastion | per backend: `kubectl rollout restart` of the Bastion's Deployment, and `bastion.sh install` (`helm upgrade`) with a changed pod annotation `e2e-roll`; the same conditions (with the volume backend the caches start empty after each, so the warm loops refill from the main installation) |
 | `TestBastionLong_R_BAS_049_AnonymousMissFlood` | anonymous miss flood | 10,000 anonymous requests for random names: at most 30 reach the main installation per minute, at most 16 (the anonymous quarter of `max_concurrent`) in flight |
+
+**The failure suite's load and judgement** ([bastion_load_test.go](../../test/e2e/bastion_load_test.go), Q-BAS-141 to Q-BAS-144). `underLoad` warms the clients, publishes a pool of cold packages
+to the main installation (`bas<run>-lc-<scenario>-<n>`, 100 to 250 of them), then runs three loops until the last fault is over, every command recorded with its start, end, result and the tail of a failure's output:
+`npm ci` (empty client cache each run, the set of the other scenarios), `dotnet restore` (empty client cache each run) and one `npm install --no-save` of the next package of the pool, which the Bastion has
+not been asked for, so every run is a miss forwarded to the main installation. The clients run with their default retries. Each loop pauses after a command (2 s, 2 s and 1 s): back to back, one client address sends about 200 requests a second, above the Bastion's per-address limit of 50 (burst 200, R-BAS-035), and the Bastion's `429` makes npm wait 10 s and 60 s (Q-BAS-142). A sampler reads `trove_bastion_interface_mismatch` and `trove_bastion_main_reachable`
+of every running replica every 2 s. Each fault is followed by 30 s of load; after the last one the load stops and a subtest per fault (named with the requirement IDs) requires: every command that ran during the
+fault or its 30 s exited 0; each loop had a command during the fault itself; the mismatch gauge never rose; the replicas were never all unreachable for two minutes (the condition of `TroveBastionMainUnreachable`);
+and the scenario's own conditions. A failed command outside every fault, and a cold pool that ran out before the load ended, fail the scenario itself. The record of the run (commands, faults, link statistics) is
+`bastion-load-<variant>-<scenario>.json` in the artifact directory. A Bastion's rolling restart with the volume backend drops its caches (an ephemeral volume), so the loops refill them from the main installation.
+The cold loop is `npm` only; a NuGet miss loop would need NuGet packages published per run (Q-BAS-142).
+
+**Measured** (local kind cluster, Docker Desktop, 2 Bastion replicas, the profile's short periods; the load of Q-BAS-142 with the pauses): a replica force-deleted, ready again after 8 s (volume) and 4 s (bucket), about 100
+commands in 75 s, none failed; of the 26 warm artifacts the main installation sent 30 again with the volume backend (the lost replica's share, bound 52) and none with the bucket. The main installation failing over: the PostgreSQL
+switchover took 17 s, the Valkey failover 2 s, the force-deleted `packages` pod 16 s; 208 commands in 2 min 36 s, none failed; the slowest was a cold install of 7.9 s during the switchover and an `npm ci` of 10.5 s
+during the pod crash, each one client retry (Q-BAS-141). Rolling upgrade of the main installation through the
+bucket Bastion, 837 commands in 9 min 56 s (`npm ci` 238, `dotnet restore` 182, cold installs 417 of the pool of 450), none failed, the slowest 1.5 s; `rollout restart` of `packages` took 2 min 27 s, of `api`
+2 min 28 s, the `helm upgrade` with the migration Job 3 min 0 s; the mismatch gauge stayed 0 and no replica reported the main installation unreachable. Rolling upgrade of the Bastion: restart 39 s (volume) and 33 s
+(bucket), `helm upgrade` 42 s and 34 s, no command failed, the slowest 1.4 s. The first runs showed what a load without pauses does: three 70-second `npm ci` runs and one failure, all `429 rate_limited` of the Bastion
+(npm waits 10 s, then 60 s) - the loops sent 200 requests a second from one address.
 
 **Diagnostics of a failure.** A failed Bastion install (`basInstall`) and a failed grace-period install of the interface-mismatch scenario write
 `bastion-diag-<test>/` into the artifact directory ([bastion_diag_test.go](../../test/e2e/bastion_diag_test.go)): the pods, the events and the logs (previous
@@ -2348,7 +2372,7 @@ expired from a cache that was never warm.
 ```shell
 make image VERSION=dev && make dev-up
 make e2e SET=bastion          # the short scenarios; the profile and the Bastions are made by the first test (about 40 minutes)
-make e2e SET=bastion-long     # the drain (TROVE_E2E_BASTION_LOOP shortens the loop while a test is written) and the anonymous flood
+make e2e SET=bastion-long     # the failure suite, the drain (TROVE_E2E_BASTION_LOOP shortens the loop while a test is written) and the anonymous flood
 TROVE_E2E_BASTION_KEEP=1 make e2e SET=bastion TROVE_E2E_RUN='^TestBastion_R_BAS_049_ReadOnly$'   # one test; the Bastions and the profile stay
 deploy/dev/bastion.sh status | down
 ```

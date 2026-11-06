@@ -2319,9 +2319,12 @@ Bastion's Ingress:
 | Anonymous miss flood | anonymous requests for 10,000 random names within a minute send at most the anonymous miss budget and the anonymous share of `max_concurrent` to the main installation |
 | Read-only | `npm publish` and `dotnet nuget push` are refused in the client's shape, pointing at the main installation |
 | Drain | `kubectl drain` of one Bastion replica's node during a 10-minute client loop: zero failed runs |
+| Replica lost | a Bastion replica force-deleted (`--grace-period=0 --force`) under a client loop, with the volume backend and with the bucket backend: zero failed commands with the clients' own retries, the replacement becomes ready, warm content keeps being served (bucket: no artifact fetched again; volume: at most once per replica) ([Q-BAS-141](#q-bas-141--zero-failed-commands-means-after-the-clients-own-retries-the-bastion-does-not-retry-a-forward), [Q-BAS-143](#q-bas-143--what-warm-content-keeps-being-served-means-after-a-replica-is-lost)) |
+| Main installation failing over | under a client loop through the bucket Bastion: a PostgreSQL switchover, a Valkey failover and a force-deleted `packages` pod of the main installation: zero failed commands with the clients' own retries, including the commands for packages the Bastion has not seen (misses), and the replicas are never all unreachable for the alert's two minutes (R-HA-052, [Q-BAS-141](#q-bas-141--zero-failed-commands-means-after-the-clients-own-retries-the-bastion-does-not-retry-a-forward), [Q-BAS-142](#q-bas-142--the-failure-suite-runs-one-load-with-a-miss-loop-and-one-fault-after-the-other)) |
+| Rolling upgrade of either side | `kubectl rollout restart` and a `helm upgrade` with a changed pod annotation of the main installation's `packages` and `api` Deployments, and of the Bastion's Deployment (both backends), each under a client loop: zero failed commands, `trove_bastion_interface_mismatch` never 1 (R-BAS-028), the replicas are never all unreachable for two minutes ([Q-BAS-144](#q-bas-144--the-links-state-under-maintenance-is-judged-by-the-alerts-condition)) |
 | Hidden content | a package hidden by a permission at the main installation is hidden at the Bastion, cached or not, and a narrowed permission hides cached content within the revocation bound ([Q-BAS-114](#q-bas-114--hidden-content-in-the-suite-is-a-package-permission-the-exposure-rules-of-an-endpoint-are-not-the-bastions)) |
 
-- The drain, the flood and the anonymous flood are long tests: they run nightly, on dispatch and locally, not in the release
+- The drain, the failure scenarios (replica lost, main installation failing over, rolling upgrade of either side), the flood and the anonymous flood are long tests: they run nightly, on dispatch and locally, not in the release
   path, and a red long leg is a finding, not a blocker (the owner's rule of 2026-11-01). The other scenarios run with every
   change to the Bastion.
 
@@ -5173,6 +5176,79 @@ Context: finding F-45. `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgains
 **Rationale:** the ratio of the page to a pass was 2.0 to 2.4 in all environments measured, while the absolute time varied by a factor of 50 with the load, so the ratio is the stable measure. A per-entry design exceeds 100 passes by a factor of 10. The development agent would revisit the choice when the unit tier runs on runners without a CPU limit (then the fixed 5 s returns) or when a regression slips through the factor.
 
 **Applied in the spec:** R-BAS-026 (test note); code: `engine.answerStore.dropWhere`; `TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousandAnswersWithinTheBound`; [releasing.md](../developer/releasing.md); `make test-performance`.
+
+### Q-BAS-141 · Zero failed commands means after the clients' own retries; the Bastion does not retry a forward
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the failure scenarios of R-BAS-049 (a replica lost, the main installation failing over, a rolling upgrade) ask for "zero failed iterations". R-HA-052 states the pass condition of its pod-crash row as "no client iteration fails after its own retries". R-BAS-021 lets a forward that meets a connect or TLS error, a timeout or an unmarked `5xx` answer `502 main_failed` or `504 main_timeout` and keep nothing, and R-BAS-027 lets a replica that cannot handshake serve only what its answers allow. A command for a package the Bastion has not seen is a miss, which is a forward to the main installation; a fault of the main installation that meets that forward reaches the client.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The clients' own retries decide; the Bastion forwards once (chosen) | `npm` (`fetch-retries`) and `dotnet restore` run with their defaults; a `502`/`504` of the Bastion is retried by the client | The condition of R-HA-052; no change to R-BAS-021; the Bastion adds no load to a main installation in trouble; the concurrency budget (R-BAS-025) stays the one bound | A miss that meets a fault costs the client a retry delay |
+| (b) The Bastion retries a `GET` forward once | A transient error is hidden from the client | A shorter wait | A second request to a main installation that is failing over, while the budget and the collapsing of R-BAS-025 count one; a streamed body that failed halfway cannot be retried, so the retry covers only part of the faults |
+| (c) The scenarios load warm content only | Misses never meet a fault | No retry delay in the result | Leaves the forwarding path of the Bastion untested under the faults |
+
+**Choice:** (a). The scenarios load misses as well as warm content (Q-BAS-142) and fail on any command that exits non-zero after the client's retries.
+
+**Rationale:** (a) is R-HA-052's own wording and keeps the Bastion's forwarding at the single attempt R-BAS-021 specifies. The development agent would revisit the choice if a scenario finds a command that the clients' retries do not save within a fault the main installation absorbs itself (a switchover, a rolling restart): that would show the Bastion's single attempt, not the clients, to be the limit.
+
+**Applied in the spec:** R-BAS-049 (rows Replica lost, Main installation failing over, Rolling upgrade of either side); code: `test/e2e/bastion_failure_long_test.go`.
+
+### Q-BAS-142 · The failure suite runs one load with a miss loop and one fault after the other
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the faults of R-HA-052 meet the Bastion in three ways: the answers and cached content it serves alone, the revalidations it sends to the main installation after `metadata_revalidate_after` and `artifact_revalidate_after` (90 s in the suite), and the misses it forwards. A load of warm runs alone reaches the main installation only through the second.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three loops through one Bastion - `npm ci` and `dotnet restore` of warm sets with an empty client cache each run, and a loop installing one package per run that no client has asked for before (a pool published to the main installation before the load starts) - and the faults one after the other under it (chosen) | Hits, revalidations and misses meet every fault; the load is set up once per scenario | All three paths of the Bastion are exercised; a fault is judged by the commands that overlapped it and its 30 s settle time | The pool must outlast the faults: a load that uses it up before the end fails the scenario |
+| (b) The warm loops of the drain scenario only | Hits and revalidations | Smaller | No miss meets a fault (Q-BAS-141) |
+| (d) The loops back to back, as fast as the clients run | No pause | Most commands per fault | One client address then sends 200 requests a second, above `limits.authenticated.requests_per_second` (50, burst 200, R-BAS-035): the Bastion answers `429 rate_limited`, npm retries after 10 s and after 60 s, and one run ends 70 s late or fails (found in the first runs of the suite) - the scenario would test the limiter, not the fault |
+| (c) One load and one fresh Bastion per fault | Isolation | A fault cannot disturb the next | The setup (a warm run, a pool) is paid per fault, and a rolling upgrade of the main installation is not seen with a cache that has aged |
+
+**Choice:** (a), with a pause after each command of each loop (2 s after `npm ci` and `dotnet restore`, 1 s after the cold install) that keeps one client address near 20 requests a second. The cold loop is `npm` only: the suite publishes npm packages cheaply, while a NuGet package is built and pushed with the client.
+
+**Rationale:** the commands that overlap a fault are the ones it can fail; the three loops make that set contain a hit, a revalidation and a miss for every fault. The development agent would revisit the choice if the suite can publish NuGet packages as cheaply, then a NuGet miss loop joins.
+
+**Applied in the spec:** R-BAS-049; code: `test/e2e/bastion_load_test.go` (`underLoad`, `startLoad`).
+
+### Q-BAS-143 · What "warm content keeps being served" means after a replica is lost
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a force-deleted replica with the volume backend takes its cache with it (the volume is the pod's), and `routeByPath` (R-BAS-033) moves its paths to the surviving replica and back to the replacement. With the bucket backend the cache and the answers are outside the pod (R-BAS-030, R-BAS-046).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Bucket: the main installation sends no warm artifact again; volume: at most once per replica, and the surviving replica keeps serving hits (chosen) | The bound each backend's design gives | Exact for the bucket; for the volume it is the least a cache that is replica-local can promise, and a regression to refetching on every request is caught | The volume bound (twice the warm artifacts) does not catch a single needless refetch |
+| (b) The same zero for both | Strictest | Simple | Wrong for the volume backend: the replacement starts empty |
+| (c) Only client success | Nothing about the cache | Smallest | Does not check the cache the scenario is about |
+
+**Choice:** (a), counted from the request log of the main installation (`warmFills`: artifact requests answered `200`, the cold loop's packages left out) and from `trove_bastion_requests_total{class="artifact",result="hit"}` of the surviving replica.
+
+**Rationale:** the bounds follow R-BAS-030 and R-BAS-033. The development agent would revisit the volume bound if the chart gives the volume backend a cache that survives a pod.
+
+**Applied in the spec:** R-BAS-049 (row Replica lost); code: `TestBastionLong_R_BAS_049_ReplicaLost`.
+
+### Q-BAS-144 · The link's state under maintenance is judged by the alert's condition
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: during a rolling upgrade or a failover a replica may report the main installation unreachable for some seconds (R-BAS-027), which is allowed; R-HA-052's "Maintenance stays quiet" asks that no alert fires on planned maintenance. The profile has no Prometheus (Q-BAS-112).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sample `trove_bastion_main_reachable` and `trove_bastion_interface_mismatch` of every replica every 2 s, and fail when every replica reported unreachable for two minutes (`TroveBastionMainUnreachable`, `for: 2m`) or any reported a mismatch (chosen) | The rules' own conditions | What the alert would do; the longest stretch with any replica down is recorded as well (`TroveBastionMainUnreachableSingleReplica`, `for: 5m`) | A sampler at 2 s sees a stretch of less than that as none |
+| (b) No unreachable at all | Strict | Simple | The spec allows it, and a handshake that meets a pod being replaced fails |
+| (c) Not checked | — | — | A rolling upgrade could leave the Bastion unreachable and the clients served from the grace period unnoticed |
+
+**Choice:** (a); the single-replica stretch is recorded, not bounded.
+
+**Rationale:** it ties the scenario to the alerts of the chart (R-BAS-041). The development agent would revisit the choice when the profile runs Prometheus with the Bastion's rules (then the alerts themselves are asserted, as Q-BAS-112 foresees).
+
+**Applied in the spec:** R-BAS-049; code: `linkIn` in `test/e2e/bastion_load_test.go`.
 
 ## What this does not cover
 
