@@ -204,6 +204,17 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-06 while reviewing the nightly runs for phase 7:
+
+### Tests and tools
+
+- **F-56 · The set `vuln` of the scheduled nightly run 42002617340 failed in its setup on one `EOF` from the npm test upstream**
+  (confirmed in the job log, not reproduced). `vuln_env_test.go:214` seeds the upstream with `POST
+  https://npmstub.trove.svc/-/stub/publish` and got `EOF` (09:48:00 UTC, GitHub-hosted runner); `TestVuln_R_VULN_022_Journeys` failed on
+  it and the six tests after it failed at 0 s because the environment never finished. The same set passed in run 42126196109. Not known:
+  whether the stub's pod restarted or the connection was cut on the way (the run's cluster-state artifact has the stub's log). Done when
+  the cause is named and fixed in the stub or the seed, or shown to lie in the runner; remove the entry then.
+
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
 ### Tests and tools
@@ -265,7 +276,7 @@ Found on 2026-11-03 while building phase 6:
   The runs above also found 9,000 findings, not 10,000: the NuGet packages were seeded under mixed-case names, which the lower-cased
   advisory names never match (fixed 2026-11-05, the seed stores the lower-cased ID as a push does); the same run found 10,000 and
   measured V-2 at 0.69 min and V-7b at 213 ms.
-  The dispatched nightly run 42126196109 (2026-11-05, phase 6b's closing commit, GitHub-hosted runner, the fixed dump): V-1 1.5 min, V-2
+  The dispatched nightly run 42126196109 (2026-11-05, phase 6b's closing commit, the self-hosted class `large`, the fixed dump): V-1 1.5 min, V-2
   0.72 min, V-3 0.10 min, V-5a, V-5b 0.92 transactions, V-6 62 ms, V-7a 20 ms, V-8 3.3 ms and V-9 0.19 GiB met; V-4 9.7 ms (median
   2.5 ms) against 5 ms and V-7b 340 ms against 300 ms missed, as in 41902592855.
 
