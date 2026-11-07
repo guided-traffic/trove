@@ -97,6 +97,23 @@ func (r *subjectRoles) merge(m membership) {
 	}
 }
 
+// isMember reports whether the subject carries roles and its user or one of its groups is a member of some
+// project: a map lookup per ID, no allocation, nothing per membership.
+func (x *Index) isMember(sub Subject) bool {
+	if len(x.memberships) == 0 || !carriesRoles(sub) {
+		return false
+	}
+	if len(x.memberships[sub.ID]) > 0 {
+		return true
+	}
+	for _, g := range sub.Groups {
+		if len(x.memberships[g.ID]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // projectRoles derives the roles of the subject from its user ID and its group IDs through the index's
 // memberships by principal (R-AUTHZ-015 performance target, R-ARCH-033): no query, a map lookup per ID and
 // work per membership of the subject, none per project of the installation. A credential that carries no

@@ -37,9 +37,9 @@ project's objects inside it. It does not repeat the model of permissions ([permi
 ## What a role grants, and through which credential
 
 - **The role is decided, not stored as a grant.** The index keeps every membership row by principal
-  ([index.go](../../internal/authz/index.go), `addProjects`). A decision derives the subject's roles once from its user ID and its
-  group IDs, the highest per project ([project.go](../../internal/authz/project.go), `projectRoles`), and looks the repository's
-  project up in them ([decide.go](../../internal/authz/decide.go), `grantedBy`). The role's actions join the policy grants as one more
+  ([index.go](../../internal/authz/index.go), `addProjects`) and by project. A decision reads the subject's role in the one project of
+  the repository it decides, the highest over its user ID and its group IDs ([project.go](../../internal/authz/project.go), `roleOf`;
+  [decide.go](../../internal/authz/decide.go), `evalState.roleIn` in `grantedBy`). The role's actions join the policy grants as one more
   source, `role:<projectKey>:<role>`, so the refusal and audit of a decision are the same as for a grant. On a virtual repository a role
   has the effect of `read` and `manage` only, as a grant does (R-AUTHZ-009).
 - **Credentials.** A role reaches a user's UI session and personal access tokens; a token's scope is the ceiling over it as over a
@@ -63,8 +63,11 @@ project's objects inside it. It does not repeat the model of permissions ([permi
   membership carries the role, or the user for its own membership ([ownership.go](../../internal/authz/ownership.go), `roleClaimers`,
   R-AUTHZ-018 rule 2). A role is never an owner identity of its own, so a member who leaves the project keeps owning what it published
   through its own membership.
-- **Cost.** The derivation reads a map entry per user and group ID and merges per membership; nothing depends on the number of projects
-  of the installation and nothing is queried (`TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`).
+- **Cost.** A decision reads a map entry of the repository's project per user and group ID and allocates nothing for the role; nothing
+  depends on the number of projects of the installation or of the subject's memberships, and nothing is queried; a listing decides every
+  key on one state derived from the subject (`ReadableOn`) (`TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`,
+  `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheMemberships`, `TestR_AUTHZ_015_AListingDerivesTheSubjectOnce`). Only `MembershipsOn`,
+  which lists them, walks the subject's memberships (`projectRoles`).
 
 ## The members and the last Owner
 

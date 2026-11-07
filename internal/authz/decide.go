@@ -208,14 +208,24 @@ type evalState struct {
 	// contributions with their caps and bounds, never the plain principal set.
 	isCI bool
 	ci   CIGrantSet
-	// roles are the subject's project roles, the highest over its user and its groups per
-	// project (R-AUTHZ-026), derived once; empty for a credential that carries no role
-	// (Q-AUTHZ-215). A decision looks a repository's project up in it.
-	roles subjectRoles
+	// member says the subject may hold a project role: it carries roles (Q-AUTHZ-215) and its user or one
+	// of its groups is a member of some project. A subject that is none skips every role lookup.
+	member bool
+}
+
+// roleIn is the subject's role in the project of a repository, the highest over its user and its groups
+// (R-AUTHZ-026), ProjectRoleNone for a credential that carries no role (Q-AUTHZ-215). It is read from the
+// one project a decision asks about, a map lookup per user and group ID, and allocates nothing: neither a
+// decision nor a listing of many repositories derives the subject's other memberships (R-AUTHZ-015).
+func (st *evalState) roleIn(p *projectInfo) ProjectRole {
+	if !st.member {
+		return ProjectRoleNone
+	}
+	return p.roleOf(st.sub)
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
-	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub), roles: idx.projectRoles(sub)}
+	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub), member: idx.isMember(sub)}
 	if kindOf(sub) == kindCI {
 		st.isCI, st.ci = true, idx.CIGrants(sub)
 	}
@@ -329,7 +339,7 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
-	if role := st.roles.in(r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
+	if role := st.roleIn(r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
 		out = append(out, r.proj.source(role))
 	}
 	return out
@@ -658,8 +668,14 @@ func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys [
 		return nil, nil
 	}
 	out := make([]qname.Repo, 0, len(keys))
+	// One state for every key, as a read scope builds it (readScope.MayRead): it is immutable, so each
+	// answer is the one evaluate gives, and a key more costs one decision, not one derivation of the subject.
+	var st *evalState
+	if len(keys) > 0 {
+		st = e.newEvalState(idx, sub)
+	}
 	for _, k := range keys {
-		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
+		d := e.evaluateWith(idx, sub, st, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
 		switch {
 		case d.Outcome == Allow:
 			out = append(out, k)
