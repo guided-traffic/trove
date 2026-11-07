@@ -114,6 +114,39 @@ describe('User detail (R-UI-024)', () => {
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('changeUserGroups alice + -platform');
   });
 
+  it('R-UI-051 an administrator removes the avatar of another user after a confirmation; a user without one shows none to remove', async () => {
+    const { fixture, root, get } = await renderScreen(UserDetail, {
+      inputs: { username: 'bob' },
+      setup: (g) => {
+        const api = g(IdentityApi) as FakeIdentityApi;
+        api.userList = api.userList.map((u) => (u.username === 'bob' ? { ...u, avatarUrl: `/api/v1/avatars/${'b'.repeat(64)}` } : u));
+      },
+    });
+    expect(root.querySelector('dd trove-avatar img')?.getAttribute('src')).toBe(`/api/v1/avatars/${'b'.repeat(64)}`);
+    buttonByText(root, 'Remove avatar').click();
+    await settle(fixture);
+    const confirm = overlay().querySelector('trove-confirm-dialog') as HTMLElement;
+    expect(confirm.textContent).toContain('Remove the avatar of this user?');
+    expect((get(IdentityApi) as FakeIdentityApi).calls).not.toContain('removeUserAvatar bob');
+    buttonByText(confirm, 'Remove avatar').click();
+    await sleep(fixture, 300);
+    expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('removeUserAvatar bob');
+    expect(root.textContent).not.toContain('Remove avatar');
+    expect(root.querySelector('dd trove-avatar img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+  });
+
+  it('R-UI-051 without identities:write the administrator screen offers no removal', async () => {
+    const { root } = await renderScreen(UserDetail, {
+      inputs: { username: 'bob' },
+      capabilities: ['identities:read'],
+      setup: (g) => {
+        const api = g(IdentityApi) as FakeIdentityApi;
+        api.userList = api.userList.map((u) => (u.username === 'bob' ? { ...u, avatarUrl: `/api/v1/avatars/${'b'.repeat(64)}` } : u));
+      },
+    });
+    expect(root.textContent).not.toContain('Remove avatar');
+  });
+
   it('R-UI-024 disabling asks whether to revoke the tokens and sends the answer', async () => {
     const { fixture, root, get } = await renderScreen(UserDetail, { inputs: { username: 'alice' } });
     // Another user: the self guard does not apply.

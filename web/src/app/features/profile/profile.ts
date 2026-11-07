@@ -11,6 +11,8 @@ import { SelectField, SelectOption } from '../../shared/access/fields';
 import { asApiError } from '../../shared/paged-resource';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
+import { AvatarStore } from '../../core/avatar-store';
+import { ProfileAvatar } from './profile-avatar';
 import { ProfileNav } from './profile-nav';
 
 /**
@@ -23,7 +25,7 @@ import { ProfileNav } from './profile-nav';
  */
 @Component({
   selector: 'trove-profile',
-  imports: [DatePipe, Checkbox, ErrorNotice, ProfileNav, SelectField],
+  imports: [DatePipe, Checkbox, ErrorNotice, ProfileAvatar, ProfileNav, SelectField],
   templateUrl: './profile.html',
   styleUrl: '../../shared/access/access.scss',
 })
@@ -33,6 +35,7 @@ export class Profile {
   private readonly preferencesStore = inject(PreferencesStore);
   private readonly conflicts = inject(ConflictResolver);
   private readonly notifier = inject(Notifier);
+  private readonly avatars = inject(AvatarStore);
   protected readonly session = inject(SessionStore);
 
   protected readonly user = signal<User | null>(null);
@@ -65,7 +68,9 @@ export class Profile {
   protected async load(): Promise<void> {
     this.loadError.set(null);
     try {
-      this.user.set(await this.identity.me());
+      const me = await this.identity.me();
+      this.user.set(me);
+      this.avatars.set(me.avatarUrl);
     } catch (e) {
       this.loadError.set(asApiError(e));
     }

@@ -155,3 +155,13 @@ dl.facts {
     }
   }
 }
+
+// The avatar of a user on the administrator's detail screen: the round image of the top bar at 48 px.
+.user-avatar {
+  inline-size: 3rem;
+  block-size: 3rem;
+  margin-inline-end: var(--trove-space-3);
+  border-radius: 50%;
+  background: var(--trove-surface-variant);
+  vertical-align: middle;
+}

@@ -77,6 +77,12 @@ export abstract class IdentityApi {
     change: MembershipChange,
   ): Promise<readonly UserGroupMembership[]>;
   abstract unlockUser(username: string): Promise<void>;
+  /** Sets the caller's avatar to the image (R-API-055); answers the user record with its new `avatarUrl`. */
+  abstract setAvatar(image: Blob): Promise<User>;
+  /** Removes the caller's avatar; also when there is none. */
+  abstract removeAvatar(): Promise<void>;
+  /** Removes another user's avatar (moderation, `identities:write`). */
+  abstract removeUserAvatar(username: string): Promise<void>;
 
   abstract groups(filters: GroupFilters): PageFetcher<Group>;
   abstract group(name: string): Promise<Versioned<Group>>;
@@ -161,6 +167,18 @@ export class HttpIdentityApi extends IdentityApi {
 
   override async unlockUser(username: string): Promise<void> {
     await this.client.post(`/api/v1/users/${seg(username)}/unlock`);
+  }
+
+  override async setAvatar(image: Blob): Promise<User> {
+    return (await this.client.putBlob<User>('/api/v1/users/me/avatar', image)).body;
+  }
+
+  override async removeAvatar(): Promise<void> {
+    await this.client.delete('/api/v1/users/me/avatar');
+  }
+
+  override async removeUserAvatar(username: string): Promise<void> {
+    await this.client.delete(`/api/v1/users/${seg(username)}/avatar`);
   }
 
   override groups(filters: GroupFilters): PageFetcher<Group> {

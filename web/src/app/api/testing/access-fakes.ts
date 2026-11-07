@@ -91,6 +91,7 @@ export function sampleUser(over: Partial<User> = {}): User {
       { name: 'platform', source: 'manual' },
     ],
     groupClaimMissing: null,
+    avatarUrl: null,
     lockedUntil: null,
     lastLoginAt: '2026-10-28T09:12:00Z',
     createdAt: '2026-09-01T08:00:00Z',
@@ -325,6 +326,43 @@ export class FakeIdentityApi extends IdentityApi {
   override async unlockUser(username: string): Promise<void> {
     this.calls.push(`unlockUser ${username}`);
     this.userList = this.userList.map((u) => (u.username === username ? { ...u, lockedUntil: null } : u));
+  }
+
+  /** The digest the next upload gets; each upload takes a new one, as a new image has a new digest. */
+  avatarCounter = 0;
+
+  override async setAvatar(image: Blob): Promise<User> {
+    this.calls.push(`setAvatar ${image.type} ${image.size}`);
+    if (this.failure) {
+      const e = this.failure;
+      this.failure = null;
+      throw e;
+    }
+    this.avatarCounter += 1;
+    const avatarUrl = `/api/v1/avatars/${String(this.avatarCounter).padStart(64, 'a')}`;
+    const me = this.meResult instanceof ApiError ? sampleUser() : this.meResult;
+    this.meResult = { ...me, avatarUrl };
+    return this.meResult;
+  }
+
+  override async removeAvatar(): Promise<void> {
+    this.calls.push('removeAvatar');
+    if (this.failure) {
+      const e = this.failure;
+      this.failure = null;
+      throw e;
+    }
+    if (!(this.meResult instanceof ApiError)) this.meResult = { ...this.meResult, avatarUrl: null };
+  }
+
+  override async removeUserAvatar(username: string): Promise<void> {
+    this.calls.push(`removeUserAvatar ${username}`);
+    if (this.failure) {
+      const e = this.failure;
+      this.failure = null;
+      throw e;
+    }
+    this.userList = this.userList.map((u) => (u.username === username ? { ...u, avatarUrl: null } : u));
   }
 
   override groups(filters: GroupFilters): PageFetcher<Group> {

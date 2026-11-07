@@ -15,6 +15,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
 import { PrincipalRoles } from '../../shared/access/principal-roles';
 import { ErrorNotice } from '../../shared/error-notice';
+import { TroveAvatar } from '../../shared/ui/avatar';
 import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
 import { isLocked, originLabel } from './user-labels';
 
@@ -27,7 +28,7 @@ import { isLocked, originLabel } from './user-labels';
  */
 @Component({
   selector: 'trove-user-detail',
-  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager],
+  imports: [DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, TextField, TokenManager, TroveAvatar],
   templateUrl: './user-detail.html',
   styleUrl: '../../shared/access/access.scss',
 })
@@ -154,6 +155,19 @@ export class UserDetail {
 
   protected async unlock(): Promise<void> {
     await this.act(() => this.api.unlockUser(this.username()), $localize`:@@user.unlocked:Account unlocked.`);
+  }
+
+  /** Moderation (R-UI-051, R-API-055): the user's avatar is replaced by the generated one; the user can upload another. */
+  protected async removeAvatar(): Promise<void> {
+    const answer = await this.confirmer.ask({
+      title: $localize`:@@user.remove-avatar-title:Remove the avatar of this user?`,
+      lines: [
+        $localize`:@@user.remove-avatar-text:The avatar of ${this.username()}:user: is removed and replaced by the generated one. The user can upload a new one.`,
+      ],
+      confirmLabel: $localize`:@@user.remove-avatar-confirm:Remove avatar`,
+    });
+    if (answer === null) return;
+    await this.act(() => this.api.removeUserAvatar(this.username()), $localize`:@@user.avatar-removed:Avatar removed.`);
   }
 
   protected async remove(): Promise<void> {

@@ -84,7 +84,7 @@
       @switch (session.state()) {
         @case ('authenticated') {
           <button type="button" class="user-button" [cdkMenuTriggerFor]="userMenu">
-            <trove-avatar class="avatar" aria-hidden="true" [seed]="session.whoami()?.principal?.id ?? ''" />
+            <trove-avatar class="avatar" aria-hidden="true" [seed]="session.whoami()?.principal?.id ?? ''" [imageUrl]="avatars.url()" />
             <!-- The name is the first part of the accessible name; the avatar is the user's generated robot. -->
             <span class="visually-hidden"
               ><span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span

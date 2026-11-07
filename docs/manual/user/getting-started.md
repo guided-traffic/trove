@@ -77,7 +77,7 @@ From left to right:
 | **Admin** | Opens the admin area. Shown only if you hold an administrative permission |
 | **Documentation** | Opens this manual. On a screen that has a matching manual page, it opens that page |
 | **Theme** | **Follow the system**, **Light** or **Dark** |
-| User menu | A round badge with your initial. Its menu shows your name and holds **Profile and tokens**, **Client setup**, **Guides**, **Language** and **Sign out** |
+| User menu | Your avatar in a circle: the picture you uploaded, or a robot that trove generates for you alone. Its menu shows your name and holds **Profile and tokens**, **Client setup**, **Guides**, **Language** and **Sign out** |
 
 ### The side bar
 
@@ -103,6 +103,15 @@ trove is available in English and German.
 The language is part of the page address (`/ui/en/` or `/ui/de/`), so a bookmark keeps it. When you open trove without a language in the address, it uses the language you saved in your preferences if you are signed in, otherwise the language your browser prefers, and English if that is neither. The sign-in page itself comes before any preference is known, so it follows the browser.
 
 To change the colours, select **Theme** in the top bar and choose **Follow the system**, **Light** or **Dark**. When you are signed in, trove saves the choice with your preferences and applies it at your next sign-in, also in another browser. You can set both on your profile too: **Profile and tokens**, then **Profile**, section **Preferences**, then **Save preferences**.
+
+## Your avatar
+
+Until you upload a picture, trove shows a generated robot for you, the same one on every device. To use your own picture:
+
+1. Open the user menu and select **Profile and tokens**; the page **Profile** opens with the card **Public avatar**.
+2. Select **Choose file…** and pick a PNG, JPEG or WebP image of at most 1 MiB, at least 32 by 32 pixels, that is not animated.
+
+trove checks the file in your browser first and says what is wrong when it refuses it. It then stores the picture cut to a centred square and scaled to 256 by 256 pixels, so choose an image whose centre shows what you want; nothing else of the file is kept, no position data included. The new avatar shows in the top bar at once. **Remove avatar** brings the generated robot back. An administrator can also remove an avatar that should not be shown; you can then upload another.
 
 ## Where to go next
 

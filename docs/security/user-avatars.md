@@ -98,6 +98,15 @@ upload records nothing.
   milliseconds; the rate limits of the management API (R-API-016) apply per caller as to any write.
 - A read is one database lookup and one verified object-store read, for the first request of each browser: the rest are cache hits.
 
+## What the browser does with it
+
+The UI ([R-UI-051](../spec/api-and-ui.md#r-ui-051--avatar-upload)) checks a chosen file for its type, its size and its pixel size
+before it sends it. That is a courtesy that saves a request for a common mistake; none of the server's checks above depends on
+it, and a client that is not the UI skips it. The UI sends the file as the request body with the session's CSRF header and shows
+the image only as the `src` of an `<img>` with an empty alternative text, from a same-origin URL that the page's CSP admits
+(`img-src 'self' data:`); it puts nothing of the uploaded bytes into the document. The generated robot of a user without an image
+is drawn in the browser from the bundled style and shown as a data URI, with no request to another host (Q-UI-167).
+
 ## What this does not cover
 
 ### H-559 · The picture itself is not inspected

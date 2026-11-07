@@ -14,6 +14,9 @@ import { BrowserStorage } from './core/storage';
 import { SessionStore } from './core/session-store';
 import { seriousViolations } from './testing/axe';
 import { robotDataUri } from './shared/ui/robot';
+import { IdentityApi } from './api/identity-api';
+import { FakeIdentityApi, sampleUser } from './api/testing/access-fakes';
+import { AvatarStore } from './core/avatar-store';
 
 async function render(url = '/', setup?: (api: FakeSessionApi) => void, pinned?: boolean, keepStorage = false) {
   if (!keepStorage) new BrowserStorage().clear('local');
@@ -288,6 +291,26 @@ describe('App shell', () => {
     items()[0]!.click();
     await fixture.whenStable();
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
+  it('R-UI-051 the top bar shows the uploaded avatar of the user, and the robot again after its removal, without a reload', async () => {
+    const { fixture, root } = await render();
+    TestBed.inject(AvatarStore).set(`/api/v1/avatars/${'c'.repeat(64)}`);
+    await fixture.whenStable();
+    const img = () => root.querySelector<HTMLImageElement>('header .user-button .avatar img')!;
+    expect(img().getAttribute('src')).toBe(`/api/v1/avatars/${'c'.repeat(64)}`);
+    TestBed.inject(AvatarStore).set(null);
+    await fixture.whenStable();
+    expect(img().getAttribute('src')).toBe(robotDataUri('00000000-0000-0000-0000-000000000001'));
+  });
+
+  it('R-UI-051 the shell reads the avatar of the signed-in user from the user record', async () => {
+    const url = `/api/v1/avatars/${'d'.repeat(64)}`;
+    const { fixture, root } = await render();
+    (TestBed.inject(IdentityApi) as FakeIdentityApi).meResult = sampleUser({ avatarUrl: url });
+    await TestBed.inject(AvatarStore).refresh();
+    await fixture.whenStable();
+    expect(root.querySelector<HTMLImageElement>('header .user-button .avatar img')?.getAttribute('src')).toBe(url);
   });
 
   it('R-UI-002 the user menu shows the robot of the user ID and the name; the theme is not in it any more', async () => {

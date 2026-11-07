@@ -8,6 +8,8 @@
 }
 
 @if (user(); as u) {
+  <trove-profile-avatar [seed]="u.id" />
+
   <section class="card" aria-labelledby="profile-identity">
     <h2 id="profile-identity" i18n="@@profile.identity">Identity</h2>
     <dl class="facts">

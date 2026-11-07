@@ -38,6 +38,7 @@ import { Notices } from './shared/notices';
 import { SessionDialog } from './shared/session-dialog';
 import { TroveMark } from './shared/brand/trove-mark';
 import { TroveAvatar } from './shared/ui/avatar';
+import { AvatarStore } from './core/avatar-store';
 import { ProjectSwitcher } from './features/projects/project-switcher';
 
 /** Whether a route on the path to the active screen carries `data: { bare: true }`. */
@@ -82,6 +83,7 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
 export class App {
   protected readonly layout = inject(Layout);
   protected readonly session = inject(SessionStore);
+  protected readonly avatars = inject(AvatarStore);
   protected readonly navigation = inject(Navigation);
   protected readonly preferences = inject(PreferencesStore);
   protected readonly navState = inject(NavState);
@@ -153,6 +155,15 @@ export class App {
     // Load the preferences (theme) once a session exists.
     effect(() => {
       if (this.session.authenticated()) untracked(() => void this.preferences.load());
+    });
+    // The uploaded avatar is not part of `whoami` (R-UI-051): read the user record once per signed-in principal.
+    effect(() => {
+      const principal = this.session.authenticated() ? this.session.whoami()?.principal.id : undefined;
+      if (principal) {
+        untracked(() => void this.avatars.refresh());
+      } else {
+        untracked(() => this.avatars.clear());
+      }
     });
     effect(() => {
       if (this.session.ended()) {

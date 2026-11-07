@@ -1,0 +1,42 @@
+<section class="card" aria-labelledby="profile-avatar">
+  <h2 id="profile-avatar" i18n="@@avatar.heading">Public avatar</h2>
+  <div class="avatar-row">
+    <trove-avatar class="avatar-preview" aria-hidden="true" [seed]="seed()" [imageUrl]="url()" />
+    <div class="avatar-controls">
+      <p i18n="@@avatar.intro">
+        Other users see this image next to your name. Without one, trove shows a generated robot that is yours alone.
+      </p>
+      <div class="row-actions">
+        <button class="btn btn-default" type="button" [disabled]="busy()" (click)="chooser.click()" i18n="@@avatar.choose">
+          Choose file…
+        </button>
+        @if (hasAvatar()) {
+          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@avatar.remove">
+            Remove avatar
+          </button>
+        }
+        <input
+          #chooser
+          type="file"
+          class="visually-hidden"
+          tabindex="-1"
+          aria-hidden="true"
+          [accept]="accept"
+          (change)="chosen($event)"
+        />
+      </div>
+      <p id="avatar-help" class="muted" i18n="@@avatar.help">
+        PNG, JPEG or WebP, at most 1 MiB, at least 32 by 32 pixels and one frame. The picture is cut to a centred square and
+        stored again as a 256 by 256 pixel PNG, so choose an image whose centre shows what you want.
+      </p>
+      @if (message(); as text) {
+        <p class="field-error" role="alert">
+          <span class="material-icons" aria-hidden="true">error</span> {{ text }}
+        </p>
+      }
+      @if (failure(); as e) {
+        <trove-error-notice [error]="e" />
+      }
+    </div>
+  </div>
+</section>

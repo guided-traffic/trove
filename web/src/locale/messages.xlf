@@ -444,7 +444,7 @@
     </unit>
     <unit id="shell.theme.system">
       <notes>
-        <note category="location">src/app/app.ts:139</note>
+        <note category="location">src/app/app.ts:141</note>
       </notes>
       <segment>
         <source>Follow the system</source>
@@ -452,7 +452,7 @@
     </unit>
     <unit id="shell.theme.light">
       <notes>
-        <note category="location">src/app/app.ts:140</note>
+        <note category="location">src/app/app.ts:142</note>
       </notes>
       <segment>
         <source>Light</source>
@@ -460,7 +460,7 @@
     </unit>
     <unit id="shell.theme.dark">
       <notes>
-        <note category="location">src/app/app.ts:141</note>
+        <note category="location">src/app/app.ts:143</note>
       </notes>
       <segment>
         <source>Dark</source>
@@ -11888,6 +11888,142 @@
         <source>Anonymous read on a remote repository lets anyone fill its cache from upstream.</source>
       </segment>
     </unit>
+    <unit id="avatar.err.empty">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:11</note>
+      </notes>
+      <segment>
+        <source>The file is empty.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.type">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:13</note>
+      </notes>
+      <segment>
+        <source>Only PNG, JPEG and WebP images are accepted.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.size">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:15</note>
+      </notes>
+      <segment>
+        <source>The image is larger than 1 MiB.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.animated">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:17</note>
+      </notes>
+      <segment>
+        <source>Animated images are not accepted. Choose an image with a single frame.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.dimensions">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:19</note>
+      </notes>
+      <segment>
+        <source>The image must be at least 32 by 32 pixels and at most 4,194,304 pixels in all.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.undecodable">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:21</note>
+      </notes>
+      <segment>
+        <source>The file could not be read as an image. It may be damaged or cut off.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.busy">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:23</note>
+      </notes>
+      <segment>
+        <source>The server is busy processing other images. Try again in a moment.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.heading">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Public avatar</source>
+      </segment>
+    </unit>
+    <unit id="avatar.intro">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:7,9</note>
+      </notes>
+      <segment>
+        <source> Other users see this image next to your name. Without one, trove shows a generated robot that is yours alone. </source>
+      </segment>
+    </unit>
+    <unit id="avatar.choose">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:11,13</note>
+      </notes>
+      <segment>
+        <source> Choose file… </source>
+      </segment>
+    </unit>
+    <unit id="avatar.remove">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:15,16</note>
+      </notes>
+      <segment>
+        <source> Remove avatar </source>
+      </segment>
+    </unit>
+    <unit id="avatar.help">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:29,31</note>
+      </notes>
+      <segment>
+        <source> PNG, JPEG or WebP, at most 1 MiB, at least 32 by 32 pixels and one frame. The picture is cut to a centred square and stored again as a 256 by 256 pixel PNG, so choose an image whose centre shows what you want. </source>
+      </segment>
+    </unit>
+    <unit id="avatar.saved">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:62</note>
+      </notes>
+      <segment>
+        <source>Avatar saved.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.remove-title">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:72</note>
+      </notes>
+      <segment>
+        <source>Remove your avatar?</source>
+      </segment>
+    </unit>
+    <unit id="avatar.remove-text">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:73</note>
+      </notes>
+      <segment>
+        <source>Your avatar is replaced by the generated one.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.remove-confirm">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:74</note>
+      </notes>
+      <segment>
+        <source>Remove avatar</source>
+      </segment>
+    </unit>
+    <unit id="avatar.removed">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:83</note>
+      </notes>
+      <segment>
+        <source>Avatar removed.</source>
+      </segment>
+    </unit>
     <unit id="profile.nav">
       <notes>
         <note category="location">src/app/features/profile/profile-nav.ts:9,10</note>
@@ -12090,7 +12226,7 @@
     </unit>
     <unit id="profile.identity">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:12,14</note>
+        <note category="location">src/app/features/profile/profile.html:14,16</note>
       </notes>
       <segment>
         <source>Identity</source>
@@ -12098,7 +12234,7 @@
     </unit>
     <unit id="profile.username">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:14,15</note>
+        <note category="location">src/app/features/profile/profile.html:16,17</note>
       </notes>
       <segment>
         <source>User name</source>
@@ -12106,7 +12242,7 @@
     </unit>
     <unit id="profile.display-name">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:16,17</note>
+        <note category="location">src/app/features/profile/profile.html:18,19</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -12114,7 +12250,7 @@
     </unit>
     <unit id="profile.email">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:18,19</note>
+        <note category="location">src/app/features/profile/profile.html:20,21</note>
       </notes>
       <segment>
         <source>Email</source>
@@ -12122,7 +12258,7 @@
     </unit>
     <unit id="profile.last-login">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:20,21</note>
+        <note category="location">src/app/features/profile/profile.html:22,23</note>
       </notes>
       <segment>
         <source>Last sign-in</source>
@@ -12130,7 +12266,7 @@
     </unit>
     <unit id="profile.identity-note">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:24,28</note>
+        <note category="location">src/app/features/profile/profile.html:26,30</note>
       </notes>
       <segment>
         <source> Your name and email come from the identity provider and are replaced at every sign-in. </source>
@@ -12138,7 +12274,7 @@
     </unit>
     <unit id="profile.groups">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:29,30</note>
+        <note category="location">src/app/features/profile/profile.html:31,32</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -12146,7 +12282,7 @@
     </unit>
     <unit id="profile.claim.absent">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:36,37</note>
+        <note category="location">src/app/features/profile/profile.html:38,39</note>
       </notes>
       <segment>
         <source> Your last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried no group claim, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider. </source>
@@ -12154,7 +12290,7 @@
     </unit>
     <unit id="profile.claim.wrong-type">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:41,42</note>
+        <note category="location">src/app/features/profile/profile.html:43,44</note>
       </notes>
       <segment>
         <source> Your last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried a group claim of the wrong type, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider. </source>
@@ -12162,7 +12298,7 @@
     </unit>
     <unit id="profile.claim.overage">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:46,47</note>
+        <note category="location">src/app/features/profile/profile.html:48,49</note>
       </notes>
       <segment>
         <source> Your last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried too many groups to fit in the token, so the groups synchronized from it may be missing. Ask an administrator to check the group mapping of that identity provider. </source>
@@ -12170,7 +12306,7 @@
     </unit>
     <unit id="profile.no-groups">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:53,55</note>
+        <note category="location">src/app/features/profile/profile.html:55,57</note>
       </notes>
       <segment>
         <source>You are not a member of any group.</source>
@@ -12178,7 +12314,7 @@
     </unit>
     <unit id="profile.groups-caption">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:56,58</note>
+        <note category="location">src/app/features/profile/profile.html:58,60</note>
       </notes>
       <segment>
         <source>Your groups and where each membership comes from</source>
@@ -12186,7 +12322,7 @@
     </unit>
     <unit id="profile.group">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:59,60</note>
+        <note category="location">src/app/features/profile/profile.html:61,62</note>
       </notes>
       <segment>
         <source>Group</source>
@@ -12194,7 +12330,7 @@
     </unit>
     <unit id="profile.source">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:60,62</note>
+        <note category="location">src/app/features/profile/profile.html:62,64</note>
       </notes>
       <segment>
         <source>Source</source>
@@ -12202,7 +12338,7 @@
     </unit>
     <unit id="profile.roles">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:76,77</note>
+        <note category="location">src/app/features/profile/profile.html:78,79</note>
       </notes>
       <segment>
         <source>System roles</source>
@@ -12210,7 +12346,7 @@
     </unit>
     <unit id="profile.no-roles">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:78,81</note>
+        <note category="location">src/app/features/profile/profile.html:80,83</note>
       </notes>
       <segment>
         <source>You hold no system role.</source>
@@ -12218,7 +12354,7 @@
     </unit>
     <unit id="profile.preferences">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:90,92</note>
+        <note category="location">src/app/features/profile/profile.html:92,94</note>
       </notes>
       <segment>
         <source>Preferences</source>
@@ -12226,7 +12362,7 @@
     </unit>
     <unit id="profile.pref.locale">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:96</note>
+        <note category="location">src/app/features/profile/profile.html:98</note>
       </notes>
       <segment>
         <source>Language</source>
@@ -12234,7 +12370,7 @@
     </unit>
     <unit id="profile.pref.theme">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:97</note>
+        <note category="location">src/app/features/profile/profile.html:99</note>
       </notes>
       <segment>
         <source>Theme</source>
@@ -12242,7 +12378,7 @@
     </unit>
     <unit id="profile.pref.shortcuts">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:99,100</note>
+        <note category="location">src/app/features/profile/profile.html:101,102</note>
       </notes>
       <segment>
         <source>Keyboard shortcuts with a single key</source>
@@ -12250,7 +12386,7 @@
     </unit>
     <unit id="profile.pref.save">
       <notes>
-        <note category="location">src/app/features/profile/profile.html:102,104</note>
+        <note category="location">src/app/features/profile/profile.html:104,106</note>
       </notes>
       <segment>
         <source>Save preferences</source>
@@ -12274,7 +12410,7 @@
     </unit>
     <unit id="profile.pref.locale.browser">
       <notes>
-        <note category="location">src/app/features/profile/profile.ts:51</note>
+        <note category="location">src/app/features/profile/profile.ts:54</note>
       </notes>
       <segment>
         <source>Follow the browser</source>
@@ -12282,7 +12418,7 @@
     </unit>
     <unit id="profile.pref.theme.system">
       <notes>
-        <note category="location">src/app/features/profile/profile.ts:56</note>
+        <note category="location">src/app/features/profile/profile.ts:59</note>
       </notes>
       <segment>
         <source>Follow the system</source>
@@ -12290,7 +12426,7 @@
     </unit>
     <unit id="profile.pref.theme.light">
       <notes>
-        <note category="location">src/app/features/profile/profile.ts:57</note>
+        <note category="location">src/app/features/profile/profile.ts:60</note>
       </notes>
       <segment>
         <source>Light</source>
@@ -12298,7 +12434,7 @@
     </unit>
     <unit id="profile.pref.theme.dark">
       <notes>
-        <note category="location">src/app/features/profile/profile.ts:58</note>
+        <note category="location">src/app/features/profile/profile.ts:61</note>
       </notes>
       <segment>
         <source>Dark</source>
@@ -12306,7 +12442,7 @@
     </unit>
     <unit id="profile.pref.saved">
       <notes>
-        <note category="location">src/app/features/profile/profile.ts:121</note>
+        <note category="location">src/app/features/profile/profile.ts:126</note>
       </notes>
       <segment>
         <source>Preferences saved.</source>
@@ -20307,9 +20443,33 @@
         <source>ID</source>
       </segment>
     </unit>
+    <unit id="user.avatar">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:21,23</note>
+      </notes>
+      <segment>
+        <source>Avatar</source>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:26,27</note>
+      </notes>
+      <segment>
+        <source>Remove avatar</source>
+      </segment>
+    </unit>
+    <unit id="user.avatar-generated">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:30,33</note>
+      </notes>
+      <segment>
+        <source>Generated</source>
+      </segment>
+    </unit>
     <unit id="user.display-name-fact">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:21,22</note>
+        <note category="location">src/app/features/users/user-detail.html:33,34</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -20317,7 +20477,7 @@
     </unit>
     <unit id="user.email-fact">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:23,24</note>
+        <note category="location">src/app/features/users/user-detail.html:35,36</note>
       </notes>
       <segment>
         <source>Email</source>
@@ -20325,7 +20485,7 @@
     </unit>
     <unit id="user.origin">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:25,26</note>
+        <note category="location">src/app/features/users/user-detail.html:37,38</note>
       </notes>
       <segment>
         <source>Origin</source>
@@ -20333,7 +20493,7 @@
     </unit>
     <unit id="user.status">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:27,29</note>
+        <note category="location">src/app/features/users/user-detail.html:39,41</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -20341,7 +20501,7 @@
     </unit>
     <unit id="user.status.active">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:30,31</note>
+        <note category="location">src/app/features/users/user-detail.html:42,43</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -20349,7 +20509,7 @@
     </unit>
     <unit id="user.status.disabled">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:32,33</note>
+        <note category="location">src/app/features/users/user-detail.html:44,45</note>
       </notes>
       <segment>
         <source>Disabled</source>
@@ -20357,7 +20517,7 @@
     </unit>
     <unit id="user.locked">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:38</note>
+        <note category="location">src/app/features/users/user-detail.html:50</note>
       </notes>
       <segment>
         <source>Locked until</source>
@@ -20365,7 +20525,7 @@
     </unit>
     <unit id="user.admin">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:41,43</note>
+        <note category="location">src/app/features/users/user-detail.html:53,55</note>
       </notes>
       <segment>
         <source>Administrator</source>
@@ -20373,7 +20533,7 @@
     </unit>
     <unit id="user.admin.yes">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:44</note>
+        <note category="location">src/app/features/users/user-detail.html:56</note>
       </notes>
       <segment>
         <source>Yes</source>
@@ -20381,7 +20541,7 @@
     </unit>
     <unit id="user.admin.no">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:46,48</note>
+        <note category="location">src/app/features/users/user-detail.html:58,60</note>
       </notes>
       <segment>
         <source>No</source>
@@ -20389,7 +20549,7 @@
     </unit>
     <unit id="user.last-login">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:49,50</note>
+        <note category="location">src/app/features/users/user-detail.html:61,62</note>
       </notes>
       <segment>
         <source>Last sign-in</source>
@@ -20397,7 +20557,7 @@
     </unit>
     <unit id="user.created">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:51,52</note>
+        <note category="location">src/app/features/users/user-detail.html:63,64</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -20405,7 +20565,7 @@
     </unit>
     <unit id="user.attributes-note">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:55,58</note>
+        <note category="location">src/app/features/users/user-detail.html:67,70</note>
       </notes>
       <segment>
         <source> Name and email come from the identity provider and are replaced at the user&apos;s next sign-in. </source>
@@ -20413,7 +20573,7 @@
     </unit>
     <unit id="user.display-name">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:63</note>
+        <note category="location">src/app/features/users/user-detail.html:75</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -20421,7 +20581,7 @@
     </unit>
     <unit id="user.email">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:64</note>
+        <note category="location">src/app/features/users/user-detail.html:76</note>
       </notes>
       <segment>
         <source>Email</source>
@@ -20429,7 +20589,7 @@
     </unit>
     <unit id="user.save">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:66,67</note>
+        <note category="location">src/app/features/users/user-detail.html:78,79</note>
       </notes>
       <segment>
         <source>Save correction</source>
@@ -20437,7 +20597,7 @@
     </unit>
     <unit id="user.disable">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:74,75</note>
+        <note category="location">src/app/features/users/user-detail.html:86,87</note>
       </notes>
       <segment>
         <source>Disable</source>
@@ -20445,7 +20605,7 @@
     </unit>
     <unit id="user.enable">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:76,78</note>
+        <note category="location">src/app/features/users/user-detail.html:88,90</note>
       </notes>
       <segment>
         <source>Enable</source>
@@ -20453,7 +20613,7 @@
     </unit>
     <unit id="user.delete">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:78,80</note>
+        <note category="location">src/app/features/users/user-detail.html:90,92</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -20461,7 +20621,7 @@
     </unit>
     <unit id="user.unlock">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:81,83</note>
+        <note category="location">src/app/features/users/user-detail.html:93,95</note>
       </notes>
       <segment>
         <source>Unlock</source>
@@ -20469,7 +20629,7 @@
     </unit>
     <unit id="user.audit">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:84,87</note>
+        <note category="location">src/app/features/users/user-detail.html:96,99</note>
       </notes>
       <segment>
         <source>Audit log of this user</source>
@@ -20477,7 +20637,7 @@
     </unit>
     <unit id="user.self-guard">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:88,92</note>
+        <note category="location">src/app/features/users/user-detail.html:100,104</note>
       </notes>
       <segment>
         <source>You cannot disable or delete your own account.</source>
@@ -20485,7 +20645,7 @@
     </unit>
     <unit id="user.identities">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:93,94</note>
+        <note category="location">src/app/features/users/user-detail.html:105,106</note>
       </notes>
       <segment>
         <source>Identities</source>
@@ -20493,7 +20653,7 @@
     </unit>
     <unit id="user.no-identities">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:95,98</note>
+        <note category="location">src/app/features/users/user-detail.html:107,110</note>
       </notes>
       <segment>
         <source>No identity provider is linked.</source>
@@ -20501,7 +20661,7 @@
     </unit>
     <unit id="user.linked">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:102,103</note>
+        <note category="location">src/app/features/users/user-detail.html:114,115</note>
       </notes>
       <segment>
         <source>Linked</source>
@@ -20509,7 +20669,7 @@
     </unit>
     <unit id="user.pending">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:104,105</note>
+        <note category="location">src/app/features/users/user-detail.html:116,117</note>
       </notes>
       <segment>
         <source>Pending first sign-in</source>
@@ -20517,7 +20677,7 @@
     </unit>
     <unit id="user.groups">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:113,114</note>
+        <note category="location">src/app/features/users/user-detail.html:125,126</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -20525,7 +20685,7 @@
     </unit>
     <unit id="user.claim-missing">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:118,119</note>
+        <note category="location">src/app/features/users/user-detail.html:130,131</note>
       </notes>
       <segment>
         <source> The last sign-in through <ph id="0" equiv="INTERPOLATION" disp="{{ missing.provider }}"/> carried no usable group claim (<ph id="1" equiv="INTERPOLATION_1" disp="{{ missing.reason }}"/>), so groups synchronized from it may be missing. </source>
@@ -20533,7 +20693,7 @@
     </unit>
     <unit id="user.no-groups">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:123,125</note>
+        <note category="location">src/app/features/users/user-detail.html:135,137</note>
       </notes>
       <segment>
         <source>This user is in no group.</source>
@@ -20541,7 +20701,7 @@
     </unit>
     <unit id="user.groups-caption">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:126,128</note>
+        <note category="location">src/app/features/users/user-detail.html:138,140</note>
       </notes>
       <segment>
         <source>Group memberships and their sources</source>
@@ -20549,7 +20709,7 @@
     </unit>
     <unit id="user.group">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:129,130</note>
+        <note category="location">src/app/features/users/user-detail.html:141,142</note>
       </notes>
       <segment>
         <source>Group</source>
@@ -20557,7 +20717,7 @@
     </unit>
     <unit id="user.source">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:130,131</note>
+        <note category="location">src/app/features/users/user-detail.html:142,143</note>
       </notes>
       <segment>
         <source>Source</source>
@@ -20565,7 +20725,7 @@
     </unit>
     <unit id="user.actions">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:131,132</note>
+        <note category="location">src/app/features/users/user-detail.html:143,144</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -20573,7 +20733,7 @@
     </unit>
     <unit id="user.remove-group">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:142,143</note>
+        <note category="location">src/app/features/users/user-detail.html:154,155</note>
       </notes>
       <segment>
         <source>Remove</source>
@@ -20581,7 +20741,7 @@
     </unit>
     <unit id="user.add-group">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:154</note>
+        <note category="location">src/app/features/users/user-detail.html:166</note>
       </notes>
       <segment>
         <source>Add to group</source>
@@ -20589,7 +20749,7 @@
     </unit>
     <unit id="user.add-group-submit">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:155,158</note>
+        <note category="location">src/app/features/users/user-detail.html:167,170</note>
       </notes>
       <segment>
         <source>Add</source>
@@ -20597,7 +20757,7 @@
     </unit>
     <unit id="user.tokens">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:166,167</note>
+        <note category="location">src/app/features/users/user-detail.html:178,179</note>
       </notes>
       <segment>
         <source>Tokens</source>
@@ -20605,7 +20765,7 @@
     </unit>
     <unit id="user.sessions">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:172,173</note>
+        <note category="location">src/app/features/users/user-detail.html:184,185</note>
       </notes>
       <segment>
         <source>Sessions</source>
@@ -20613,7 +20773,7 @@
     </unit>
     <unit id="user.no-sessions">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:178,180</note>
+        <note category="location">src/app/features/users/user-detail.html:190,192</note>
       </notes>
       <segment>
         <source>No open session.</source>
@@ -20621,7 +20781,7 @@
     </unit>
     <unit id="user.sessions-caption">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:181,183</note>
+        <note category="location">src/app/features/users/user-detail.html:193,195</note>
       </notes>
       <segment>
         <source>Open sessions of this user</source>
@@ -20629,7 +20789,7 @@
     </unit>
     <unit id="user.session.created">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:184,185</note>
+        <note category="location">src/app/features/users/user-detail.html:196,197</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -20637,7 +20797,7 @@
     </unit>
     <unit id="user.session.last-seen">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:185,186</note>
+        <note category="location">src/app/features/users/user-detail.html:197,198</note>
       </notes>
       <segment>
         <source>Last seen</source>
@@ -20645,7 +20805,7 @@
     </unit>
     <unit id="user.session.address">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:186,187</note>
+        <note category="location">src/app/features/users/user-detail.html:198,199</note>
       </notes>
       <segment>
         <source>Address</source>
@@ -20653,7 +20813,7 @@
     </unit>
     <unit id="user.session.agent">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:187,189</note>
+        <note category="location">src/app/features/users/user-detail.html:199,201</note>
       </notes>
       <segment>
         <source>Browser</source>
@@ -20661,7 +20821,7 @@
     </unit>
     <unit id="user.end-sessions">
       <notes>
-        <note category="location">src/app/features/users/user-detail.html:203,205</note>
+        <note category="location">src/app/features/users/user-detail.html:215,217</note>
       </notes>
       <segment>
         <source>End all sessions</source>
@@ -20669,7 +20829,7 @@
     </unit>
     <unit id="user.saved">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:132</note>
+        <note category="location">src/app/features/users/user-detail.ts:133</note>
       </notes>
       <segment>
         <source>User saved.</source>
@@ -20677,7 +20837,7 @@
     </unit>
     <unit id="user.disable-title">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:138</note>
+        <note category="location">src/app/features/users/user-detail.ts:139</note>
       </notes>
       <segment>
         <source>Disable this user?</source>
@@ -20685,7 +20845,7 @@
     </unit>
     <unit id="user.disable-text">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:139</note>
+        <note category="location">src/app/features/users/user-detail.ts:140</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="user" disp="this.username()"/> can no longer sign in, and their sessions end.</source>
@@ -20693,7 +20853,7 @@
     </unit>
     <unit id="user.disable-confirm">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:140</note>
+        <note category="location">src/app/features/users/user-detail.ts:141</note>
       </notes>
       <segment>
         <source>Disable</source>
@@ -20701,7 +20861,7 @@
     </unit>
     <unit id="user.disable-revoke">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:141</note>
+        <note category="location">src/app/features/users/user-detail.ts:142</note>
       </notes>
       <segment>
         <source>Also revoke all tokens of this user</source>
@@ -20709,7 +20869,7 @@
     </unit>
     <unit id="user.disabled">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:147</note>
+        <note category="location">src/app/features/users/user-detail.ts:148</note>
       </notes>
       <segment>
         <source>User disabled.</source>
@@ -20717,7 +20877,7 @@
     </unit>
     <unit id="user.enabled">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:152</note>
+        <note category="location">src/app/features/users/user-detail.ts:153</note>
       </notes>
       <segment>
         <source>User enabled.</source>
@@ -20725,15 +20885,47 @@
     </unit>
     <unit id="user.unlocked">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:156</note>
+        <note category="location">src/app/features/users/user-detail.ts:157</note>
       </notes>
       <segment>
         <source>Account unlocked.</source>
       </segment>
     </unit>
+    <unit id="user.remove-avatar-title">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:163</note>
+      </notes>
+      <segment>
+        <source>Remove the avatar of this user?</source>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar-text">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:165</note>
+      </notes>
+      <segment>
+        <source>The avatar of <ph id="0" equiv="user" disp="this.username()"/> is removed and replaced by the generated one. The user can upload a new one.</source>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar-confirm">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:167</note>
+      </notes>
+      <segment>
+        <source>Remove avatar</source>
+      </segment>
+    </unit>
+    <unit id="user.avatar-removed">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:170</note>
+      </notes>
+      <segment>
+        <source>Avatar removed.</source>
+      </segment>
+    </unit>
     <unit id="user.delete-title">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:161</note>
+        <note category="location">src/app/features/users/user-detail.ts:175</note>
       </notes>
       <segment>
         <source>Delete this user?</source>
@@ -20741,7 +20933,7 @@
     </unit>
     <unit id="user.delete-text">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:162</note>
+        <note category="location">src/app/features/users/user-detail.ts:176</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="user" disp="this.username()"/> and their tokens and sessions are removed. This cannot be undone.</source>
@@ -20749,7 +20941,7 @@
     </unit>
     <unit id="user.delete-confirm">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:163</note>
+        <note category="location">src/app/features/users/user-detail.ts:177</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -20757,7 +20949,7 @@
     </unit>
     <unit id="user.deleted">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:169</note>
+        <note category="location">src/app/features/users/user-detail.ts:183</note>
       </notes>
       <segment>
         <source>User deleted.</source>
@@ -20765,7 +20957,7 @@
     </unit>
     <unit id="user.group-added">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:186</note>
+        <note category="location">src/app/features/users/user-detail.ts:200</note>
       </notes>
       <segment>
         <source>Group membership added.</source>
@@ -20773,7 +20965,7 @@
     </unit>
     <unit id="user.group-removed">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:194</note>
+        <note category="location">src/app/features/users/user-detail.ts:208</note>
       </notes>
       <segment>
         <source>Group membership removed.</source>
@@ -20781,7 +20973,7 @@
     </unit>
     <unit id="user.end-sessions-title">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:200</note>
+        <note category="location">src/app/features/users/user-detail.ts:214</note>
       </notes>
       <segment>
         <source>End all sessions of this user?</source>
@@ -20789,7 +20981,7 @@
     </unit>
     <unit id="user.end-sessions-text">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:201</note>
+        <note category="location">src/app/features/users/user-detail.ts:215</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="user" disp="this.username()"/> is signed out of every browser at once.</source>
@@ -20797,7 +20989,7 @@
     </unit>
     <unit id="user.end-sessions-confirm">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:202</note>
+        <note category="location">src/app/features/users/user-detail.ts:216</note>
       </notes>
       <segment>
         <source>End sessions</source>
@@ -20805,7 +20997,7 @@
     </unit>
     <unit id="user.sessions-ended">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:211</note>
+        <note category="location">src/app/features/users/user-detail.ts:225</note>
       </notes>
       <segment>
         <source>Sessions ended.</source>
@@ -20813,7 +21005,7 @@
     </unit>
     <unit id="user.source.manual">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:221</note>
+        <note category="location">src/app/features/users/user-detail.ts:235</note>
       </notes>
       <segment>
         <source>Manual</source>
@@ -20821,7 +21013,7 @@
     </unit>
     <unit id="user.source.auto">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:222</note>
+        <note category="location">src/app/features/users/user-detail.ts:236</note>
       </notes>
       <segment>
         <source>Auto-join</source>
@@ -20829,7 +21021,7 @@
     </unit>
     <unit id="user.source.provider">
       <notes>
-        <note category="location">src/app/features/users/user-detail.ts:224</note>
+        <note category="location">src/app/features/users/user-detail.ts:238</note>
       </notes>
       <segment>
         <source>Identity provider</source>

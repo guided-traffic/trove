@@ -89,3 +89,4 @@ before using a new term in a German text.
 | storage (the logical size a project is charged), physical size | Speicher (logische Größe, die dem Projekt angerechnet wird), physische Größe |
 | backup, backup run, stored backup, backup target | Backup, Backup-Lauf, gespeichertes Backup, Backup-Ziel |
 | blob, snapshot, pod (as in the backups screen) | Blob, Snapshot, Pod |
+| avatar | Avatar |

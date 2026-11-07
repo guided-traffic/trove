@@ -264,6 +264,7 @@ A user's page shows **Attributes**, **Identities** (**Linked** or **Pending firs
 - **Disable** the user: sessions end, tokens stop working, and **Also revoke all tokens of this user** (checked by default) revokes them for good. **Enable** reverses a disable, but not a revocation;
 - **Delete** the user with tokens, sessions, identity links, memberships, policy entries and role bindings. A later sign-in of the same identity creates a new user with no grants, if `jit` allows it;
 - **End all sessions**.
+- **Remove avatar** (next to the user's avatar under **Attributes**, shown while the user has uploaded one; needs `identities:write`): after a confirmation the user shows the generated robot again. You cannot set another user's avatar; the user uploads a new one on their profile.
 
 Nobody can disable or delete their own account here. Disabling or deleting the last active holder of `admin` is refused with `last_admin` while the break-glass account is disabled. Changing a user or group that holds a system role needs `roles:write` as well.
 

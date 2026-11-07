@@ -18,6 +18,18 @@
     <dl class="facts">
       <dt i18n="@@user.id">ID</dt>
       <dd><code translate="no">{{ u.id }}</code></dd>
+      <dt i18n="@@user.avatar">Avatar</dt>
+      <dd>
+        <trove-avatar class="user-avatar" aria-hidden="true" [seed]="u.id" [imageUrl]="u.avatarUrl" />
+        @if (u.avatarUrl && canWrite()) {
+          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="removeAvatar()">
+            <ng-container i18n="@@user.remove-avatar">Remove avatar</ng-container>
+            <span class="visually-hidden" translate="no"> {{ u.username }}</span>
+          </button>
+        } @else if (!u.avatarUrl) {
+          <span class="muted" i18n="@@user.avatar-generated">Generated</span>
+        }
+      </dd>
       <dt i18n="@@user.display-name-fact">Display name</dt>
       <dd>{{ u.displayName ?? '' }}</dd>
       <dt i18n="@@user.email-fact">Email</dt>

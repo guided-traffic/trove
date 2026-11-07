@@ -1,0 +1,22 @@
+.avatar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-6);
+}
+
+// The preview is the avatar of the top bar at 96 px; the same round shape and the same fill behind the robot.
+.avatar-preview {
+  flex: none;
+  inline-size: 6rem;
+  block-size: 6rem;
+  border-radius: 50%;
+  background: var(--trove-surface-variant);
+}
+
+.avatar-controls {
+  min-inline-size: 0;
+
+  p {
+    margin-block: 0 var(--trove-space-3);
+  }
+}

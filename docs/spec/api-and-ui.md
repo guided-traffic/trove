@@ -39,7 +39,7 @@ OPS-032),
 ## Reading this page
 
 - Part A (R-API-001 to R-API-019, R-API-051, R-API-052): conventions. Part B (R-API-020 to
-  R-API-050, R-API-053): endpoint surface. Part C (R-UI-001 to R-UI-049): UI.
+  R-API-050, R-API-053): endpoint surface. Part C (R-UI-001 to R-UI-051): UI.
 - Every `web` replica answers every request, and the Kubernetes Service picks one at random without
   session affinity (INV-2, INV-12). "A request" on this page therefore never means "the same
   replica as the previous request" (INV-18, R-API-051).
@@ -2697,11 +2697,12 @@ Priority: **MVP** · Covers: UI-001, UI-004
   dependencies of the UI, bundled by its build and served by trove with the rest of the UI; the browser renders the SVG
   itself and shows it as a data URI, and no request goes to DiceBear's HTTP service, a CDN or any other host at runtime
   ([Q-UI-167](#q-ui-167--the-robot-is-rendered-in-the-browser-from-the-bundled-bottts-style-and-loaded-as-a-lazy-chunk)). An
-  uploaded avatar, once the product has one, takes precedence over the robot (the avatar component takes an optional image
-  URL; there is no upload yet). The robot is decoration, as the letter was: `alt=""`, the name beside it names the
+  uploaded avatar takes precedence over the robot (the avatar component takes an optional image URL; upload and removal
+  are R-UI-051). The robot is decoration, as the letter was: `alt=""`, the name beside it names the
   button. The robot sits on the surface fill of the theme, so it reads in both colour schemes
   ([Q-UI-168](#q-ui-168--the-robot-keeps-the-badge-the-letter-had-on-the-themes-surface-fill)). The avatar is shown in the
-  top bar only; other screens get one when the reference's screen for them shows one and the owner asks for it. The global
+  top bar, on the profile and on the administrator's user screen (R-UI-051); other screens get one when the reference's
+  screen for them shows one and the owner asks for it. The global
   search over packages and files (P1, R-UI-015) takes its place in the same bar when its API exists. The project is not
   chosen in the top bar but by the address and the project's side bar
   ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)). A configurable server name is P2 on
@@ -4546,6 +4547,54 @@ Acceptance criteria:
   request with a method other than GET or HEAD.
 - With `manualRun.cronJob` set to a 52-character name, the copied command, run with `kubectl`,
   creates the Job, and its name has at most 63 characters.
+
+### R-UI-051 · Avatar upload
+Priority: **MVP** · Covers: trove-only
+
+The owner's decision of 2026-11-07: "Upload jetzt mitbauen: nur PNG/JPEG/WebP, serverseitig neu kodiert, max. 1 MiB, als Blob
+gespeichert, vom api-Pod ausgeliefert; Spec, Security-Seite und Tests dazu." The API is R-API-055; this requirement is the
+screens. The robot that a user without an image gets is R-UI-002. The development agent decided what the owner did not say
+(Q-UI-169 to Q-UI-171).
+
+- **Where a user manages their own avatar.** The profile (R-UI-029) opens with a card **Public avatar**, the place the
+  reference puts it: the current avatar at 96 px (the uploaded image, or the robot), a **Choose file…** button, **Remove
+  avatar** while an image is set, and the help text: PNG, JPEG or WebP, at most 1 MiB, at least 32 by 32 pixels, not animated,
+  and that the server cuts the picture to a centred square and stores it again as a 256 by 256 pixel PNG, so there is no
+  cropper. Choosing a file sends it at once (`PUT /api/v1/users/me/avatar`; the body is the file, `Content-Type` its type, the
+  CSRF header as for every session write); there is no second save step (Q-UI-170). **Remove avatar** asks first, then
+  sends `DELETE /api/v1/users/me/avatar`. Both give a status message.
+- **Checks before sending.** The browser refuses, with the text of the matching server refusal and without a request, an empty
+  file, a type other than `image/png`, `image/jpeg` and `image/webp`, a file over 1,048,576 bytes, a file the browser cannot
+  decode, and an image under 32 pixels on a side or over 4,194,304 pixels in all (read with `createImageBitmap`). The server
+  repeats every check and decides the format from the bytes; only it can tell an animated image (Q-UI-171).
+- **The answers.** `415 unsupported_media_type`, `413 payload_too_large`, `400 malformed_request`, `422` with
+  `errors[0].code` `animated_image`, `invalid_dimensions` or `undecodable_image`, and `503 server_busy` (which the UI does not
+  retry: the user chooses again) each have a sentence in English and German next to the form (R-UI-042, R-UI-045); any other
+  answer, `403` included, is the general error notice with the request ID. A refused upload changes nothing on screen.
+- **The new URL.** The answer of the upload is the user record; its `avatarUrl` replaces the image everywhere in the page. The
+  shell keeps the signed-in user's `avatarUrl` (it reads `GET /api/v1/users/me` once per signed-in principal, because
+  `whoami` does not carry it), so the top bar changes without a reload, and a removal puts the robot back. A principal
+  that is not a user or the break-glass account (a service account, a CI token) has no avatar and the shell does not ask. The
+  old URL is `404` after a replacement and is never requested again. The seed of the robot stays the principal's ID.
+- **Moderation.** On the administrator's user screen (R-UI-024) the **Attributes** show the user's avatar (48 px) and, for a
+  holder of `identities:write` while an image is set, **Remove avatar**, which asks for a confirmation that names the user and then
+  sends `DELETE /api/v1/users/{username}/avatar` (R-API-055). An administrator never sets another user's image.
+- **Accessibility and security.** The avatar images are decoration (`alt=""`, hidden from assistive technology): the name is
+  next to them. The file input is hidden and its button carries the name; a refusal is announced as an alert. The images
+  are same-origin URLs, which the CSP (`img-src 'self' data:`) admits; the UI renders nothing from the uploaded bytes but an
+  `<img>`.
+
+Acceptance criteria:
+
+- A signed-in user without an image sees the robot on the profile and in the top bar. After choosing a valid PNG, the top bar
+  and the profile show the uploaded image without a reload, and a reload keeps it; **Remove avatar** and its confirmation
+  bring the robot back.
+- A GIF, an empty file, a file over 1 MiB and an image of 31 by 400 pixels are each refused with a sentence and no
+  `PUT` leaves the browser; an animated WebP is refused with the sentence for `animated_image` after the server answers `422`.
+- Every refusal code above has an English and a German sentence.
+- An administrator with `identities:write` sees **Remove avatar** on the user screen of a user who has an image, after a
+  confirmation the image is gone and the robot is shown; without the capability the button is not shown.
+- While the profile and the top bar are used, no request leaves trove's origin.
 
 ## Deferred
 
@@ -8742,6 +8791,66 @@ Context: the UI reads the avatar of a user from the user record. The record has 
 **Rationale:** a user changes the avatar at most a few times in a lifetime and an administrator edits profile data of a user rarely, so the race of (a) is real and cheap to repair, and (b) costs a second tagging scheme. Revisit when users change avatars often enough that administrators meet the `412`.
 
 **Applied:** R-API-055, R-AUTH-016 (the record); migration `user_avatars` (the triggers `user_avatars_revision_change` and `user_avatars_revision_replace`); `internal/auth/principal/manager.go` (`fillAvatars`), `internal/api/v1/users_api.go` (`toUser`). Test: `TestR_API_055_AvatarLifecycle`.
+
+### Q-UI-169 · The shell reads the avatar of the signed-in user from the user record, in a store of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-051 wants the top bar to change after an upload without a reload. `whoami` (the session) does not carry
+`avatarUrl`, which is on the user record (R-API-055).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An `AvatarStore` (`core/avatar-store.ts`): reads `GET /api/v1/users/me` once per signed-in principal, the profile sets it after a change (chosen) | One signal, `url`, which the top bar's avatar takes as `imageUrl` | No change to `whoami` or the session store, whose specs stay as they are; the top bar and the profile share one value; a failed read leaves the robot | One more request after the sign-in |
+| (b) `avatarUrl` on `whoami` | The session answer names it | No extra request | A change of the API after R-API-055 was built and tested; `whoami` is also the answer for service accounts |
+| (c) The top bar reads the record on every navigation | No store | Always current | A request per navigation for a value that changes when this tab changes it |
+
+**Choice:** (a). A service account and a CI token get no read (`available`), because they have no avatar and the two `me` routes answer
+`403` for them. Another browser tab of the same user shows the change at its next load; the avatar is a convenience, not a
+permission.
+**Rationale:** the shell needs one value, and the tab that changes it is the tab that shows it. The development agent would revisit this
+when the avatar is shown on lists (the list items carry their own `avatarUrl`) or when `whoami` is extended for other reasons.
+**Applied:** R-UI-051. Code: `web/src/app/core/avatar-store.ts`, `app.ts`, `app.html`, `features/profile/profile.ts`.
+
+### Q-UI-170 · The profile card sends the chosen file at once, and "Remove avatar" asks first
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the reference's "Public avatar" lets the user choose a file and saves it with the form's "Update profile settings"; the
+profile of trove has no such form for identity (name and email come from the identity provider, R-UI-029), only the preferences.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The file is sent when chosen; the card shows the result (chosen) | **Choose file…** opens the picker, the answer replaces the image | One step; the card does not mix with the preferences' save button, which would save two unrelated things; a refusal appears where the file was chosen | No preview before the change; replacing is one click after the picker |
+| (b) Choose, preview, then a **Save avatar** button | The reference's two steps | A preview before anything is stored | A pending state to keep (a chosen file, a preview URL to revoke) for a 256 pixel image the server re-encodes anyway |
+| (c) The preview inside the preferences form | One save for everything | Fewer buttons | The preferences are saved with `If-Match` and a conflict dialog; the image has neither |
+
+**Choice:** (a). **Remove avatar** opens the confirmation dialog of the other destructive actions (the reference confirms too), because the
+removal drops the stored image; the user must upload it again to get it back. The card does not cut the picture (no cropper): the
+server takes the centre square, and the help text says so.
+**Rationale:** the image is its own resource with its own endpoint (R-API-055), so the card is its own unit. The development agent would
+revisit this when the owner wants the crop dialog of the reference.
+**Applied:** R-UI-051. Code: `web/src/app/features/profile/profile-avatar.ts`, `.html`, `.scss`, `profile.html`.
+
+### Q-UI-171 · The browser checks type, size and pixel size, and leaves the animation check to the server
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner asked to mirror what is cheap in the browser; the server decides the format from the bytes and finds an
+animated PNG or WebP only by reading the file (R-API-055).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not empty, the declared type, the 1 MiB limit and the pixel size by `createImageBitmap`; no animation check (chosen) | `features/profile/avatar-file.ts`; the refusals use the server's codes, so one sentence serves both | No request for the common mistakes (a screenshot as GIF, a camera photo of 20 MB); a few lines; the sizer is an injection token, so tests need no real decoder | An animated WebP costs one upload before it is refused; a browser that cannot decode a WebP refuses it as unreadable |
+| (b) Also parse the headers for animation (APNG `acTL`, WebP `ANIM`) | A second parser in the browser | Saves the one request | Another parser to keep equal to the server's, for a case the server handles in milliseconds |
+| (c) No checks, the server decides | Every file is sent | Nothing to keep equal | Up to 1 MiB, or a file of any size read by the browser, goes out for a refusal the browser knows in advance |
+
+**Choice:** (a). The 1 MiB limit is checked before decoding, so a huge file is never read into a bitmap; the declared type is the browser's
+guess from the file name, and the server checks the bytes against it anyway.
+**Rationale:** the browser's checks are a courtesy; the server's are the control, and nothing here relaxes them. The development agent would
+revisit this when users report animated images as a common mistake.
+**Applied:** R-UI-051. Code: `web/src/app/features/profile/avatar-file.ts`, `avatar-messages.ts`. Tests: `profile-avatar.spec.ts`;
+the browser journey `web/e2e/tests/15-avatar.spec.ts`.
 
 ## What this does not cover
 

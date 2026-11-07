@@ -129,6 +129,14 @@ export class ApiClient {
   }
   // <<< M1 ui-b
 
+  /**
+   * PUT of raw bytes with the media type of the blob and no `ETag`: the image of an avatar replaces the whole
+   * resource and is addressed by its digest (R-API-055). The body is the file itself, not JSON or multipart.
+   */
+  putBlob<T>(url: string, blob: Blob): Promise<ApiResponse<T>> {
+    return this.send<T>('PUT', url, blob, { headers: { 'Content-Type': blob.type } });
+  }
+
   /** Delete; `etag` is optional because DELETE honours but does not require `If-Match`. */
   delete<T = void>(
     url: string,

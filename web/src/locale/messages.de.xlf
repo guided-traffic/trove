@@ -21653,6 +21653,33 @@
         <target>Benutzer</target>
       </segment>
     </unit>
+    <unit id="user.avatar">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:21,23</note>
+      </notes>
+      <segment>
+        <source>Avatar</source>
+        <target>Avatar</target>
+      </segment>
+    </unit>
+    <unit id="user.avatar-generated">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:30,33</note>
+      </notes>
+      <segment>
+        <source>Generated</source>
+        <target>Erzeugt</target>
+      </segment>
+    </unit>
+    <unit id="user.avatar-removed">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:170</note>
+      </notes>
+      <segment>
+        <source>Avatar removed.</source>
+        <target>Avatar entfernt.</target>
+      </segment>
+    </unit>
     <unit id="user.back">
       <notes>
         <note category="location">src/app/features/users/user-detail.html:3,5</note>
@@ -21975,6 +22002,42 @@
       <segment>
         <source>Actions</source>
         <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.html:26,27</note>
+      </notes>
+      <segment>
+        <source>Remove avatar</source>
+        <target>Avatar entfernen</target>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar-confirm">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:167</note>
+      </notes>
+      <segment>
+        <source>Remove avatar</source>
+        <target>Avatar entfernen</target>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar-text">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:165</note>
+      </notes>
+      <segment>
+        <source>The avatar of <ph id="0" equiv="user" disp="this.username()"/> is removed and replaced by the generated one. The user can upload a new one.</source>
+        <target>Der Avatar von <ph id="0" equiv="user" disp="this.username()"/> wird entfernt und durch den erzeugten ersetzt. Der Benutzer kann einen neuen hochladen.</target>
+      </segment>
+    </unit>
+    <unit id="user.remove-avatar-title">
+      <notes>
+        <note category="location">src/app/features/users/user-detail.ts:163</note>
+      </notes>
+      <segment>
+        <source>Remove the avatar of this user?</source>
+        <target>Den Avatar dieses Benutzers entfernen?</target>
       </segment>
     </unit>
     <unit id="user.remove-group">
@@ -25603,6 +25666,159 @@
       <segment>
         <source>Select <ph id="0" equiv="description" disp="t.description"/></source>
         <target><ph id="0" equiv="description" disp="t.description"/> auswählen</target>
+      </segment>
+    </unit>
+    <unit id="avatar.choose">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:11,13</note>
+      </notes>
+      <segment>
+        <source> Choose file… </source>
+        <target> Datei auswählen… </target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.animated">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:17</note>
+      </notes>
+      <segment>
+        <source>Animated images are not accepted. Choose an image with a single frame.</source>
+        <target>Animierte Bilder werden nicht angenommen. Wählen Sie ein Bild ohne Animation.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.busy">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:23</note>
+      </notes>
+      <segment>
+        <source>The server is busy processing other images. Try again in a moment.</source>
+        <target>Der Server verarbeitet gerade andere Bilder. Versuchen Sie es gleich noch einmal.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.dimensions">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:19</note>
+      </notes>
+      <segment>
+        <source>The image must be at least 32 by 32 pixels and at most 4,194,304 pixels in all.</source>
+        <target>Das Bild muss mindestens 32 mal 32 Pixel groß sein und insgesamt höchstens 4.194.304 Pixel haben.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.empty">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:11</note>
+      </notes>
+      <segment>
+        <source>The file is empty.</source>
+        <target>Die Datei ist leer.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.size">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:15</note>
+      </notes>
+      <segment>
+        <source>The image is larger than 1 MiB.</source>
+        <target>Das Bild ist größer als 1 MiB.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.type">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:13</note>
+      </notes>
+      <segment>
+        <source>Only PNG, JPEG and WebP images are accepted.</source>
+        <target>Nur Bilder als PNG, JPEG und WebP werden angenommen.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.undecodable">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:21</note>
+      </notes>
+      <segment>
+        <source>The file could not be read as an image. It may be damaged or cut off.</source>
+        <target>Die Datei ließ sich nicht als Bild lesen. Sie ist möglicherweise beschädigt oder abgeschnitten.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.heading">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Public avatar</source>
+        <target>Öffentlicher Avatar</target>
+      </segment>
+    </unit>
+    <unit id="avatar.help">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:29,31</note>
+      </notes>
+      <segment>
+        <source> PNG, JPEG or WebP, at most 1 MiB, at least 32 by 32 pixels and one frame. The picture is cut to a centred square and stored again as a 256 by 256 pixel PNG, so choose an image whose centre shows what you want. </source>
+        <target> PNG, JPEG oder WebP, höchstens 1 MiB, mindestens 32 mal 32 Pixel, nicht animiert. Das Bild wird auf ein zentriertes Quadrat zugeschnitten und als PNG mit 256 mal 256 Pixeln neu gespeichert. Wählen Sie also ein Bild, dessen Mitte zeigt, was Sie wollen. </target>
+      </segment>
+    </unit>
+    <unit id="avatar.intro">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:7,9</note>
+      </notes>
+      <segment>
+        <source> Other users see this image next to your name. Without one, trove shows a generated robot that is yours alone. </source>
+        <target> Andere Benutzer sehen dieses Bild neben Ihrem Namen. Ohne eigenes Bild zeigt trove einen erzeugten Roboter, den es nur für Sie gibt. </target>
+      </segment>
+    </unit>
+    <unit id="avatar.remove">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.html:15,16</note>
+      </notes>
+      <segment>
+        <source> Remove avatar </source>
+        <target> Avatar entfernen </target>
+      </segment>
+    </unit>
+    <unit id="avatar.remove-confirm">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:74</note>
+      </notes>
+      <segment>
+        <source>Remove avatar</source>
+        <target>Avatar entfernen</target>
+      </segment>
+    </unit>
+    <unit id="avatar.remove-text">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:73</note>
+      </notes>
+      <segment>
+        <source>Your avatar is replaced by the generated one.</source>
+        <target>Ihr Avatar wird durch den erzeugten ersetzt.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.remove-title">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:72</note>
+      </notes>
+      <segment>
+        <source>Remove your avatar?</source>
+        <target>Ihren Avatar entfernen?</target>
+      </segment>
+    </unit>
+    <unit id="avatar.removed">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:83</note>
+      </notes>
+      <segment>
+        <source>Avatar removed.</source>
+        <target>Avatar entfernt.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.saved">
+      <notes>
+        <note category="location">src/app/features/profile/profile-avatar.ts:62</note>
+      </notes>
+      <segment>
+        <source>Avatar saved.</source>
+        <target>Avatar gespeichert.</target>
       </segment>
     </unit>
     <unit id="banner.label">

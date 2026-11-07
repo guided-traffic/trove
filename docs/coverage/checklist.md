@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 454 of 693 spec requirements are implemented: a passing test names them and no
+**Status.** 454 of 694 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 704 specified (343 of them implemented), 1,535 open.
-693 spec requirements: 546 cover catalog features, 147 cover none (`trove-only`, [listed at the
+694 spec requirements: 546 cover catalog features, 148 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>147 requirements</summary>
+<summary>148 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2997,6 +2997,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-UI-045 (implemented) | Internationalization | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-046 | State management with signals | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-047 | Testing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-051 | Avatar upload | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-ARCH-003 (implemented) | Go module and package layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-004 (implemented) | Angular workspace layout | MVP | [architecture.md](../spec/architecture.md) |
 | R-ARCH-007 (implemented) | One origin for UI and package content | MVP | [architecture.md](../spec/architecture.md) |
