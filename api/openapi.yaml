@@ -5676,7 +5676,7 @@ paths:
         `global_policy`, Q-REPO-232): that grant is held by the repository's ID and would follow it into the target
         project, whose other Owners cannot remove it; an administrator of trove moves it or removes the selector. It is refused with `409 already_exists` when the target project has a repository with the key,
         also one being deleted. A target equal to the source changes nothing and answers `200` with the repository as it is. The move needs no
-        `If-Match`: the path names the source. It records `repository.moved` with both projects, notifies `authz`
+        `If-Match`: the path names the source. It records `repository.moved` in the source project and `repository.moved_in` in the target project (Q-REPO-233), notifies `authz`
         and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
         Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
         below Owner `403`.
