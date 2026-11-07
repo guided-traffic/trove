@@ -1070,10 +1070,10 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   one statement after the cache refills R-ARCH-027 exempts (Q-VULN-98, Q-VULN-99), 1 in the local runs. Open: two nightly runs in a row
 
 **Backup and restore**
-- ⚪ Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
-- ⚪ Restore job into an empty installation
-- ⚪ Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure
-- ⚪ E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
+- 🟡 Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
+- 🟡 Restore job into an empty installation
+- 🟡 Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure
+- 🟡 E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
 
 **Helm chart and release**
 - 🟡 Chart complete: values reference and schema, autoscaling, network policies, monitoring integration. Built on 2026-11-07: the values reference is held to `values.yaml` and `values.schema.json` (`TestR_HA_031_ValuesReference`), the Gateway API exposure (`TestR_HA_038_GatewayAPIExposure`), the ServiceMonitor and 23 alerts of the PrometheusRule with promtool tests ([Q-HA-135](../spec/ha-and-helm.md)). Open: the backup alerts and the revocation journal's alert of R-HA-045, which wait for the backup jobs and the journal below
