@@ -27,7 +27,12 @@
     [
       "@semantic-release/git",
       {
-        "assets": [".github/badges/coverage.json"],
+        "assets": [
+          ".github/badges/coverage.json",
+          "docs/coverage/implemented.txt",
+          "docs/coverage/checklist.md",
+          "docs/coverage/README.md"
+        ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ]

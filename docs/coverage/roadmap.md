@@ -1726,7 +1726,8 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Choice:** (b). The committed record `docs/coverage/implemented.txt` is the evidence the checklist is built from, and
 `-tests` recomputes it from every report given, the chart report included. The coverage-evidence job of CI runs
-`go run ./internal/tools/coverage -check -tests` on every change, not only on `main`.
+`go run ./internal/tools/coverage -claims -tests` and Semantic Release commits the record it writes (owner, 2026-11-07:
+[coverage.md](../developer/coverage.md#why-ci-writes-the-record)).
 
 **Rationale:** Q-ROAD-4 ties status to evidence; this block says what counts as evidence. A veto makes a failing test
 visible in the status, not only in CI. The development agent would revisit the veto if flaky tests keep requirements

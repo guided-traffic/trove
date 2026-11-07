@@ -20,6 +20,7 @@ const (
 	exitOK    = 0
 	exitData  = 1 // rule violation, bad input, broken link
 	exitStale = 2 // -check: a committed file differs from the regenerated one
+	exitClaim = 3 // -claims: implemented.txt lists a requirement the reports do not prove
 	exitUsage = 64
 )
 
@@ -29,10 +30,11 @@ func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
 type options struct {
-	Repo  string
-	Check bool
-	Links bool
-	Tests []string
+	Repo   string
+	Check  bool
+	Claims bool
+	Links  bool
+	Tests  []string
 }
 
 func main() {
@@ -46,11 +48,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	opts := options{}
 	fs.StringVar(&opts.Repo, "repo", "", "repository root (default: nearest parent directory holding go.mod)")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 2 when a generated file differs from what would be generated")
+	fs.BoolVar(&opts.Claims, "claims", false, "with -tests, the CI form: write the generated files from the reports; exit 3 when the committed "+
+		"implemented.txt lists a requirement the reports do not prove")
 	fs.BoolVar(&opts.Links, "links", false, "check the relative links and anchors of every Markdown file instead of generating")
 	fs.Var(&tests, "tests", "test report with requirement IDs in test names: `go test -json` stream or JUnit XML; "+
 		"'-' reads stdin; repeatable, further file arguments count too")
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: coverage [-repo dir] [-check] [-tests report]... [report...]\n"+
+		fmt.Fprintf(stderr, "usage: coverage [-repo dir] [-check | -claims] [-tests report]... [report...]\n"+
 			"       coverage [-repo dir] -links\n\n")
 		fs.PrintDefaults()
 	}
@@ -70,11 +74,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		opts.Repo = root
 	}
 	if opts.Links {
-		if len(opts.Tests) > 0 || opts.Check {
-			fmt.Fprintln(stderr, "coverage: -links does not combine with -check or -tests")
+		if len(opts.Tests) > 0 || opts.Check || opts.Claims {
+			fmt.Fprintln(stderr, "coverage: -links does not combine with -check, -claims or -tests")
 			return exitUsage
 		}
 		return runLinks(opts.Repo, stdout, stderr)
+	}
+	if opts.Claims && (opts.Check || len(opts.Tests) == 0) {
+		fmt.Fprintln(stderr, "coverage: -claims needs -tests and does not combine with -check")
+		return exitUsage
 	}
 	return runGenerate(opts, stdin, stdout, stderr)
 }
@@ -157,6 +165,11 @@ func runGenerate(opts options, stdin io.Reader, stdout, stderr io.Writer) int {
 		targets[implPath] = renderImplemented(ids)
 		fmt.Fprintf(stdout, "tests: %d results read, %d requirements with passing evidence, %d with a failing test\n",
 			ev.Tests, len(ids), len(ev.Failed))
+		if opts.Claims {
+			if code := checkClaims(committed, ids, stdout, stderr); code != exitOK {
+				return code
+			}
+		}
 	}
 	set := map[string]bool{}
 	for _, id := range implemented {
@@ -229,6 +242,39 @@ func runGenerate(opts options, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "wrote %s (%s bytes)\n", filepath.ToSlash(rel), num(len(targets[p])))
 	}
 	return exitOK
+}
+
+// checkClaims is the CI form of the evidence check: the committed list may lag behind the reports (a requirement proven for
+// the first time is written by this run and committed with the release), but it must not claim a requirement the reports no
+// longer prove (a test that named it was removed, renamed or skipped).
+func checkClaims(committed, proven []string, stdout, stderr io.Writer) int {
+	added, unproven := missingFrom(proven, committed), missingFrom(committed, proven)
+	fmt.Fprintf(stdout, "newly proven: %d\n", len(added))
+	for _, id := range added {
+		fmt.Fprintf(stdout, "  %s\n", id)
+	}
+	if len(unproven) == 0 {
+		return exitOK
+	}
+	fmt.Fprintf(stderr, "docs/coverage/implemented.txt claims %d requirements that no passing test of the reports names: %s\n"+
+		"(a test that named one was removed, renamed or skipped; if that was meant, take the ID out of implemented.txt and run the generator)\n",
+		len(unproven), strings.Join(unproven, ", "))
+	return exitClaim
+}
+
+// missingFrom returns the IDs of a that b does not hold, in the order of a.
+func missingFrom(a, b []string) []string {
+	in := make(map[string]bool, len(b))
+	for _, id := range b {
+		in[id] = true
+	}
+	var out []string
+	for _, id := range a {
+		if !in[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // readImplemented reads docs/coverage/implemented.txt; a missing file is an

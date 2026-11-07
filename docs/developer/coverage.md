@@ -14,7 +14,8 @@ for people who change or run it.
 | `go run ./internal/tools/coverage` | Regenerates [checklist.md](../coverage/checklist.md), the four marked blocks of [coverage/README.md](../coverage/README.md) and [implemented.txt](../coverage/implemented.txt). Implementation status comes from the committed `implemented.txt`. | 0, or 1 on a rule violation |
 | `go run ./internal/tools/coverage -check` | Writes nothing. Fails when a generated file differs from what would be generated. This is the `git diff --exit-code` of E0.8 without needing git. | 0, 1 rule violation, 2 stale file |
 | `go run ./internal/tools/coverage -tests <report>` | Reads test reports, recomputes the implemented requirements, rewrites `implemented.txt` and everything rendered from it. | as above |
-| `go run ./internal/tools/coverage -check -tests <report>` | The CI form on `main`: also fails when `implemented.txt` differs from the reports. | as above |
+| `go run ./internal/tools/coverage -check -tests <report>` | Writes nothing; also fails when `implemented.txt` differs from the reports, in either direction. A local comparison; CI uses `-claims`. | as above |
+| `go run ./internal/tools/coverage -claims -tests <report>` | The CI form on `main`: writes `implemented.txt` and everything rendered from it from the reports, prints the requirements proven for the first time, and fails when the committed `implemented.txt` lists a requirement the reports do not prove (it then writes nothing). | 0, 1 rule violation, 3 unproven claim |
 | `go run ./internal/tools/coverage -links` | Checks every relative Markdown link and `#anchor` in the repository. Replaces the interim `check_links.py` and `check_anchors.py`. | 0, or 1 on a broken link |
 
 Flags:
@@ -23,6 +24,7 @@ Flags:
 |---|---|
 | `-repo <dir>` | Repository root. Default: the nearest parent directory of the working directory that holds `go.mod`. |
 | `-check` | Compare only, write nothing. |
+| `-claims` | With `-tests`: the committed list may lag behind the reports but must not claim more than they prove. Does not combine with `-check` or `-links`. |
 | `-tests <report>` | A test report; repeatable. File arguments after the flags count as reports too. `-` reads standard input. |
 | `-links` | Link and anchor check instead of generation. Does not combine with `-check` or `-tests`. |
 
@@ -129,11 +131,24 @@ reports given, so a run that omits the e2e report drops the requirements only e2
 |---|---|---|
 | Every pull request | `go run ./internal/tools/coverage -check` | Rule violations, and generated files that the change did not regenerate. |
 | Every pull request | `go run ./internal/tools/coverage -links` | Broken relative links and anchors. |
-| `main`, after the test jobs | `go test -json ./... > unit.json`, then `go run ./internal/tools/coverage -check -tests unit.json [e2e.xml]` | `implemented.txt` and the pages rendered from it are current. |
+| `main`, after the test jobs (`coverage evidence`) | `go run ./internal/tools/coverage -claims -tests` over the unit, chart and both integration reports of the run | No requirement is claimed without a passing test; the record written from the reports is uploaded as `coverage-evidence` and committed by Semantic Release with the release. |
 
-Locally, `go test -json ./... | go run ./internal/tools/coverage -tests -` regenerates
-`implemented.txt`; commit it with the change that adds the tests. The CI wiring is not part of the
-generator: the Makefile target and the workflow call the commands above.
+Nobody refreshes `implemented.txt` by hand or from a local run: CI writes it from the reports of every run on `main`, and
+Semantic Release commits it, `checklist.md` and the generated blocks of the coverage README with the release (the release
+commit is `[skip ci]`). Two things stay manual. A change to the catalog or the spec reruns `go run ./internal/tools/coverage`
+(`make coverage`), which needs no tests. A change that removes or renames the only test of a requirement on purpose takes
+the ID out of `implemented.txt` in the same change; otherwise `coverage evidence` fails with exit 3 and names it. The CI
+wiring is not part of the generator: the workflow calls the commands above.
+
+### Why CI writes the record
+
+Decided by the owner (2026-11-07), on the development agent's proposal.
+
+| Option | Effect | For | Against |
+|---|---|---|---|
+| The committed record must equal the reports of the run (`-check -tests`) | A push whose tests prove a requirement for the first time fails until the record is refreshed and pushed again | The record is exact on every commit | Every such push costs a second pipeline run, and the refresh needs every test tier locally (2.5 h on 2026-11-07, and still stale: the test binary was older than the last commit). 4 of 11 red runs of 2026-11-06/07 were this job |
+| **CI writes the record, Semantic Release commits it; the check fails only on an unproven claim (`-claims`)** | The record is written from the run that releases; a claim without a passing test fails the run | No local evidence run, no second pipeline run; the record never claims more than the tests prove | The record lags behind a push that makes no release, until the next release |
+| CI commits the record on every push | Exact after every push | — | A bot commit after every push, and a pipeline run for each |
 
 ## Format changes against the interim script
 

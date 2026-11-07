@@ -94,7 +94,7 @@ at its pin (`make promtool`, below).
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
 | compatibility (R-ARCH-025, R-ARCH-026) | `make compat-check` | the OpenAPI document against the latest `v0.*` release with the pinned oasdiff (`--fail-on ERR`), the migration files: only additions that continue the numbering, and no change of a migration that `main` has committed (the history of `main`); needs the history and the tags (`fetch-depth: 0`, `fetch-tags: true`); see [Compatibility](#compatibility). Switched off until the first stable release (`if: false`, not among the needs of Semantic Release; [the switches](#switched-off-until-the-first-stable-release)) |
 | coverage generator (links and rules) | `go run ./internal/tools/coverage -check`, then `-links` | the generated pages match their rules; every relative link and anchor resolves |
-| coverage evidence (implemented.txt) | `go run ./internal/tools/coverage -check -tests …` over the reports of this run | [implemented.txt](../coverage/implemented.txt) equals what the reports imply; needs `unit`, both `integration` shards and `chart` |
+| coverage evidence (implemented.txt) | `go run ./internal/tools/coverage -claims -tests …` over the reports of this run | [implemented.txt](../coverage/implemented.txt) claims no requirement the reports do not prove; writes the record and the pages rendered from it, lists the requirements proven for the first time in the job summary and uploads the files as `coverage-evidence` for Semantic Release; needs `unit`, both `integration` shards and `chart` |
 | Combined Coverage Report | `make coverage-report` | merges the unit and integration profiles; the job summary and the badge `coverage-badge` |
 | Release Tooling | `make test-release-tooling` | `npm ci`, `npm audit signatures`, and [hack/verify-release-tooling.mjs](../../hack/verify-release-tooling.mjs), which renders release notes with the installed plugins |
 | Semantic Release | – | needs every job above; runs only on a push to `main`; publishes the release ([release flow](#release-flow)) |
@@ -127,8 +127,10 @@ from 80 %, brightgreen from 90 %, yellow from 70 %, orange from 60 %, red below)
 commits the badge with the release.
 
 The requirement evidence of [docs/coverage](../coverage/README.md) is a different thing: the
-`coverage evidence` job checks that `implemented.txt` equals the requirement IDs the test reports of
-the run prove. A refresh of the file is `make coverage-refresh`, which runs both integration lines.
+`coverage evidence` job writes `implemented.txt`, `checklist.md` and the generated blocks of the coverage README from the
+test reports of the run, and Semantic Release commits them with the release, beside the badge. Nobody refreshes them by
+hand; the job fails only when the committed record claims a requirement that no passing test of the run names
+([coverage.md](coverage.md#how-ci-feeds-it)). A push that makes no release leaves the record as it is until the next release.
 
 ### Cyclomatic complexity
 

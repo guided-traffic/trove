@@ -361,13 +361,6 @@ s3-conformance: ## S3 conformance tests (R-STOR-035) against the MinIO of minio-
 coverage: ## Regenerate the requirement coverage checklist from the committed evidence record
 	go run ./internal/tools/coverage
 
-.PHONY: coverage-refresh
-coverage-refresh: test chart-test ## Recompute docs/coverage/implemented.txt from the unit, chart and integration reports
-	$(MAKE) integration-up
-	$(MAKE) test-integration || { $(MAKE) integration-down; exit 1; }
-	$(MAKE) integration-down
-	go run ./internal/tools/coverage -tests .out/test-unit.json .out/test-chart.json .out/test-integration.json
-
 # Merges the profiles of one run (unit and each integration line) into the combined coverage of
 # the repository: coverage.txt, summary.md for the job summary, and coverage.json, the badge.
 .PHONY: coverage-report

@@ -451,6 +451,50 @@ func TestCommandWithTestReports(t *testing.T) {
 			t.Errorf("implemented.txt:\n%s", data)
 		}
 	})
+	t.Run("Q-ROAD-4 -claims writes newly proven requirements and passes", func(t *testing.T) {
+		repo := setup(t)
+		if err := os.WriteFile(filepath.Join(repo, "docs", "coverage", "implemented.txt"), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		report := write(t, t.TempDir(), stream)
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"-repo", repo, "-claims", "-tests", report}, strings.NewReader(""), &stdout, &stderr); code != exitOK {
+			t.Fatalf("exit %d:\n%s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "newly proven: 1\n  R-ARCH-002\n") {
+			t.Errorf("stdout does not list R-ARCH-002 as newly proven:\n%s", stdout.String())
+		}
+		data, _ := os.ReadFile(filepath.Join(repo, "docs", "coverage", "implemented.txt"))
+		if ids, err := parseImplemented(string(data)); err != nil || strings.Join(ids, ",") != "R-ARCH-002" {
+			t.Fatalf("implemented.txt lists %v (%v), want exactly R-ARCH-002", ids, err)
+		}
+	})
+	t.Run("Q-ROAD-4 -claims fails on a committed requirement the reports do not prove and writes nothing", func(t *testing.T) {
+		repo := setup(t)
+		impl := filepath.Join(repo, "docs", "coverage", "implemented.txt")
+		if err := os.WriteFile(impl, []byte("R-ARCH-002\nR-ARCH-003\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		report := write(t, t.TempDir(), stream)
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"-repo", repo, "-claims", "-tests", report}, strings.NewReader(""), &stdout, &stderr); code != exitClaim {
+			t.Fatalf("exit %d, want %d:\n%s", code, exitClaim, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "R-ARCH-003") || strings.Contains(stderr.String(), "R-ARCH-002,") {
+			t.Errorf("stderr does not name exactly R-ARCH-003:\n%s", stderr.String())
+		}
+		if data, _ := os.ReadFile(impl); string(data) != "R-ARCH-002\nR-ARCH-003\n" {
+			t.Errorf("implemented.txt was rewritten:\n%s", data)
+		}
+	})
+	t.Run("Q-ROAD-4 -claims needs -tests and does not combine with -check or -links", func(t *testing.T) {
+		repo := setup(t)
+		for _, args := range [][]string{{"-claims"}, {"-claims", "-check", "-tests", "x.json"}, {"-claims", "-links"}} {
+			if code := run(append([]string{"-repo", repo}, args...), strings.NewReader(""), io.Discard, io.Discard); code != exitUsage {
+				t.Errorf("%v: exit %d, want %d", args, code, exitUsage)
+			}
+		}
+	})
 	t.Run("Q-ROAD-4 a requirement implemented in the committed list must exist", func(t *testing.T) {
 		repo := setup(t)
 		if err := os.WriteFile(filepath.Join(repo, "docs", "coverage", "implemented.txt"), []byte("R-NOPE-001\n"), 0o644); err != nil {

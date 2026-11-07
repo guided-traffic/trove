@@ -2261,9 +2261,10 @@ jobs:
       - name: Relative links and anchors
         run: go run ./internal/tools/coverage -links
 
-  # The evidence record: implemented.txt must equal what the test reports of this run imply. It runs on
-  # every change, so a stale file fails the pull request, not main. To refresh the file, run
-  # `make coverage-refresh` (see docs/developer/releasing.md).
+  # The evidence record (docs/developer/coverage.md#how-ci-feeds-it): the generator writes implemented.txt and the pages
+  # rendered from it from the test reports of this run, and fails only when the committed list claims a requirement the
+  # reports do not prove. Requirements proven for the first time are listed in the job summary; the written files go to
+  # Semantic Release, which commits them with the release, so nobody refreshes them by hand.
   coverage-evidence:
     name: coverage evidence (implemented.txt)
     needs: [unit, integration, chart]
@@ -2298,8 +2299,30 @@ jobs:
           done
           ls -l .out/reports/*/*.json
 
-      - name: Rules, and implemented.txt against the reports
-        run: go run ./internal/tools/coverage -check -tests .out/reports/*/*.json
+      - name: Rules, no claim without a passing test, and the evidence record written from the reports
+        run: |
+          set -euo pipefail
+          rc=0
+          go run ./internal/tools/coverage -claims -tests .out/reports/*/*.json > .out/evidence.txt || rc=$?
+          cat .out/evidence.txt
+          {
+            echo '### Requirement evidence'
+            echo '```'
+            grep -E '^(implemented:|newly proven:|  R-)' .out/evidence.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Upload the evidence record
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-evidence
+          path: |
+            docs/coverage/implemented.txt
+            docs/coverage/checklist.md
+            docs/coverage/README.md
+          if-no-files-found: error
+          retention-days: 14
 
   # The unit and integration profiles merged (make coverage-report): the job summary, and the README's
   # badge, which Semantic Release commits with the release.
@@ -2394,7 +2417,7 @@ jobs:
         run: make test-release-tooling
 
   # The version from the commits since the last tag, the release notes, the release commit with the
-  # badge ([skip ci]), the tag and the GitHub release (.releaserc.json; docs/developer/releasing.md).
+  # badge and the evidence record ([skip ci]), the tag and the GitHub release (.releaserc.json; docs/developer/releasing.md).
   # `compat` is out of these needs while that job is switched off (Q-ARCH-340): a skipped need would skip the release. It goes back in, after
   # `workflows`, when the job is switched on.
   semantic-release:
@@ -2426,6 +2449,12 @@ jobs:
         with:
           name: coverage-badge
           path: .github/badges
+
+      - name: Download the evidence record
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-evidence
+          path: docs/coverage
 
       - name: Install the shared library the pinned Node.js loads
         run: |

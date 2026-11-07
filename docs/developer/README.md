@@ -240,8 +240,8 @@ The NuGet format (`internal/formats/nuget`) followed in phase 4 ([nuget.md](nuge
 | End-to-end | `make e2e` against the dev cluster; build tag `e2e` | `test/e2e/` |
 | Web unit | Angular's `unit-test` builder with Vitest and jsdom | `web/` |
 
-The coverage evidence (`make coverage-refresh`) reads the unit, chart and integration reports; the rules
-are in [coverage.md](coverage.md).
+The coverage evidence is written by CI from the unit, chart and integration reports and committed with each release; the
+rules are in [coverage.md](coverage.md).
 
 ## ID schemes
 
