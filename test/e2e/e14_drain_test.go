@@ -174,19 +174,29 @@ func nodesHosting(t testing.TB, selectors ...string) map[string]bool {
 }
 
 // drainNode picks the node of variant A (R-HA-059): it hosts an api, a packages and a main worker pod (not one of a
-// pool, whose queues exclude the probe jobs). drain.sh evicts only the release's pods, so a PostgreSQL instance on the
-// node stays where it is and no switchover is needed (see deploy/dev/drain.sh).
+// pool, whose queues exclude the probe jobs) and is not the PostgreSQL primary's node: CloudNativePG switches the primary
+// over as soon as its node is cordoned, which ends every connection and every job lease (Test and Release run
+// 42406831768). When the only node that hosts all three is the primary's, the primary is switched over first (variant B);
+// the standby that then stays on the node is not evicted, because drain.sh evicts only the release's pods.
 func drainNode(t *testing.T) string {
 	t.Helper()
-	var all []string
-	for n := range nodesHosting(t, selAPI, selPackages, selMainWorker) {
-		all = append(all, n)
+	for attempt := 0; attempt < 2; attempt++ {
+		primary := strings.TrimSpace(kn(t, "get", "pod", pgPrimary(t), "-o", "jsonpath={.spec.nodeName}"))
+		var both []string
+		for n := range nodesHosting(t, selAPI, selPackages, selMainWorker) {
+			if n != primary {
+				both = append(both, n)
+			}
+		}
+		sort.Strings(both)
+		if len(both) > 0 {
+			return both[0]
+		}
+		t.Logf("the only node with an api, a packages and a worker pod is the PostgreSQL primary's (%s); switching the primary over first", primary)
+		script(t, "failover.sh")
 	}
-	if len(all) == 0 {
-		t.Fatal("no node hosts an api, a packages and a worker pod")
-	}
-	sort.Strings(all)
-	return all[0]
+	t.Fatal("no node hosts an api, a packages and a worker pod without the PostgreSQL primary")
+	return ""
 }
 
 type probeJob struct {

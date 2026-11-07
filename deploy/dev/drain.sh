@@ -10,12 +10,14 @@
 #                          --ignore-daemonsets --delete-emptydir-data` of trove's pods, wait for the rollouts, uncordon.
 #   drain.sh --pick        print the node the test would drain.
 #
-# The test picks a worker node that hosts an api, a packages and a worker pod. The drain evicts only the pods of the
-# trove release (--pod-selector): PostgreSQL, Valkey and the object store on the node keep running, as the acceptance
-# test of R-HA-059 has them on other nodes. The three workers cannot always offer such a node, and evicting a
-# PostgreSQL instance is not trove's drain: the synchronous standby of the profile (dataDurability preferred) holds
-# every commit until CloudNativePG drops it, about 6 s in Test and Release run 42402849059, long enough for uploads
-# queued on one row lock to meet the lock timeout.
+# The test picks a worker node that hosts an api, a packages and a worker pod and not the CloudNativePG primary:
+# CloudNativePG switches the primary over as soon as its node is cordoned (Test and Release run 42406831768). When only
+# the primary's node hosts all three, `failover.sh` moves the primary first (variant B). The drain evicts only the pods
+# of the trove release (--pod-selector): PostgreSQL, Valkey and the object store on the node keep running, as the
+# acceptance test of R-HA-059 has them on other nodes. The three workers cannot always offer such a node, and evicting
+# a PostgreSQL instance is not trove's drain: the synchronous standby of the profile (dataDurability preferred) that
+# stays on the node after a switchover holds every commit until CloudNativePG drops it, about 6 s in run 42402849059,
+# long enough for uploads queued on one row lock to meet the lock timeout.
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -26,7 +28,9 @@ sel='app.kubernetes.io/instance=trove,trove/serve=true'
 nodes_of() { kn get pods -l "$sel,app.kubernetes.io/component=$1" -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u; }
 
 pick_node() {
-  comm -12 <(comm -12 <(nodes_of api) <(nodes_of packages)) <(nodes_of worker) | head -1 || true
+  local dbprimary
+  dbprimary="$(kn get pod "$(kn get cluster trove-db -o jsonpath='{.status.currentPrimary}')" -o jsonpath='{.spec.nodeName}')"
+  comm -12 <(comm -12 <(nodes_of api) <(nodes_of packages)) <(nodes_of worker) | grep -vx "$dbprimary" | head -1 || true
 }
 
 case "${1:-}" in
@@ -34,7 +38,7 @@ case "${1:-}" in
     exec "$DEV_DIR/e2e.sh" drain ;;
   --pick)
     node="$(pick_node)"
-    [ -n "$node" ] || die "no node hosts an api, a packages and a worker pod"
+    [ -n "$node" ] || die "no node hosts an api, a packages and a worker pod apart from the PostgreSQL primary's"
     echo "$node"
     exit 0 ;;
   -*) die "unknown option $1" ;;
