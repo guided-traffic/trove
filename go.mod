@@ -16,6 +16,7 @@ require (
 	github.com/aws/smithy-go v1.28.7
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/klauspost/compress v1.20.1
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/pandatix/go-cvss v0.6.4

@@ -144,8 +144,81 @@ func TestDispatch(t *testing.T) {
 			t.Errorf("none: code %d", code)
 		}
 	})
-	t.Run("R-ARCH-001 backup is reserved and says so", func(t *testing.T) {
-		code, _, stderr := runCmd(t, nil, "backup", "list")
+}
+
+func TestBackupCommands(t *testing.T) {
+	id := "20261028T020000Z-7f3a"
+	env := baseEnv("TROVE_BACKUP_TARGET_BUCKET=backups")
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"create", []string{"create", "--trigger", "schedule", "--no-prune"}},
+		{"list", []string{"list", "--all", "--json"}},
+		{"verify", []string{"verify", "--latest", "--deep"}},
+		{"verify by id", []string{"verify", id}},
+		{"delete", []string{"delete", id, "--yes", "--allow-last"}},
+		{"prune", []string{"prune"}},
+		{"restore", []string{"restore", id, "--check", "--skip-revocation-journal"}},
+	}
+	for _, c := range cases {
+		t.Run("R-BAK-013 "+c.name+" is wired and, until its work package lands, fails with exit 1 saying so", func(t *testing.T) {
+			code, _, stderr := runCmd(t, env, append([]string{"backup"}, c.args...)...)
+			if code != 1 || !strings.Contains(stderr, "not built yet") {
+				t.Fatalf("code %d stderr %q", code, stderr)
+			}
+		})
+	}
+	t.Run("R-BAK-011 a configuration error is exit 2 and names the key", func(t *testing.T) {
+		code, _, stderr := runCmd(t, baseEnv(), "backup", "list")
+		if code != 2 || !strings.Contains(stderr, "backup.target.bucket") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
+	t.Run("R-BAK-011 heartbeat_interval times 4 above lease_duration exits 2 naming both keys", func(t *testing.T) {
+		code, _, stderr := runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=b", "TROVE_BACKUP_HEARTBEAT_INTERVAL=2m", "TROVE_BACKUP_LEASE_DURATION=5m"), "backup", "create")
+		if code != 2 || !strings.Contains(stderr, "backup.heartbeat_interval") || !strings.Contains(stderr, "backup.lease_duration") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
+	t.Run("R-BAK-002 a target on the blob store's bucket exits 2 unless allow_same_bucket is set", func(t *testing.T) {
+		code, _, stderr := runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=blobs"), "backup", "create")
+		if code != 2 || !strings.Contains(stderr, "backup.target.bucket") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+		code, _, stderr = runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=blobs", "TROVE_BACKUP_TARGET_ALLOW_SAME_BUCKET=true", "TROVE_BACKUP_TARGET_PREFIX=bk"), "backup", "create")
+		if code != 1 {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
+	t.Run("R-BAK-020 usage errors are exit 2", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"backup"},
+			{"backup", "nope"},
+			{"backup", "restore"},
+			{"backup", "restore", "not-an-id"},
+			{"backup", "delete"},
+			{"backup", "verify"},
+			{"backup", "verify", "--latest", "--all"},
+			{"backup", "create", "--trigger", "x"},
+			{"backup", "prune", "extra"},
+			{"admin", "post-restore"},
+			{"admin", "post-restore", "--restored-to", "yesterday"},
+			{"admin", "npm", "reinstate", "x"},
+		} {
+			if code, _, stderr := runCmd(t, env, args...); code != 2 {
+				t.Errorf("%v: code %d stderr %q", args, code, stderr)
+			}
+		}
+	})
+	t.Run("R-HA-025 admin post-restore is wired and fails with exit 1 until built", func(t *testing.T) {
+		code, _, stderr := runCmd(t, env, "admin", "post-restore", "--restored-to", "2026-10-28T12:00:00Z")
+		if code != 1 || !strings.Contains(stderr, "not built yet") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
+	t.Run("R-NPM-047 admin npm reinstate is wired and fails with exit 1 until built", func(t *testing.T) {
+		code, _, stderr := runCmd(t, env, "admin", "npm", "reinstate", "web/npm-local", "@acme/ui@1.4.0")
 		if code != 1 || !strings.Contains(stderr, "not implemented yet") {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}

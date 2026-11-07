@@ -4133,6 +4133,130 @@ type BackgroundMigration struct {
 // built.
 type BackgroundMigrationState string
 
+// BackupActiveRun defines model for BackupActiveRun.
+type BackupActiveRun struct {
+	Id           openapi_types.UUID `json:"id"`
+	LeaseExpired bool               `json:"leaseExpired"`
+
+	// Operation `create`, `delete` or `verify`.
+	Operation string    `json:"operation"`
+	StartedAt time.Time `json:"startedAt"`
+
+	// State `starting`, `snapshot`, `copying`, `finalizing`, `pruning`, `completed`, `completed_with_warnings`, `failed`, `interrupted` or `abandoned` (R-BAK-009).
+	State string `json:"state"`
+}
+
+// BackupLastFailure defines model for BackupLastFailure.
+type BackupLastFailure struct {
+	At    time.Time          `json:"at"`
+	Code  *string            `json:"code"`
+	RunId openapi_types.UUID `json:"runId"`
+}
+
+// BackupManualRun What the chart renders into `backup.manual_run`, so the UI can show the exact command; each is `null` when unset.
+type BackupManualRun struct {
+	CronJob   *string `json:"cronJob"`
+	Namespace *string `json:"namespace"`
+}
+
+// BackupProgress What the heartbeat of the run last wrote (R-BAK-009); members that do not apply to the phase are absent.
+type BackupProgress struct {
+	BlobsCopied       *int64     `json:"blobsCopied,omitempty"`
+	BlobsToCopy       *int64     `json:"blobsToCopy,omitempty"`
+	BytesCopied       *int64     `json:"bytesCopied,omitempty"`
+	Phase             *string    `json:"phase,omitempty"`
+	PinsLeft          *int64     `json:"pinsLeft,omitempty"`
+	SnapshotOpenSince *time.Time `json:"snapshotOpenSince,omitempty"`
+	TablesDone        *int       `json:"tablesDone,omitempty"`
+	TablesTotal       *int       `json:"tablesTotal,omitempty"`
+}
+
+// BackupRestoredFrom `system_state.restored_from` after a restore (R-BAK-022).
+type BackupRestoredFrom struct {
+	BackupId       string    `json:"backupId"`
+	Incarnation    string    `json:"incarnation"`
+	InstallationId string    `json:"installationId"`
+	SnapshotAt     time.Time `json:"snapshotAt"`
+}
+
+// BackupRetention defines model for BackupRetention.
+type BackupRetention struct {
+	KeepLast          int   `json:"keepLast"`
+	KeepWithinSeconds int64 `json:"keepWithinSeconds"`
+}
+
+// BackupRun One row of `backup_run` in the names of R-API-003 (R-API-050).
+type BackupRun struct {
+	// BackupId The backup ID of R-BAK-002; `null` for a delete run of several backups.
+	BackupId *string `json:"backupId"`
+
+	// Error The stored problem object; its `code` is stable (R-UI-042).
+	Error       *map[string]interface{} `json:"error"`
+	FinishedAt  *time.Time              `json:"finishedAt"`
+	HeartbeatAt time.Time               `json:"heartbeatAt"`
+	Id          openapi_types.UUID      `json:"id"`
+
+	// LeaseExpired True for a run in an active state whose lease has passed (R-BAK-010).
+	LeaseExpired bool `json:"leaseExpired"`
+
+	// Operation `create`, `delete` or `verify`.
+	Operation string `json:"operation"`
+
+	// Pod The pod of the run; a Job created by hand carries the name its creator chose.
+	Pod string `json:"pod"`
+
+	// Progress What the heartbeat of the run last wrote (R-BAK-009); members that do not apply to the phase are absent.
+	Progress BackupProgress `json:"progress"`
+
+	// Result The manifest summary, the retention outcome and the warnings (R-BAK-009, R-BAK-016).
+	Result     *map[string]interface{} `json:"result"`
+	SnapshotAt *time.Time              `json:"snapshotAt"`
+	StartedAt  time.Time               `json:"startedAt"`
+
+	// State `starting`, `snapshot`, `copying`, `finalizing`, `pruning`, `completed`, `completed_with_warnings`, `failed`, `interrupted` or `abandoned` (R-BAK-009).
+	State string `json:"state"`
+
+	// Target `s3://<bucket>/<prefix>` as recorded; never a credential.
+	Target string `json:"target"`
+
+	// Trigger `schedule` or `manual`.
+	Trigger      string `json:"trigger"`
+	TroveVersion string `json:"troveVersion"`
+}
+
+// BackupRunList defines model for BackupRunList.
+type BackupRunList struct {
+	Items []BackupRun `json:"items"`
+
+	// NextCursor Opaque; `null` on the last page.
+	NextCursor *string `json:"nextCursor"`
+
+	// Total Present with `includeTotal=true`.
+	Total *int64 `json:"total,omitempty"`
+}
+
+// BackupSummary defines model for BackupSummary.
+type BackupSummary struct {
+	Active *BackupActiveRun `json:"active"`
+
+	// ExpectedIntervalSeconds `backup.expected_interval`, the value behind `trove_backup_expected_interval_seconds` and `TroveBackupStale`.
+	ExpectedIntervalSeconds int64              `json:"expectedIntervalSeconds"`
+	LastFailure             *BackupLastFailure `json:"lastFailure"`
+	LastSuccessAt           *time.Time         `json:"lastSuccessAt"`
+
+	// ManualRun What the chart renders into `backup.manual_run`, so the UI can show the exact command; each is `null` when unset.
+	ManualRun BackupManualRun `json:"manualRun"`
+
+	// Overdue True when `lastSuccessAt` is older than 1.5 times the expected interval; `null` with no successful run.
+	Overdue       *bool               `json:"overdue"`
+	RestoredFrom  *BackupRestoredFrom `json:"restoredFrom"`
+	Retention     *BackupRetention    `json:"retention"`
+	StoredBackups *StoredBackups      `json:"storedBackups"`
+
+	// Target The target of the newest run, as recorded; `null` before any run.
+	Target *string `json:"target"`
+}
+
 // Bastion A Bastion registration, a principal of the kind `bastion` (R-BAS-004).
 type Bastion struct {
 	// Contacts The last contact of each replica, the most recent first (R-BAS-010).
@@ -7308,6 +7432,25 @@ type Stamp struct {
 	By *string `json:"by"`
 }
 
+// StoredBackup defines model for StoredBackup.
+type StoredBackup struct {
+	BackupId      string    `json:"backupId"`
+	BlobBytes     int64     `json:"blobBytes"`
+	BlobCount     int64     `json:"blobCount"`
+	Damaged       bool      `json:"damaged"`
+	DatabaseBytes int64     `json:"databaseBytes"`
+	SchemaStep    int       `json:"schemaStep"`
+	SnapshotAt    time.Time `json:"snapshotAt"`
+	TroveVersion  string    `json:"troveVersion"`
+}
+
+// StoredBackups The complete backups the newest create or delete run found after its own deletions (Q-API-11).
+type StoredBackups struct {
+	AsOf  time.Time          `json:"asOf"`
+	Items []StoredBackup     `json:"items"`
+	RunId openapi_types.UUID `json:"runId"`
+}
+
 // SystemInfo defines model for SystemInfo.
 type SystemInfo struct {
 	AnsweredBy struct {
@@ -8201,6 +8344,9 @@ type WhoamiPrincipal struct {
 
 // WhoamiPrincipalKind defines model for WhoamiPrincipal.Kind.
 type WhoamiPrincipalKind string
+
+// BackupRunId defines model for BackupRunId.
+type BackupRunId = openapi_types.UUID
 
 // BastionInterface defines model for BastionInterface.
 type BastionInterface = int
@@ -9236,6 +9382,31 @@ type GetAuthSettingsParams struct {
 type UpdateAuthSettingsParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
 	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ListBackupRunsParams defines parameters for ListBackupRuns.
+type ListBackupRunsParams struct {
+	// Operation `create`, `delete` or `verify`.
+	Operation *string `form:"operation,omitempty" json:"operation,omitempty"`
+
+	// State One of the states of R-BAK-009, for example `failed` or `completed_with_warnings`.
+	State *string `form:"state,omitempty" json:"state,omitempty"`
+
+	// Trigger `schedule` or `manual`.
+	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
+
+	// StartedFrom Runs started at or after this time.
+	StartedFrom *time.Time `form:"startedFrom,omitempty" json:"startedFrom,omitempty"`
+
+	// StartedTo Runs started before this time.
+	StartedTo    *time.Time `form:"startedTo,omitempty" json:"startedTo,omitempty"`
+	IncludeTotal *bool      `form:"includeTotal,omitempty" json:"includeTotal,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // ListJobsParams defines parameters for ListJobs.
@@ -10330,6 +10501,15 @@ type ServerInterface interface {
 	// UpdateAuthSettings Change the runtime authentication settings
 	// (PATCH /api/v1/settings/auth)
 	UpdateAuthSettings(w http.ResponseWriter, r *http.Request, params UpdateAuthSettingsParams)
+	// ListBackupRuns List backup runs
+	// (GET /api/v1/system/backups)
+	ListBackupRuns(w http.ResponseWriter, r *http.Request, params ListBackupRunsParams)
+	// GetBackupSummary Status of the backup job
+	// (GET /api/v1/system/backups/summary)
+	GetBackupSummary(w http.ResponseWriter, r *http.Request)
+	// GetBackupRun Read a backup run
+	// (GET /api/v1/system/backups/{runId})
+	GetBackupRun(w http.ResponseWriter, r *http.Request, runId BackupRunId)
 	// GetEncryptionStatus Status of the stored-secret key ring
 	// (GET /api/v1/system/encryption)
 	GetEncryptionStatus(w http.ResponseWriter, r *http.Request)
@@ -18140,6 +18320,170 @@ func (siw *ServerInterfaceWrapper) UpdateAuthSettings(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// ListBackupRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListBackupRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListBackupRunsParams
+
+	// ------------- Optional query parameter "operation" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "operation", r.URL.Query(), &params.Operation, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "operation"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operation", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "trigger" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "trigger", r.URL.Query(), &params.Trigger, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "trigger"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trigger", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "startedFrom" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "startedFrom", r.URL.Query(), &params.StartedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "startedFrom"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "startedFrom", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "startedTo" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "startedTo", r.URL.Query(), &params.StartedTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "startedTo"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "startedTo", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "includeTotal" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "includeTotal", r.URL.Query(), &params.IncludeTotal, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "includeTotal"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "includeTotal", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBackupRuns(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBackupSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetBackupSummary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBackupSummary(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBackupRun operation middleware
+func (siw *ServerInterfaceWrapper) GetBackupRun(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "runId" -------------
+	var runId BackupRunId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runId", r.PathValue("runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBackupRun(w, r, runId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetEncryptionStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetEncryptionStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -20709,6 +21053,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan", wrapper.RescanRepositoryVulnerabilities)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror", wrapper.GetRepositoryMirror)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run", wrapper.RunRepositoryMirror)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/backups", wrapper.ListBackupRuns)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/backups/summary", wrapper.GetBackupSummary)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/system/backups/{runId}", wrapper.GetBackupRun)
 
 	return m
 }

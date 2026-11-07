@@ -45,6 +45,7 @@ func (c *Config) Validate(r *Report) {
 	c.validateNuGetCoupling(r)
 	c.validateUICoupling(r)
 	c.validateCI(r)
+	c.validateBackupCoupling(r)
 	if g := c.Health.DatabaseOutageGrace; g >= c.Database.Retry.MaxElapsed {
 		r.Add("health.database_outage_grace", "%s must be below database.retry.max_elapsed (%s): a replica must turn unready before its queries give up (R-OPS-001)",
 			g, c.Database.Retry.MaxElapsed)

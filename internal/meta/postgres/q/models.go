@@ -168,6 +168,32 @@ type AuthzRoleBinding struct {
 	Source      string
 }
 
+type BackupBlobPin struct {
+	RunID  pgtype.UUID
+	Sha256 []byte
+	Size   int64
+}
+
+type BackupRun struct {
+	ID             pgtype.UUID
+	Operation      string
+	BackupID       pgtype.Text
+	State          string
+	Hold           string
+	Trigger        string
+	Target         string
+	Pod            string
+	TroveVersion   string
+	SnapshotAt     pgtype.Timestamptz
+	Progress       []byte
+	Result         []byte
+	Error          []byte
+	StartedAt      pgtype.Timestamptz
+	HeartbeatAt    pgtype.Timestamptz
+	LeaseExpiresAt pgtype.Timestamptz
+	FinishedAt     pgtype.Timestamptz
+}
+
 type Bastion struct {
 	PrincipalID pgtype.UUID
 	Description string

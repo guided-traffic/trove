@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trove.guided-traffic.dev/schemas/backup-manifest-1.json",
+  "title": "trove backup manifest, format 1 (R-BAK-003)",
+  "type": "object",
+  "required": ["format", "backupId", "installationId", "incarnation", "trove", "schema", "postgres", "startedAt", "snapshotAt",
+    "completedAt", "previousBackupId", "options", "source", "tables", "sequences", "blobs", "secrets", "encryption"],
+  "properties": {
+    "format": {"type": "integer", "minimum": 1},
+    "backupId": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}$"},
+    "installationId": {"type": "string", "minLength": 1},
+    "incarnation": {"type": "string", "minLength": 1},
+    "trove": {
+      "type": "object",
+      "required": ["version", "revision"],
+      "properties": {"version": {"type": "string"}, "revision": {"type": "string"}}
+    },
+    "schema": {
+      "type": "object",
+      "required": ["step", "steps"],
+      "properties": {
+        "step": {"type": "integer", "minimum": 1},
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["step", "name", "sha256"],
+            "properties": {
+              "step": {"type": "integer", "minimum": 1},
+              "name": {"type": "string"},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        }
+      }
+    },
+    "postgres": {
+      "type": "object",
+      "required": ["serverVersion", "isolation"],
+      "properties": {"serverVersion": {"type": "string"}, "isolation": {"type": "string"}}
+    },
+    "startedAt": {"type": "string", "format": "date-time"},
+    "snapshotAt": {"type": "string", "format": "date-time"},
+    "completedAt": {"type": "string", "format": "date-time"},
+    "previousBackupId": {"type": ["string", "null"], "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}$"},
+    "options": {
+      "type": "object",
+      "required": ["excludeRemoteCaches"],
+      "properties": {"excludeRemoteCaches": {"type": "boolean"}}
+    },
+    "source": {
+      "type": "object",
+      "required": ["storage", "revocationJournal"],
+      "properties": {
+        "storage": {
+          "type": "object",
+          "required": ["endpoint", "bucket", "prefix"],
+          "properties": {"endpoint": {"type": "string"}, "bucket": {"type": "string"}, "prefix": {"type": "string"}}
+        },
+        "revocationJournal": {"type": "boolean"}
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "class", "file", "columns", "rows", "bytes", "compressedBytes", "sha256"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "class": {"enum": ["data", "blobs"]},
+          "file": {"type": "string", "pattern": "^db/.+\\.copy\\.zst$"},
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}], "minItems": 2, "maxItems": 2}
+          },
+          "rows": {"type": "integer", "minimum": 0},
+          "bytes": {"type": "integer", "minimum": 0},
+          "compressedBytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "sequences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "lastValue", "isCalled"],
+        "properties": {"name": {"type": "string"}, "lastValue": {"type": "integer"}, "isCalled": {"type": "boolean"}}
+      }
+    },
+    "blobs": {
+      "type": "object",
+      "required": ["file", "sha256", "referenced", "referencedBytes", "copied", "copiedBytes", "damaged"],
+      "properties": {
+        "file": {"const": "blobs.idx.zst"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "referenced": {"type": "integer", "minimum": 0},
+        "referencedBytes": {"type": "integer", "minimum": 0},
+        "copied": {"type": "integer", "minimum": 0},
+        "copiedBytes": {"type": "integer", "minimum": 0},
+        "damaged": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sha256", "status"],
+            "properties": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "status": {"enum": ["missing", "corrupt"]}}
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "required": ["keyIds"],
+      "properties": {"keyIds": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}
+    },
+    "encryption": {
+      "type": "object",
+      "required": ["sse", "clientSide"],
+      "properties": {
+        "sse": {"enum": ["AES256", "aws:kms", "none"]},
+        "clientSide": {"enum": ["age", null]},
+        "recipients": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

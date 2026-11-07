@@ -291,22 +291,7 @@ func (s *Storage) finalizeEndpoints(sources map[string]Source) {
 // validateS3Connection applies the startup validation of R-STOR-030: the prefix
 // and the endpoint.
 func (s *Storage) validateS3Connection(r *Report) {
-	p := s.S3.Prefix
-	switch {
-	case strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/"):
-		r.Add("s3.prefix", "must not start or end with /")
-	case strings.Contains(p, "//"):
-		r.Add("s3.prefix", "must not contain //")
-	case len(p) > 256:
-		r.Add("s3.prefix", "must be at most 256 characters")
-	default:
-		for _, c := range p {
-			if !isKeyChar(c) {
-				r.Add("s3.prefix", "contains %q; allowed are letters, digits and !_.*'()/-", c)
-				break
-			}
-		}
-	}
+	checkKeyPrefix(r, "s3.prefix", s.S3.Prefix)
 	endpoint, presign := NormalizeEndpoint(s.S3.Endpoint), NormalizeEndpoint(s.S3.Presign.Endpoint)
 	rejectUserinfo(r, "s3.endpoint", endpoint, "storage.s3.credentials.access_key_id_file")
 	rejectUserinfo(r, "s3.credentials.sts_endpoint", s.S3.Credentials.STSEndpoint, "")
@@ -319,6 +304,27 @@ func (s *Storage) validateS3Connection(r *Report) {
 			r.Add("s3.endpoint", "must be an absolute https URL (is %q)", redactUserinfo(e))
 		case u.Scheme == "http" && !s.S3.AllowInsecureEndpoint:
 			r.Add("s3.endpoint", "uses http: set s3.allow_insecure_endpoint to allow it")
+		}
+	}
+}
+
+// checkKeyPrefix applies the prefix rules of R-STOR-030, which the backup target
+// shares (R-BAK-011): no leading, trailing or doubled slash, at most 256
+// characters, and only characters that are safe in an object key.
+func checkKeyPrefix(r *Report, key, p string) {
+	switch {
+	case strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/"):
+		r.Add(key, "must not start or end with /")
+	case strings.Contains(p, "//"):
+		r.Add(key, "must not contain //")
+	case len(p) > 256:
+		r.Add(key, "must be at most 256 characters")
+	default:
+		for _, c := range p {
+			if !isKeyChar(c) {
+				r.Add(key, "contains %q; allowed are letters, digits and !_.*'()/-", c)
+				break
+			}
 		}
 	}
 }

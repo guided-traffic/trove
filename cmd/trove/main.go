@@ -35,10 +35,11 @@ const usageText = `usage: trove <command> [flags]
 commands:
   serve --role api|packages|worker|web|all|bastion   run one replica of a role (bastion: the read-only cache, deployed by its own chart)
   migrate [up|status]           apply or list the embedded migrations
+  backup <command>              create, list, verify, delete, prune and restore backups (trove backup lists them)
   admin <command>               bootstrap and recovery commands (trove admin lists them)
   version, --version            print version, commit and build date
 
-flags common to serve, migrate and admin:
+flags common to serve, migrate, backup and admin:
   --config <file>               configuration file (default /etc/trove/trove.yaml, or TROVE_CONFIG_FILE)
   --log-level <level>           overrides log.level
 `
@@ -65,7 +66,7 @@ func run(args []string, s streams) int {
 	case "help", "-h", "--help":
 		fmt.Fprint(s.stdout, usageText)
 	case "backup":
-		err = fmt.Errorf("backup: %w", errNotImplemented)
+		err = backupCmd(args[1:], s)
 	default:
 		err = usageError{fmt.Sprintf("unknown command %q (see trove help)", args[0])}
 	}

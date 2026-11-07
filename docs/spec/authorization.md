@@ -5291,6 +5291,21 @@ owners by an identity-provider attribute, then the owners might be resolved at t
 [crud.go](../../internal/project/crud.go). The management API reads the member from the create body once the document declares it
 writable on create.
 
+### Q-AUTHZ-230 · The comparators of R-AUTHZ-031 are `journal.Narrower[T]` implementations in the owning packages
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One comparator package for every object | `internal/journal` knows policies, memberships and settings | One place | The comparators are the owning page's; the journal would import the authorization model, and the authorization engine would import the journal's rule |
+| (b) The generic `journal.Narrower[T]` and `journal.ApplyUpdate[T]`; each owner implements `Narrows(current, after T) bool` for its type in a file of its own (chosen) | Policy, role and settings comparators live in `internal/authz` and `internal/project`, the exposure comparator beside the exposure service in `internal/authz` (R-EP-020), and the issuer and mapping comparators in `internal/ci` | The rule that picks apply, skip or suspend is tested once; each comparator is tested with the cases of its page | Four comparator types to keep conservative |
+
+**Choice:** (b). A comparator answers true only when it can prove that `after` grants nothing `current` does not; every doubt is false (R-HA-054).
+
+**Rationale:** This is the division R-AUTHZ-031 and R-HA-054 already state in prose. The development agent would revisit this if two pages need the same comparator over one type.
+
+**Applied:** R-AUTHZ-031, R-HA-054 update rule; `internal/journal/replay.go`.
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

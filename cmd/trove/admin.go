@@ -16,6 +16,8 @@ commands:
   token create --service-account <name|project/name> [--ttl 15m] [--scope-file <file>]   print a token once (R-AUTH-015)
   token revoke --id <uuid> | --value-stdin     revoke a token (R-AUTH-015)
   user disable <username> [--keep-tokens]      disable a user (R-AUTH-015)
+  post-restore --restored-to <time> [--credentials-file <path>]   clean up after a point-in-time restore (R-HA-025)
+  npm reinstate <projectKey>/<repoKey> <name>@<version>   put back a version a journal replay withheld (R-NPM-047)
   bastion create <name> [--description <text>]   register a Bastion (R-BAS-004)
   bastion token create <name> [--ttl 8760h]     print a Bastion token once (R-BAS-004)
   bastion token revoke <name> <token-id>        revoke a Bastion token (R-BAS-004)
@@ -45,6 +47,10 @@ func adminCmd(args []string, s streams) error {
 		return userCmd(args[1:], s)
 	case "bastion":
 		return bastionCmd(args[1:], s)
+	case "post-restore":
+		return postRestoreCmd(args[1:], s)
+	case "npm":
+		return npmAdminCmd(args[1:], s)
 	}
 	return usageError{adminUsage}
 }

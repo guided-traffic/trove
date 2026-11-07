@@ -5881,6 +5881,21 @@ bounded by the passes that run. Revisit when another package keeps a long-runnin
 **Applied:** R-OPS-007 (repository cap, the families delete their series with the name); `internal/mirror/metrics.go`
 (`Metrics.of`, `Forget`, `repoMetrics.record`), `internal/mirror/pass.go` (the handle is released at the end of `run`).
 
+### Q-OPS-180 · The last-success and last-failure gauges of the backup have no series until the event happened
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Always export, 0 for never | The gauges start at 0 | A value always exists | `time() - 0` fires `TroveBackupStale` the moment a new installation starts, before its first backup is due; `0` is a timestamp in 1970 |
+| (b) No series until the first success or failure (chosen) | `trove_backup_last_success_timestamp_seconds` and `trove_backup_last_failure_timestamp_seconds` are gauge vectors without a label; a replica sets them when a run of that outcome exists | The `absent` clause of `TroveBackupStale` (R-BAK-014) means what it says; the rule for a first backup is the expected interval, not zero | A rule must handle the absent series: `TroveBackupFailed` reads `max(last_failure) > (max(last_success) or vector(0))` |
+
+**Choice:** (b). The other backup gauges are plain gauges; `trove_revocation_journal_pending` is registered by `journal.NewMetrics`, the others by `backup.NewMetrics`.
+
+**Rationale:** R-BAK-014 already contains the absent clause, which only makes sense for a gauge that can be absent. The development agent would revisit this if a dashboard needs a zero.
+
+**Applied:** R-BAK-014, R-OPS-008; `internal/backup/metrics.go`, `internal/journal/metrics.go`.
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy

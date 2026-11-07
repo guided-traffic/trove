@@ -731,6 +731,377 @@
       },
       "type": "object"
     },
+    "backup": {
+      "additionalProperties": false,
+      "properties": {
+        "compression_level": {
+          "default": 3,
+          "description": "zstd level of table files and the blob list.",
+          "maximum": 19,
+          "minimum": 1,
+          "type": "integer",
+          "x-trove-env": "TROVE_BACKUP_COMPRESSION_LEVEL"
+        },
+        "copy": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes_per_second": {
+              "default": "0",
+              "description": "Transfer rate cap per run; 0 is unlimited.",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_BACKUP_COPY_BYTES_PER_SECOND",
+              "x-trove-type": "bytes"
+            },
+            "check_existing": {
+              "default": "auto",
+              "enum": [
+                "auto",
+                "always",
+                "never"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_COPY_CHECK_EXISTING"
+            },
+            "concurrency": {
+              "default": 16,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_BACKUP_COPY_CONCURRENCY"
+            },
+            "part_size": {
+              "default": "256MiB",
+              "description": "Raised so that an object fits 10,000 parts.",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_BACKUP_COPY_PART_SIZE",
+              "x-trove-type": "bytes"
+            },
+            "server_side": {
+              "default": "auto",
+              "enum": [
+                "auto",
+                "always",
+                "never"
+              ],
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_COPY_SERVER_SIDE"
+            }
+          },
+          "type": "object"
+        },
+        "database": {
+          "additionalProperties": false,
+          "properties": {
+            "lock_timeout": {
+              "default": "1m",
+              "description": "Wait for the table locks of the snapshot.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_DATABASE_LOCK_TIMEOUT",
+              "x-trove-type": "duration"
+            },
+            "migration_wait": {
+              "default": "15m",
+              "description": "Wait for a running migration's lock.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_DATABASE_MIGRATION_WAIT",
+              "x-trove-type": "duration"
+            },
+            "parallel": {
+              "default": 2,
+              "description": "Export connections besides the snapshot connection.",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_BACKUP_DATABASE_PARALLEL"
+            },
+            "part_size": {
+              "default": "16MiB",
+              "description": "Multipart part size of table files.",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_BACKUP_DATABASE_PART_SIZE",
+              "x-trove-type": "bytes"
+            }
+          },
+          "type": "object"
+        },
+        "exclude": {
+          "additionalProperties": false,
+          "properties": {
+            "remote_caches": {
+              "default": false,
+              "description": "Leave out blobs that only remote-repository caches reference.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_BACKUP_EXCLUDE_REMOTE_CACHES"
+            }
+          },
+          "type": "object"
+        },
+        "expected_interval": {
+          "default": "24h",
+          "description": "How often a backup is expected. TroveBackupStale and the overdue mark of the API and the UI fire after 1.5 times this value (R-BAK-014).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_EXPECTED_INTERVAL",
+          "x-trove-type": "duration"
+        },
+        "finalize_timeout": {
+          "default": "30s",
+          "description": "Request deadline of the manifest write; twice this value must stay below lease_duration (R-BAK-010).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_FINALIZE_TIMEOUT",
+          "x-trove-type": "duration"
+        },
+        "heartbeat_interval": {
+          "default": "15s",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_HEARTBEAT_INTERVAL",
+          "x-trove-type": "duration"
+        },
+        "lease_duration": {
+          "default": "5m",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_LEASE_DURATION",
+          "x-trove-type": "duration"
+        },
+        "manual_run": {
+          "additionalProperties": false,
+          "properties": {
+            "cronjob": {
+              "default": "",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_MANUAL_RUN_CRONJOB"
+            },
+            "namespace": {
+              "default": "",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_MANUAL_RUN_NAMESPACE"
+            }
+          },
+          "type": "object"
+        },
+        "retention": {
+          "additionalProperties": false,
+          "properties": {
+            "keep_last": {
+              "default": 7,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_BACKUP_RETENTION_KEEP_LAST"
+            },
+            "keep_within": {
+              "default": "0s",
+              "description": "0s means count only.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_RETENTION_KEEP_WITHIN",
+              "x-trove-type": "duration"
+            },
+            "sweep_interval": {
+              "default": "168h",
+              "description": "A full pool sweep at least this often.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_RETENTION_SWEEP_INTERVAL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "revocation_journal": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean",
+              "x-trove-env": "TROVE_BACKUP_REVOCATION_JOURNAL_ENABLED"
+            },
+            "replay_margin": {
+              "default": "5m",
+              "description": "Longer than any transaction (R-HA-015 timeouts).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_REVOCATION_JOURNAL_REPLAY_MARGIN",
+              "x-trove-type": "duration"
+            },
+            "ship_interval": {
+              "default": "5s",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_REVOCATION_JOURNAL_SHIP_INTERVAL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "run_history": {
+          "default": "2160h",
+          "description": "backup_run rows older than this are deleted by the next run.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_RUN_HISTORY",
+          "x-trove-type": "duration"
+        },
+        "stall_timeout": {
+          "default": "30m",
+          "description": "A run without progress for this long cancels itself and exits 75 (R-BAK-013).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_STALL_TIMEOUT",
+          "x-trove-type": "duration"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_insecure_endpoint": {
+              "default": false,
+              "type": "boolean",
+              "x-trove-env": "TROVE_BACKUP_TARGET_ALLOW_INSECURE_ENDPOINT"
+            },
+            "allow_same_bucket": {
+              "default": false,
+              "description": "Allows the target on the blob store's endpoint and bucket, for single-bucket evaluation setups; the prefixes still must not contain each other (R-BAK-002).",
+              "type": "boolean",
+              "x-trove-env": "TROVE_BACKUP_TARGET_ALLOW_SAME_BUCKET"
+            },
+            "bucket": {
+              "default": "",
+              "description": "Required by every backup command.",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_TARGET_BUCKET"
+            },
+            "ca_file": {
+              "default": "",
+              "description": "Empty means the system trust store.",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_TARGET_CA_FILE"
+            },
+            "credentials": {
+              "additionalProperties": false,
+              "properties": {
+                "access_key_id_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_ACCESS_KEY_ID_FILE",
+                  "x-trove-secret": "file-only"
+                },
+                "role_arn": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_ROLE_ARN"
+                },
+                "secret_access_key_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_SECRET_ACCESS_KEY_FILE",
+                  "x-trove-secret": "file-only"
+                },
+                "session_token_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_SESSION_TOKEN_FILE",
+                  "x-trove-secret": "file-only"
+                },
+                "source": {
+                  "default": "default",
+                  "enum": [
+                    "default",
+                    "webIdentity",
+                    "static"
+                  ],
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_SOURCE"
+                },
+                "sts_endpoint": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_STS_ENDPOINT"
+                },
+                "web_identity_token_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_CREDENTIALS_WEB_IDENTITY_TOKEN_FILE",
+                  "x-trove-secret": "file-only"
+                }
+              },
+              "type": "object"
+            },
+            "endpoint": {
+              "default": "",
+              "description": "Empty means AWS endpoint resolution for the region. A host without a scheme means https://.",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_TARGET_ENDPOINT"
+            },
+            "force_path_style": {
+              "default": false,
+              "type": "boolean",
+              "x-trove-env": "TROVE_BACKUP_TARGET_FORCE_PATH_STYLE"
+            },
+            "prefix": {
+              "default": "trove",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_TARGET_PREFIX"
+            },
+            "region": {
+              "default": "",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_TARGET_REGION"
+            },
+            "sse": {
+              "additionalProperties": false,
+              "properties": {
+                "bucket_key": {
+                  "default": true,
+                  "type": "boolean",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_SSE_BUCKET_KEY"
+                },
+                "kms_key_id": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_SSE_KMS_KEY_ID"
+                },
+                "mode": {
+                  "default": "s3",
+                  "enum": [
+                    "s3",
+                    "kms",
+                    "none"
+                  ],
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_TARGET_SSE_MODE"
+                }
+              },
+              "type": "object"
+            },
+            "storage_class": {
+              "default": "",
+              "type": "string",
+              "x-trove-env": "TROVE_BACKUP_TARGET_STORAGE_CLASS"
+            }
+          },
+          "type": "object"
+        },
+        "verify_sample": {
+          "default": 1000,
+          "description": "Pool objects HEAD-checked before each manifest.",
+          "minimum": 0,
+          "type": "integer",
+          "x-trove-env": "TROVE_BACKUP_VERIFY_SAMPLE"
+        }
+      },
+      "type": "object"
+    },
     "bastions": {
       "additionalProperties": false,
       "properties": {

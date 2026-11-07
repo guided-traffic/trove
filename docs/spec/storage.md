@@ -4627,6 +4627,21 @@ reads one row, together with the quota's setting and error shape.
 
 **Applied in the spec:** R-STOR-049; R-STOR-029 states that a project has no quota; Q-STOR-155 is built.
 
+### Q-STOR-162 · The usage recount is a SQL function, and the collector's hold check is a generated query
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The restore recomputes the counters in Go | Queries over `items` and `blobs` in the restore | No migration | The counters and the triggers that maintain them are the migrations' (R-STOR-003); a second description of the sums in Go would drift |
+| (b) `storage_usage_recount()` in migration 00046 and `BackupBlobHeld` in `queries/backup.sql` (chosen) | The function deletes the deltas and recomputes `repository_usage` from untrashed items and `storage_usage_totals` from live blobs in the caller's transaction; the query is the statement of R-BAK-007 that the per-blob transaction runs as step 2b | The sums stay next to the triggers; a test compares the function with the triggers' results; the collector's work package calls one named query | A function in the schema, which `trove migrate` has to apply before a restore can run it |
+
+**Choice:** (b).
+
+**Rationale:** R-STOR-003 and R-STOR-047 name the function but no migration created it. The development agent would revisit this when a counter is added to the fold, which changes the function in the same migration.
+
+**Applied:** R-STOR-003 "Recount", R-STOR-024 step 2b, R-STOR-047; `internal/meta/postgres/migrations/00046_backup.sql`, `internal/meta/postgres/queries/backup.sql`, `test/integration/postgres/backup_runstore_test.go`.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

@@ -190,6 +190,8 @@ checked every earlier decision against them:
 | [ADR-154](#adr-154--network-policies-are-ingress-rules-between-the-charts-pods-each-with-its-port) | Network policies are ingress rules between the chart's pods, each with its port | Accepted (owner constraint of 2026-11-04; both charts, owner decision of 2026-11-05) |
 | [ADR-155](#adr-155--three-roles-api-packages-and-worker-variants-are-pools) | Three roles: api, packages and worker; variants are pools | Accepted (owner decision of 2026-11-04; the fetch role dropped the same day) |
 | [ADR-156](#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project) | Projects own their repositories, members hold roles, names are scoped to the project | Accepted (owner decision of 2026-11-06); the details decided by the development agent — owner review at the walkthrough |
+| [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) | The backup lane is cut into ports, formats and registries that its work packages fill in files of their own | Decided by the development agent — owner review at the walkthrough |
+| [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) | A journal object is an envelope around the producer's entry, and replay is a registry of handlers | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -5950,6 +5952,68 @@ format's lister by its type, without importing the contract (Q-ARCH-284).
 
 **Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008 and Q-ARCH-284; [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-050.
 
+## Backup lane contracts
+
+### ADR-157 · The backup lane is cut into ports, formats and registries that its work packages fill in files of their own
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The backup lane (phase 7: create, retention and sweep, restore, the revocation journal, the npm and NuGet parts, the
+API and the chart) is built by several work packages in parallel. Without shared contracts they would edit the same files: the
+on-target format is read by the create pipeline, the sweep, verify and restore; the run record by every operation, the API and the
+collector; the restore's derived state belongs to the pages that own it.
+
+**Decision.** The shared shapes are fixed first, in packages that no work package owns afterwards
+([Q-BAK-14](spec/backup-and-restore.md#q-bak-14--the-package-cut-of-the-backup-lane)):
+`internal/backup/format` (backup ID, layout, marker, manifest, blob list and its merge), `internal/backup/target` (the port of the
+S3 target, with an in-memory fake), `internal/backup/fixup` (the registry of restore fix-ups and remote-cache purgers),
+`internal/backup` (exit codes, run states, the run store, the lease handle, the ports to the source database and blob store, the
+operation interfaces, the metric families) and `internal/journal` (below). The AWS SDK stays in `internal/blob/s3`
+([Q-BAK-15](spec/backup-and-restore.md#q-bak-15--the-s3-implementation-of-the-target-port-is-built-in-internalblobs3)); the pins are
+inserted in batches ([Q-BAK-17](spec/backup-and-restore.md#q-bak-17--the-to-copy-set-is-inserted-in-batches-with-unnest-not-with-copy-from-stdin));
+the backup commands load a configuration of their own and map every failure to the exit codes of R-BAK-013
+([Q-BAK-18](spec/backup-and-restore.md#q-bak-18--the-backup-commands-load-their-configuration-as-commandbackup-and-every-failure-maps-to-one-exit-code-and-one-failure-code)).
+Each command of `cmd/trove` has a file of its own with a constructor that returns `backup.NotBuilt` until its work package replaces
+the body. `backup` is a command of the one binary, not a role ([Q-ARCH-342](spec/architecture.md#q-arch-342--backup-is-a-command-journal-is-a-domain-package-and-the-lanes-registries-are-listed-as-frozen-state)).
+
+**Consequences.** The packages of the lane own disjoint files ([docs/developer/backup.md](developer/backup.md)). The run record, the
+fenced heartbeat and the one-active rule exist once, with an integration test. A parallel build can run against `targettest.Mem` and
+fakes of the ports before the S3 adapter exists.
+
+**Alternatives considered.** One `internal/backup` package; the SDK in the backup package; a `backup` serving role; a restore that
+lists its own fix-ups.
+
+**Revisit condition:** a package of the cut grows a second reason to change, or a target other than S3 is added.
+
+**Spec:** [spec/backup-and-restore.md](spec/backup-and-restore.md) Q-BAK-13 to Q-BAK-19, R-BAK-004, R-BAK-009, R-BAK-010, R-BAK-013, R-BAK-022;
+[spec/architecture.md](spec/architecture.md) R-ARCH-002 and Q-ARCH-342.
+
+### ADR-158 · A journal object is an envelope around the producer's entry, and replay is a registry of handlers
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The revocation journal (R-HA-054) has producers in every domain, which already write their entries through the audit
+event, and two commands replay it (`trove backup restore`, `trove admin post-restore`). The update rule that decides between
+applying, skipping and suspending is shared; the comparator that feeds it belongs to the page that owns the object.
+
+**Decision.** A journal object is `{v, id, at, event, entry}` with the producer's entry verbatim
+([Q-HA-140](spec/ha-and-helm.md#q-ha-140--a-journal-object-is-an-envelope-around-the-producers-entry)). A domain replays its events with
+`journal.Register` in a file of its own, and applies the update rule with `journal.ApplyUpdate[T]` over a `journal.Narrower[T]` that it
+implements ([Q-HA-141](spec/ha-and-helm.md#q-ha-141--replay-handlers-are-registered-per-event-name-by-the-domain-that-owns-the-event),
+[Q-AUTHZ-230](spec/authorization.md#q-authz-230--the-comparators-of-r-authz-031-are-journalnarrowert-implementations-in-the-owning-packages)).
+The reader lists the UTC days of the window and reports an object it cannot read
+([Q-HA-142](spec/ha-and-helm.md#q-ha-142--the-replay-reads-the-journal-by-day-prefixes-and-reports-what-it-cannot-read)).
+
+**Consequences.** The identity, authorization, CI, exposure, npm and NuGet parts are added by separate owners without a shared
+switch; an event type without a handler is reported `skipped`. The gap that a journal object can be overwritten with the runtime
+credential stays open ([H-553](spec/backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential)).
+
+**Alternatives considered.** The entry as the object; one replay function with a switch on the event; one comparator package.
+
+**Revisit condition:** an entry needs a value that the outbox row does not carry, or a replay needs a batch of entries.
+
+**Spec:** [spec/ha-and-helm.md](spec/ha-and-helm.md) R-HA-054 and Q-HA-140 to Q-HA-142; [spec/authorization.md](spec/authorization.md) R-AUTHZ-031.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -6145,6 +6209,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-332](spec/architecture.md#q-arch-332--where-the-shared-asset-store-of-the-ui-sits-in-the-code) | Where does the shared asset store of the UI sit in the code? | (a) an area `ui-assets` on `api`, `web` and `all`, the store in `internal/webui/shared`, the handler takes it as an interface | — |
 | [Q-ARCH-340](spec/architecture.md#q-arch-340--no-backward-compatibility-until-the-first-stable-release) | Does trove keep backward compatibility before its first stable release? | (a) no: the compatibility checks (the `compat` job with `make compat-check`, the immutable migrations, the expand/contract rules, the nightly upgrade set) are switched off until then, ready to be switched on at the first stable release; breaking changes are expected (owner, 2026-11-06; CLAUDE.md) | ADR-139 and ADR-148, superseded |
 | [Q-ARCH-341](spec/architecture.md#q-arch-341--code-shaped-only-by-the-compatibility-rules-is-cleaned-up-the-cluster-minimum-version-stays) | What happens to code shaped only by the compatibility rules? | (a) clean up the replica role enum, the cursor version and the audit boolean; keep the cluster minimum-version gate (owner, 2026-11-06); built | — |
+| [Q-ARCH-342](spec/architecture.md#q-arch-342--backup-is-a-command-journal-is-a-domain-package-and-the-lanes-registries-are-listed-as-frozen-state) | Is `backup` a role, and where does `journal` sit? | (b) a command of the one binary; `journal` in the domain layer; the two registries in the state rule | — |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
@@ -6331,6 +6396,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-STOR-154](spec/storage.md#q-stor-154--blobs-are-deduplicated-across-projects) | Are blobs deduplicated across projects? | (a) yes, globally, as built: one blob per content in the installation; the timing of a hit stays as gap H-552 (owner, 2026-11-06) | — |
 | [Q-STOR-155](spec/storage.md#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds) | Which storage figure is charged to a project? | (a) the logical size of the files it holds; the physical figure stays instance-wide (owner, 2026-11-06) | — |
 | [Q-STOR-158](spec/storage.md#q-stor-158--a-projects-figure-is-the-sum-of-its-repositories-folded-counters-and-reports-only) | Where does a project's figure come from, and does charging refuse uploads? Decided by the development agent | (a) the sum of its repositories' folded counters on read; reporting only, no project quota | — |
+| [Q-STOR-162](spec/storage.md#q-stor-162--the-usage-recount-is-a-sql-function-and-the-collectors-hold-check-is-a-generated-query) | Where do the usage recount and the hold check live? | (b) `storage_usage_recount()` in migration 00046 and `BackupBlobHeld` in `queries/backup.sql` | — |
 | [Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) | Where does login provider configuration live? | (a) the configuration file only, claim mapping, gates and group rules included; same choice as Q-OPS-6 | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7), [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) |
 | [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name) | Should the cookies use the `__Host-` prefix? | (c) all three: `__Host-trv_session`, `__Host-trv_csrf`, `__Host-trv_oidc_binding`; changes INV-8 | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8), [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) |
 | [Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation) | Refresh tokens or rotation only? | (a) no refresh tokens; rotation and repeated login are the renewal paths | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |
@@ -6495,6 +6561,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-AUTHZ-216](spec/authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project) | How does a selector name a repository once keys are unique per project? | (a) instance contexts `projectGlob/keyGlob[:format]` or a class for every project, project contexts bare keys; `*` does not cross `/`; a bare key in an instance context is refused | [ADR-156](#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project) |
 | [Q-AUTHZ-217](spec/authorization.md#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove) | Can a project lose its last Owner? | (a) only through an administrator of trove (`projects:write`); an Owner gets 409 `last_owner`; the count reads the membership rows under the project's lock | [ADR-156](#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project) |
 | [Q-AUTHZ-229](spec/authorization.md#q-authz-229--a-project-create-names-its-first-owners) | How does a new project get its first Owner? | (a) the create names `owners`, which become Owners in its transaction | — |
+| [Q-AUTHZ-230](spec/authorization.md#q-authz-230--the-comparators-of-r-authz-031-are-journalnarrowert-implementations-in-the-owning-packages) | Where do the narrowing comparators live? | (b) `journal.Narrower[T]` implemented by each owner | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
 | [Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings) | First match per tier, or union of all matching mappings? | (a) first match within a tier, union across tiers | [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) |
 | [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter) | Grammar of the exchange's `scope` parameter? | (c) an RFC 6749 scope string as notation for the repository part of the R-AUTH-024 scope | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
 | [Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences) | Accept ID tokens with several audiences? | (c) only if every audience is an allowed audience of the CI issuer | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |
@@ -6752,6 +6819,13 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-BAK-10](spec/backup-and-restore.md#q-bak-10--resuming-an-interrupted-restore) | Resuming an interrupted restore? | (c) automatic resumption keyed to the backup ID through a schema anchor, with the migration lock held for the whole restore | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) |
 | [Q-BAK-11](spec/backup-and-restore.md#q-bak-11--bounding-a-hung-backup-run) | Bounding a hung backup run? | (c) the run cancels itself after `backup.stall_timeout` (30 minutes) without progress; no `activeDeadlineSeconds` by default | [ADR-107](#adr-107--backup-runs-one-at-a-time-in-a-leased-row-cancelled-when-they-stall) |
 | [Q-BAK-12](spec/backup-and-restore.md#q-bak-12--the-backup-command-in-m0) | What does `trove backup` do in M0? | (c) the name is reserved; every subcommand returns "not implemented yet" | — |
+| [Q-BAK-13](spec/backup-and-restore.md#q-bak-13--where-the-manifest-schema-lives) | Where does the manifest schema live? | (b) `internal/backup/format/manifest.schema.json`, embedded by the package that owns the type | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
+| [Q-BAK-14](spec/backup-and-restore.md#q-bak-14--the-package-cut-of-the-backup-lane) | How is the backup lane cut into packages? | (b) `format`, `target`, `fixup`, the runner in `internal/backup`, and `internal/journal` as a package of its own | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
+| [Q-BAK-15](spec/backup-and-restore.md#q-bak-15--the-s3-implementation-of-the-target-port-is-built-in-internalblobs3) | Where is the S3 target built? | (b) a port `target.Store` in the domain, the adapter in `internal/blob/s3`, joined in `cmd/trove` | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
+| [Q-BAK-16](spec/backup-and-restore.md#q-bak-16--the-restores-fix-ups-are-a-registry-not-a-list-in-the-restore) | How does the restore know its fix-ups? | (b) a registry with an order, filled by the owner of the state | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
+| [Q-BAK-17](spec/backup-and-restore.md#q-bak-17--the-to-copy-set-is-inserted-in-batches-with-unnest-not-with-copy-from-stdin) | How are the pins inserted? | (b) batches of `unnest`, behind `RunStore.AddPins`; `COPY` in `meta/postgres` if the drill shows it is needed | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
+| [Q-BAK-18](spec/backup-and-restore.md#q-bak-18--the-backup-commands-load-their-configuration-as-commandbackup-and-every-failure-maps-to-one-exit-code-and-one-failure-code) | How do the backup commands load their configuration and report? | (b) `config.CommandBackup`, exit 2 on any configuration error, one mapping to exit and failure codes | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
+| [Q-BAK-19](spec/backup-and-restore.md#q-bak-19--the-run-store-the-lease-handle-and-the-slot-rule-are-shared-contracts-built-once) | Who implements the run record and the lease? | (b) `RunStore`, `Handle` and `AcquireSlot` in `internal/backup` | [ADR-157](#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own) |
 | [Q-HA-1](spec/ha-and-helm.md#q-ha-1--readiness-on-object-storage-failure) | Readiness on object-storage failure? | (d) gate only the first readiness; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-OPS-2 | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-HA-2](spec/ha-and-helm.md#q-ha-2--postgresql-version-floor) | PostgreSQL version floor? | (b) 16; raised only after a version's community end of life, announced one minor release ahead | [ADR-003](#adr-003--postgresql-as-the-database), [ADR-014](#adr-014--postgresql-is-the-system-of-record-valkey-holds-only-shared-ephemeral-state-inv-3) |
 | [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival) | Which S3 store for the local profile after MinIO's archival? | (e) SeaweedFS in the local profile and per-change CI; MinIO and AWS S3 nightly. Owner decision of 2026-10-29: the MinIO leg on every change, AWS S3 once an AWS account exists | [ADR-004](#adr-004--s3-as-binary-storage), [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |
@@ -6847,6 +6921,9 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-HA-132](spec/ha-and-helm.md#q-ha-132--the-bridge-guard-checks-readiness-only-on-the-upgrade-that-moves-the-edge) | When does the bridge guard check the readiness of the target shape? | (a) only while the edge is still on the bridge (the Ingress or an endpoint Service, read by `lookup`); with no edge to read, only a missing main `api` or `packages` | — |
 | [Q-HA-135](spec/ha-and-helm.md#q-ha-135--the-names-of-the-specification-win-and-the-binary-is-renamed-where-it-drifted) | Which names do the metrics of the alert expressions have: the specification's or the binary's? | (a) the specification's; the binary is renamed where it drifted (`trove_spool_*`, the empty-acquire counter) and exports the missing metrics that have a mechanism; the backup and revocation-journal gauges wait for their jobs | — |
 | [Q-HA-136](spec/ha-and-helm.md#q-ha-136--the-dev-edge-keeps-an-idle-client-connection-longer-than-npms-longest-retry-delay) | How long does the dev edge keep an idle client connection, against npm's retry delay of up to 60 s? | (a) 90 s (`timeout-keep-alive`), longer than the longest retry delay; the forwarder logs a connection that the target closed first | — |
+| [Q-HA-140](spec/ha-and-helm.md#q-ha-140--a-journal-object-is-an-envelope-around-the-producers-entry) | What is a journal object? | (b) `{v, id, at, event, entry}` with the producer's object verbatim in `entry` | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
+| [Q-HA-141](spec/ha-and-helm.md#q-ha-141--replay-handlers-are-registered-per-event-name-by-the-domain-that-owns-the-event) | How are journal entries replayed per domain? | (b) `journal.Register` per event and the generic `ApplyUpdate` over the owner's comparator | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
+| [Q-HA-142](spec/ha-and-helm.md#q-ha-142--the-replay-reads-the-journal-by-day-prefixes-and-reports-what-it-cannot-read) | How does the replay read the journal? | (b) the UTC days of the window; an unreadable object is reported and skipped | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) |
 | [Q-OPS-1](spec/operations-and-observability.md#q-ops-1--couple-liveness-to-prolonged-unreadiness) | Couple liveness to prolonged unreadiness? | (d) never; liveness is a watchdog over trove's own loops | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-OPS-2](spec/operations-and-observability.md#q-ops-2--should-object-storage-reachability-gate-readiness) | Should object-storage reachability gate readiness? | (d) gate only the first readiness, then report and degrade; continuous gating as an opt-in; changes INV-12; same choice as Q-STOR-1 and Q-HA-1 | [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
 | [Q-OPS-3](spec/operations-and-observability.md#q-ops-3--anonymous-access-to-the-version-endpoint) | Anonymous access to the version endpoint? | (b) authenticated by default; `system.public_version: true` opens it | — |
@@ -6919,6 +6996,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OPS-174](spec/operations-and-observability.md#q-ops-174--the-metrics-label-result-of-the-items-has-a-sixth-value-refused) | Is `refused` a result? | (a) yes | — |
 | [Q-OPS-175](spec/operations-and-observability.md#q-ops-175--the-admin-dashboards-runtime-figures-come-from-a-snapshot-each-replica-writes-with-its-heartbeat) | Where do the admin dashboard's latency and load figures come from? | (a) a runtime snapshot each replica writes with its heartbeat into the registry; counts from `GET /api/v1/system/overview` (owner, 2026-11-06) | — |
 | [Q-OPS-176](spec/operations-and-observability.md#q-ops-176--a-mirror-pass-that-outlives-its-repositorys-name-records-through-a-handle-that-the-deletion-of-the-series-invalidates) | How does a mirror pass that outlives its repository's name stop bringing the deleted series back? | (a) it records through a handle that `Metrics.Forget` invalidates under the lock the pass records under (development agent, 2026-11-07) | — |
+| [Q-OPS-180](spec/operations-and-observability.md#q-ops-180--the-last-success-and-last-failure-gauges-of-the-backup-have-no-series-until-the-event-happened) | Do the last-success and last-failure gauges exist before the event? | (b) no series until the first success or failure | — |
 | [Q-API-1](spec/api-and-ui.md#q-api-1--openapi-generation-approach) | How is the OpenAPI document produced? | (a) spec-first: oapi-codegen models and `net/http` server interface, openapi-typescript types, thin hand-written Angular clients | [ADR-083](#adr-083--the-openapi-31-document-is-the-api-contract) |
 | [Q-API-2](spec/api-and-ui.md#q-api-2--is-if-match-mandatory-on-writes) | Is `If-Match` mandatory on writes? | (b) required on PUT and PATCH of revisioned resources; `If-Match: *` is the explicit blind write | [ADR-084](#adr-084--uniform-api-conventions-problem-details-cursors-merge-patch-etags-idempotency-keys) |
 | [Q-API-3](spec/api-and-ui.md#q-api-3--cluster-wide-rate-limiting) | Cluster-wide rate limiting? | (e) cluster-wide sliding-window counters in Valkey (R-ARCH-034) with a per-replica fallback; revisited 2026-10-28; H-43 narrowed; same choice as Q-ARCH-17 | [ADR-102](#adr-102--cluster-wide-rate-limits-in-valkey-with-a-per-replica-fallback) |
@@ -6996,6 +7074,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-API-198](spec/api-and-ui.md#q-api-198--the-run-enqueues-first-so-that-the-exclusive-key-answers-whether-a-pass-is-queued-or-running-and-writes-the-request-after-it) | In what order does the run enqueue, record and refuse? | (a) enqueue first; the exclusive key answers 409; then the request and the event | — |
 | [Q-API-199](spec/api-and-ui.md#q-api-199--the-two-operations-decide-their-permission-in-the-handler-a-refused-reader-is-hidden-by-the-decision-on-read-and-a-project-administrator-runs-on-the-manage-it-holds) | Where and how are the permissions of status and run decided? | (a) in the handler; hidden through the decision on read; a project administrator runs on its `manage`; superseded in part by Q-AUTHZ-208 | [H-531](security/delegated-administration.md#h-531--a-run-can-be-requested-as-often-as-a-pass-ends) |
 | [Q-API-200](spec/api-and-ui.md#q-api-200--the-format-descriptors-mirror-is-a-required-boolean-read-from-the-catalog) | How does the format descriptor carry `mirror`? | (a) a required boolean from the catalog fact | — |
+| [Q-API-204](spec/api-and-ui.md#q-api-204--the-backup-endpoints-use-settingsread-list-summary-as-a-reserved-name-and-declare-their-state-fields-as-strings) | Which permission and which schema types do the backup endpoints use? | (b) `settings:read`, `summary` reserved, strings instead of enums | — |
 | [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) | Which component library? | (a) Angular Material with the CDK and `@angular/aria`; font icons | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested) | Shell layout and density? | (c) a left side bar, compact density, container queries | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested) | Layout of the package details page? | (c) two columns with a sticky install panel from 960 CSS px of content width; one column below | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |

@@ -20,7 +20,7 @@ func statePackages() []string {
 	return []string{
 		"internal/cache", "internal/cluster", "internal/observability",
 		"internal/formats", "internal/formats/catalog", "internal/jobs", "internal/errs", "internal/secrets",
-		"internal/meta", "internal/backup/tables", "internal/audit",
+		"internal/meta", "internal/backup/tables", "internal/backup/fixup", "internal/journal", "internal/audit",
 	}
 }
 

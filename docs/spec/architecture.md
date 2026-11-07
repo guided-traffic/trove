@@ -415,7 +415,8 @@ flowchart LR
 | cache | `internal/cache` | Bounded in-process caches and their invalidation hooks | R-ARCH-018 |
 | jobs | `internal/jobs` | Queue, workers, scheduler | R-ARCH-016 |
 | audit | `internal/audit` | Audit events | [operations-and-observability.md](operations-and-observability.md) |
-| backup | `internal/backup` | `trove backup` create, restore, list, verify and delete; the table registry | [backup-and-restore.md](backup-and-restore.md) |
+| backup | `internal/backup` | `trove backup` create, restore, list, verify and delete; the table registry (`tables`), the on-target format (`format`), the port of the target (`target`), the restore fix-ups (`fixup`) | [backup-and-restore.md](backup-and-restore.md) |
+| journal | `internal/journal` | The revocation journal: object, ports, replay handlers and the update rule | R-HA-054 in [ha-and-helm.md](ha-and-helm.md) |
 | observability | `internal/observability` | Logs, metrics, traces, health checks | [operations-and-observability.md](operations-and-observability.md) |
 | outbound | `internal/outbound` | Every outbound HTTP client | R-ARCH-022; settings in [repositories-and-proxy.md](repositories-and-proxy.md) |
 | secrets | `internal/secrets` | Stored-secret encryption, sealed-column registry, key-ring status | R-ARCH-021 |
@@ -441,9 +442,9 @@ Normative rules:
   (HA-006) therefore does not exist in trove.
 - Imports form layers:
   1. Edge: `httpserver`, `api/v1`, `api/edge`, `api/dispatch`, `webui`, `formats` (the contract and the format handlers), `formathost`.
-  2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `virtual`, `formatdata`, `authz`, `auth`, `jobs`, `audit`, `backup`.
+  2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `virtual`, `formatdata`, `authz`, `auth`, `jobs`, `audit`, `backup`, `journal`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `formats/nuget/id`, `formats/nuget/version`, `formats/nuget/nupkg`, `formats/nuget/nuspec`, `formats/<id>/rows`, `auth/scope`, `auth/jws` (the compact-JWS verifier the login and the CI exchange share, Q-CI-19), `ci/reason`, `ci/claims`, `ci/subject` (the pure parts of the CI federation, Q-CI-21). Every layer may import them, and they import only each other.
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `backup/target` (the port of the backup target, Q-BAK-15), `tlsfiles`, `formats/catalog`, `formats/nuget/id`, `formats/nuget/version`, `formats/nuget/nupkg`, `formats/nuget/nuspec`, `formats/<id>/rows`, `auth/scope`, `auth/jws` (the compact-JWS verifier the login and the CI exchange share, Q-CI-19), `ci/reason`, `ci/claims`, `ci/subject` (the pure parts of the CI federation, Q-CI-21). Every layer may import them, and they import only each other.
      `formats/<id>/rows` is the values of a format's data port, shared by the format and `formatdata/<id>` (Q-ARCH-193). It is a leaf by rule, not by a
      list entry: archtest's `layerOf` gives every `internal/formats/<id>/rows` the leaf layer, and `CheckLayers` fails it when it imports anything but `errs` and
      the standard library (npm and NuGet each have one).
@@ -536,7 +537,7 @@ Acceptance criteria:
   `sync.Map` type outside `internal/cache`, `internal/cluster`, `internal/observability` and the
   registries that are frozen at start-up: `internal/formats`, `internal/jobs`, `internal/errs`,
   `internal/secrets`, `internal/meta` (the revision-column registry, R-ARCH-009) and
-  `internal/backup/tables` (the table registry) and `internal/audit` (the event registry, R-OPS-014).
+  `internal/backup/tables` (the table registry), `internal/backup/fixup` (the restore fix-ups, R-BAK-022), `internal/journal` (the replay handlers, R-HA-054) and `internal/audit` (the event registry, R-OPS-014).
   A package-level `*regexp.Regexp` is exempt; generated
   files, variables with a `//go:embed` directive and variables of interface type are not checked
   (Q-ARCH-19).
@@ -9226,6 +9227,21 @@ removed, `npm.audit.mode` is `local | forward | disabled`), `internal/api/v1/rol
 of another shape is refused with `invalid_cursor`), `internal/formats/npm` (`settings.go`, `settings.schema.json`,
 `handlers_audit_local.go`), the status screen of the UI (`web/src/app/features/system`). The audit setting lives in the repository
 document, so no migration and no database column changed.
+
+### Q-ARCH-342 · `backup` is a command, `journal` is a domain package, and the lane's registries are listed as frozen state
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `backup` serving role | A fourth role with a Deployment | One more entry in the role table | R-BAK-009 says the backup never listens on a client port; a role is a replica that serves or claims jobs (INV-2) |
+| (b) A command of the one binary; `internal/journal` joins the domain layer; `internal/backup/fixup` and `internal/journal` are listed with the registries that are filled at start-up (chosen) | `TestR_ARCH_001_RoleTableIsData` is unchanged; the layer table gains one line; the state rule names the two registries | No role to wire; the layering test keeps the journal out of the edge | The state rule has two more entries |
+
+**Choice:** (b).
+
+**Rationale:** R-ARCH-001's own table already lists `backup` as a subcommand and not as a role. The development agent would revisit this if a backup ever serves a listener.
+
+**Applied:** R-ARCH-002, R-ARCH-032; `internal/archtest/layers.go` (`journal` in the domain layer, `backup/target` a leaf), `internal/archtest/state.go`.
 
 ## What this does not cover
 

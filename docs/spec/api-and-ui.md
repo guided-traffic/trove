@@ -2375,13 +2375,13 @@ Every value comes from PostgreSQL (`backup_run`, `system_state`) and the replica
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/system/backups` | Runs, newest first; filters `operation` (`create`, `delete`, `verify`), `state`, `trigger`, `startedFrom`, `startedTo`; cursor-paged (R-API-010), `includeTotal` allowed | `system.read` |
-| GET | `/api/v1/system/backups/{runId}` | One run | `system.read` |
-| GET | `/api/v1/system/backups/summary` | Status of the backup job: last success, overdue, last failure, active run, stored backups and the retention that produced them, target, restore origin, manual-run command | `system.read` |
+| GET | `/api/v1/system/backups` | Runs, newest first; filters `operation` (`create`, `delete`, `verify`), `state`, `trigger`, `startedFrom`, `startedTo`; cursor-paged (R-API-010), `includeTotal` allowed | `settings:read` |
+| GET | `/api/v1/system/backups/{runId}` | One run | `settings:read` |
+| GET | `/api/v1/system/backups/summary` | Status of the backup job: last success, overdue, last failure, active run, stored backups and the retention that produced them, target, restore origin, manual-run command | `settings:read` |
 
 No endpoint starts, deletes, verifies or restores a backup, in any priority (Q-API-10); a manual
 run is `kubectl create job --from=cronjob/<name>`, which R-UI-048 shows. `{runId}` is a
-server-generated UUID, so `summary` needs no reservation (R-API-004). The `backup` block of
+server-generated UUID, so `summary` can never be a run; the route check of R-API-004 still lists it as a reserved name of `runId` (Q-API-204). `state`, `operation` and `trigger` are strings in the schema (Q-API-204). The `backup` block of
 `/api/v1/system/info` (R-OPS-004, R-API-038) repeats the last success, the overdue mark and the
 state of the newest run in short form, under the same overdue rule.
 
@@ -8562,6 +8562,21 @@ seed).
 **Rationale:** the least styling that works in both schemes. The development agent would revisit this when the owner
 wants a coloured background per user (`backgroundColor` in the options).
 **Applied:** R-UI-002. Code: `web/src/styles/_shell.scss` (`.avatar`), `web/src/app/shared/ui/avatar.ts`.
+
+### Q-API-204 · The backup endpoints use `settings:read`, list `summary` as a reserved name and declare their state fields as strings
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Follow the table of R-API-050 literally | The permission is `system.read`; `summary` needs no reservation; `state`, `operation` and `trigger` are enums | Matches the text | `system.read` is the name of the capability `settings:read` (R-OPS page); the route check of R-API-004 lists every literal sibling of a `{key}` segment; the code generator renames the existing `ReplicaState` constants when a second enum has the values `failed` or `completed`, which would change the code of every other page |
+| (b) `settings:read`, `summary` in `x-trove-reserved-names`, strings with the values in the description (chosen) | The operations declare `permission: settings:read`; `BackupRunId` lists `summary`; the schema types are strings | No other page's generated names change; the check passes; the authorization step needs no new permission | The generated client does not type the state; the UI compares strings |
+
+**Choice:** (b).
+
+**Rationale:** The three choices follow from the existing code: the declared permission names, the reserved-name test and the generator's collision rule. A UUID never equals `summary`, so the reservation costs nothing. The development agent would revisit the string types when the generator keeps enum constants per type.
+
+**Applied:** R-API-050 table and permission column; `api/openapi.yaml` (M5 backup); `internal/api/v1/backups_api.go`.
 
 ## What this does not cover
 

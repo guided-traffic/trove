@@ -11166,6 +11166,173 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M6b mirror
   #
+  # >>> M5 backup
+  /api/v1/system/backups:
+    get:
+      operationId: listBackupRuns
+      tags: [system]
+      summary: List backup runs
+      description: |
+        The runs of the backup job (R-API-050, R-BAK-014), newest first: creates, deletes and verifies, from `backup_run`.
+        The answer shows what the runs recorded in PostgreSQL; the replicas hold no target credential and never read the
+        target, so the live contents of the target are `trove backup list`. `leaseExpired` is true for a run in an active
+        state whose lease has passed; the next run will mark it `abandoned`. Cursor pagination (R-API-010) over
+        `(startedAt, id)`; `includeTotal=true` adds `total`. No endpoint starts, deletes, verifies or restores a backup
+        (Q-API-10): a manual run is `kubectl create job --from=cronjob/<name>`.
+      x-trove-permission:
+        permission: settings:read
+      parameters:
+        - name: operation
+          in: query
+          description: "`create`, `delete` or `verify`."
+          schema:
+            type: string
+        - name: state
+          in: query
+          description: One of the states of R-BAK-009, for example `failed` or `completed_with_warnings`.
+          schema:
+            type: string
+        - name: trigger
+          in: query
+          description: "`schedule` or `manual`."
+          schema:
+            type: string
+        - name: startedFrom
+          in: query
+          description: Runs started at or after this time.
+          schema:
+            type: string
+            format: date-time
+        - name: startedTo
+          in: query
+          description: Runs started before this time.
+          schema:
+            type: string
+            format: date-time
+        - name: includeTotal
+          in: query
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of runs.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRunList"
+              example:
+                items:
+                  - id: 01933c4e-2f10-7b3a-9c1d-5e8f7a6b4c21
+                    operation: create
+                    backupId: 20261028T020000Z-7f3a
+                    state: copying
+                    trigger: schedule
+                    pod: trove-backup-29885880-x7k2q
+                    troveVersion: 0.4.0
+                    target: s3://trove-backups/trove
+                    startedAt: "2026-10-28T02:00:04.112Z"
+                    heartbeatAt: "2026-10-28T02:41:19.870Z"
+                    leaseExpired: false
+                    finishedAt: null
+                    snapshotAt: "2026-10-28T02:00:09.448Z"
+                    progress: {phase: copying, tablesDone: 41, tablesTotal: 58, blobsToCopy: 1204, blobsCopied: 830, bytesCopied: 9123456789}
+                    result: null
+                    error: null
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/backups/summary:
+    get:
+      operationId: getBackupSummary
+      tags: [system]
+      summary: Status of the backup job
+      description: |
+        The last success, the overdue mark, the last failure, the active run, the stored backups and the retention that
+        produced them, the target, the restore origin and the manual-run command (R-API-050, R-BAK-014). `overdue` is true
+        when the last success is older than 1.5 times `expectedIntervalSeconds`, the condition on which `TroveBackupStale`
+        fires, so API, UI and alert agree; `null` when no run has succeeded. `storedBackups` and `retention` come from the
+        newest create or delete run that listed the target (Q-API-11) and are `null` until such a run exists.
+      x-trove-permission:
+        permission: settings:read
+      responses:
+        "200":
+          description: The summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupSummary"
+              example:
+                expectedIntervalSeconds: 86400
+                lastSuccessAt: "2026-10-27T02:47:31.009Z"
+                overdue: false
+                lastFailure: null
+                active: {id: 01933c4e-2f10-7b3a-9c1d-5e8f7a6b4c21, operation: create, state: copying, startedAt: "2026-10-28T02:00:04.112Z", leaseExpired: false}
+                target: s3://trove-backups/trove
+                retention: {keepLast: 7, keepWithinSeconds: 0}
+                storedBackups:
+                  asOf: "2026-10-27T02:47:31.009Z"
+                  runId: 01933a1b-8c22-7e41-b0f3-2a6d9e4c7b10
+                  items:
+                    - {backupId: 20261027T020000Z-1c9e, snapshotAt: "2026-10-27T02:00:08.913Z", troveVersion: 0.4.0, schemaStep: 42, databaseBytes: 183500800, blobCount: 51234, blobBytes: 412316860416, damaged: false}
+                restoredFrom: null
+                manualRun: {namespace: trove, cronJob: trove-backup}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/system/backups/{runId}:
+    get:
+      operationId: getBackupRun
+      tags: [system]
+      summary: Read a backup run
+      description: One run of the backup job (R-API-050). `{runId}` is the server-generated UUID of the run.
+      x-trove-permission:
+        permission: settings:read
+      parameters:
+        - $ref: "#/components/parameters/BackupRunId"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M5 backup
 components:
   securitySchemes:
     bearerAuth:
@@ -11295,6 +11462,14 @@ components:
         type: string
         minLength: 1
         maxLength: 255
+    BackupRunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        x-trove-reserved-names: [summary]
     JobId:
       name: id
       in: path
@@ -17331,3 +17506,238 @@ components:
           format: int64
           description: The repository's logical bytes (R-REPO-052), as the usage counters report them.
     # <<< M6b mirror
+    # >>> M5 backup
+    BackupProgress:
+      type: object
+      description: What the heartbeat of the run last wrote (R-BAK-009); members that do not apply to the phase are absent.
+      properties:
+        phase:
+          type: string
+        tablesDone:
+          type: integer
+        tablesTotal:
+          type: integer
+        blobsToCopy:
+          type: integer
+          format: int64
+        blobsCopied:
+          type: integer
+          format: int64
+        bytesCopied:
+          type: integer
+          format: int64
+        pinsLeft:
+          type: integer
+          format: int64
+        snapshotOpenSince:
+          type: string
+          format: date-time
+    BackupRun:
+      type: object
+      description: One row of `backup_run` in the names of R-API-003 (R-API-050).
+      required: [id, operation, backupId, state, trigger, pod, troveVersion, target, startedAt, heartbeatAt, leaseExpired, finishedAt, snapshotAt, progress, result, error]
+      properties:
+        id:
+          type: string
+          format: uuid
+        operation:
+          type: string
+          description: "`create`, `delete` or `verify`."
+        backupId:
+          type: [string, "null"]
+          description: The backup ID of R-BAK-002; `null` for a delete run of several backups.
+        state:
+          type: string
+          description: "`starting`, `snapshot`, `copying`, `finalizing`, `pruning`, `completed`, `completed_with_warnings`, `failed`, `interrupted` or `abandoned` (R-BAK-009)."
+        trigger:
+          type: string
+          description: "`schedule` or `manual`."
+        pod:
+          type: string
+          description: The pod of the run; a Job created by hand carries the name its creator chose.
+        troveVersion:
+          type: string
+        target:
+          type: string
+          description: "`s3://<bucket>/<prefix>` as recorded; never a credential."
+        startedAt:
+          type: string
+          format: date-time
+        heartbeatAt:
+          type: string
+          format: date-time
+        leaseExpired:
+          type: boolean
+          description: True for a run in an active state whose lease has passed (R-BAK-010).
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        snapshotAt:
+          type: [string, "null"]
+          format: date-time
+        progress:
+          $ref: "#/components/schemas/BackupProgress"
+        result:
+          type: [object, "null"]
+          description: The manifest summary, the retention outcome and the warnings (R-BAK-009, R-BAK-016).
+          additionalProperties: true
+        error:
+          type: [object, "null"]
+          description: The stored problem object; its `code` is stable (R-UI-042).
+          additionalProperties: true
+    BackupRunList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupRun"
+        nextCursor:
+          type: [string, "null"]
+          description: Opaque; `null` on the last page.
+        total:
+          type: integer
+          format: int64
+          description: Present with `includeTotal=true`.
+    BackupLastFailure:
+      type: object
+      required: [runId, at, code]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        at:
+          type: string
+          format: date-time
+        code:
+          type: [string, "null"]
+    BackupActiveRun:
+      type: object
+      required: [id, operation, state, startedAt, leaseExpired]
+      properties:
+        id:
+          type: string
+          format: uuid
+        operation:
+          type: string
+          description: "`create`, `delete` or `verify`."
+        state:
+          type: string
+          description: "`starting`, `snapshot`, `copying`, `finalizing`, `pruning`, `completed`, `completed_with_warnings`, `failed`, `interrupted` or `abandoned` (R-BAK-009)."
+        startedAt:
+          type: string
+          format: date-time
+        leaseExpired:
+          type: boolean
+    BackupRetention:
+      type: object
+      required: [keepLast, keepWithinSeconds]
+      properties:
+        keepLast:
+          type: integer
+        keepWithinSeconds:
+          type: integer
+          format: int64
+    StoredBackup:
+      type: object
+      required: [backupId, snapshotAt, troveVersion, schemaStep, databaseBytes, blobCount, blobBytes, damaged]
+      properties:
+        backupId:
+          type: string
+        snapshotAt:
+          type: string
+          format: date-time
+        troveVersion:
+          type: string
+        schemaStep:
+          type: integer
+        databaseBytes:
+          type: integer
+          format: int64
+        blobCount:
+          type: integer
+          format: int64
+        blobBytes:
+          type: integer
+          format: int64
+        damaged:
+          type: boolean
+    StoredBackups:
+      type: object
+      description: The complete backups the newest create or delete run found after its own deletions (Q-API-11).
+      required: [asOf, runId, items]
+      properties:
+        asOf:
+          type: string
+          format: date-time
+        runId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoredBackup"
+    BackupRestoredFrom:
+      type: object
+      description: "`system_state.restored_from` after a restore (R-BAK-022)."
+      required: [installationId, incarnation, backupId, snapshotAt]
+      properties:
+        installationId:
+          type: string
+        incarnation:
+          type: string
+        backupId:
+          type: string
+        snapshotAt:
+          type: string
+          format: date-time
+    BackupManualRun:
+      type: object
+      description: What the chart renders into `backup.manual_run`, so the UI can show the exact command; each is `null` when unset.
+      required: [namespace, cronJob]
+      properties:
+        namespace:
+          type: [string, "null"]
+        cronJob:
+          type: [string, "null"]
+    BackupSummary:
+      type: object
+      required: [expectedIntervalSeconds, lastSuccessAt, overdue, lastFailure, active, target, retention, storedBackups, restoredFrom, manualRun]
+      properties:
+        expectedIntervalSeconds:
+          type: integer
+          format: int64
+          description: "`backup.expected_interval`, the value behind `trove_backup_expected_interval_seconds` and `TroveBackupStale`."
+        lastSuccessAt:
+          type: [string, "null"]
+          format: date-time
+        overdue:
+          type: [boolean, "null"]
+          description: True when `lastSuccessAt` is older than 1.5 times the expected interval; `null` with no successful run.
+        lastFailure:
+          oneOf:
+            - $ref: "#/components/schemas/BackupLastFailure"
+            - type: "null"
+        active:
+          oneOf:
+            - $ref: "#/components/schemas/BackupActiveRun"
+            - type: "null"
+        target:
+          type: [string, "null"]
+          description: The target of the newest run, as recorded; `null` before any run.
+        retention:
+          oneOf:
+            - $ref: "#/components/schemas/BackupRetention"
+            - type: "null"
+        storedBackups:
+          oneOf:
+            - $ref: "#/components/schemas/StoredBackups"
+            - type: "null"
+        restoredFrom:
+          oneOf:
+            - $ref: "#/components/schemas/BackupRestoredFrom"
+            - type: "null"
+        manualRun:
+          $ref: "#/components/schemas/BackupManualRun"
+    # <<< M5 backup

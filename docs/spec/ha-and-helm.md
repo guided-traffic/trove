@@ -3253,11 +3253,12 @@ CREATE TABLE revocation_outbox (
 );
 ```
 
-Journal objects (examples, one object per line):
+Journal objects (examples, one object per line). The envelope is `v`, `id`, `at` and `event`; `entry` is the object the
+producer passed with the audit event, verbatim (Q-HA-140). The names inside `entry` are the owning page's:
 
 ```json
-{"v": 1, "id": "0192f0c4-7a1e-7c3b-9d2e-5b8f1a2c3d4e", "at": "2026-10-28T12:00:03.114Z", "event": "token.revoked", "subject": {"type": "token", "id": "0192f0a1-…"}, "actor": "user:alice"}
-{"v": 1, "id": "0192f0d2-…", "at": "2026-10-28T12:04:41.902Z", "event": "authz.policy.updated", "subject": {"type": "permission_policy", "id": "0191aa07-…"}, "before": {"entries": [{"principal": "group:team-web", "actions": ["deploy", "read"]}]}, "after": {"entries": [{"principal": "group:team-web", "actions": ["read"]}]}, "actor": "user:sec-alice"}
+{"v": 1, "id": "0192f0c4-7a1e-7c3b-9d2e-5b8f1a2c3d4e", "at": "2026-10-28T12:00:03.114Z", "event": "token.revoked", "entry": {"tokenId": "0192f0a1-…", "reason": "admin"}}
+{"v": 1, "id": "0192f0d2-…", "at": "2026-10-28T12:04:41.902Z", "event": "authz.policy.updated", "entry": {"policyId": "0191aa07-…", "name": "team-web-publish", "before": {"entries": [{"principal": "group:team-web", "actions": ["deploy", "read"]}]}, "after": {"entries": [{"principal": "group:team-web", "actions": ["read"]}]}}}
 ```
 
 Configuration:
@@ -8261,6 +8262,51 @@ edge's limit (then the cause is elsewhere) or when a client waits longer than 90
 
 **Applied:** `deploy/dev/haproxy-values.yaml` (`timeout-keep-alive: 90s`), `test/e2e/clients/fwd/main.go` (closing line, tests in `main_test.go`),
 [developer/e2e.md](../developer/e2e.md) (forwarder), F-70 in [projektplan/promt.md](../projektplan/promt.md). No requirement text changed.
+
+### Q-HA-140 · A journal object is an envelope around the producer's entry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The producer's entry is the object | The entry carries `v`, `id`, `at`, `event` itself | One level | Every producer would have to repeat the four envelope members and could get one wrong; the entries in the code (`internal/auth/token`, `internal/auth/principal`, `internal/project`, `internal/formatdata/*`) are already shaped by their owners without them |
+| (b) `{"v", "id", "at", "event", "entry"}` with the producer's object verbatim in `entry` (chosen) | `journal.NewObject` builds it from the `revocation_outbox` row; the shipper never interprets `entry` | The envelope is one function; the same row always produces the same bytes (a repeated shipment is harmless); a new producer needs no change here | The examples of this requirement showed `subject` and `before`/`after` at the top level, and change |
+
+**Choice:** (b).
+
+**Rationale:** The audit writer already stores the producer's entry in `revocation_outbox.entry`, and the outbox row has the other four values. Wrapping them keeps the producers independent of the journal's format and gives the reader a version to refuse (`ErrUnknownVersion`). The development agent would revisit this if an entry needs a value that the outbox row does not have.
+
+**Applied:** R-HA-054 examples; `internal/journal/object.go`.
+
+### Q-HA-141 · Replay handlers are registered per event name by the domain that owns the event
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One replay function with a switch on the event name | A package `replay` knows every domain | Everything in one place | Identity, authorization, CI, exposure, npm and NuGet owners would edit one file; the import graph would make the replay depend on every domain |
+| (b) `journal.Register(Handler{Domain, Events, Apply})` in a file of the owning domain, and `journal.ApplyUpdate` for the update rule (chosen) | A handler applies one entry in its own transaction as the owner credential and returns an outcome; `ApplyUpdate[T]` is the three-case rule of this requirement over the owner's `Narrower[T]` | The update rule exists once and is tested once; a domain adds its events without touching another's; an event type without a handler is `skipped` | A registry (frozen at start-up, R-ARCH-032) |
+
+**Choice:** (b).
+
+**Rationale:** The comparator is the owning page's (R-AUTHZ-031, R-EP-020, R-CI-020), and the rule that chooses between applying, skipping and suspending is this page's. Splitting them along the two owners is what the generic function does. The development agent would revisit this if a replay needs several entries at once (a handler for a batch).
+
+**Applied:** R-HA-054 "Dispatch" and "Replay rules"; `internal/journal/replay.go`.
+
+### Q-HA-142 · The replay reads the journal by day prefixes and reports what it cannot read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) List the whole journal | One listing of `_journal/revocations/` | Simple | The journal is kept for as long as the operator keeps it; a restore lists years of keys for the entries of one interval |
+| (b) List the UTC days from `snapshotAt - replay_margin` to now, read each object, report an object that does not decode (chosen) | `journal.DayPrefixes`; an object that is unreadable or newer than this binary reads is returned as `Unreadable` and printed `skipped`; it never stops the replay | Bounded work; one forged or damaged object cannot block the replay of the others; the output shows what was lost (H-553) | A day boundary is a prefix boundary; the margin is always rounded to whole days |
+
+**Choice:** (b).
+
+**Rationale:** The key layout of this requirement already names the day. The margin covers transactions that started before the snapshot and committed after it, which a day prefix includes. The development agent would revisit this if a store lists a prefix of millions of keys too slowly.
+
+**Applied:** R-HA-054 "Replay run"; `internal/journal/object.go` (`DayPrefixes`), `internal/journal/ports.go` (`Reader`).
 
 ## What this does not cover
 

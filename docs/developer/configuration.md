@@ -20,9 +20,10 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 | [rules.go](../../internal/config/rules.go), [value.go](../../internal/config/value.go), [units.go](../../internal/config/units.go) | `validate` tag rules, text and YAML value parsing, `ByteSize` |
 | [secret.go](../../internal/config/secret.go), [report.go](../../internal/config/report.go) | the `Secret` type; `Report`, `Validator`, `CommandValidator`, `Command`, `Error` |
 | [effective.go](../../internal/config/effective.go), [jsonschema.go](../../internal/config/jsonschema.go), [schemagen](../../internal/config/schemagen/main.go), [schema.json](../../internal/config/schema.json), [bastion.schema.json](../../internal/config/bastion.schema.json) | redacted view, JSON Schema generator and its committed outputs (the main tree's and the role bastion's) |
+| [backup.go](../../internal/config/backup.go) | the section `backup`: target, database, copy, retention, lease and journal keys, see [Backup keys](#backup-keys) |
 | [bastions.go](../../internal/config/bastions.go), [bastion_role.go](../../internal/config/bastion_role.go) | the main installation's section `bastions`, and the configuration tree of the role bastion (`BastionConfig`, `LoadBastion`), see [Bastion keys](#bastion-keys) |
 
-Sections that exist in the specification but have no owner yet are not in the tree: `backup`, `retention`,
+Sections that exist in the specification but have no owner yet are not in the tree: `retention`,
 `ci`, `proxy` (apart from the keys listed under [M2 keys](#m2-keys)), `support`,
 `config_as_code` (apart from `secrets_dir`), `webhooks`, `mail`, `content_types`. Of `ui`, only the keys under
 [M2 keys](#m2-keys) exist. Strict validation rejects a file that sets them
@@ -142,6 +143,17 @@ The `vulnerabilities` section ([vulnerabilities.go](../../internal/config/vulner
 `maintenance.tasks`. `Vulnerabilities.Validate` refuses what R-VULN-025's criterion names, each time with the key: `max_shrink` outside 0 to 1, an `ecosystems` entry of no format of this
 release (the fixed list `npm`, `NuGet`, spelled as OSV spells them), `mode: repository` without `repository` or with a `repository` that is not a qualified name `<projectKey>/<repoKey>`, a source URL that is not an https URL (INV-20), and an `epss` mode other than
 `off`. A source URL is checked also while its source is off, so a typo does not wait for the day the mode changes.
+
+## Backup keys
+
+The `backup` section ([backup.go](../../internal/config/backup.go), [backup.md](backup.md)): `target.*` (endpoint, region, bucket, prefix, `force_path_style`, `allow_insecure_endpoint`,
+`ca_file`, `storage_class`, `allow_same_bucket`, `credentials.*` with the keys of `storage.s3.credentials`, `sse.*` with the default `s3`), `database.*` (`parallel`, `lock_timeout`,
+`migration_wait`, `part_size`), `copy.*` (`concurrency`, `server_side`, `part_size`, `check_existing`, `bytes_per_second`), `compression_level`, `exclude.remote_caches`, `retention.*`
+(`keep_last`, `keep_within`, `sweep_interval`), `expected_interval`, `manual_run.*`, `lease_duration`, `heartbeat_interval`, `stall_timeout`, `finalize_timeout`, `verify_sample`, `run_history` and
+`revocation_journal.*` (`enabled`, `ship_interval`, `replay_margin`), each with the default of R-BAK-011 and R-HA-054. `Backup.Validate` refuses the combinations R-BAK-011 names (the lease
+against the heartbeat and the finalize timeout, `migration_wait` against `stall_timeout`, the target prefix and endpoint, the credential and SSE modes), and `Config.validateBackupCoupling`
+refuses a target on the blob store's endpoint and bucket unless `allow_same_bucket` is set (R-BAK-002). The command `trove backup` loads the configuration as `CommandBackup`, which requires
+`backup.target.bucket`; a configuration error exits 2. The platform keys `recovery_window` and `object_versioning` of R-HA-023 are not in the section yet.
 
 ## Bastion keys
 

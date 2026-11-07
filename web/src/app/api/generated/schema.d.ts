@@ -4056,6 +4056,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List backup runs
+         * @description The runs of the backup job (R-API-050, R-BAK-014), newest first: creates, deletes and verifies, from `backup_run`.
+         *     The answer shows what the runs recorded in PostgreSQL; the replicas hold no target credential and never read the
+         *     target, so the live contents of the target are `trove backup list`. `leaseExpired` is true for a run in an active
+         *     state whose lease has passed; the next run will mark it `abandoned`. Cursor pagination (R-API-010) over
+         *     `(startedAt, id)`; `includeTotal=true` adds `total`. No endpoint starts, deletes, verifies or restores a backup
+         *     (Q-API-10): a manual run is `kubectl create job --from=cronjob/<name>`.
+         */
+        get: operations["listBackupRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/backups/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status of the backup job
+         * @description The last success, the overdue mark, the last failure, the active run, the stored backups and the retention that
+         *     produced them, the target, the restore origin and the manual-run command (R-API-050, R-BAK-014). `overdue` is true
+         *     when the last success is older than 1.5 times `expectedIntervalSeconds`, the condition on which `TroveBackupStale`
+         *     fires, so API, UI and alert agree; `null` when no run has succeeded. `storedBackups` and `retention` come from the
+         *     newest create or delete run that listed the target (Q-API-11) and are `null` until such a run exists.
+         */
+        get: operations["getBackupSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/backups/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a backup run
+         * @description One run of the backup job (R-API-050). `{runId}` is the server-generated UUID of the run.
+         */
+        get: operations["getBackupRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8107,6 +8176,146 @@ export interface components {
              */
             usedBytes: number;
         };
+        /** @description What the heartbeat of the run last wrote (R-BAK-009); members that do not apply to the phase are absent. */
+        BackupProgress: {
+            phase?: string;
+            tablesDone?: number;
+            tablesTotal?: number;
+            /** Format: int64 */
+            blobsToCopy?: number;
+            /** Format: int64 */
+            blobsCopied?: number;
+            /** Format: int64 */
+            bytesCopied?: number;
+            /** Format: int64 */
+            pinsLeft?: number;
+            /** Format: date-time */
+            snapshotOpenSince?: string;
+        };
+        /** @description One row of `backup_run` in the names of R-API-003 (R-API-050). */
+        BackupRun: {
+            /** Format: uuid */
+            id: string;
+            /** @description `create`, `delete` or `verify`. */
+            operation: string;
+            /** @description The backup ID of R-BAK-002; `null` for a delete run of several backups. */
+            backupId: string | null;
+            /** @description `starting`, `snapshot`, `copying`, `finalizing`, `pruning`, `completed`, `completed_with_warnings`, `failed`, `interrupted` or `abandoned` (R-BAK-009). */
+            state: string;
+            /** @description `schedule` or `manual`. */
+            trigger: string;
+            /** @description The pod of the run; a Job created by hand carries the name its creator chose. */
+            pod: string;
+            troveVersion: string;
+            /** @description `s3://<bucket>/<prefix>` as recorded; never a credential. */
+            target: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            heartbeatAt: string;
+            /** @description True for a run in an active state whose lease has passed (R-BAK-010). */
+            leaseExpired: boolean;
+            /** Format: date-time */
+            finishedAt: string | null;
+            /** Format: date-time */
+            snapshotAt: string | null;
+            progress: components["schemas"]["BackupProgress"];
+            /** @description The manifest summary, the retention outcome and the warnings (R-BAK-009, R-BAK-016). */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** @description The stored problem object; its `code` is stable (R-UI-042). */
+            error: {
+                [key: string]: unknown;
+            } | null;
+        };
+        BackupRunList: {
+            items: components["schemas"]["BackupRun"][];
+            /** @description Opaque; `null` on the last page. */
+            nextCursor: string | null;
+            /**
+             * Format: int64
+             * @description Present with `includeTotal=true`.
+             */
+            total?: number;
+        };
+        BackupLastFailure: {
+            /** Format: uuid */
+            runId: string;
+            /** Format: date-time */
+            at: string;
+            code: string | null;
+        };
+        BackupActiveRun: {
+            /** Format: uuid */
+            id: string;
+            /** @description `create`, `delete` or `verify`. */
+            operation: string;
+            /** @description `starting`, `snapshot`, `copying`, `finalizing`, `pruning`, `completed`, `completed_with_warnings`, `failed`, `interrupted` or `abandoned` (R-BAK-009). */
+            state: string;
+            /** Format: date-time */
+            startedAt: string;
+            leaseExpired: boolean;
+        };
+        BackupRetention: {
+            keepLast: number;
+            /** Format: int64 */
+            keepWithinSeconds: number;
+        };
+        StoredBackup: {
+            backupId: string;
+            /** Format: date-time */
+            snapshotAt: string;
+            troveVersion: string;
+            schemaStep: number;
+            /** Format: int64 */
+            databaseBytes: number;
+            /** Format: int64 */
+            blobCount: number;
+            /** Format: int64 */
+            blobBytes: number;
+            damaged: boolean;
+        };
+        /** @description The complete backups the newest create or delete run found after its own deletions (Q-API-11). */
+        StoredBackups: {
+            /** Format: date-time */
+            asOf: string;
+            /** Format: uuid */
+            runId: string;
+            items: components["schemas"]["StoredBackup"][];
+        };
+        /** @description `system_state.restored_from` after a restore (R-BAK-022). */
+        BackupRestoredFrom: {
+            installationId: string;
+            incarnation: string;
+            backupId: string;
+            /** Format: date-time */
+            snapshotAt: string;
+        };
+        /** @description What the chart renders into `backup.manual_run`, so the UI can show the exact command; each is `null` when unset. */
+        BackupManualRun: {
+            namespace: string | null;
+            cronJob: string | null;
+        };
+        BackupSummary: {
+            /**
+             * Format: int64
+             * @description `backup.expected_interval`, the value behind `trove_backup_expected_interval_seconds` and `TroveBackupStale`.
+             */
+            expectedIntervalSeconds: number;
+            /** Format: date-time */
+            lastSuccessAt: string | null;
+            /** @description True when `lastSuccessAt` is older than 1.5 times the expected interval; `null` with no successful run. */
+            overdue: boolean | null;
+            lastFailure: components["schemas"]["BackupLastFailure"] | null;
+            active: components["schemas"]["BackupActiveRun"] | null;
+            /** @description The target of the newest run, as recorded; `null` before any run. */
+            target: string | null;
+            retention: components["schemas"]["BackupRetention"] | null;
+            storedBackups: components["schemas"]["StoredBackups"] | null;
+            restoredFrom: components["schemas"]["BackupRestoredFrom"] | null;
+            manualRun: components["schemas"]["BackupManualRun"];
+        };
     };
     responses: {
         /** @description The operation belongs to the Bastion work and is not built in this release yet (`bastion_not_implemented`). */
@@ -8301,6 +8510,7 @@ export interface components {
         IfNoneMatch: string;
         /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
         IdempotencyKey: string;
+        BackupRunId: string;
         JobId: string;
         /** @description The server-generated package identifier (R-API-029). */
         PackageId: string;
@@ -17256,6 +17466,176 @@ export interface operations {
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listBackupRuns: {
+        parameters: {
+            query?: {
+                /** @description `create`, `delete` or `verify`. */
+                operation?: string;
+                /** @description One of the states of R-BAK-009, for example `failed` or `completed_with_warnings`. */
+                state?: string;
+                /** @description `schedule` or `manual`. */
+                trigger?: string;
+                /** @description Runs started at or after this time. */
+                startedFrom?: string;
+                /** @description Runs started before this time. */
+                startedTo?: string;
+                includeTotal?: boolean;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of runs. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "01933c4e-2f10-7b3a-9c1d-5e8f7a6b4c21",
+                     *           "operation": "create",
+                     *           "backupId": "20261028T020000Z-7f3a",
+                     *           "state": "copying",
+                     *           "trigger": "schedule",
+                     *           "pod": "trove-backup-29885880-x7k2q",
+                     *           "troveVersion": "0.4.0",
+                     *           "target": "s3://trove-backups/trove",
+                     *           "startedAt": "2026-10-28T02:00:04.112Z",
+                     *           "heartbeatAt": "2026-10-28T02:41:19.870Z",
+                     *           "leaseExpired": false,
+                     *           "finishedAt": null,
+                     *           "snapshotAt": "2026-10-28T02:00:09.448Z",
+                     *           "progress": {
+                     *             "phase": "copying",
+                     *             "tablesDone": 41,
+                     *             "tablesTotal": 58,
+                     *             "blobsToCopy": 1204,
+                     *             "blobsCopied": 830,
+                     *             "bytesCopied": 9123456789
+                     *           },
+                     *           "result": null,
+                     *           "error": null
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["BackupRunList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getBackupSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "expectedIntervalSeconds": 86400,
+                     *       "lastSuccessAt": "2026-10-27T02:47:31.009Z",
+                     *       "overdue": false,
+                     *       "lastFailure": null,
+                     *       "active": {
+                     *         "id": "01933c4e-2f10-7b3a-9c1d-5e8f7a6b4c21",
+                     *         "operation": "create",
+                     *         "state": "copying",
+                     *         "startedAt": "2026-10-28T02:00:04.112Z",
+                     *         "leaseExpired": false
+                     *       },
+                     *       "target": "s3://trove-backups/trove",
+                     *       "retention": {
+                     *         "keepLast": 7,
+                     *         "keepWithinSeconds": 0
+                     *       },
+                     *       "storedBackups": {
+                     *         "asOf": "2026-10-27T02:47:31.009Z",
+                     *         "runId": "01933a1b-8c22-7e41-b0f3-2a6d9e4c7b10",
+                     *         "items": [
+                     *           {
+                     *             "backupId": "20261027T020000Z-1c9e",
+                     *             "snapshotAt": "2026-10-27T02:00:08.913Z",
+                     *             "troveVersion": "0.4.0",
+                     *             "schemaStep": 42,
+                     *             "databaseBytes": 183500800,
+                     *             "blobCount": 51234,
+                     *             "blobBytes": 412316860416,
+                     *             "damaged": false
+                     *           }
+                     *         ]
+                     *       },
+                     *       "restoredFrom": null,
+                     *       "manualRun": {
+                     *         "namespace": "trove",
+                     *         "cronJob": "trove-backup"
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["BackupSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getBackupRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["BackupRunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRun"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

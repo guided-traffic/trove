@@ -249,7 +249,7 @@ Priority: **MVP** · Covers: OPS-032, OPS-034
 
 Acceptance criteria:
 
-- A JSON Schema of the manifest (`internal/backup/manifest.schema.json`) validates every manifest
+- A JSON Schema of the manifest (`internal/backup/format/manifest.schema.json`, Q-BAK-13) validates every manifest
   the test suite writes.
 - A manifest edited to `"format": 2` makes `trove backup restore` and `verify` exit `6` and name
   the format.
@@ -461,8 +461,8 @@ needs to be copied again.
 2. The run merges the referenced set (a sorted stream from the snapshot) with the previous list (a
    sorted stream from the target) and produces in one pass:
    - the new blob list, written to `backups/<id>/blobs.idx.zst`;
-   - the *to-copy set*: referenced digests not in the previous list, bulk-inserted with
-     `COPY backup_blob_pin FROM STDIN` on the control connection (R-BAK-007).
+   - the *to-copy set*: referenced digests not in the previous list, bulk-inserted in batches into
+     `backup_blob_pin` on the control connection (R-BAK-007, Q-BAK-17).
    Memory stays bounded; neither list is held in full.
 3. Without a previous backup, the to-copy set is the whole referenced set.
 
@@ -2093,6 +2093,111 @@ would revisit this at the start of M5, when the command is implemented and the r
 **Applied in the spec:** no requirement text changed. The backup format and procedure of this page are unchanged;
 the M0 state is the command's reservation only.
 
+### Q-BAK-13 · Where the manifest schema lives
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/backup/manifest.schema.json` | The path R-BAK-003 named | Matches the text | The package that owns the Go type is `internal/backup/format`; a schema one directory up cannot be embedded by it, so the type and its schema would drift |
+| (b) `internal/backup/format/manifest.schema.json`, embedded by the package (chosen) | The schema sits next to `Manifest` and is exported as `format.ManifestSchema` | One package owns the type, its encoding and its schema; a test validates every manifest it writes against it | R-BAK-003 changes its path |
+
+**Choice:** (b).
+
+**Rationale:** The acceptance criterion of R-BAK-003 asks that a JSON Schema validates every manifest the suite writes. That only holds if the schema cannot be forgotten when the type changes, which an embed in the owning package guarantees. The development agent would revisit this if a tool outside Go needs the file at a stable URL.
+
+**Applied:** R-BAK-003 acceptance criterion; `internal/backup/format/schema.go`, `internal/backup/format/format_test.go`.
+
+### Q-BAK-14 · The package cut of the backup lane
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One package `internal/backup` | Format, ports, runner, registries and commands in one package | No import questions | Eight work packages edit one directory; the format, which the sweep, verify, restore and the create pipeline all read, has no seam of its own |
+| (b) `format`, `target`, `fixup` and the runner as packages, the journal as `internal/journal` (chosen) | `internal/backup/format` (ID, layout, marker, manifest, blob list and its merge), `internal/backup/target` (the port of the S3 target and an in-memory fake in `targettest`), `internal/backup/fixup` (the restore's registry), `internal/backup` (exit codes, run states, run store, lease handle, ports, operation interfaces, metrics) and `internal/journal` | Each work package owns files in directories no other package edits; the shared shapes are fixed once and have tests; the journal is used by `trove admin post-restore` without the backup | More packages than one |
+
+**Choice:** (b).
+
+**Rationale:** The lane is built by parallel work packages. The only way they stay out of each other's files is shared types that sit in packages none of them owns after the contracts commit. `internal/journal` is separate because the journal is MVP on its own (R-HA-054), is replayed by two commands and has producers in every domain. The development agent would revisit this if a package of the cut grows a second reason to change.
+
+**Applied:** [ADR-157](../decisions.md#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own); `internal/archtest/layers.go` (journal is a domain package); [docs/developer/backup.md](../developer/backup.md).
+
+### Q-BAK-15 · The S3 implementation of the target port is built in `internal/blob/s3`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/backup/target` imports the AWS SDK | The adapter sits with the port | One place | R-ARCH-002 allows the SDK in `internal/blob/s3` only, and the architecture test would fail |
+| (b) The port `target.Store` is a leaf package; the adapter is a file of `internal/blob/s3` that implements it (chosen) | `internal/backup/target` imports only the standard library, so `internal/blob/s3` (infrastructure) may import it; the adapter is a client for a second bucket with its own credentials, SSE and part sizes; `cmd/trove` joins it with the backup code | R-ARCH-002 holds; the target client is built by the package that already knows the SDK, its retry settings and its credential chain (R-STOR-031, R-STOR-033) | The adapter's work package edits a package of the storage layer; the port may not import a domain package |
+
+**Choice:** (b).
+
+**Rationale:** R-ARCH-002 names `blob/s3` as the only importer of the SDK, and the backup text of the same page says the target is reached through clients built by `blob/s3`. The port in the domain package lets every other work package test against `targettest.Mem`. The development agent would revisit this if a target other than S3 is added (Deferred), which would add a second adapter behind the same port.
+
+**Applied:** `internal/backup/target/store.go`, `internal/backup/target/targettest`; the adapter is a work package of the lane ([docs/developer/backup.md](../developer/backup.md)).
+
+### Q-BAK-16 · The restore's fix-ups are a registry, not a list in the restore
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A function in the restore that runs every fix-up | One file lists jobs, keyspace, revisions, usage counters, mirror state | Simple | Every later page that adds derived state edits the restore; the npm and NuGet remote-cache purge, the mirror state and the storage recount belong to other pages' owners |
+| (b) A registry with an order and a name, filled by the owner of the state (chosen) | `fixup.Register` for step 6 (one transaction), `fixup.RegisterPurger` for the remote caches of step 7; the restore runs what is registered in order | The same pattern as the table registry (R-BAK-004) and the revision registry (R-ARCH-009); `trove admin post-restore` runs the same fix-ups; a format adds its purger in a file of its own | A registry is package-level state that is frozen at start-up (R-ARCH-032) |
+
+**Choice:** (b).
+
+**Rationale:** R-BAK-022 already says the revision registry is `meta.RegisterRevisionColumn` and that no second list exists. The same argument applies to every other restore fix-up. The development agent would revisit this if the order of two fix-ups starts to matter beyond the constants of `fixup.Order*`.
+
+**Applied:** R-BAK-021 steps 6 and 7, R-BAK-022, R-BAK-008; `internal/backup/fixup`.
+
+### Q-BAK-17 · The to-copy set is inserted in batches with `unnest`, not with `COPY FROM STDIN`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `COPY backup_blob_pin FROM STDIN` as R-BAK-006 wrote it | The pgx copy protocol on the control connection | Fastest bulk path | The copy protocol is pgx API; only `internal/meta/postgres` may import pgx, so the domain package would need an export API for one statement |
+| (b) `INSERT … SELECT unnest($digests), unnest($sizes)` in batches of a few thousand rows (chosen) | A generated query, `RunStore.AddPins` | No driver in the domain; the same transaction semantics; the batch size is a tuning constant | Slower than `COPY` by a small factor |
+
+**Choice:** (b), with a way out: if the pin insert of the first full backup of the reference data set takes longer than five minutes (the revisit condition of Q-BAK-2), the create work package adds a `COPY` method to `internal/meta/postgres` behind `RunStore.AddPins`.
+
+**Rationale:** The interface stays the same either way, so the way out costs one file. The development agent would revisit this when the drill (R-BAK-029 scenario 9) measures the pin phase.
+
+**Applied:** R-BAK-006 step 2; `internal/meta/postgres/queries/backup.sql` (`InsertBackupPins`), `internal/backup/runstore.go`.
+
+### Q-BAK-18 · The backup commands load their configuration as `CommandBackup`, and every failure maps to one exit code and one failure code
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Load as `CommandAdmin` | The admin command set | No new command | The bucket of the target would be optional, so a misconfigured Job would fail later and with exit 1, which the pod failure policy retries |
+| (b) A command of its own, `config.CommandBackup`; `backup.target.bucket` is required for it; any configuration error exits 2 naming every key (chosen) | Needs the database, the blob store and the `backup` keys; no role, no Valkey, no key ring check except where the restore opens it | R-BAK-011's "a violation exits 2 and names the key" and R-BAK-012's `FailJob` on 2 hold from the first line of every command | One more command value |
+
+**Choice:** (b). `internal/backup/exit.go` maps every error of the lane to one of the exit codes of R-BAK-013 (`ExitCode`) and one failure code (`ErrorCode`) for `backup_run.error` and `system.backup.failed`; a command returns the error and `cmd/trove` exits with the code.
+
+**Rationale:** A mapping in one place is the only way eight work packages agree on what "temporary" means. The development agent would revisit this when a code needs a distinction the table of R-BAK-013 does not make.
+
+**Applied:** R-BAK-011, R-BAK-013; `internal/config/backup.go` (`ValidateFor`, `validateBackupCoupling`), `cmd/trove/backup.go`.
+
+### Q-BAK-19 · The run store, the lease handle and the slot rule are shared contracts, built once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each operation writes its own `backup_run` code | create, delete, verify, the API and the collector each query the table | No coordination | Four copies of the fencing rules; the rule that makes a stalled run safe would be tested in none of them |
+| (b) `RunStore` (PostgreSQL implementation `PGStore`), `Handle` (lease, heartbeat, stall) and `AcquireSlot` in `internal/backup` (chosen) | The queries are in `queries/backup.sql`; the table has CHECK constraints that only a create run holds anything and that a finished run holds nothing | R-BAK-010 and R-BAK-013 are implemented and tested once; every operation, including `verify`, heartbeats the same way | A change to the lease rules touches a package every work package imports |
+
+**Choice:** (b).
+
+**Rationale:** The one-active rule, the fenced heartbeat and the wait for a stale run's lease are the part of the lane whose failure corrupts a backup or blocks all of them, so they get one implementation and an integration test (`test/integration/postgres/backup_runstore_test.go`). The development agent would revisit this if the heartbeat needs a second progress signal that `Handle.Tick` cannot carry.
+
+**Applied:** R-BAK-007, R-BAK-009, R-BAK-010, R-BAK-013; `internal/backup/runstore.go`, `handle.go`, `slot.go`, `internal/meta/postgres/migrations/00046_backup.sql`.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated
@@ -2130,3 +2235,15 @@ the database. Live in the MVP; dormant once R-BAK-027 (P1) is configured, after 
 needs the escrowed age identity. Mitigation in the MVP: a target in a separate account or project,
 readers limited to the backup and restore identities, and SSE-KMS with a key policy that names
 only those identities.
+
+### H-553 · A journal object can be overwritten with the runtime credential
+
+Component: the revocation journal in the blob bucket (R-HA-054, R-BAK-024). Subject: the access removals and version reservations recorded after the last backup. The runtime S3 credential may put objects under `_journal/`, so a holder can overwrite an entry with other content or with bytes that do not decode. The replay reports an object it cannot decode and skips it; it applies a forged removal only as a removal, so no access is granted, but the genuine entry is lost: the revocation it recorded is undone by the restore. Live in the MVP in every installation whose journal bucket has no versioning; with versioning and a credential that lists versions, the original version remains and an administrator can recover it by hand. Mitigation: bucket versioning with noncurrent expiry longer than `backup.recovery_window` on the journal prefix, and a bucket policy that denies `s3:PutObject` over an existing key where the store supports it.
+
+### H-554 · A compromised backup pod can hold garbage collection
+
+Component: `backup_run` and the hold of R-BAK-007. Subject: storage reclamation. The backup role may update its own run row, so a process that keeps heartbeating with progress keeps a valid lease and, with `hold = 'all'`, keeps the collector from moving any blob to `deleting`. Live in the MVP whenever the backup credential is compromised; `TroveBackupGlobalHoldLong` fires after 30 minutes and `TroveBackupRunningLong` after half an expected interval. Storage grows until the run is deleted by hand. Mitigation: the alerts, and the stall detection of R-BAK-013, which ends a run that makes no progress but not one that fakes it.
+
+### H-555 · The run history is only as trustworthy as the backup role
+
+Component: `backup_run`, the API of R-API-050 and the alerts of R-BAK-014. Subject: the statement "the last backup succeeded". The summary, the overdue mark and `TroveBackupStale` are computed from rows that the backup role writes, so a compromised role or a process with write access to the table can record a success for a backup that was never written. Live in the MVP. The check that does not depend on the table is `trove backup list` and `trove backup verify --latest`, which read the target. Mitigation: restrict the grant to the two tables (R-BAK-015), and run `verify` regularly (scheduled verification is P1, Deferred).

@@ -11,7 +11,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, qname, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, qname, observability, cache, meta, backup/tables, backup/target, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual, mirror
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -58,6 +58,9 @@ func layerTable() []layerRule {
 		{"internal/cache", layerLeaf},
 		{"internal/meta", layerLeaf},
 		{"internal/backup/tables", layerLeaf},
+		// The port of the backup target and its in-memory fake: standard library only, so that the S3 client of internal/blob/s3
+		// implements it without importing a domain package (R-BAK-002, Q-BAK-15).
+		{"internal/backup/target", layerLeaf},
 		{"internal/tlsfiles", layerLeaf},
 		{"internal/formats/catalog", layerLeaf},
 		// The rows a serve-time check decides on, read by the item lookup (R-ARCH-027): plain types, no imports. A leaf so that
@@ -132,6 +135,7 @@ func layerTable() []layerRule {
 		{"internal/jobs", layerDomain},
 		{"internal/audit", layerDomain},
 		{"internal/backup", layerDomain},
+		{"internal/journal", layerDomain}, // the revocation journal: object, ports, replay handlers (R-HA-054)
 		// The main installation's side of the Bastion (seams, recognition, registrations, marking) and the Bastion's
 		// guard and download buffer.
 		{"internal/bastionmain", layerDomain},

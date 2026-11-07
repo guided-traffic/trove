@@ -277,7 +277,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if len(pending) == 0 {
 		res.NothingToDo = true
 		log.Info("nothing to do", "schema_applied", st.schemaApplied, "required_schema", res.RequiredSchema)
-		return res, finish(ctx, conn, opts, log)
+		return res, finish(ctx, conn, cfg, opts, log)
 	}
 
 	// 5. Apply.
@@ -289,14 +289,18 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 		res.Applied = append(res.Applied, sr)
 	}
 	res.SchemaApplied, res.CompatFloor = st.schemaApplied, st.compatFloor
-	return res, finish(ctx, conn, opts, log)
+	return res, finish(ctx, conn, cfg, opts, log)
 }
 
 // finish is the part of every run, applied or not, that follows the steps: the
-// audit policy, then the declared state of the configuration, which writes audit
-// events into the partitions the first made sure of.
-func finish(ctx context.Context, conn *pgx.Conn, opts MigrateOptions, log *slog.Logger) error {
+// audit policy, the privileges of the backup role (R-BAK-015), then the declared
+// state of the configuration, which writes audit events into the partitions the
+// first made sure of.
+func finish(ctx context.Context, conn *pgx.Conn, cfg config.Database, opts MigrateOptions, log *slog.Logger) error {
 	if err := syncAudit(ctx, conn, opts, log); err != nil {
+		return err
+	}
+	if err := grantBackupRole(ctx, conn, cfg.Schema, cfg.BackupRole, log); err != nil {
 		return err
 	}
 	return applyDeclared(ctx, conn, opts)

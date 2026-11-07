@@ -55,6 +55,9 @@ type Config struct {
 	// (BastionConfig in bastion_role.go); the section named bastion there has nothing to do with this one.
 	Bastions Bastions `yaml:"bastions"`
 
+	// The backup lane (backup.go): trove backup, the restore and the revocation journal (R-BAK-011, R-HA-054).
+	Backup Backup `yaml:"backup"`
+
 	// ConfigAsCode holds secrets_dir, which the secret references of M2 use.
 	ConfigAsCode AsCode `yaml:"config_as_code"`
 }

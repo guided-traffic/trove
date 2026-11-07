@@ -20,6 +20,9 @@ const (
 	// CommandValidate is `trove admin config validate`: every check of
 	// CommandServe except that the role may be unset.
 	CommandValidate
+	// CommandBackup is `trove backup …`: the database, the blob store and the backup keys, no role and no Valkey
+	// (R-BAK-009).
+	CommandBackup
 )
 
 // runsReplica reports whether the command needs what a serving replica needs:

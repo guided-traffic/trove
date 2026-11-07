@@ -8,7 +8,7 @@ the endpoints and exposure rules, the generic repository format with raw transfe
 trail, the Angular admin UI with the package screens, client setup and the in-app manual, the Helm chart, the local development profile on kind, the integration, end-to-end
 and chart tests, and the CI workflows. The vulnerability scanning (the advisory mirror, the findings and their triage, the download block, the client audits, the report) is integrated
 and its flow is tested end to end at the integration tier ([vulnerabilities.md](vulnerabilities.md), [test/integration/vulnflow](../../test/integration/vulnflow)); its browser journeys and client runs are the
-end-to-end wave's. No backup exists yet (phase 7: only the export classes of the tables). Everything marked *planned* below is the target design in
+end-to-end wave's. The contracts of the backup lane exist (phase 7, [backup.md](backup.md)); the operations behind them are not built yet. Everything marked *planned* below is the target design in
 [docs/spec/](../spec/README.md).
 
 ## What to have in your head first
@@ -25,7 +25,7 @@ end-to-end wave's. No backup exists yet (phase 7: only the export classes of the
 - **Roles, one binary** ([R-ARCH-001](../spec/architecture.md)). `web` answers HTTP and never claims a job or
   holds a lease. `worker` claims jobs, holds leases and serves only the ops listener. `all` combines both
   for a local run outside the chart. `bastion` is the read-only cache of phase 5b with a configuration tree of its own and
-  no PostgreSQL ([bastion.md](bastion.md)). The `backup` role is planned.
+  no PostgreSQL ([bastion.md](bastion.md)). `backup` is a command of the binary, not a serving role ([backup.md](backup.md)).
 - **PostgreSQL decides, Valkey accelerates.** State whose loss would corrupt data lives in PostgreSQL,
   including every mutual exclusion whose failure would corrupt data. Valkey holds shared ephemeral state and
   never the only copy of anything. Only `internal/cluster` talks to Valkey, and every key expires.
@@ -53,6 +53,7 @@ end-to-end wave's. No backup exists yet (phase 7: only the export classes of the
 | [coverage.md](coverage.md) | The requirement coverage generator, its rules and its evidence record |
 | [database.md](database.md) | PostgreSQL connections, pools, migrations, sqlc and the job and change tables |
 | [blob-store.md](blob-store.md) | The S3 blob layer: keys, spool, commit, download, garbage collection |
+| [backup.md](backup.md) | The backup lane: the on-target format, the run record and its lease, the ports, the restore fix-ups, the revocation journal, the command tree and how to add to them |
 | [coordination.md](coordination.md) | Change log, signals, leases, the job queue and the replica registry |
 | [valkey.md](valkey.md) | The Valkey client, Sentinel discovery, key families, degraded mode, the flight lock and the negative store |
 | [observability.md](observability.md) | Logs, metrics, traces, health and the ops listener |
@@ -160,7 +161,8 @@ trove/
 │   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
 │   ├── bastion/              # the trove Bastion's own code (R-BAS-001, bastion.md): iface (the wire contract), answers, metrics, mainclient, cache, shared, guard, downloads, engine, server; its own packages import no subsystem of the main installation and the role enables none (archtest, transitive, with the listed exceptions of its dependency closure)
 │   ├── bastionmain/          # the main installation's side of the Bastion: the seams of the work packages (recognition, token authenticator, read-shape resolver, route observer, chain stages)
-│   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
+│   ├── backup/               # trove backup: contracts, run record, lease; format/ target/ fixup/ tables/ (backup.md)
+│   ├── journal/              # the revocation journal: object, ports, replay handlers (backup.md)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
 │   ├── buildinfo/            # version, commit and build date from -ldflags
 │   ├── cache/                # bounded in-process caches with change-area invalidation
