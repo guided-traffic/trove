@@ -24,6 +24,25 @@ without `allow_insecure_endpoint` (R-BAK-026). Every write, multipart start and 
 compares what the store reports with it (`Target.CheckSSE`). A store without a conditional create gets a `HeadObject` check before the
 marker is written, which is not atomic; the one-run rule in PostgreSQL, not the store, keeps two runs apart (Q-BAK-27).
 
+## How the chart keeps the split
+
+The chart gives each Job its own pod template and the Secrets of its scope only ([helm-chart.md](../developer/helm-chart.md#the-backup-and-restore-jobs),
+[_secrets.tpl](../../deploy/helm/trove/templates/_secrets.tpl)):
+
+| Mechanism | Effect | Test |
+|---|---|---|
+| `secrets.backupTarget` and `secrets.backupTargetCA` mount in the scopes `backup` and `restore` | no `api`, `packages` or `worker` pod and not the migration Job has a file or a variable with the target's credentials; the shared `trove.yaml` names the paths and nothing exists under them there | `TestR_HA_030_BackupSecrets` (every value set) |
+| Valkey Secrets mount in neither Job; the key ring only in the restore Job | a compromised backup pod holds no Valkey credential and no key ring (R-BAK-012) | `TestR_HA_030_BackupSecrets` |
+| `secrets.databaseBackup` for the backup pod, the migration login for the restore Job | the backup pod can use the `backup` role (`database.backup_role`) and the owner credential reaches only the Job that needs it | `TestR_HA_030_BackupSecrets` |
+| a ServiceAccount per Job, no token mounted | a workload identity maps each Job to a cloud role of its own; neither Job can call the Kubernetes API | `TestR_HA_060_BackupCronJob`, `TestR_HA_060_RestoreJob` |
+| a NetworkPolicy per Job with `ingress: []` | no pod reaches a Job's pod | `TestR_HA_042_JobsAdmitNothing` |
+| the Jobs take no global `extraEnv`, `extraVolumes` or `extraEnvFrom` | a variable or volume meant for the replicas does not reach the pods that hold the target's keys (Q-HA-149) | `TestR_HA_030_BackupSecrets` |
+
+Verified in this repo: the render tests above. Not verified, because it needs a cluster: that a workload identity annotation maps the Job to
+a role, and that a CNI enforces the empty ingress list (the profile's CNI is the only one the ingress policies are verified on, H-41). The
+chart cannot see what an operator adds through `backup.extraEnv`, `backup.nodeSelector`, `extraObjects` or a mutating webhook of the cluster;
+a Secret placed there reaches the Job as the operator wrote it.
+
 ## The run record and the hold
 
 `backup_run` is the one place that says which backup operation is active. A partial unique index admits one `create` or `delete`

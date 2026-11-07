@@ -1,0 +1,60 @@
+{{- if .Values.backup.enabled }}
+{{- /*
+The backup CronJob (R-HA-060, R-BAK-012): trove backup create --trigger schedule, one Job at a time. concurrencyPolicy
+Forbid is fixed and not a value, because the database run row decides in the end (R-BAK-010) and a manual Job from this
+CronJob bypasses the controller. The CronJob is suspended while restore.enabled is set, so no backup runs against a
+half-restored installation. activeDeadlineSeconds is left out by default: a first backup of a large installation takes
+many hours, and a hung run ends itself after config.backup.stall_timeout (R-BAK-013).
+*/ -}}
+{{- $fullname := include "trove.fullname" . }}
+{{- $b := .Values.backup }}
+{{- $args := list "backup" "create" "--trigger" "schedule" }}
+{{- if $b.adoptTarget }}
+{{- $args = append $args "--adopt-target" }}
+{{- end }}
+{{- if $b.serviceAccount.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "trove.jobServiceAccountName" (dict "root" . "kind" "backup") }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "backup") | nindent 4 }}
+  {{- if or $b.serviceAccount.annotations .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml (merge (dict) $b.serviceAccount.annotations .Values.commonAnnotations) | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+{{- end }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fullname }}-backup
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "backup") | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  schedule: {{ $b.schedule | quote }}
+  timeZone: {{ $b.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: {{ $b.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ $b.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $b.failedJobsHistoryLimit }}
+  suspend: {{ or $b.suspend .Values.restore.enabled }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "trove.labels" (dict "root" . "component" "backup") | nindent 8 }}
+    spec:
+      backoffLimit: {{ $b.backoffLimit }}
+      {{- if $b.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ $b.activeDeadlineSeconds }}
+      {{- end }}
+      {{- include "trove.jobPodFailurePolicy" "backup" | nindent 6 }}
+      template:
+        {{- include "trove.jobPod" (dict "root" . "kind" "backup" "args" $args) | nindent 8 }}
+{{- end }}

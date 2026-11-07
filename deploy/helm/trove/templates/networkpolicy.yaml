@@ -11,8 +11,8 @@ Per Deployment the policy admits the ports its pods open:
   8081                  only from networkPolicy.ingress.ops.from and networkPolicy.ingress.probeCIDRs; with no
                         peer at all the rule is left out, because an empty "from" would mean
                         from anywhere
-A worker listens on no client port, so its policy holds the 8081 rule only. The migration Job
-accepts nothing. Replicas never talk to each other, so no rule admits one trove pod from another.
+A worker listens on no client port, so its policy holds the 8081 rule only. The migration Job, the
+pods of the backup CronJob and the restore Job accept nothing. Replicas never talk to each other, so no rule admits one trove pod from another.
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
 {{- $np := .Values.networkPolicy }}
@@ -79,7 +79,7 @@ metadata:
   name: {{ include "trove.fullname" . }}-migrate
   labels:
     {{- include "trove.labels" (dict "root" . "component" "migrate") | nindent 4 }}
-  {{- if eq .Values.migrations.mode "hook" }}
+  {{- if and (eq .Values.migrations.mode "hook") (not .Values.restore.enabled) }}
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "-10"
@@ -92,4 +92,26 @@ spec:
   policyTypes:
     - Ingress
   ingress: []
+{{- /*
+The Jobs of trove backup open no port (R-HA-060, R-HA-042): their policies select their pods and admit nothing, as the
+migration Job's does. They hold the credentials of the backup target, so no pod reaches them.
+*/}}
+{{- range $kind := list "backup" "restore" }}
+{{- if (get $.Values $kind).enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "trove.fullname" $ }}-{{ $kind }}
+  labels:
+    {{- include "trove.labels" (dict "root" $ "component" $kind) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "trove.selectorLabels" (dict "root" $ "component" $kind) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress: []
+{{- end }}
+{{- end }}
 {{- end }}

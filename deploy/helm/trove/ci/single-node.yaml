@@ -18,6 +18,9 @@ worker:
     host:
       whenUnsatisfiable: ScheduleAnyway
 config:
+  backup:
+    target:
+      bucket: trove-backups
   server:
     base_url: http://localhost:8080
   database:

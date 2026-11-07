@@ -5912,6 +5912,21 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-OPS-007, R-OPS-008, R-BAK-014; `internal/app/wire_backup_gauges.go`.
 
+### Q-OPS-182 · The clause of `TroveBackupStale` for a backup that never succeeded reads its window from the chart
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `absent(last_success)` with a `for:` clause | The alert waits a fixed time | One line | A `for:` cannot follow `backup.expected_interval`; with the default of 24 hours it keeps a rule evaluation pending for a day, and Prometheus restarts reset it |
+| (b) `absent(last_success) and on() max(expected_interval offset <window>)` with the window rendered from `config.backup.expected_interval` (chosen) | The expected-interval gauge exists on every replica from its start, so a value one window back means the replicas have reported for a whole interval, and no success series exists still | Fires exactly one interval after the first report, survives a Prometheus restart, and a young installation stays silent | The window is a literal in the rule, so the chart reads the same value as the replicas (a replica configured elsewhere with another interval keeps its own gauge for the other clause) |
+| (c) A gauge for the age of the installation | The replicas export when the installation was created | No literal | A new family for one clause |
+
+**Choice:** (b).
+
+**Rationale:** The clause is the one of R-BAK-014 ("absent for longer than `expected_interval`"). The development agent would revisit this if the replicas gain an installation-age metric for another reason.
+
+**Applied:** R-BAK-014, R-HA-045; `deploy/helm/trove/templates/_rules.tpl`, `deploy/helm/trove/tests/rules_test.yaml`.
 
 ## What this does not cover
 

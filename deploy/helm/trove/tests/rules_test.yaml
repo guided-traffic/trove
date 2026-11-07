@@ -596,3 +596,215 @@ tests:
             exp_annotations:
               summary: "Replicas name different Valkey primaries."
               description: "At least one replica is bound to a demoted primary (Q-OPS-15, R-ARCH-031), so locks, rate limits and cache signals are split between two servers. The registry in GET /api/v1/system/replicas shows each replica's primary; a restart of the replica that names the old one rebinds it."
+
+  # === R-HA-045, R-BAK-014: the alerts of the backup runs and of the revocation journal ========================
+  # The gauges of the backup are read from PostgreSQL by every replica, so every replica reports the same value; the series of a
+  # replica pair p1 and p2 stand for that. trove_backup_last_success_timestamp_seconds and trove_backup_last_failure_timestamp_seconds
+  # have no series until a run of that outcome exists (Q-OPS-180). The expected interval of the tests is 1h; the window of the
+  # clause for a backup that never ran is the chart's config.backup.expected_interval (24h in ci/monitoring.yaml).
+
+  - name: "TroveBackupStale fires 90 minutes after the last success when the CronJob is suspended, and not before"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "600x300"}
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"default\",pod=\"w2\"}", values: "600x300"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "3600x300"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w2\"}", values: "3600x300"}
+    alert_rule_test:
+      - {eval_time: 99m, alertname: TroveBackupStale, exp_alerts: []}
+      - eval_time: 101m
+        alertname: TroveBackupStale
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The last successful backup is older than one and a half times backup.expected_interval, or none has succeeded in a whole interval."
+              description: "No create run has ended successfully within 1.5 times config.backup.expected_interval, the condition of the overdue mark in the API and the UI (R-BAK-014). On an installation whose first backup never succeeded the alert fires one expected interval after the replicas first reported. Look at GET /api/v1/system/backups, the CronJob (suspended? missed its starting deadline?) and its Jobs, and the log of the last pod."
+
+  - name: "TroveBackupStale stays silent while the last success is within one and a half intervals"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "89000x2000"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "3600x2000"}
+    alert_rule_test:
+      - {eval_time: 1500m, alertname: TroveBackupStale, exp_alerts: []}
+
+  - name: "TroveBackupStale fires on an installation that never had a backup once the replicas reported for a whole interval, and not before"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "86400x2000"}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: TroveBackupStale, exp_alerts: []}
+      - {eval_time: 23h, alertname: TroveBackupStale, exp_alerts: []}
+      - eval_time: 25h
+        alertname: TroveBackupStale
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The last successful backup is older than one and a half times backup.expected_interval, or none has succeeded in a whole interval."
+              description: "No create run has ended successfully within 1.5 times config.backup.expected_interval, the condition of the overdue mark in the API and the UI (R-BAK-014). On an installation whose first backup never succeeded the alert fires one expected interval after the replicas first reported. Look at GET /api/v1/system/backups, the CronJob (suspended? missed its starting deadline?) and its Jobs, and the log of the last pod."
+
+  - name: "TroveBackupStale does not read the success of another namespace, and is silent on a young installation"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"other\",pod=\"w1\"}", values: "89000x2000"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "86400x2000"}
+    alert_rule_test:
+      - {eval_time: 10m, alertname: TroveBackupStale, exp_alerts: []}
+
+  - name: "TroveBackupFailed fires for a run that failed after the last success, until the next success"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "600x20 5000x100"}
+      - {series: "trove_backup_last_failure_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "_x10 3000x110"}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: TroveBackupFailed, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveBackupFailed
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The newest backup run failed and no backup has succeeded since."
+              description: "A create run ended failed or abandoned, or its lease expired in an active state, after the last success (R-BAK-014). A run interrupted by a drain does not count. The alert resolves with the next success. The cause is in GET /api/v1/system/backups (error code) and the log of the Job's pod; the exit codes are in R-BAK-013."
+      - {eval_time: 30m, alertname: TroveBackupFailed, exp_alerts: []}
+
+  - name: "TroveBackupFailed fires for a first backup that failed, when no success series exists"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_failure_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "_x10 3000x110"}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: TroveBackupFailed, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveBackupFailed
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The newest backup run failed and no backup has succeeded since."
+              description: "A create run ended failed or abandoned, or its lease expired in an active state, after the last success (R-BAK-014). A run interrupted by a drain does not count. The alert resolves with the next success. The cause is in GET /api/v1/system/backups (error code) and the log of the Job's pod; the exit codes are in R-BAK-013."
+
+  - name: "TroveBackupFailed stays silent after an interrupted run and its successful retry: an interrupted run leaves no failure series"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "600x20 5000x100"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "3600x120"}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: TroveBackupFailed, exp_alerts: []}
+      - {eval_time: 15m, alertname: TroveBackupFailed, exp_alerts: []}
+      - {eval_time: 60m, alertname: TroveBackupFailed, exp_alerts: []}
+
+  - name: "TroveBackupFailed stays silent when the failure is older than the last success"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "5000x100"}
+      - {series: "trove_backup_last_failure_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "3000x100"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveBackupFailed, exp_alerts: []}
+
+  - name: "TroveBackupRunningLong fires when the active run is older than half the expected interval"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_running_seconds{namespace=\"default\",pod=\"w1\"}", values: "0x5 1800+60x120"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "3600x130"}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: TroveBackupRunningLong, exp_alerts: []}
+      - eval_time: 30m
+        alertname: TroveBackupRunningLong
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "A backup or delete run has been active for more than half of backup.expected_interval."
+              description: "The run holds the slot of the target and pins blobs against garbage collection while it lasts (R-BAK-007, R-BAK-010). A first backup of a large installation takes long; a run that makes no progress ends itself after config.backup.stall_timeout. Look at the progress in GET /api/v1/system/backups and the log of the pod."
+
+  - name: "TroveBackupRunningLong stays silent for a short run"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_running_seconds{namespace=\"default\",pod=\"w1\"}", values: "100x100"}
+      - {series: "trove_backup_expected_interval_seconds{namespace=\"default\",pod=\"w1\"}", values: "3600x100"}
+    alert_rule_test:
+      - {eval_time: 60m, alertname: TroveBackupRunningLong, exp_alerts: []}
+
+  - name: "TroveBackupGlobalHoldLong fires when the hold on all blobs lasts 30 minutes, and not for a pinned hold"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_gc_hold{namespace=\"default\",mode=\"all\",pod=\"w1\"}", values: "0x5 1x100"}
+      - {series: "trove_backup_gc_hold{namespace=\"default\",mode=\"pinned\",pod=\"w1\"}", values: "1x105"}
+    alert_rule_test:
+      - {eval_time: 25m, alertname: TroveBackupGlobalHoldLong, exp_alerts: []}
+      - eval_time: 40m
+        alertname: TroveBackupGlobalHoldLong
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "A backup has held garbage collection for all blobs for 30 minutes."
+              description: "The hold mode all stops the collection of every blob while a backup run opens its snapshot or writes its pins (R-BAK-007). It is meant to last minutes. Look at the active run in GET /api/v1/system/backups; a run that is stuck ends itself after config.backup.stall_timeout."
+
+  - name: "TroveBackupGlobalHoldLong stays silent for a hold that ends within minutes"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_gc_hold{namespace=\"default\",mode=\"all\",pod=\"w1\"}", values: "0x5 1x10 0x100"}
+    alert_rule_test:
+      - {eval_time: 40m, alertname: TroveBackupGlobalHoldLong, exp_alerts: []}
+
+  - name: "TroveBackupSourceDamage fires when the newest successful backup found damaged blobs"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_source_blobs_damaged{namespace=\"default\",pod=\"w1\"}", values: "0x5 3x20"}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: TroveBackupSourceDamage, exp_alerts: []}
+      - eval_time: 10m
+        alertname: TroveBackupSourceDamage
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The newest successful backup found blobs of the installation damaged or missing."
+              description: "The backup could not copy the objects of these blobs correctly (R-BAK-009, R-BAK-014), so a restore of it lacks them. The list is in the result of the run (GET /api/v1/system/backups) and the log. Restore the objects from the bucket's versions or upload the content again, then take a new backup."
+
+  - name: "TroveBackupSourceDamage stays silent without damage"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_source_blobs_damaged{namespace=\"default\",pod=\"w1\"}", values: "0x30"}
+    alert_rule_test:
+      - {eval_time: 20m, alertname: TroveBackupSourceDamage, exp_alerts: []}
+
+  - name: "TroveBackupVerifyFindings fires when the newest verification had findings"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_verify_findings{namespace=\"default\",pod=\"w1\"}", values: "0x5 2x20"}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: TroveBackupVerifyFindings, exp_alerts: []}
+      - eval_time: 10m
+        alertname: TroveBackupVerifyFindings
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The newest verification of a backup found missing, damaged or mismatching objects."
+              description: "trove backup verify exited 5 (R-BAK-019, R-BAK-014). The findings are in its output and the run record. A backup with findings may not restore; take a new one and look at the target (lifecycle rules, deletions, a credential that can delete)."
+
+  - name: "TroveBackupVerifyFindings stays silent for a clean verification"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_last_verify_findings{namespace=\"default\",pod=\"w1\"}", values: "0x30"}
+    alert_rule_test:
+      - {eval_time: 20m, alertname: TroveBackupVerifyFindings, exp_alerts: []}
+
+  - name: "TroveRevocationJournalBacklog fires when entries wait for shipping for 15 minutes, and not for a short backlog"
+    interval: 1m
+    input_series:
+      - {series: "trove_revocation_journal_pending{namespace=\"default\",pod=\"w1\"}", values: "0x5 4x10 0x30 7x40"}
+      - {series: "trove_revocation_journal_pending{namespace=\"default\",pod=\"w2\"}", values: "0x100"}
+    alert_rule_test:
+      - {eval_time: 12m, alertname: TroveRevocationJournalBacklog, exp_alerts: []}
+      - {eval_time: 40m, alertname: TroveRevocationJournalBacklog, exp_alerts: []}
+      - eval_time: 65m
+        alertname: TroveRevocationJournalBacklog
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "Entries of the revocation journal have waited for shipping to the blob bucket for 15 minutes."
+              description: "The outbox grows while the object store is out and ships afterwards, so a backlog of 15 minutes means the shipper does not write the _journal/ prefix of the blob bucket, or writes slower than entries arrive (R-HA-054). A restore taken now would replay a journal that lacks those entries, and a revocation among them would not be applied again. Check that worker pods are ready, the object store alerts, the shipper's log records and the write access of the credential to the prefix."
+
+  - name: "TroveRevocationJournalBacklog stays silent with an empty outbox"
+    interval: 1m
+    input_series:
+      - {series: "trove_revocation_journal_pending{namespace=\"default\",pod=\"w1\"}", values: "0x60"}
+    alert_rule_test:
+      - {eval_time: 50m, alertname: TroveRevocationJournalBacklog, exp_alerts: []}

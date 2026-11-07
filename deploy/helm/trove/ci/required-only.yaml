@@ -1,5 +1,8 @@
 # Only the values names as required; everything else keeps its default.
 config:
+  backup:
+    target:
+      bucket: trove-backups
   server:
     base_url: https://trove.example.com
   database:

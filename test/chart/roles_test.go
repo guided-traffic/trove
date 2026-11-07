@@ -528,14 +528,14 @@ func TestRolesNetworkPolicy(t *testing.T) {
 		}
 	})
 
-	t.Run("R-HA-042 the policies of the default render are api, packages, worker and migrate", func(t *testing.T) {
+	t.Run("R-HA-042 the policies of the default render are api, packages, worker, migrate and backup", func(t *testing.T) {
 		_, docs := render(t, required())
 		var got []string
 		for _, np := range ofKind(docs, "NetworkPolicy") {
 			got = append(got, str(np, "metadata", "name"))
 		}
 		sort.Strings(got)
-		if want := []string{"trove-api", "trove-migrate", "trove-packages", "trove-worker"}; !equalStrings(got, want) {
+		if want := []string{"trove-api", "trove-backup", "trove-migrate", "trove-packages", "trove-worker"}; !equalStrings(got, want) {
 			t.Errorf("policies = %v, want %v", got, want)
 		}
 		if r := list(find(docs, "NetworkPolicy", "trove-migrate"), "spec", "ingress"); len(r) != 0 || at(find(docs, "NetworkPolicy", "trove-migrate"), "spec", "ingress") == nil {

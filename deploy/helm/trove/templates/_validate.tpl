@@ -1,7 +1,7 @@
 {{/*
 Fail-fast validation (R-HA-029). Every failure names the offending value. Rows of R-HA-029 that
-belong to features this chart does not render yet (pooler, backup, restore, gateway, monitoring,
-pools) are added with those features.
+belong to features this chart does not render yet (pooler, gateway, pools) are added with those
+features; the backup and restore rows are in templates/_validate_backup.tpl.
 */}}
 {{/*
 A Gateway API duration (GEP-2257: a sequence of h, m, s and ms terms, "1h30m", "3600s") in milliseconds. The schema
@@ -157,7 +157,7 @@ fixes the form, so every term is a number and a unit.
 {{- end -}}
 
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}
-{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.ca_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "auth.break_glass.password_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" -}}
+{{- $managedPaths := list "storage.spool.dir" "database.username_file" "database.password_file" "database.ssl_root_cert_file" "database.ssl_cert_file" "database.ssl_key_file" "valkey.username_file" "valkey.password_file" "valkey.sentinel.username_file" "valkey.sentinel.password_file" "valkey.tls.ca_file" "valkey.tls.cert_file" "valkey.tls.key_file" "storage.s3.ca_file" "storage.s3.credentials.access_key_id_file" "storage.s3.credentials.secret_access_key_file" "metrics.bearer_token_file" "auth.break_glass.password_file" "secrets.encryption_key_files" "secrets.active_key_id" "server.endpoints" "backup.manual_run" "backup.target.ca_file" "backup.target.credentials.access_key_id_file" "backup.target.credentials.secret_access_key_file" "backup.target.credentials.session_token_file" -}}
 {{- if $t.enabled -}}
 {{- $managedPaths = concat $managedPaths (list "server.tls" "server.ops_tls") -}}
 {{- end -}}
@@ -187,6 +187,7 @@ fixes the form, so every term is a number and a unit.
 {{- end -}}
 
 {{- include "trove.validateEndpoints" . -}}
+{{- include "trove.validateBackup" . -}}
 {{- end -}}
 
 {{/*

@@ -2659,6 +2659,17 @@ Acceptance criteria:
 ### R-HA-060 · Backup CronJob and restore Job
 Priority: **MVP** · Covers: OPS-032, OPS-033
 
+**Status.** The chart side is built (phase 7): [backup.yaml](../../deploy/helm/trove/templates/backup.yaml) (ServiceAccount and
+CronJob), [restore.yaml](../../deploy/helm/trove/templates/restore.yaml) (ServiceAccount and Job), the pod template and failure
+policy in [_backup.tpl](../../deploy/helm/trove/templates/_backup.tpl), the validation in
+[_validate_backup.tpl](../../deploy/helm/trove/templates/_validate_backup.tpl), checked by `test/chart/backup_test.go`. The Jobs
+take only their own `extraEnv` ([Q-HA-149](#q-ha-149--the-backup-and-restore-jobs-take-the-environment-of-their-own-values-only)),
+the restore Job has a grace period of its own ([Q-HA-147](#q-ha-147--the-restore-job-has-a-termination-grace-period-of-its-own)),
+and the target's CA is the Secret `secrets.backupTargetCA`
+([Q-HA-146](#q-ha-146--the-ca-of-the-backup-target-is-a-secret-of-the-chart)). The acceptance criteria that need a cluster (a
+drain of the node of a running pod, `kubectl create job --from=cronjob/…` under load, the restore sequence on the local profile)
+are the end-to-end suite's.
+
 `trove backup create` writes a consistent backup of the service, a transactionally consistent
 snapshot of trove's PostgreSQL data with every blob it references, to a configurable S3 target, and
 `trove backup restore` restores one into an empty installation (INV-19).
@@ -2765,7 +2776,7 @@ renders the Job `<fullname>-restore` and changes two other things while the valu
   anchor without a flag. No PodDisruptionBudget selects the pod, so a drain never waits for a
   restore either; the pod carries `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` like
   the backup pod. `activeDeadlineSeconds` comes from `restore.activeDeadlineSeconds` (0 = not
-  rendered).
+  rendered) and `terminationGracePeriodSeconds` from `restore.terminationGracePeriodSeconds` (60, at least 30, Q-HA-147).
 - **A Job that failed for good** (its retries used up, or a `FailJob` exit) is continued after the
   cause is fixed by deleting it and running the same `helm upgrade` with the restore values again:
   `kubectl -n trove delete job trove-restore`. Helm then creates the Job anew, and its pod resumes.
@@ -3493,7 +3504,8 @@ changes, that default follows.
 | `secrets.valkeySentinel` (same pods) | `username` (optional), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` |
 | `secrets.valkeyCA` (same pods) | `ca.crt` | `/var/run/secrets/trove/valkey-ca/` | `valkey.tls.ca_file` |
 | `secrets.valkeyClientCert` (same pods) | `tls.crt`, `tls.key` | `/var/run/secrets/trove/valkey-client/` | `valkey.tls.cert_file`, `valkey.tls.key_file` |
-| `secrets.backupTarget` (backup and restore pods; only with `source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/backup-target/` | `backup.target.credentials.access_key_id_file`, `…secret_access_key_file` |
+| `secrets.backupTarget` (backup and restore pods; only with `source: static`) | `access-key-id`, `secret-access-key`, `session-token` (only with `sessionTokenKey`) | `/var/run/secrets/trove/backup-target/` | `backup.target.credentials.access_key_id_file`, `…secret_access_key_file`, `…session_token_file` |
+| `secrets.backupTargetCA` (backup and restore pods; Q-HA-146) | `ca.crt` | `/var/run/secrets/trove/backup-target-ca/` | `backup.target.ca_file` |
 | `secrets.oidc[]` (one entry per provider ID; only the pods of role `api` (its main Deployment, its pools and its endpoint pools) and `web` with `web.enabled`; never a pod of `packages`, worker, backup, migration or restore pods, R-AUTH-042, Q-HA-79) | `client-secret` | `/var/run/secrets/trove/oidc-<id>/` | `client_secret_file` of the provider with that `id` in `config.auth.oidc.providers` |
 | `secrets.breakGlass` (the same pods as `secrets.oidc[]`, R-AUTH-014, R-AUTH-042) | `password` | `/var/run/secrets/trove/break-glass/` | `auth.break_glass.password_file`; empty value → `auth.break_glass.enabled: false` |
 | `secrets.encryption` | `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered) and `secrets.active_key_id` (the first entry) |
@@ -4073,7 +4085,10 @@ secrets:
     existingSecret: ""                  # required with config.backup.target.credentials.source static
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
-    sessionTokenKey: ""
+    sessionTokenKey: ""                 # empty = no session token
+  backupTargetCA:
+    existingSecret: ""                  # empty = the system trust store; the backup and restore pods only; example: trove-backup-target-tls. Renders backup.target.ca_file (Q-HA-146)
+    key: ca.crt
   oidc: []                              # example:
   #  - providerId: corp                 # example; matches config.auth.oidc.providers[].id
   #    existingSecret: trove-oidc-corp  # example
@@ -4304,6 +4319,7 @@ restore:
   extraArgs: []                         # example: [--check] for a dry run of the preconditions (R-BAK-020)
   backoffLimit: 2                       # evictions are not counted, every retry resumes (R-BAK-021)
   activeDeadlineSeconds: 0              # 0 = not rendered
+  terminationGracePeriodSeconds: 60     # at least 30; time to stop at the next safe point (Q-HA-147)
   serviceAccount:
     create: true
     name: ""                            # <fullname>-restore
@@ -5047,11 +5063,15 @@ Q-STOR-152); and these sixteen rows of the table below: `TroveReplicasNotReady`,
 `namespace`, which every scrape through the Prometheus operator carries. The binary exports every metric these rows read under the name of their
 expression (Q-HA-135).
 
-**Not rendered, because what they read does not exist yet.** `TroveBackupCheckFailed`, `TroveBackupStale`, `TroveBackupFailed`,
-`TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage` and `TroveBackupVerifyFindings` read the `trove_backup_*`
-gauges that the backup and restore jobs write ([backup-and-restore.md](backup-and-restore.md) R-BAK-014); those jobs are phase 7 and not built,
-so the gauges are not exported and the alerts stay out until the backup exists. `TroveRevocationJournalBacklog` reads
-`trove_revocation_journal_pending` of the revocation journal (R-HA-054), which is the same phase and not built either. The acceptance criteria
+Phase 7 adds `TroveRevocationJournalBacklog` (R-HA-054) and the six alerts of the backup runs, `TroveBackupStale`, `TroveBackupFailed`,
+`TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage` and `TroveBackupVerifyFindings`
+([backup-and-restore.md](backup-and-restore.md) R-BAK-014), each with a rule test in which it fires and one in which it stays silent. The
+two gauges that have no series until the event happened (Q-OPS-180) are handled in the expressions: `TroveBackupFailed` reads the last success
+as `or vector(0)`, and `TroveBackupStale` has a clause for a backup that never succeeded ([Q-OPS-182](operations-and-observability.md#q-ops-182--the-clause-of-trovebackupstale-for-a-backup-that-never-succeeded-reads-its-window-from-the-chart)).
+
+**Not rendered, because what it reads does not exist yet.** `TroveBackupCheckFailed` reads `trove_backup_check_ok{check}` of the platform
+check task `backup-check` (R-HA-023, [operations-and-observability.md](operations-and-observability.md) R-OPS-019); no code registers that gauge,
+so the alert stays out until the task exists, and R-HA-045 is complete only then. The acceptance criteria
 below that need a Prometheus scraping a running profile (object store stopped, Valkey stopped, the suspended backup, the interrupted backup run)
 are not covered by a test: the rule tests prove the expressions against given series, not that a stopped component produces those series.
 
@@ -5149,7 +5169,8 @@ Acceptance criteria:
 ### R-HA-046 · Extension points
 Priority: **P1** · Covers: HA-048, HA-049, HA-050, HA-051
 
-- `extraEnv` and `extraEnvFrom` (all trove containers), `web.extraEnv`, `worker.extraEnv`,
+- `extraEnv` and `extraEnvFrom` (the containers of the Deployments; the backup and restore Jobs take only their own
+  `backup.extraEnv` and `restore.extraEnv`, like the migration Job, Q-HA-149), `web.extraEnv`, `worker.extraEnv`,
   `backup.extraEnv`, `restore.extraEnv` and `migrations.extraEnv` (per workload), `extraVolumes`
   and `extraVolumeMounts` (trove container), `initContainers`,
   `sidecars` (Kubernetes native sidecars with `restartPolicy: Always` are allowed), `lifecycle`
@@ -8262,6 +8283,68 @@ edge's limit (then the cause is elsewhere) or when a client waits longer than 90
 
 **Applied:** `deploy/dev/haproxy-values.yaml` (`timeout-keep-alive: 90s`), `test/e2e/clients/fwd/main.go` (closing line, tests in `main_test.go`),
 [developer/e2e.md](../developer/e2e.md) (forwarder), F-70 in [projektplan/promt.md](../projektplan/promt.md). No requirement text changed.
+
+### Q-HA-146 · The CA of the backup target is a Secret of the chart
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `config.backup.target.ca_file` stays an ordinary key | The operator mounts the file with `extraVolumes` | No new value | `extraVolumes` reach the Deployments and not the Jobs (Q-HA-149), so the key would name a file no backup pod has; a private CA, which the local profile uses on every link, could not be trusted |
+| (b) `secrets.backupTargetCA` (`existingSecret`, `key`), mounted in the backup and restore pods, renders `backup.target.ca_file` (chosen) | The CA mounts as a directory volume like every other Secret of the chart, so a rotated CA reaches the pod without a restart | The target's trust is its own, as the target's credentials are; replicas never mount it; the key moves from the operator's keys to the chart-managed ones (R-HA-029 refuses it inside `config`) | One value more |
+| (c) Reuse `secrets.s3CA` | One CA for the blob store and the target | No new value | A target in another account or provider has its own CA; a backup pod would trust the blob store's CA for it |
+
+**Choice:** (b).
+
+**Rationale:** The rule of the owner's stack is that every link is TLS-capable and certificates rotate without a restart (2026-10-29). The chart's way to give a pod a CA is a Secret mounted without `subPath`, which (b) follows. The development agent would revisit this when the chart gets the `trustedCA` values of R-HA-043, which could carry the target's CA as well.
+
+**Applied:** R-HA-030 (Secrets table), R-HA-031 (values block), R-HA-029 (managed keys); `templates/_secrets.tpl`, `templates/_helpers.tpl`, `templates/_validate.tpl`, `values.yaml`, `values.schema.json`, `deploy/dev/values-dev.yaml`.
+
+### Q-HA-147 · The restore Job has a termination grace period of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The restore Job reads `backup.terminationGracePeriodSeconds` | No new value | One value | Switching the backup off or tuning it for a lighter run would change how a restore ends; a restore at a safe point can need other time than a backup (R-BAK-012 asks only for at least 30 seconds of both) |
+| (b) `restore.terminationGracePeriodSeconds`, default 60, at least 30 (chosen) | Each Job has its own | The value sits with the object it configures, like `backoffLimit` and `activeDeadlineSeconds` | One value more |
+
+**Choice:** (b).
+
+**Rationale:** R-BAK-012 demands the grace period of both Jobs and R-HA-060 only named it for the backup. The development agent would revisit this if the restore's time to a safe point turns out to be much longer than a backup's.
+
+**Applied:** R-HA-060, R-HA-031 (values block); `values.yaml`, `values.schema.json`.
+
+### Q-HA-148 · While `restore.enabled` is set, the replica minimums give way to the zero rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the minimums and add the zero rule | `api`, `packages` and `worker` need at least one replica, with `highAvailability.enforce` at least two, and `restore.enabled` needs none | Nothing to change | Cannot be satisfied together: no value passes both |
+| (b) The checks "at least 1" and "at least 2 with `highAvailability.enforce`" do not apply while `restore.enabled` is set; the zero rule replaces them (chosen) | Every Deployment, pool and endpoint pool must have `replicaCount: 0` and no autoscaler; the other rules (disruption budget, host spread, memory limits) stay | The sequence of R-HA-060 passes with its own values; a replica that would write during the restore is refused with the value named | `highAvailability.enforce` does not stop an installation without replicas while the restore Job exists |
+| (c) No validation while `restore.enabled` is set | Every rule off | Simplest | A typo in the other values would surface in the final upgrade, after hours of restore |
+
+**Choice:** (b).
+
+**Rationale:** An installation under restore is not served on purpose, and the operator's sequence (R-HA-060) sets `highAvailability.enforce=false` for the same reason; the final `helm upgrade` without `restore.enabled` applies every minimum again. The development agent would revisit this if a restore should run beside replicas that only read.
+
+**Applied:** R-HA-029 (rows of `restore.enabled`), R-HA-060; `templates/_validate_roles.tpl`, `templates/_validate_backup.tpl`.
+
+### Q-HA-149 · The backup and restore Jobs take the environment of their own values only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The global `extraEnv`, `extraEnvFrom`, `extraVolumes` and `extraVolumeMounts` reach the Jobs as they reach the Deployments | R-HA-046 read literally | An outbound proxy variable set once reaches every pod | A variable or volume that serves the replicas (a Valkey or login Secret an operator adds, the dev profile's CA volume) would reach the pods that hold the target's credentials, and the rule that the Jobs mount no Valkey Secret (R-BAK-012) could not be checked from the chart |
+| (b) The Jobs take `backup.extraEnv` and `restore.extraEnv` and nothing global (chosen) | As the migration Job does with `migrations.extraEnv` | What a Job mounts is what its values and the Secrets of its scope say; the chart test can assert it | An operator sets a proxy variable three times |
+
+**Choice:** (b).
+
+**Rationale:** The Jobs are the pods with the highest privilege on the data, and the chart's rule is that each Secret is mounted only into the pods whose process reads it (R-HA-030). The development agent would revisit this if operators ask for a shared list for all Jobs.
+
+**Applied:** R-HA-046, R-HA-060; `templates/_backup.tpl`.
 
 ### Q-HA-140 · A journal object is an envelope around the producer's entry
 

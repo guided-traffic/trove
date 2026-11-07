@@ -9,6 +9,9 @@ packages:
     maxUnavailable: null
     minAvailable: 2
 config:
+  backup:
+    target:
+      bucket: trove-backups
   server:
     base_url: https://trove.example.com
   database:

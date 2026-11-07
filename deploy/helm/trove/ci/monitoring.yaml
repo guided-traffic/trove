@@ -2,6 +2,9 @@
 # the chart reads. The rules are rendered into a rule file and tested with promtool
 # (deploy/helm/trove/tests/rules_test.yaml, test/chart).
 config:
+  backup:
+    target:
+      bucket: trove-backups
   server:
     base_url: https://trove.example.com
   database:

@@ -62,13 +62,14 @@ func schemaAllows(node map[string]any, path []string) bool {
 }
 
 // unbuiltPrefixes are the values of the spec block that the chart does not carry because the feature that owns
-// them is not rendered yet: the backup and restore Jobs (R-BAK-*, R-HA-060), the chart-created Gateway
-// (R-HA-053), the content origin (R-HA-055), the bootstrap ConfigMap, dual-stack and Service tuning (R-HA-044),
-// trusted CA bundles (R-HA-043) and the extension points (R-HA-046). The keys under config belong to the binary's
-// schema (R-HA-029) and are shown by the spec block as far as the pages name them.
+// them is not rendered yet: the post-restore Job (R-HA-025), the chart-created Gateway (R-HA-053), the content origin
+// (R-HA-055), the bootstrap ConfigMap, dual-stack and Service tuning (R-HA-044), trusted CA bundles (R-HA-043) and the
+// extension points (R-HA-046). The keys under config belong to the binary's schema (R-HA-029) and are shown by the spec
+// block as far as the pages name them. The backup and restore values (R-HA-060, R-HA-030) are the chart's and compared
+// like every other value.
 var unbuiltPrefixes = []string{
-	"config.", "backup.", "restore.", "postRestore.", "bootstrap.", "contentOrigin.", "gateway.create.",
-	"secrets.backupTarget.", "secrets.databaseBackup.", "secrets.s3.sessionTokenKey",
+	"config.", "postRestore.", "bootstrap.", "contentOrigin.", "gateway.create.",
+	"secrets.s3.sessionTokenKey",
 	"service.externalTrafficPolicy", "service.ipFamilyPolicy", "service.ipFamilies", "service.loadBalancerSourceRanges",
 	"trustedCA.", "sidecars", "initContainers", "lifecycle",
 }

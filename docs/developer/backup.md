@@ -177,6 +177,15 @@ system screens in [web/src/app/features/system/backups/](../../web/src/app/featu
   which asserts that every request of the visit is a `GET`. The states that need a cluster (a run in progress, an interrupted
   run, a lease-expired run) are covered by fixtures in the component tier and by the backup suite of `test/e2e`.
 
+## The chart
+
+The CronJob `<fullname>-backup` runs `trove backup create --trigger schedule`, the Job `<fullname>-restore` runs `trove backup restore <id>`
+(with `restore.enabled`); both read the shared `trove.yaml`, run as a ServiceAccount of their own and take the exit codes of
+[exit.go](../../internal/backup/exit.go) as their failure policy (2, 3, 4 and 6 fail the Job, an eviction is ignored, 75 and 1 are
+retried). The alerts of R-BAK-014 are rules of the chart over the metric names of [metrics.go](../../internal/backup/metrics.go) and
+[journal/metrics.go](../../internal/journal/metrics.go): a renamed family fails `TestPrometheusRule`. What the chart renders, the Secrets of
+each Job and the tests are in [helm-chart.md](helm-chart.md#the-backup-and-restore-jobs).
+
 ## Conventions
 
 - Test names carry requirement IDs (`R-BAK-010`), never decision IDs.

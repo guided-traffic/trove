@@ -11,10 +11,9 @@ import (
 
 type alertSeverity struct{ name, severity string }
 
-// alertSeverities are the alerts the chart renders, in the order of templates/_rules.tpl, with their severity. The
-// seven TroveBackup* alerts and TroveRevocationJournalBacklog of R-HA-045's table are not among them: the metrics they
-// read (trove_backup_*, trove_revocation_journal_pending) are not exported until the backup and restore jobs and the
-// revocation journal exist (phase 7).
+// alertSeverities are the alerts the chart renders, in the order of templates/_rules.tpl, with their severity. Of
+// R-HA-045's table only TroveBackupCheckFailed is not among them: it reads trove_backup_check_ok, which the platform
+// check task backup-check (R-HA-023) exports, and no code registers that gauge yet.
 func alertSeverities() []alertSeverity {
 	return []alertSeverity{
 		{"TroveReplicasNotReady", "critical"},
@@ -35,11 +34,18 @@ func alertSeverities() []alertSeverity {
 		{"TroveBridgeLeftOn", "warning"},
 		{"TroveBlobMissing", "critical"},
 		{"TroveGCStale", "warning"},
+		{"TroveRevocationJournalBacklog", "warning"},
 		{"TroveValkeyUnavailable", "critical"},
 		{"TroveValkeyUnavailableSingleReplica", "warning"},
 		{"TroveValkeySentinelsDegraded", "warning"},
 		{"TroveValkeyFailoverFlapping", "warning"},
 		{"TroveValkeyPrimaryDisagreement", "critical"},
+		{"TroveBackupStale", "critical"},
+		{"TroveBackupFailed", "critical"},
+		{"TroveBackupRunningLong", "warning"},
+		{"TroveBackupGlobalHoldLong", "warning"},
+		{"TroveBackupSourceDamage", "critical"},
+		{"TroveBackupVerifyFindings", "critical"},
 	}
 }
 
@@ -54,9 +60,9 @@ func renderedRules(t *testing.T, sets ...string) []any {
 }
 
 // TestPrometheusRule is the check of the PrometheusRule of the chart for what is built of the monitoring integration. It
-// does not carry the ID R-HA-045: the requirement is not complete, the TroveBackup* alerts wait for the backup and
-// restore jobs and TroveRevocationJournalBacklog for the revocation journal (R-HA-045, status), and its acceptance
-// criteria with a Prometheus scraping a running profile are not covered here.
+// does not carry the ID R-HA-045: the requirement is not complete, TroveBackupCheckFailed waits for the gauge of the
+// platform check task (R-HA-023, R-HA-045 status), and its acceptance criteria with a Prometheus scraping a running
+// profile are not covered here. The rule tests of the backup alerts are in deploy/helm/trove/tests/rules_test.yaml.
 func TestPrometheusRule(t *testing.T) {
 	t.Run("it is rendered when metrics.prometheusRule.enabled is true and carries the configured labels", func(t *testing.T) {
 		_, docs := render(t, []string{monitoringSet()})
@@ -117,6 +123,8 @@ func TestPrometheusRule(t *testing.T) {
 			"TroveJobsStuck": "5m", "TroveLeaseLost": "", "TroveMixedVersions": "2h", "TroveSpoolNearlyFull": "10m",
 			"TroveBlobMissing": "", "TroveGCStale": "1h", "TroveValkeyUnavailable": "2m", "TroveValkeyUnavailableSingleReplica": "5m",
 			"TroveValkeySentinelsDegraded": "5m", "TroveValkeyFailoverFlapping": "", "TroveValkeyPrimaryDisagreement": "5m",
+			"TroveRevocationJournalBacklog": "15m", "TroveBackupStale": "", "TroveBackupFailed": "", "TroveBackupRunningLong": "",
+			"TroveBackupGlobalHoldLong": "30m", "TroveBackupSourceDamage": "", "TroveBackupVerifyFindings": "",
 		}
 		for _, r := range renderedRules(t) {
 			name := str(r, "alert")
@@ -154,14 +162,10 @@ func TestPrometheusRule(t *testing.T) {
 		}
 	})
 
-	t.Run("no alert of the backup or the revocation journal is rendered before their metrics exist", func(t *testing.T) {
+	t.Run("the alert of the platform check is not rendered before its gauge is exported", func(t *testing.T) {
 		for _, r := range renderedRules(t) {
-			name := str(r, "alert")
-			if strings.HasPrefix(name, "TroveBackup") || name == "TroveRevocationJournalBacklog" {
-				t.Errorf("%s is rendered, but the binary exports no metric for it", name)
-			}
-			if strings.Contains(str(r, "expr"), "trove_backup_") || strings.Contains(str(r, "expr"), "trove_revocation_journal_pending") {
-				t.Errorf("%s reads a metric the binary does not export: %s", name, str(r, "expr"))
+			if str(r, "alert") == "TroveBackupCheckFailed" || strings.Contains(str(r, "expr"), "trove_backup_check_ok") {
+				t.Errorf("%s is rendered, but no code registers trove_backup_check_ok: %s", str(r, "alert"), str(r, "expr"))
 			}
 		}
 	})
@@ -205,8 +209,21 @@ func TestPrometheusRule(t *testing.T) {
 		}
 	})
 
-	t.Run("a name of an alert that waits for the backup is not yet an alert", func(t *testing.T) {
-		renderFails(t, []string{monitoringSet()}, []string{"metrics.prometheusRule.disabledAlerts={TroveBackupStale}"}, "disabledAlerts", "TroveBackupStale")
+	t.Run("a name of an alert that waits for its gauge is not yet an alert", func(t *testing.T) {
+		renderFails(t, []string{monitoringSet()}, []string{"metrics.prometheusRule.disabledAlerts={TroveBackupCheckFailed}"}, "disabledAlerts", "TroveBackupCheckFailed")
+	})
+
+	t.Run("the backup alerts can be disabled one by one", func(t *testing.T) {
+		got := renderedRules(t, "metrics.prometheusRule.disabledAlerts={TroveBackupStale,TroveBackupGlobalHoldLong,TroveRevocationJournalBacklog}")
+		for _, r := range got {
+			switch str(r, "alert") {
+			case "TroveBackupStale", "TroveBackupGlobalHoldLong", "TroveRevocationJournalBacklog":
+				t.Errorf("%s is rendered although disabled", str(r, "alert"))
+			}
+		}
+		if len(got) != len(alertSeverities())-3 {
+			t.Errorf("%d alerts, want %d", len(got), len(alertSeverities())-3)
+		}
 	})
 }
 

@@ -1,5 +1,5 @@
 # Values of the trove chart. A value is commented where its meaning, unit, range or consequence is not evident
-# from its name. Values of features the chart does not render yet (Gateway API chart-created Gateway, backup, restore)
+# from its name. Values of features the chart does not render yet (Gateway API chart-created Gateway, the post-restore Job)
 # are not defined: values.schema.json refuses unknown keys, so a typo or a value of a later feature fails before
 # anything renders. docs/developer/helm-chart.md lists what is in and what is not; docs/spec/ha-and-helm.md is the
 # reference of every key.
@@ -324,6 +324,14 @@ config:
       max_size: 10GiB                   # must fit the spool
   metrics:
     auth: none                          # none | static (needs secrets.metricsToken)
+  backup:                               # backup-and-restore.md R-BAK-011 owns these keys; the chart manages manual_run and the credential and CA file paths of the target
+    target:
+      endpoint: ""                      # AWS resolution; example: https://s3.eu-central-1.amazonaws.com
+      region: ""                        # example: eu-central-1
+      bucket: ""                        # required with backup.enabled or restore.enabled; example: trove-backups
+      credentials:
+        source: default                 # default | webIdentity | static (secrets.backupTarget)
+    expected_interval: 24h              # drives TroveBackupStale through its gauge; the chart reads it for the window of the alert on a backup that never ran (R-HA-045)
   auth:                                 # identity-and-authentication.md
     login_page:
       auto_redirect: true               # true: with exactly one OIDC provider the sign-in page goes straight to it; /ui/login?auto_sign_in=false still shows the page with the break-glass form. false: the page lists the providers
@@ -435,6 +443,10 @@ secrets:
     existingSecret: ""                  # empty = single-role mode; example: trove-db-owner
     usernameKey: username
     passwordKey: password
+  databaseBackup:
+    existingSecret: ""                  # empty = secrets.database; the backup pods only; example: trove-db-backup (the login of database.backup_role)
+    usernameKey: username
+    passwordKey: password
   databaseCA:
     existingSecret: ""                  # example: trove-db-ca (only ca.crt is projected)
     key: ca.crt
@@ -457,6 +469,14 @@ secrets:
     existingSecret: ""                  # Sentinels without authentication; example: trove-valkey-sentinel
     usernameKey: ""                     # empty = no Sentinel user, the file is not mounted
     passwordKey: password
+  backupTarget:
+    existingSecret: ""                  # required with config.backup.target.credentials.source static; the backup and restore pods only
+    accessKeyIdKey: access-key-id
+    secretAccessKeyKey: secret-access-key
+    sessionTokenKey: ""                 # empty = no session token
+  backupTargetCA:
+    existingSecret: ""                  # empty = the system trust store; the backup and restore pods only; example: trove-backup-target-tls. Renders backup.target.ca_file
+    key: ca.crt
   s3CA:
     existingSecret: ""                  # empty = the outbound trust store (system roots plus config.proxy.outbound.tls.ca_files); example: trove-s3-tls. Renders storage.s3.ca_file
     key: ca.crt
@@ -672,6 +692,60 @@ migrations:
     limits:
       memory: 512Mi
   podAnnotations: {}
+  extraEnv: []
+
+# ── Backup CronJob and restore Job (R-HA-060, R-BAK-012) ──────────────────────
+# Both are Jobs of the binary's command `trove backup`, not roles. They serve nothing, open no port and mount no volume but /tmp.
+backup:
+  enabled: true                         # needs config.backup.target.bucket
+  schedule: "0 2 * * *"                 # five fields or one of the @-macros, the dialect of trove's cron parser; no seconds, no ?, day of week 0-6, no @every, no TZ=
+  timeZone: Etc/UTC
+  suspend: false                        # rendered true while restore.enabled
+  adoptTarget: false                    # adds --adopt-target, to adopt the target of the installation this one was restored from (R-BAK-002)
+  startingDeadlineSeconds: 3600         # a run missed by more than this is skipped, not started late
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  backoffLimit: 2                       # a drain or an eviction is not counted (podFailurePolicy)
+  activeDeadlineSeconds: 0              # 0 = not rendered: a first backup of a large installation takes many hours, and a hung run cancels itself after config.backup.stall_timeout
+  terminationGracePeriodSeconds: 60     # at least 30: time to end the run as interrupted
+  tmpSizeLimit: 256Mi                   # the only volume; the commands use at most 64 MiB of it
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  serviceAccount:
+    create: true
+    name: ""                            # <fullname>-backup
+    annotations: {}                     # example (IRSA, read on the blob bucket, write on the target): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-backup"}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  priorityClassName: ""
+  podAnnotations: {}                    # cluster-autoscaler.kubernetes.io/safe-to-evict: "false" is always added
+  podLabels: {}
+  extraEnv: []
+
+restore:
+  enabled: false                        # renders the restore Job, no migration Job and a suspended CronJob; every role and pool must have no replica
+  backupId: ""                          # required with enabled; example: 20261028T020000Z-7f3a
+  skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
+  extraArgs: []                         # appended to trove backup restore; example: [--check] for a run of the preconditions only
+  backoffLimit: 2                       # a drain or an eviction is not counted; every retry resumes from the anchor
+  activeDeadlineSeconds: 0              # 0 = not rendered
+  terminationGracePeriodSeconds: 60     # at least 30
+  serviceAccount:
+    create: true
+    name: ""                            # <fullname>-restore
+    annotations: {}                     # example (IRSA, read on the target, write on the new blob prefix, read on the source's journal): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-restore"}
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  podAnnotations: {}                    # safe-to-evict: "false" is always added, as for backup pods
   extraEnv: []
 
 # ── Extension points ────────────────────────────────────────────

@@ -1279,7 +1279,8 @@ func TestChart(t *testing.T) {
 	})
 
 	t.Run("R-HA-019 migrations.mode disabled renders no Job", func(t *testing.T) {
-		_, docs := render(t, required(), "migrations.mode=disabled")
+		// The backup CronJob is the backup's (R-HA-060), not a migration object, so the check runs with it off.
+		_, docs := render(t, required(), "migrations.mode=disabled", "backup.enabled=false")
 		for _, k := range []string{"Job", "CronJob"} {
 			if n := len(ofKind(docs, k)); n != 0 {
 				t.Errorf("%d %s objects rendered", n, k)

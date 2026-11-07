@@ -1,7 +1,7 @@
 # Chart values of the local development profile (R-HA-051): the real chart with every role, api (2 replicas), packages
 # (3) and worker (2) plus a worker pool for the queue vuln (2), against the dependencies deploy/dev/up.sh installs into the "trove"
-# namespace of the kind cluster "trove". The backup CronJob of R-HA-051 is not part of the chart
-# skeleton yet, so no backup target is configured here.
+# namespace of the kind cluster "trove". The backup CronJob runs every six hours against the bucket trove-backups of the same
+# SeaweedFS (s3.yaml creates it), a bucket of its own beside the blob bucket trove-blobs (R-HA-060).
 image:
   registry: docker.io
   repository: guidedtraffic/trove
@@ -145,6 +145,18 @@ config:
         source: static
     upload:
       max_size: 1GiB
+  backup:
+    target:
+      bucket: trove-backups                        # a bucket of its own on the blob store's SeaweedFS, over TLS like every link of the profile
+      region: us-east-1
+      endpoint: https://trove-s3.trove.svc:9000
+      force_path_style: true
+      credentials:
+        source: static
+    expected_interval: 6h                          # the schedule below
+
+backup:
+  schedule: "0 */6 * * *"
 
 secrets:
   database:
@@ -162,8 +174,13 @@ secrets:
     usernameKey: ""
   valkeySentinel:
     existingSecret: trove-valkey-auth
+  backupTarget:
+    existingSecret: trove-s3              # the same SeaweedFS login as the blob store; a production target has keys of its own
   s3CA:
     existingSecret: trove-s3-tls          # the SeaweedFS certificate Secret (cert-manager, dev CA); renders storage.s3.ca_file
+    key: ca.crt
+  backupTargetCA:
+    existingSecret: trove-s3-tls          # the same certificate; renders backup.target.ca_file
     key: ca.crt
   valkeyCA:
     existingSecret: trove-valkey-tls      # the Valkey operator's certificate Secret (cert-manager, dev CA)

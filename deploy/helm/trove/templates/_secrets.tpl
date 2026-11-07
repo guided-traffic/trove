@@ -1,19 +1,26 @@
 {{/*
 The Secret mounts of a pod (R-HA-030) as a YAML list. Argument: dict "root" . "scope" "runtime"
-(web and worker pods) or "migrate" (the migration Job). Each entry names one existing Secret,
+(the pods of the roles), "migrate" (the migration Job), "backup" (the backup CronJob's pods) or "restore" (the
+restore Job's pod). Each entry names one existing Secret,
 the keys that are projected and the file name each key gets. Secrets mount read-only with
 defaultMode 0440, with items and without subPath, so a rotated Secret reaches the files.
 Secrets never become environment variables. The login secrets (secrets.oidc, secrets.breakGlass) are
 mounted into the pods of role api (the main Deployment, its pools and its endpoint pools) and, in the bridge of
-R-HA-064, into the web pods; never into packages, worker or the migration Job.
+R-HA-064, into the web pods; never into packages, worker or a Job. The target of the backup (secrets.backupTarget,
+secrets.backupTargetCA) mounts into the backup and restore pods only (R-HA-060, R-BAK-011); Valkey into none of the Jobs
+(R-BAK-012, R-BAK-022); the key ring into the replicas and the restore Job, which checks that it opens every key ID of the
+backup (R-BAK-020).
 */}}
 {{- define "trove.secretMounts" -}}
 {{- $s := .root.Values.secrets -}}
 {{- $out := list -}}
 {{- $dbSecret := $s.database -}}
-{{- if and (eq .scope "migrate") $s.databaseMigration.existingSecret -}}
+{{- if and (has .scope (list "migrate" "restore")) $s.databaseMigration.existingSecret -}}
 {{- $dbSecret = $s.databaseMigration -}}
+{{- else if and (eq .scope "backup") $s.databaseBackup.existingSecret -}}
+{{- $dbSecret = $s.databaseBackup -}}
 {{- end -}}
+{{- $job := has .scope (list "backup" "restore") -}}
 {{- $out = append $out (dict "name" "database" "secret" $dbSecret.existingSecret "path" "/var/run/secrets/trove/database" "items" (list (dict "key" $dbSecret.usernameKey "path" "username") (dict "key" $dbSecret.passwordKey "path" "password"))) -}}
 {{- if $s.databaseCA.existingSecret -}}
 {{- $out = append $out (dict "name" "database-ca" "secret" $s.databaseCA.existingSecret "path" "/var/run/secrets/trove/database-ca" "items" (list (dict "key" $s.databaseCA.key "path" "ca.crt"))) -}}
@@ -21,19 +28,36 @@ R-HA-064, into the web pods; never into packages, worker or the migration Job.
 {{- if $s.databaseClientCert.existingSecret -}}
 {{- $out = append $out (dict "name" "database-client" "secret" $s.databaseClientCert.existingSecret "path" "/var/run/secrets/trove/database-client" "items" (list (dict "key" $s.databaseClientCert.certKey "path" "tls.crt") (dict "key" $s.databaseClientCert.keyKey "path" "tls.key"))) -}}
 {{- end -}}
-{{- if eq .scope "runtime" -}}
-{{- /* The key ring is mounted into replicas only: the migration Job never seals or opens a value (R-HA-030). */ -}}
+{{- if or (eq .scope "runtime") (eq .scope "restore") -}}
+{{- /* The key ring is mounted into replicas and the restore Job only: the migration Job and the backup pods never seal or open a value (R-HA-030, R-BAK-012). */ -}}
 {{- $encItems := list -}}
 {{- range $s.encryption.keys -}}
 {{- $encItems = append $encItems (dict "key" . "path" .) -}}
 {{- end -}}
 {{- $out = append $out (dict "name" "encryption" "secret" $s.encryption.existingSecret "path" "/var/run/secrets/trove/encryption" "items" $encItems) -}}
+{{- end -}}
+{{- if or (eq .scope "runtime") $job -}}
 {{- if eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "s3" "secret" $s.s3.existingSecret "path" "/var/run/secrets/trove/s3" "items" (list (dict "key" $s.s3.accessKeyIdKey "path" "access-key-id") (dict "key" $s.s3.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}
 {{- if $s.s3CA.existingSecret -}}
 {{- $out = append $out (dict "name" "s3-ca" "secret" $s.s3CA.existingSecret "path" "/var/run/secrets/trove/s3-ca" "items" (list (dict "key" $s.s3CA.key "path" "ca.crt"))) -}}
 {{- end -}}
+{{- end -}}
+{{- if $job -}}
+{{- /* The backup target: its keys and its CA reach the Jobs that write or read it and no replica (R-HA-060, R-BAK-011). */ -}}
+{{- if eq (dig "backup" "target" "credentials" "source" "default" .root.Values.config) "static" -}}
+{{- $tItems := list (dict "key" $s.backupTarget.accessKeyIdKey "path" "access-key-id") (dict "key" $s.backupTarget.secretAccessKeyKey "path" "secret-access-key") -}}
+{{- if $s.backupTarget.sessionTokenKey -}}
+{{- $tItems = append $tItems (dict "key" $s.backupTarget.sessionTokenKey "path" "session-token") -}}
+{{- end -}}
+{{- $out = append $out (dict "name" "backup-target" "secret" $s.backupTarget.existingSecret "path" "/var/run/secrets/trove/backup-target" "items" $tItems) -}}
+{{- end -}}
+{{- if $s.backupTargetCA.existingSecret -}}
+{{- $out = append $out (dict "name" "backup-target-ca" "secret" $s.backupTargetCA.existingSecret "path" "/var/run/secrets/trove/backup-target-ca" "items" (list (dict "key" $s.backupTargetCA.key "path" "ca.crt"))) -}}
+{{- end -}}
+{{- end -}}
+{{- if eq .scope "runtime" -}}
 {{- $vkItems := list -}}
 {{- if $s.valkey.usernameKey -}}
 {{- $vkItems = append $vkItems (dict "key" $s.valkey.usernameKey "path" "username") -}}

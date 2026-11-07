@@ -1,0 +1,50 @@
+{{- if .Values.restore.enabled }}
+{{- /*
+The restore Job (R-HA-060, R-BAK-012, Q-HA-18): trove backup restore <restore.backupId>, an ordinary Job and not a Helm
+hook, so Helm does not wait for it and a restore of many hours meets no Helm or GitOps timeout; the operator waits with
+kubectl wait. While restore.enabled is set the chart renders no migration Job (the restore applies the migrations
+itself), suspends the backup CronJob and refuses every replica (trove.validateBackup). The Job takes the failure
+handling of the backup Job: a retry resumes from the anchor. It runs as a ServiceAccount of its own, because neither the
+backup account nor the replicas' account holds the rights of a restore (R-BAK-015).
+*/ -}}
+{{- $fullname := include "trove.fullname" . }}
+{{- $r := .Values.restore }}
+{{- $args := list "backup" "restore" $r.backupId }}
+{{- if $r.skipRevocationJournal }}
+{{- $args = append $args "--skip-revocation-journal" }}
+{{- end }}
+{{- $args = concat $args $r.extraArgs }}
+{{- if $r.serviceAccount.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "trove.jobServiceAccountName" (dict "root" . "kind" "restore") }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "restore") | nindent 4 }}
+  {{- if or $r.serviceAccount.annotations .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml (merge (dict) $r.serviceAccount.annotations .Values.commonAnnotations) | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-restore
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "restore") | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ $r.backoffLimit }}
+  {{- if $r.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ $r.activeDeadlineSeconds }}
+  {{- end }}
+  {{- include "trove.jobPodFailurePolicy" "restore" | nindent 2 }}
+  template:
+    {{- include "trove.jobPod" (dict "root" . "kind" "restore" "args" $args) | nindent 4 }}
+{{- end }}

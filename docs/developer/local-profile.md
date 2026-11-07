@@ -201,6 +201,18 @@ address on macOS and on systemd-resolved; otherwise add `127.0.0.1 packages.trov
 The chart gives the default endpoint a host check too (its `hosts` are the host of `base_url`), so a request to the
 default endpoint with another `Host` answers `421`.
 
+### The backup target
+
+values-dev.yaml renders the backup CronJob (R-HA-060, [helm-chart.md](helm-chart.md#the-backup-and-restore-jobs)) with the schedule
+`0 */6 * * *` and `config.backup.expected_interval: 6h`, so `TroveBackupStale` and the overdue mark follow the schedule. The target is
+the bucket `trove-backups` of the profile's SeaweedFS (created beside `trove-blobs` by the Job of [s3.yaml](../../deploy/dev/s3.yaml)),
+a bucket of its own on the same endpoint, so the rule that a target must not be the blob store's bucket (R-BAK-002) holds without
+`allow_same_bucket`. The link is HTTPS like every link of the profile: `secrets.backupTargetCA` is the SeaweedFS certificate Secret
+`trove-s3-tls`, which also serves `secrets.s3CA`, and the keys are the blob store's (`secrets.backupTarget` names `trove-s3`), because the
+profile has one S3 login; a real target has credentials of its own that no replica holds. The Jobs mount these in the backup and restore
+pods only. A restore on the profile is the sequence of R-HA-060 with `restore.enabled`, `restore.backupId` and every replica count at zero;
+the `dev-backup` and `dev-restore` targets and their drill belong to the end-to-end suite and are not part of the chart.
+
 ## Valkey and Sentinel
 
 [valkey.yaml](../../deploy/dev/valkey.yaml) is a `Valkey` resource of the Valkey operator (`vko.gtrfc.com/v1`); the
@@ -412,6 +424,6 @@ Not verified here, or not configured:
   the operator's own rolling restart (ADR 0030 of the operator, not exercised here) and SeaweedFS at its next restart.
   trove re-reads the Valkey CA per handshake and the S3 CA per request.
 - The operators' amd64 images run under qemu on an arm64 host; their timing there says nothing about production.
-- WAL archiving to `trove-pg-archive` (point-in-time recovery is M5), the backup CronJob (the chart skeleton has
-  none), the Playwright journeys of R-UI-047 (E1.11): the harness has no browser; the e2e tests drive the login with an HTTP
+- WAL archiving to `trove-pg-archive` (point-in-time recovery is M5), a run of the backup CronJob against the profile and the
+  restore drill (the chart renders both, `make chart-test` checks the render; the runs are the end-to-end suite's), the Playwright journeys of R-UI-047 (E1.11): the harness has no browser; the e2e tests drive the login with an HTTP
   client ([e2e.md](e2e.md#m1-tests)), and `TestE1_11Journeys` runs the suite as soon as `web/e2e` exists.

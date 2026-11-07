@@ -2,9 +2,15 @@
 The alerts of the PrometheusRule (R-HA-045) as a YAML list, before disabledAlerts is applied. Names are
 stable. Rendered: the alerts of the vulnerability scanning (R-VULN-024), the two of the mirror mode (R-OPS-046,
 Q-OPS-160, Q-OPS-171), the one of a bridge left on (R-HA-064, Q-HA-92), TroveBlobMissing (R-HA-024, Q-STOR-152) and
-the sixteen rows of R-HA-045's table whose metrics the binary exports. Not rendered, because the metrics do not exist
-yet: the seven TroveBackup* alerts (the backup and restore jobs, phase 7) and TroveRevocationJournalBacklog (the
-revocation journal, R-HA-054). docs/developer/helm-chart.md lists them.
+the sixteen rows of R-HA-045's table whose metrics the binary exports, TroveRevocationJournalBacklog (R-HA-054) and the
+six TroveBackup* alerts of the backup runs (R-BAK-014). Not rendered, because the metric does not exist yet:
+TroveBackupCheckFailed, which reads trove_backup_check_ok of the platform check task backup-check (R-HA-023).
+docs/developer/helm-chart.md lists it.
+
+The backup alerts handle the gauges that have no series until the event happened (Q-OPS-180): TroveBackupFailed reads
+the last success as "or vector(0)", and TroveBackupStale has a clause for a success that never was: no series for
+longer than config.backup.expected_interval, which the chart reads for the window, because the alert has no series to
+read the interval from before the first success.
 
 Every selector is scoped to the namespace of the release, because one Prometheus can scrape several
 installations and a max() over all of them would blend their states. A scrape through the Prometheus
@@ -17,6 +23,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
 {{- $ns := printf "namespace=%q" .Release.Namespace -}}
 {{- $roles := printf "%s-(api|packages|worker|web)(-.*)?" (include "trove.fullname" .) -}}
 {{- $stale := include "trove.seconds" (dig "vulnerabilities" "stale_after" "24h" .Values.config) -}}
+{{- $interval := include "trove.seconds" (dig "backup" "expected_interval" "24h" .Values.config) -}}
 - alert: TroveReplicasNotReady
   expr: min by (deployment) (kube_deployment_status_replicas_available{ {{ $ns }},deployment=~{{ $roles | quote }} }) < 2
   for: 5m
@@ -156,6 +163,14 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: No garbage-collection run has ended successfully for more than two days.
     description: The tasks gc and gc-full do not finish (R-STOR-025). Blobs that nothing references stay in the object store until a run succeeds. The series exists after the first successful run of a worker process, so a worker that never completed a run reports nothing. Check the jobs of the task and the object store.
+- alert: TroveRevocationJournalBacklog
+  expr: max(trove_revocation_journal_pending{ {{ $ns }} }) > 0
+  for: 15m
+  labels:
+    severity: warning
+  annotations:
+    summary: Entries of the revocation journal have waited for shipping to the blob bucket for 15 minutes.
+    description: The outbox grows while the object store is out and ships afterwards, so a backlog of 15 minutes means the shipper does not write the _journal/ prefix of the blob bucket, or writes slower than entries arrive (R-HA-054). A restore taken now would replay a journal that lacks those entries, and a revocation among them would not be applied again. Check that worker pods are ready, the object store alerts, the shipper's log records and the write access of the credential to the prefix.
 - alert: TroveValkeyUnavailable
   expr: max(trove_valkey_available{ {{ $ns }} }) == 0
   for: 2m
@@ -195,9 +210,52 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: Replicas name different Valkey primaries.
     description: At least one replica is bound to a demoted primary (Q-OPS-15, R-ARCH-031), so locks, rate limits and cache signals are split between two servers. The registry in GET /api/v1/system/replicas shows each replica's primary; a restart of the replica that names the old one rebinds it.
+- alert: TroveBackupStale
+  expr: time() - max(trove_backup_last_success_timestamp_seconds{ {{ $ns }} }) > 1.5 * max(trove_backup_expected_interval_seconds{ {{ $ns }} }) or (max(absent(trove_backup_last_success_timestamp_seconds{ {{ $ns }} })) and on() max(trove_backup_expected_interval_seconds{ {{ $ns }} } offset {{ $interval }}s))
+  labels:
+    severity: critical
+  annotations:
+    summary: The last successful backup is older than one and a half times backup.expected_interval, or none has succeeded in a whole interval.
+    description: No create run has ended successfully within 1.5 times config.backup.expected_interval, the condition of the overdue mark in the API and the UI (R-BAK-014). On an installation whose first backup never succeeded the alert fires one expected interval after the replicas first reported. Look at GET /api/v1/system/backups, the CronJob (suspended? missed its starting deadline?) and its Jobs, and the log of the last pod.
+- alert: TroveBackupFailed
+  expr: max(trove_backup_last_failure_timestamp_seconds{ {{ $ns }} }) > (max(trove_backup_last_success_timestamp_seconds{ {{ $ns }} }) or vector(0))
+  labels:
+    severity: critical
+  annotations:
+    summary: The newest backup run failed and no backup has succeeded since.
+    description: A create run ended failed or abandoned, or its lease expired in an active state, after the last success (R-BAK-014). A run interrupted by a drain does not count. The alert resolves with the next success. The cause is in GET /api/v1/system/backups (error code) and the log of the Job's pod; the exit codes are in R-BAK-013.
+- alert: TroveBackupRunningLong
+  expr: max(trove_backup_running_seconds{ {{ $ns }} }) > 0.5 * max(trove_backup_expected_interval_seconds{ {{ $ns }} })
+  labels:
+    severity: warning
+  annotations:
+    summary: A backup or delete run has been active for more than half of backup.expected_interval.
+    description: The run holds the slot of the target and pins blobs against garbage collection while it lasts (R-BAK-007, R-BAK-010). A first backup of a large installation takes long; a run that makes no progress ends itself after config.backup.stall_timeout. Look at the progress in GET /api/v1/system/backups and the log of the pod.
+- alert: TroveBackupGlobalHoldLong
+  expr: max(trove_backup_gc_hold{ {{ $ns }},mode="all" }) == 1
+  for: 30m
+  labels:
+    severity: warning
+  annotations:
+    summary: A backup has held garbage collection for all blobs for 30 minutes.
+    description: The hold mode all stops the collection of every blob while a backup run opens its snapshot or writes its pins (R-BAK-007). It is meant to last minutes. Look at the active run in GET /api/v1/system/backups; a run that is stuck ends itself after config.backup.stall_timeout.
+- alert: TroveBackupSourceDamage
+  expr: max(trove_backup_source_blobs_damaged{ {{ $ns }} }) > 0
+  labels:
+    severity: critical
+  annotations:
+    summary: The newest successful backup found blobs of the installation damaged or missing.
+    description: The backup could not copy the objects of these blobs correctly (R-BAK-009, R-BAK-014), so a restore of it lacks them. The list is in the result of the run (GET /api/v1/system/backups) and the log. Restore the objects from the bucket's versions or upload the content again, then take a new backup.
+- alert: TroveBackupVerifyFindings
+  expr: max(trove_backup_last_verify_findings{ {{ $ns }} }) > 0
+  labels:
+    severity: critical
+  annotations:
+    summary: The newest verification of a backup found missing, damaged or mismatching objects.
+    description: trove backup verify exited 5 (R-BAK-019, R-BAK-014). The findings are in its output and the run record. A backup with findings may not restore; take a new one and look at the target (lifecycle rules, deletions, a credential that can delete).
 {{- end -}}
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement") -}}
+{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveRevocationJournalBacklog" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
 {{- end -}}

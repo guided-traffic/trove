@@ -35,6 +35,16 @@ contain the chart name; fullnameOverride wins. Cut at 50 characters so that ever
 {{- end -}}
 {{- end -}}
 
+{{/* The ServiceAccount of the backup pods and of the restore Job (R-HA-060). Argument: dict "root" . "kind" "backup" | "restore". */}}
+{{- define "trove.jobServiceAccountName" -}}
+{{- $sa := (get .root.Values .kind).serviceAccount -}}
+{{- if $sa.create -}}
+{{- default (printf "%s-%s" (include "trove.fullname" .root) .kind) $sa.name -}}
+{{- else -}}
+{{- default "default" $sa.name -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Selector labels of one component. Argument: dict "root" . "component" "web".
 api, packages, worker and web pods carry trove/pool (R-HA-028): the empty value for the main
@@ -238,6 +248,32 @@ keys win; setting one inside config is refused by trove.validate.
 {{- end -}}
 {{- if eq (dig "metrics" "auth" "" .Values.config) "static" -}}
 {{- $_ := set $managed "metrics" (dict "bearer_token_file" "/var/run/secrets/trove/metrics/token") -}}
+{{- end -}}
+{{- /*
+The backup (R-HA-060, R-HA-030): where the target's credentials and CA are mounted in the backup and restore pods, and the
+names the UI shows for a manual run (R-BAK-011). The files exist in those pods only; the path in the shared file is
+the whole of what a replica sees of the target's credentials.
+*/ -}}
+{{- $bk := dict -}}
+{{- $bkTarget := dict -}}
+{{- if eq (dig "backup" "target" "credentials" "source" "default" .Values.config) "static" -}}
+{{- $bkCreds := dict "access_key_id_file" "/var/run/secrets/trove/backup-target/access-key-id" "secret_access_key_file" "/var/run/secrets/trove/backup-target/secret-access-key" -}}
+{{- if $s.backupTarget.sessionTokenKey -}}
+{{- $_ := set $bkCreds "session_token_file" "/var/run/secrets/trove/backup-target/session-token" -}}
+{{- end -}}
+{{- $_ := set $bkTarget "credentials" $bkCreds -}}
+{{- end -}}
+{{- if $s.backupTargetCA.existingSecret -}}
+{{- $_ := set $bkTarget "ca_file" "/var/run/secrets/trove/backup-target-ca/ca.crt" -}}
+{{- end -}}
+{{- if $bkTarget -}}
+{{- $_ := set $bk "target" $bkTarget -}}
+{{- end -}}
+{{- if .Values.backup.enabled -}}
+{{- $_ := set $bk "manual_run" (dict "namespace" .Release.Namespace "cronjob" (printf "%s-backup" (include "trove.fullname" .))) -}}
+{{- end -}}
+{{- if $bk -}}
+{{- $_ := set $managed "backup" $bk -}}
 {{- end -}}
 {{- /* Login (R-AUTH-004, R-AUTH-014): the paths of the web pods' mounts; without secrets.breakGlass the account is off. */ -}}
 {{- $bg := dict "enabled" false -}}
