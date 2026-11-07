@@ -11,6 +11,8 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 // AdminBindingCheck reports whether any admin role binding exists. The replay prints a warning when none is left
@@ -28,7 +30,12 @@ type Options struct {
 	Notifier journal.Notifier
 	// AdminBinding fills Summary.NoAdminBinding; nil leaves it false.
 	AdminBinding AdminBindingCheck
-	Log          *slog.Logger
+	// Newest returns the time of the newest audit event of the restored database; ok is false when there is none or the
+	// database cannot say. The replay starts at the earlier of that time and the restore point given by the operator, so a
+	// restore point that lies later than the database does not skip the revocations in between (audit finding L2). Nil
+	// reads audit_event.
+	Newest func(ctx context.Context) (t time.Time, ok bool, err error)
+	Log    *slog.Logger
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -60,7 +67,15 @@ func New(o Options) *Replayer {
 //
 // It prints one line per entry to opts.Out and writes system.restore.journal_replayed with the counts.
 func (r *Replayer) Replay(ctx context.Context, opts journal.ReplayOptions) (*journal.Summary, error) {
-	entries, unreadable, err := r.o.Reader.Entries(ctx, opts.RestoredTo.Add(-opts.Margin))
+	from := opts.RestoredTo
+	if newest, ok, err := r.newest(ctx); err != nil {
+		return nil, err
+	} else if ok && newest.Before(from) {
+		from = newest
+		line(opts, fmt.Sprintf("the newest audit event of the database (%s) is older than the restore point (%s): replaying from it",
+			newest.UTC().Format(time.RFC3339), opts.RestoredTo.UTC().Format(time.RFC3339)))
+	}
+	entries, unreadable, err := r.o.Reader.Entries(ctx, from.Add(-opts.Margin))
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +87,10 @@ func (r *Replayer) Replay(ctx context.Context, opts journal.ReplayOptions) (*jou
 	}
 	env := journal.Env{Now: r.o.Now(), RestoredTo: opts.RestoredTo, Notifier: r.o.Notifier}
 	for _, o := range entries {
+		if o.Warning != "" {
+			sum.Warnings = append(sum.Warnings, o.ID+": "+o.Warning)
+			line(opts, "warning: "+o.Event+" "+o.ID+": "+o.Warning)
+		}
 		res, err := r.apply(ctx, env, o)
 		if err != nil {
 			return sum, fmt.Errorf("journal: replaying %s %s: %w", o.Event, o.ID, err)
@@ -91,6 +110,27 @@ func (r *Replayer) Replay(ctx context.Context, opts journal.ReplayOptions) (*jou
 		line(opts, "no admin role binding is left: sign in with the break-glass account (R-AUTH-014) and bind the role again")
 	}
 	return sum, nil
+}
+
+// newest returns the time of the newest audit event of the restored database.
+func (r *Replayer) newest(ctx context.Context) (time.Time, bool, error) {
+	if r.o.Newest != nil {
+		return r.o.Newest(ctx)
+	}
+	var us int64
+	err := r.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			return nil // not a PostgreSQL transaction (a test of the handlers): nothing to read
+		}
+		var err error
+		us, err = q.New(ptx).JournalNewestAuditEvent(ctx)
+		return err
+	})
+	if err != nil || us <= 0 {
+		return time.Time{}, false, err
+	}
+	return time.UnixMicro(us).UTC(), true, nil
 }
 
 // apply runs the handler of one entry in its own transaction. A panic in a handler is an entry that cannot be replayed,

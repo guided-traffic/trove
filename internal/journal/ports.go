@@ -19,6 +19,13 @@ type Store interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
+// AllVersions is an optional capability of a Store listed with versions: GetAll returns every distinct content the key ever
+// held that is not a delete marker, oldest first. trove only ever rewrites a key with the same bytes, so more than one
+// content is somebody else's write; the reader replays each (R-HA-054).
+type AllVersions interface {
+	GetAll(ctx context.Context, key string) ([][]byte, error)
+}
+
 // Outbox is revocation_outbox (R-HA-054), the transactional queue the audit writer fills.
 type Outbox interface {
 	// Claim returns up to limit rows in id order.

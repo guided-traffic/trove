@@ -136,8 +136,13 @@ a missing member, an oversized value or a digest that is not the expected shape 
 ### Replay rules by mechanism
 
 - **Unreadable or forged objects.** [reader.go](../../internal/journal/replay/reader.go) lists the days from the restore point, reads every
-  object and refuses one that does not decode, whose key is not its ID, whose key names another day than its time, a duplicate ID, or
-  a newer version: it is listed in the output as unreadable and never replayed. A listing that fails ends the replay.
+  object and refuses one that does not decode, whose key is not its ID, whose key names another day than its time, or a newer version: it
+  is listed in the output as unreadable and never replayed. An ID under two keys, and a key whose versions differ, are not
+  dropped: every copy is replayed and flagged, because the handlers only remove or narrow, whereas dropping a copy lets the
+  writer of a planted one choose which is believed (`TestR_HA_054_ReaderReplaysEveryCopyOfADuplicatedID`,
+  `TestR_HA_054_APlantedCopyUnderAnotherDayDoesNotHideTheGenuineEntry`). A listing that fails ends the replay. The replay starts at
+  the earlier of the operator's restore point and the newest audit event of the restored database, so a wrong `--restored-to`
+  cannot skip revocations (`TestR_HA_054_TheReplayStartsAtTheNewestAuditEventWhenTheRestorePointLiesLater`).
 - **Unknown events and panics.** An event without a handler is reported `skipped`; a handler that panics is rolled back and reported
   `skipped` ([replayer.go](../../internal/journal/replay/replayer.go)).
 - **Comparators.** The policy, settings, role and anonymous-switch comparators answer true only when they can prove the after-state
@@ -164,9 +169,19 @@ a missing member, an oversized value or a digest that is not the expected shape 
   which decide a tier's first match, is never one. Tested in `TestR_CI_020_TheIssuerComparator`, `TestR_CI_020_TheMappingComparator` and
   `TestR_CI_020_IssuerAndMappingEntriesReplayIntoTheRestoredDatabase`, which also shows that a merge request pipeline gets
   `no_matching_mapping` after a replayed deletion of the shadowing mapping.
+- **Replicas during a platform restore.** `trove admin post-restore` commits `system_state.post_restore_in_progress` in its first
+  transaction and deletes it in its last, after the replay and `system.restored`; the schema check of
+  [gate.go](../../internal/meta/postgres/gate.go) fails with `ErrRestoreInProgress` while it exists, so no pod, running or
+  started later, serves the restored database's access before the replay (`TestR_HA_025_ReplicasAreHeldUntilThePostRestoreHasReplayed`).
+  The replay writes change-log rows through the command's notifier, so pods learn of what it changed. A repeat for a restore
+  point that completed changes nothing; a run after a failed one resumes at the replay. The chart renders the Job with the
+  owner credential: it should be switched off after the restore, and it refuses replicas while it is on (the chart's part).
+  A failed post-restore leaves the installation not ready until it is run again, on purpose.
+- **A row the shipper cannot encode** is set aside (`system_state.journal_quarantined`, `trove_revocation_journal_quarantined_total`)
+  and the rows behind it ship; post-restore prints the count, because the change that row recorded is not in the journal.
 - **Declared bindings.** `trove migrate` applies two kinds of configuration-declared access: `authz.role_bindings` and `ci.issuers`
-  (policies, repository settings and the authz settings are not written by it). A replayed unbinding is recorded in
-  `system_state.journal_suppressed_bindings`; `ApplyDeclared` ([declared.go](../../internal/authz/declared.go)) then does not
+  (policies, repository settings and the authz settings are not written by it). A replayed unbinding is recorded (also when the row was
+  already gone, and for every role of a replayed group deletion) by role and name in `system_state.journal_suppressed_bindings`; `ApplyDeclared` ([declared.go](../../internal/authz/declared.go)) then does not
   re-create the binding from an older configuration, logs it, and lists it in the outcome, until an administrator binds the role
   again through the API (Q-AUTHZ-235; `TestR_AUTHZ_010_DeclaredBindingRemovedByReplayIsNotBroughtBack`). The CI issuers have no such
   mark: [H-565](ci-federation.md#h-565--a-replayed-disable-of-a-configuration-declared-ci-issuer-is-undone-by-trove-migrate-when-the-restore-runs-with-an-older-configuration).

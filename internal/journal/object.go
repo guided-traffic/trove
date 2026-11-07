@@ -25,6 +25,9 @@ type Object struct {
 	At    time.Time       `json:"at"`
 	Event string          `json:"event"`
 	Entry json.RawMessage `json:"entry"`
+	// Warning is set by the reader, never stored: the entry exists in more than one copy, or one object diverges between
+	// its versions. Every copy is replayed (the handlers fail closed) and the warning is printed (R-HA-054).
+	Warning string `json:"-"`
 }
 
 // OutboxRow is a row of revocation_outbox.

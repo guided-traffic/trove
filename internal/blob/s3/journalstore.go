@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"sync"
 
@@ -30,7 +31,8 @@ type JournalStore struct {
 	versions bool
 
 	mu     sync.Mutex
-	latest map[string]string // key -> version ID of the newest version that is not a delete marker
+	latest map[string]string   // key -> version ID of the newest version that is not a delete marker
+	all    map[string][]string // key -> the version IDs that are not delete markers, oldest first
 }
 
 // NewJournalStore wraps a client. With versions set, List also returns the keys whose newest version is a delete marker,
@@ -38,7 +40,7 @@ type JournalStore struct {
 // entry. It needs a credential that may list object versions and read them (s3:ListBucketVersions, s3:GetObjectVersion);
 // without versioning on the bucket it behaves as the plain listing.
 func NewJournalStore(c *Client, versions bool) *JournalStore {
-	return &JournalStore{c: c, versions: versions, latest: map[string]string{}}
+	return &JournalStore{c: c, versions: versions, latest: map[string]string{}, all: map[string][]string{}}
 }
 
 // Put writes an object. The same key with the same bytes is harmless; the payload checksum makes the store verify them.
@@ -70,6 +72,11 @@ func (s *JournalStore) List(ctx context.Context, prefix string, fn func(key stri
 	}
 }
 
+type versionAt struct {
+	key, id string
+	when    int64
+}
+
 type journalVersion struct {
 	id     string
 	marker bool
@@ -79,6 +86,7 @@ type journalVersion struct {
 func (s *JournalStore) listVersions(ctx context.Context, prefix string, fn func(key string) error) error {
 	newest := map[string]journalVersion{} // newest version of any kind
 	live := map[string]journalVersion{}   // newest version that is not a delete marker
+	var versions []versionAt
 	var keyMarker, versionMarker *string
 	for {
 		out, err := s.c.api.ListObjectVersions(ctx, &awss3.ListObjectVersionsInput{
@@ -88,6 +96,7 @@ func (s *JournalStore) listVersions(ctx context.Context, prefix string, fn func(
 			return mapError(ctx, "ListObjectVersions", prefix, err)
 		}
 		for _, v := range out.Versions {
+			versions = append(versions, versionAt{key: aws.ToString(v.Key), id: aws.ToString(v.VersionId), when: aws.ToTime(v.LastModified).UnixNano()})
 			note(newest, live, aws.ToString(v.Key), journalVersion{id: aws.ToString(v.VersionId), when: aws.ToTime(v.LastModified).UnixNano()})
 		}
 		for _, m := range out.DeleteMarkers {
@@ -98,11 +107,17 @@ func (s *JournalStore) listVersions(ctx context.Context, prefix string, fn func(
 		}
 		keyMarker, versionMarker = out.NextKeyMarker, out.NextVersionIdMarker
 	}
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i].when < versions[j].when })
+	readable := map[string][]string{}
+	for _, v := range versions {
+		readable[v.key] = append(readable[v.key], v.id)
+	}
 	keys := make([]string, 0, len(live))
 	s.mu.Lock()
 	for k, v := range live {
 		keys = append(keys, k)
 		s.latest[k] = v.id
+		s.all[k] = readable[k]
 	}
 	s.mu.Unlock()
 	sort.Strings(keys)
@@ -132,6 +147,37 @@ func (s *JournalStore) Get(ctx context.Context, key string) ([]byte, error) {
 	s.mu.Lock()
 	version := s.latest[key]
 	s.mu.Unlock()
+	return s.read(ctx, key, version)
+}
+
+// GetAll returns every distinct content the key held in a version that is not a delete marker, oldest first, when the store
+// was listed with versions; otherwise the one content. trove rewrites a key only with the same bytes, so a second content is
+// a write of somebody else, and the reader replays each (R-HA-054, audit finding H2).
+func (s *JournalStore) GetAll(ctx context.Context, key string) ([][]byte, error) {
+	s.mu.Lock()
+	ids := append([]string(nil), s.all[key]...)
+	s.mu.Unlock()
+	if len(ids) == 0 {
+		b, err := s.Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{b}, nil
+	}
+	var out [][]byte
+	for _, id := range ids {
+		b, err := s.read(ctx, key, id)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.ContainsFunc(out, func(o []byte) bool { return bytes.Equal(o, b) }) {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+func (s *JournalStore) read(ctx context.Context, key, version string) ([]byte, error) {
 	var rc io.ReadCloser
 	if version != "" {
 		out, err := s.c.api.GetObject(ctx, &awss3.GetObjectInput{Bucket: &s.c.bucket, Key: &key, VersionId: &version})

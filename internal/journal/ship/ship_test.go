@@ -17,7 +17,7 @@ type fakeOutbox struct {
 }
 
 func (o *fakeOutbox) Claim(_ context.Context, limit int) ([]journal.OutboxRow, error) {
-	return o.rows[:min(limit, len(o.rows))], nil
+	return slices.Clone(o.rows[:min(limit, len(o.rows))]), nil
 }
 
 func (o *fakeOutbox) Delete(_ context.Context, ids []string) error {

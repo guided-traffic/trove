@@ -190,6 +190,11 @@ func newJEnv(t *testing.T) *jenv {
 	}
 }
 
+// shipperWith is a shipper over the test's outbox and store that reports the rows it sets aside.
+func (e *jenv) shipperWith(onQuarantine func(journal.OutboxRow, error)) *ship.Shipper {
+	return ship.New(ship.Options{Outbox: e.outbox, Store: e.store, BlobPrefix: e.prefix, OnQuarantine: onQuarantine})
+}
+
 // freshTokens is a token service with empty caches over the same database: the replica that starts after a restore.
 func (e *jenv) freshTokens() *token.Service {
 	e.t.Helper()

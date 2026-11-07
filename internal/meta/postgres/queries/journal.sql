@@ -151,3 +151,32 @@ UPDATE system_state
 
 -- name: JournalSuppressedBindings :many
 SELECT e::text AS entry FROM system_state, jsonb_array_elements_text(system_state.value) e WHERE key = 'journal_suppressed_bindings';
+
+-- name: JournalNewestAuditEvent :one
+-- The time of the newest audit event of the restored database: what the database really holds, whatever the operator says
+-- the restore point is (the replay starts at the earlier of the two).
+SELECT COALESCE((extract(epoch FROM max(occurred_at)) * 1000000)::bigint, 0)::bigint AS newest_us FROM audit_event;
+
+-- name: JournalQuarantine :exec
+-- An outbox row that cannot be encoded as a journal object. It leaves the outbox so that it does not hold back the rows
+-- behind it, and stays visible here (post-restore prints it) and in trove_revocation_journal_quarantined_total.
+INSERT INTO system_state (key, value) VALUES ('journal_quarantined', jsonb_build_array(sqlc.arg(entry)::text::jsonb))
+ON CONFLICT (key) DO UPDATE SET value = system_state.value || EXCLUDED.value, updated_at = now();
+
+-- name: JournalQuarantined :one
+SELECT COALESCE((SELECT jsonb_array_length(value) FROM system_state WHERE key = 'journal_quarantined'), 0)::bigint AS n;
+
+-- name: JournalSetPostRestoreMarker :exec
+-- The marker that gates replicas while post-restore runs (key post_restore_in_progress, read by the schema check).
+INSERT INTO system_state (key, value) VALUES ('post_restore_in_progress', sqlc.arg(value)::text::jsonb)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+
+-- name: JournalGetState :many
+SELECT value::text AS value FROM system_state WHERE key = sqlc.arg(key)::text;
+
+-- name: JournalSetState :exec
+INSERT INTO system_state (key, value) VALUES (sqlc.arg(key)::text, sqlc.arg(value)::text::jsonb)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+
+-- name: JournalDeleteState :execrows
+DELETE FROM system_state WHERE key = sqlc.arg(key)::text;

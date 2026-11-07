@@ -5351,6 +5351,32 @@ Status: Decided by the development agent — selected from the options below; th
 **Rationale:** the mark is written in the transaction of the replayed removal and read in the transaction of `ApplyDeclared`, both as the owner. Revisit when the CI issuers get the same mark.
 **Applied:** `internal/authz/declared.go`, `bindings.go`, `journal_replay.go`, `internal/app/migrate_declared.go`, `queries/journal.sql`.
 
+### Q-AUTHZ-236 · The suppression mark of a declared binding is keyed by role and name and written for every replayed unbinding
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) Mark `<role>|<kind>:<name>` for every replayed `authz.role.unbound`, whatever the row count, and for every role of a group that `group.deleted` removes (all roles when the group is not in the database) | Covers a binding added and removed after the restore point and a declared group that `ApplyDeclared` creates again under a new ID | A forged unbind entry suppresses a declared binding until an administrator binds it (fail-closed) |
+| (b) Keep the mark by principal ID and only on a deleted row (Q-AUTHZ-235 as first built) | Smaller | A binding absent from the snapshot, and a recreated group, escape (audit finding M4) |
+
+**Choice:** (a). `ApplyDeclared` and the API bind use the same key (`suppressionKey` in `internal/authz/declared.go`).
+**Rationale:** The restore never brings back removed access; the cost lands on the rare case that the configuration declares a binding the journal removed, and the way out is one API bind.
+**Applied:** `internal/authz/journal_replay.go`, `internal/auth/principal/journal_replay.go`, `internal/authz/declared.go`, `bindings.go`.
+
+### Q-AUTHZ-237 · A repository setting without an order is suspended around, not skipped by a panic
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) Settings without an access order are left as they are and named in the output; the ordered ones are suspended; the outcome is `suspended` | A needed suspension is never turned into a skip | The unordered setting needs an administrator |
+| (b) Leave the recovered panic to report `skipped` | No code | An entry that should fail closed is skipped (audit finding L1) |
+
+**Choice:** (a).
+**Rationale:** The comparator already answers false for a setting without an order; the suspension now has no hole.
+**Applied:** `internal/authz/journal_replay.go` (`replaySettings`).
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

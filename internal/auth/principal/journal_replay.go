@@ -120,6 +120,7 @@ func replayDisableAccount(ctx context.Context, tx meta.Tx, env journal.Env, o jo
 func replayDeleteGroup(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object) (journal.Result, error) {
 	var e struct {
 		PrincipalID string `json:"principalId"`
+		Name        string `json:"name"`
 	}
 	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) {
 		return o.Malformed("principalId is not an ID"), nil
@@ -130,7 +131,28 @@ func replayDeleteGroup(ctx context.Context, tx meta.Tx, env journal.Env, o journ
 		return journal.Result{}, err
 	}
 	if !found {
+		// A group created and deleted after the restore point is not in the database, and a configuration that declares a
+		// role binding for its name would create it again with the role. The roles it held are unknown, so the name is
+		// marked for every system role (Q-AUTHZ-236).
+		if e.Name != "" {
+			for _, role := range systemRoles() {
+				if err := qs.JournalSuppressBinding(ctx, role+"|group:"+e.Name); err != nil {
+					return journal.Result{}, err
+				}
+			}
+		}
 		return o.Result(journal.SubjectUnknown, e.PrincipalID), nil
+	}
+	// The roles the group holds go with it (the binding rows cascade), and trove migrate must not bind them to the group it
+	// would create again under a new ID: mark each by name (Q-AUTHZ-236).
+	roles, err := qs.IdentityGroupRoles(ctx, g.ID)
+	if err != nil {
+		return journal.Result{}, err
+	}
+	for _, role := range roles {
+		if err := qs.JournalSuppressBinding(ctx, role+"|group:"+g.Name); err != nil {
+			return journal.Result{}, err
+		}
 	}
 	// The policies that name the group lose its entry with the row: their versions move, as the live delete does.
 	if _, err := qs.AuthzTouchPoliciesOfPrincipal(ctx, g.ID); err != nil {
@@ -143,6 +165,11 @@ func replayDeleteGroup(ctx context.Context, tx meta.Tx, env journal.Env, o journ
 		return journal.Result{}, err
 	}
 	return o.Result(journal.Applied, g.Name), NotifyPrincipals(env, tx, ChangeGroup, g.ID)
+}
+
+// systemRoles are the roles a binding can hold.
+func systemRoles() []string {
+	return []string{"admin", "security-admin", "auditor", "repository-admin", "webhook-admin"}
 }
 
 // removedMembership is one removed membership of group.members.changed and user.groups.synced.

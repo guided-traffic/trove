@@ -27,7 +27,8 @@ func (a *App) wireJournalShipper(client *s3.Client, db *postgres.DB) {
 	j := a.cfg.Backup.RevocationJournal
 	o := ship.Options{
 		Outbox: ship.NewOutbox(db), BlobPrefix: a.cfg.Storage.S3.Prefix, Discard: !j.Enabled,
-		Log: a.log.With("component", "journal"),
+		Log:          a.log.With("component", "journal"),
+		OnQuarantine: func(journal.OutboxRow, error) { a.laneMetrics().jrnl.Quarantined.Inc() },
 	}
 	if j.Enabled {
 		o.Store = s3.NewJournalStore(client, false)

@@ -9,6 +9,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup"
 	"github.com/guided-traffic/trove/internal/backup/postrestore"
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/journal/replay"
@@ -93,6 +94,13 @@ func (r postRestoreRunner) PostRestore(ctx context.Context, opts backup.PostRest
 	if err != nil {
 		return nil, err
 	}
+	// The change log writes the rows of the areas the replay changed, so that a pod that is already running learns of them
+	// instead of keeping its cached tokens and grants until it restarts (R-HA-025 step 4, audit finding H1). It does not
+	// poll: the command holds no replica.
+	changes, err := cluster.NewChanges(cluster.ChangesOptions{DB: db.ControlPool(), Config: cfg.Cluster, WatchdogTimeout: cfg.Health.WatchdogTimeout, Log: r.env.log})
+	if err != nil {
+		return nil, err
+	}
 	out := outbound.New(cfg.Proxy.Outbound)
 	pr := postrestore.New(postrestore.Options{
 		DB: db, Recorder: rec, Margin: cfg.Backup.RevocationJournal.ReplayMargin, Log: r.env.log,
@@ -101,7 +109,7 @@ func (r postRestoreRunner) PostRestore(ctx context.Context, opts backup.PostRest
 			if err != nil {
 				return nil, err
 			}
-			return replay.New(replay.Options{DB: db, Reader: reader, Recorder: rec, AdminBinding: authz.HasAdminBinding, Log: r.env.log}), nil
+			return replay.New(replay.Options{DB: db, Reader: reader, Recorder: rec, Notifier: changes, AdminBinding: authz.HasAdminBinding, Log: r.env.log}), nil
 		},
 	})
 	return pr.PostRestore(ctx, opts)

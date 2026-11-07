@@ -132,7 +132,7 @@ func (s *Service) ApplyDeclared(ctx context.Context, declared []config.AuthzRole
 		}
 		var changes []declaredChange
 		for _, d := range want {
-			if slices.Contains(marked, suppressionKey(string(d.role), d.id)) {
+			if slices.Contains(marked, suppressionKey(string(d.role), d.ref)) {
 				// A replay removed this binding after the restore point. A configuration that still declares it, for
 				// instance because the restore runs with older values, must not bring it back (R-HA-054); a binding
 				// that exists is an administrator's confirmation and is taken over as usual.
@@ -144,7 +144,7 @@ func (s *Service) ApplyDeclared(ctx context.Context, declared []config.AuthzRole
 					out.Suppressed = append(out.Suppressed, d.String())
 					continue
 				}
-				if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(d.role), d.id)); err != nil {
+				if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(d.role), d.ref)); err != nil {
 					return err
 				}
 			}
@@ -178,8 +178,10 @@ func (s *Service) ApplyDeclared(ctx context.Context, declared []config.AuthzRole
 	return out, err
 }
 
-// suppressionKey is the entry of system_state journal_suppressed_bindings for a role and a principal ID.
-func suppressionKey(role, principalID string) string { return role + "|" + principalID }
+// suppressionKey is the entry of system_state journal_suppressed_bindings for a role and a principal: "<role>|<kind>:<name>".
+// It is keyed by the name, not the ID, because a declared group that a replay deleted is created again under a new ID by
+// ApplyDeclared, and a mark by ID would no longer match (Q-AUTHZ-236).
+func suppressionKey(role string, ref Ref) string { return role + "|" + ref.String() }
 
 // resolveDeclared finds the principal of every declaration and creates the
 // missing groups. It collects every problem before it fails, so one run of

@@ -162,3 +162,62 @@ func TestR_HA_054_ReplayAppliesInOrderAndFailsClosed(t *testing.T) {
 		t.Fatal("a failing handler must end the replay with an error")
 	}
 }
+
+// TestR_HA_054_ReaderReplaysEveryCopyOfADuplicatedID: a copy of an entry planted under another day, with a time before the
+// restore point, must not hide the genuine entry (audit finding H2). Both copies are returned, each flagged.
+func TestR_HA_054_ReaderReplaysEveryCopyOfADuplicatedID(t *testing.T) {
+	s := &memStore{objs: map[string][]byte{}}
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	genuine := put(t, s, 1, now.Add(25*time.Hour), "a.b") // the day after the restore point
+	planted := journal.Object{V: 1, ID: genuine.ID, At: now.Add(-25 * time.Hour), Event: "a.b", Entry: []byte(`{}`)}
+	b, _ := planted.Encode()
+	s.objs[journal.Key(prefix, planted)] = b
+	r := NewReader(s, prefix)
+	r.now = func() time.Time { return now.Add(48 * time.Hour) }
+	got, _, err := r.Entries(t.Context(), now.Add(-48*time.Hour))
+	if err != nil || len(got) != 2 {
+		t.Fatalf("Entries = %v, %v; want both copies", got, err)
+	}
+	for _, o := range got {
+		if !strings.Contains(o.Warning, "also under") {
+			t.Errorf("copy at %s is not flagged: %q", o.At, o.Warning)
+		}
+	}
+	// A copy before the restore point is dropped by the time filter on its own, the genuine one stays.
+	got, _, err = r.Entries(t.Context(), now)
+	if err != nil || len(got) != 1 || !got[0].At.Equal(genuine.At) {
+		t.Fatalf("Entries since the restore point = %v, %v; want the genuine entry", got, err)
+	}
+}
+
+type versionedStore struct {
+	*memStore
+	versions map[string][][]byte
+}
+
+func (v *versionedStore) GetAll(_ context.Context, key string) ([][]byte, error) {
+	return v.versions[key], nil
+}
+
+// TestR_HA_054_ReaderReplaysDivergingVersions: with version listing, an overwrite of a key shows up as a second content and
+// both are replayed (audit finding H2).
+func TestR_HA_054_ReaderReplaysDivergingVersions(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	genuine := journal.Object{V: 1, ID: id(1), At: now.Add(time.Second), Event: "token.revoked", Entry: []byte(`{"tokenId":"x"}`)}
+	forged := genuine
+	forged.Event, forged.Entry = "made.up", []byte(`{}`)
+	g, _ := genuine.Encode()
+	f, _ := forged.Encode()
+	key := journal.Key(prefix, genuine)
+	vs := &versionedStore{memStore: &memStore{objs: map[string][]byte{key: f}}, versions: map[string][][]byte{key: {g, f}}}
+	r := NewReader(vs, prefix)
+	r.now = func() time.Time { return now.Add(time.Minute) }
+	got, bad, err := r.Entries(t.Context(), now)
+	if err != nil || len(bad) != 0 || len(got) != 2 {
+		t.Fatalf("Entries = %v, %v, %v; want both versions", got, bad, err)
+	}
+	events := got[0].Event + "," + got[1].Event
+	if !strings.Contains(events, "token.revoked") || !strings.Contains(got[0].Warning+got[1].Warning, "diverge") {
+		t.Errorf("events %s, warnings %q %q", events, got[0].Warning, got[1].Warning)
+	}
+}

@@ -22,9 +22,18 @@ type Options struct {
 	// Discard deletes the rows without writing an object: backup.revocation_journal.enabled is false, and a row must not
 	// pile up for a journal nobody reads.
 	Discard bool
+	// OnQuarantine is called for every row set aside because it cannot be encoded (the metric
+	// trove_revocation_journal_quarantined_total counts them). Optional.
+	OnQuarantine func(r journal.OutboxRow, err error)
 	// Batch is the largest number of rows one claim reads; zero means [DefaultBatch].
 	Batch int
 	Log   *slog.Logger
+}
+
+// Quarantiner is an outbox that can set a row aside: the row leaves the queue and stays recorded where an operator and the
+// post-restore find it. [Outbox] implements it.
+type Quarantiner interface {
+	Quarantine(ctx context.Context, r journal.OutboxRow, reason string) error
 }
 
 // Shipper is the [journal.Shipper] over an outbox and a store.
@@ -64,7 +73,29 @@ func (s *Shipper) Ship(ctx context.Context) (int, error) {
 		var putErr error
 		for _, r := range rows {
 			if !s.o.Discard {
-				if putErr = s.put(ctx, r); putErr != nil {
+				body, key, err := s.encode(r)
+				if err != nil {
+					// One row that cannot become an object must not hold back the revocations behind it. It is set aside, not
+					// dropped: it is counted, recorded in system_state and listed by post-restore, so the revocation it
+					// recorded is known to be missing from the journal (audit finding L4). An outbox that cannot do that keeps
+					// the row and fails, as before.
+					q, ok := s.o.Outbox.(Quarantiner)
+					if !ok {
+						putErr = err
+						break
+					}
+					if qerr := q.Quarantine(ctx, r, err.Error()); qerr != nil {
+						putErr = fmt.Errorf("journal: quarantining row %s: %w", r.ID, qerr)
+						break
+					}
+					s.o.Log.Error("journal: an outbox row cannot be encoded and was set aside", "id", r.ID, "event", r.Event, "error", err)
+					if s.o.OnQuarantine != nil {
+						s.o.OnQuarantine(r, err)
+					}
+					continue
+				}
+				if err := s.o.Store.Put(ctx, key, body); err != nil {
+					putErr = fmt.Errorf("journal: writing %s: %w", key, err)
 					break
 				}
 			}
@@ -85,15 +116,11 @@ func (s *Shipper) Ship(ctx context.Context) (int, error) {
 	}
 }
 
-func (s *Shipper) put(ctx context.Context, r journal.OutboxRow) error {
+func (s *Shipper) encode(r journal.OutboxRow) (body []byte, key string, err error) {
 	obj := journal.NewObject(r)
-	body, err := obj.Encode()
+	body, err = obj.Encode()
 	if err != nil {
-		return fmt.Errorf("journal: row %s cannot be encoded: %w", r.ID, err)
+		return nil, "", fmt.Errorf("journal: row %s cannot be encoded: %w", r.ID, err)
 	}
-	key := journal.Key(s.o.BlobPrefix, obj)
-	if err := s.o.Store.Put(ctx, key, body); err != nil {
-		return fmt.Errorf("journal: writing %s: %w", key, err)
-	}
-	return nil
+	return body, journal.Key(s.o.BlobPrefix, obj), nil
 }

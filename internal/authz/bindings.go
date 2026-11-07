@@ -103,7 +103,7 @@ func (s *Service) BindRole(ctx context.Context, actor Subject, role Role, ref st
 			return s.currentEpoch(ctx, qs, &epoch)
 		}
 		// An administrator who binds a role again confirms what a replay removed (Q-AUTHZ-235).
-		if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(role), id)); err != nil {
+		if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(role), r)); err != nil {
 			return err
 		}
 		if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: id}); err != nil {
@@ -152,7 +152,7 @@ func (s *Service) BindAdmin(ctx context.Context, tx meta.Tx, principalID, grante
 	if err != nil || n == 0 {
 		return bindingWriteError(err)
 	}
-	if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(RoleAdmin), principalID)); err != nil {
+	if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(RoleAdmin), ref)); err != nil {
 		return err
 	}
 	if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: principalID}); err != nil {

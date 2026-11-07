@@ -44,6 +44,18 @@ func (q *Queries) JournalDeleteReplicaRows(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const journalDeleteState = `-- name: JournalDeleteState :execrows
+DELETE FROM system_state WHERE key = $1::text
+`
+
+func (q *Queries) JournalDeleteState(ctx context.Context, key string) (int64, error) {
+	result, err := q.db.Exec(ctx, journalDeleteState, key)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const journalDisableAnonymousAccess = `-- name: JournalDisableAnonymousAccess :many
 UPDATE auth_settings SET anonymous_access = false, revision = revision + 1, updated_at = now()
  WHERE singleton AND anonymous_access
@@ -64,6 +76,30 @@ func (q *Queries) JournalDisableAnonymousAccess(ctx context.Context) ([]int64, e
 			return nil, err
 		}
 		items = append(items, revision)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const journalGetState = `-- name: JournalGetState :many
+SELECT value::text AS value FROM system_state WHERE key = $1::text
+`
+
+func (q *Queries) JournalGetState(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, journalGetState, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		items = append(items, value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -103,6 +139,19 @@ func (q *Queries) JournalLimitTokenExpiry(ctx context.Context, arg JournalLimitT
 		return nil, err
 	}
 	return items, nil
+}
+
+const journalNewestAuditEvent = `-- name: JournalNewestAuditEvent :one
+SELECT COALESCE((extract(epoch FROM max(occurred_at)) * 1000000)::bigint, 0)::bigint AS newest_us FROM audit_event
+`
+
+// The time of the newest audit event of the restored database: what the database really holds, whatever the operator says
+// the restore point is (the replay starts at the earlier of the two).
+func (q *Queries) JournalNewestAuditEvent(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, journalNewestAuditEvent)
+	var newest_us int64
+	err := row.Scan(&newest_us)
+	return newest_us, err
 }
 
 const journalOwnerRemoveCIProject = `-- name: JournalOwnerRemoveCIProject :execrows
@@ -396,6 +445,29 @@ func (q *Queries) JournalProjectMembersRemoveAll(ctx context.Context, id string)
 	return result.RowsAffected(), nil
 }
 
+const journalQuarantine = `-- name: JournalQuarantine :exec
+INSERT INTO system_state (key, value) VALUES ('journal_quarantined', jsonb_build_array($1::text::jsonb))
+ON CONFLICT (key) DO UPDATE SET value = system_state.value || EXCLUDED.value, updated_at = now()
+`
+
+// An outbox row that cannot be encoded as a journal object. It leaves the outbox so that it does not hold back the rows
+// behind it, and stays visible here (post-restore prints it) and in trove_revocation_journal_quarantined_total.
+func (q *Queries) JournalQuarantine(ctx context.Context, entry string) error {
+	_, err := q.db.Exec(ctx, journalQuarantine, entry)
+	return err
+}
+
+const journalQuarantined = `-- name: JournalQuarantined :one
+SELECT COALESCE((SELECT jsonb_array_length(value) FROM system_state WHERE key = 'journal_quarantined'), 0)::bigint AS n
+`
+
+func (q *Queries) JournalQuarantined(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, journalQuarantined)
+	var n int64
+	err := row.Scan(&n)
+	return n, err
+}
+
 const journalRepositoryLock = `-- name: JournalRepositoryLock :many
 SELECT r.id, r.key, r.class, r.config, r.lifecycle, r.project_id::text AS project_id, p.key AS project_key
   FROM repositories r JOIN project p ON p.id = r.project_id
@@ -486,6 +558,17 @@ func (q *Queries) JournalRoleBindingExists(ctx context.Context, principalID stri
 	return principal_exists, err
 }
 
+const journalSetPostRestoreMarker = `-- name: JournalSetPostRestoreMarker :exec
+INSERT INTO system_state (key, value) VALUES ('post_restore_in_progress', $1::text::jsonb)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+`
+
+// The marker that gates replicas while post-restore runs (key post_restore_in_progress, read by the schema check).
+func (q *Queries) JournalSetPostRestoreMarker(ctx context.Context, value string) error {
+	_, err := q.db.Exec(ctx, journalSetPostRestoreMarker, value)
+	return err
+}
+
 const journalSetRestoredAt = `-- name: JournalSetRestoredAt :exec
 INSERT INTO system_state (key, value)
 VALUES ('restored_at', to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))
@@ -495,6 +578,21 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
 // The restore cut-off of the single-use CI issuers (R-CI-018, R-BAK-022): the time the clean-up ran, on the database's clock.
 func (q *Queries) JournalSetRestoredAt(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, journalSetRestoredAt)
+	return err
+}
+
+const journalSetState = `-- name: JournalSetState :exec
+INSERT INTO system_state (key, value) VALUES ($1::text, $2::text::jsonb)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+`
+
+type JournalSetStateParams struct {
+	Key   string
+	Value string
+}
+
+func (q *Queries) JournalSetState(ctx context.Context, arg JournalSetStateParams) error {
+	_, err := q.db.Exec(ctx, journalSetState, arg.Key, arg.Value)
 	return err
 }
 

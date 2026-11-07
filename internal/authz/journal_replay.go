@@ -77,20 +77,24 @@ func replayUnbound(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.
 	var e struct {
 		Role        string `json:"role"`
 		PrincipalID string `json:"principalId"`
+		Principal   string `json:"principal"`
 	}
 	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) || !bindableRole(e.Role) {
 		return o.Malformed("role or principalId is invalid"), nil
 	}
 	subject := e.Role + "/" + e.PrincipalID
+	// Whatever the restored database holds, the configuration of the restore must not bind this principal again: mark it
+	// before the row count is known. A declared binding that was added and removed after the restore point is absent from
+	// the snapshot and a delete finds nothing, but trove migrate would still bind it (Q-AUTHZ-236). The mark is by name,
+	// from the entry and from the principal the ID names in this database.
+	if err := suppress(ctx, qs, e.Role, e.PrincipalID, e.Principal); err != nil {
+		return journal.Result{}, err
+	}
 	n, err := qs.AuthzDeleteBinding(ctx, q.AuthzDeleteBindingParams{Role: e.Role, PrincipalID: e.PrincipalID})
 	if err != nil {
 		return journal.Result{}, err
 	}
 	if n > 0 {
-		// trove migrate must not bring the binding back from a configuration that still declares it (Q-AUTHZ-235).
-		if err := qs.JournalSuppressBinding(ctx, suppressionKey(e.Role, e.PrincipalID)); err != nil {
-			return journal.Result{}, err
-		}
 		return o.Result(journal.Applied, subject), env.Notify(tx, cluster.AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: e.PrincipalID})
 	}
 	exists, err := qs.JournalRoleBindingExists(ctx, e.PrincipalID)
@@ -101,6 +105,30 @@ func replayUnbound(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.
 		return o.Result(journal.SubjectUnknown, subject), nil
 	}
 	return o.Result(journal.AlreadyInEffect, subject), nil
+}
+
+// suppress marks the principal of an unbinding, by every name it has: the one the entry gives and the one the database gives
+// for the ID.
+func suppress(ctx context.Context, qs *q.Queries, role, principalID, entryRef string) error {
+	refs := map[string]bool{}
+	if r, err := ParseRef(entryRef); err == nil && r.Kind != "" && r.Name != "" {
+		refs[r.String()] = true
+	}
+	rows, err := qs.IdentityPrincipalByID(ctx, principalID)
+	if err != nil {
+		return err
+	}
+	if len(rows) > 0 {
+		if r, err := ParseRef(refOfRow(rows[0].Kind, rows[0].Name)); err == nil {
+			refs[r.String()] = true
+		}
+	}
+	for ref := range refs {
+		if err := qs.JournalSuppressBinding(ctx, role+"|"+ref); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func replayPolicyDeleted(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx, o journal.Object) (journal.Result, error) {
@@ -585,7 +613,9 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 	}
 	save := func(apply func(key string) string) error {
 		for k := range after {
-			writeSetting(repo.Class, doc, k, apply(k))
+			if v := apply(k); v != "" {
+				writeSetting(repo.Class, doc, k, v)
+			}
 		}
 		raw, err := json.Marshal(doc)
 		if err != nil {
@@ -603,11 +633,25 @@ func replaySettings(ctx context.Context, qs *q.Queries, env journal.Env, tx meta
 	act := journal.UpdateActions{
 		Apply: func() error { return save(func(k string) string { return after[k] }) },
 		Suspend: func() (json.RawMessage, error) {
-			detail, err := json.Marshal(map[string]any{"repository": subject, "after": e.After})
+			// A setting without an order has no most restrictive value to take: it is left as it is and named in the output,
+			// and the others are suspended. The entry is never skipped on that account (audit finding L1, Q-AUTHZ-237).
+			var unordered []string
+			for k := range after {
+				if accessOrder(k) == nil {
+					unordered = append(unordered, k)
+				}
+			}
+			slices.Sort(unordered)
+			detail, err := json.Marshal(map[string]any{"repository": subject, "after": e.After, "unordered": unordered})
 			if err != nil {
 				return nil, err
 			}
-			return detail, save(func(k string) string { return accessOrder(k)[0] })
+			return detail, save(func(k string) string {
+				if order := accessOrder(k); order != nil {
+					return order[0]
+				}
+				return ""
+			})
 		},
 	}
 	out, detail, err := journal.ApplyUpdate[repoSettings](settingsOrder{}, current, before, after, act)

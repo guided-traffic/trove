@@ -351,6 +351,13 @@ link them (`internal/backup/fixup` imports both, `internal/app` binds them).
 | `journal_replay.go` in `internal/auth/token`, `internal/auth/principal`, `internal/authz`, `internal/project` | the handlers and comparators of the identity and authorization events |
 | [backup/postrestore](../../internal/backup/postrestore/postrestore.go), [cmd/trove/admin_postrestore.go](../../cmd/trove/admin_postrestore.go) | `trove admin post-restore`: replica rows, deletion pause, sessions, the fix-ups of orders jobs, system state and revisions, `restored_at`, replay, `system.restored` |
 
+After the audit of the journal: the reader returns every copy and every version (`journal.AllVersions`, `Object.Warning`), the replayer
+starts at `min(t, newest audit event) - margin` (`Options.Newest`), the shipper quarantines a row that cannot be encoded
+(`ship.Quarantiner`, `OnQuarantine`), and `postrestore` keeps two `system_state` keys: `post_restore_in_progress` (the gate,
+`postgres.PostRestoreMarkerKey`) and `post_restore_done` (the last restore point that completed). Marks of declared bindings are
+`<role>|<kind>:<name>` entries; `authz.suppressionKey` is the one place that builds them, and the group handler in `principal`
+writes the same form by hand (keep them equal).
+
 Queries are in [journal.sql](../../internal/meta/postgres/queries/journal.sql). A handler takes IDs only, applies a removal as recorded
 or runs `journal.ApplyUpdate` with its comparator, and returns a `Result`; `ci.token.revoked` is replayed by the token package because
 `RecordCIRevoked` lives there. The gauge `trove_revocation_journal_pending` is the gauge package's (`Outbox.Pending`). Tests:

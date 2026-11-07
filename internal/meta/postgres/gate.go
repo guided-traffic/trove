@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -114,13 +115,36 @@ func checkRestoreMarker(ctx context.Context, conn q.DBTX) error {
 		return err
 	}
 	row, err := qs.GetSystemState(ctx, "restore_in_progress")
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		return fmt.Errorf("%w: backup %s", ErrRestoreInProgress, backupIDOf(row.Value))
+	}
+	// `trove admin post-restore` of a platform restore holds the replicas the same way until its replay has finished.
+	post, err := qs.GetSystemState(ctx, PostRestoreMarkerKey)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("%w: backup %s", ErrRestoreInProgress, backupIDOf(row.Value))
+	return fmt.Errorf("%w: post-restore %s", ErrRestoreInProgress, restoredToOf(post.Value))
+}
+
+// PostRestoreMarkerKey is the system_state key `trove admin post-restore` commits in its first transaction and deletes in its
+// last (R-HA-025 step 4): the schema check fails while it exists.
+const PostRestoreMarkerKey = "post_restore_in_progress"
+
+// restoredToOf extracts the restore point from the value of the post-restore marker.
+func restoredToOf(raw []byte) string {
+	var o struct {
+		RestoredTo string `json:"restoredTo"`
+	}
+	if json.Unmarshal(raw, &o) == nil && o.RestoredTo != "" {
+		return o.RestoredTo
+	}
+	return "(restore point unknown)"
 }
 
 // ReplicasUpTo lists the live replicas that run release or an older one, and those whose

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/journal"
@@ -15,8 +16,10 @@ import (
 // Reader is the [journal.Reader] over a [journal.Store].
 //
 // Whoever holds the runtime credential of the blob bucket can write objects below the journal prefix, so every object is
-// untrusted: one that does not decode, whose ID differs from its key, whose key names another day than its time, or whose
-// ID appears under a second key is reported unreadable and never replayed.
+// untrusted: one that does not decode, whose ID differs from its key, or whose key names another day than its time is reported
+// unreadable and never replayed. An ID that appears under a second key, and a key whose versions diverge, are not dropped
+// either: every copy is replayed and flagged, because a handler only removes or narrows and checks the entry against the
+// database, whereas dropping a copy would let the writer of the planted one hide the genuine one (audit finding H2).
 type Reader struct {
 	store      journal.Store
 	blobPrefix string
@@ -47,7 +50,7 @@ func (r *Reader) Entries(ctx context.Context, since time.Time) ([]journal.Object
 	var (
 		out        []journal.Object
 		unreadable []journal.Unreadable
-		seen       = map[string]string{}
+		keysOf     = map[string][]string{} // entry ID -> the keys it was read under
 	)
 	for _, key := range keys {
 		id, ok := journal.ParseKey(r.blobPrefix, key)
@@ -55,7 +58,7 @@ func (r *Reader) Entries(ctx context.Context, since time.Time) ([]journal.Object
 			unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: "the key is not a journal key"})
 			continue
 		}
-		body, err := r.store.Get(ctx, key)
+		bodies, err := r.bodies(ctx, key)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
@@ -63,29 +66,64 @@ func (r *Reader) Entries(ctx context.Context, since time.Time) ([]journal.Object
 			unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: "read: " + err.Error()})
 			continue
 		}
-		o, err := journal.Decode(body)
-		if err != nil {
-			reason := err.Error()
-			if errors.Is(err, journal.ErrUnknownVersion) {
-				reason = "unknown version: " + reason
+		var readable []journal.Object
+		for _, body := range bodies {
+			o, err := journal.Decode(body)
+			if err != nil {
+				reason := err.Error()
+				if errors.Is(err, journal.ErrUnknownVersion) {
+					reason = "unknown version: " + reason
+				}
+				unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: reason})
+				continue
 			}
-			unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: reason})
-			continue
+			if o.ID != id || journal.Key(r.blobPrefix, o) != key {
+				unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: "the object does not belong under this key"})
+				continue
+			}
+			readable = append(readable, o)
 		}
-		if o.ID != id || journal.Key(r.blobPrefix, o) != key {
-			unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: "the object does not belong under this key"})
-			continue
+		// trove writes a key only with the same bytes (R-HA-054), so a second content is somebody else's write.
+		if len(readable) > 1 {
+			for i := range readable {
+				readable[i].Warning = "the versions of " + key + " diverge; every version is replayed"
+			}
 		}
-		if first, dup := seen[o.ID]; dup {
-			unreadable = append(unreadable, journal.Unreadable{Key: key, Reason: "the entry " + o.ID + " is also under " + first})
-			continue
-		}
-		seen[o.ID] = key
-		if !o.At.After(since) {
-			continue
-		}
-		out = append(out, o)
+		keysOf[id] = append(keysOf[id], key)
+		out = append(out, readable...)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Less(out[j]) })
-	return out, unreadable, nil
+	kept := out[:0]
+	for _, o := range out {
+		if ks := keysOf[o.ID]; len(ks) > 1 {
+			o.Warning = strings.TrimSpace(o.Warning + " the entry " + o.ID + " is also under " +
+				strings.Join(without(ks, journal.Key(r.blobPrefix, o)), ", ") + "; every copy is replayed")
+		}
+		if o.At.After(since) {
+			kept = append(kept, o)
+		}
+	}
+	sort.Slice(kept, func(i, j int) bool { return kept[i].Less(kept[j]) })
+	return kept, unreadable, nil
+}
+
+// bodies returns the contents to read for a key: every version when the store was listed with versions, else the one.
+func (r *Reader) bodies(ctx context.Context, key string) ([][]byte, error) {
+	if av, ok := r.store.(journal.AllVersions); ok {
+		return av.GetAll(ctx, key)
+	}
+	b, err := r.store.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return [][]byte{b}, nil
+}
+
+func without(keys []string, drop string) []string {
+	var out []string
+	for _, k := range keys {
+		if k != drop {
+			out = append(out, k)
+		}
+	}
+	return out
 }

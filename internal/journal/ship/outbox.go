@@ -64,6 +64,27 @@ func (o *Outbox) Delete(ctx context.Context, ids []string) error {
 	return nil
 }
 
+// Quarantine implements [Quarantiner]: the row is recorded in system_state journal_quarantined and leaves the outbox in one
+// transaction.
+func (o *Outbox) Quarantine(ctx context.Context, r journal.OutboxRow, reason string) error {
+	entry, err := json.Marshal(map[string]string{"id": r.ID, "event": r.Event, "at": r.At.UTC().Format(time.RFC3339Nano), "reason": reason})
+	if err != nil {
+		return err
+	}
+	return o.db.InTx(ctx, func(tx meta.Tx) error {
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			return errors.New("the transaction is not a PostgreSQL transaction")
+		}
+		qs := q.New(ptx)
+		if err := qs.JournalQuarantine(ctx, string(entry)); err != nil {
+			return err
+		}
+		_, err := qs.DeleteRevocationOutboxRows(ctx, []string{r.ID})
+		return err
+	})
+}
+
 // Pending implements [journal.Outbox]: the number of rows and the age of the oldest (trove_revocation_journal_pending).
 func (o *Outbox) Pending(ctx context.Context) (int64, time.Duration, error) {
 	var (

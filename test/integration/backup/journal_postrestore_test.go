@@ -100,12 +100,19 @@ func TestR_HA_025_PostRestoreRunsTheStepsAndReplaysTheJournal(t *testing.T) {
 		t.Errorf("system.restored written %s times, want 1", n)
 	}
 
+	// A repeat for the same restore point changes nothing (audit finding L3).
+	e.stack.Exec(`INSERT INTO ui_session (id, secret_sha256, csrf_sha256, principal_id, auth_method, authenticated_at, idle_timeout, absolute_expires_at)
+		VALUES (gen_random_uuid(), decode(repeat('03', 32), 'hex'), decode(repeat('04', 32), 'hex'), $1::uuid, 'oidc', now(), interval '1 hour', now() + interval '1 day')`, alice.ID)
+	ranBefore := len(ran)
 	again, err := pr.PostRestore(ctx, backup.PostRestoreOptions{RestoredTo: restorePoint})
-	if err != nil || !strings.Contains(strings.Join(again.Steps, "\n"), "1 already in effect") {
-		t.Fatalf("second PostRestore = %v, %v; want the entry already in effect", again, err)
+	if err != nil || !strings.Contains(strings.Join(again.Steps, "\n"), "nothing changed") {
+		t.Fatalf("second PostRestore = %v, %v; want a no-op", again, err)
+	}
+	if len(ran) != ranBefore || e.count("SELECT count(*)::text FROM ui_session WHERE ended_at IS NULL") != "1" {
+		t.Error("a repeat must not run the fix-ups or end sessions")
 	}
 
-	skipped, err := pr.PostRestore(ctx, backup.PostRestoreOptions{RestoredTo: restorePoint, SkipJournal: true})
+	skipped, err := pr.PostRestore(ctx, backup.PostRestoreOptions{RestoredTo: restorePoint.Add(-time.Hour), SkipJournal: true})
 	if err != nil || !strings.Contains(strings.Join(skipped.Steps, "\n"), "revocation journal skipped") {
 		t.Fatalf("PostRestore --skip-revocation-journal = %v, %v", skipped, err)
 	}

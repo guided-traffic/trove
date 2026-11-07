@@ -2954,7 +2954,7 @@ needed with a blob prefix that starts empty and ends holding exactly the referen
 (Q-HA-19), and except a Valkey flush, which neither path performs: both replace it by a new
 keyspace.
 
-1. **Stop writers and backups.** `helm upgrade … --set web.replicaCount=0 --set worker.replicaCount=0 --set web.autoscaling.enabled=false --set worker.autoscaling.enabled=false --set highAvailability.enforce=false --set backup.suspend=true`.
+1. **Stop writers and backups.** `helm upgrade … --set web.replicaCount=0 --set worker.replicaCount=0 --set api.replicaCount=0 --set packages.replicaCount=0 --set web.autoscaling.enabled=false --set worker.autoscaling.enabled=false --set api.autoscaling.enabled=false --set packages.autoscaling.enabled=false --set highAvailability.enforce=false --set backup.suspend=true`, and the same `replicaCount=0` and `autoscaling.enabled=false` for every entry of `api.pools`, `packages.pools` and `worker.pools`. Every role that serves a request or claims a job must be at zero: a replica that is Ready on the restored database serves the access the restore brought back until the replay has run (Q-HA-157).
    Wait `system.heartbeat_stale_after`. A backup run that is already going is deleted
    (`kubectl delete job -l app.kubernetes.io/component=backup`), so it cannot record a
    half-restored state.
@@ -2966,7 +2966,11 @@ keyspace.
    new cluster has new ones). The encryption key Secret stays the same.
 4. **Run `trove admin post-restore --restored-to <t>`** as a one-off pod with the release's
    configuration (`kubectl run … -- trove admin post-restore …`, or
-   `helm upgrade … --set postRestore.enabled=true`, which renders a hook Job). It:
+   `helm upgrade … --set postRestore.enabled=true`, which renders a hook Job; the chart refuses that upgrade while any
+   role has replicas, as it does for `restore.enabled`). Its first transaction commits the marker
+   `system_state.post_restore_in_progress`, which fails the schema check of every replica (running or started later) as
+   `restore_in_progress` does, and its last transaction deletes the marker, after the replay and `system.restored`
+   (Q-HA-157). It:
    - deletes all rows of `replica` (they describe pods that no longer exist);
    - returns every `running` job to `queued` without incrementing `attempt`;
    - sets the deletion pause (below), so GC and the orphan sweep delete nothing until an operator
@@ -2987,7 +2991,10 @@ keyspace.
      number of referenced blobs whose objects are missing;
    - re-applies the revocation journal entries newer than *t* (R-HA-054) and prints one line per
      entry, including every object it suspended;
-   - writes the audit event `system.restored` with *t*;
+   - writes the audit event `system.restored` with *t*, records *t* in `system_state.post_restore_done` and deletes the
+     marker; a run for a *t* that is recorded changes nothing (no session ends, no revision offset, no new keyspace), a
+     run after a failed one with the same *t* resumes at the replay, and a run for another *t* while one is unfinished
+     is refused (Q-HA-157);
    - prints a reminder that access granted after *t* is gone and that revocations newer than the
      last shipped journal entry are undone (H-37).
 5. **Repair missing blobs** if step 4 reported any and the bucket is versioned:
@@ -3246,6 +3253,11 @@ restore does not revive it and it is not journaled.
 - `trove admin post-restore --restored-to <t>` lists the entries with
   `at > t − backup.revocation_journal.replay_margin` and sorts them by `at` and `id`. It applies
   them in that order, each to the state its predecessors left.
+- The replay starts at the earlier of *t* and the newest `audit_event.occurred_at` of the restored database, minus the
+  margin, so a `--restored-to` that lies later than the database does not skip revocations (Q-HA-158).
+- Every readable copy of an entry is replayed: an ID that appears under two keys and a key whose versions differ are
+  somebody else's writes, each copy is replayed (the handlers only remove or narrow) and the output flags them
+  (Q-HA-158). With version listing the replay reads every version of a key.
 - It prints one line per entry (`applied`, `already in effect`, `subject unknown`, `skipped`,
   `suspended`, `revived`) and writes the audit event `system.restore.journal_replayed` with the
   count of each outcome. `revived` marks a version that a format handler found present although the
@@ -8562,6 +8574,34 @@ Status: Decided by the development agent — selected from the options below; th
 **Choice:** (a). `revocation-journal-ship` is `Coalesce` in the `maintenance` queue; `internal/app/wire_journal.go` starts the timer. With `enabled: false` the same job deletes the rows without writing objects. A credentials file also switches the journal reader to listing object versions; an unknown key in it is refused, so a typo cannot fall back to the runtime credential.
 **Rationale:** The interval alone meets the acceptance criterion (the object appears within `ship_interval` after the store returns). The runtime credential lacks `s3:ListBucketVersions` (R-HA-023), so a file is the way to give a restore one. Revisit when the 5 s latency matters for the recovery point, or when the restore Job's identity replaces files.
 **Applied:** R-HA-054 "Outbox and shipping" is read as triggered by the interval; `internal/jobs/journal.go`, `internal/journal/ship`, `internal/app/wire_journal.go`, `internal/journal/replay/open.go`.
+
+### Q-HA-157 · How a platform restore keeps replicas away from the restored database until the replay has run
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) A marker `post_restore_in_progress` committed in the first transaction of `trove admin post-restore`, read by the schema check like `restore_in_progress`, deleted in the last transaction; the step that scales the roles lists `api`, `packages` and every pool; the replay gets a change-log notifier; the restore point is recorded so a repeat is a no-op | The restored database is not served until the replay is done, whatever the Deployments do; a pod that is already running turns not ready and learns of the replay | A failed post-restore leaves the installation not ready until it is run again |
+| (b) Only scale the roles to zero and trust the operator | No code | One role forgotten, or a hook that runs after the Deployments are applied, serves the old access (audit finding H1) |
+| (c) Reuse the key `restore_in_progress` | One key | `trove migrate` refuses a half-restored database by that key and names a backup that does not exist |
+
+**Choice:** (a). The marker holds `{restoredTo, phase, startedAt}`; phase `cleaned` records that the clean-up (replica rows, pause, sessions, fix-ups, `restored_at`) committed, so a resumed run goes to the replay and does not add the revision offset or rotate the keyspace again. `post_restore_done` holds `{restoredTo, journal, at}`; a repeat for the same restore point is a no-op unless the first run skipped the journal and this one replays. A chart that keeps `postRestore.enabled` after the restore is therefore harmless to the data; it should still switch the value off, since the Job holds the owner credential.
+**Rationale:** The gate has to be in the database because the Deployments cannot be trusted to be at zero when the hook runs (a post-upgrade hook runs after them). Revisit when the chart renders the Job as a pre-upgrade hook.
+**Applied:** R-HA-025 steps 1 and 4; `internal/backup/postrestore`, `internal/meta/postgres/gate.go`, `cmd/trove/admin_postrestore.go`.
+
+### Q-HA-158 · What the replay reads: every copy, from the database's own clock, and what the shipper does with a row it cannot encode
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) Group the objects by ID, replay each distinct readable copy and flag the duplicates; with version listing read every version of a key and replay the ones that differ; start at the earlier of the restore point and the newest audit event of the database; quarantine an outbox row that cannot be encoded (system_state `journal_quarantined`, `trove_revocation_journal_quarantined_total`) and ship the rest | A planted copy or overwrite cannot hide the genuine entry; a wrong `--restored-to` cannot skip revocations; one bad row does not stop the journal | A forged copy is replayed as well (it can only remove or be suspended); a quarantined row's change is missing from the journal and post-restore says so |
+| (b) First copy wins (as before) | Simple | The writer of a copy chooses which one is believed (audit finding H2) |
+| (c) Refuse a restore that finds a duplicate | Loud | The holder of the runtime credential can block every restore |
+
+**Choice:** (a). The alert on the counter is the chart's (`deploy/` is not edited here).
+**Rationale:** Handlers are fail-closed: a removal only removes and an update is applied only when the comparator proves it narrows, so replaying more copies cannot grant. Revisit when the journal objects are signed.
+**Applied:** R-HA-054 "Replay run"; `internal/journal/replay/reader.go`, `replayer.go`, `internal/blob/s3/journalstore.go` (`GetAll`), `internal/journal/ship`.
 
 ## What this does not cover
 

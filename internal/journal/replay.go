@@ -182,6 +182,9 @@ func ApplyUpdate[T any](cmp Narrower[T], current, before, after T, act UpdateAct
 type Summary struct {
 	Counts  map[Outcome]int `json:"counts"`
 	Results []Result        `json:"results"`
+	// Warnings lists the entries that exist in more than one copy and the objects whose versions diverge: somebody wrote to
+	// the journal, and every copy was replayed.
+	Warnings []string `json:"warnings,omitempty"`
 	// Unreadable lists the objects that could not be decoded.
 	Unreadable []Unreadable `json:"unreadable,omitempty"`
 	// NoAdminBinding is true when the replay left no admin role binding: the break-glass account is the way back in.
