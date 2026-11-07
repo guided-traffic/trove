@@ -20,7 +20,8 @@ type lockViolation struct{ file, call, why string }
 // lock takes the two-argument form, its first argument is a category constant
 // (a literal of a registered category or a placeholder bound to a constant of
 // locks.go), the retired category 2 is never used, and the shared form appears
-// only in the backup export code.
+// only in the backup export code: internal/backup and the database half of its
+// snapshot, internal/meta/postgres/backup_snapshot.go (Q-BAK-23).
 func checkAdvisoryCalls(file string, src string) []lockViolation {
 	var out []lockViolation
 	for _, m := range advisoryCall.FindAllStringSubmatch(src, -1) {
@@ -50,7 +51,7 @@ func checkAdvisoryCalls(file string, src string) []lockViolation {
 		default:
 			bad("first argument must be a category constant of internal/cluster/locks.go")
 		}
-		if shared && !strings.HasPrefix(filepath.ToSlash(file), "internal/backup/") {
+		if shared && !isBackupExportCode(filepath.ToSlash(file)) {
 			bad("the shared form is only for the backup export code")
 		}
 	}
@@ -174,4 +175,11 @@ func TestAdvisoryLockCategories(t *testing.T) {
 			t.Fatalf("migrate.go has category %s, locks.go has %d", m[1], LockMigration)
 		}
 	})
+}
+
+// isBackupExportCode reports whether file is part of the backup export, the only code that may take the
+// migration lock shared (R-ARCH-017): the backup lane under internal/backup and the pgx half of its snapshot
+// protocol, which lives in the infrastructure layer (Q-BAK-23).
+func isBackupExportCode(file string) bool {
+	return strings.HasPrefix(file, "internal/backup/") || file == "internal/meta/postgres/backup_snapshot.go"
 }

@@ -2828,7 +2828,8 @@ Acceptance criteria:
 - A test over `internal/meta/postgres/queries/*.sql` and every Go source fails on any
   `pg_advisory*` or `pg_try_advisory*` call with one argument, or with a first argument that is not
   a category constant of `internal/cluster/locks.go`, or with the retired category 2. It accepts
-  the shared form `pg_advisory_lock_shared(3, 0)` in the backup export code and fails on a shared
+  the shared form `pg_advisory_lock_shared(3, 0)` in the backup export code (`internal/backup/` and the database half of its
+  snapshot, `internal/meta/postgres/backup_snapshot.go`, Q-BAK-23) and fails on a shared
   advisory-lock call anywhere else.
 - After `SELECT pg_terminate_backend(<pid of the connection holding the scheduler lease>)`, the
   replica logs the lease loss, `/readyz` stays `200`, and a worker holds the `scheduler` lease again
