@@ -422,6 +422,11 @@ since the last tag.
 
 - **A job failed:** `gh run list --branch main --limit 3`, then for the newest commit's run
   `gh run view <id>` and `gh run rerun <id> --failed`. Nothing re-runs by itself.
+- **A commit was pushed while the run was in progress, with `[skip ci]` in its message:** that push starts
+  no run and cancels none, so the running run passes, but Semantic Release then finds `main` ahead of its
+  commit ("The local branch main is behind the remote one") and publishes nothing. GitHub reads the marker
+  anywhere in the message. A dispatched run (`gh run … workflow_dispatch`) does not release either: the job
+  runs on a push only. Push a new commit without the marker (an empty `ci:` commit when nothing else is due).
 - **The release is published but its image or chart is not:** the run of that tag in
   `Release Docker & Helm` (`gh run list --workflow "Release Docker & Helm"`), then
   `gh run rerun <id> --failed`. The job pushes the same tags again.

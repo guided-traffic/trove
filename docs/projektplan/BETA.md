@@ -1076,7 +1076,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - ⚪ E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
 
 **Helm chart and release**
-- ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
+- 🟡 Chart complete: values reference and schema, autoscaling, network policies, monitoring integration. Built on 2026-11-07: the values reference is held to `values.yaml` and `values.schema.json` (`TestR_HA_031_ValuesReference`), the Gateway API exposure (`TestR_HA_038_GatewayAPIExposure`), the ServiceMonitor and 23 alerts of the PrometheusRule with promtool tests ([Q-HA-135](../spec/ha-and-helm.md)). Open: the backup alerts and the revocation journal's alert of R-HA-045, which wait for the backup jobs and the journal below
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
 - 🟡 Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) with provenance and SBOM attestations and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)); it publishes every release since the switch to the organisation's CI standard. Open: E5.8, the beta candidate installed by digest from there passing E2.1's smoke scenarios
 - ⚪ Beta candidate published

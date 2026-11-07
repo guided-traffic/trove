@@ -484,3 +484,10 @@ options and a recommendation, and what depends on it is not built before the ans
   `/private/tmp/claude-501/-Users-hfi-repos-trove-ui-review/1ac9eb74-ba5b-44d7-bd76-154bcdbbefa7/scratchpad/gitlab-profile`. When
   the owner has finished comparing, close the window and delete the profile (ask first: it is the owner's session).
 
+- **T-15 · Housekeeping of the project model run (2026-11-07).** Ask the owner before each deletion. Left behind: the remote
+  branch `project-model` (the validation branch of the closed pull request #60; landed squashed as 6c28b738), about 250
+  agent worktrees under `.claude/worktrees/` with their local branches (`worktree-agent-*`, `project-model-*`, `t7`, `t8`,
+  `t9`, `fix-*`, `wp8*`, `e6a8`, `rha045`); the owner's installation on `wds18-k8s-main` was reset on 2026-11-07 for v0.22.0's
+  changed migrations (database `trove` dropped and recreated, Valkey flushed, the owner's permission), so its S3 bucket
+  still holds the blobs of the dropped database, which no garbage collection reaches (empty it except `ui-assets/` once
+  the owner agrees).
