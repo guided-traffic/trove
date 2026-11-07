@@ -147,4 +147,21 @@ func TestR_AUTHZ_026_AnOwnerWritesRemoteRepositoriesWithinTheRules(t *testing.T)
 		}
 		wantStatus(t, patch(f.admin, "owner-value", map[string]any{"vulnerabilities": map[string]any{"blockMalicious": false}}), 200, "")
 	})
+	t.Run("Q-VULN-69 an Owner creates no repository whose member vulnerabilities is weaker than the defaults", func(t *testing.T) {
+		// A create is a write against the defaults: without this, deleting and re-creating a repository lifts a block.
+		section := map[string]any{"url": upstream}
+		for i, member := range []map[string]any{{"enabled": false}, {"blockMalicious": false}, {"matchPublicAdvisories": "never"}} {
+			key := "owner-weak-" + string(rune('a'+i))
+			wantStatus(t, f.do(f.alice, "POST", repos, remote(key, section, map[string]any{"vulnerabilities": member})), 403, "vulnerability_weakening_refused")
+			wantStatus(t, f.do(f.alice, "POST", repos, map[string]any{"key": key + "-local", "class": "local", "format": "npm",
+				"vulnerabilities": member}), 403, "vulnerability_weakening_refused")
+		}
+		if n := f.e.Number("SELECT count(*) FROM repositories WHERE key LIKE 'owner-weak-%'"); n != 0 {
+			t.Fatalf("%d repositories", n)
+		}
+		strict := map[string]any{"onMissingData": "block", "matchPublicAdvisories": "always"}
+		wantStatus(t, f.do(f.alice, "POST", repos, remote("owner-strict", section, map[string]any{"vulnerabilities": strict})), 201, "")
+		wantStatus(t, f.do(f.admin, "POST", repos, remote("admin-weak", section,
+			map[string]any{"vulnerabilities": map[string]any{"blockMalicious": false}})), 201, "")
+	})
 }

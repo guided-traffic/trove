@@ -238,6 +238,11 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, project st
 	}
 	d.Project = project
 	restrictedRemote(v, c, nil, &d)
+	// A create is checked against the defaults (Q-VULN-69): otherwise deleting and re-creating a repository would lift
+	// the blocks an Owner may not lift by an update.
+	if err := restrictedVulnerabilities(c, &Document{}, &d); err != nil {
+		return Stored{}, err
+	}
 	qs, err := queries(tx)
 	if err != nil {
 		return Stored{}, err

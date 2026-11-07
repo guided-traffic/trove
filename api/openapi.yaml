@@ -5343,6 +5343,9 @@ paths:
         `repositories:write-config`, or is an Owner of the project, creates it. A virtual repository's members and
         deploy target are repositories of the same project, named by their bare keys (`422
         repository_outside_project`, Q-AUTHZ-178). A project the caller cannot see answers `404`.
+        An Owner's create whose member `vulnerabilities` is weaker than the defaults (`enabled: false`,
+        `matchPublicAdvisories: never`, `blockMalicious: false`) answers `403 vulnerability_weakening_refused` unless the
+        caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
       x-trove-permission:
         permission: repositories:write-config
         project: path.projectKey
