@@ -80,7 +80,6 @@ func TestR_BAK_015_TheBackupRole(t *testing.T) {
 		if _, err := maint.Exec(ctx, `CREATE ROLE `+role+` LOGIN PASSWORD 'pw'`); err != nil {
 			t.Fatal(err)
 		}
-		role := role
 		t.Cleanup(func() { _, _ = maint.Exec(context.Background(), `DROP ROLE IF EXISTS `+role) })
 	}
 	in := newInstall(t)

@@ -396,21 +396,3 @@ func pgConfig(t testing.TB, dir, name string) config.Database {
 		Preflight:       config.DatabasePreflight{ConnectionBudget: "enforce", ReservedConnections: 10, AllowSuperuser: true},
 	}
 }
-
-// attachInstall connects to the database and the blob prefix that another process of the test created, for a child process.
-func attachInstall(t *testing.T, dbName, srcPrefix string) *install {
-	t.Helper()
-	dir := t.TempDir()
-	in := &install{t: t, dbName: dbName}
-	in.dbCfg = pgConfig(t, dir, dbName)
-	in.s3cfg = sourceConfig(t, dir)
-	in.s3cfg.Prefix = srcPrefix
-	in.prefix = srcPrefix
-	factory := outbound.New(config.Outbound{TLS: config.OutboundTLS{UseSystemRoots: true}})
-	c, err := s3.NewFromFactory(context.Background(), in.s3cfg, factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in.client, in.obj = c, c
-	return in
-}
