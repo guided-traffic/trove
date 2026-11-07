@@ -49,7 +49,7 @@ func codeOf(t *testing.T, err error) (errs.Kind, string) {
 	return e.Kind, e.Code
 }
 
-func TestR_AUTHZ_207_TheDeclarationOfAProjectRole(t *testing.T) {
+func TestR_AUTHZ_026_TheDeclarationOfAProjectRole(t *testing.T) {
 	t.Run("R-AUTHZ-026 parseRequirement reads permission with project and projectRole and refuses another role", func(t *testing.T) {
 		q, err := parseRequirement(map[string]any{"permission": "identities:write", "project": "path.projectKey", "projectRole": "owner"})
 		if err != nil || q.Permission != "identities:write" || q.ProjectRole != "owner" || q.Project != "path.projectKey" {
