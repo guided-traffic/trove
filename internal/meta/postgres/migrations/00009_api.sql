@@ -33,7 +33,6 @@ CREATE TABLE user_preferences (
     locale              text        CHECK (locale IN ('en', 'de')),
     theme               text        CHECK (theme IN ('light', 'dark')),
     keyboard_shortcuts  boolean     NOT NULL DEFAULT false,
-    project_filter      text,
     revision            bigint      NOT NULL DEFAULT 1,
     updated_at          timestamptz NOT NULL DEFAULT now()
 );

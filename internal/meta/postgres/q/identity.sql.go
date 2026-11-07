@@ -2773,8 +2773,7 @@ func (q *Queries) IdentityUserMemberships(ctx context.Context, memberID string) 
 
 const preferencesGet = `-- name: PreferencesGet :many
 
-SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts,
-       coalesce(project_filter, '')::text AS project_filter, revision
+SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts, revision
   FROM user_preferences WHERE user_id = $1::text::uuid
 `
 
@@ -2782,7 +2781,6 @@ type PreferencesGetRow struct {
 	Locale            string
 	Theme             string
 	KeyboardShortcuts bool
-	ProjectFilter     string
 	Revision          int64
 }
 
@@ -2800,7 +2798,6 @@ func (q *Queries) PreferencesGet(ctx context.Context, userID string) ([]Preferen
 			&i.Locale,
 			&i.Theme,
 			&i.KeyboardShortcuts,
-			&i.ProjectFilter,
 			&i.Revision,
 		); err != nil {
 			return nil, err
@@ -2814,15 +2811,15 @@ func (q *Queries) PreferencesGet(ctx context.Context, userID string) ([]Preferen
 }
 
 const preferencesUpsert = `-- name: PreferencesUpsert :many
-INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, project_filter, revision)
+INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, revision)
 VALUES ($1::text::uuid, NULLIF($2::text, ''), NULLIF($3::text, ''),
-        $4::boolean, NULLIF($5::text, ''), 2)
+        $4::boolean, 2)
 ON CONFLICT (user_id) DO UPDATE
    SET locale = EXCLUDED.locale, theme = EXCLUDED.theme, keyboard_shortcuts = EXCLUDED.keyboard_shortcuts,
-       project_filter = EXCLUDED.project_filter, revision = p.revision + 1, updated_at = now()
- WHERE $6::bigint = 0 OR p.revision = $6::bigint
+       revision = p.revision + 1, updated_at = now()
+ WHERE $5::bigint = 0 OR p.revision = $5::bigint
 RETURNING coalesce(p.locale, '')::text AS locale, coalesce(p.theme, '')::text AS theme, p.keyboard_shortcuts,
-          coalesce(p.project_filter, '')::text AS project_filter, p.revision
+          p.revision
 `
 
 type PreferencesUpsertParams struct {
@@ -2830,7 +2827,6 @@ type PreferencesUpsertParams struct {
 	Locale            string
 	Theme             string
 	KeyboardShortcuts bool
-	ProjectFilter     string
 	IfRevision        int64
 }
 
@@ -2838,7 +2834,6 @@ type PreferencesUpsertRow struct {
 	Locale            string
 	Theme             string
 	KeyboardShortcuts bool
-	ProjectFilter     string
 	Revision          int64
 }
 
@@ -2851,7 +2846,6 @@ func (q *Queries) PreferencesUpsert(ctx context.Context, arg PreferencesUpsertPa
 		arg.Locale,
 		arg.Theme,
 		arg.KeyboardShortcuts,
-		arg.ProjectFilter,
 		arg.IfRevision,
 	)
 	if err != nil {
@@ -2865,7 +2859,6 @@ func (q *Queries) PreferencesUpsert(ctx context.Context, arg PreferencesUpsertPa
 			&i.Locale,
 			&i.Theme,
 			&i.KeyboardShortcuts,
-			&i.ProjectFilter,
 			&i.Revision,
 		); err != nil {
 			return nil, err

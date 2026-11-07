@@ -5972,7 +5972,6 @@ export interface components {
          *       "locale": "de",
          *       "theme": null,
          *       "keyboardShortcuts": false,
-         *       "projectFilter": null,
          *       "revision": 2
          *     }
          */
@@ -5982,7 +5981,6 @@ export interface components {
             /** @description `light`, `dark` or `null` (the system decides). */
             theme: string | null;
             keyboardShortcuts: boolean;
-            projectFilter: string | null;
             revision: number;
         };
         /** @description `null` resets a member to its default. `revision` is accepted and ignored. */
@@ -5992,7 +5990,6 @@ export interface components {
             /** @description `light`, `dark` or `null`. */
             theme?: string | null;
             keyboardShortcuts?: boolean | null;
-            projectFilter?: string | null;
         };
         /** @description The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted. */
         PatternLists: {

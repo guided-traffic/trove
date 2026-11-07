@@ -1248,13 +1248,12 @@ Priority: **MVP** · Covers: trove-only
 Preferences are owned here:
 
 ```json
-{"locale": "de", "theme": null, "keyboardShortcuts": false, "projectFilter": null, "revision": 2}
+{"locale": "de", "theme": null, "keyboardShortcuts": false, "revision": 2}
 ```
 
-`locale` is `en`, `de` or `null` (browser decides); `theme` is `light`, `dark` or `null` (system);
-`projectFilter` is a project key or `null`; the UI does not read or write it since the project is the context of the screens
-([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)), so the member is dead and goes with
-the next change of the preferences. PATCH takes a merge patch with
+`locale` is `en`, `de` or `null` (browser decides); `theme` is `light`, `dark` or `null` (system). The project is not a
+preference: it is the context of the screens ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)),
+and a member `projectFilter` in a patch is refused as an unknown member. PATCH takes a merge patch with
 `If-Match`. `user_preferences.revision` is the `ETag` and is registered with
 `meta.RegisterRevisionColumn` (R-API-012, [backup-and-restore.md](backup-and-restore.md)
 R-BAK-022).
@@ -1267,7 +1266,6 @@ CREATE TABLE user_preferences (
   locale             text CHECK (locale IN ('en', 'de')),
   theme              text CHECK (theme IN ('light', 'dark')),
   keyboard_shortcuts boolean NOT NULL DEFAULT false,
-  project_filter     text,
   revision           bigint  NOT NULL DEFAULT 1,
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
@@ -8078,7 +8076,7 @@ filter of the top bar (R-UI-041), offered to administrators and project administ
 always shown inside its project; the admin area's lists name the project in a column.
 
 **Applied in the spec:** R-UI-002 (the side bars, the project switcher), R-UI-003 (the route table), R-UI-020, R-UI-021,
-R-UI-041 (the start page, no project filter); the preference `projectFilter` of R-API-021 is no longer used. Code:
+R-UI-041 (the start page, no project filter); the preference `projectFilter` of R-API-021 is removed (API, OpenAPI, column). Code:
 `web/src/app/core/project-context.ts` (the project of the URL, the projects of the caller, the recent ones),
 `core/navigation.ts` (`projectEntries`), `features/projects/` (`project-context.routes.ts`, `projects-home.ts`,
 `project-switcher.ts`, `project-settings.ts`, `project-members-page.ts`, `project-list-pages.ts`), the content routes

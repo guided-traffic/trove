@@ -135,6 +135,9 @@ describe('The auditor\'s security dashboard (Q-UI-130, R-VULN-022)', () => {
     expect(r.root.querySelector(`a[href="/admin/security/findings/${FINDING_VULN}"]`)).toBeTruthy();
     expect(r.root.querySelector('a[href^="/vulnerabilities"]')).toBeNull();
     expect(r.root.querySelector('a[href="/admin/advisory-sources"]')).toBeTruthy();
+    // A package opens in the project of its finding (Q-UI-163), never at a content address without a project.
+    expect(r.root.querySelector('a[href^="/projects/shop/packages/npm/minimist"]')).toBeTruthy();
+    expect(r.root.querySelector('a[href^="/packages/"]')).toBeNull();
   });
 
   it('Q-UI-130 a holder of vulnerabilities:triage selects findings and changes their status; a reader does not', async () => {

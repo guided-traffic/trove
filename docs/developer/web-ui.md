@@ -775,7 +775,7 @@ How the pieces fit:
   holder nor Owner.
 - **Tokens of a project account.** The token form has no "Never expires" for an Owner and says that the installation caps the lifetime; the cap itself is not known to the UI, so a longer lifetime is
   refused by the server (`ttl_exceeds_maximum`, shown at the field). The form offers no `system` scope for any token.
-- **No project filter.** The `ProjectFilter` of the top bar and the `projectFilter` preference are gone from the UI; the preference member stays in the API until the preferences next change.
+- **No project filter.** The `ProjectFilter` of the top bar and the `projectFilter` preference are gone, in the UI and in the API (the preference, its column and its OpenAPI member).
 - **Saving a project.** `ProjectDialog` sends the project (`POST` with `owners`, or `PUT` with `If-Match`; a 412 opens the conflict dialog of R-UI-042). The display name (required, 1 to 128 characters)
   and the key pattern are checked before the request; the `Idempotency-Key` of the create is replaced after every 4xx refusal except `idempotency_in_progress`, because the server stores a 4xx
   outcome under its key (R-API-014). Repositories are created in the project and moved with `POST …/move` from the repository's settings; the dialog assigns nothing. A change, a create and a delete call

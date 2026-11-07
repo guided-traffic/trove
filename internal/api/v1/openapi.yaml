@@ -14013,7 +14013,7 @@ components:
     Preferences:
       type: object
       description: The caller's UI preferences (R-API-021). `revision` is the ETag number.
-      required: [locale, theme, keyboardShortcuts, projectFilter, revision]
+      required: [locale, theme, keyboardShortcuts, revision]
       properties:
         locale:
           type: [string, "null"]
@@ -14023,12 +14023,10 @@ components:
           description: "`light`, `dark` or `null` (the system decides)."
         keyboardShortcuts:
           type: boolean
-        projectFilter:
-          type: [string, "null"]
         revision:
           type: integer
           minimum: 1
-      example: {locale: de, theme: null, keyboardShortcuts: false, projectFilter: null, revision: 2}
+      example: {locale: de, theme: null, keyboardShortcuts: false, revision: 2}
     PreferencesPatch:
       type: object
       description: "`null` resets a member to its default. `revision` is accepted and ignored."
@@ -14041,8 +14039,6 @@ components:
           description: "`light`, `dark` or `null`."
         keyboardShortcuts:
           type: [boolean, "null"]
-        projectFilter:
-          type: [string, "null"]
     # <<< M1 login
     #
     # >>> M1 authz

@@ -6532,9 +6532,8 @@ type Preferences struct {
 	KeyboardShortcuts bool `json:"keyboardShortcuts"`
 
 	// Locale `en`, `de` or `null` (the browser decides).
-	Locale        *string `json:"locale"`
-	ProjectFilter *string `json:"projectFilter"`
-	Revision      int     `json:"revision"`
+	Locale   *string `json:"locale"`
+	Revision int     `json:"revision"`
 
 	// Theme `light`, `dark` or `null` (the system decides).
 	Theme *string `json:"theme"`
@@ -6545,8 +6544,7 @@ type PreferencesPatch struct {
 	KeyboardShortcuts *bool `json:"keyboardShortcuts,omitempty"`
 
 	// Locale `en`, `de` or `null`.
-	Locale        *string `json:"locale,omitempty"`
-	ProjectFilter *string `json:"projectFilter,omitempty"`
+	Locale *string `json:"locale,omitempty"`
 
 	// Theme `light`, `dark` or `null`.
 	Theme *string `json:"theme,omitempty"`

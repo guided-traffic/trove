@@ -139,7 +139,7 @@ describe('access services over HTTP', () => {
     const prefs = TestBed.inject(HttpPreferencesApi).patch({ theme: 'dark' }, '"1"');
     const p = http.expectOne('/api/v1/users/me/preferences');
     expect(p.request.headers.get('If-Match')).toBe('"1"');
-    p.flush({ locale: null, theme: 'dark', keyboardShortcuts: false, projectFilter: null, revision: 2 });
+    p.flush({ locale: null, theme: 'dark', keyboardShortcuts: false, revision: 2 });
     expect((await prefs).etag).toBe('"2"');
   });
 

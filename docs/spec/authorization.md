@@ -4328,7 +4328,6 @@ still run 0.9.x, and then merges the two tables in a contract step.
 **Applied in the spec:** R-AUTHZ-026 (project policies), R-AUTHZ-028 (data model, index inputs), R-HA-018 (no change).
 Code: `internal/meta/postgres/migrations/00019_projects.sql`, `queries/authz.sql` (`AuthzBuildEntries`,
 `AuthzPolicyEntries`, `AuthzInsertProjectEntry`), [ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them).
-Gap: [H-395](#h-395--during-a-rollout-from-09x-the-rights-of-a-project-are-partly-absent-and-its-name-rules-are-not-enforced).
 
 ### Q-AUTHZ-175 · A project service account is granted by its project's policies only
 
@@ -4829,7 +4828,7 @@ Context: [Q-AUTHZ-175](#q-authz-175--a-project-service-account-is-granted-by-its
 
 **Rationale:** skipping only removes rights, as for every row that cannot be compiled. The development agent revisits the log line when an installation needs to alert on it; the remedy is a counter on the engine's install step.
 
-**Applied in the spec:** R-AUTHZ-026 (project service accounts). H-397 is closed by the trigger `AI005` ([Q-AUTHZ-203](#q-authz-203--the-migration-of-projects-is-expand-class-in-seven-steps-and-the-database-refuses-a-project-account-as-a-global-principal)), which refuses such a row from any writer, a replica of the previous release included; [H-395](#h-395--during-a-rollout-from-09x-the-rights-of-a-project-are-partly-absent-and-its-name-rules-are-not-enforced) (amended). Code: `internal/authz/declared.go` (`resolveOne`, `declare`), `index.go`, `store.go` (`writeChildren`), `bindings.go`, `queries/authz.sql` (`AuthzBuildEntries`, `AuthzBuildBindings`).
+**Applied in the spec:** R-AUTHZ-026 (project service accounts). H-397 is closed by the trigger `AI005` ([Q-AUTHZ-203](#q-authz-203--the-migration-of-projects-is-expand-class-in-seven-steps-and-the-database-refuses-a-project-account-as-a-global-principal)), which refuses such a row from any writer, a replica of the previous release included. Code: `internal/authz/declared.go` (`resolveOne`, `declare`), `index.go`, `store.go` (`writeChildren`), `bindings.go`, `queries/authz.sql` (`AuthzBuildEntries`, `AuthzBuildBindings`).
 
 ### Q-AUTHZ-199 · A delegate's policy write is checked under the policy lock, and its project lookups run in the write's transaction
 
@@ -5311,22 +5310,6 @@ A group that is a member of a project is filled by the identity provider (R-AUTH
 a member to that group at the provider holds the group's role in the project, the role Owner included, with no event in trove's audit
 log beyond the membership change that the next login writes (`group.members.changed`). This is the same position as for a
 group bound to a system role (R-AUTHZ-010); the role bounds what it can do.
-
-### H-395 · During a rollout from 0.9.x the rights of a project are partly absent and its name rules are not enforced
-
-While a replica of release 0.9.x runs (Q-AUTHZ-174) it reads no project: a project administrator has no `manage` on it,
-project policies cover nothing, and requests that replica decides are refused where a project would grant (availability,
-not security), and a rewrite of a project policy on it fails. The name rules (Q-AUTHZ-176) are not enforced by that
-replica's creation of a global service account or repository. After the last 0.9.x replica is gone the rights hold on
-every replica; a global service account that was created in the window with a project's prefix stays and is listed as
-global, and so does a global policy created there with a project's prefix (H-405).
-
-A 0.9.x replica can rewrite a project policy that has no entries (it reads none): the rewrite replaces the policy's selectors and
-patterns, and the project entries, which it does not know, stay. The new build compiles every policy that names a project against
-that project's repositories only (`builder.covered`, `policyRepos`), so a selector written by the old release can change which of
-the project's repositories the policy covers, never reach beyond the project; an entry of a project service account of another
-project or of an auto-join group is skipped by the build (Q-AUTHZ-198, Q-AUTHZ-200). The old release cannot add entries: the
-database refuses a row of `authz_policy_entry` for a project policy (`AI004`).
 
 ### H-398 · A failed project delete can leave the project without some of its policies
 

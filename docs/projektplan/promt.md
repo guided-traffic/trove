@@ -419,19 +419,9 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 
 ### Build what the owner decided (spec first, then code)
 
-- **T-7 · The project is the context of the content**
-  ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap H-550): the
-  start page lists your projects (one project: start in it); the content screens move under `/projects/<key>/…` with the
-  project's sidebar (packages, browse, repositories, members, settings) and a switcher at its top (recent, search); the top bar's
-  project filter (R-UI-041) goes; the admin area's lists name the project in a column. Needs T-5 for "your projects".
 - **T-8 · Storage per project** ([Q-STOR-155](../spec/storage.md#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds),
   gap H-547): a project shows and is charged the logical size of the files it holds; the admin dashboard keeps the physical
   figure of the store.
-- **T-9 · The auditor's security dashboard**
-  ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area), gap
-  H-551): in the admin area, for `vulnerabilities:triage` or `content:metadata-read`: the counts and trend over all projects, a
-  search by advisory ID (CVE, GHSA), package and project, and the triage of each finding; the project's own Vulnerabilities screen
-  shows that project only. Check first what the current report already searches.
 - **T-12 · The logo's open point** ([design-language.md](../developer/design-language.md#logo)): `web/public/brand/drafts/` and
   the preview on the sign-in page removed once the owner calls the logo final. The reduced form for the favicon and the
   wordmark as paths are built ([Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)).

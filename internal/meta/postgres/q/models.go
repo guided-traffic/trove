@@ -894,7 +894,6 @@ type UserPreference struct {
 	Locale            pgtype.Text
 	Theme             pgtype.Text
 	KeyboardShortcuts bool
-	ProjectFilter     pgtype.Text
 	Revision          int64
 	UpdatedAt         pgtype.Timestamptz
 }

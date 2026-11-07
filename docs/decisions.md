@@ -5765,7 +5765,7 @@ current release reads both tables in the same statements.
 
 **Consequences.** Fail closed by construction, in the database. The index build, the policy read, the policy write, the
 cleanup of a principal's entries and the test harness handle two tables. A rollout shows a project's rights as absent on
-old replicas (availability, not security); H-395 records it. A contract step may merge the tables once no 0.9.x installation
+old replicas (availability, not security). A contract step may merge the tables once no 0.9.x installation
 runs.
 
 **Alternatives considered.** Refusing project policies while a 0.9.x replica lives (checked at write time only; a later
