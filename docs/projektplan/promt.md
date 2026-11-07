@@ -189,6 +189,9 @@ and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the ch
 2. Push, and wait until `Test and Release` is green on that commit. Semantic Release has then cut the
    release of the push, if the commits held a `feat` or a `fix`, and `Release Docker & Helm` has run for
    it: `gh run list --workflow "Release Docker & Helm" --limit 3`, then `gh run watch <run-id> --exit-status`.
+   Push nothing to `main` while that run is going, not even a `[skip ci]` commit: Semantic Release publishes only when the
+   run's commit is still the tip of `main` ("The local branch main is behind the remote one, therefore a new version won't be
+   published", run 42410791254 on 2026-11-07), and a manual dispatch does not release (the job runs on `push` only).
 3. `git pull --rebase origin main` (the release commit moves `main` with the coverage badge). The release
    number goes into no plan: BETA.md and FULL.md track features only (owner, 2026-11-02).
 4. Check the published artifacts of the release: `gh release view vX.Y.Z`, the image
