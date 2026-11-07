@@ -1,7 +1,8 @@
 # Backup, restore and the revocation journal
 
-Status: the contracts are built ([backup.md](../developer/backup.md)); the operations are not. This page describes the mechanisms
-as the contracts fix them and marks what a later work package still has to build. The specification is
+Status: built ([backup.md](../developer/backup.md)); of the P1 parts, client-side encryption of the table files (R-BAK-027) and
+the restore onto an existing blob store (R-BAK-025) are not. The chart runs the backup only with `backup.enabled: true` (off by
+default). The specification is
 [backup-and-restore.md](../spec/backup-and-restore.md) and R-HA-054 in [ha-and-helm.md](../spec/ha-and-helm.md).
 
 ## Who holds what

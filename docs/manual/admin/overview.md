@@ -47,7 +47,7 @@ Besides `serve`, the binary has these commands:
 | `trove migrate up` | Applies the database migrations. The chart runs it as a Job before every install and upgrade. |
 | `trove migrate status` | Prints the migration state as JSON and changes nothing; `GET /api/v1/system/migrations` answers the same report ([Upgrades](upgrades.md#how-the-migrations-work)). |
 | `trove admin …` | Bootstrap and recovery: validate the configuration, the break-glass account, service accounts and their tokens, ending sessions, disabling a user. See [Installation](installation.md#bootstrap-and-recovery-commands). |
-| `trove backup` | Reserved. It exits with "not implemented yet": this version has no backup or restore command, no backup role and no backup job. See [Known limitations](limitations.md). |
+| `trove backup` | The backup of the database and the blobs to a target bucket of its own: `create`, `list`, `verify`, `delete`, `prune` and `restore`. The chart runs `create` as the CronJob `<fullname>-backup` once `backup.enabled: true` is set (off by default) and `restore` as the Job `<fullname>-restore` with `restore.enabled`. See [Backups](operations.md#backups).
 
 The web UI is built into the binary with the licences of the software it bundles. Every installation serves their notices as plain text at `/ui/<locale>/3rdpartylicenses.txt`, for example `https://trove.example.com/ui/en/3rdpartylicenses.txt`, with the same English text under `/ui/de/`. The Installation card of the system status screen links the file of its build.
 
@@ -124,4 +124,4 @@ A replica checks the schema at start (the compatibility gate):
 
 The pods run as a non-root user with a read-only root file system and satisfy the restricted Pod Security Standard. They are spread across nodes and zones.
 
-The chart does not deploy PostgreSQL, Valkey, the object store, the ingress controller, certificates or any Secret: every Secret it mounts must exist before the install. It also renders no autoscaler, no egress NetworkPolicy, no ServiceMonitor, no Gateway API route and no backup job in this version.
+The chart does not deploy PostgreSQL, Valkey, the object store, the ingress controller, certificates or any Secret: every Secret it mounts must exist before the install. It also renders no autoscaler, no egress NetworkPolicy, no ServiceMonitor, and no Gateway API route; the backup CronJob only with `backup.enabled: true`.

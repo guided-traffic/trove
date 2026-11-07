@@ -30,7 +30,7 @@ This ends with the first stable release.
 ## Before you upgrade
 
 1. Read the release notes, as above, and adjust your values file to any renamed or removed key.
-2. Back up the PostgreSQL database with the tools of your database platform, such as the backups of [CloudNativePG](https://cloudnative-pg.io/documentation/). Migrations are not reversible, and trove has no backup command in this version. The object store needs no extra step: migrations do not touch it.
+2. Back up the PostgreSQL database with the tools of your database platform, such as the backups of [CloudNativePG](https://cloudnative-pg.io/documentation/). Migrations are not reversible. trove's own backup ([Backups](operations.md#backups)) restores into a new, empty installation and is no rollback of an upgrade, so back up the database here as well. The object store needs no extra step: migrations do not touch it.
 3. Check that the new chart accepts your values. Rendering runs the chart's schema and its checks without changing anything:
 
    ```shell
