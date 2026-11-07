@@ -3608,7 +3608,8 @@ export interface paths {
         post?: never;
         /**
          * Delete a Bastion registration
-         * @description Deletes the registration and revokes its tokens (`token.revoked`, journaled, R-HA-054). Records `bastion.deleted`.
+         * @description Deletes the registration and revokes its tokens (`token.revoked`, journaled, R-HA-054). Records `bastion.deleted`,
+         *     journaled: a restore to a point before the deletion brings the registration back disabled (Q-BAS-145).
          */
         delete: operations["deleteBastion"];
         options?: never;
@@ -3617,8 +3618,9 @@ export interface paths {
          * Change or disable a Bastion registration
          * @description Changes the description and enables or disables the registration (JSON merge patch). A disabled registration refuses its
          *     tokens like a disabled service account's (R-AUTH-020) within the revocation bound of every replica; the tokens stay
-         *     unrevoked, so enabling the registration again restores them. Records `bastion.updated`, which carries no journal
-         *     entry: the revocation feed tells a Bastion what changed for the callers it answers (R-BAS-015, Q-BAS-61).
+         *     unrevoked, so enabling the registration again restores them. A new description records `bastion.updated`; a disable
+         *     records `bastion.disabled`, journaled, so a restore to a point before it disables the registration again (R-HA-054,
+         *     Q-BAS-145); an enable records `bastion.enabled`.
          */
         patch: operations["updateBastion"];
         trace?: never;

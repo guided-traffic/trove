@@ -2673,6 +2673,8 @@ restore from a scheduled backup an MVP path. For this page:
 | `authz.project.member_removed` | Project ID and key; the principal's ID and reference | Remove the membership |
 | `authz.project.member_changed` | Project ID and key; the principal's ID and reference; the role before and after | Update rule of R-HA-054 with the role comparator below |
 | `repository.moved` | Repository ID; the source and the target project, IDs and keys | When the restored database holds the repository in the source project, disable it (`disabled: true`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004) and report it `suspended`; `already in effect` when it is in the target project; otherwise `subject unknown` |
+| `repository.disabled` | Repository ID; its qualified name for display | Disable the repository (`disabled: true`); `already in effect` when the restored database holds it disabled or being deleted; `subject unknown` when it holds no repository of the ID. Enabling a repository narrows nothing and is not journaled ([Q-AUTHZ-238](#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own)) |
+| `repository.deleted` | As for `repository.disabled`; both phases of a deletion (R-REPO-013) carry it | As for `repository.disabled`: the repository is disabled, never deleted, so replay deletes no content and an administrator deletes it again ([Q-AUTHZ-239](#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled)) |
 | `authz.ownership.removed` | Domain, format, normalized package name; the removed owner (principal ID, or CI issuer ID and GitLab project ID) | Remove that owner |
 | `authz.ownership.released` | As for `.removed`, for the last owner | Remove that owner; the name's state is left as below |
 | `authz.settings.changed` | Repository ID; the changed access settings, before and after | Update rule of R-HA-054 with the settings comparator below |
@@ -5376,6 +5378,47 @@ Status: Decided by the development agent — selected from the options below; th
 **Choice:** (a).
 **Rationale:** The comparator already answers false for a setting without an order; the suspension now has no hole.
 **Applied:** `internal/authz/journal_replay.go` (`replaySettings`).
+
+### Q-AUTHZ-238 · Disabling a repository is journaled as `repository.disabled` with a handler of its own
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+A repository with `disabled: true` takes no part in resolution, download or deploy (R-REPO-004), yet the authorization settings
+hook journaled only `requireAuthentication`, `hideExistence`, `cacheFillAction` and `packageOwnership`: a restore to a point before
+a disable enabled the repository again, and nothing replayed it.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) `disabled` as a fifth setting of `authz.settings.changed`, order `true`, `false`, under the settings comparator | No new event; the Bastion feed already maps the event | The update rule's comparator, its suspension and its writer learn a setting that is a plain removal; a disable rides on the narrowing proof of the other settings of the same entry |
+| (b) A transactional event `repository.disabled` that an update records next to `repository.updated` when it sets `disabled`, with the entry `{repositoryId, key}`; the replay disables the repository by ID (chosen) | A removal applied as recorded, like `user.disabled`: `applied`, `already in effect` (disabled, or being deleted), `subject unknown`; enabling records only `repository.updated` and is never replayed | One more event name; the Bastion feed reads it (`grants`, Q-BAS-120) |
+| (c) Flag `repository.updated` with an entry on every update | One event | A journal object for every configuration change of every repository, almost all of which narrow nothing |
+
+**Choice:** (b). The handler is the project package's, beside the replay of `repository.moved`, and writes the document through the
+same `disableRepository` step (`internal/project/journal_replay.go`).
+**Rationale:** a disable is a removal, and R-HA-054 applies removals as recorded; a comparator is for updates whose direction has
+to be proved. A forged entry can only disable a repository, which withholds content and grants nothing. Revisit when the settings
+table of this requirement gains a member whose suspension has to name `disabled` with it.
+**Applied:** R-AUTHZ-031 table, R-HA-054 table, R-BAS-015 table; `internal/audit/events_repository.go`, `internal/repository/service.go`
+(`recordDisabled`), `internal/project/journal_replay.go`, `internal/bastionmain/feed.go`.
+
+### Q-AUTHZ-239 · A deleted repository is journaled and replayed as disabled
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+A deletion ends every access to a repository (R-REPO-013), and a restore to a point before it brings the repository back with the
+grants of its policies and its project.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) Not journaled: a restore restores the repository | Nothing to build | An administrator who deleted a repository to withdraw what it served finds it served again after a restore |
+| (b) `repository.deleted` carries the entry `{repositoryId, key}` in both phases; the replay disables the repository (chosen) | The rule of R-HA-054 for deleted principals: disabled, never deleted, so a mistaken or forged entry stays reversible and replay deletes no content; a repository the restored database holds in deletion is `already in effect` | Every deletion ships one or two journal objects |
+| (c) The replay deletes the repository again | The restored state equals the state before the restore | Replay would delete content, which R-HA-054 forbids, and a forged entry could destroy a repository |
+
+**Choice:** (b).
+**Rationale:** the disabled repository grants nothing, and an administrator deletes it again or enables it. Revisit when the backup
+keeps a repository's deletion in the manifest itself.
+**Applied:** R-AUTHZ-031 table, R-HA-054 table and replay rules, R-BAS-015 table; `internal/audit/events_repository.go`,
+`internal/repository/service.go` (`recordAndNotify`), `internal/project/journal_replay.go`.
 
 ## What this does not cover
 

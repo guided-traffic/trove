@@ -265,6 +265,9 @@ Priority: **MVP** · Covers: DIST-025
   ([Q-BAS-62](#q-bas-62--the-bastion-token-authenticator-is-the-token-services-with-its-cache-gate-and-change-area)); disabling a
   registration revokes nothing, deleting it revokes every token first
   ([Q-BAS-61](#q-bas-61--the-registration-events-carry-no-journal-entry-a-bastion-tokens-events-name-the-registration-in-their-data)).
+  Both are journaled ([ha-and-helm.md](ha-and-helm.md) R-HA-054): a restore to a point before a disable or a deletion disables the
+  registration again, so its tokens stay refused
+  ([Q-BAS-145](#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled)).
 - **API** (management API conventions of [api-and-ui.md](api-and-ui.md); capability in brackets,
   [Q-BAS-24](#q-bas-24--bastion-registrations-are-managed-with-the-endpoint-capabilities)):
 
@@ -279,8 +282,9 @@ Priority: **MVP** · Covers: DIST-025
 
 - `trove admin bastion create <name>`, `trove admin bastion token create <name> --ttl <duration>` and
   `trove admin bastion token revoke <name> <id>` do the same from a `web` pod (R-AUTH-015's pattern). Every operation writes its
-  audit event: `bastion.created`, `bastion.updated`, `bastion.deleted`, and `token.created` / `token.revoked` with
-  `resource_type: bastion`. The three registration events carry no journal entry; `token.revoked` keeps its flag and its entry. At most
+  audit event: `bastion.created`, `bastion.updated` (the description), `bastion.disabled`, `bastion.enabled`, `bastion.deleted`, and
+  `token.created` / `token.revoked` with `resource_type: bastion`. `bastion.disabled` and `bastion.deleted` carry the journal entry
+  `{principalId, name}`, the others none; `token.revoked` keeps its flag and its entry (Q-BAS-145). At most
   `bastions.max_registrations` is held exactly, also when creates race
   ([Q-BAS-64](#q-bas-64--creating-registrations-is-serialized-by-an-advisory-lock-a-registrations-name-never-changes)).
 
@@ -306,6 +310,9 @@ Acceptance criteria:
 - Deleting `partners` revokes its tokens (a `token.revoked` with `resource_type: bastion` and a journal entry each), removes the
   registration and its contacts, and the revoked token is refused on every replica within `auth.revocation_bound`; disabling it
   refuses the tokens in the same time and enabling it restores them.
+- A registration disabled or deleted after the point a restore returns to is disabled by the journal's replay, and its tokens are
+  refused afterwards; an enable after that point is not replayed
+  (`TestR_BAS_004_ADisabledOrDeletedRegistrationStaysDisabledAfterARestore`).
 
 ### R-BAS-005 · What the Bastion token can do
 Priority: **MVP** · Covers: DIST-025
@@ -763,7 +770,8 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
 | from M4b: `vulnerability.finding.status_changed` and `vulnerability.finding.reopened` with `block: set` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013) | `content` for the finding's repository and its virtual repositories |
 | `repository.moved` | `grants`: the repository left its project's roles and policies behind and changed its address ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified), [repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)) |
 | `authz.project.member_removed`, `authz.project.member_changed` | `grants`: a member's role grants reads on every repository of the project ([authorization.md](authorization.md) R-AUTHZ-026), so a removal or a lower role narrows them |
-| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted` | none: they bound publishing, reserve numbers, change a project's name and description, or remove a project that holds no repository (a project's policies are deleted before it, each `authz.policy.deleted`); each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
+| `repository.disabled`, `repository.deleted` | `grants`: the repository takes no part in resolution or download any more, and a `content` entry would keep its shape answers ([Q-AUTHZ-238](authorization.md#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own), [Q-AUTHZ-239](authorization.md#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled)) |
+| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted`, `bastion.disabled`, `bastion.deleted`, `group.updated` | none: they bound publishing, reserve numbers, change a project's name and description, remove a project that holds no repository (a project's policies are deleted before it, each `authz.policy.deleted`), end a registration, which is no caller a Bastion answers and learns of its end from `401 bastion_token_invalid` (R-BAS-006, [Q-BAS-145](#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled)), or clear a group's auto-join flag, which removes no membership that exists; each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
 
 ```json
 {
@@ -3588,7 +3596,9 @@ valid. The development agent would revisit (b) if the policy editor needs the fi
 
 ### Q-BAS-61 · The registration events carry no journal entry; a Bastion token's events name the registration in their data
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded in
+part by [Q-BAS-145](#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled): a disable and a deletion of a
+registration are journaled; the token events and the feed stay as decided here.
 
 Context: R-BAS-004 lists `bastion.created`, `bastion.updated`, `bastion.deleted` and `token.created` / `token.revoked` with
 `resource_type: bastion`, "registered with their journal flags". The committed OpenAPI text said that a switch to disabled is
@@ -5267,6 +5277,33 @@ Context: during a rolling upgrade or a failover a replica may report the main in
 **Rationale:** it ties the scenario to the alerts of the chart (R-BAS-041). The development agent would revisit the choice when the profile runs Prometheus with the Bastion's rules (then the alerts themselves are asserted, as Q-BAS-112 foresees).
 
 **Applied in the spec:** R-BAS-049; code: `linkIn` in `test/e2e/bastion_load_test.go`.
+
+### Q-BAS-145 · A disabled or deleted registration is journaled and replayed as disabled
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-BAS-61 left the three registration events without a journal entry, reasoning from the revocation feed of R-BAS-015. The
+revocation journal of R-HA-054 has another purpose: a restore to a point before a disable brought the registration back enabled,
+and because disabling revokes nothing, its tokens worked again. A deletion revoked and journaled each token, but the restored
+registration came back enabled.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `bastion.disabled` and `bastion.enabled` beside `bastion.updated`, which keeps the description; `bastion.disabled` and `bastion.deleted` carry the entry `{principalId, name}`, and the replay disables the registration of that ID (chosen) | A removal applied as recorded, as for `serviceaccount.disabled` and `serviceaccount.deleted`: `applied`, `already in effect`, `subject unknown` for an ID that names no registration | The events read like the user and service-account events; a description change ships no journal object | Two more event names; `bastion.updated` loses the `enabled` member |
+| (b) Flag `bastion.updated` and give every update the flag `enabled` before and after; the update rule clears it | One event | Every description change ships an object; a removal goes through a comparator |
+| (c) A disable revokes the registration's tokens | The token entries cover it | R-BAS-004's disable is reversible by design: enabling restores the tokens, and a renewal's overlap (R-BAS-006) would be lost to a pause |
+
+**Choice:** (a). Q-BAS-61 stands for the token events and the feed; its "no journal entry" for the registration events is replaced by
+this decision. Neither event yields a feed entry: a registration is no caller a Bastion answers, and the Bastion learns of its own
+disable from `401 bastion_token_invalid` (R-BAS-006).
+
+**Rationale:** the journal's question is whether a restore brings removed access back, not whether a Bastion must learn of the
+change. A forged entry can only disable a registration, which a `PATCH` with `enabled: true` reverses. The development agent would
+revisit (b) if a registration gains further access-bearing members.
+
+**Applied in the spec:** R-BAS-004, R-BAS-015 table, R-HA-054 table, R-AUTH-041; the OpenAPI text of `updateBastion` and
+`deleteBastion`; code: `internal/audit/events_bastion.go`, `internal/bastionmain/registrations.go`, `internal/bastionmain/feed.go`,
+`internal/auth/principal/journal_replay.go`. Test: `TestR_BAS_004_ADisabledOrDeletedRegistrationStaysDisabledAfterARestore`.
 
 ## What this does not cover
 

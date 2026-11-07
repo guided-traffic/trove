@@ -1515,7 +1515,9 @@ Priority: **P1** · Covers: IAM-015
   JIT, administrator and SCIM users alike. It is not applied retroactively, and never to
   service accounts, the break-glass account or CI identities.
 - Clearing the flag does not remove existing `auto` memberships. They can be removed per member
-  like manual ones (`PATCH …/members` with `"source": "auto"`).
+  like manual ones (`PATCH …/members` with `"source": "auto"`). Clearing it is journaled with
+  `group.updated` (R-AUTH-041), so a restore to a point before it does not let the users created
+  afterwards join again ([Q-AUTH-198](#q-auth-198--a-disable-or-deletion-journals-every-token-it-revokes-and-clearing-auto-join-is-journaled)).
 - A group that carries any administration role binding ([authorization.md](authorization.md))
   MUST NOT be auto-join. Setting the flag on such a group, or binding such a role to an
   auto-join group, answers 409 `auto_join_admin_conflict`. Both pages enforce this.
@@ -3299,7 +3301,7 @@ or authorization codes.
 | `user.groups.claim_missing` | R-AUTH-008, with provider and reason (`absent`, `wrong_type`, `overage`); severity `warning` | yes, once per affected login |
 | `group.created`, `group.updated`, `group.deleted`, `group.members.changed` | R-AUTH-018, R-AUTH-039 | yes |
 | `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` | R-AUTH-020 | yes |
-| `bastion.created`, `bastion.updated`, `bastion.deleted` | R-BAS-004 ([bastion.md](bastion.md)); the token events of a Bastion token (`token.created`, `token.revoked`) carry `resource_type` `bastion` | yes (no journal entry, Q-BAS-61) |
+| `bastion.created`, `bastion.updated`, `bastion.disabled`, `bastion.enabled`, `bastion.deleted` | R-BAS-004 ([bastion.md](bastion.md)); the token events of a Bastion token (`token.created`, `token.revoked`) carry `resource_type` `bastion` | yes; `bastion.disabled` and `bastion.deleted` carry a journal entry (Q-BAS-145) |
 | `cli_login.approved`, `cli_login.denied` | R-AUTH-034, R-AUTH-036 | yes |
 | `cli_login.poll_refused` | R-AUTH-034 address binding, with the refused and the requesting address | yes, once per change of the refused address within a login, decided under the row's lock (R-AUTH-034) |
 | `settings.auth.changed` | R-AUTH-040 | yes |
@@ -3316,11 +3318,13 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
 
 | Event | The journal entry carries | Replay (R-HA-054) |
 |---|---|---|
-| `token.revoked` | Token ID and revocation reason | Revoke the token with the cascade of R-AUTH-029; reason `leaked` also repeats the forward cascade over rotation successors |
+| `token.revoked` | Token ID and revocation reason; written for every token a revocation ends, including each token a disable with `revokeTokens` or a deletion of a user, service account or Bastion registration revokes (Q-AUTH-198) | Revoke the token with the cascade of R-AUTH-029; reason `leaked` also repeats the forward cascade over rotation successors |
 | `token.rotated` | The predecessor's token ID, its new `expires_at` and `overlapSeconds` (R-AUTH-030) | Set the predecessor's `expires_at` to the earlier of its current and its journaled value; revoke it when the overlap was 0 |
 | `user.disabled`, `user.deleted` | Principal ID and username; for `user.disabled` also `disabled_reason` | Disable the user, with the journaled reason for `user.disabled` and reason `admin` for `user.deleted` |
 | `serviceaccount.disabled`, `serviceaccount.deleted` | Principal ID and name | Disable the service account |
 | `group.deleted` | Principal ID and name | Delete the group |
+| `group.updated` | Principal ID and name; `autoJoin` before and after, on every update | Update rule with the comparator below: clear the flag, never set it |
+| `bastion.disabled`, `bastion.deleted` | The registration's principal ID and name ([bastion.md](bastion.md) R-BAS-004, Q-BAS-145) | Disable the registration |
 | `group.members.changed` | The group, and the removed memberships, each with its member and source (`manual`, `auto`, `scim`) | Remove each removed membership with its source |
 | `user.groups.synced` | The user, and the removed memberships, each with its group and source `oidc:<providerId>` | Remove each removed membership with its source |
 | `settings.auth.changed`, only when the change sets `anonymousAccess` | `anonymousAccess` before and after; the token lifetime fields are not part of the entry | Update rule with the comparator below |
@@ -3338,6 +3342,14 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
   false when `after` is `true` while `current` is `false`. Replay can therefore switch anonymous
   access off but never on: an entry that switched it on is skipped under case 2 of R-HA-054,
   whatever its journaled before-state says.
+- **Comparator for the auto-join flag** (R-AUTH-019). The same order: `narrows(current, after)` is
+  true when `after.autoJoin` is `false` or equals the current flag. Replay clears the flag of the
+  group of the journaled ID and never sets it; the group's name and description are not replayed.
+- **Every revoked token has its entry.** A disable with `revokeTokens` and a deletion of a user,
+  service account or Bastion registration record one `token.revoked` per token they revoke, in the
+  transaction of the change, so enabling a restored principal again brings none of its tokens back.
+  The events and their journal rows are written in batches, at a fixed number of statements for any
+  number of tokens (Q-AUTH-198).
 - **Not journaled.** The break-glass account's `enabled` state and the YAML ceiling
   `auth.anonymous.allowed` live in the configuration file, not in PostgreSQL, so a restore does not
   change them.
@@ -5453,6 +5465,35 @@ Context: R-OPS-016 requires every change of a user to be an audit event written 
 **Rationale:** a distinct pair keeps `user.updated` meaning what its schema says, and the catalog is the place an auditor looks. The development agent revisits this when the log of avatar changes is read by a moderation workflow that wants the declared content type or the rejected uploads (a refused upload records nothing today).
 
 **Applied:** [operations-and-observability.md](operations-and-observability.md) R-OPS-016; the event table of R-AUTH-041; `internal/audit/events_identity.go`; `internal/avatar/store.go` (`record`); README (Audit event types). Test: `TestR_API_055_AvatarLifecycle`.
+
+### Q-AUTH-198 · A disable or deletion journals every token it revokes, and clearing auto-join is journaled
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a security review of the revocation journal (R-HA-054) found two identity changes that removed access without an entry.
+A user or service account disabled with `revokeTokens`, or deleted, lost its tokens in one statement and journaled only the
+principal: the replay disabled the restored principal, and an administrator who enabled it again brought its tokens back, a leaked
+one included. Clearing a group's `autoJoin` (R-AUTH-019) journaled nothing, so after a restore every user created later joined the
+group, and its grants, again.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One `token.revoked` with its entry `{tokenId, reason}` per revoked token, as `DELETE /users/{u}/tokens` and the deletion of a Bastion registration already write, the events and their journal rows inserted in batches of 500 (`audit.RecordAllTx`); `group.updated` carries the flag before and after on every update and is replayed by the update rule, which clears the flag and never sets it (chosen) | The token entries are the ones every revocation writes, so one handler replays them all; the audit trail lists every token a disable ended; the flag follows the precedent of the anonymous switch (Q-AUTH-18) | No new event; a revoke-all costs the same handful of statements for one token and for thousands (`TestR_AUTH_016_ADisableCostsTheSameStatementsForOneTokenAndForThousands`: 14 against 18) | A disable of a principal with many tokens writes as many audit rows; every group update ships a journal object, a few hundred bytes |
+| (b) The entry of `user.disabled`, `serviceaccount.disabled` and the deletions lists the revoked token IDs; the replay revokes them | One journal object per change | A second replay path for tokens; the list is bounded by the object's 4 MiB cap, not by the data; the audit trail keeps only a count |
+| (c) One `token.revoked` per token written one statement at a time | The code of `RevokeAll` as it was | Three round trips per token inside the transaction that holds the principal's lock |
+| (d) A dedicated event for clearing auto-join | No journal object for a description change | One more event name for one flag, beside a `group.updated` that already names `autoJoin` in `fields` |
+
+**Choice:** (a). Every revoke-all of a principal goes through `principal.RevokeAllTokensTx`, and every `token.revoked` through
+`principal.RecordTokensRevoked`, the token service's included; a user's deletion now revokes its tokens before the row goes, as a
+service account's did. The flag's comparator is `false` < `true`: a cleared flag is `applied`, a set flag `skipped` whatever the
+forged before-state says, so case 3 of the update rule cannot occur. The name and description of a group are not replayed.
+**Rationale:** the token entries close the gap with the mechanism that already exists, and the batch keeps the change's cost flat. A
+producer that always supplies the flag cannot drop the narrowing by a bug. The development agent revisits (b) if the audit table's
+growth from mass revocations becomes a retention problem.
+**Applied:** R-AUTH-019, the journal table of R-AUTH-041, R-HA-054 table; `internal/audit/event.go` (`BatchRecorder`, `RecordAllTx`),
+`internal/audit/recorder.go`, `queries/audit.sql` (`InsertRevocationOutbox` takes a batch), `internal/api/v1/audit_source.go`,
+`internal/auth/principal/token_events.go`, `manager.go`, `serviceaccounts.go`, `groups.go`, `journal_replay.go`,
+`internal/auth/token/revoke.go`, `bastion.go`, `internal/bastionmain/feed.go` (`group.updated` yields no feed entry).
 
 ## What this does not cover
 

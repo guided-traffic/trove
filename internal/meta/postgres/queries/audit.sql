@@ -26,11 +26,15 @@ SELECT (e ->> 'id')::uuid, COALESCE(NULLIF(e ->> 'at', '')::timestamptz, now()),
 ON CONFLICT (occurred_at, id) DO NOTHING
 RETURNING id::text AS id, occurred_at;
 
--- name: InsertRevocationOutbox :exec
--- The journal row of a flagged event, in the transaction of the change: the
--- event's id and occurred_at, its registry name and the producer's entry.
+-- name: InsertRevocationOutbox :execrows
+-- The journal rows of flagged events, in the transaction of the change: each
+-- event's id and occurred_at, its registry name and the producer's entry. One
+-- statement inserts a batch, one JSON array of objects {id, at, event, entry},
+-- so a change that records many flagged events (the tokens a disable revokes)
+-- costs one statement, not one per event (R-HA-054).
 INSERT INTO revocation_outbox (id, at, event, entry)
-VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(at)::text::timestamptz, sqlc.arg(event)::text, sqlc.arg(entry)::text::jsonb);
+SELECT (r ->> 'id')::uuid, (r ->> 'at')::timestamptz, r ->> 'event', r -> 'entry'
+  FROM jsonb_array_elements(sqlc.arg(entries)::text::jsonb) AS r;
 
 -- name: ListAuditEventsNewest :many
 -- repository is the qualified name <project>/<key> and project the project key (Q-AUTHZ-209).

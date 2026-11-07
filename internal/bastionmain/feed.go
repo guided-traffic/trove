@@ -33,6 +33,7 @@ const behindFactor = 4
 // these to it.
 const (
 	eventRepositoryMoved      = "repository.moved"
+	eventRepositoryDeleted    = "repository.deleted"
 	eventProjectMemberRemoved = "authz.project.member_removed"
 	eventProjectMemberChanged = "authz.project.member_changed"
 )
@@ -50,6 +51,7 @@ func feedActions() []string {
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
 		"endpoint.exposure.updated", "endpoint.exposure.deleted",
 		audit.EventSettingsAuthChanged, eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
+		audit.EventRepositoryDisabled, eventRepositoryDeleted,
 		audit.EventNPMUnpublish, audit.EventPackageDeleted,
 		audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened,
 	}
@@ -67,6 +69,9 @@ func noFeedEntry() map[string]string {
 		"authz.ownership.released":  "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
 		audit.EventPackagePublished: "reserves the version numbers a publish took (R-HA-054); a Bastion never publishes",
 		audit.EventProjectDeleted:   "a project is deleted only when it holds no repository and no service account, and its policies are deleted before it, each journaled as authz.policy.deleted (grants)",
+		audit.EventBastionDisabled:  "a registration is no caller a Bastion answers; the Bastion learns of its own disable from 401 bastion_token_invalid on its next call (R-BAS-006, Q-BAS-145)",
+		audit.EventBastionDeleted:   "a registration is no caller a Bastion answers; its tokens' token.revoked entries come before it, and the Bastion learns of its end from 401 bastion_token_invalid (R-BAS-006, Q-BAS-145)",
+		audit.EventGroupUpdated:     "clearing auto-join removes no membership that exists (R-AUTH-019): only users created afterwards stay out of the group; a rename or a description changes no grant",
 	}
 }
 
@@ -191,12 +196,14 @@ func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {
 	case audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
-		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged:
+		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
+		audit.EventRepositoryDisabled, eventRepositoryDeleted:
 		// A move takes the repository out of its project's roles and policies and changes its address (R-REPO-060),
+		// a disabled or deleted repository takes no part in resolution or download any more (R-REPO-004, R-REPO-013),
 		// and a removed or re-roled member loses reads on every repository of the project (R-AUTHZ-026): the event
 		// names a project or one repository, not the callers or the virtual repositories over it. A content entry
 		// drops only the URL answers of a repository, not its shape answers, so only grants is exact enough
-		// (Q-BAS-120).
+		// (Q-BAS-120, Q-AUTHZ-238).
 		return grants
 	case "endpoint.exposure.updated", "endpoint.exposure.deleted":
 		// Only the exposure of the default endpoint reaches a Bastion, which connects to it (Q-BAS-4).

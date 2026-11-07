@@ -142,49 +142,114 @@ func newWriter(o Options, s sink) *Writer {
 // and fails the caller's transaction: no change exists without its audit record
 // (R-OPS-015). The log copy and the counter follow the commit.
 func (w *Writer) RecordTx(ctx context.Context, tx meta.Tx, ev Event) error {
-	t, ok := Lookup(ev.Type)
-	if !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownType, ev.Type)
+	return w.RecordAllTx(ctx, tx, []Event{ev})
+}
+
+var _ BatchRecorder = (*Writer)(nil)
+
+// outboxRow is one revocation_outbox row as InsertRevocationOutbox reads it.
+type outboxRow struct {
+	ID    string          `json:"id"`
+	At    string          `json:"at"`
+	Event string          `json:"event"`
+	Entry json.RawMessage `json:"entry"`
+}
+
+// RecordAllTx is RecordTx for many events of one transaction. Every event is
+// checked before anything is written, so one invalid event writes none of them.
+// The audit rows go in with one statement per batchMax events and the journal
+// rows of the flagged ones with one statement per batch as well, so the cost of
+// a change that records thousands of events (the tokens a disable revokes) is a
+// handful of round trips, not one or two per event (R-OPS-015, R-HA-054).
+func (w *Writer) RecordAllTx(ctx context.Context, tx meta.Tx, evs []Event) error {
+	rows := make([]row, 0, len(evs))
+	entries := make([]json.RawMessage, 0, len(evs))
+	for _, ev := range evs {
+		t, ok := Lookup(ev.Type)
+		if !ok {
+			return fmt.Errorf("%w: %q", ErrUnknownType, ev.Type)
+		}
+		switch t.Mode {
+		case None:
+			continue
+		case Async:
+			return fmt.Errorf("%w: %s is asynchronous", ErrWrongMode, t.Name)
+		}
+		journal, err := journalEntry(t, ev)
+		if err != nil {
+			return err
+		}
+		r, err := toRow(t, ev, newID(w.now()), time.Time{}, w.o.Replica)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, r)
+		entries = append(entries, journal)
 	}
-	switch t.Mode {
-	case None:
+	if len(rows) == 0 {
 		return nil
-	case Async:
-		return fmt.Errorf("%w: %s is asynchronous", ErrWrongMode, t.Name)
-	}
-	journal, err := journalEntry(t, ev)
-	if err != nil {
-		return err
-	}
-	r, err := toRow(t, ev, newID(w.now()), time.Time{}, w.o.Replica)
-	if err != nil {
-		return err
 	}
 	ptx, ok := postgres.Unwrap(tx)
 	if !ok {
 		return errors.New("audit: the transaction is not a PostgreSQL transaction")
 	}
-	payload, err := json.Marshal([]row{r})
+	qs := q.New(ptx)
+	var outbox []outboxRow
+	for start := 0; start < len(rows); start += batchMax {
+		batch := rows[start:min(start+batchMax, len(rows))]
+		if err := insertBatch(ctx, qs, batch); err != nil {
+			return err
+		}
+		for i := range batch {
+			if e := entries[start+i]; e != nil {
+				outbox = append(outbox, outboxRow{ID: batch[i].ID, At: batch[i].At, Event: batch[i].Action, Entry: e})
+			}
+		}
+	}
+	for start := 0; start < len(outbox); start += batchMax {
+		batch := outbox[start:min(start+batchMax, len(outbox))]
+		payload, err := json.Marshal(batch)
+		if err != nil {
+			return fmt.Errorf("audit: %w", err)
+		}
+		n, err := qs.InsertRevocationOutbox(ctx, string(payload))
+		if err != nil {
+			return fmt.Errorf("audit: journal %s: %w", batch[0].Event, err)
+		}
+		if int(n) != len(batch) {
+			return fmt.Errorf("audit: journal %s stored %d of %d rows", batch[0].Event, n, len(batch))
+		}
+	}
+	tx.After(func() { w.storedAll(rows) })
+	return nil
+}
+
+// insertBatch inserts the rows with one statement and sets the time of each
+// from what the database stored (the transaction's now()), which the journal
+// row repeats.
+func insertBatch(ctx context.Context, qs *q.Queries, batch []row) error {
+	payload, err := json.Marshal(batch)
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
-	qs := q.New(ptx)
 	got, err := qs.InsertAuditEvents(ctx, string(payload))
 	if err != nil {
-		return fmt.Errorf("audit: insert %s: %w", t.Name, err)
+		return fmt.Errorf("audit: insert %s: %w", batch[0].Action, err)
 	}
-	if len(got) != 1 {
-		return fmt.Errorf("audit: insert %s stored %d rows", t.Name, len(got))
+	if len(got) != len(batch) {
+		return fmt.Errorf("audit: insert %s stored %d of %d rows", batch[0].Action, len(got), len(batch))
 	}
-	r.At = got[0].OccurredAt.UTC().Format(time.RFC3339Nano)
-	if journal != nil {
-		if err := qs.InsertRevocationOutbox(ctx, q.InsertRevocationOutboxParams{
-			ID: r.ID, At: r.At, Event: t.Name, Entry: string(journal),
-		}); err != nil {
-			return fmt.Errorf("audit: journal %s: %w", t.Name, err)
+	at := make(map[string]string, len(got))
+	for _, g := range got {
+		at[g.ID] = g.OccurredAt.UTC().Format(time.RFC3339Nano)
+	}
+	for i := range batch {
+		t, ok := at[batch[i].ID]
+		if !ok {
+			return fmt.Errorf("audit: insert %s did not return the event %s", batch[i].Action, batch[i].ID)
 		}
+		batch[i].At = t
 	}
-	tx.After(func() { w.stored(r) })
 	return nil
 }
 

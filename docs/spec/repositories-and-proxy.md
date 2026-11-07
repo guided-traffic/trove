@@ -259,7 +259,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `description` | Public description, shown to everyone who can read the repository | `""` (≤ 2000 characters) | this page |
 | `adminNotes` | Notes shown only to holders of `repositories:read-config` | `""` (≤ 8000 characters) | this page |
 | `includePatterns`, `excludePatterns` | R-REPO-005 | `[]` (everything), `[]` | this page |
-| `disabled` | Takes no part in resolution, download or deploy | `false` | this page |
+| `disabled` | Takes no part in resolution, download or deploy. Setting it records `repository.disabled`, journaled, so a restore keeps it set ([authorization.md](authorization.md) R-AUTHZ-031, Q-AUTHZ-238) | `false` | this page |
 | `requireAuthentication` | Anonymous requests are challenged even where anonymous read is granted | `false` | this page |
 | `priorityMember` | R-REPO-022; local and remote only | `false` | this page |
 | `hideExistence` | `inherit`, `true`, `false` | `inherit` | [R-AUTHZ-017](authorization.md) |
@@ -687,6 +687,9 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
   ownership rows of the repository's ownership domain, which carry no foreign key to the row
   ([authorization.md](authorization.md) R-AUTHZ-018, Q-AUTHZ-156).
 - Job progress (items total and removed, errors) is read from the job resource.
+- Both `repository.deleted` events (phase `started` and `completed`) carry the revocation journal's
+  entry: a restore to a point before the deletion brings the repository back disabled, not deleted
+  ([authorization.md](authorization.md) R-AUTHZ-031, Q-AUTHZ-239).
 
 Acceptance criteria:
 
@@ -3757,7 +3760,8 @@ L covers the name) is not counted (Q-REPO-115).
   waited first, a `follower` first joined a flight of its replica that ended with nothing to
   read and then fetched itself, a `waiter` first waited for another replica's flight that ended
   without an entry and then fetched.
-- Audit events (INV-16): `repository.created`, `repository.updated`, `repository.deleted`,
+- Audit events (INV-16): `repository.created`, `repository.updated`, `repository.disabled` (an
+  update that sets `disabled`, beside its `repository.updated`), `repository.deleted`,
   `repository.cache_invalidated`, `repository.claims_changed`, `proxy.global_offline_changed`,
   `proxy.client_certificate_changed`, `proxy.outbound_proxy_changed`. Security events:
   `proxy.integrity_mismatch`, `proxy.upstream_digest_changed`, `proxy.tls_untrusted`,

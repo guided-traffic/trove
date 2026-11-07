@@ -4,6 +4,8 @@ package audit
 // the runtime authentication settings. The login events (auth.*, cli_login.*)
 // are registered by the login area. The journal flag follows the table of
 // R-AUTH-041: an event that removes access or updates an access-bearing object.
+// A disable or deletion that revokes a principal's tokens records one
+// token.revoked per token besides its own event (Q-AUTH-198).
 //
 // The data schemas describe Event.Details. No schema has a field for a secret: a
 // token value, a hash, a session secret or a password never appears in an event.
@@ -92,7 +94,12 @@ func init() {
 	})
 
 	ident(EventGroupCreated, NoJournal, `{"type":"object","properties":{"origin":{"type":"string"},"autoJoin":{"type":"boolean"},"members":`+eventSchemaNames+`}}`)
-	ident(EventGroupUpdated, NoJournal, `{"type":"object","properties":{"fields":`+eventSchemaNames+`}}`)
+	// The entry carries the auto-join flag before and after on every update, not
+	// only when the update clears it: clearing it ends the group's grants for the
+	// users created afterwards (R-AUTH-019), an unchanged value is a no-op for the
+	// replay, and a producer that always supplies the entry cannot drop the
+	// narrowing by a bug (Q-AUTH-198, as Q-AUTH-18 for the anonymous switch).
+	ident(EventGroupUpdated, JournalRevocation, `{"type":"object","properties":{"fields":`+eventSchemaNames+`}}`)
 	ident(EventGroupDeleted, JournalRevocation, `{"type":"object","properties":{"membershipsDeleted":{"type":"integer"}}}`)
 	ident(EventGroupMembersChanged, JournalRevocation, `{"type":"object","properties":{`+
 		`"added":`+eventSchemaMemberships+`,"removed":`+eventSchemaMemberships+`}}`)

@@ -2,6 +2,7 @@ package principal
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -10,13 +11,15 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
-// Replay of the identity events of the revocation journal (R-HA-054, R-AUTH-016, R-AUTH-018, R-AUTH-020, R-AUTH-021,
-// R-AUTH-039). The handlers remove or disable and nothing else:
+// Replay of the identity events of the revocation journal (R-HA-054, R-AUTH-016, R-AUTH-018, R-AUTH-019, R-AUTH-020,
+// R-AUTH-021, R-AUTH-039, R-BAS-004). The handlers remove or disable and nothing else:
 //
 //   - a deleted user or service account is disabled, not deleted, so a mistaken or forged entry stays reversible and the
 //     account's tokens fail all the same (R-AUTH-016, R-AUTH-020);
+//   - a disabled or deleted Bastion registration is disabled, which refuses its tokens (R-BAS-004, Q-BAS-145);
 //   - a deleted group is deleted, which removes its memberships and the role bindings and policy entries that named it;
-//   - a removed membership is removed with its source; added members are never replayed.
+//   - a removed membership is removed with its source; added members are never replayed;
+//   - a group update clears the auto-join flag when the entry cleared it, and never sets it (R-AUTH-019, Q-AUTH-198).
 //
 // Every entry names its principals by ID. The break-glass account lives in the configuration, is never journaled and is never
 // touched by a replay (a forged entry naming it is skipped).
@@ -25,7 +28,8 @@ func init() {
 		Domain: "identity",
 		Events: []string{
 			audit.EventUserDisabled, audit.EventUserDeleted, audit.EventSADisabled, audit.EventSADeleted,
-			audit.EventGroupDeleted, audit.EventGroupMembersChanged, audit.EventUserGroupsSynced,
+			audit.EventBastionDisabled, audit.EventBastionDeleted,
+			audit.EventGroupDeleted, audit.EventGroupMembersChanged, audit.EventUserGroupsSynced, audit.EventGroupUpdated,
 		},
 		Apply: replayPrincipal,
 	})
@@ -39,7 +43,11 @@ func replayPrincipal(ctx context.Context, tx meta.Tx, env journal.Env, o journal
 	case audit.EventUserDisabled, audit.EventUserDeleted:
 		return replayDisableUser(ctx, tx, env, o)
 	case audit.EventSADisabled, audit.EventSADeleted:
-		return replayDisableAccount(ctx, tx, env, o)
+		return replayDisableAccount(ctx, tx, env, o, KindServiceAccount)
+	case audit.EventBastionDisabled, audit.EventBastionDeleted:
+		return replayDisableAccount(ctx, tx, env, o, KindBastion)
+	case audit.EventGroupUpdated:
+		return replayGroupUpdated(ctx, tx, o)
 	case audit.EventGroupDeleted:
 		return replayDeleteGroup(ctx, tx, env, o)
 	case audit.EventGroupMembersChanged:
@@ -94,7 +102,10 @@ func replayDisableUser(ctx context.Context, tx meta.Tx, env journal.Env, o journ
 	return o.Result(journal.Applied, u.Name), NotifyPrincipals(env, tx, ChangePrincipal, u.ID)
 }
 
-func replayDisableAccount(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object) (journal.Result, error) {
+// replayDisableAccount disables a service account or a Bastion registration, the two kinds whose disable is the status
+// alone: the status refuses every token of the principal (R-AUTH-020, R-BAS-004). An entry naming a principal of another
+// kind is "subject unknown", so a bastion.* entry cannot disable a user and the reverse.
+func replayDisableAccount(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object, kind Kind) (journal.Result, error) {
 	var e struct {
 		PrincipalID string `json:"principalId"`
 	}
@@ -102,7 +113,7 @@ func replayDisableAccount(ctx context.Context, tx meta.Tx, env journal.Env, o jo
 		return o.Malformed("principalId is not an ID"), nil
 	}
 	qs := Queries(tx)
-	sa, found, err := principalOf(ctx, qs, e.PrincipalID, KindServiceAccount)
+	sa, found, err := principalOf(ctx, qs, e.PrincipalID, kind)
 	switch {
 	case err != nil:
 		return journal.Result{}, err
@@ -255,4 +266,85 @@ func removeMemberships(ctx context.Context, tx meta.Tx, env journal.Env, o journ
 		return o.Result(journal.AlreadyInEffect, ""), nil
 	}
 	return o.Result(journal.SubjectUnknown, ""), nil
+}
+
+// boolChange is a flag before and after a change, as a journal entry carries it.
+type boolChange struct {
+	Before bool `json:"before"`
+	After  bool `json:"after"`
+}
+
+// groupUpdatedEntry is the journal entry of group.updated (R-AUTH-041, Q-AUTH-198): the group by ID, its name for display,
+// and the auto-join flag before and after the update, on every update whether it changed the flag or not.
+type groupUpdatedEntry struct {
+	PrincipalID string     `json:"principalId"`
+	Name        string     `json:"name"`
+	AutoJoin    boolChange `json:"autoJoin"`
+}
+
+// readGroupUpdated reads a group.updated entry strictly: the ID and both values of the flag must be present.
+func readGroupUpdated(o journal.Object) (groupUpdatedEntry, bool) {
+	var e struct {
+		PrincipalID string `json:"principalId"`
+		Name        string `json:"name"`
+		AutoJoin    *struct {
+			Before *bool `json:"before"`
+			After  *bool `json:"after"`
+		} `json:"autoJoin"`
+	}
+	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) || e.AutoJoin == nil || e.AutoJoin.Before == nil || e.AutoJoin.After == nil {
+		return groupUpdatedEntry{}, false
+	}
+	return groupUpdatedEntry{PrincipalID: e.PrincipalID, Name: e.Name, AutoJoin: boolChange{Before: *e.AutoJoin.Before, After: *e.AutoJoin.After}}, true
+}
+
+// autoJoinOrder is the comparator of the auto-join flag (R-AUTH-019): off gives the users created afterwards nothing that on
+// does not, so a value narrows when it is off or equal to the current one.
+type autoJoinOrder struct{}
+
+// Narrows reports whether after grants nothing that current does not.
+func (autoJoinOrder) Narrows(current, after bool) bool { return !after || current }
+
+// replayGroupUpdated is the update rule of R-HA-054 on the auto-join flag: a flag the entry cleared is cleared (applied), one
+// it set is never set (skipped, case 2). With two values the rule cannot reach case 3: the only change that is neither a
+// narrowing nor contained in its before-state is an equal one, which is already in effect. The name and the description of
+// a group are not access-bearing and are not replayed; replay never changes an identifying field.
+func replayGroupUpdated(ctx context.Context, tx meta.Tx, o journal.Object) (journal.Result, error) {
+	e, ok := readGroupUpdated(o)
+	if !ok {
+		return o.Malformed("principalId or autoJoin is missing"), nil
+	}
+	qs := Queries(tx)
+	g, found, err := principalOf(ctx, qs, e.PrincipalID, KindGroup)
+	if err != nil {
+		return journal.Result{}, err
+	}
+	if !found {
+		return o.Result(journal.SubjectUnknown, e.PrincipalID), nil
+	}
+	locked, err := qs.IdentityLockGroup(ctx, g.ID)
+	if err != nil {
+		return journal.Result{}, err
+	}
+	if len(locked) == 0 {
+		return o.Result(journal.SubjectUnknown, g.Name), nil
+	}
+	current := locked[0].AutoJoin
+	if current == e.AutoJoin.After {
+		return o.Result(journal.AlreadyInEffect, g.Name), nil
+	}
+	// The flag is read when a user is created (applyAutoJoin); no replica caches it, so no change area is told.
+	clearFlag := func() error {
+		return qs.IdentityUpdateGroup(ctx, q.IdentityUpdateGroupParams{ID: g.ID, SetAutoJoin: true, AutoJoin: false})
+	}
+	act := journal.UpdateActions{
+		Apply: clearFlag,
+		Suspend: func() (json.RawMessage, error) {
+			return json.RawMessage(`{"autoJoin":false}`), clearFlag()
+		},
+	}
+	out, detail, err := journal.ApplyUpdate[bool](autoJoinOrder{}, current, e.AutoJoin.Before, e.AutoJoin.After, act)
+	r := o.Result(out, g.Name)
+	r.Detail = detail
+	return r, err
 }

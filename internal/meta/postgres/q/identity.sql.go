@@ -1565,25 +1565,31 @@ func (q *Queries) IdentityLockAdminBindings(ctx context.Context) error {
 }
 
 const identityLockGroup = `-- name: IdentityLockGroup :many
-SELECT principal_id::text AS id FROM user_group WHERE principal_id = $1::text::uuid FOR UPDATE
+SELECT principal_id::text AS id, auto_join FROM user_group WHERE principal_id = $1::text::uuid FOR UPDATE
 `
+
+type IdentityLockGroupRow struct {
+	ID       string
+	AutoJoin bool
+}
 
 // Locks a group's row, so that binding a role to the group and turning on its
 // auto-join flag, which each check the other, run one after the other
-// (R-AUTH-019, R-AUTHZ-022). No row for a principal that is not a group.
-func (q *Queries) IdentityLockGroup(ctx context.Context, id string) ([]string, error) {
+// (R-AUTH-019, R-AUTHZ-022). No row for a principal that is not a group. The
+// flag read under the lock is the before-state of group.updated's journal entry.
+func (q *Queries) IdentityLockGroup(ctx context.Context, id string) ([]IdentityLockGroupRow, error) {
 	rows, err := q.db.Query(ctx, identityLockGroup, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []IdentityLockGroupRow{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i IdentityLockGroupRow
+		if err := rows.Scan(&i.ID, &i.AutoJoin); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

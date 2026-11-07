@@ -274,7 +274,10 @@ func (r *Registrations) List(ctx context.Context) ([]Registration, error) {
 // Update changes the description and enables or disables a registration (R-BAS-004). expected is the revision
 // the caller loaded (If-Match) or errs.AnyRevision for the blind write. A disabled registration refuses its
 // tokens like a disabled service account's (R-AUTH-020) within the revocation bound; enabling it restores them,
-// because disabling revokes nothing. A patch that changes nothing writes nothing and records nothing.
+// because disabling revokes nothing. A new description records bastion.updated; a disable records
+// bastion.disabled with its journal entry, so a restore to a point before it disables the registration again
+// (R-HA-054, Q-BAS-145); an enable records bastion.enabled. A patch that changes nothing writes nothing and
+// records nothing.
 func (r *Registrations) Update(ctx context.Context, c principal.Caller, name string, p Patch, expected int64) (Registration, error) {
 	if p.Description != nil {
 		if err := checkDescription("/description", *p.Description); err != nil {
@@ -299,12 +302,17 @@ func (r *Registrations) Update(ctx context.Context, c principal.Caller, name str
 		if err != nil {
 			return err
 		}
-		var fields []string
+		subject := audit.Subject{Kind: "bastion", ID: lock.ID, Name: name}
 		if p.Description != nil && *p.Description != cur.Description {
 			if err := qs.BastionUpdateDescription(ctx, q.BastionUpdateDescriptionParams{ID: lock.ID, Description: *p.Description}); err != nil {
 				return err
 			}
-			fields = append(fields, "description")
+			if err := r.o.Recorder.RecordTx(ctx, tx, audit.Event{
+				Type: audit.EventBastionUpdated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
+				Subject: subject, Details: mustJSON(map[string]any{"fields": []string{"description"}}),
+			}); err != nil {
+				return err
+			}
 		}
 		if p.Enabled != nil && *p.Enabled != cur.Enabled {
 			changed, err := qs.BastionSetEnabled(ctx, q.BastionSetEnabledParams{ID: lock.ID, Enabled: *p.Enabled})
@@ -312,22 +320,19 @@ func (r *Registrations) Update(ctx context.Context, c principal.Caller, name str
 				return err
 			}
 			if len(changed) > 0 {
-				fields = append(fields, "enabled")
 				if err := principal.NotifyPrincipals(r.o.Notifier, tx, principal.ChangePrincipal, lock.ID); err != nil {
 					return err
 				}
-			}
-		}
-		if len(fields) > 0 {
-			d := map[string]any{"fields": fields}
-			if p.Enabled != nil {
-				d["enabled"] = *p.Enabled
-			}
-			if err := r.o.Recorder.RecordTx(ctx, tx, audit.Event{
-				Type: audit.EventBastionUpdated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
-				Subject: audit.Subject{Kind: "bastion", ID: lock.ID, Name: name}, Details: mustJSON(d),
-			}); err != nil {
-				return err
+				ev := audit.Event{
+					Type: audit.EventBastionEnabled, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
+					Subject: subject, Details: mustJSON(map[string]any{}),
+				}
+				if !*p.Enabled {
+					ev.Type, ev.Journal = audit.EventBastionDisabled, registrationEntry(lock.ID, name)
+				}
+				if err := r.o.Recorder.RecordTx(ctx, tx, ev); err != nil {
+					return err
+				}
 			}
 		}
 		out, err = load(ctx, qs, name)
@@ -340,7 +345,8 @@ func (r *Registrations) Update(ctx context.Context, c principal.Caller, name str
 }
 
 // Delete deletes a registration: its tokens are revoked first (token.revoked with the journal entry of each,
-// R-HA-054), then the registration and its contacts go; bastion.deleted is the last event.
+// R-HA-054), then the registration and its contacts go; bastion.deleted is the last event, with the journal entry
+// that disables the registration a restore brings back (Q-BAS-145).
 func (r *Registrations) Delete(ctx context.Context, c principal.Caller, name string) error {
 	err := r.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs := principal.Queries(tx)
@@ -365,9 +371,16 @@ func (r *Registrations) Delete(ctx context.Context, c principal.Caller, name str
 		return r.o.Recorder.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventBastionDeleted, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
 			Subject: audit.Subject{Kind: "bastion", ID: id, Name: name}, Details: mustJSON(map[string]any{"tokensRevoked": len(revoked)}),
+			Journal: registrationEntry(id, name),
 		})
 	})
 	return principal.DBErr("bastion.delete", err)
+}
+
+// registrationEntry is the journal entry of bastion.disabled and bastion.deleted: the registration's principal ID and,
+// for display, its name. The replay disables the registration of that ID (R-HA-054, Q-BAS-145).
+func registrationEntry(id, name string) json.RawMessage {
+	return mustJSON(map[string]string{"principalId": id, "name": name})
 }
 
 // TokenRequest is the request of [Registrations.CreateTokenTx].

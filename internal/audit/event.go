@@ -100,14 +100,42 @@ type Recorder interface {
 	Record(ctx context.Context, ev Event)
 }
 
+// BatchRecorder is a Recorder that writes many transactional events of one
+// transaction with a fixed number of statements. *Writer implements it.
+type BatchRecorder interface {
+	Recorder
+	// RecordAllTx is RecordTx for every event of evs, in order, in tx: one
+	// invalid event fails the call before anything is written.
+	RecordAllTx(ctx context.Context, tx meta.Tx, evs []Event) error
+}
+
+// RecordAllTx records evs in tx: in batches when rec is a [BatchRecorder], one
+// RecordTx each otherwise. A producer whose change records a number of events
+// that only the data bounds (one token.revoked per token of a principal) calls
+// it, so the change does not cost a round trip per event.
+func RecordAllTx(ctx context.Context, rec Recorder, tx meta.Tx, evs []Event) error {
+	if b, ok := rec.(BatchRecorder); ok {
+		return b.RecordAllTx(ctx, tx, evs)
+	}
+	for _, ev := range evs {
+		if err := rec.RecordTx(ctx, tx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Nop is a Recorder that discards everything, for tests and for components
 // built before the recorder exists.
 type Nop struct{}
 
-var _ Recorder = Nop{}
+var _ BatchRecorder = Nop{}
 
 // RecordTx discards the event.
 func (Nop) RecordTx(context.Context, meta.Tx, Event) error { return nil }
+
+// RecordAllTx discards the events.
+func (Nop) RecordAllTx(context.Context, meta.Tx, []Event) error { return nil }
 
 // Record discards the event.
 func (Nop) Record(context.Context, Event) {}

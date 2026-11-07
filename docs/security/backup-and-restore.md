@@ -157,7 +157,19 @@ a missing member, an oversized value or a digest that is not the expected shape 
   `TestR_AUTHZ_031_SettingsComparator`, `TestR_AUTHZ_031_RoleComparator` and, against PostgreSQL,
   `TestR_HA_054_ForgedEntriesCannotEscalate`.
 - **Removals.** A deleted user, service account or CI owner is disabled, a moved repository is disabled and not moved, a released name
-  stays claimed, a membership is never added or raised, the break-glass account is never touched.
+  stays claimed, a membership is never added or raised, the break-glass account is never touched. A disabled or deleted Bastion
+  registration is disabled (Q-BAS-145), and a disabled or deleted repository is disabled, never deleted (Q-AUTHZ-238, Q-AUTHZ-239). An
+  entry acts only on an object of its own kind: a `bastion.*` entry naming a user or a service account is `subject unknown`.
+- **Tokens a disable ended.** A disable with `revokeTokens` and a deletion of a user, service account or registration journal one
+  `token.revoked` per token besides the principal's own entry ([token_events.go](../../internal/auth/principal/token_events.go),
+  Q-AUTH-198). Without them the replay disabled the restored principal, and an administrator who enabled it again brought every token
+  back, a leaked one included; `TestR_AUTH_016_TokensADisableRevokedStayRevokedAfterARestore` enables the restored principals and finds
+  every token refused. The entries are written in batches, so a principal with thousands of tokens cannot make the disable slow
+  enough to hold its lock for long (14 statements for one token, 18 for 1,200).
+- **Auto-join.** `group.updated` journals the flag before and after on every update; the replay clears a cleared flag and never sets
+  one, so a forged entry can only stop new users from joining a group (Q-AUTH-198).
+- **Coverage.** `TestR_HA_054_EveryJournaledEventHasAReplayHandler` fails for a journaled event without a handler in the `trove` binary,
+  apart from the vulnerability-finding events of H-489.
 - **Exposure rules** ([journal_replay_exposure.go](../../internal/authz/journal_replay_exposure.go), R-EP-020). A deletion deletes the rule;
   deleting a rule only removes exposure, because rules add up and exclude wins inside a rule only. An update is applied only when the
   comparator proves the after-state exposes nothing the restored rule does not: the same endpoint and repository, `enabled` and
@@ -245,3 +257,32 @@ The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--bac
 - [H-555](../spec/backup-and-restore.md#h-555--the-run-history-is-only-as-trustworthy-as-the-backup-role): the run history is only as trustworthy as the backup role.
 - [H-556](../spec/backup-and-restore.md#h-556--adopting-a-target-and-writing-its-marker-are-not-atomic-on-a-store-without-conditional-writes): adopting a target and writing its marker are not atomic on a store without conditional writes.
 - [H-558](../spec/backup-and-restore.md#h-558--a-server-side-copy-into-the-blob-store-is-checked-by-size-not-by-content): a server-side copy into the blob store is checked by size, not by content.
+- [H-569](#h-569--narrowings-without-a-journal-entry-come-back-with-a-restore): narrowings without a journal entry come back with a restore.
+
+### H-569 · Narrowings without a journal entry come back with a restore
+
+A review of the write paths that remove access (2026-11-07) found the following changes, which narrow what an installation grants or
+serves, recorded in the audit trail without a journal entry. A restore to a point before one of them brings the earlier state back,
+and the replay cannot restore the narrowing. Each is live wherever the change is used and a restore follows it; none grants a caller
+anything it did not hold at the point the restore returns to.
+
+- **A pending identity link removed.** `PATCH /api/v1/users/{username}` with `identities` drops pending links
+  (`IdentityReplaceIdentities`, [manager.go](../../internal/auth/principal/manager.go) in `UpdateUser`); `user.updated` carries no entry.
+  After a restore the link is back, and the first login at that provider whose claims carry the username takes the user over
+  (`IdentityClaimPendingLink`, R-AUTH-007). Real when an administrator removed a link because the provider's account of that name is
+  someone else.
+- **A group renamed away from the name the identity provider fills.** A rename ([groups.go](../../internal/auth/principal/groups.go) in
+  `UpdateGroup`) is an identifying field, which R-HA-054 never replays. After a restore the old name is back, and the group sync of the
+  next login (R-AUTH-008) fills the group, with its role bindings and policy entries, from the provider's group of that name.
+- **A repository's content narrowed.** Fewer `includePatterns`, more `excludePatterns`, a member taken out of a virtual repository
+  (`writeVirtual`, [members.go](../../internal/repository/members.go)) and a stronger `vulnerabilities` member are `repository.updated`,
+  which carries no entry ([service.go](../../internal/repository/service.go) in `update`). After a restore the repository serves what the
+  narrowing withheld; a token scoped to a virtual repository reaches its restored member again (R-AUTHZ-009 rule 2, Q-AUTHZ-163). The
+  download blocks of findings are H-489's.
+- **A namespace claim or pin rule added.** `PUT …/claims` ([claims.go](../../internal/repository/claims.go), `PutClaims`) records
+  `repository.claims_changed` without an entry. After a restore a virtual repository may serve a remote package of a name the claim
+  reserved for a local repository again (R-REPO-023).
+- **A token lifetime ceiling lowered.** `settings.auth.changed` journals only the anonymous switch; the ceilings are not part of the
+  entry by R-AUTH-041. Tokens issued after the restore may live up to the earlier, longer ceiling.
+
+Sessions are not on the list: a backup restore loads no session (R-BAK-004) and `trove admin post-restore` ends every session.

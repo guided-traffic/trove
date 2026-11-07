@@ -365,6 +365,32 @@ or runs `journal.ApplyUpdate` with its comparator, and returns a `Result`; `ci.t
 `test/integration/backup/journal_*_test.go`. Post-restore refuses to run when no fix-up is registered for the orders it needs, so it
 works only together with the restore package's fix-ups.
 
+### Producers that a review found without an entry
+
+| Change | Entry | Replay | Code |
+|---|---|---|---|
+| A Bastion registration disabled or deleted | `bastion.disabled`, `bastion.deleted`: `{principalId, name}` | disable the registration (`replayDisableAccount` with `KindBastion`) | [registrations.go](../../internal/bastionmain/registrations.go), [principal/journal_replay.go](../../internal/auth/principal/journal_replay.go) (Q-BAS-145) |
+| A user or service account disabled with `revokeTokens`, or deleted | one `token.revoked` `{tokenId, reason}` per token, besides the principal's own entry | the token handler, as for every revocation | `principal.RevokeAllTokensTx` and `RecordTokensRevoked` in [token_events.go](../../internal/auth/principal/token_events.go) (Q-AUTH-198) |
+| A repository disabled or deleted | `repository.disabled`, `repository.deleted` (both phases): `{repositoryId, key}` | disable the repository (`replayRepositoryDisabled`, the `disableRepository` step that `repository.moved` uses too) | [repository/service.go](../../internal/repository/service.go) (`recordDisabled`, `recordAndNotify`), [project/journal_replay.go](../../internal/project/journal_replay.go) (Q-AUTHZ-238, Q-AUTHZ-239) |
+| A group's auto-join flag cleared | `group.updated`, on every update: `{principalId, name, autoJoin: {before, after}}` | the update rule with `autoJoinOrder`: clear, never set | [groups.go](../../internal/auth/principal/groups.go), [principal/journal_replay.go](../../internal/auth/principal/journal_replay.go) (Q-AUTH-198) |
+
+- **Cost.** A revoke-all writes its events through `audit.RecordAllTx`: one `InsertAuditEvents` and one `InsertRevocationOutbox` per 500
+  events. `TestR_AUTH_016_ADisableCostsTheSameStatementsForOneTokenAndForThousands` counts 14 statements for a disable with one token
+  and 18 for one with 1,200.
+- **Every journaled event has a handler.** `TestR_HA_054_EveryJournaledEventHasAReplayHandler` in [cmd/trove](../../cmd/trove/journal_handlers_test.go)
+  walks the audit registry in the binary that replays; an event that is flagged and has no handler fails it, unless `handlerPending`
+  lists it with its gap (today the two vulnerability-finding events, H-489).
+- **The Bastion feed.** Every new journaled event is classified in [feed.go](../../internal/bastionmain/feed.go): `repository.disabled`
+  and `repository.deleted` drop every answer (`grants`), the registration events and `group.updated` yield none.
+- **Tests.** Unit: `TestR_OPS_015_RecordAllTxBatchesWhereTheRecorderCan`, `TestR_OPS_015_RecordAllTxChecksEveryEventBeforeItWrites`,
+  `TestR_AUTH_019_AutoJoinOrder`, `TestR_AUTH_019_TheUpdateRuleClearsAndNeverSetsTheFlag`, `TestR_AUTH_041_GroupUpdatedEntriesAreReadStrictly`,
+  `TestR_BAS_004_ARegistrationEntryWithoutAnIDIsSkipped`, `TestR_AUTH_029_TheEventOfARevokedToken`,
+  `TestR_AUTHZ_031_RepositoryEntriesAreReadStrictly`. Integration, through the services the API uses, the shipper and the replayer into
+  a copy of the database made at *t* ([journal_producers_test.go](../../test/integration/backup/journal_producers_test.go)):
+  `TestR_AUTH_016_TokensADisableRevokedStayRevokedAfterARestore` (enabling the restored principals again brings no token back),
+  `TestR_BAS_004_ADisabledOrDeletedRegistrationStaysDisabledAfterARestore`, `TestR_AUTHZ_031_ADisabledOrDeletedRepositoryStaysDisabledAfterARestore`,
+  `TestR_AUTH_019_AClearedAutoJoinStaysClearedAfterARestore`.
+
 
 ## Exposure and CI in the journal (package E)
 

@@ -31,6 +31,16 @@ func (r requestRecorder) RecordTx(ctx context.Context, tx meta.Tx, ev audit.Even
 	return r.Recorder.RecordTx(ctx, tx, completeSource(ctx, ev))
 }
 
+// RecordAllTx completes the source of every event and keeps the batch of the
+// wrapped recorder.
+func (r requestRecorder) RecordAllTx(ctx context.Context, tx meta.Tx, evs []audit.Event) error {
+	done := make([]audit.Event, len(evs))
+	for i, ev := range evs {
+		done[i] = completeSource(ctx, ev)
+	}
+	return audit.RecordAllTx(ctx, r.Recorder, tx, done)
+}
+
 func (r requestRecorder) Record(ctx context.Context, ev audit.Event) {
 	r.Recorder.Record(ctx, completeSource(ctx, ev))
 }

@@ -180,28 +180,23 @@ func (q *Queries) InsertAuditEvents(ctx context.Context, events string) ([]Inser
 	return items, nil
 }
 
-const insertRevocationOutbox = `-- name: InsertRevocationOutbox :exec
+const insertRevocationOutbox = `-- name: InsertRevocationOutbox :execrows
 INSERT INTO revocation_outbox (id, at, event, entry)
-VALUES ($1::text::uuid, $2::text::timestamptz, $3::text, $4::text::jsonb)
+SELECT (r ->> 'id')::uuid, (r ->> 'at')::timestamptz, r ->> 'event', r -> 'entry'
+  FROM jsonb_array_elements($1::text::jsonb) AS r
 `
 
-type InsertRevocationOutboxParams struct {
-	ID    string
-	At    string
-	Event string
-	Entry string
-}
-
-// The journal row of a flagged event, in the transaction of the change: the
-// event's id and occurred_at, its registry name and the producer's entry.
-func (q *Queries) InsertRevocationOutbox(ctx context.Context, arg InsertRevocationOutboxParams) error {
-	_, err := q.db.Exec(ctx, insertRevocationOutbox,
-		arg.ID,
-		arg.At,
-		arg.Event,
-		arg.Entry,
-	)
-	return err
+// The journal rows of flagged events, in the transaction of the change: each
+// event's id and occurred_at, its registry name and the producer's entry. One
+// statement inserts a batch, one JSON array of objects {id, at, event, entry},
+// so a change that records many flagged events (the tokens a disable revokes)
+// costs one statement, not one per event (R-HA-054).
+func (q *Queries) InsertRevocationOutbox(ctx context.Context, entries string) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRevocationOutbox, entries)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listAuditEventsNewest = `-- name: ListAuditEventsNewest :many

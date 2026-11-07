@@ -1072,7 +1072,12 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **Backup and restore**
 - 🟡 Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
 - 🟡 Restore job into an empty installation
-- 🟡 Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure
+- 🟡 Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure. Built on 2026-11-07: the
+  removals a security review found without an entry are journaled and replayed, proved through the shipper and the replayer into a copy
+  of the database at *t*: a Bastion registration's disable and deletion ([Q-BAS-145](../spec/bastion.md)), one `token.revoked` per token a
+  disable or deletion revokes, written in batches, and a cleared auto-join flag ([Q-AUTH-198](../spec/identity-and-authentication.md)), a
+  repository's disable and deletion ([Q-AUTHZ-238, Q-AUTHZ-239](../spec/authorization.md)); every journaled event has a handler in the
+  `trove` binary (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`). Open: the narrowings of H-569 and the finding blocks of H-489
 - 🟡 E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
 
 **Helm chart and release**

@@ -117,20 +117,11 @@ func (s *Service) RevokeBastionToken(ctx context.Context, c principal.Caller, ba
 // RevokeAllOfBastionTx revokes every unrevoked token of a registration in tx, one token.revoked event with its
 // journal entry each, and tells the replicas' caches (deleting a registration, R-BAS-004). It returns the IDs.
 func (s *Service) RevokeAllOfBastionTx(ctx context.Context, tx meta.Tx, c principal.Caller, bastionID, reason string) ([]string, error) {
-	qs := principal.Queries(tx)
-	ids, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{PrincipalID: bastionID, RevokedBy: c.Actor.ID, Reason: reason})
+	ids, err := principal.RevokeAllTokensTx(ctx, tx, s.o.Recorder, c, bastionID, reason, true)
 	if err != nil || len(ids) == 0 {
 		return nil, err
 	}
-	if err := principal.NotifyPrincipals(s.o.Notifier, tx, principal.ChangePrincipal, bastionID); err != nil {
-		return nil, err
-	}
-	for _, id := range ids {
-		if err := s.recordRevoked(ctx, tx, c, id, bastionID, reason, TypeBST, nil); err != nil {
-			return nil, err
-		}
-	}
-	return ids, nil
+	return ids, principal.NotifyPrincipals(s.o.Notifier, tx, principal.ChangePrincipal, bastionID)
 }
 
 // AuthenticateBastion validates a raw Bastion token (R-BAS-005): the syntax without database access, the

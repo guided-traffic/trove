@@ -3177,10 +3177,11 @@ to this mechanism. At least these events are flagged:
 
 | Audit event | Owner | Replay |
 |---|---|---|
-| `token.revoked`, `ci.token.revoked` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-029, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-017 | Revoke the token, with the cascade of R-AUTH-029 |
+| `token.revoked`, `ci.token.revoked` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-029, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-017 | Revoke the token, with the cascade of R-AUTH-029. A disable or deletion that revokes a principal's tokens (a user's or service account's with `revokeTokens` or on deletion, a Bastion registration's on deletion) records one `token.revoked` per token as well ([Q-AUTH-198](identity-and-authentication.md#q-auth-198--a-disable-or-deletion-journals-every-token-it-revokes-and-clearing-auto-join-is-journaled)) |
 | `token.rotated` | identity R-AUTH-030 | Set the predecessor's `expires_at` to the earlier of its current and its journaled value; revoke it when the overlap was 0 |
 | `user.disabled`, `user.deleted` | identity R-AUTH-016, R-AUTH-021, R-AUTH-039 | Disable the user |
 | `serviceaccount.disabled`, `serviceaccount.deleted` | identity R-AUTH-020 | Disable the service account |
+| `bastion.disabled`, `bastion.deleted` | [bastion.md](bastion.md) R-BAS-004 | Disable the Bastion registration ([Q-BAS-145](bastion.md#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled)) |
 | `group.deleted` | identity R-AUTH-018 | Delete the group |
 | `group.members.changed`, `user.groups.synced` | identity R-AUTH-018, R-AUTH-008, R-AUTH-039 | Remove each removed membership with its source; added members are ignored |
 | `authz.role.unbound` | [authorization.md](authorization.md) R-AUTHZ-022 | Remove the role binding |
@@ -3188,6 +3189,8 @@ to this mechanism. At least these events are flagged:
 | `authz.ownership.removed`, `authz.ownership.released` | authorization R-AUTHZ-019 | Remove the owner |
 | `authz.project.deleted`, `authz.project.member_removed` | authorization R-AUTHZ-026, R-AUTHZ-031 | Delete the project (when empty), remove the membership |
 | `repository.moved` | authorization R-AUTHZ-031, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060 | Disable the repository when the restored database holds it in the source project, and report it `suspended` |
+| `repository.disabled`, `repository.deleted` | authorization R-AUTHZ-031, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004, R-REPO-013 | Disable the repository ([Q-AUTHZ-238](authorization.md#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own), [Q-AUTHZ-239](authorization.md#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled)) |
+| `group.updated` (the auto-join flag) | identity R-AUTH-019 | Update rule below: clear the flag, never set it (Q-AUTH-198) |
 | `ci.issuer.*` and `ci.mapping.*` disables and deletions | gitlab-ci R-CI-002, R-CI-019, R-CI-020 | Disable the issuer or mapping. Disabling a mapping that was enabled also suspends every later enabled mapping of its tier, so no job falls through to a mapping that grants more ([Q-CI-11](gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match)) |
 | `authz.policy.updated`, `authz.project.member_changed`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
 | `endpoint.exposure.deleted`; `endpoint.exposure.updated` | [endpoints.md](endpoints.md) R-EP-020 | Delete the rule; the update rule below with the exposure comparator of R-EP-020, whose suspension disables the rule |
@@ -3206,9 +3209,12 @@ restore does not revive it and it is not journaled.
 
 - Removals (revoke, disable, delete, remove) are applied as recorded. Each is idempotent: a subject
   already in the recorded state is reported `already in effect`, one missing from the restored
-  database `subject unknown`. A deleted user, service account, CI issuer or mapping is disabled
-  rather than deleted, so a mistaken or forged entry stays reversible; disabling already makes
-  its tokens fail (R-AUTH-016, R-AUTH-020, R-CI-017).
+  database `subject unknown`. A deleted user, service account, Bastion registration, CI issuer,
+  mapping or repository is disabled rather than deleted, so a mistaken or forged entry stays
+  reversible and replay never deletes content; disabling already makes its tokens fail, and a
+  disabled repository takes no part in resolution, download or deploy (R-AUTH-016, R-AUTH-020,
+  R-BAS-004, R-CI-017, R-REPO-004). The tokens such a principal lost carry entries of their own,
+  so enabling the restored principal again brings none of them back.
 - **Update rule.** An update entry carries the object's state before and after the change, without
   secrets. Replay compares the object's *current* state with the journaled after-state through the
   owning page's comparator `narrows(current, after)`. The comparator answers true only when the

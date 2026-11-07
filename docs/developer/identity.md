@@ -27,7 +27,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | [internal/auth/token](../../internal/auth/token) | Token format, scopes, lifetime policy, `Service` (create, rotate, revoke, list, validate with cache), `SettingsStore` (runtime settings), the two scheduled tasks |
 | [internal/avatar](../../internal/avatar) | The user avatar (R-API-055): `Processor.Process` turns an upload into a 256 x 256 PNG, `Store` keeps it in the blob store and `user_avatars` |
 | [internal/audit/events_identity.go](../../internal/audit/events_identity.go) | The identity event types with their data schemas and journal flags |
-| [internal/audit/events_bastion.go](../../internal/audit/events_bastion.go) | `bastion.created`, `bastion.updated`, `bastion.deleted` (no journal entry, Q-BAS-61) |
+| [internal/audit/events_bastion.go](../../internal/audit/events_bastion.go) | `bastion.created`, `bastion.updated`, `bastion.disabled`, `bastion.enabled`, `bastion.deleted`; the disable and the deletion carry the journal entry (Q-BAS-145) |
 | [internal/bastionmain](../../internal/bastionmain) | The Bastion registrations (`registrations.go`: `Registrations`, the service behind `/api/v1/bastions` and `trove admin bastion`) and the `TokenAuthenticator` over the token service (`authenticator.go`); see [bastion.md](bastion.md) |
 | [internal/cluster/valkey_tokseen.go](../../internal/cluster/valkey_tokseen.go) | `TokenSeen`: the throttle-exemption marker (key family `tokseen`) |
 | [internal/meta/postgres/queries/identity.sql](../../internal/meta/postgres/queries/identity.sql) | Every identity query; parameters are plain Go types because the packages above import no driver |
@@ -53,6 +53,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `guards.go` | `guardRoleHolder` (a principal that holds a system role, or a group that carries one, is changed only with `roles:write`, Q-AUTHZ-69) and `LastAdminGuard` (`last_admin` over active holders, locked on the `admin` binding rows; authz uses it in `UnbindRole`, Q-AUTHZ-70) |
 | `provisioner.go` | `PGProvisioner.SignIn`: just-in-time user, identity link, rename, group sync (R-AUTH-007, R-AUTH-008) |
 | `change.go` | The payload of the change area `auth` and its notify helpers |
+| `token_events.go` | `RevokeAllTokensTx` (revoke every unrevoked token of a principal) and `RecordTokensRevoked`: the one place that builds `token.revoked` with its journal entry `{tokenId, reason}`, for the token service's revocations and for the disables and deletions of `Manager`; the events go through `audit.RecordAllTx`, so a principal's thousands of tokens cost a fixed number of statements (Q-AUTH-198) |
+| `journal_replay.go` | The replay handlers of the identity events (R-HA-054): disable a user, a service account or a Bastion registration, delete a group, remove memberships, clear a group's auto-join flag (`autoJoinOrder`, the update rule) |
 | `gate.go` | `Gate` (freshness), `Flights` (shared lookups while the gate is closed), `Metrics` |
 | `ids.go`, `errors.go`, `db.go` | UUIDv7 and name rules; the refusals; the `DB` and `Notifier` interfaces |
 
@@ -359,12 +361,15 @@ A Bastion registration is a principal of the kind `bastion` plus a row of the ta
   revoked through its registration. `token.Service.Check` refuses the type as unknown before the cache and the table.
 - **Validation** is `token.Service.AuthenticateBastion` through the same `auth_tokens` cache, freshness gate and change area as every token;
   `bastionmain.Authenticator` maps its verdicts to `ErrTokenInvalid` and notes the use for `lastUsedAt`. Disabling a registration
-  notifies `ChangePrincipal` (the cache flushes) and revokes nothing; deleting one revokes every token with its journal entry first.
+  notifies `ChangePrincipal` (the cache flushes) and revokes nothing; deleting one revokes every token with its journal entry first
+  (`principal.RevokeAllTokensTx`).
 - **A registration holds nothing.** `authz.ParseRef` parses `bastion:<name>`; the policy writes, role bindings, owner records, group
   members and project members refuse it with `principal.BastionNotAllowed` (422 `principal_not_allowed`); the database guards are
   the second line.
-- **Events**: the three `bastion.*` events and `token.created` / `token.revoked` with `resource_type` `bastion` (the token as the resource,
-  the registration in `details.bastion`).
+- **Events**: the five `bastion.*` events and `token.created` / `token.revoked` with `resource_type` `bastion` (the token as the resource,
+  the registration in `details.bastion`). `Update` records `bastion.updated` for a description, `bastion.disabled` (journaled,
+  `registrationEntry`) for a disable and `bastion.enabled` for an enable; `Delete` journals `bastion.deleted` as well. The replay
+  of both is `replayDisableAccount` with the kind bastion in `internal/auth/principal/journal_replay.go` (Q-BAS-145).
 - **Wiring**: the `package 1` block of [wire_bastion.go](../../internal/app/wire_bastion.go) builds `bastionRegistrations` (passed as
   `v1.Options.Bastions`) and `bastionAuthenticator`, which the recognition stage of the interface consumes.
 

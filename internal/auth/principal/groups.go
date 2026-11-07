@@ -238,9 +238,14 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 		}
 		// The lock that binding a role to the group takes too: the auto-join check
 		// below and the binding's check of the flag cannot both pass (R-AUTH-019).
-		if _, err := qs.IdentityLockGroup(ctx, g.ID); err != nil {
+		locked, err := qs.IdentityLockGroup(ctx, g.ID)
+		if err != nil {
 			return err
 		}
+		if len(locked) == 0 {
+			return NotFound("The group")
+		}
+		autoJoinBefore := locked[0].AutoJoin
 		// A rename of a group that carries a role lets the identity provider's group
 		// sync fill it (R-AUTH-008), so every change of it needs roles:write.
 		if err := guardRoleHolder(ctx, qs, c, g.ID); err != nil {
@@ -301,10 +306,17 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 		if len(fields) == 0 {
 			return nil
 		}
+		autoJoinAfter := autoJoinBefore
+		if p.AutoJoin != nil {
+			autoJoinAfter = *p.AutoJoin
+		}
 		return m.record(ctx, tx, audit.Event{
 			Type: audit.EventGroupUpdated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
 			Subject: audit.Subject{Kind: "group", ID: g.ID, Name: final},
 			Details: details(map[string]any{"fields": fields}),
+			Journal: details(groupUpdatedEntry{
+				PrincipalID: g.ID, Name: final, AutoJoin: boolChange{Before: autoJoinBefore, After: autoJoinAfter},
+			}),
 		})
 	})
 	if err != nil {

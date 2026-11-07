@@ -13,18 +13,23 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // Replay of the project events of the revocation journal (R-HA-054, R-AUTHZ-031). Memberships are removed or lowered, an
 // empty project is deleted, and a moved repository is disabled rather than moved back: moving it again would give the target
 // project's members what the restored database does not give them, and leaving it would give the source project's members
 // back what the move took, while the disabled repository grants nothing to either. An administrator moves it again
-// (R-REPO-060) and enables it. Every entry names its objects by ID.
+// (R-REPO-060) and enables it. A disabled or deleted repository is disabled (Q-AUTHZ-238, Q-AUTHZ-239). Every entry names its
+// objects by ID.
 func init() {
 	journal.Register(journal.Handler{
 		Domain: "project",
-		Events: []string{audit.EventProjectDeleted, audit.EventProjectMemberRemoved, audit.EventProjectMemberChanged, audit.EventRepositoryMoved},
-		Apply:  replayProject,
+		Events: []string{
+			audit.EventProjectDeleted, audit.EventProjectMemberRemoved, audit.EventProjectMemberChanged, audit.EventRepositoryMoved,
+			audit.EventRepositoryDisabled, repository.EventDeleted,
+		},
+		Apply: replayProject,
 	})
 }
 
@@ -43,6 +48,8 @@ func replayProject(ctx context.Context, tx meta.Tx, env journal.Env, o journal.O
 		return replayMemberRemoved(ctx, qs, env, tx, o)
 	case audit.EventProjectMemberChanged:
 		return replayMemberChanged(ctx, qs, env, tx, o)
+	case audit.EventRepositoryDisabled, repository.EventDeleted:
+		return replayRepositoryDisabled(ctx, qs, env, tx, o)
 	default:
 		return replayMoved(ctx, qs, env, tx, o)
 	}
@@ -231,24 +238,97 @@ func replayMoved(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx
 			return journal.Result{}, err
 		}
 	}
-	doc["disabled"] = json.RawMessage("true")
-	raw, err := json.Marshal(doc)
-	if err != nil {
+	if _, err := disableRepository(ctx, qs, env, tx, repo, doc); err != nil {
 		return journal.Result{}, err
-	}
-	ver, err := qs.JournalRepositorySetConfig(ctx, q.JournalRepositorySetConfigParams{ID: id, Config: string(raw)})
-	if err != nil {
-		return journal.Result{}, err
-	}
-	if len(ver) > 0 {
-		if err := env.Notify(tx, cluster.AreaRepoConfig, payloadVersion, map[string]any{"id": e.RepositoryID, "key": subject, "op": "updated", "version": ver[0]}); err != nil {
-			return journal.Result{}, err
-		}
-		if err := notifyProject(env, tx, "repository", e.RepositoryID); err != nil {
-			return journal.Result{}, err
-		}
 	}
 	r := o.Result(journal.Suspended, subject)
 	r.Detail, _ = json.Marshal(map[string]string{"disabled": subject, "movedFromProjectId": e.From.ID, "movedToProjectId": e.To.ID})
 	return r, nil
+}
+
+// disableRepository writes `disabled: true` into the locked repository's document, as an update that disables it does
+// (R-REPO-004), and tells the change areas repo_config and authz. It reports whether the row changed.
+func disableRepository(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx, repo q.JournalRepositoryLockRow, doc map[string]json.RawMessage) (bool, error) {
+	doc["disabled"] = json.RawMessage("true")
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return false, err
+	}
+	ver, err := qs.JournalRepositorySetConfig(ctx, q.JournalRepositorySetConfigParams{ID: repo.ID, Config: string(raw)})
+	if err != nil || len(ver) == 0 {
+		return false, err
+	}
+	id := strconv.FormatInt(repo.ID, 10)
+	subject := repo.ProjectKey + "/" + repo.Key
+	if err := env.Notify(tx, cluster.AreaRepoConfig, payloadVersion, map[string]any{"id": id, "key": subject, "op": "updated", "version": ver[0]}); err != nil {
+		return false, err
+	}
+	return true, notifyProject(env, tx, "repository", id)
+}
+
+// readRepositoryEntry reads the entry of repository.disabled and repository.deleted: the repository's ID as the decimal
+// text the producers write (Q-AUTHZ-238).
+func readRepositoryEntry(o journal.Object) (int64, string, bool) {
+	var e struct {
+		RepositoryID string `json:"repositoryId"`
+	}
+	if !o.Into(&e) {
+		return 0, "", false
+	}
+	id, err := strconv.ParseInt(e.RepositoryID, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, "", false
+	}
+	return id, e.RepositoryID, true
+}
+
+// enabledDocument reads a stored repository document and reports whether it leaves the repository enabled: a document
+// that is no JSON object is refused as disabled by every reader, and so is one whose `disabled` is true.
+func enabledDocument(raw []byte) (map[string]json.RawMessage, bool) {
+	var doc map[string]json.RawMessage
+	if json.Unmarshal(raw, &doc) != nil || doc == nil {
+		return nil, false
+	}
+	var disabled bool
+	if json.Unmarshal(doc["disabled"], &disabled) == nil && disabled {
+		return nil, false
+	}
+	return doc, true
+}
+
+// replayRepositoryDisabled disables the repository of a repository.disabled or repository.deleted entry (R-AUTHZ-031,
+// Q-AUTHZ-238, Q-AUTHZ-239). A deletion is replayed as a disable, never as a deletion: replay deletes no content, and the
+// disabled repository grants nothing while an administrator deletes it again. A repository the restored database holds
+// disabled, or holds in deletion, is "already in effect": neither takes part in resolution, download or deploy, and a
+// document that does not read as an object is refused as disabled by every reader (repository.toRepository). Enabling a
+// repository narrows nothing and is never journaled.
+func replayRepositoryDisabled(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.Tx, o journal.Object) (journal.Result, error) {
+	id, text, ok := readRepositoryEntry(o)
+	if !ok {
+		return o.Malformed("repositoryId is not an ID"), nil
+	}
+	rows, err := qs.JournalRepositoryLock(ctx, id)
+	if err != nil {
+		return journal.Result{}, err
+	}
+	if len(rows) == 0 {
+		return o.Result(journal.SubjectUnknown, text), nil
+	}
+	repo := rows[0]
+	subject := repo.ProjectKey + "/" + repo.Key
+	if repo.Lifecycle != "active" {
+		return o.Result(journal.AlreadyInEffect, subject), nil
+	}
+	doc, enabled := enabledDocument(repo.Config)
+	if !enabled {
+		return o.Result(journal.AlreadyInEffect, subject), nil
+	}
+	changed, err := disableRepository(ctx, qs, env, tx, repo, doc)
+	if err != nil {
+		return journal.Result{}, err
+	}
+	if !changed {
+		return o.Result(journal.AlreadyInEffect, subject), nil
+	}
+	return o.Result(journal.Applied, subject), nil
 }

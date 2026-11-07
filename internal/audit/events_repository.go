@@ -1,10 +1,14 @@
 package audit
 
 // The repository events (R-OPS-016, R-REPO-009 to R-REPO-013). They are
-// transactional: the producer records them in the transaction of the change. None
-// carries the revocation flag; a repository setting that narrows access is
-// journaled by the authorization area's own authz.settings.changed event in the
-// same transaction (R-AUTHZ-031).
+// transactional: the producer records them in the transaction of the change. An
+// authorization setting that narrows access is journaled by the authorization
+// area's own authz.settings.changed event in the same transaction (R-AUTHZ-031).
+// Two repository events end all access to a repository and carry the revocation
+// flag themselves (Q-AUTHZ-238, Q-AUTHZ-239): repository.disabled, which an
+// update records next to repository.updated when it sets disabled, and
+// repository.deleted. Their entry is the repository's ID and qualified name; the
+// replay disables the repository.
 
 // repositoryEventSchema is the data of the three types. changes lists the
 // top-level members of the document that the write changed (key, class and format
@@ -55,15 +59,28 @@ const claimsEventSchema = `{
 
 // <<< M2 virtual
 
+// EventRepositoryDisabled is an update that set disabled on a repository
+// (R-REPO-004): the repository takes no part in resolution, download or deploy
+// any more, so the event is journaled (R-AUTHZ-031, Q-AUTHZ-238).
+const EventRepositoryDisabled = "repository.disabled"
+
 func init() {
-	for _, name := range []string{"repository.created", "repository.updated", "repository.deleted"} {
+	for name, journal := range map[string]Journal{
+		"repository.created": NoJournal, "repository.updated": NoJournal, "repository.deleted": JournalRevocation,
+	} {
 		Register(EventType{
 			Name:     name,
 			Category: CategoryRepository,
 			Mode:     Transactional,
+			Journal:  journal,
 			Schema:   repositoryEventSchema,
 		})
 	}
+	Register(EventType{
+		Name: EventRepositoryDisabled, Category: CategoryRepository, Mode: Transactional, Journal: JournalRevocation,
+		Schema: `{"type":"object","properties":{"class":{"type":"string","enum":["local","remote","virtual"]},` +
+			`"format":{"type":"string"},"project":{"type":"string"}},"required":["class","format"],"additionalProperties":false}`,
+	})
 	// >>> M2 virtual
 	Register(EventType{
 		Name:     "repository.claims_changed",

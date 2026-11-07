@@ -291,11 +291,12 @@ func (m *Manager) disableAccount(ctx context.Context, c Caller, o qname.Object, 
 		}
 		revoked := 0
 		if revokeTokens {
-			rs, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{PrincipalID: id, RevokedBy: c.Actor.ID, Reason: "principal_disabled"})
+			// One token.revoked with its journal entry per token (Q-AUTH-198), as for a user.
+			ids, err := RevokeAllTokensTx(ctx, tx, m.rec, c, id, "principal_disabled", false)
 			if err != nil {
 				return err
 			}
-			revoked = len(rs)
+			revoked = len(ids)
 		}
 		if err := NotifyPrincipals(m.notify, tx, ChangePrincipal, id); err != nil {
 			return err
@@ -339,7 +340,8 @@ func (m *Manager) DeleteServiceAccount(ctx context.Context, c Caller, name strin
 // deleteAccount revokes the account's tokens first and removes the principal row after: the token rows
 // go with the principal through their foreign key, so a revocation after the delete would find none
 // and the caches of the replicas would learn of the account's end only from the change of the
-// principal. The tokens are revoked, and the change notified, in the transaction that deletes the row.
+// principal. The tokens are revoked, each with its token.revoked and journal entry (Q-AUTH-198), and
+// the change notified, in the transaction that deletes the row.
 func (m *Manager) deleteAccount(ctx context.Context, c Caller, o qname.Object) error {
 	return DBErr("principal.DeleteServiceAccount", m.db.InTx(ctx, func(tx meta.Tx) error {
 		qs := Queries(tx)
@@ -359,7 +361,7 @@ func (m *Manager) deleteAccount(ctx context.Context, c Caller, o qname.Object) e
 		if err != nil {
 			return err
 		}
-		if _, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{PrincipalID: id, RevokedBy: c.Actor.ID, Reason: "principal_disabled"}); err != nil {
+		if _, err := RevokeAllTokensTx(ctx, tx, m.rec, c, id, "principal_disabled", false); err != nil {
 			return err
 		}
 		memberships, err := qs.IdentityCountMembershipsOfMember(ctx, id)

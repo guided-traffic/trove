@@ -3,7 +3,6 @@ package token
 import (
 	"context"
 
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -83,14 +82,16 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 	if err := principal.NotifyTokens(s.o.Notifier, tx, refs...); err != nil {
 		return nil, err
 	}
+	toks := make([]principal.RevokedToken, 0, len(out))
 	for _, r := range out {
 		why := reason
 		if !r.Root {
 			why = ReasonParentRevoked
 		}
-		if err := s.recordRevoked(ctx, tx, c, r.ID, r.OwnerID, why, r.Type, nil); err != nil {
-			return nil, err
-		}
+		toks = append(toks, principal.RevokedToken{ID: r.ID, OwnerID: r.OwnerID, Reason: why, Bastion: r.Type == TypeBST})
+	}
+	if err := principal.RecordTokensRevoked(ctx, tx, s.o.Recorder, c, toks); err != nil {
+		return nil, err
 	}
 	// A CI token's revocation also writes ci.token.revoked with its cause (R-CI-017, R-CI-020): self for the
 	// presenting token (reason owner, DELETE /api/v1/tokens/current), single for one by ID or by value.
@@ -98,46 +99,6 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 		return nil, err
 	}
 	return out, nil
-}
-
-func (s *Service) recordRevoked(ctx context.Context, tx meta.Tx, c principal.Caller, id, ownerID, reason string, typ Type, cascaded []string) error {
-	d := map[string]any{"reason": reason, "cascaded": orEmpty(cascaded)}
-	subject := audit.Subject{Kind: "token", ID: id}
-	if typ == TypeBST {
-		// A Bastion token's event has the resource type bastion (R-BAS-004) and the token as the resource; the
-		// registration is in the data.
-		rows, err := principal.Queries(tx).IdentityPrincipalByID(ctx, ownerID)
-		if err != nil {
-			return err
-		}
-		if len(rows) > 0 {
-			d["owner"] = Owner{ID: ownerID, Kind: principal.KindBastion, Name: rows[0].Name}.Ref()
-			d["bastion"] = rows[0].Name
-		}
-		d["tokenId"] = id
-		subject.Kind = "bastion"
-	}
-	// The event of a token of a project service account carries the project
-	// (Q-AUTHZ-169).
-	projects, err := principal.Queries(tx).IdentityIsProjectServiceAccount(ctx, ownerID)
-	if err != nil {
-		return err
-	}
-	if len(projects) > 0 {
-		d["project"] = projects[0]
-	}
-	return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
-		Type: audit.EventTokenRevoked, Outcome: audit.Success, Reason: reason, Actor: c.Actor, Source: c.Source,
-		Subject: subject, Details: mustJSON(d),
-		Journal: mustJSON(map[string]string{"tokenId": id, "reason": reason}),
-	})
-}
-
-func orEmpty(s []string) []string {
-	if s == nil {
-		return []string{}
-	}
-	return s
 }
 
 // ByValue is the result of RevokeByValue.
@@ -202,7 +163,7 @@ func (s *Service) RevokeAll(ctx context.Context, c principal.Caller, principalID
 		} else if len(rows) == 0 {
 			return principal.NotFound("The principal")
 		}
-		ids, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{PrincipalID: principalID, RevokedBy: c.Actor.ID, Reason: reason})
+		ids, err := principal.RevokeAllTokensTx(ctx, tx, s.o.Recorder, c, principalID, reason, false)
 		if err != nil {
 			return err
 		}
@@ -210,15 +171,7 @@ func (s *Service) RevokeAll(ctx context.Context, c principal.Caller, principalID
 		if n == 0 {
 			return nil
 		}
-		if err := principal.NotifyPrincipals(s.o.Notifier, tx, principal.ChangePrincipal, principalID); err != nil {
-			return err
-		}
-		for _, id := range ids {
-			if err := s.recordRevoked(ctx, tx, c, id, principalID, reason, "", nil); err != nil {
-				return err
-			}
-		}
-		return nil
+		return principal.NotifyPrincipals(s.o.Notifier, tx, principal.ChangePrincipal, principalID)
 	})
 	return n, principal.DBErr("token.revoke_all", err)
 }

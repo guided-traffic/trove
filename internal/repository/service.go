@@ -457,7 +457,7 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		if err != nil {
 			return err
 		}
-		if err := s.recordAndNotify(ctx, tx, c, EventUpdated, out.Repository, updateDetails(out.Repository, changes, &cur, &nd), strings.TrimPrefix(EventUpdated, "repository.")); err != nil {
+		if err := s.recordUpdate(ctx, tx, c, out.Repository, changes, &cur, &nd); err != nil {
 			return err
 		}
 		// >>> M2 virtual
@@ -662,6 +662,9 @@ func (s *Service) afterWrite(ctx context.Context, tx meta.Tx, c Caller, event st
 		strings.TrimPrefix(event, "repository."))
 }
 
+// recordAndNotify records the event and the change-log row of a write. repository.deleted, of either phase, carries the
+// journal entry of R-AUTHZ-031: a deletion ends every access to the repository, and a restore to a point before it brings
+// the repository back, which the replay disables (Q-AUTHZ-239).
 func (s *Service) recordAndNotify(ctx context.Context, tx meta.Tx, c Caller, event string, r Repository,
 	d eventDetails, op string,
 ) error {
@@ -672,13 +675,55 @@ func (s *Service) recordAndNotify(ctx context.Context, tx meta.Tx, c Caller, eve
 	if err != nil {
 		return err
 	}
-	if err := s.rec.RecordTx(ctx, tx, audit.Event{
+	ev := audit.Event{
 		Type: event, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
 		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name.String()}, Project: r.Name.Project, Details: raw,
-	}); err != nil {
+	}
+	if event == EventDeleted {
+		ev.Journal = journalEntry(r)
+	}
+	if err := s.rec.RecordTx(ctx, tx, ev); err != nil {
 		return err
 	}
 	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Name.String(), Op: op, Version: r.Version})
+}
+
+// recordUpdate records repository.updated and its change-log row, and repository.disabled when the update set disabled.
+func (s *Service) recordUpdate(ctx context.Context, tx meta.Tx, c Caller, r Repository, changes []string, cur, nd *Document) error {
+	if err := s.recordAndNotify(ctx, tx, c, EventUpdated, r, updateDetails(r, changes, cur, nd), strings.TrimPrefix(EventUpdated, "repository.")); err != nil {
+		return err
+	}
+	if cur.Disabled || !nd.Disabled {
+		return nil
+	}
+	return s.recordDisabled(ctx, tx, c, r)
+}
+
+// recordDisabled records repository.disabled for an update that set disabled (R-REPO-004), next to repository.updated:
+// the repository takes no part in resolution, download or deploy any more, and the entry keeps it disabled across a
+// restore to a point before the update (R-AUTHZ-031, Q-AUTHZ-238). An update that clears disabled narrows nothing and
+// records only repository.updated.
+func (s *Service) recordDisabled(ctx context.Context, tx meta.Tx, c Caller, r Repository) error {
+	d := map[string]string{"class": string(r.Class), "format": r.Format}
+	if r.Name.Project != "" {
+		d["project"] = r.Name.Project
+	}
+	raw, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	return s.rec.RecordTx(ctx, tx, audit.Event{
+		Type: audit.EventRepositoryDisabled, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
+		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name.String()}, Project: r.Name.Project, Details: raw,
+		Journal: journalEntry(r),
+	})
+}
+
+// journalEntry is the journal entry of repository.disabled and repository.deleted: the repository's ID, which the replay
+// acts on, and its qualified name for display (R-AUTHZ-031).
+func journalEntry(r Repository) json.RawMessage {
+	raw, _ := json.Marshal(map[string]string{"repositoryId": r.ID, "key": r.Name.String()}) // two strings always marshal
+	return raw
 }
 
 // ListFilter selects repositories (R-REPO-012). Class and format values are

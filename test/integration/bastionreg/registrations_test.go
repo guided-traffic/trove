@@ -4,6 +4,7 @@ package bastionreg
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -274,10 +275,20 @@ func TestR_BAS_004_PatchDisableAndTheRevision(t *testing.T) {
 			t.Fatalf("after: %v", got)
 		}
 	})
-	t.Run("the event names the fields", func(t *testing.T) {
-		evs := e.events(audit.EventBastionUpdated)
-		if len(evs) != 2 || evs[0].ResourceType != "bastion" || evs[0].Details["enabled"] != false {
-			t.Fatalf("events = %+v", evs)
+	t.Run("the description, the disable and the enable are events of their own; the disable is journaled", func(t *testing.T) {
+		upd, off, on := e.events(audit.EventBastionUpdated), e.events(audit.EventBastionDisabled), e.events(audit.EventBastionEnabled)
+		if len(upd) != 1 || upd[0].ResourceType != "bastion" || fmt.Sprint(upd[0].Details["fields"]) != "[description]" {
+			t.Fatalf("bastion.updated = %+v", upd)
+		}
+		if len(off) != 1 || off[0].ResourceType != "bastion" || len(on) != 1 || on[0].ResourceType != "bastion" {
+			t.Fatalf("bastion.disabled = %+v, bastion.enabled = %+v", off, on)
+		}
+		bid := e.text(`SELECT id::text FROM principal WHERE kind = 'bastion' AND name = 'partners'`)
+		if n := e.number(`SELECT count(*) FROM revocation_outbox WHERE event = 'bastion.disabled' AND entry ->> 'principalId' = $1 AND entry ->> 'name' = 'partners'`, bid); n != 1 {
+			t.Fatalf("journal entries of the disable = %d, want 1 (R-HA-054, Q-BAS-145)", n)
+		}
+		if n := e.number(`SELECT count(*) FROM revocation_outbox WHERE event IN ('bastion.updated', 'bastion.enabled')`); n != 0 {
+			t.Fatalf("%d journal entries of the description or the enable, want none", n)
 		}
 	})
 }
@@ -324,6 +335,9 @@ func TestR_BAS_004_DeleteRevokesTheTokensAndJournalsThem(t *testing.T) {
 	}
 	if evs := e.events(audit.EventBastionDeleted); len(evs) != 1 || evs[0].ResourceType != "bastion" || evs[0].Details["tokensRevoked"] != float64(2) {
 		t.Fatalf("bastion.deleted = %+v", evs)
+	}
+	if n := e.number(`SELECT count(*) FROM revocation_outbox WHERE event = 'bastion.deleted' AND entry ->> 'principalId' = $1`, bid); n != 1 {
+		t.Fatalf("journal entries of the deletion = %d, want 1: the replay disables the registration a restore brings back (Q-BAS-145)", n)
 	}
 	waitFor(t, "the deleted registration's token is refused on the replica that cached it", revocationBound+2*time.Second, func() bool {
 		_, err := r.auth.Authenticate(context.Background(), secrets[0])
@@ -480,10 +494,15 @@ func TestR_BAS_004_TheEventsCarryNoSecretAndTheResourceTypeBastion(t *testing.T)
 	if n := e.number(`SELECT count(*) FROM audit_event WHERE details::text LIKE '%' || $1 || '%' OR details::text LIKE '%' || $2 || '%'`, secret, secret[8:]); n != 0 {
 		t.Fatalf("%d audit events hold the token value", n)
 	}
-	for _, name := range []string{audit.EventBastionCreated, audit.EventBastionUpdated, audit.EventBastionDeleted} {
+	// The registration's disable and deletion end what its tokens may do and are journaled (Q-BAS-145); the others narrow
+	// nothing.
+	for name, journaled := range map[string]audit.Journal{
+		audit.EventBastionCreated: audit.NoJournal, audit.EventBastionUpdated: audit.NoJournal, audit.EventBastionEnabled: audit.NoJournal,
+		audit.EventBastionDisabled: audit.JournalRevocation, audit.EventBastionDeleted: audit.JournalRevocation,
+	} {
 		et, ok := audit.Lookup(name)
-		if !ok || et.Journal != audit.NoJournal || et.Mode != audit.Transactional {
-			t.Errorf("%s registered as %+v (%v)", name, et, ok)
+		if !ok || et.Journal != journaled || et.Mode != audit.Transactional {
+			t.Errorf("%s registered as %+v (%v), want journal %q", name, et, ok, journaled)
 		}
 	}
 	if et, _ := audit.Lookup(audit.EventTokenRevoked); et.Journal != audit.JournalRevocation {

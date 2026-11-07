@@ -655,13 +655,14 @@ func (m *Manager) DisableUser(ctx context.Context, c Caller, name string, o Disa
 		}
 		revoked := 0
 		if o.RevokeTokens {
-			rows, err := qs.IdentityRevokeAllOfPrincipal(ctx, q.IdentityRevokeAllOfPrincipalParams{
-				PrincipalID: id, RevokedBy: c.Actor.ID, Reason: "principal_disabled",
-			})
+			// One token.revoked with its journal entry per token (Q-AUTH-198): the replay of user.disabled disables
+			// the user, and only these entries keep the tokens revoked when an administrator enables the user again
+			// after a restore.
+			ids, err := RevokeAllTokensTx(ctx, tx, m.rec, c, id, "principal_disabled", false)
 			if err != nil {
 				return err
 			}
-			revoked = len(rows)
+			revoked = len(ids)
 		}
 		if err := NotifyPrincipals(m.notify, tx, ChangePrincipal, id); err != nil {
 			return err
@@ -752,6 +753,12 @@ func (m *Manager) DeleteUser(ctx context.Context, c Caller, name string) error {
 		}
 		idents, err := qs.IdentityUserIdentities(ctx, id)
 		if err != nil {
+			return err
+		}
+		// The tokens go with the row; they are revoked first so that each has its token.revoked and journal entry:
+		// the replay of user.deleted disables the user, and these entries keep the tokens revoked when an
+		// administrator enables the restored user again (Q-AUTH-198).
+		if _, err := RevokeAllTokensTx(ctx, tx, m.rec, c, id, "principal_disabled", false); err != nil {
 			return err
 		}
 		if err := notifyAuthz(ctx, m.authz, tx, id); err != nil {

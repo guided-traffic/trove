@@ -17,7 +17,7 @@ its event types here.
 | [registry.go](../../internal/audit/registry.go), [schema.go](../../internal/audit/schema.go) | `EventType`, `Register` (panics on a programming error), `Freeze`, `Lookup`, `Types`; the rules of R-OPS-014 and the bounded-array check of the data schema |
 | [event.go](../../internal/audit/event.go) | `Event` (with `At`, the time of an asynchronous event the producer learned of later), `Actor`, `Subject`, `Source`, `Outcome`, `Recorder`, `Nop` |
 | [events_audit.go](../../internal/audit/events_audit.go), `events_<area>.go` | the types of one area; the audit area registers `audit.exported`, [events_bastion.go](../../internal/audit/events_bastion.go) the `bastion.*` events of a registration (no journal flag; the token events of a Bastion token are registered with the identity events and carry `resource_type` `bastion`, R-BAS-004); [events_bastion_iface.go](../../internal/audit/events_bastion_iface.go) the two events of the Bastion interface (`bastion.contact`, `bastion.downloads.dropped`) |
-| [recorder.go](../../internal/audit/recorder.go) | `Writer`, `New`, `RecordTx` (the transactional path), the journal rule, the PostgreSQL sink |
+| [recorder.go](../../internal/audit/recorder.go) | `Writer`, `New`, `RecordTx` and `RecordAllTx` (the transactional path, in batches), the journal rule, the PostgreSQL sink |
 | [async.go](../../internal/audit/async.go) | `Record` (the asynchronous path), the bounded buffer, the batch loop, the backoff, `Flush` |
 | [dedup.go](../../internal/audit/dedup.go) | deduplication of `authz.denied` and `token.rejected`, the switches for anonymous denials and downloads |
 | [row.go](../../internal/audit/row.go) | `Event` to table row: validation, truncation, UUID and address handling, the error sentinels |
@@ -73,6 +73,11 @@ RecordTx(ctx, tx, ev)                       Record(ctx, ev)
 - `RecordTx` is for `Transactional` types and returns an error for anything else; a `None` type is a no-op. The caller returns the
   error from its transaction function, which rolls the change back. Errors are the sentinels `ErrUnknownType`, `ErrWrongMode`,
   `ErrJournalEntryRequired`, `ErrJournalNotAllowed`, `ErrInvalidEvent`, or the PostgreSQL error.
+- `audit.RecordAllTx(ctx, rec, tx, evs)` records many transactional events of one change: a `BatchRecorder` (the `Writer`, `Nop`, and
+  the API's `requestRecorder`) checks every event first, then inserts the audit rows with one statement per 500 and their journal rows
+  with one statement per 500; any other `Recorder` (a test fake) gets one `RecordTx` each. `RecordTx` is the batch of one. A producer
+  whose number of events only the data bounds uses it: `principal.RecordTokensRevoked` writes the `token.revoked` of every token a
+  revocation ends (Q-AUTH-198).
 - `Record` is for `Async` types and never returns anything. A bad call (an unregistered or transactional type, an invalid event) is
   logged at error level and skipped, because the request must not fail.
 - The batch statement takes the rows as one JSON array of text values, so it is one statement of one shape ([audit.sql](../../internal/meta/postgres/queries/audit.sql),
@@ -87,7 +92,8 @@ RecordTx(ctx, tx, ev)                       Record(ctx, ev)
 
 An event type with `Journal: audit.JournalRevocation` and `Entry` required (the default) must come with `Event.Journal`, a JSON object
 of IDs and states, never a secret or a hash. `RecordTx` then inserts the `revocation_outbox` row with the event's `id`, its
-`occurred_at` as `at` and the registry name as `event`, in the same transaction. An optional-entry type writes a row only when the
+`occurred_at` as `at` and the registry name as `event`, in the same transaction (`InsertRevocationOutbox` takes a JSON array, so
+`RecordAllTx` writes the rows of a batch with one statement). An optional-entry type writes a row only when the
 producer passes an entry. The shape of the entry belongs to the owning page; the writer checks only that it is an object. Shipping the
 rows is the journal writer of a later milestone: it reads `revocation_outbox` in `id` order and needs nothing the row does not carry.
 
