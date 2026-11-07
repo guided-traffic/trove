@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -285,15 +286,24 @@ func (s *memStore) HeldNames(_ context.Context, id int64, after string, limit in
 func (s *memStore) NextPending(_ context.Context, id int64, now time.Time, after string, limit int) ([]PendingName, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []PendingName
+	// The smallest `limit` due names after `after`, kept sorted while scanning: the store answers from an index, so the fake must
+	// not sort every pending name per batch (10,000 names in 100 batches made this the cost of the large-pending tests).
+	out := make([]PendingName, 0, limit)
 	for n, p := range s.pending[id] {
-		if p.attempts < MaxPackageAttempts && (p.notBefore.IsZero() || !p.notBefore.After(now)) && n > after {
-			out = append(out, PendingName{Name: n, Attempts: p.attempts})
+		if p.attempts >= MaxPackageAttempts || (!p.notBefore.IsZero() && p.notBefore.After(now)) || n <= after {
+			continue
 		}
+		at, _ := slices.BinarySearchFunc(out, n, func(e PendingName, name string) int { return strings.Compare(e.Name, name) })
+		if at >= limit {
+			continue
+		}
+		if len(out) == limit {
+			out = out[:limit-1]
+		}
+		out = slices.Insert(out, at, PendingName{Name: n, Attempts: p.attempts})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	if len(out) > limit {
-		out = out[:limit]
+	if len(out) == 0 {
+		return nil, nil
 	}
 	return out, nil
 }
