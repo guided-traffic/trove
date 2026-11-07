@@ -406,9 +406,11 @@ func TestCollapse(t *testing.T) {
 		if seen := up.Seen(); seen[len(seen)-1].At.Sub(start) < 4*time.Second {
 			t.Fatalf("the conditional request came %s after the request, the wait bound is 5 s", seen[len(seen)-1].At.Sub(start))
 		}
-		if s := b.metadata(rem, "pkg/held"); !strings.HasPrefix(s.cacheStatus(), "trove; hit; ttl=") {
-			t.Fatalf("the next request is %q, want a fresh hit", s.cacheStatus())
-		}
+		// The upstream sees the conditional request before the replica has stored the refreshed entry, so a request in that
+		// gap joins the revalidation in flight (fwd=stale, collapsed); once it is stored, the entry is a fresh hit again.
+		waitFor(t, "the refreshed entry served as a fresh hit", 5*time.Second, func() bool {
+			return strings.HasPrefix(b.metadata(rem, "pkg/held").cacheStatus(), "trove; hit; ttl=")
+		})
 	})
 
 	t.Run("R-REPO-026 two fetches that return different bytes leave one entry and a proxy.upstream_digest_changed event", func(t *testing.T) {
