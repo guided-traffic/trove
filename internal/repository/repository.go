@@ -25,10 +25,8 @@ const (
 // raw transfer on (Q-ROAD-1). Other formats arrive with M2.
 const FormatGeneric = "generic"
 
-// KeyPattern is the pattern of a repository key (R-REPO-002). A key also must
-// not contain ".." or end in "." and must not be a reserved name; a violation
-// answers 422 invalid_key or reserved_name.
-const KeyPattern = `^[a-z0-9][a-z0-9._-]{1,63}$`
+// A repository key has the grammar of qname.ValidKey (R-REPO-002) and must not be a reserved name; a violation answers 422
+// invalid_key or reserved_name.
 
 // ReservedKeys are the literal sub-paths of /api/v1/repositories that a key
 // cannot take (R-REPO-002).

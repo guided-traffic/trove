@@ -83,18 +83,18 @@ func TestRegister(t *testing.T) {
 		"upper case":       {fake{d: valid("Generic")}, "invalid or reserved"},
 		"one character":    {fake{d: valid("x")}, "invalid or reserved"},
 		"api version":      {fake{d: valid("v1")}, "invalid or reserved"},
-		"no class":         {fake{d: Descriptor{Facts: catalog.Facts{ID: "nocls", Layout: "x", PatternSubject: SubjectPath}, ContractVersion: 1}}, "no class"},
-		"no layout":        {fake{d: Descriptor{Facts: catalog.Facts{ID: "nolay", Classes: []Class{Local}, PatternSubject: SubjectPath}, ContractVersion: 1}}, "no layout"},
-		"no subject":       {fake{d: Descriptor{Facts: catalog.Facts{ID: "nosub", Classes: []Class{Local}, Layout: "x"}, ContractVersion: 1}}, "pattern subject"},
-		"class twice":      {fake{d: Descriptor{Facts: catalog.Facts{ID: "twice", Classes: []Class{Local, Local}, Layout: "x", PatternSubject: SubjectPath}, ContractVersion: 1}}, "invalidly"},
-		"class out of set": {fake{d: Descriptor{Facts: catalog.Facts{ID: "oos", Classes: []Class{"mirror"}, Layout: "x", PatternSubject: SubjectPath}, ContractVersion: 1}}, "invalidly"},
+		"no class":         {fake{d: Descriptor{Facts: catalog.Facts{ID: "nocls", Layout: "x", PatternSubject: SubjectPath}, ContractVersion: ContractVersion}}, "no class"},
+		"no layout":        {fake{d: Descriptor{Facts: catalog.Facts{ID: "nolay", Classes: []Class{Local}, PatternSubject: SubjectPath}, ContractVersion: ContractVersion}}, "no layout"},
+		"no subject":       {fake{d: Descriptor{Facts: catalog.Facts{ID: "nosub", Classes: []Class{Local}, Layout: "x"}, ContractVersion: ContractVersion}}, "pattern subject"},
+		"class twice":      {fake{d: Descriptor{Facts: catalog.Facts{ID: "twice", Classes: []Class{Local, Local}, Layout: "x", PatternSubject: SubjectPath}, ContractVersion: ContractVersion}}, "invalidly"},
+		"class out of set": {fake{d: Descriptor{Facts: catalog.Facts{ID: "oos", Classes: []Class{"mirror"}, Layout: "x", PatternSubject: SubjectPath}, ContractVersion: ContractVersion}}, "invalidly"},
 		// A format's settings are the document member named after it: the name must be free of
 		// the other members, and a schema needs the member to be stored in.
 		"named like a member": {fake{d: valid("storage")}, "named like a member of the repository document"},
 		"schema without a member": {fake{d: Descriptor{Facts: catalog.Facts{
 			ID: "setfmt", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectPath,
 			SettingsSchema: []byte(`{"type":"object","additionalProperties":false}`),
-		}, ContractVersion: 1}}, "no \"setfmt\" member"},
+		}, ContractVersion: ContractVersion}}, "no \"setfmt\" member"},
 	}
 	for name, c := range bad {
 		t.Run("R-ARCH-010 Register panics on "+name, func(t *testing.T) {

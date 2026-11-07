@@ -141,3 +141,27 @@ func containsPercent(s string) bool {
 	}
 	return false
 }
+
+func TestR_REPO_060_ParseContentAddress(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want Address
+		ok   bool
+	}{
+		{"/api/v1/projects/web/repositories/r1/content/a/b.bin", Address{FamilyContent, "", Repo{"web", "r1"}, false, "a/b.bin"}, true},
+		{"/api/v1/projects/web/repositories/r1/content/", Address{FamilyContent, "", Repo{"web", "r1"}, false, ""}, true},
+		{"/api/v1/projects/web/repositories/r1/content/a%2Fb", Address{FamilyContent, "", Repo{"web", "r1"}, false, "a%2Fb"}, true},
+		{"/api/v1/projects/web/repositories/r1~cache/content/x", Address{}, false},
+		{"/api/v1/projects/w%65b/repositories/r1/content/x", Address{}, false},
+		{"/api/v1/projects/web/repositories/r%31/content/x", Address{}, false},
+		{"/api/v1/projects/web/repositories/r1/items", Address{}, false},
+		{"/api/v1/projects/web/repositories/a/b/content/x", Address{}, false},
+		{"/api/v1/repositories/r1/content/x", Address{}, false},
+		{"/files/web/r1/x", Address{}, false},
+	} {
+		got, ok := ParseContentAddress(tc.in)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("ParseContentAddress(%q) = %+v, %v; want %+v, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/guided-traffic/trove/internal/qname"
 
@@ -56,7 +55,7 @@ func (c *Content) Register(r *httpserver.Router) {
 		r.Handle(ContentPattern(m), c)
 	}
 	r.HideMethods(contentBase, func(req *http.Request) bool {
-		_, _, ok := splitContentPath(req.URL.EscapedPath())
+		_, ok := qname.ParseContentAddress(req.URL.EscapedPath())
 		return ok && !bySession(req)
 	})
 }
@@ -75,34 +74,12 @@ func (c *Content) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}
-	key, rest, ok := splitContentPath(r.URL.EscapedPath())
+	addr, ok := qname.ParseContentAddress(r.URL.EscapedPath())
 	if !ok {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}
-	c.h.serve(w, r, key, rest, c.maxUpload)
-}
-
-// splitContentPath cuts "/api/v1/projects/<project>/repositories/<key>/content/<rest>" and decodes the name; rest stays
-// escaped. A project or key with an escape is no name (as in qname.ParseAddress).
-func splitContentPath(escaped string) (name qname.Repo, rest string, ok bool) {
-	tail, found := strings.CutPrefix(escaped, contentBase)
-	if !found {
-		return qname.Repo{}, "", false
-	}
-	project, tail, found := strings.Cut(tail, "/repositories/")
-	if !found || strings.Contains(project, "/") {
-		return qname.Repo{}, "", false
-	}
-	key, rest, found := strings.Cut(tail, contentMiddle)
-	if !found || strings.Contains(key, "/") {
-		return qname.Repo{}, "", false
-	}
-	name = qname.Repo{Project: project, Key: key}
-	if !name.Valid() {
-		return qname.Repo{}, "", false
-	}
-	return name, rest, true
+	c.h.serve(w, r, addr.Repo, addr.Rest, c.maxUpload)
 }
 
 // limitBody refuses a body above the limit of the UI's uploads. A declared length above it fails the first read, so

@@ -783,7 +783,12 @@ that names a repository, a project's service account or a project's CI mapping c
 ([ADR-016](#adr-016--repository-model-local-remote-virtual-inv-5), [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6)).
 The prefix rules, their overlap checks and their gaps go. A repository named outside its project, in a log, a metric, an
 audit event or a job target, is the qualified `<projectKey>/<repoKey>`. The schema is changed in place, without a
-migration path. The declaration of the API names the project from the path and the least role, so the shared step narrows
+migration path. The format contract (R-ARCH-008) changes with it: a format names a repository by its qualified
+`qname.Repo` (`RepoRef.Name`), the read scope, the link builder, the refusals and the request carry that name
+(`ReadScope.MayRead` and `Shape`, `LinkBuilder.File` and `Registry`, `Refusal.Name` and `CacheView`, `Request.Addressed()`),
+and `catalog.ValidID` is replaced by `qname.ValidFormat`: a changed meaning and a removal, so `formats.ContractVersion`
+rises from 1 to 2 under the rule of R-ARCH-025, every format is moved in the same change and
+`internal/formats/testdata/contract.txt` is regenerated. The declaration of the API names the project from the path and the least role, so the shared step narrows
 to the project itself ([ADR-146](#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own),
 superseded in part). Built.
 

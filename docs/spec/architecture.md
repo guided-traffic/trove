@@ -1178,10 +1178,11 @@ store.
 package formats
 
 // ContractVersion changes whenever a method below changes meaning or leaves (R-ARCH-025). The
-// contract is frozen at 1 since the end of M3 (E3.3, ADR-141): every change of it is an ADR, an
+// contract is frozen since the end of M3 (E3.3, ADR-141): every change of it is an ADR, an
 // addition keeps the version, and a breaking change raises it and moves every format in the same
-// change. A format declares the literal it was written against.
-const ContractVersion = 1
+// change. Version 2 is the project model's (ADR-156): the repository is named by its qualified name, the read scope, the
+// link builder and the refusals changed. A format declares the literal it was written against.
+const ContractVersion = 2
 
 // The types of other packages under the names a format spells them: one type each, no mirrors
 // (Q-ARCH-188, Q-ARCH-189). A format imports this package and nothing else of the core.
@@ -1718,8 +1719,13 @@ pattern subjects and `KindArtifact`, `KindMetadata`, `KindSearch`, `KindWrite` a
 the names a format spells; `TierLocal`, `TierRemoteCached` and `TierRemote` are the tiers of a merge part; `Current`,
 `Revalidated` and `Unknown` are the values of `Currency`.
 
-**The freeze.** The contract is frozen at `ContractVersion` 1 since the end of M3 (E3.3,
-[ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)).
+**The freeze.** The contract is frozen since the end of M3 (E3.3,
+[ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)); it was at `ContractVersion` 1 until the
+project model and is at **2** since ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project)):
+the repository a format names is the qualified `qname.Repo` (`RepoRef.Name`, no bare key), the read scope answers
+`MayRead` and `Shape` for a qualified repository, the link builder renders `File` and `Registry` addresses from it, a
+`Refusal` carries `Name` and `CacheView`, a `Request` reports `Addressed()`, and `catalog.ValidID` is gone (the shape of a
+format ID is `qname.ValidFormat`). Every registered format was moved in the same change.
 `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` holds the exported surface of `internal/formats` and of
 `internal/formats/catalog`, and the types of the two leaf packages the contract speaks in (`internal/vuln/advisory` with its
 constants, `internal/vuln/match`; ADR-150, Q-VULN-73), equal to
@@ -1942,8 +1948,8 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
   - an external process would add a network hop to every package request.
 - At start-up, `Register` panics, and the process exits, on any of these:
   - a duplicate or reserved ID;
-  - a `ContractVersion` mismatch (the contract is frozen at 1 since the end of M3, E3.3 and ADR-141;
-    a change that raises it moves every format in the same change, R-ARCH-025);
+  - a `ContractVersion` mismatch (the contract is frozen since the end of M3, E3.3 and ADR-141, at 2 since the project
+    model, ADR-156; a change that raises it moves every format in the same change, R-ARCH-025);
   - a route set that fails the kit's ambiguity check, which `Register` runs itself: every route has
     a name, a method, a template, a handler, a kind, an action and at least one example, and every
     entry of `Route.Examples` is matched by its own route and by no other route of the same method;
@@ -4172,7 +4178,7 @@ describe the policy from the first stable release on.
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
 | Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
 | Bastion interface | `bastion.InterfaceVersion`, an integer of its own, carried in `Trove-Bastion-Interface` ([bastion.md](bastion.md) R-BAS-009) | Main installation and Bastion talk only at the same version; every change of the interface raises it, guarded by its surface file; a release that raises it says so in its notes |
-| Format contract | `formats.ContractVersion`, frozen at 1 since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
+| Format contract | `formats.ContractVersion`, frozen since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)), at 2 since the project model ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
 
 **Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
 ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); Semantic Release sets each version from the
@@ -4210,7 +4216,9 @@ the core could use is not in it (Q-ARCH-256). From the freeze on:
 - *`ContractVersion` rises only when the meaning of an existing method changes* (an argument gains a rule, a result a
   case), a signature changes or a method or field leaves. The change is applied to every registered format in the same
   change, `Register` refuses a format written against the older number, and its ADR names what breaks. The narrowed
-  signatures of Q-ARCH-260 (a format names only its own repository, H-329) are the first such change on record.
+  signatures of Q-ARCH-260 (a format names only its own repository, H-329) were the first such change on record, and the
+  qualified repository name of the project model ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project))
+  raised the version to 2.
 - The conformance kit gains a check for every new behaviour in the change that adds it, and the written blocks of R-ARCH-008
   and R-ARCH-009 change with the code (`TestR_ARCH_008_TheWrittenContractEqualsTheCode`). A check added to the kit later
   applies to every format in the change that adds it.

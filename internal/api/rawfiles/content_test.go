@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 const contentDownload = "/api/v1/projects/it/repositories/generic-local/content/a.bin"
@@ -270,7 +271,7 @@ func TestContentRoutes(t *testing.T) {
 	})
 }
 
-func TestSplitContentPath(t *testing.T) {
+func TestR_REPO_060_TheContentPathHasOneParser(t *testing.T) {
 	for _, tc := range []struct {
 		in        string
 		key, rest string
@@ -288,10 +289,10 @@ func TestSplitContentPath(t *testing.T) {
 		{"/api/v1/projects/it/repositories/r1/content/x/..", "it/r1", "x/..", true},
 		{"/files/it/r1/x", "", "", false},
 	} {
-		name, rest, ok := splitContentPath(tc.in)
-		key := name.String()
-		if key != tc.key || rest != tc.rest || ok != tc.ok {
-			t.Errorf("splitContentPath(%q) = %q, %q, %v", tc.in, key, rest, ok)
+		addr, ok := qname.ParseContentAddress(tc.in)
+		key := addr.Repo.String()
+		if key != tc.key || addr.Rest != tc.rest || ok != tc.ok {
+			t.Errorf("ParseContentAddress(%q) = %q, %q, %v", tc.in, key, addr.Rest, ok)
 		}
 	}
 }

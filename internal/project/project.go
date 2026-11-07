@@ -1,13 +1,9 @@
 package project
 
-import (
-	"regexp"
-	"time"
-)
+import "time"
 
-// KeyRE is the rule of a project key (R-AUTHZ-026): 2 to 32 characters, lower-case
-// letters, digits and hyphens, starting with a letter. The key is immutable.
-var KeyRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
+// The rule of a project key (R-AUTHZ-026) is qname.ValidProjectKey: 2 to 32 characters, lower-case letters, digits and
+// hyphens, starting with a letter. The key is immutable.
 
 // Limits of the free-text fields, the CHECKs of the table project.
 const (
