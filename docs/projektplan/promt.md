@@ -90,7 +90,8 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    last tag, keep what is done and tested, and plan only the rest.
 5. Open findings: plan every finding of [section 8](#8--open-findings), and every task of
    [section 9](#9--owner-review-of-2026-11-06-tasks-and-open-questions) in its order, as a work package of this run,
-   in front of the phase's own packages. Before fixing one, reproduce it (a failing test first); a
+   in front of the phase's own packages. The registries of [section 10](#10--owner-tasks-of-2026-11-07-the-next-registries)
+   are the next phases, ahead of the next unit of FULL.md. Before fixing one, reproduce it (a failing test first); a
    finding that does not reproduce is removed with a one-line reason in the commit message. Remove each
    finding from section 8 in the commit that fixes it.
 6. Set the phase row and the started items to 🟡 in BETA.md or FULL.md.
@@ -211,6 +212,39 @@ Defects and gaps found outside a phase, waiting for a run (step 2, item 5). Each
 is, what was seen and how far it is confirmed: **confirmed** means checked in the code by the
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
+
+Found on 2026-11-07 by the owner on his installation (`wds18-k8s-main`, release v0.24.0):
+
+### Product
+
+- **F-73 · One oversized advisory record stops every OSV import of its ecosystem, and neither screen says why** (confirmed on the
+  owner's installation and in the code, 2026-11-07). The advisory sources screen showed OSV npm "Noch nicht importiert" with 58 failed
+  runs in a row and only "Das Advisory-Archiv überschreitet eine Grenze für nicht vertrauenswürdige Inhalte und wurde nicht
+  importiert"; the jobs screen showed `vuln-sync-osv` failed with the result `job_failed`. The cause, from the worker's log and the job
+  row (`trove.job.error`): `archive_limit: the archive crossed a limit or is not a valid zip archive: payload_too_large: entry
+  "MAL-2026-16369.json" is larger than 1048576 bytes`.
+  - **The limit.** `vulnerabilities.sources.osv.max_record_size` (default 1 MiB, `internal/config/vulnerabilities.go`) bounds each entry of
+    the archive (`zipLimits`, `scanArchive` in `internal/vuln/sync/archive.go`), and R-VULN-004 step 3 fails the whole run on any crossed
+    limit. Measured in the npm archive of 2026-11-07 (220 MB, 231,292 entries): p99.9 13,186 bytes; one entry above 1 MiB,
+    `MAL-2026-16369.json` with 1,148,610 bytes, a legitimate malicious-package advisory ("Malicious code in mathsbase"); the next two,
+    `MAL-2026-16368` and `-16367`, about 560 KB. So the npm data of the installation has been empty since that record appeared.
+  - **Why it matters beyond the size.** MAL records are generated from reported malicious packages, so a record's size is
+    attacker-influenced: failing the whole archive turns one large record into a denial of service of the vulnerability data of an
+    ecosystem.
+  - **The diagnosis gap.** The job row keeps the full cause (`{"code":"job_failed","detail":"…","attempt":1}`) and the API returns it as
+    `error` (`internal/api/v1/jobs_api.go`), but the jobs screen shows only the code. `trove.vuln_source_state.last_error` loses the
+    cause: `problemf(errs.CodeArchiveLimit, …, err)` writes only its own sentence into `detail`, so the advisory sources screen cannot
+    show the entry, its size, the limit or the key that sets it.
+  - **To build (the development agent's proposal of 2026-11-07, recorded as decisions on the spec page):** (1) an entry above
+    `max_record_size` is rejected and counted (the screen's "Abgelehnt"), logged at WARN with source, ecosystem, entry, size and
+    limit, and the run goes on; the limits of the archive as a whole (entry count, total inflated size, an invalid or ambiguous zip)
+    still end the run; a rejected record keeps its stored row (it was seen, so step 5 does not delete it); (2) default
+    `max_record_size` 8 MiB (about seven times the largest record measured); (3) `last_error.detail` names what was crossed (entry,
+    size, limit, configuration key), and the advisory sources screen shows it under the title; (4) the jobs screen shows a failed job's
+    `error.detail` and attempt. Spec R-VULN-004 steps 3 to 5, the configuration reference, README and the manual move with it.
+  - **How:** planned, built and checked by separate agents (section 10's working mode). Done when the npm import of the measured
+    archive completes with one rejected record, a test holds each of the four points, and both screens name the cause of a failed run.
+    The owner's installation needs no change of its values: it takes the fix with the release.
 
 Found on 2026-11-07 by the security audit of the avatar upload (R-API-055) and of the revocation journal (R-HA-054):
 
@@ -529,3 +563,46 @@ options and a recommendation, and what depends on it is not built before the ans
   changed migrations (database `trove` dropped and recreated, Valkey flushed, the owner's permission), so its S3 bucket
   still holds the blobs of the dropped database, which no garbage collection reaches (empty it except `ui-assets/` once
   the owner agrees).
+
+## 10 · Owner tasks of 2026-11-07: the next registries
+
+The owner set the next registries on 2026-11-07: Docker, then APT, each with pull-through **and** full mirror from the start. They
+come before the next unit of [FULL.md](FULL.md) (step 1, item 3) and after the findings of section 8; each is one phase. Set the
+matching FULL.md entry (block B F4 for Docker, the block D row "Debian / APT repositories" for APT) to 🟡 when the phase starts and
+to 🟢 with the evidence when it is done; remove the task here in the commit that closes it.
+
+**Working mode (owner, 2026-11-07), for F-73 and for every task of this section.** Planning, building and checking are done by
+separate agents; no agent checks its own work.
+
+1. **Plan.** A planning agent (`voltagent-qa-sec:architect-reviewer` or `voltagent-core-dev:api-designer` with the format's specialist)
+   writes the spec first: the format's spec page under [docs/spec/formats/](../spec/formats/) from its catalog page under
+   [docs/features/formats/](../features/formats/), the requirements with IDs, the decisions as decision blocks, and the cut into work
+   packages with their contracts (Go interfaces, OpenAPI, schema, chart values) and dependencies. The development agent reads the plan
+   against the catalog and the existing formats before anything is built.
+2. **Build.** One agent per work package (the format's specialist from the table of step 3), with disjoint directories or
+   `isolation: "worktree"`; each returns its changed files and test results and does not commit.
+3. **Check.** Agents that did not build the package: `voltagent-qa-sec:code-reviewer` over each package's diff,
+   `voltagent-qa-sec:security-auditor` (and `voltagent-qa-sec:penetration-tester` for what parses upstream or client input),
+   `voltagent-qa-sec:architect-reviewer` for the contracts, and a verifier that runs the real clients against the chart on kind. Every
+   finding goes back to a builder, and the checker reads the fix. The development agent integrates, runs the checks of step 3 and
+   commits.
+
+- **T-16 · Docker registry (OCI distribution), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
+  repositories for container images; the remote in both modes of R-REPO-050 (`pullThrough` and `mirror`). The planning agent takes
+  FULL.md F4 as the starting list (registry API under `/v2/`, token challenge, chunked uploads across replicas, multi-architecture
+  images, referrers; clients Docker CLI and Podman at least) and records which F4 items this phase builds and which stay in F4
+  (BuildX/BuildKit caches, ORAS, Cosign, WebAssembly artifacts, image vulnerability scanning), as a decision. Full mirror for a
+  registry cannot mean the whole upstream: what a mirror of Docker Hub or another registry discovers and keeps (named repositories,
+  tag patterns, platforms, the newest n tags), within R-REPO-051's bounds and R-REPO-052's storage limits, is the central decision of
+  the plan. Tests per step 3: integration (protocol over HTTP against the stack, the conformance kit) and e2e with the real clients
+  through local, remote in both modes and virtual repositories on several replicas, an upload interrupted by a drain, a mirror pass on
+  n replicas (R-REPO-058, R-REPO-059).
+- **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
+  repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
+  from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
+  `Packages` and its compressed forms, `by-hash`, `pool/`), signing of the indexes trove generates for local and virtual repositories
+  (key management is a security decision: where the key lives, rotation, how clients get it) and pass-through of the upstream's signed
+  indexes for a remote, flat repositories, and what a full mirror covers (suites, components, architectures, sources or not, the
+  bounds of R-REPO-051/052). Tests per step 3: integration and e2e with `apt-get update` and `apt-get install` in Debian and Ubuntu
+  containers through local, remote in both modes and virtual repositories, signature verification on the client included.
+
