@@ -47,6 +47,19 @@ decodes and validates it; the handlers check it against the restored database). 
 update is applied only when the comparator proves that it grants nothing beyond the current state, and the generic rule fails closed
 ([replay.go](../../internal/journal/replay.go), `ApplyUpdate`, tested in `TestApplyUpdate`).
 
+## Deleting from the target
+
+Retention, `delete` and the pool sweep are the only code that removes objects from the target, and only under the run's lease: each
+delete request is preceded by the fenced lease check ([retention/stage.go](../../internal/backup/retention/stage.go), `deleteBackup`,
+and `Sweeper.Fence`), and the target marker is compared with the installation ID and incarnation first (`CheckMarker`), so a second
+installation configured with the same target exits 4 before it deletes anything. The sweep deletes a pool object only if no remaining
+complete backup lists it, and it builds that set only from blob lists whose SHA-256 and entry count match their manifest
+(`Sweeper.Sweep`, `TestR_BAK_017_CorruptBlobListSkipsTheSweepWithAWarning`); a pool key outside the layout or out of order ends the
+sweep without a further delete. The manifest's own SHA-256 entries are in the same trust domain as the lists (H-46).
+
+`trove backup create` warns when a retained backup lists a key ID the new backup no longer uses (`EscrowWarnings`): it compares
+IDs only and says nothing about whether the key is in escrow. The listing prints `encryption` per backup, `none` included.
+
 ## What a restore trusts
 
 A restore trusts the manifest and the files of the backup it is told to restore (H-46). It checks formats, sizes, schema steps and the key

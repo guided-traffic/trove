@@ -154,11 +154,6 @@ func TestBackupCommands(t *testing.T) {
 		args []string
 	}{
 		{"create", []string{"create", "--trigger", "schedule", "--no-prune"}},
-		{"list", []string{"list", "--all", "--json"}},
-		{"verify", []string{"verify", "--latest", "--deep"}},
-		{"verify by id", []string{"verify", id}},
-		{"delete", []string{"delete", id, "--yes", "--allow-last"}},
-		{"prune", []string{"prune"}},
 		{"restore", []string{"restore", id, "--check", "--skip-revocation-journal"}},
 	}
 	for _, c := range cases {
@@ -169,6 +164,19 @@ func TestBackupCommands(t *testing.T) {
 			}
 		})
 	}
+	t.Run("R-BAK-016 delete without --yes and without a terminal answer is exit 2 and deletes nothing", func(t *testing.T) {
+		code, _, stderr := runCmd(t, env, "backup", "delete", id)
+		if code != 2 || !strings.Contains(stderr, "--yes") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
+	t.Run("R-BAK-019 verify needs exactly one of an ID, --latest and --all", func(t *testing.T) {
+		for _, args := range [][]string{{"verify"}, {"verify", "--latest", "--all"}, {"verify", id, "--all"}} {
+			if code, _, _ := runCmd(t, env, append([]string{"backup"}, args...)...); code != 2 {
+				t.Fatalf("%v: code %d", args, code)
+			}
+		}
+	})
 	t.Run("R-BAK-011 a configuration error is exit 2 and names the key", func(t *testing.T) {
 		code, _, stderr := runCmd(t, baseEnv(), "backup", "list")
 		if code != 2 || !strings.Contains(stderr, "backup.target.bucket") {

@@ -77,6 +77,8 @@ type Finding struct {
 	BackupID string      `json:"backupId"`
 	// Object is the digest or the target key.
 	Object string `json:"object"`
+	// Detail says what is wrong in words, for the log and --json; it is empty where Kind says it all.
+	Detail string `json:"detail,omitempty"`
 }
 
 // VerifyReport is the outcome of verify. A report with findings comes with [ErrFindings].
@@ -198,6 +200,9 @@ type Result struct {
 	IncompleteDeleted  []string   `json:"incompleteDeleted,omitempty"`
 	PoolObjectsDeleted int64      `json:"poolObjectsDeleted,omitempty"`
 	PoolBytesReclaimed int64      `json:"poolBytesReclaimed,omitempty"`
+	// PoolSweptAt is when a run last swept the pool; the sweep interval of R-BAK-017 counts from the newest value among
+	// the recorded results.
+	PoolSweptAt *time.Time `json:"poolSweptAt,omitempty"`
 }
 
 // Retention is the policy a run applied.

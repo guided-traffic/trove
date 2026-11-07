@@ -2,7 +2,7 @@
 
 Status: the contracts of the lane are built (phase 7, first step): the schema, the on-target format, the ports, the run record with
 its lease, the configuration, the command tree, the API operations, the metric families, the audit events and the registries.
-The operations themselves are not: `trove backup create|list|verify|delete|prune|restore`, `trove admin post-restore` and
+The operations themselves are not: `trove backup create|restore`, `trove admin post-restore` and
 `trove admin npm reinstate` are wired and answer "not built yet" (exit 1) until their work packages replace the constructors. The
 specification is [backup-and-restore.md](../spec/backup-and-restore.md); the decisions behind the cut are
 [ADR-157](../decisions.md#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own)
@@ -35,6 +35,10 @@ cmd/trove/
   admin_postrestore.go    admin post-restore          -> newPostRestorer
   admin_npm.go            admin npm reinstate         -> npmReinstate
 internal/backup/
+  listing/                the scan of a target (complete or incomplete), the blob-list reader that checks itself, `backup.Lister`; fixture/ writes test backups
+  retention/              policy, the pruning stage, the pool sweep, delete and prune runs, the marker check
+  verify/                 `backup.Verifier`, the shared-digest merge, the download throttle
+  runstoretest/           in-memory `RunStore` for the tests of the operations that write run rows
   doc.go exit.go state.go ports.go runner.go metrics.go      the contracts
   runstore.go handle.go slot.go                              the run record, the lease, the one-active rule
   format/                 backup ID, layout, marker, manifest (+ JSON Schema), blob list and its merge
@@ -177,3 +181,40 @@ system screens in [web/src/app/features/system/backups/](../../web/src/app/featu
   change; it does not copy the shape.
 - The AWS SDK is imported in `internal/blob/s3` only (which implements `target.Store` and imports the leaf `internal/backup/target`); pgx in `internal/meta/postgres` and `internal/cluster` only.
 - Migrations of the lane start at 46 and are expand steps; a table gets its export class in the same change.
+
+## Target operations: list, verify, delete, prune
+
+Code: [listing](../../internal/backup/listing), [retention](../../internal/backup/retention), [verify](../../internal/backup/verify);
+wiring in [cmd/trove/backup_targetops.go](../../cmd/trove/backup_targetops.go) and the three command files. Decisions:
+[Q-BAK-28, Q-BAK-29, Q-BAK-30](../spec/backup-and-restore.md#q-bak-28--trove-backup-list---json-is-flat-schemastep-and-keyids-stand-at-the-top-of-each-entry).
+
+| File | Responsibility |
+|---|---|
+| [listing/scan.go](../../internal/backup/listing/scan.go) | `Dirs` (one listing, no manifest read), `Scan` (newest first, manifests read and validated), `ReadManifest`, `DatabaseBytes` |
+| [listing/bloblist.go](../../internal/backup/listing/bloblist.go) | `CheckBlobList` (SHA-256 against the manifest), `OpenBlobList` (decoder that fails on a wrong entry count), `HashObject` |
+| [listing/lister.go](../../internal/backup/listing/lister.go) | `Lister`, `Describe` (manifest to `backup.Listing`) |
+| [retention/policy.go](../../internal/backup/retention/policy.go) | `Policy.Expired`: not among the newest `keep_last` and older than `keep_within`; the newest is never selected |
+| [retention/stage.go](../../internal/backup/retention/stage.go) | `Stage` implements `backup.PruneStage`: marker check, deletions (manifest first, fenced), incomplete directories, sweep when due, `retained`, escrow reminder |
+| [retention/sweep.go](../../internal/backup/retention/sweep.go) | `Sweeper`: proves the lists, merges keep set and pool listing in one pass, deletes in batches of 1,000 behind the fence |
+| [retention/runner.go](../../internal/backup/retention/runner.go) | `Runner`: the `delete` run (`Delete`, `Pruner()`): reads the facts, takes the slot, heartbeats, ends the row |
+| [retention/marker.go](../../internal/backup/retention/marker.go) | `CheckMarker` (exit 4 / exit 2), `RunSweepClock` (reads `poolSweptAt` from recorded results) |
+| [verify/verify.go](../../internal/backup/verify/verify.go) | `Verifier`: manifest and file checks, then the pool check over all selected backups at once |
+
+How the create pipeline calls the stage: build a `retention.Stage` (store, layout, policy, `SweepInterval`, `Facts`, `Audit`, `Clock`)
+and call `Prune(ctx, handle, &result)` in state `pruning`. The stage fills `Retention`, `Retained`, the deletion counters and
+`PoolSweptAt`, appends warnings and sets `Outcome` to `completed_with_warnings` when there are any; `result.BackupID` must be the run's
+own ID (its directory is never an "incomplete" one, and its key IDs are what the escrow reminder compares with). An error means nothing
+further was deleted.
+
+**How to add a check to verify.** Add the finding in `checkFiles` (a file of the backup) or `checkObject` (a pool object), give it a
+`backup.FindingKind` only if the four of R-BAK-019 do not fit, and add a case to `verify_test.go`.
+
+**Tests.** Unit tests run against `targettest.Mem`; `listing/fixture` writes whole backups (real digests, a valid manifest) and
+`runstoretest.Mem` stands in for the run table. A store wrapper that reorders `List` produces the out-of-order key of R-BAK-017.
+[test/integration/backup/target_ops_test.go](../../test/integration/backup/target_ops_test.go) runs retention, sweep, list, verify and
+delete through the real adapter against the stack's S3 store (encryption mode `none`: the stack's store rejects SSE-S3).
+
+Not built: a Facts implementation for the delete runs reads `installation_id`, `incarnation` and the `restore_in_progress` key in
+[backup_targetops.go](../../cmd/trove/backup_targetops.go) and does not check the schema step; the create package's `Facts` replaces it.
+R-BAK-027 (client-side encryption) is P1 and left: `trove backup list` prints the field when a manifest carries it.
+

@@ -1235,7 +1235,7 @@ empty). It writes nothing. `--json` prints the same as an array of objects.
 
 Acceptance criteria:
 
-- After two runs, `trove backup list --json | jq length` is 2 and the newest entry's `schema.step`
+- After two runs, `trove backup list --json | jq length` is 2 and the newest entry's `schemaStep`
   equals `trove migrate status`'s highest applied step.
 
 ### R-BAK-019 · Verifying backups
@@ -1693,7 +1693,7 @@ Priority: **MVP** · Covers: OPS-033
   offline copy. Storing it next to the backups would hand both halves to whoever reads the
   target.
 - **Every key a retained backup needs.** The manifest lists `secrets.keyIds`; `trove backup list
-  --json | jq -r '.[].secrets.keyIds[]' | sort -u` prints every key ID that retained backups need.
+  --json | jq -r '.[].keyIds[]' | sort -u` prints every key ID that retained backups need.
   After a rotation (R-HA-027) a retired key stays in escrow until no retained backup lists it.
 - The same rule covers the age identity of R-BAK-027 (P1) and the database and S3 credentials the
   restore needs; the restore itself needs no secret that the release does not already have.
@@ -2214,6 +2214,55 @@ A conditional create sends `If-None-Match: *` (PutObject, CompleteMultipartUploa
 **Rationale:** The target needs the same classification of store answers as the blob store, and the backup lane must run against stores without conditional writes (older MinIO, Ceph, Garage). The development agent would revisit this when the lane needs an atomic create for correctness, which would make a store without conditional writes a configuration error.
 
 **Applied:** R-BAK-002, R-BAK-015, R-BAK-026; `internal/blob/s3/target*.go`, `internal/backup/target/targettest/conformance.go`, `test/integration/backup/target_adapter_test.go`, `docs/developer/backup.md`, `docs/security/backup-and-restore.md`.
+
+### Q-BAK-28 · `trove backup list --json` is flat: `schemaStep` and `keyIds` stand at the top of each entry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Mirror the manifest | `schema.step`, `secrets.keyIds` nested as in `manifest.json` | The acceptance criteria of R-BAK-018 and R-BAK-028 already say `schema.step` and `secrets.keyIds` | A listing line is a summary, not a manifest; `backup.Listing` (the contract every consumer built against) is already flat; the incomplete entries would carry empty objects |
+| (b) Flat summary: `schemaStep`, `keyIds`, `incarnation`, `options`, `encryption` beside `backupId` and `complete` (chosen) | `backup.Listing` as it is | One shape for the CLI and the Go callers; fields that do not exist for an incomplete directory are omitted | The two acceptance criteria are reworded |
+
+**Choice:** (b). `databaseBytes` is the sum of the table files' `compressedBytes` (what the database part occupies on the target); `listing.DatabaseBytes` is the one definition that the listing, the `retained` records and a create run's result share. A manifest that cannot be read (unreadable, naming another backup, or of a higher format) fails the whole listing: retention and the sweep could not tell what to keep, and a listing that hid such a backup would mislead. A higher format is exit 6.
+
+**Rationale:** Nothing reads the nested form yet, and the flat form is what the contract already is. The development agent would revisit this if a consumer wants the manifest's own shape; then `--json --manifests` is the extension, not a change of this array.
+
+**Applied:** R-BAK-018 and R-BAK-028 acceptance criteria; `internal/backup/listing`.
+
+### Q-BAK-29 · A verify run stays in state `starting`; what verify and delete do with what they cannot judge
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Give verify phases | Map checking onto `copying` and `finalizing` | The UI shows movement | The states are the phases of a create run (R-BAK-009); a verify showing `copying` would make a reader think blobs move |
+| (b) One state, progress by lease renewal (chosen) | The row is `operation = 'verify'`, state `starting` until it ends `completed` (also with findings) or `failed`; its `result` is the report (`verified`, `findings`), so `trove_backup_last_verify_findings` is the number of findings | No new states; the index ignores verify | A long deep verify reads "starting" in the run list |
+
+**Choice:** (b), and for the cases the requirement text leaves open:
+
+- A manifest that does not parse, a table file or blob list that is missing or differs, and a manifest naming another installation than the target marker are findings (`missing`, `size_mismatch`, `file_checksum_mismatch`; `detail` says why). A manifest of a higher format is exit 6 and ends the run `failed` with `format_unknown`. After an adoption (`adoptedAt` set) the installation comparison is skipped, because the marker then names the adopting installation and the backups of its predecessor stay in the target. A blob list that failed its check is not read, so its pool entries produce no findings.
+- A digest that several verified backups list is checked once (`HeadObject`, with `--deep` one download) and reported for every backup that lists it, by merging the sorted lists. `--bytes-per-second` throttles the downloads of `--deep` across all workers; the table files are not throttled.
+- `delete` and `prune` are `operation = 'delete'` runs; the move to `pruning` is their only phase. A refusal (unknown ID, the only complete backup without `--allow-last`, no marker on the target) is exit 2 and leaves a `failed` row with the code, after the slot is taken and before anything is written. A foreign marker is exit 4 and writes nothing.
+
+**Rationale:** Each rule makes the report say what is wrong without a human reading code, and none of them changes what is written to the target. The development agent would revisit the verify state when the UI wants a progress bar for deep verification.
+
+**Applied:** R-BAK-019, R-BAK-016; `internal/backup/verify`, `internal/backup/retention`, `backup.Finding.Detail`.
+
+### Q-BAK-30 · The sweep builds its keep set only from blob lists it has proven, and a skipped or stopped sweep is a warning
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Trust the lists | Merge the lists as they are and delete what they lack | One download per list | A list that is truncated at a line boundary or replaced would delete live pool objects of a retained backup; the damage is found by the next restore |
+| (b) Prove the lists first (chosen) | Before the first delete request every retained backup's list is downloaded and hashed against `blobs.sha256`, and the entry count at the end of the merge must equal `blobs.referenced` | Silent truncation cannot reach the delete request; the cost is a second read of lists that are about 40 bytes per blob compressed | Two reads of every list per sweep |
+
+**Choice:** (b). A list that fails the proof skips the sweep with a warning naming the backup, and the run ends `completed_with_warnings`: the backup the run wrote is complete and valid, and `trove backup verify` names the damaged list. A sweep that a foreign or out-of-order pool key stopped is also a warning, drops the batch not yet sent, and leaves `poolSweptAt` unset so that the next run sweeps again. A completed sweep records `poolSweptAt` in the result; "at least every `sweep_interval`" counts from the newest value among the last 50 successful create and delete runs (`retention.RunSweepClock`), and a pool that was never swept is swept. The sweep runs on an empty keep set (after `delete --allow-last`), which empties the pool: that is what the operator asked for.
+
+**Rationale:** Retention deletes only what a verified manifest-and-list pair proves unreferenced, which is the property R-BAK-017 states. The development agent would revisit this if the lists grow so large that the second read matters; the manifest could then carry a per-list digest of the sorted entries to check in the same pass.
+
+**Applied:** R-BAK-016, R-BAK-017; `internal/backup/retention/sweep.go`, `stage.go`, `marker.go`; `backup.Result.PoolSweptAt`.
 
 ### Q-BAK-36 · The backups screen refreshes as one load on the status screen's interval, and keeps pages the user has loaded
 

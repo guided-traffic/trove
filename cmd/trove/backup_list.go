@@ -2,9 +2,32 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/backup"
+	"github.com/guided-traffic/trove/internal/backup/format"
+	"github.com/guided-traffic/trove/internal/backup/listing"
 )
+
+// encryptionText is the encryption column of the listing: the server-side mode, "none" included (R-BAK-026), and the
+// client-side layer when there is one (R-BAK-027).
+func encryptionText(e *format.Encryption) string {
+	if e == nil {
+		return "unknown"
+	}
+	out := e.SSE
+	if e.ClientSide != nil {
+		out += "+" + *e.ClientSide
+	}
+	return out
+}
+
+func remoteCachesText(o *format.Options) string {
+	if o != nil && o.ExcludeRemoteCaches {
+		return "  excludes-remote-caches"
+	}
+	return ""
+}
 
 // backupListCmd is trove backup list (R-BAK-018). Owned by the target work package: it replaces newLister.
 func backupListCmd(args []string, s streams) error {
@@ -40,13 +63,28 @@ func backupListCmd(args []string, s streams) error {
 		if !l.Complete {
 			state = "incomplete"
 		}
-		if _, err := fmt.Fprintf(s.stdout, "%s  %s  %s  trove %s  step %d  db %d B  blobs %d (%d B)  copied %d  damaged %t\n",
-			l.BackupID, state, l.SnapshotAt.UTC().Format("2006-01-02T15:04:05Z"), l.TroveVersion, l.SchemaStep, l.DatabaseBytes, l.BlobCount, l.BlobBytes, l.BlobsCopied, l.Damaged); err != nil {
+		if !l.Complete {
+			if _, err := fmt.Fprintf(s.stdout, "%s  %s\n", l.BackupID, state); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := fmt.Fprintf(s.stdout, "%s  %s  %s  trove %s  step %d  db %d B  blobs %d (%d B)  copied %d  damaged %t  keys %s  incarnation %s  encryption %s%s\n",
+			l.BackupID, state, l.SnapshotAt.UTC().Format("2006-01-02T15:04:05Z"), l.TroveVersion, l.SchemaStep, l.DatabaseBytes, l.BlobCount, l.BlobBytes,
+			l.BlobsCopied, l.Damaged, strings.Join(l.KeyIDs, ","), l.Incarnation, encryptionText(l.Encryption), remoteCachesText(l.Options)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// newLister builds the Lister. The target work package replaces the body.
-func newLister(*backupEnv) (backup.Lister, error) { return backup.NotBuilt{Operation: "list"}, nil }
+// newLister builds the Lister over the target.
+func newLister(env *backupEnv) (backup.Lister, error) {
+	ctx, stop := env.context()
+	defer stop()
+	t, layout, err := openTarget(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	return &listing.Lister{Store: t, Layout: layout}, nil
+}

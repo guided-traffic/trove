@@ -28,6 +28,11 @@ func backupDeleteCmd(args []string, s streams) error {
 		return err
 	}
 	env.json = *asJSON
+	if !*yes {
+		if err := confirm(s, "Delete backup "+string(id)+" and sweep the pool?"); err != nil {
+			return err
+		}
+	}
 	deleter, err := newDeleter(env)
 	if err != nil {
 		return err
@@ -75,8 +80,14 @@ func printPruneResult(env *backupEnv, res *backup.Result) error {
 	return err
 }
 
-// newDeleter builds the Deleter. The target work package replaces the body.
-func newDeleter(*backupEnv) (backup.Deleter, error) { return backup.NotBuilt{Operation: "delete"}, nil }
+// newDeleter builds the Deleter.
+func newDeleter(env *backupEnv) (backup.Deleter, error) { return newRetentionRunner(env) }
 
-// newPruner builds the Pruner. The target work package replaces the body.
-func newPruner(*backupEnv) (backup.Pruner, error) { return backup.NotBuilt{Operation: "prune"}, nil }
+// newPruner builds the Pruner.
+func newPruner(env *backupEnv) (backup.Pruner, error) {
+	r, err := newRetentionRunner(env)
+	if err != nil {
+		return nil, err
+	}
+	return r.Pruner(), nil
+}
