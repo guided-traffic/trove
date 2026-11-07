@@ -133,6 +133,12 @@ a missing member, an oversized value or a digest that is not the expected shape 
   which decide a tier's first match, is never one. Tested in `TestR_CI_020_TheIssuerComparator`, `TestR_CI_020_TheMappingComparator` and
   `TestR_CI_020_IssuerAndMappingEntriesReplayIntoTheRestoredDatabase`, which also shows that a merge request pipeline gets
   `no_matching_mapping` after a replayed deletion of the shadowing mapping.
+- **Declared bindings.** `trove migrate` applies two kinds of configuration-declared access: `authz.role_bindings` and `ci.issuers`
+  (policies, repository settings and the authz settings are not written by it). A replayed unbinding is recorded in
+  `system_state.journal_suppressed_bindings`; `ApplyDeclared` ([declared.go](../../internal/authz/declared.go)) then does not
+  re-create the binding from an older configuration, logs it, and lists it in the outcome, until an administrator binds the role
+  again through the API (Q-AUTHZ-235; `TestR_AUTHZ_010_DeclaredBindingRemovedByReplayIsNotBroughtBack`). The CI issuers have no such
+  mark: [H-565](ci-federation.md#h-565--a-replayed-disable-of-a-configuration-declared-ci-issuer-is-undone-by-trove-migrate-when-the-restore-runs-with-an-older-configuration).
 - **Credential.** The shipper writes with the runtime credential and deletes nothing. The reader of a restore uses the credentials file
   of [open.go](../../internal/journal/replay/open.go) and lists object versions with it.
 

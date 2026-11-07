@@ -60,7 +60,7 @@ func TestR_HA_025_PostRestoreRunsTheStepsAndReplaysTheJournal(t *testing.T) {
 	}
 
 	// A build without the fix-ups refuses rather than leave a stale keyspace behind.
-	if _, err := mk(nil).PostRestore(ctx, backup.PostRestoreOptions{RestoredTo: restorePoint}); err == nil || !strings.Contains(err.Error(), "no restore fix-up") {
+	if _, err := mk([]fixup.Fixup{}).PostRestore(ctx, backup.PostRestoreOptions{RestoredTo: restorePoint}); err == nil || !strings.Contains(err.Error(), "no restore fix-up") {
 		t.Fatalf("PostRestore without fix-ups = %v, want a refusal", err)
 	}
 	if e.revokedAt(id) {

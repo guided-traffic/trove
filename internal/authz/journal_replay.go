@@ -87,6 +87,10 @@ func replayUnbound(ctx context.Context, qs *q.Queries, env journal.Env, tx meta.
 		return journal.Result{}, err
 	}
 	if n > 0 {
+		// trove migrate must not bring the binding back from a configuration that still declares it (Q-AUTHZ-235).
+		if err := qs.JournalSuppressBinding(ctx, suppressionKey(e.Role, e.PrincipalID)); err != nil {
+			return journal.Result{}, err
+		}
 		return o.Result(journal.Applied, subject), env.Notify(tx, cluster.AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: e.PrincipalID})
 	}
 	exists, err := qs.JournalRoleBindingExists(ctx, e.PrincipalID)

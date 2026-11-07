@@ -498,6 +498,44 @@ func (q *Queries) JournalSetRestoredAt(ctx context.Context) error {
 	return err
 }
 
+const journalSuppressBinding = `-- name: JournalSuppressBinding :exec
+INSERT INTO system_state (key, value) VALUES ('journal_suppressed_bindings', jsonb_build_array($1::text))
+ON CONFLICT (key) DO UPDATE
+   SET value = CASE WHEN jsonb_exists(system_state.value, EXCLUDED.value ->> 0) THEN system_state.value ELSE system_state.value || EXCLUDED.value END,
+       updated_at = now()
+`
+
+// A role binding that a replay removed ("<role>|<principal id>"). trove migrate does not apply a declared binding that is
+// marked until an administrator binds it again (R-AUTHZ-010, Q-AUTHZ-235).
+func (q *Queries) JournalSuppressBinding(ctx context.Context, entry string) error {
+	_, err := q.db.Exec(ctx, journalSuppressBinding, entry)
+	return err
+}
+
+const journalSuppressedBindings = `-- name: JournalSuppressedBindings :many
+SELECT e::text AS entry FROM system_state, jsonb_array_elements_text(system_state.value) e WHERE key = 'journal_suppressed_bindings'
+`
+
+func (q *Queries) JournalSuppressedBindings(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, journalSuppressedBindings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var entry string
+		if err := rows.Scan(&entry); err != nil {
+			return nil, err
+		}
+		items = append(items, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const journalTokenState = `-- name: JournalTokenState :many
 
 SELECT t.id::text AS id, t.type, (t.revoked_at IS NOT NULL)::boolean AS revoked
@@ -534,6 +572,18 @@ func (q *Queries) JournalTokenState(ctx context.Context, id string) ([]JournalTo
 		return nil, err
 	}
 	return items, nil
+}
+
+const journalUnsuppressBinding = `-- name: JournalUnsuppressBinding :exec
+UPDATE system_state
+   SET value = COALESCE((SELECT jsonb_agg(to_jsonb(e)) FROM jsonb_array_elements_text(system_state.value) e WHERE e <> $1::text), '[]'::jsonb),
+       updated_at = now()
+ WHERE key = 'journal_suppressed_bindings' AND jsonb_exists(value, $1::text)
+`
+
+func (q *Queries) JournalUnsuppressBinding(ctx context.Context, entry string) error {
+	_, err := q.db.Exec(ctx, journalUnsuppressBinding, entry)
+	return err
 }
 
 const journalUserState = `-- name: JournalUserState :many

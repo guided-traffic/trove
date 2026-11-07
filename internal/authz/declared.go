@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -58,6 +59,9 @@ type DeclaredOutcome struct {
 	Unbound []string
 	// GroupsCreated are the declared groups that did not exist.
 	GroupsCreated []string
+	// Suppressed are the declared bindings that a journal replay removed and that were not applied: an administrator
+	// binds them again to confirm (Q-AUTHZ-235).
+	Suppressed []string
 }
 
 // Changed reports whether the application wrote anything.
@@ -122,8 +126,28 @@ func (s *Service) ApplyDeclared(ctx context.Context, declared []config.AuthzRole
 		if err != nil {
 			return err
 		}
+		marked, err := qs.JournalSuppressedBindings(ctx)
+		if err != nil {
+			return err
+		}
 		var changes []declaredChange
 		for _, d := range want {
+			if slices.Contains(marked, suppressionKey(string(d.role), d.id)) {
+				// A replay removed this binding after the restore point. A configuration that still declares it, for
+				// instance because the restore runs with older values, must not bring it back (R-HA-054); a binding
+				// that exists is an administrator's confirmation and is taken over as usual.
+				src, err := qs.AuthzBindingSource(ctx, q.AuthzBindingSourceParams{Role: string(d.role), PrincipalID: d.id})
+				if err != nil {
+					return err
+				}
+				if len(src) == 0 {
+					out.Suppressed = append(out.Suppressed, d.String())
+					continue
+				}
+				if err := qs.JournalUnsuppressBinding(ctx, suppressionKey(string(d.role), d.id)); err != nil {
+					return err
+				}
+			}
 			c, err := s.declare(ctx, tx, qs, d, &out)
 			if err != nil {
 				return err
@@ -153,6 +177,9 @@ func (s *Service) ApplyDeclared(ctx context.Context, declared []config.AuthzRole
 	})
 	return out, err
 }
+
+// suppressionKey is the entry of system_state journal_suppressed_bindings for a role and a principal ID.
+func suppressionKey(role, principalID string) string { return role + "|" + principalID }
 
 // resolveDeclared finds the principal of every declaration and creates the
 // missing groups. It collects every problem before it fails, so one run of

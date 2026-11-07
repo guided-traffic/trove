@@ -5337,6 +5337,20 @@ Status: Decided by the development agent — selected from the options below; th
 **Rationale:** R-AUTHZ-031 says suspension "writes its audit event as any policy change does"; that event carries a required journal entry, which would ship an object for every replayed change. The replay lines and the single summary event are the record. Revisit when audit events may be written without an entry.
 **Applied:** R-AUTHZ-031 comparators in `internal/authz/journal_replay.go`, `internal/project/journal_replay.go`, `internal/auth/token/journal_replay.go`; the identity entries of `group.members.changed` and `user.groups.synced` carry IDs now (`internal/auth/principal`).
 
+### Q-AUTHZ-235 · A binding that a replay removed is not re-created by trove migrate
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) The replay marks the removed binding in `system_state`; `ApplyDeclared` skips a marked binding that does not exist, logs it and reports it, and an API bind clears the mark | Fail-closed, no new table, no new command; a restore with an older configuration cannot bring the access back | A binding the configuration declares again on purpose stays unapplied until it is bound through the API |
+| (b) `trove migrate` fails when the configuration declares what the journal removed | Loud | Blocks the final `helm upgrade` of a restore |
+| (c) Record it as a gap only | No code | The owner's rule: a restore never brings back removed access |
+
+**Choice:** (a). Only the declared role bindings and the CI issuers are written by `trove migrate`; the issuers stay with H-565.
+**Rationale:** the mark is written in the transaction of the replayed removal and read in the transaction of `ApplyDeclared`, both as the owner. Revisit when the CI issuers get the same mark.
+**Applied:** `internal/authz/declared.go`, `bindings.go`, `journal_replay.go`, `internal/app/migrate_declared.go`, `queries/journal.sql`.
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

@@ -134,3 +134,20 @@ DELETE FROM replica;
 INSERT INTO system_state (key, value)
 VALUES ('restored_at', to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+
+-- name: JournalSuppressBinding :exec
+-- A role binding that a replay removed ("<role>|<principal id>"). trove migrate does not apply a declared binding that is
+-- marked until an administrator binds it again (R-AUTHZ-010, Q-AUTHZ-235).
+INSERT INTO system_state (key, value) VALUES ('journal_suppressed_bindings', jsonb_build_array(sqlc.arg(entry)::text))
+ON CONFLICT (key) DO UPDATE
+   SET value = CASE WHEN jsonb_exists(system_state.value, EXCLUDED.value ->> 0) THEN system_state.value ELSE system_state.value || EXCLUDED.value END,
+       updated_at = now();
+
+-- name: JournalUnsuppressBinding :exec
+UPDATE system_state
+   SET value = COALESCE((SELECT jsonb_agg(to_jsonb(e)) FROM jsonb_array_elements_text(system_state.value) e WHERE e <> sqlc.arg(entry)::text), '[]'::jsonb),
+       updated_at = now()
+ WHERE key = 'journal_suppressed_bindings' AND jsonb_exists(value, sqlc.arg(entry)::text);
+
+-- name: JournalSuppressedBindings :many
+SELECT e::text AS entry FROM system_state, jsonb_array_elements_text(system_state.value) e WHERE key = 'journal_suppressed_bindings';

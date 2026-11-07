@@ -47,6 +47,10 @@ func DeclaredState(cfg *config.Config, instance string, log *slog.Logger) func(c
 		}
 		log.Info("role bindings of the configuration applied", "declared", len(cfg.Authz.RoleBindings),
 			"bound", out.Bound, "taken_over", out.Adopted, "unbound", out.Unbound, "groups_created", out.GroupsCreated)
+		if len(out.Suppressed) > 0 {
+			log.Warn("declared role bindings were not applied: a journal replay removed them after the restore point; bind them through the API to confirm",
+				"bindings", out.Suppressed)
+		}
 		return applyDeclaredCIIssuers(ctx, s, changes, recorder, cfg, log)
 	}
 }
