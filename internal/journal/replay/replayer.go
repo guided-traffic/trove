@@ -77,9 +77,11 @@ func (r *Replayer) Replay(ctx context.Context, opts journal.ReplayOptions) (*jou
 			return sum, fmt.Errorf("journal: replaying %s %s: %w", o.Event, o.ID, err)
 		}
 		sum.Add(res)
-		line(opts, res.Line())
-		if len(res.Detail) > 0 && (res.Outcome == journal.Suspended || res.Outcome == journal.Revived) {
-			line(opts, "  "+string(res.Detail))
+		for _, r := range res.Flat() {
+			line(opts, r.Line())
+			if len(r.Detail) > 0 && (r.Outcome == journal.Suspended || r.Outcome == journal.Revived) {
+				line(opts, "  "+string(r.Detail))
+			}
 		}
 	}
 	if err := r.finish(ctx, sum); err != nil {

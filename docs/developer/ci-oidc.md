@@ -397,6 +397,7 @@ reach). The gaps are H-418 to H-420 of [ci-federation.md](../security/ci-federat
 | [exchange_service.go](../../internal/ci/exchange_service.go) | `ExchangeService`, `ExchangeOptions`, `NewExchange`; `CheckAddress` with `exempt_cidrs`, `Refused`, `Exchange` (steps 1 and 2, the subject budget), the mapping of errors to reasons, the metrics, the log line and the denial event |
 | [exchange_request.go](../../internal/ci/exchange_request.go) | step 1: the parameters (Q-CI-41) |
 | [exchange_tx.go](../../internal/ci/exchange_tx.go) | the transaction: `LockShareTx`, the comparison with the copies, the second validation and `SetTx` on a mismatch, `configuration_changed`, the restore cut-off and the `jti` upsert, the bundle, the scope, `ComputeTTL`, `IssueCITx`, the issuance record, `ci.exchange.succeeded`; the statements behind `exchangeQueries` |
+| [restored.go](../../internal/ci/restored.go) | the CI parts of a restore (R-CI-029): `predatesRestore`, the cut-off of R-CI-018 the transaction applies to a single-use issuer, and `restoredAtOf`; the note of what a restore does with each piece of CI state |
 | [exchange_scope.go](../../internal/ci/exchange_scope.go) | `GrantIndex`, `GrantIndexes`, `GrantIndexFunc`; `narrow`: the stored scope, `NarrowFrozen` with the index as `held` (an unknown key is `scope_not_granted` like any item the grants do not hold, Q-CI-51), the answer's `scope` |
 | [exchange_denials.go](../../internal/ci/exchange_denials.go) | the per-replica aggregation of `ci.exchange.denied` (R-CI-021): per address, reason and minute, a timer the first entry arms, at most 10,000 addresses, the flush at shutdown |
 | [ttl.go](../../internal/ci/ttl.go) | `TTLInput`, `ComputeTTL` with the reason of its cause (moved out of exchange.go); `ComputeLifetime`, `Lifetime` and `tokenOwner`: the token's lifetime from its owner's bound and the window of every other contribution (Q-CI-47) |
@@ -610,3 +611,9 @@ The reference pipeline of R-CI-028 with the real npm and .NET clients against th
   error codes for a service option left nil (the issuer service of `trove migrate`) and for the task handlers.
 - The `nuget.config` of the specification's Examples names `nuget-internal` as a source with credentials (Q-CI-44), found by the first run of
   the pipeline.
+
+## The CI entries of the revocation journal
+
+The issuer and mapping entries of R-CI-020 are replayed by [journal_replay.go](../../internal/ci/journal_replay.go) (the backup lane's
+package E); [backup.md](backup.md#exposure-and-ci-in-the-journal-package-e) describes the handler, the comparators and their tests.
+`ci.token.revoked` is replayed by `internal/auth/token`.

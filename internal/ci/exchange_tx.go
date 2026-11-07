@@ -213,8 +213,7 @@ func (s *ExchangeService) replay(ctx context.Context, qs exchangeQueries, row Is
 		if err != nil {
 			return s.unavailable(err)
 		}
-		skew := time.Duration(row.ClockSkewSeconds) * time.Second
-		if us > 0 && !v.IssuedAt.After(time.UnixMicro(us).Add(skew)) {
+		if predatesRestore(v.IssuedAt, restoredAtOf(us), time.Duration(row.ClockSkewSeconds)*time.Second) {
 			return refuse(reason.SubjectTokenPredatesRestore, "the subject token was issued before the last restore of trove finished; request a new one")
 		}
 	}

@@ -2154,14 +2154,26 @@ reference to a PEM bundle, not key material.
   step, because its jobs already fall through. Mappings of other tiers are not touched, because
   tiers combine by union. An issuer needs no such step: `iss` selects exactly one issuer (R-CI-005), and a disabled
   issuer answers every exchange with `issuer_disabled`.
+- **Subject and idempotence.** Replay finds an issuer or a mapping by its ID and acts only when the
+  restored mapping belongs to the entry's CI issuer and tier; a missing or foreign object is `subject
+  unknown`. A disable or delete entry of an object that is disabled already, and an update entry
+  whose after-state the object already has, are `already in effect`, so a resumed replay reports
+  them so ([endpoints.md](endpoints.md) Q-EP-77 decides the same for exposure rules). Like every
+  replayed change, the disables and the token revocations notify their change areas (`ci_mappings`,
+  `authz`, `auth`) and write no audit event of their own
+  ([authorization.md](authorization.md) Q-AUTHZ-232); `ci.token.revoked` is replayed with
+  `token.revoked` by the identity domain.
 
 **Comparators.** `narrows(current, after)` of R-HA-054 is true only when every field in the table
 is equal in `current` and `after` or differs in the direction the table allows. Any other
 difference, including a field the comparator does not know, makes it false. Case 2's test of
 R-HA-054, whether the journaled before-state is contained in the after-state, is
-`narrows(after, before)` under the same rules. `description` is ignored, and replay never changes
-identifying fields: `name`, `issuer` and `kind` of an issuer; `name`, CI issuer and tier of a
-mapping.
+`narrows(after, before)` under the same rules. `description` and the record's `version` (its ETag,
+which every write moves) are ignored, and replay never changes identifying fields: `name`, `issuer`
+and `kind` of an issuer; `name`, CI issuer and tier of a mapping. These, the record's `id`, and an
+issuer's `source` and `removedFromConfiguration` must be equal. A journaled record is read only when it
+has exactly the members the producer writes, each of its type; a missing member is a field the
+comparator cannot tell and makes it false like an unknown one. Lists compare as sets.
 
 | Object | Field | Narrowing difference allowed |
 |---|---|---|

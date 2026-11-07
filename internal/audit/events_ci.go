@@ -12,8 +12,8 @@ package audit
 //
 // Flagged `journal: revocation` with a required entry (R-CI-020, R-OPS-014): ci.token.revoked,
 // ci.issuer.disabled, ci.issuer.deleted, ci.mapping.disabled, ci.mapping.deleted, ci.issuer.updated
-// and ci.mapping.updated. Their producers (W1, W3, W5) must supply the entry; the replay of journal
-// entries is not built anywhere yet (beta phase 7), the entries are. Not journaled: .created and
+// and ci.mapping.updated. Their producers (W1, W3, W5) must supply the entry; internal/ci/journal_replay.go
+// replays the issuer and mapping events, internal/auth/token ci.token.revoked. Not journaled: .created and
 // .enabled (they grant or only record, and replay never grants), ci.exchange.*, ci.keys.*,
 // ci.package_ownership.* and ci.job_token.lookup.
 const (

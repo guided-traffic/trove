@@ -5,7 +5,8 @@ package audit
 // records them in the transaction of the change, after the change log raised the
 // epoch, so details.epoch is the epoch of the write. An update and a deletion can
 // narrow what an endpoint exposes, so both carry the revocation-journal flag from
-// their registration on: a restore re-applies them (R-HA-054); the replay is M5.
+// their registration on: a restore re-applies them (R-HA-054) through the handler of
+// internal/authz/journal_replay_exposure.go.
 
 // exposureStateSchema is the access-bearing state of a rule (R-EP-020).
 const exposureStateSchema = `{

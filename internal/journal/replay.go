@@ -43,6 +43,10 @@ type Result struct {
 	// Detail adds what an administrator needs: the journaled after-state of a suspended object, the name of a version
 	// withheld or revived.
 	Detail json.RawMessage `json:"detail,omitempty"`
+	// Also are the results of further objects the entry's replay changed, each printed as a line of its own with the
+	// entry's ID and event: the later mappings of a tier that a replayed mapping disable suspends (R-CI-020, Q-CI-11).
+	// [Summary.Add] records them as results of their own.
+	Also []Result `json:"also,omitempty"`
 }
 
 // Notifier records a change of a change area in the transaction that makes it. *cluster.Changes implements it.
@@ -189,8 +193,13 @@ func (s *Summary) Add(r Result) {
 	if s.Counts == nil {
 		s.Counts = map[Outcome]int{}
 	}
+	also := r.Also
+	r.Also = nil
 	s.Counts[r.Outcome]++
 	s.Results = append(s.Results, r)
+	for _, a := range also {
+		s.Add(a)
+	}
 }
 
 // ReplayOptions are the parameters of a replay.
@@ -216,4 +225,16 @@ func (r Result) Line() string {
 		s = fmt.Sprintf("%s %s %s %s", r.Event, r.Subject, r.ID, r.Outcome)
 	}
 	return s
+}
+
+// Flat is the result followed by its further results (Also), each without further results: the results a replay prints
+// for one entry, in order.
+func (r Result) Flat() []Result {
+	also := r.Also
+	r.Also = nil
+	out := []Result{r}
+	for _, a := range also {
+		out = append(out, a.Flat()...)
+	}
+	return out
 }

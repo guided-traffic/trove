@@ -4,8 +4,9 @@ Status: specification; the M0 parts are implemented: listeners and identificatio
 surface per listener, TLS per endpoint, the chart rendering, and the metrics, logs and spans that carry the endpoint. The M1
 parts are implemented: the credential rules per endpoint, endpoint-bound tokens, exposure rules as the ceiling of the
 decision point, the rate-limit class and the management API of R-EP-016 (the screen of R-EP-017 is the UI wave's).
-Metadata filtering and the cache-fill policy (R-EP-018, R-EP-019) arrive with npm, the journal replay (R-EP-020) with the
-restore.
+Metadata filtering and the cache-fill policy (R-EP-018, R-EP-019) arrive with npm. The journal replay of R-EP-020 is
+implemented: the handler and the comparator in `internal/authz/journal_replay_exposure.go`, run by the replayer of the revocation
+journal.
 
 This page specifies endpoints: the named network entry points through which clients reach trove,
 and what each of them may serve. It covers:
@@ -1296,23 +1297,40 @@ re-applies them.
   3. in each of `packages`, `paths`, the version globs and `distTags`, the exclude list of `after`
      holds every exclude pattern of `current`, and when the include list of `current` is non-empty,
      the include list of `after` is non-empty and a subset of it; patterns are compared as the
-     matcher compares them, without glob containment (as R-AUTHZ-031);
-  4. the ranges are equal, or `current` has none.
+     matcher compares them, without glob containment (as R-AUTHZ-031): package patterns folded
+     with the format's name rule, paths, version globs and tag names as written;
+  4. the ranges are equal as text, or `current` has none. A range is never compared by what it
+     contains, so a moved bound is no narrowing the comparator proves
+     ([Q-EP-79](#q-ep-79--the-exposure-comparator-proves-no-range-or-glob-containment-and-the-two-criteria-that-assumed-it-are-restated)).
+- **Subject.** Replay finds the rule by endpoint and name, which never change, and acts only when
+  the restored rule has the entry's rule ID and repository ID; otherwise the entry is `subject
+  unknown`. A deletion whose rule the restored database does not hold is `already in effect`, and
+  so is an update whose after-state the rule already has, so a resumed replay reports the entries
+  it applied that way
+  ([Q-EP-77](#q-ep-77--how-replay-identifies-an-exposure-rule-and-what-a-missing-foreign-or-already-narrowed-rule-reports)).
+- **Unreadable states.** A journaled before- or after-state that is not exactly the state the
+  rule service writes (an unknown or missing member, another type), or an after-state the API
+  would refuse for the rule's repository (R-EP-012 validation), proves no narrowing: the update
+  rule suspends the rule
+  ([Q-EP-78](#q-ep-78--a-journaled-exposure-state-that-does-not-read-or-that-the-api-would-refuse-suspends-the-rule)).
 - **Suspension** sets `enabled: false`. A disabled rule exposes nothing, and an administrator
-  re-enables it from the after-state that the replay prints. Replay notifies the change area `authz`
-  and writes its audit event like every rule change.
+  re-enables it from the after-state that the replay prints. Replay notifies the change area
+  `authz`; like every replayed change it writes no audit event of its own, the replay's lines and
+  `system.restore.journal_replayed` are the record ([authorization.md](authorization.md) Q-AUTHZ-232).
 - Rules created after *t* are lost with the restore, which fails closed. Endpoint modes are file
   configuration and are not restored, so they are not journaled.
 
 Acceptance criteria:
 
-- A trove backup is taken; then `acme-sdk` is narrowed to `"range": ">=2.1.0"` and a rule `beta` is
-  deleted. `trove backup restore` of that backup into an empty installation reports both entries
-  `applied`; afterwards `npm view @acme/sdk@2.0.0` on `customers` gets `E404` on every replica, and
-  `beta` does not exist.
-- A journaled update that widens `packages.include` from `@acme/sdk` to `@acme/*` is reported
-  `skipped`; one that replaces `@acme/sdk` by `@acme/sdk-*` is reported `suspended`, and the rule
-  reads back with `"enabled": false`.
+- A trove backup is taken; then `acme-sdk` is narrowed by adding `2.0.0` to `versions.exclude` and
+  a rule `beta` is deleted. `trove backup restore` of that backup into an empty installation
+  reports both entries `applied`; afterwards `npm view @acme/sdk@2.0.0` on `customers` gets `E404`
+  on every replica, and `beta` does not exist. A narrowing of the range itself (`">=2.0.0"` to
+  `">=2.1.0"`) is reported `suspended`, and the rule reads back with `"enabled": false` (Q-EP-79).
+- A journaled update that widens `packages.include` from `["@acme/sdk"]` to
+  `["@acme/sdk", "@acme/*"]` is reported `skipped`; one that replaces `@acme/sdk` by `@acme/sdk-*`
+  is reported `suspended`, and the rule reads back with `"enabled": false`. A replacement by the
+  wider `@acme/*` is `suspended` as well, because patterns are not compared by glob containment.
 
 ## Worked example: a customer endpoint
 
@@ -2398,6 +2416,74 @@ R-EP-012 (a rule names its repository by its qualified name), the terms; cross-p
 R-HA-041 (edited with the other platform pages). With the addresses of Q-REPO-212, in routes, examples and acceptance
 criteria: R-EP-002, R-EP-005, R-EP-010, R-EP-011, R-EP-013, R-EP-014, R-EP-016, R-EP-017, R-EP-018, R-EP-019 and the worked
 example.
+
+### Q-EP-77 · How replay identifies an exposure rule, and what a missing, foreign or already narrowed rule reports
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-020 names what an entry carries (rule ID, endpoint, name, repository ID) and R-HA-054 the outcomes, but not which of
+the four finds the rule, nor what a deletion of a rule the restored database does not hold reports. R-BAK-024 asks a resumed replay
+to report its applied entries as `already in effect` on the second pass; the update rule of R-HA-054 alone would report an update
+applied twice as `applied` twice.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) By rule ID alone | A query by ID | The entry's primary key | A new query; the name and endpoint of the entry are not checked at all |
+| (b) By endpoint and name, acting only when the restored rule has the entry's rule ID and repository ID (chosen) | The lock and read the API's writes use; a rule under the name with another ID or repository is `subject unknown`; no rule of the name is `already in effect` for a deletion and `subject unknown` for an update; an update whose after-state the rule already has (the comparator holds both ways) is `already in effect` | Endpoint, name and repository are immutable (Q-EP-18), so a genuine entry always meets its rule; a forged entry acts only on the rule it names completely; a resumed replay reads as R-BAK-024 asks | A rule deleted and re-created under its name after *t* is never touched by the old rule's entries, which is correct but shows as `subject unknown` |
+| (c) By name alone | Like (b) without the ID check | Simplest | A rule re-created under the name would be narrowed or deleted by entries of its predecessor |
+
+**Choice:** (b).
+**Rationale:** The entry is a claim about the restored database; the immutable identity of a rule is its ID together with its endpoint,
+name and repository, and acting only when all of them agree is what "identity by ID" of R-AUTHZ-031 means for a rule addressed by name.
+A deletion of a rule that is not there leaves the state the entry recorded, which is what `already in effect` says; an update that is
+already reflected changes nothing either. The CI handlers report an update whose after-state the object already has the same way
+([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-020). The development agent would revisit this if rules become movable between
+repositories (Q-EP-18), which would make the repository ID a mutable field.
+**Applied:** R-EP-020 ("Subject"); `internal/authz/journal_replay_exposure.go`.
+
+### Q-EP-78 · A journaled exposure state that does not read, or that the API would refuse, suspends the rule
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a journal object is untrusted input (R-HA-054); an update entry of a rule that the restored database holds may still carry a
+before- or after-state the comparator cannot read: a member it does not know, a missing member, another type, an invalid pattern or a
+range the format refuses. Q-HA-142 reports an object that does not decode as `skipped`; this is an object that decodes and names its
+rule.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `skipped`, as an unreadable object | Nothing changes | The rule keeps its restored state | A narrowing the journal recorded is lost whenever its state is damaged or forged: fails open |
+| (b) Read leniently (unknown members ignored, missing ones defaulted) | The comparator sees what it can | Fewer suspensions | A default can look like a narrowing (a missing `prereleases` reads `false`), so the comparator would prove something the entry does not say |
+| (c) An unreadable state is no state: the comparator proves nothing with it and the update rule suspends the rule (chosen) | A state reads only when it is exactly the state the rule service writes (`stateOfRule`), and an after-state only when the API would accept it for the rule's repository (R-EP-012 syntax and format checks) | The comparator's "false whenever it cannot tell" covers damaged input; nothing is stored that the API would refuse; a forged state can disable a rule but never widen one | A damaged genuine narrowing disables its rule until an administrator re-enables it |
+
+**Choice:** (c).
+**Rationale:** Replay must not keep exposure a narrowing removed, and suspending is the update rule's own answer when it cannot tell;
+a forged entry gains nothing it could not gain with a well-formed after-state, which case 3 of R-HA-054 suspends anyway. The development
+agent would revisit this if a later release changes the state's members, which would then be read by version rather than refused.
+**Applied:** R-EP-020 ("Unreadable states"); `readExposureState` and `journalState` in `internal/authz/journal_replay_exposure.go`.
+
+### Q-EP-79 · The exposure comparator proves no range or glob containment, and the two criteria that assumed it are restated
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: rule 4 of R-EP-020 accepts a range only when it is equal or `current` has none, and rule 3 compares patterns without glob
+containment. Two acceptance criteria assumed more: narrowing `acme-sdk` from `">=2.0.0"` to `">=2.1.0"` was to be `applied`, and
+"widening `packages.include` from `@acme/sdk` to `@acme/*`" was to be `skipped`, which under rule 3 holds only when `@acme/*` is added
+to the list, not when it replaces `@acme/sdk`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the comparator; restate the criteria (chosen) | The range narrowing ends `suspended` (the rule disabled, so `2.0.0` is hidden as wanted, and the rest of the rule too); the first criterion narrows by `versions.exclude`; the widening criterion adds `@acme/*` and states that a replacement by it is `suspended` | One comparator rule set for policies and exposure; nothing has to reason about a format's range algebra | A narrowed range costs a suspension after a restore |
+| (b) Range containment through a format capability | `Versioning` gains `RangeContains(outer, inner)`; npm's `\|\|` unions and pre-release rules and NuGet's interval notation each implement it | The range criterion stays `applied` | A containment test per format whose error proves a widening a narrowing, which fails open; new contract surface for every format |
+| (c) Glob containment for patterns | `@acme/*` is known to contain `@acme/sdk` | The literal widening criterion stays `skipped` | R-AUTHZ-031 excludes it for policies for the same reason; containment of two globs with brace sets and classes is where comparators go wrong |
+
+**Choice:** (a).
+**Rationale:** The comparator must answer false whenever it cannot tell, and a range or a glob can only be told apart reliably by text.
+The criterion's purpose, a narrowing after the snapshot that the restore keeps, is met by a narrowing the comparator proves; a narrowed
+range still fails closed. The development agent would revisit this when a format's range syntax gains a reference implementation that
+can decide containment, then for that format only.
+**Applied:** R-EP-020 (comparator rules 3 and 4, both acceptance criteria); `exposureNarrower` in
+`internal/authz/journal_replay_exposure.go`; `TestR_EP_020_TheComparator`, `TestR_EP_020_ExposureEntriesReplayIntoTheRestoredDatabase`.
 
 ## What this does not cover
 

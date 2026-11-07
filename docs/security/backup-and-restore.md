@@ -117,8 +117,28 @@ a missing member, an oversized value or a digest that is not the expected shape 
   `TestR_HA_054_ForgedEntriesCannotEscalate`.
 - **Removals.** A deleted user, service account or CI owner is disabled, a moved repository is disabled and not moved, a released name
   stays claimed, a membership is never added or raised, the break-glass account is never touched.
+- **Exposure rules** ([journal_replay_exposure.go](../../internal/authz/journal_replay_exposure.go), R-EP-020). A deletion deletes the rule;
+  deleting a rule only removes exposure, because rules add up and exclude wins inside a rule only. An update is applied only when the
+  comparator proves the after-state exposes nothing the restored rule does not: the same endpoint and repository, `enabled` and
+  `prereleases` never switched on, excludes kept, includes only shrunk and never emptied, a range only added or kept as text (Q-EP-79).
+  The entry acts only on the rule whose endpoint, name, rule ID and repository ID it names (Q-EP-77), and a state that does not read
+  exactly as the rule service writes it, or that the API would refuse for the rule's repository, proves nothing and disables the rule
+  (Q-EP-78). A forged entry can therefore disable or delete a rule, which withholds content, and never widen one. Tested in
+  `TestR_EP_020_TheComparator` and, through the shipper and the replayer against PostgreSQL, `TestR_EP_020_ExposureEntriesReplayIntoTheRestoredDatabase`.
+- **CI issuers and mappings** ([journal_replay.go](../../internal/ci/journal_replay.go), R-CI-020). A disable or deletion disables, never
+  deletes, and revokes the object's unexpired CI tokens as the API does. Disabling a mapping that was enabled also disables every later
+  enabled mapping of its tier, so no job falls through to a mapping that grants more (Q-CI-11): without that step a forged deletion of a
+  read-only mapping placed above a publish mapping would grant merge request pipelines a deploy. An update is applied only when the
+  comparator proves a pure narrowing over a record read in full; a change of a condition, a priority, `enabled` or the subject kinds,
+  which decide a tier's first match, is never one. Tested in `TestR_CI_020_TheIssuerComparator`, `TestR_CI_020_TheMappingComparator` and
+  `TestR_CI_020_IssuerAndMappingEntriesReplayIntoTheRestoredDatabase`, which also shows that a merge request pipeline gets
+  `no_matching_mapping` after a replayed deletion of the shadowing mapping.
 - **Credential.** The shipper writes with the runtime credential and deletes nothing. The reader of a restore uses the credentials file
   of [open.go](../../internal/journal/replay/open.go) and lists object versions with it.
+
+Not verified, for the exposure and CI handlers: the restore-level runs (`npm view` on every replica of a restored installation, an
+exchange against it), which are the end-to-end suite's; the handlers' outcomes, writes and change-area notes are verified against
+PostgreSQL through the real shipper and replayer.
 
 Not verified: that a delete marker is read through on a versioned bucket. The store implements it
 ([journalstore.go](../../internal/blob/s3/journalstore.go)); the integration stack's bucket is not versioned, so only the listing
