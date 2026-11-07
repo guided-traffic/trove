@@ -739,8 +739,10 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   its project holds by ID does not change its project (SQLSTATE `AI007`; a move that meets it answers 409
   `repository_in_use`).
 - **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
-  repository's `project_id`, raises its `config_version`, writes the audit event `repository.moved` with the source and the
-  target project, and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
+  repository's `project_id`, raises its `config_version`, writes the audit events `repository.moved` (project: the source,
+  repository: the former name, journaled) and `repository.moved_in` (project: the target, repository: the new name), both
+  with the source and the target project, so the audit of each project shows the move
+  ([Q-REPO-233](#q-repo-233--a-move-is-recorded-in-the-audit-of-both-projects)), and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
   ([architecture.md](architecture.md) R-ARCH-018), as the change of an input of the grant index (Repository management
   API above). A target project that holds the key, also a repository being deleted there, answers 409 `already_exists` and
   nothing changes. A target equal to the source changes nothing and answers 200 without an event
@@ -7154,6 +7156,32 @@ projects, or if exposure rules start to grant.
 
 **Applied in the spec:** R-REPO-060 (the refusal, the kind, the criterion); `api/openapi.yaml` (`moveRepository`,
 `RepositoryReference.kind`).
+
+### Q-REPO-233 · A move is recorded in the audit of both projects
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an audit event names one project (`audit_event.project`, the `project` filter of `GET /api/v1/audit/events`,
+[authorization.md](authorization.md) Q-AUTHZ-209). `repository.moved` named the source project only, so the audit of the
+target project showed a repository that arrived without any event: no `repository.created` there, and no move.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The source only (as before) | One event, `project` the source | No new type | The target's audit cannot tell where a repository came from |
+| (b) The target only | One event, `project` the target, the new name | The repository's history continues under its new name | The source's audit loses a repository without an event |
+| (c) The same type twice | `repository.moved` in each project | One type to filter | A filter on the type counts every move twice; the journal entry, which the restore reads once, is on one of two equal events |
+| (d) Two types, one per project (chosen) | `repository.moved` in the source under the former name, journaled; `repository.moved_in` in the target under the new name, without a journal entry; equal details | Each project's audit shows the move once; the type `repository.moved` still counts every move once and carries the one journal entry | One more event type |
+
+**Choice:** (d). Both events are written in the move's transaction with the same details (the repository's ID and key, both
+projects by ID and key, the epoch, the configuration version); `repository.moved_in` has the subject and the `repository` column
+of the new name. The restore and the Bastion's feed read the journal entry of `repository.moved` only.
+
+**Rationale:** the audit of a project should explain every repository it holds and every one it lost, and a journal entry is a
+fact about the installation, recorded once. The development agent would revisit this if `audit_event` gains several projects per
+event; then one event would serve both views.
+
+**Applied in the spec:** R-REPO-060 (the events); [authorization.md](authorization.md) R-AUTHZ-026 (the project's events), the
+event table of R-AUTHZ-029.
 
 ## What this does not cover
 

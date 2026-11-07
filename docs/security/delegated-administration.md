@@ -120,8 +120,9 @@ names it. The database holds the same rule for every writer (SQLSTATE `AI007`, m
 does not change its project, and a project policy's key selector names a repository of its own project. Nothing is rewritten on the caller's behalf,
 so no grant or resolution changes behind the back of the people who wrote those objects. The move notifies `authz` and `repo_config`
 with the repository's ID and raises its `config_version`, so the old address answers 404 and every cache keyed by the configuration
-version drops what it built, on every replica within the bound of R-AUTHZ-028; it records `repository.moved` with the journal entry of
-R-AUTHZ-031. What holds the repository by its ID outside the project (a key selector of a global policy, an exposure rule) follows it.
+version drops what it built, on every replica within the bound of R-AUTHZ-028; it records `repository.moved` in the source project with
+the journal entry of R-AUTHZ-031, and `repository.moved_in` in the target project, so the audit of each project shows the move
+([Q-REPO-233](../spec/repositories-and-proxy.md#q-repo-233--a-move-is-recorded-in-the-audit-of-both-projects)). What holds the repository by its ID outside the project (a key selector of a global policy, an exposure rule) follows it.
 Who may move is the API's decision: `repositories:write-config`, or an Owner of both projects (403 for a member with a lower role in
 the target, 404 for a caller that is no member there). The Owner's move is restricted (`checkMoveTarget` in
 [repositories_api.go](../../internal/api/v1/repositories_api.go) passes `restricted`): while a key selector of a global policy names

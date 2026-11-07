@@ -270,12 +270,13 @@ func withinSchema(t *testing.T, ev audit.Event) {
 }
 
 // TestR_REPO_060_TheMovedEvent: repository.moved names the repository by ID and its former address, both
-// projects by ID and key, and journals them (R-AUTHZ-031).
+// projects by ID and key, and journals them (R-AUTHZ-031); repository.moved_in records the same move in the
+// target project under the new address, without a journal entry (Q-REPO-233).
 func TestR_REPO_060_TheMovedEvent(t *testing.T) {
 	actor := authz.Subject{Kind: principal.KindUser, ID: "u1", Name: "root"}
 	from, to := qname.Repo{Project: "web", Key: "npm-libs"}, qname.Repo{Project: "mobile", Key: "npm-libs"}
-	ev := movedEvent(actor, from, to, "42", "pw", "pm", 5, 11)
-	if ev.Repository != "web/npm-libs" || ev.Project != "web" || ev.Subject.ID != "42" {
+	ev, in := movedEvents(actor, from, to, "42", "pw", "pm", 5, 11)
+	if ev.Type != audit.EventRepositoryMoved || ev.Repository != "web/npm-libs" || ev.Project != "web" || ev.Subject.ID != "42" {
 		t.Errorf("%+v", ev)
 	}
 	d := rawOf(t, ev.Details)
@@ -287,6 +288,16 @@ func TestR_REPO_060_TheMovedEvent(t *testing.T) {
 		t.Errorf("journal %v", j)
 	}
 	withinSchema(t, ev)
+	t.Run("Q-REPO-233 the arrival in the target project", func(t *testing.T) {
+		if in.Type != audit.EventRepositoryMovedIn || in.Repository != "mobile/npm-libs" || in.Project != "mobile" ||
+			in.Subject.ID != "42" || in.Subject.Name != "mobile/npm-libs" || in.Journal != nil {
+			t.Errorf("%+v", in)
+		}
+		if string(in.Details) != string(ev.Details) {
+			t.Errorf("details %s, the leaving's %s", in.Details, ev.Details)
+		}
+		withinSchema(t, in)
+	})
 }
 
 // TestR_REPO_060_ACIMappingNamesTheRepositoryByKey: an inline grant of a CI mapping of the source project's

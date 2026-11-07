@@ -2096,7 +2096,7 @@ Operations of other pages below a project, each declared with `project: path.pro
 - Every write above answers `Trove-Authz-Epoch` (R-AUTHZ-032). The writes of a project and its members, and the creation
   and deletion of project service accounts, are audited in the transaction of the change (R-AUTHZ-029):
   `authz.project.created`, `.updated`, `.deleted`, `.member_added`, `.member_changed` and `.member_removed`; a move is
-  `repository.moved` (R-REPO-060). Every event of a project's object carries the member `project`. A removed member, a
+  `repository.moved` in the source project and `repository.moved_in` in the target project (R-REPO-060). Every event of a project's object carries the member `project`. A removed member, a
   lowered role and a move narrow rights and are journaled as narrowings (R-AUTHZ-031).
 - Recent authentication (R-API-007) is required for the project writes that change who may act: replace, delete, add,
   change and remove a member, and a move.
@@ -2551,7 +2551,7 @@ This requirement says which events authorization emits and what they contain.
 | `authz.role.bound`, `.unbound` | role bindings | in the transaction of the change |
 | `authz.ownership.claimed`, `.added`, `.removed`, `.released` | ownership changes, CI claims included | in the transaction of the change |
 | `authz.project.created`, `.updated`, `.deleted`, `.member_added`, `.member_changed`, `.member_removed` | project and membership changes, with the epoch and the role before and after; a deletion, a removed member and a lowered role are journaled | in the transaction of the change |
-| `repository.moved` | the move of a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060), with the source and the target project and the epoch; journaled | in the transaction of the change |
+| `repository.moved`, `repository.moved_in` | the move of a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060), with the source and the target project and the epoch: `repository.moved` in the source project under the former name, journaled; `repository.moved_in` in the target project under the new name, not journaled ([Q-REPO-233](repositories-and-proxy.md#q-repo-233--a-move-is-recorded-in-the-audit-of-both-projects)) | in the transaction of the change |
 | `authz.settings.changed` | changes to authorization settings stored in PostgreSQL, today the authorization settings of a repository (R-AUTHZ-031), with before and after | in the transaction of the change |
 
 Fields of `authz.decision`:

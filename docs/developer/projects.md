@@ -102,7 +102,8 @@ All in [codes.go](../../internal/errs/codes.go).
 | `authz.project.member_added` | no | project, projectId, principal, principalId, role |
 | `authz.project.member_changed` | project, principal, before, after | as above with before and after |
 | `authz.project.member_removed` | project, principal | as above with role |
-| `repository.moved` | repositoryId, from and to by ID and key | repository (key), repositoryId, from, fromId, to, toId, configVersion |
+| `repository.moved` (project: the source, repository: the former name) | repositoryId, from and to by ID and key | repository (key), repositoryId, from, fromId, to, toId, configVersion |
+| `repository.moved_in` (project: the target, repository: the new name; `movedEvents` in [move.go](../../internal/project/move.go), Q-REPO-233) | no | as `repository.moved` |
 
 The display name and the description are not access-bearing, so `authz.project.updated` is not journaled.
 

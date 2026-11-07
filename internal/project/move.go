@@ -136,7 +136,11 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 			return err
 		}
 		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-			return s.o.Recorder.RecordTx(ctx, tx, movedEvent(actor, from, to, id, fromID, toID, versions[0], epoch))
+			out, in := movedEvents(actor, from, to, id, fromID, toID, versions[0], epoch)
+			if err := s.o.Recorder.RecordTx(ctx, tx, out); err != nil {
+				return err
+			}
+			return s.o.Recorder.RecordTx(ctx, tx, in)
 		})
 		return nil
 	})
@@ -255,21 +259,30 @@ func keyTaken(to qname.Repo) error {
 	return errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("The project %q has a repository %q already.", to.Project, to.Key))
 }
 
-// movedEvent is repository.moved (R-REPO-060): the repository's ID and key, the source and the target
-// project; the journal entry carries the same by ID (R-AUTHZ-031: a restore suspends the repository rather
-// than move it back or keep it). The event names the source project and the repository's former address.
-func movedEvent(actor authz.Subject, from, to qname.Repo, id, fromID, toID string, version, epoch int64) audit.Event {
-	details := map[string]any{
+// movedEvents are the two records of a move (R-REPO-060, Q-REPO-233), each in the audit of one project:
+// repository.moved in the source project under the repository's former address, with the journal entry
+// (R-AUTHZ-031: a restore suspends the repository rather than move it back or keep it), and
+// repository.moved_in in the target project under its new address, without one, so the restore reads the
+// move once. Both carry the repository's ID and key and the source and the target project.
+func movedEvents(actor authz.Subject, from, to qname.Repo, id, fromID, toID string, version, epoch int64) (out, in audit.Event) {
+	details := mustJSON(map[string]any{
 		"epoch": epoch, "repository": from.Key, "repositoryId": id,
 		"from": from.Project, "fromId": fromID, "to": to.Project, "toId": toID, "configVersion": version,
-	}
-	return audit.Event{
+	})
+	out = audit.Event{
 		Type: audit.EventRepositoryMoved, Actor: actorOf(actor), Outcome: audit.Success,
 		Subject:    audit.Subject{Kind: "repository", ID: id, Name: from.String()},
 		Repository: from.String(), Project: from.Project,
-		Details: mustJSON(details),
+		Details: details,
 		Journal: mustJSON(map[string]any{
 			"repositoryId": id, "from": map[string]string{"id": fromID, "key": from.Project}, "to": map[string]string{"id": toID, "key": to.Project},
 		}),
 	}
+	in = audit.Event{
+		Type: audit.EventRepositoryMovedIn, Actor: actorOf(actor), Outcome: audit.Success,
+		Subject:    audit.Subject{Kind: "repository", ID: id, Name: to.String()},
+		Repository: to.String(), Project: to.Project,
+		Details: details,
+	}
+	return out, in
 }

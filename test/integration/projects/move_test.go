@@ -103,6 +103,21 @@ func TestR_REPO_060_MoveARepository(t *testing.T) {
 			f.detail("repository.moved", "from") != "web" || f.detail("repository.moved", "to") != "mobile" {
 			t.Errorf("events %d, journal %d", f.events("repository.moved"), f.journal("repository.moved"))
 		}
+		// Q-REPO-233: the move shows in the audit of both projects, once each: the source records the repository leaving
+		// under its former name, the target its arrival under the new one; only the leaving is journaled.
+		for _, c := range []struct{ project, action, repository string }{
+			{"web", "repository.moved", "web/npm-libs"}, {"mobile", "repository.moved_in", "mobile/npm-libs"},
+		} {
+			n := f.e.Number(`SELECT count(*) FROM audit_event WHERE project = $1 AND action = $2 AND repository = $3
+			                  AND details->>'repositoryId' = $4 AND details->>'from' = 'web' AND details->>'to' = 'mobile'`,
+				c.project, c.action, c.repository, fmt.Sprint(id))
+			if n != 1 {
+				t.Errorf("the audit of %s holds %d %s events of %s", c.project, n, c.action, c.repository)
+			}
+		}
+		if f.journal("repository.moved_in") != 0 {
+			t.Error("the arrival is journaled as well")
+		}
 		wantStatus(t, f.do(f.admin, "POST", base+"/web/repositories/npm-libs/move", map[string]any{"project": "mobile"}), 404, "")
 	})
 	t.Run("R-REPO-060 the holder of repositories:write-config moves without a membership", func(t *testing.T) {
