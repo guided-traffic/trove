@@ -1,0 +1,136 @@
+-- Queries of the revocation journal's replay handlers (R-HA-054, R-AUTHZ-031, R-AUTH-041; the handlers are the
+-- journal_replay.go files of internal/auth/token, internal/auth/principal, internal/authz and internal/project, and the
+-- restore's clean-up in internal/journal/replay). A replay changes the restored database only by removing or narrowing, and it
+-- names every object by its ID, so these statements take IDs, never names.
+
+-- name: JournalTokenState :many
+-- The state of a token of any type (the token API's IdentityTokenRow leaves out Bastion tokens, which a replay must revoke
+-- as well). No row: the token is not in the restored database.
+SELECT t.id::text AS id, t.type, (t.revoked_at IS NOT NULL)::boolean AS revoked
+  FROM api_token t WHERE t.id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalLimitTokenExpiry :many
+-- token.rotated: the predecessor expires at the earlier of its current expiry and the journaled one. A later expiry than the
+-- stored one changes nothing, so a replay never extends a token.
+UPDATE api_token SET expires_at = to_timestamp(sqlc.arg(expires_us)::bigint / 1000000.0)
+ WHERE id = sqlc.arg(id)::text::uuid AND revoked_at IS NULL
+   AND (expires_at IS NULL OR expires_at > to_timestamp(sqlc.arg(expires_us)::bigint / 1000000.0))
+RETURNING encode(secret_sha256, 'hex') AS secret_hex;
+
+-- name: JournalDisableAnonymousAccess :many
+-- settings.auth.changed: the anonymous switch is taken to off, its most restrictive value. No row: it is off already.
+UPDATE auth_settings SET anonymous_access = false, revision = revision + 1, updated_at = now()
+ WHERE singleton AND anonymous_access
+RETURNING revision;
+
+-- name: JournalAnonymousAccess :one
+SELECT anonymous_access FROM auth_settings WHERE singleton;
+
+-- name: JournalUserState :many
+-- The user behind a principal, to tell a disabled user from a disabled break-glass account.
+SELECT p.kind, p.status, coalesce(u.is_break_glass, false)::boolean AS is_break_glass
+  FROM principal p LEFT JOIN app_user u ON u.principal_id = p.id
+ WHERE p.id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalRepositoryLock :many
+-- A repository by its ID under its row lock, with its project; a repository being deleted is returned too and the caller
+-- answers it as unknown.
+SELECT r.id, r.key, r.class, r.config, r.lifecycle, r.project_id::text AS project_id, p.key AS project_key
+  FROM repositories r JOIN project p ON p.id = r.project_id
+ WHERE r.id = sqlc.arg(id)::bigint
+   FOR UPDATE OF r;
+
+-- name: JournalRepositorySetConfig :many
+UPDATE repositories
+   SET config = sqlc.arg(config)::text::jsonb, config_version = config_version + 1, updated_at = now()
+ WHERE id = sqlc.arg(id)::bigint AND lifecycle = 'active'
+RETURNING config_version;
+
+-- name: JournalOwnership :many
+-- The name's claim row, locked; no row: the name is not claimed in the restored database.
+SELECT state FROM package_ownership
+ WHERE domain = sqlc.arg(domain)::text AND format = sqlc.arg(format)::text AND package_name = sqlc.arg(package_name)::text
+   FOR UPDATE;
+
+-- name: JournalOwnerRemovePrincipal :execrows
+DELETE FROM package_owner
+ WHERE domain = sqlc.arg(domain)::text AND format = sqlc.arg(format)::text AND package_name = sqlc.arg(package_name)::text
+   AND principal_id = sqlc.arg(principal_id)::text::uuid;
+
+-- name: JournalOwnerRemoveCIProject :execrows
+DELETE FROM package_owner
+ WHERE domain = sqlc.arg(domain)::text AND format = sqlc.arg(format)::text AND package_name = sqlc.arg(package_name)::text
+   AND ci_issuer_id = sqlc.arg(ci_issuer_id)::text::uuid AND ci_project_id = sqlc.arg(ci_project_id)::text;
+
+-- name: JournalRoleBindingExists :one
+SELECT EXISTS (SELECT 1 FROM principal WHERE id = sqlc.arg(principal_id)::text::uuid) AS principal_exists;
+
+-- name: JournalPolicyByID :many
+-- A policy by ID, locked, with the key of its project.
+SELECT p.id::text AS id, p.name, p.resource_type, coalesce(pr.key, '')::text AS project_key
+  FROM authz_policy p LEFT JOIN project pr ON pr.id = p.project_id
+ WHERE p.id = sqlc.arg(id)::text::uuid
+   FOR UPDATE OF p;
+
+-- name: JournalPolicyDelete :execrows
+-- The selectors, patterns and entries of both entry tables go with the row (ON DELETE CASCADE).
+DELETE FROM authz_policy WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalPolicyTouch :exec
+UPDATE authz_policy SET version = version + 1, updated_at = now() WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalPolicyClearSelectorsPatterns :exec
+WITH s AS (DELETE FROM authz_policy_selector WHERE policy_id = sqlc.arg(policy_id)::text::uuid)
+DELETE FROM authz_policy_pattern WHERE policy_id = sqlc.arg(policy_id)::text::uuid;
+
+-- name: JournalPolicyEntryDelete :exec
+-- An entry of the policy for the principal, from whichever table holds it.
+WITH a AS (DELETE FROM authz_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid)
+DELETE FROM authz_project_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid;
+
+-- name: JournalPolicyEntrySetActions :exec
+WITH a AS (UPDATE authz_policy_entry SET actions = sqlc.arg(actions)::text[]
+            WHERE policy_id = sqlc.arg(policy_id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid)
+UPDATE authz_project_policy_entry SET actions = sqlc.arg(actions)::text[]
+ WHERE policy_id = sqlc.arg(policy_id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid;
+
+-- name: JournalPolicyClearEntries :exec
+WITH a AS (DELETE FROM authz_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid)
+DELETE FROM authz_project_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid;
+
+-- name: JournalAdminBindingCount :one
+SELECT count(*)::bigint FROM authz_role_binding WHERE role = 'admin';
+
+-- name: JournalProjectLock :many
+-- A project by ID under its row lock, which every member change and move takes.
+SELECT id::text AS id, key FROM project WHERE id = sqlc.arg(id)::text::uuid FOR UPDATE;
+
+-- name: JournalProjectHolds :one
+-- What keeps a project from being deleted: repositories, service accounts and CI mappings (R-AUTHZ-031).
+SELECT (SELECT count(*) FROM repositories WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS repositories,
+       (SELECT count(*) FROM service_account WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS service_accounts,
+       (SELECT count(*) FROM ci_mappings WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS ci_mappings;
+
+-- name: JournalProjectDelete :execrows
+DELETE FROM project WHERE id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalProjectMembersRemoveAll :execrows
+DELETE FROM project_member WHERE project_id = sqlc.arg(id)::text::uuid;
+
+-- name: JournalPauseDeletions :exec
+-- The deletion pause of R-HA-025: GC, the orphan sweep, retention and cap enforcement skip their batches while it is set.
+INSERT INTO system_state (key, value) VALUES
+    ('deletions_paused_at', to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))),
+    ('deletions_paused_reason', to_jsonb(sqlc.arg(reason)::text))
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+ WHERE system_state.value = 'null'::jsonb;
+
+-- name: JournalDeleteReplicaRows :execrows
+-- The rows of replica describe pods that no longer exist after a platform restore.
+DELETE FROM replica;
+
+-- name: JournalSetRestoredAt :exec
+-- The restore cut-off of the single-use CI issuers (R-CI-018, R-BAK-022): the time the clean-up ran, on the database's clock.
+INSERT INTO system_state (key, value)
+VALUES ('restored_at', to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();

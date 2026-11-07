@@ -288,3 +288,24 @@ link them (`internal/backup/fixup` imports both, `internal/app` binds them).
   PostgreSQL with a replica serving the protocol routes on top, the producer's entry read by the handler, `trove admin npm reinstate` run
   as a built binary, the purgers against the npm and NuGet test upstreams, and the restore bound of R-NPM-025. The restore-level client
   runs (`npm`, `dotnet`) are the end-to-end suite's.
+
+## The revocation journal (package D)
+
+| File | Responsibility |
+|---|---|
+| [journal/ship/ship.go](../../internal/journal/ship/ship.go), [outbox.go](../../internal/journal/ship/outbox.go) | `Shipper` (id order, row deleted after its object, stops at the first failure, `Discard` when the journal is off) and the `Outbox` over the queries of `backup.sql` |
+| [journal/replay/reader.go](../../internal/journal/replay/reader.go) | `Reader`: day prefixes, forged-key checks, sorted by time and ID |
+| [journal/replay/replayer.go](../../internal/journal/replay/replayer.go) | `Replayer`: one transaction per entry, panic and unknown event become `skipped`, summary event |
+| [journal/replay/open.go](../../internal/journal/replay/open.go) | `LoadCredentials`, `OpenJournal` (shared with the restore) |
+| [blob/s3/journalstore.go](../../internal/blob/s3/journalstore.go) | `JournalStore`: put, list (with versions on request), get |
+| [jobs/journal.go](../../internal/jobs/journal.go), [app/wire_journal.go](../../internal/app/wire_journal.go) | the job kind `revocation-journal-ship` and the timer that enqueues it |
+| `journal_replay.go` in `internal/auth/token`, `internal/auth/principal`, `internal/authz`, `internal/project` | the handlers and comparators of the identity and authorization events |
+| [backup/postrestore](../../internal/backup/postrestore/postrestore.go), [cmd/trove/admin_postrestore.go](../../cmd/trove/admin_postrestore.go) | `trove admin post-restore`: replica rows, deletion pause, sessions, the fix-ups of orders jobs, system state and revisions, `restored_at`, replay, `system.restored` |
+
+Queries are in [journal.sql](../../internal/meta/postgres/queries/journal.sql). A handler takes IDs only, applies a removal as recorded
+or runs `journal.ApplyUpdate` with its comparator, and returns a `Result`; `ci.token.revoked` is replayed by the token package because
+`RecordCIRevoked` lives there. The gauge `trove_revocation_journal_pending` is the gauge package's (`Outbox.Pending`). Tests:
+`go test ./internal/journal/... ./internal/authz ./internal/project ./internal/auth/token` and the integration files
+`test/integration/backup/journal_*_test.go`. Post-restore refuses to run when no fix-up is registered for the orders it needs, so it
+works only together with the restore package's fix-ups.
+

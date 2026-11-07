@@ -1,10 +1,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup"
+	"github.com/guided-traffic/trove/internal/backup/postrestore"
+	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/journal"
+	"github.com/guided-traffic/trove/internal/journal/replay"
+	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/outbound"
 )
 
 const postRestoreUsage = "usage: trove admin post-restore --restored-to <RFC 3339 time> [--credentials-file <path>] [--skip-revocation-journal] [--json] [--config <file>]"
@@ -24,7 +35,7 @@ func postRestoreCmd(args []string, s streams) error {
 	if *at == "" || perr != nil {
 		return usageError{postRestoreUsage}
 	}
-	env, err := openBackupEnv(c, s, flags, names)
+	env, err := openPostRestoreEnv(c, s, flags, names)
 	if err != nil {
 		return backupExit(err)
 	}
@@ -50,7 +61,48 @@ func postRestoreCmd(args []string, s streams) error {
 	return nil
 }
 
-// newPostRestorer builds the PostRestorer. The journal work package replaces the body.
-func newPostRestorer(*backupEnv) (backup.PostRestorer, error) {
-	return backup.NotBuilt{Operation: "post-restore"}, nil
+// openPostRestoreEnv loads the configuration as an administration command: post-restore needs the database and the blob
+// store, not backup.target, which a platform restore does not touch.
+func openPostRestoreEnv(c *commonFlags, s streams, flags, names map[string]string) (*backupEnv, error) {
+	loaded, err := c.loadConfig(s, config.CommandAdmin, flags, names)
+	if err != nil {
+		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, err)
+	}
+	instance := instanceName(s.environ)
+	log := observability.NewLogger(loaded.Config.Log, s.stderr, observability.WithIdentity(instance, "admin")).With("component", "admin")
+	return &backupEnv{loaded: loaded, cfg: loaded.Config, log: log, instance: instance, stdout: s.stdout, stderr: s.stderr, environ: s.environ}, nil
+}
+
+// postRestoreRunner opens the database and the journal when it runs, because the constructor has no context.
+type postRestoreRunner struct{ env *backupEnv }
+
+// newPostRestorer builds the PostRestorer of `trove admin post-restore` (R-HA-025 step 4).
+func newPostRestorer(env *backupEnv) (backup.PostRestorer, error) {
+	return postRestoreRunner{env: env}, nil
+}
+
+// PostRestore implements backup.PostRestorer.
+func (r postRestoreRunner) PostRestore(ctx context.Context, opts backup.PostRestoreOptions) (*backup.PostRestoreReport, error) {
+	cfg := r.env.cfg
+	db, err := postgres.Open(ctx, cfg.Database, r.env.instance, meta.RoleWeb, r.env.log)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rec, err := audit.New(audit.Options{DB: db, Replica: r.env.instance, Config: cfg.Audit, Log: r.env.log, AppLog: r.env.log})
+	if err != nil {
+		return nil, err
+	}
+	out := outbound.New(cfg.Proxy.Outbound)
+	pr := postrestore.New(postrestore.Options{
+		DB: db, Recorder: rec, Margin: cfg.Backup.RevocationJournal.ReplayMargin, Log: r.env.log,
+		OpenReplayer: func(ctx context.Context, credentialsFile string) (journal.Replayer, error) {
+			reader, err := replay.OpenJournal(ctx, cfg.Storage.S3, out, credentialsFile)
+			if err != nil {
+				return nil, err
+			}
+			return replay.New(replay.Options{DB: db, Reader: reader, Recorder: rec, AdminBinding: authz.HasAdminBinding, Log: r.env.log}), nil
+		},
+	})
+	return pr.PostRestore(ctx, opts)
 }

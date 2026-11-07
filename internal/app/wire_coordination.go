@@ -93,7 +93,10 @@ func (a *App) wireCoordination(ctx context.Context, keys keysArea, pg postgresAr
 	area := coordArea{signals: signals, changes: changes, caches: caches, vk: vk.vk}
 	if a.sub.JobLoops {
 		area.leases, area.queue, err = a.startWorker(ctx, db, registry, signals)
-		return area, err
+		if err != nil {
+			return area, err
+		}
+		return area, a.startJournalShipTrigger(ctx, db, area.queue)
 	}
 	area.queue = jobs.NewQueue(jobs.QueueOptions{DB: db.Main(), Registry: registry, Signals: signals, Log: log})
 	return area, nil

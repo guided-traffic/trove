@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/journal"
+
 	docsmanual "github.com/guided-traffic/trove/docs/manual"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
@@ -156,6 +158,7 @@ type App struct {
 	reseal     late[resealDeps]
 	host       late[formats.Host]
 	semver2    late[*nugetdata.Semver2]
+	shipper    late[journal.Shipper]
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of

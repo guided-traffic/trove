@@ -5324,6 +5324,19 @@ A replay handler of a format (npm withholds a version, NuGet reserves a number) 
 
 **Applied:** R-NPM-006 (`npm_tombstones.journal_entry`), R-NPM-047, R-NPM-044 (`npm.reinstate` carries `journal_entry`), R-NUGET-033; `internal/meta/postgres/migrations/00048_npm_tombstone_journal_entry.sql`, `internal/formatdata/npm/journal_replay.go`, `reinstate.go`, `internal/formatdata/nuget/journal_replay.go`.
 
+### Q-AUTHZ-232 · What a replay writes besides the object it changes, and how the comparators compare
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) The replay changes the object and notifies the change areas; it writes one `system.restore.journal_replayed` per run and no per-object audit event; comparators compare IDs and patterns exactly as stored (no case folding, no glob containment, no defaults guessed) | A replayed change cannot re-enter the journal; a comparator can only err towards suspending | A suspended policy has no audit event of its own, only the replay line |
+| (b) One audit event per changed object | Complete trail | Every event type is flagged with a required journal entry, so each replayed change would ship a new journal object |
+
+**Choice:** (a). The settings comparator treats a `hideExistence` of `inherit` as the most restrictive value when it is the current value and the least restrictive when it is the after-value, so it never proves a narrowing. A repository setting that the document does not set is "cannot tell". A deleted user, service account, CI token owner is disabled, never deleted; a group is deleted.
+**Rationale:** R-AUTHZ-031 says suspension "writes its audit event as any policy change does"; that event carries a required journal entry, which would ship an object for every replayed change. The replay lines and the single summary event are the record. Revisit when audit events may be written without an entry.
+**Applied:** R-AUTHZ-031 comparators in `internal/authz/journal_replay.go`, `internal/project/journal_replay.go`, `internal/auth/token/journal_replay.go`; the identity entries of `group.members.changed` and `user.groups.synced` carry IDs now (`internal/auth/principal`).
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

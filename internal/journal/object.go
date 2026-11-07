@@ -49,6 +49,9 @@ func (o Object) Encode() ([]byte, error) {
 	return json.Marshal(o)
 }
 
+// IsUUID reports whether s is a lowercase UUID, the form of every ID an entry names.
+func IsUUID(s string) bool { return uuidPattern.MatchString(s) }
+
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func (o Object) validate() error {
@@ -132,4 +135,21 @@ func DayPrefixes(blobPrefix string, from, to time.Time) []string {
 		out = append(out, ListPrefix(blobPrefix)+d.Format("2006/01/02")+"/")
 	}
 	return out
+}
+
+// Into decodes the entry into dst and reports whether it could. The entry is untrusted (R-HA-054): a handler treats a
+// failure as a malformed entry and reports it [Skipped].
+func (o Object) Into(dst any) bool { return json.Unmarshal(o.Entry, dst) == nil }
+
+// Result builds the line of an outcome for this object.
+func (o Object) Result(outcome Outcome, subject string) Result {
+	return Result{ID: o.ID, Event: o.Event, Outcome: outcome, Subject: subject}
+}
+
+// Malformed is the result of an entry a handler cannot read or whose IDs are not IDs: it is skipped and the reason is the
+// detail, so nothing a forged entry names is acted on.
+func (o Object) Malformed(why string) Result {
+	r := o.Result(Skipped, "")
+	r.Detail, _ = json.Marshal(map[string]string{"malformed": why})
+	return r
 }

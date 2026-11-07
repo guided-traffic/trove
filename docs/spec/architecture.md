@@ -9244,6 +9244,19 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-ARCH-002, R-ARCH-032; `internal/archtest/layers.go` (`journal` in the domain layer, `backup/target` a leaf), `internal/archtest/state.go`.
 
+### Q-ARCH-345 · Where the outbox implementation and the post-restore live
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) `internal/journal/ship` holds the outbox over the sqlc queries and `internal/backup/postrestore` the clean-up; the object store is `internal/blob/s3/journalstore.go`, which satisfies `journal.Store` without importing it | Respects the layer rule (infrastructure never imports the domain) | The cut named `internal/meta/postgres/journal_outbox.go` |
+| (b) The outbox in `internal/meta/postgres` | As cut | `internal/meta/postgres -> internal/journal` is a layer violation (R-ARCH-002) |
+
+**Choice:** (a).
+**Rationale:** The architecture test refuses (b). Revisit never; the rule is the point.
+**Applied:** `internal/journal/ship/outbox.go`, `internal/backup/postrestore`.
+
 ## What this does not cover
 
 

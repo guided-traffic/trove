@@ -45,12 +45,30 @@ type Result struct {
 	Detail json.RawMessage `json:"detail,omitempty"`
 }
 
+// Notifier records a change of a change area in the transaction that makes it. *cluster.Changes implements it.
+type Notifier interface {
+	Notify(tx meta.Tx, area string, version int, payload any) error
+}
+
 // Env is what a handler may depend on.
 type Env struct {
 	// Now is the replay's clock.
 	Now time.Time
 	// RestoredTo is the point in time of the restore (the backup's snapshotAt, or t of a point-in-time restore).
 	RestoredTo time.Time
+	// Notifier writes the change-log rows of the areas a handler changed, so replicas that start afterwards (or a
+	// replay run beside a running installation) see them. It may be nil: a restore holds no Valkey credentials and no
+	// replica serves, so nothing is lost by leaving it out, and Notify then does nothing (R-AUTHZ-031).
+	Notifier Notifier
+}
+
+// Notify forwards to the notifier; without one it does nothing. Env itself therefore satisfies the Notifier interfaces
+// of the domain packages.
+func (e Env) Notify(tx meta.Tx, area string, version int, payload any) error {
+	if e.Notifier == nil {
+		return nil
+	}
+	return e.Notifier.Notify(tx, area, version, payload)
 }
 
 // Handler replays the entries of one or more events. A domain registers one with [Register] in a file of its own.

@@ -219,9 +219,9 @@ func TestBackupCommands(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-HA-025 admin post-restore is wired and fails with exit 1 until built", func(t *testing.T) {
+	t.Run("R-HA-025 admin post-restore opens the database and fails with exit 1 when it is not there", func(t *testing.T) {
 		code, _, stderr := runCmd(t, env, "admin", "post-restore", "--restored-to", "2026-10-28T12:00:00Z")
-		if code != 1 || !strings.Contains(stderr, "not built yet") {
+		if code != 1 || !strings.Contains(stderr, "database") {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
 	})

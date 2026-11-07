@@ -102,6 +102,28 @@ a missing member, an oversized value or a digest that is not the expected shape 
   through the storage delete path and the cache entries and index rows of those repositories; they read the remote repositories of the
   format and nothing else, so a local repository, its tombstones and its reservations survive a purge.
 
+### Replay rules by mechanism
+
+- **Unreadable or forged objects.** [reader.go](../../internal/journal/replay/reader.go) lists the days from the restore point, reads every
+  object and refuses one that does not decode, whose key is not its ID, whose key names another day than its time, a duplicate ID, or
+  a newer version: it is listed in the output as unreadable and never replayed. A listing that fails ends the replay.
+- **Unknown events and panics.** An event without a handler is reported `skipped`; a handler that panics is rolled back and reported
+  `skipped` ([replayer.go](../../internal/journal/replay/replayer.go)).
+- **Comparators.** The policy, settings, role and anonymous-switch comparators answer true only when they can prove the after-state
+  grants nothing beyond the current one, comparing IDs and patterns exactly as stored
+  ([authz](../../internal/authz/journal_replay.go), [project](../../internal/project/journal_replay.go),
+  [token](../../internal/auth/token/journal_replay.go)). Tested in `TestR_AUTHZ_031_PolicyComparator`,
+  `TestR_AUTHZ_031_SettingsComparator`, `TestR_AUTHZ_031_RoleComparator` and, against PostgreSQL,
+  `TestR_HA_054_ForgedEntriesCannotEscalate`.
+- **Removals.** A deleted user, service account or CI owner is disabled, a moved repository is disabled and not moved, a released name
+  stays claimed, a membership is never added or raised, the break-glass account is never touched.
+- **Credential.** The shipper writes with the runtime credential and deletes nothing. The reader of a restore uses the credentials file
+  of [open.go](../../internal/journal/replay/open.go) and lists object versions with it.
+
+Not verified: that a delete marker is read through on a versioned bucket. The store implements it
+([journalstore.go](../../internal/blob/s3/journalstore.go)); the integration stack's bucket is not versioned, so only the listing
+path runs there.
+
 ## What a restore trusts
 
 A restore trusts the manifest and the files of the backup it is told to restore (H-46). It checks formats, sizes, schema steps and the key
@@ -117,4 +139,5 @@ The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--bac
 
 - [H-553](../spec/backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential): a journal object can be overwritten with the runtime credential.
 - [H-554](../spec/backup-and-restore.md#h-554--a-compromised-backup-pod-can-hold-garbage-collection): a compromised backup pod can hold garbage collection.
+- [H-557](../spec/backup-and-restore.md#h-557--the-post-restore-does-not-verify-the-blobs-and-a-replay-writes-no-audit-event-per-changed-object): post-restore does not verify the blobs, and a replay writes no audit event per changed object.
 - [H-555](../spec/backup-and-restore.md#h-555--the-run-history-is-only-as-trustworthy-as-the-backup-role): the run history is only as trustworthy as the backup role.

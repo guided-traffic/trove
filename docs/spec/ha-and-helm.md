@@ -8391,6 +8391,20 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-HA-054 "Replay run"; `internal/journal/object.go` (`DayPrefixes`), `internal/journal/ports.go` (`Reader`).
 
+### Q-HA-144 · How the shipper is triggered, and what `--credentials-file` holds
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | Behaviour | Cost |
+|---|---|---|
+| (a) A job kind that a timer on every job-running replica enqueues while the outbox holds a row; `enabled: false` deletes the rows unshipped; `--credentials-file` is a strict YAML document of the keys of `storage.s3.credentials` | One code path; bypasses the one-minute cron resolution; the audit writer stays free of Valkey | A change waits up to `ship_interval` instead of being shipped on a signal |
+| (b) A signal published by the audit writer after commit | Ships at once | The audit writer gains a Valkey dependency it must not have (INV-3) |
+| (c) A periodic task, and an AWS shared credentials file | Registry-only | The finest cron schedule is one minute; profiles and fallbacks are ambiguous |
+
+**Choice:** (a). `revocation-journal-ship` is `Coalesce` in the `maintenance` queue; `internal/app/wire_journal.go` starts the timer. With `enabled: false` the same job deletes the rows without writing objects. A credentials file also switches the journal reader to listing object versions; an unknown key in it is refused, so a typo cannot fall back to the runtime credential.
+**Rationale:** The interval alone meets the acceptance criterion (the object appears within `ship_interval` after the store returns). The runtime credential lacks `s3:ListBucketVersions` (R-HA-023), so a file is the way to give a restore one. Revisit when the 5 s latency matters for the recovery point, or when the restore Job's identity replaces files.
+**Applied:** R-HA-054 "Outbox and shipping" is read as triggered by the interval; `internal/jobs/journal.go`, `internal/journal/ship`, `internal/app/wire_journal.go`, `internal/journal/replay/open.go`.
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants

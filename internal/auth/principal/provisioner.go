@@ -347,16 +347,18 @@ func (p *PGProvisioner) syncGroups(ctx context.Context, tx meta.Tx, qs *q.Querie
 		return err
 	}
 	type removedRef struct {
-		Group  string `json:"group"`
-		Source string `json:"source"`
+		Group   string `json:"group"`
+		GroupID string `json:"groupId"`
+		Source  string `json:"source"`
 	}
 	var entry struct {
 		User    string       `json:"user"`
+		UserID  string       `json:"userId"`
 		Removed []removedRef `json:"removed"`
 	}
-	entry.User, entry.Removed = name, []removedRef{}
+	entry.User, entry.UserID, entry.Removed = name, userID, []removedRef{}
 	for _, n := range removed {
-		entry.Removed = append(entry.Removed, removedRef{Group: n, Source: source})
+		entry.Removed = append(entry.Removed, removedRef{Group: n, GroupID: have[n], Source: source})
 	}
 	return p.rec.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventUserGroupsSynced, Outcome: audit.Success, Actor: actor, Source: c.Source, Subject: subject,

@@ -493,6 +493,14 @@ type memberRefJSON struct {
 	Source string `json:"source"`
 }
 
+// journalMember is a removed membership in the journal entry: the member by ID (the name is for display), so a principal
+// created later under a reused name never matches (R-AUTHZ-031 "Identity by ID").
+type journalMember struct {
+	Member   string `json:"member"`
+	MemberID string `json:"memberId"`
+	Source   string `json:"source"`
+}
+
 // changeMembers applies membership changes of one group, records the change in
 // the change area auth and writes group.members.changed with the journal entry
 // of the removed memberships (R-AUTH-041). It writes nothing when no row
@@ -517,6 +525,7 @@ func (m *Manager) changeMembers(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 		}
 	}
 	var added, removed []memberRefJSON
+	var removedIDs []journalMember
 	var ids []string
 	for _, ch := range changes {
 		if ch.add {
@@ -542,6 +551,7 @@ func (m *Manager) changeMembers(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 		}
 		if len(rows) > 0 {
 			removed = append(removed, memberRefJSON{Member: ch.name, Source: ch.source})
+			removedIDs = append(removedIDs, journalMember{Member: ch.name, MemberID: ch.id, Source: ch.source})
 			ids = append(ids, ch.id)
 		}
 	}
@@ -556,13 +566,14 @@ func (m *Manager) changeMembers(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 	}
 	type entry struct {
 		Group   string          `json:"group"`
-		Removed []memberRefJSON `json:"removed"`
+		GroupID string          `json:"groupId"`
+		Removed []journalMember `json:"removed"`
 	}
 	return m.record(ctx, tx, audit.Event{
 		Type: audit.EventGroupMembersChanged, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
 		Subject: audit.Subject{Kind: "group", ID: g.id, Name: g.name},
 		Details: details(map[string]any{"added": orEmpty(added), "removed": orEmpty(removed)}),
-		Journal: details(entry{Group: g.name, Removed: orEmpty(removed)}),
+		Journal: details(entry{Group: g.name, GroupID: g.id, Removed: orEmpty(removedIDs)}),
 	})
 }
 
