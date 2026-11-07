@@ -198,7 +198,7 @@ func TestVuln_R_VULN_015_NuGetBlockedRestoreInTriage(t *testing.T) {
 			t.Errorf("Content-Type of the refusal = %q, want text/plain", ct)
 		}
 		body := strings.TrimSpace(string(r.Body))
-		if !strings.HasPrefix(body, "vulnerability_blocked: trove blocked "+strings.ToLower(id)+"@1.0.0 in "+vulnNuGetRemote+": blocked in triage ("+e.advisoryOf[id]+")") || strings.Contains(body, "\n") {
+		if !strings.HasPrefix(body, "vulnerability_blocked: trove blocked "+strings.ToLower(id)+"@1.0.0 in "+qn(vulnNuGetRemote)+": blocked in triage ("+e.advisoryOf[id]+")") || strings.Contains(body, "\n") {
 			t.Errorf("the refusal body = %q, want the one line of R-VULN-016", body)
 		}
 		e.lift(t, e.adm, f.ID)
