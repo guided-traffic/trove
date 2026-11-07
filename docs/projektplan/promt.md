@@ -212,6 +212,31 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-07 while reviewing the project model (T-3 to T-6):
+
+### Product
+
+- **F-67 · Counter series of a removed or moved repository stay until the process restarts** (read in the code by the review of
+  the project model). The gauges are deleted when a repository leaves the snapshot (`CappedLabels` `OnForget`,
+  `proxy.Engine.Forget`, `mirror.Metrics.Forget`, R-OPS-007), so no stale `trove_remote_upstream_up` keeps an alert firing.
+  The counters of the npm, NuGet, virtual, items and outbound packages keep the series of the old name, and a mirror pass that
+  is still running for a moved repository brings its old-name series back until it ends ([observability.md](../developer/observability.md),
+  [mirror.md](../developer/mirror.md)). Done when every series keyed by a repository name is deleted with the repository's name,
+  with a test per package.
+- **F-68 · The database guard of a move does not see a virtual-member write that skips the share locks** (read). `AI007`
+  (migration 00024) refuses a `project_id` change while a policy of the project or a virtual repository holds the repository
+  by ID; a virtual-member write that does not take `LockRepositoriesByKeys … FOR SHARE` could race it. Every write path takes
+  the locks today, so the gap is a missing second line, not a live defect. Done when the guard also covers that order (a
+  trigger on the member tables that locks the member repository) or a test pins every member write path to the locks.
+
+### Code
+
+- **F-69 · The package and vulnerability views key repositories by `<project>/<key>` strings and parse them per row** (read).
+  `packages/view/service.go` (`Name`, `Names`, `Strings`, `nameOf`) and `vuln/report/report.go` (`nameOf`) are adapters left by
+  the cut: the statements take repository IDs since the review (R9 of the review, measured in
+  [vulnerabilities.md](../developer/vulnerabilities.md#repositories-as-ids-in-the-statements-r-vuln-028)), the topologies above them still
+  hold names. Done when the topologies are keyed by `qname.Repo` or the ID and the adapters are gone.
+
 Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
