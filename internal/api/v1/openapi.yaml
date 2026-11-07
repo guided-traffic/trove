@@ -1127,6 +1127,163 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /api/v1/users/me/avatar:
+    put:
+      operationId: setAvatar
+      tags: [users]
+      summary: Set the caller's avatar
+      description: |
+        The body is the image itself, not JSON: PNG, JPEG or WebP, at most 1 MiB, between 32 x 32 and 4,194,304 pixels, one
+        frame. `Content-Type` names the format and the content must be that format; the server decides by the bytes. The
+        server decodes the image, takes the centre square, scales it to 256 x 256 pixels and stores a new PNG made from the
+        pixels alone, so metadata and anything appended are gone (R-API-055). The answer is the user record, whose
+        `avatarUrl` names the new image. A request with a session cookie needs the CSRF header (R-API-006). Service accounts
+        and CI tokens have no avatar and answer `403`.
+      x-trove-permission:
+        authenticated: true
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: The user record with the new `avatarUrl`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: removeAvatar
+      tags: [users]
+      summary: Remove the caller's avatar
+      description: |
+        The user shows the generated fallback image again. A user without an avatar answers `204` as well (R-API-055).
+      x-trove-permission:
+        authenticated: true
+      responses:
+        "204":
+          description: The caller has no avatar.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/users/{username}/avatar:
+    delete:
+      operationId: removeUserAvatar
+      tags: [users]
+      summary: Remove a user's avatar
+      description: |
+        Moderation: an administrator removes the avatar of another user (R-API-055). Nobody sets another user's avatar. A
+        user without an avatar answers `204`.
+      x-trove-permission:
+        permission: identities:write
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: The username. `me` is reserved and addresses the caller where the path has a `me` form.
+          schema:
+            type: string
+            x-trove-reserved-names: [me]
+      responses:
+        "204":
+          description: The user has no avatar.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/v1/avatars/{digest}:
+    get:
+      operationId: getAvatar
+      tags: [users]
+      summary: Read an avatar image
+      description: |
+        The image is named by the SHA-256 of its bytes, so the URL never changes its content: `avatarUrl` of a user record is
+        this path, and a replaced avatar has a new URL (R-API-055). The answer is `image/png` with `nosniff`, a CSP of
+        `default-src 'none'; sandbox`, `Content-Disposition: inline` and a private immutable cache, not the `no-store` of the
+        JSON answers. Any authenticated caller reads it; a digest that is no user's avatar answers `404`.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: digest
+          in: path
+          required: true
+          description: The lower-case hexadecimal SHA-256 of the image, 64 characters.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+      responses:
+        "200":
+          description: The avatar, a PNG of 256 x 256 pixels.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: The `If-None-Match` tag is the current one.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /api/v1/users/{username}:
     get:
       operationId: getUser
@@ -12665,7 +12822,7 @@ components:
       type: object
       description: A user (R-AUTH-016). `isAdmin`, `adminVia` and `lockedUntil` are derived and read only.
       required: [id, username, email, emailVerified, displayName, origin, status, disabledReason, isAdmin, adminVia,
-                 identities, groups, groupClaimMissing, lockedUntil, lastLoginAt, createdAt]
+                 identities, groups, groupClaimMissing, lockedUntil, lastLoginAt, createdAt, avatarUrl]
       properties:
         id:
           type: string
@@ -12678,6 +12835,12 @@ components:
           type: boolean
         displayName:
           type: [string, "null"]
+        avatarUrl:
+          type: [string, "null"]
+          description: |
+            The path of the user's avatar image (`/api/v1/avatars/<sha256>`, R-API-055), `null` for a user who has not uploaded
+            one: the UI shows the generated fallback then. The path names the image by its content, so it changes when the
+            avatar does.
         origin:
           type: string
           enum: [jit, admin, scim, system]
@@ -12722,6 +12885,7 @@ components:
         email: alice@example.com
         emailVerified: true
         displayName: Alice Example
+        avatarUrl: null
         origin: jit
         status: active
         disabledReason: null

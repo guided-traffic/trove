@@ -506,6 +506,7 @@ func (a *App) startClient() error {
 		}
 		return m, err
 	})
+	avatars := a.avatarService()
 	for _, rt := range a.eps {
 		router := httpserver.NewEndpointRouter(rt.ep)
 		api := v1.New(v1.Options{
@@ -514,7 +515,7 @@ func (a *App) startClient() error {
 			Access:   a.access(),
 			Replicas: replicaSource{a: a}, Facts: configFacts{cfg: cfg, a: a},
 			API:  a.apiServices(),
-			Auth: a.authServices(), AuditStore: a.auditStoreForAPI(), Authz: a.authzServices(), CI: a.ciAPI(),
+			Auth: a.authServices(), Avatars: avatars, AuditStore: a.auditStoreForAPI(), Authz: a.authzServices(), CI: a.ciAPI(),
 			// The endpoint and exposure-rule operations (R-EP-016, wire_exposure.go).
 			Endpoints:    a.endpointServices(),
 			Repositories: a.repositoryAPI(), Packages: part[packagesAPIArea](a.parts).services,

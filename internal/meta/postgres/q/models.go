@@ -897,6 +897,14 @@ type UiSession struct {
 	EndReason         pgtype.Text
 }
 
+type UserAvatar struct {
+	ID         pgtype.Int8
+	UserID     pgtype.UUID
+	BlobSha256 []byte
+	Size       int64
+	UpdatedAt  pgtype.Timestamptz
+}
+
 type UserGroup struct {
 	PrincipalID    pgtype.UUID
 	Description    string

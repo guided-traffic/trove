@@ -7754,7 +7754,12 @@ type UpstreamTestResultErrorCode string
 // User A user (R-AUTH-016). `isAdmin`, `adminVia` and `lockedUntil` are derived and read only.
 type User struct {
 	// AdminVia Why the user is an administrator: `direct`, `group:<name>` or `break-glass`.
-	AdminVia  []string  `json:"adminVia"`
+	AdminVia []string `json:"adminVia"`
+
+	// AvatarUrl The path of the user's avatar image (`/api/v1/avatars/<sha256>`, R-API-055), `null` for a user who has not uploaded
+	// one: the UI shows the generated fallback then. The path names the image by its content, so it changes when the
+	// avatar does.
+	AvatarUrl *string   `json:"avatarUrl"`
 	CreatedAt time.Time `json:"createdAt"`
 
 	// DisabledReason `admin`, `dormant` or `scim` while the user is disabled.
@@ -8500,6 +8505,12 @@ type ExportAuditEventsParams struct {
 
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
 type ExportAuditEventsParamsFormat string
+
+// GetAvatarParams defines parameters for GetAvatar.
+type GetAvatarParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
 
 // BastionCheckParams defines parameters for BastionCheck.
 type BastionCheckParams struct {
@@ -10078,6 +10089,9 @@ type ServerInterface interface {
 	// ValidatePermissionPolicy Validate a permission policy without storing it
 	// (POST /api/v1/authz/validate-policy)
 	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
+	// GetAvatar Read an avatar image
+	// (GET /api/v1/avatars/{digest})
+	GetAvatar(w http.ResponseWriter, r *http.Request, digest string, params GetAvatarParams)
 	// BastionCheck Check a caller's credential and read shape
 	// (POST /api/v1/bastion/check)
 	BastionCheck(w http.ResponseWriter, r *http.Request, params BastionCheckParams)
@@ -10582,6 +10596,12 @@ type ServerInterface interface {
 	// GetCurrentUser Read the caller's own user record
 	// (GET /api/v1/users/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+	// RemoveAvatar Remove the caller's avatar
+	// (DELETE /api/v1/users/me/avatar)
+	RemoveAvatar(w http.ResponseWriter, r *http.Request)
+	// SetAvatar Set the caller's avatar
+	// (PUT /api/v1/users/me/avatar)
+	SetAvatar(w http.ResponseWriter, r *http.Request)
 	// GetPreferences Read the caller's UI preferences
 	// (GET /api/v1/users/me/preferences)
 	GetPreferences(w http.ResponseWriter, r *http.Request, params GetPreferencesParams)
@@ -10609,6 +10629,9 @@ type ServerInterface interface {
 	// UpdateUser Correct a user's profile data
 	// (PATCH /api/v1/users/{username})
 	UpdateUser(w http.ResponseWriter, r *http.Request, username string, params UpdateUserParams)
+	// RemoveUserAvatar Remove a user's avatar
+	// (DELETE /api/v1/users/{username}/avatar)
+	RemoveUserAvatar(w http.ResponseWriter, r *http.Request, username string)
 	// DisableUser Disable a user
 	// (POST /api/v1/users/{username}/disable)
 	DisableUser(w http.ResponseWriter, r *http.Request, username string)
@@ -11111,6 +11134,56 @@ func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ValidatePermissionPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAvatar operation middleware
+func (siw *ServerInterfaceWrapper) GetAvatar(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "digest" -------------
+	var digest string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "digest", r.PathValue("digest"), &digest, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "digest", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAvatarParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAvatar(w, r, digest, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19317,6 +19390,34 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// RemoveAvatar operation middleware
+func (siw *ServerInterfaceWrapper) RemoveAvatar(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveAvatar(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetAvatar operation middleware
+func (siw *ServerInterfaceWrapper) SetAvatar(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetAvatar(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPreferences operation middleware
 func (siw *ServerInterfaceWrapper) GetPreferences(w http.ResponseWriter, r *http.Request) {
 
@@ -19611,6 +19712,32 @@ func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateUser(w, r, username, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveUserAvatar operation middleware
+func (siw *ServerInterfaceWrapper) RemoveUserAvatar(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "username" -------------
+	var username string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "username", r.PathValue("username"), &username, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "username", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveUserAvatar(w, r, username)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20874,6 +21001,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users", wrapper.ListUsers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/users", wrapper.CreateUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/me", wrapper.GetCurrentUser)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/me/avatar", wrapper.RemoveAvatar)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/users/me/avatar", wrapper.SetAvatar)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{username}/avatar", wrapper.RemoveUserAvatar)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/avatars/{digest}", wrapper.GetAvatar)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{username}", wrapper.DeleteUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/users/{username}", wrapper.GetUser)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/users/{username}", wrapper.UpdateUser)

@@ -23,6 +23,7 @@ func toUser(u principal.User) gen.User {
 		Origin: gen.UserOrigin(u.Origin), Status: gen.UserStatus(u.Status), DisabledReason: optString(u.DisabledReason),
 		IsAdmin: u.IsAdmin, AdminVia: orEmptyStrings(u.AdminVia), Identities: []gen.UserIdentity{}, Groups: []gen.UserGroupMembership{},
 		LockedUntil: optTime(u.LockedUntil), LastLoginAt: optTime(u.LastLoginAt), CreatedAt: utc(u.CreatedAt),
+		AvatarUrl: avatarURL(u.AvatarSHA256),
 	}
 	for _, i := range u.Identities {
 		out.Identities = append(out.Identities, gen.UserIdentity{Provider: i.Provider, Linked: i.Linked})
@@ -219,6 +220,7 @@ type userPatchBody struct {
 	LockedUntil       json.RawMessage `json:"lockedUntil"`
 	LastLoginAt       json.RawMessage `json:"lastLoginAt"`
 	CreatedAt         json.RawMessage `json:"createdAt"`
+	AvatarURL         json.RawMessage `json:"avatarUrl"`
 }
 
 // UpdateUser implements PATCH /api/v1/users/{username} (R-AUTH-016).

@@ -2,6 +2,7 @@ package principal
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -154,6 +155,9 @@ type User struct {
 	// LockedUntil is the end of the lockout of the break-glass account while it is
 	// in force (R-AUTH-038); the zero time otherwise.
 	LockedUntil time.Time
+	// AvatarSHA256 is the lower-case hex SHA-256 of the user's avatar image
+	// (R-API-055), empty for a user without one.
+	AvatarSHA256 string
 }
 
 func (m *Manager) record(ctx context.Context, tx meta.Tx, ev audit.Event) error {
@@ -328,7 +332,31 @@ func loadUser(ctx context.Context, qs *q.Queries, name string) (User, error) {
 	}
 	one := []User{u}
 	err = fillAdmin(ctx, qs, one)
+	if err == nil {
+		err = fillAvatars(ctx, qs, one)
+	}
 	return one[0], err
+}
+
+// fillAvatars sets the avatar digest of a batch of users: one query however many users there are (R-API-055).
+func fillAvatars(ctx context.Context, qs *q.Queries, users []User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(users))
+	index := make(map[string]int, len(users))
+	for i := range users {
+		ids = append(ids, users[i].ID)
+		index[users[i].ID] = i
+	}
+	rows, err := qs.AvatarDigests(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		users[index[r.UserID]].AvatarSHA256 = hex.EncodeToString(r.BlobSha256)
+	}
+	return nil
 }
 
 // fillAdmin derives isAdmin, adminVia and the lockout of a batch of users from the
@@ -428,7 +456,10 @@ func (m *Manager) ListUsers(ctx context.Context, f UserFilter) ([]User, error) {
 			}
 			out = append(out, u)
 		}
-		return fillAdmin(ctx, qs, out)
+		if err := fillAdmin(ctx, qs, out); err != nil {
+			return err
+		}
+		return fillAvatars(ctx, qs, out)
 	})
 	return out, DBErr("principal.ListUsers", err)
 }

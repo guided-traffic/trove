@@ -21,6 +21,7 @@ var ifMatchExempt = map[string]string{
 	"setProjectMember": "binds one pair (R-API-012)",
 	"deployFile":       "file content on /files (R-API-012)",
 	"deployContent":    "file content on the content route (R-API-012, Q-UI-106)",
+	"setAvatar":        "an image replaced as a whole and addressed by its digest (R-API-012, R-API-055)",
 }
 
 // TestR_API_012_OneMechanismForAMissingIfMatch holds the declaration side of

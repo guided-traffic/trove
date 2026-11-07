@@ -4642,6 +4642,42 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-STOR-003 "Recount", R-STOR-024 step 2b, R-STOR-047; `internal/meta/postgres/migrations/00046_backup.sql`, `internal/meta/postgres/queries/backup.sql`, `test/integration/postgres/backup_runstore_test.go`.
 
+### Q-STOR-166 · The avatar image is a blob of the object store, not a column
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner chose "als Blob gespeichert" for the uploaded avatar (R-API-055) and left to the development agent whether that means the content-addressed blob store (INV-4) or a `bytea` column in PostgreSQL. The image is a PNG of 256 x 256 pixels, a few KiB for a drawing and up to about 100 KiB for a photograph.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A blob of the blob store; a row names it by digest (chosen) | Spooled, hashed and committed by the protocol of R-STOR-005, deduplicated, read back verified; `user_avatars.blob_sha256` has the foreign key and the reference triggers | One rule for stored content: a backup exports the blob rows that the snapshot's rows reference (R-BAK-004), the collector deletes a blob nobody references (R-STOR-024), the scrub checks it (R-STOR-027), the read is verified (R-STOR-013); the same image uploaded by two users is one object; the image does not load PostgreSQL's buffers and WAL with 100 KiB per user; matches the owner's word and the UI asset store (Q-HA-120) | A read is a database lookup and an object-store `GET` (the browser caches it for a year, Q-API-209); an object store outage makes avatars unavailable (`503`), not the user records |
+| (b) A `bytea` column of `user_avatars` | The image in the row | One system; a transaction covers row and bytes; no collection | The backup of the table carries the images through `COPY`; a replica reads 100 KiB through a pooled connection per avatar; a second place that stores content, with none of the blob store's verification, deduplication or scrub; TOAST and WAL growth for a cosmetic feature |
+| (c) The image in the row for small ones, in the store for large | Both | Fast for small | Two paths to test and to keep consistent; the output is at most about 260 KiB anyway |
+
+**Choice:** (a). The blob is addressed by the SHA-256 of the PNG the server made, which is also the avatar's URL (Q-API-207). The object lives under the blob store's own key (`<prefix>/sha256/<h0h1>/<h2h3>/<digest>`), not under a prefix of its own: nothing distinguishes it from other content, and the references decide when it goes. The row is the whole of the avatar's metadata: user, digest, size, time of the change.
+
+**Rationale:** the question is not where 100 KiB fits but how many rules for stored content the installation should have. (a) reuses all of them and adds one table; the cost, an object-store read per avatar, is paid once per browser per avatar. The development agent revisits this if avatars become the dominant object-store reads of an installation (a metric `trove_http_requests_total` for the route would show it) and a per-replica cache of the 256 px images is wanted.
+
+**Applied:** R-API-055 (Storage); `internal/meta/postgres/migrations` (`user_avatars`), `internal/avatar/store.go`. Test: `TestR_API_055_AvatarLifecycle` (the object is read back from the bucket).
+
+### Q-STOR-167 · A row names the avatar, the blob reference rules keep and collect it
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a blob that a row references must not be collected (R-STOR-003), and one that no row references must be (R-STOR-024). An avatar's blob is referenced by one or more `user_avatars` rows (identical images deduplicate); it is replaced by an upload, dropped by a removal and by the deletion of the user (`ON DELETE CASCADE`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The reference rules of R-STOR-003, unchanged: `blob_sha256` with the foreign key and an index, the guard trigger, the two release triggers; the table is `data` (chosen) | The migration installs the three triggers, as for `items` and `ui_assets`; a replaced, removed or cascade-deleted row queues its blob in `blob_gc_queue`; the collector deletes it after its checks | A new table needs no code in the collector: it reads the catalog of columns named `blob_sha256` that reference `blobs` (`postgres.LoadBlobRefs`), so the new reference is seen without an edit; no leak path | The release trigger needs an `id` column for the update case |
+| (b) Delete the object in the request that replaces it | `DELETE` of the object after the commit | Immediate | Races the other user who uploaded the same image; breaks R-STOR-024's rule that only the collector deletes |
+| (c) Class `transient` | Avatars are gone after a restore | Smaller backup | A restore silently removes every user's picture; the owner's data, not a cache |
+
+**Choice:** (a). The upload commits the blob and the row in the link transaction of the commit protocol (R-STOR-005): the guard trigger proves the blob live under the commit's lock, so a collector that races the upload cannot delete what the row now references. The write of the same image again changes nothing (`WHERE blob_sha256 <> EXCLUDED.blob_sha256`). The table is registered `data` in `internal/backup/tables` (`tables_avatar.go`); its blobs travel with it as the blobs of every `data` table's references do (R-BAK-004; the backup job itself is not built yet). A replaced blob is queued and deleted by the collector after `storage.gc.delete_settle` and its reference check; until then the bytes are in the bucket but no route serves them (H-561).
+
+**Rationale:** the avatar is the third user of the reference rules after items and the UI asset store, and costs a migration and a registration. The development agent revisits this if a second table needs the same "one blob per owner" shape: then the pattern is a helper, not a third copy.
+
+**Applied:** R-API-055 (Storage); migration `user_avatars`; `internal/meta/postgres/tables_avatar.go`; `internal/meta/postgres/queries/avatars.sql`; [backup-and-restore.md](backup-and-restore.md) R-BAK-004 (the table is `data` by default). Tests: `TestR_API_055_AvatarLifecycle` (the replaced blob and the blob of a deleted user are queued), the migration test that every table is registered.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

@@ -23,6 +23,8 @@ const (
 	EventUserEnabled         = "user.enabled"
 	EventUserDeleted         = "user.deleted"
 	EventUserDormancyWarning = "user.dormancy_warning"
+	EventUserAvatarSet       = "user.avatar.set"
+	EventUserAvatarRemoved   = "user.avatar.removed"
 	EventUserGroupsSynced    = "user.groups.synced"
 	EventUserGroupsClaimMiss = "user.groups.claim_missing"
 	EventGroupCreated        = "group.created"
@@ -77,6 +79,10 @@ func init() {
 	ident(EventUserEnabled, NoJournal, `{"type":"object","properties":{`+userSource+`}}`)
 	ident(EventUserDeleted, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+
 		`"tokensDeleted":{"type":"integer"},"sessionsEnded":{"type":"integer"},"membershipsDeleted":{"type":"integer"},"identitiesDeleted":{"type":"integer"}}}`)
+	// The avatar of a user (R-API-055): the image is the stored PNG, named by its digest; no event holds image bytes.
+	avatarSource := `"source":{"type":"string","enum":["self","admin"]}`
+	ident(EventUserAvatarSet, NoJournal, `{"type":"object","properties":{`+avatarSource+`,"sha256":{"type":"string"},"size":{"type":"integer"}}}`)
+	ident(EventUserAvatarRemoved, NoJournal, `{"type":"object","properties":{`+avatarSource+`,"sha256":{"type":"string"}}}`)
 	ident(EventUserDormancyWarning, NoJournal, `{"type":"object","properties":{"deadline":{"type":"string"}}}`)
 	ident(EventUserGroupsSynced, JournalRevocation, `{"type":"object","properties":{`+
 		`"provider":{"type":"string"},"added":`+eventSchemaNames+`,"removed":`+eventSchemaNames+`}}`)

@@ -135,6 +135,9 @@ type Options struct {
 	// groups, service accounts, tokens, sessions, login options, the runtime
 	// authentication settings and the user preferences (auth_services.go).
 	Auth AuthServices
+	// Avatars is the avatar store behind the avatar operations (R-API-055); nil
+	// answers them with 503.
+	Avatars AvatarService
 	// <<< M1 identity
 	// >>> M4 ci
 	// CI holds the services of the CI federation's operations (ci_services.go);

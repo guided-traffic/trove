@@ -25,6 +25,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | [internal/auth](../../internal/auth) | The stage (`Stage`, implements `Authenticator`), the failure limiter interface and its per-replica implementation |
 | [internal/auth/principal](../../internal/auth/principal) | The principal table: read side with cache (`PGStore`), write side (`Manager`), the login seam (`PGProvisioner`), the change payloads (`Change`), the freshness gate (`Gate`, `Flights`), the identity metrics (`Metrics`) |
 | [internal/auth/token](../../internal/auth/token) | Token format, scopes, lifetime policy, `Service` (create, rotate, revoke, list, validate with cache), `SettingsStore` (runtime settings), the two scheduled tasks |
+| [internal/avatar](../../internal/avatar) | The user avatar (R-API-055): `Processor.Process` turns an upload into a 256 x 256 PNG, `Store` keeps it in the blob store and `user_avatars` |
 | [internal/audit/events_identity.go](../../internal/audit/events_identity.go) | The identity event types with their data schemas and journal flags |
 | [internal/audit/events_bastion.go](../../internal/audit/events_bastion.go) | `bastion.created`, `bastion.updated`, `bastion.deleted` (no journal entry, Q-BAS-61) |
 | [internal/bastionmain](../../internal/bastionmain) | The Bastion registrations (`registrations.go`: `Registrations`, the service behind `/api/v1/bastions` and `trove admin bastion`) and the `TokenAuthenticator` over the token service (`authenticator.go`); see [bastion.md](bastion.md) |
@@ -318,6 +319,34 @@ Extension checklist, **a new identity operation**: add the path and schemas betw
 `429`, the problem responses, `x-trove-reserved-names` for a literal next to a key), run `make generate`, write the handler on `*Server`
 with `s.identityReady`, call the domain function, answer with `failIdentity`, add it to `identityOperations` in
 [api_test.go](../../test/integration/identity/api_test.go) so that `Uncovered` fails until a test reaches it.
+
+## User avatars (R-API-055)
+
+A user uploads a picture for their own record; the server keeps a new image made from its pixels. The security view is
+[user-avatars](../security/user-avatars.md); this is where the code is.
+
+| File | Responsibility |
+|---|---|
+| [internal/avatar/process.go](../../internal/avatar/process.go) | The constants (`MaxUpload`, `OutputSide`, `MinSide`, `MaxPixels`, `MaxConcurrent`, `BusyWait`), the refusals (`ErrTooLarge`, `ErrUnsupportedType`, `ErrTypeMismatch`, `ErrAnimated`, `ErrDimensions`, `ErrCorrupt`, `ErrBusy`) and `Processor.Process`: sniff, header size, slot, decode, crop, scale, encode |
+| [internal/avatar/orient.go](../../internal/avatar/orient.go) | The EXIF orientation reader and `orient`, applied to the scaled square |
+| [internal/avatar/store.go](../../internal/avatar/store.go) | `Store`: `Put` (process, spool, `Commit` with a link that upserts `user_avatars` and records the event), `Remove`, `Open` (lookup by digest, verified read) |
+| [internal/api/v1/avatar_api.go](../../internal/api/v1/avatar_api.go) | The four handlers, `readImage`, `avatarErr` (the mapping of refusals to problems), the image headers; `AvatarService` is the seam the handlers take |
+| [internal/app/wire_avatar.go](../../internal/app/wire_avatar.go) | `avatarService`: one `Store` per replica over the infra database, blob store and recorder, so the decoding slots are the replica's |
+| [internal/meta/postgres/queries/avatars.sql](../../internal/meta/postgres/queries/avatars.sql) | `AvatarUpsert`, `AvatarDelete`, `AvatarByDigest`, `AvatarDigests` |
+| [internal/meta/postgres/tables_avatar.go](../../internal/meta/postgres/tables_avatar.go) | The export class of `user_avatars` (`data`) |
+
+- **The user record.** `principal.User.AvatarSHA256` is filled for a batch of users by `fillAvatars` in one statement (`GetUser` and
+  `ListUsers`); `toUser` turns it into `avatarUrl` (`/api/v1/avatars/<sha256>` or `null`). The triggers of `user_avatars` bump
+  `principal.revision`, so the ETag of the record follows the avatar (Q-API-210).
+- **The blob.** The table has the `blob_sha256` column, its foreign key and index, and the three reference triggers of R-STOR-003, so
+  the collector keeps the PNG while a row names it and collects it after a replacement, a removal or the deletion of the user. `Put` commits
+  the blob and the row in one link transaction (R-STOR-005).
+- **Adding a format** means a decoder in `config` and `decode` and a sniff rule in `check`, a fixture, a test per refusal of
+  [process_test.go](../../internal/avatar/process_test.go), and a change of R-API-055; do not add a format whose decoder reads
+  a stream the header does not bound.
+- **Tests.** Unit: `go test ./internal/avatar/` (fixtures in `testdata/`, made with a WebP encoder outside the repository; the
+  animated ones are two-frame files). Integration, against the stack with the role `api`:
+  [test/integration/api/avatar_test.go](../../test/integration/api/avatar_test.go).
 
 ## Bastion registrations and tokens (R-BAS-004, R-BAS-005)
 

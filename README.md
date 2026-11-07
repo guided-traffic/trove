@@ -85,6 +85,7 @@ Built (M1, access core):
 - 🔐 **OIDC login with PKCE.** Providers under `auth.oidc.providers`, the authorization-code flow with PKCE, a server-side session per browser login, CSRF protection and logout. See [login](docs/developer/login.md) and [login and sessions](docs/security/login-and-sessions.md).
 - 🆘 **Break-glass administrator.** One local account whose password comes from a file: a plaintext password of at least 20 characters or an Argon2id hash; lockout and a rotation hold. See [login](docs/developer/login.md).
 - 🎟️ **Own tokens.** Personal (`trv_pat_`) and service-account (`trv_sat_`) tokens with lifetimes, rotation, revocation, a per-address failed-credential throttle. See [identity](docs/developer/identity.md) and [tokens and credentials](docs/security/tokens-and-credentials.md).
+- 🖼️ **User avatars.** A user uploads a PNG, JPEG or WebP of at most 1 MiB for their own record; the server decodes it, bounds its size before decoding and stores a new 256 x 256 PNG (no metadata, no animation, never SVG) as a blob, served by the `api` role with image headers; users without one get a generated avatar in the UI ([security](docs/security/user-avatars.md), R-API-055).
 - 🛂 **Permission policies.** Deny by default; allow-only policies over repository and package-name patterns, five system roles and role bindings; a grant index per replica that is consistent through an epoch. See [authorization](docs/developer/authorization.md) and [permissions](docs/security/permissions.md).
 - 🪪 **Role bindings from the Helm values.** `authz.role_bindings` makes an IdP group the administrator or the auditor from a GitOps repository: `trove migrate` applies the list, the API and the UI show it read-only. See [sign-in and identity](docs/manual/admin/sign-in-and-identity.md#administrators-from-the-helm-values).
 - 🔎 **Auditor.** Reads the configuration, the audit log and the metadata of every repository (package lists, documents, search, package pages) and downloads, publishes and changes nothing. See [permissions](docs/security/permissions.md#the-auditor).
@@ -179,6 +180,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/v1/vulnerabilities/findings`, `…/findings/export`, `…/findings/{id}`, `…/findings/set-status`, `…/advisories/{ecosystem}/{id}`, `…/summary`, `…/trend`, `…/sources`, `…/claimed-name-matches` | GET; PATCH on `…/findings/{id}`, POST on `…/set-status` | yes (M4b; [the operations](#management-api)) |
 | `/api/v1/packages/{packageId}/vulnerabilities`, `/api/v1/packages/{packageId}/versions/{version}/vulnerabilities`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` | GET; POST for the rescan | yes (M4b) |
 | `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | GET; POST | yes (phase 6b): the status of a remote repository's mirror and a request for a pass now ([mirror_api.go](internal/api/v1/mirror_api.go)); both answer `400 not_applicable` for a local or virtual repository |
+| `/api/v1/avatars/{digest}` | GET | yes (R-API-055): the avatar image of a user, `{digest}` the 64 lower-case hex characters of the SHA-256 of the stored PNG; the `avatarUrl` of a user record is this path |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
 | `/ui/{locale}/vulnerabilities`, `…/vulnerabilities/findings/{id}`, `…/vulnerabilities/advisories/{ecosystem}/{id}`, `…/vulnerabilities/sources` | GET, HEAD | yes (M4b): the report, a finding, an advisory and the advisory sources ([vulnerabilities.routes.ts](web/src/app/features/vulnerabilities/vulnerabilities.routes.ts)) |
 
@@ -475,7 +477,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected`; for a Bastion token (type `bst`) `token.created` and `token.revoked` carry `resource_type` `bastion` and the registration in the data (`token.revoked` keeps its journal entry) |
 | Bastion registrations | `bastion.created`, `bastion.updated`, `bastion.deleted` ([internal/audit/events_bastion.go](internal/audit/events_bastion.go); no journal entry) |
 | CI federation | `ci.exchange.succeeded`, `ci.exchange.denied`, `ci.exchange.replayed`, `ci.exchange.repeated`, `ci.token.revoked`, `ci.issuer.created`, `ci.issuer.updated`, `ci.issuer.disabled`, `ci.issuer.enabled`, `ci.issuer.deleted`, `ci.mapping.created`, `ci.mapping.updated`, `ci.mapping.disabled`, `ci.mapping.enabled`, `ci.mapping.deleted`, `ci.keys.refreshed`, `ci.keys.refresh_failed`, `ci.package_ownership.claimed`, `ci.package_ownership.conflict`, `ci.job_token.lookup` ([internal/audit/events_ci.go](internal/audit/events_ci.go)); `ci.token.revoked` and the `.updated`, `.disabled` and `.deleted` events of issuers and mappings carry the journal entry |
-| Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
+| Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.avatar.set`, `user.avatar.removed`, `user.groups.synced`, `user.groups.claim_missing` |
 | Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
 | Settings | `settings.auth.changed` |
 | Repositories and endpoints | `repository.created`, `repository.updated`, `repository.deleted`, `repository.moved` (a move to another project, journaled as a narrowing), `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` |
@@ -561,6 +563,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit, vulnerability scanning |
 | [docs/security/vulnerability-scanning.md](docs/security/vulnerability-scanning.md) | The download block, the client audits and what they reveal, who reads and triages findings, the advisory data as untrusted input, who decides the data in mode `repository`, and the open gaps of the scanning |
 | [docs/security/mirror.md](docs/security/mirror.md) | The mirror engine: the fence of a pass, what a pass takes from an upstream and what bounds it, what its state and messages show, what a restore leaves, and the gaps H-527 to H-529 |
+| [docs/security/user-avatars.md](docs/security/user-avatars.md) | The avatar upload: the order of the checks on an untrusted image, the bounds, what is stored (a new PNG made from the pixels), what a request can read, who can set and remove one |
 | [docs/developer/mirror.md](docs/developer/mirror.md) | The mirror mode: the work packages, the engine's files, how a pass runs and ends, what the status reads, the tests |
 | [docs/manual/admin/vulnerability-sources.md](docs/manual/admin/vulnerability-sources.md) | Administrator manual: the advisory sources, their tasks, refused archives, the import for installations without internet access, the settings and the checks |
 | [docs/manual/user/vulnerabilities.md](docs/manual/user/vulnerabilities.md) | User manual: the vulnerability report, a finding, triage and the package page's tab |
@@ -1568,6 +1571,10 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/users` | `listUsers` | `identities:read` |
 | `POST /api/v1/users` | `createUser` | `identities:write` |
 | `GET /api/v1/users/me` | `getCurrentUser` | authenticated |
+| `PUT /api/v1/users/me/avatar` | `setAvatar` | authenticated; the body is a PNG, JPEG or WebP of at most 1 MiB, stored as a new 256 x 256 PNG ([security](docs/security/user-avatars.md)) |
+| `DELETE /api/v1/users/me/avatar` | `removeAvatar` | authenticated |
+| `DELETE /api/v1/users/{username}/avatar` | `removeUserAvatar` | `identities:write` |
+| `GET /api/v1/avatars/{digest}` | `getAvatar` | authenticated; `image/png`, immutable private cache |
 | `GET /api/v1/users/{username}` | `getUser` | `identities:read` |
 | `PATCH /api/v1/users/{username}` | `updateUser` | `identities:write` |
 | `DELETE /api/v1/users/{username}` | `deleteUser` | `identities:write` |

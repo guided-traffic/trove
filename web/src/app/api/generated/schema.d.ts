@@ -454,6 +454,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the caller's avatar
+         * @description The body is the image itself, not JSON: PNG, JPEG or WebP, at most 1 MiB, between 32 x 32 and 4,194,304 pixels, one
+         *     frame. `Content-Type` names the format and the content must be that format; the server decides by the bytes. The
+         *     server decodes the image, takes the centre square, scales it to 256 x 256 pixels and stores a new PNG made from the
+         *     pixels alone, so metadata and anything appended are gone (R-API-055). The answer is the user record, whose
+         *     `avatarUrl` names the new image. A request with a session cookie needs the CSRF header (R-API-006). Service accounts
+         *     and CI tokens have no avatar and answer `403`.
+         */
+        put: operations["setAvatar"];
+        post?: never;
+        /**
+         * Remove the caller's avatar
+         * @description The user shows the generated fallback image again. A user without an avatar answers `204` as well (R-API-055).
+         */
+        delete: operations["removeAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{username}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a user's avatar
+         * @description Moderation: an administrator removes the avatar of another user (R-API-055). Nobody sets another user's avatar. A
+         *     user without an avatar answers `204`.
+         */
+        delete: operations["removeUserAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/avatars/{digest}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an avatar image
+         * @description The image is named by the SHA-256 of its bytes, so the URL never changes its content: `avatarUrl` of a user record is
+         *     this path, and a replaced avatar has a new URL (R-API-055). The answer is `image/png` with `nosniff`, a CSP of
+         *     `default-src 'none'; sandbox`, `Content-Disposition: inline` and a private immutable cache, not the `no-store` of the
+         *     JSON answers. Any authenticated caller reads it; a digest that is no user's avatar answers `404`.
+         */
+        get: operations["getAvatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users/{username}": {
         parameters: {
             query?: never;
@@ -4749,6 +4822,7 @@ export interface components {
          *       "email": "alice@example.com",
          *       "emailVerified": true,
          *       "displayName": "Alice Example",
+         *       "avatarUrl": null,
          *       "origin": "jit",
          *       "status": "active",
          *       "disabledReason": null,
@@ -4779,6 +4853,12 @@ export interface components {
             email: string | null;
             emailVerified: boolean;
             displayName: string | null;
+            /**
+             * @description The path of the user's avatar image (`/api/v1/avatars/<sha256>`, R-API-055), `null` for a user who has not uploaded
+             *     one: the UI shows the generated fallback then. The path names the image by its content, so it changes when the
+             *     avatar does.
+             */
+            avatarUrl: string | null;
             /** @enum {string} */
             origin: "jit" | "admin" | "scim" | "system";
             /** @enum {string} */
@@ -9288,6 +9368,131 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["User"];
                 };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    setAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "image/png": string;
+                "image/jpeg": string;
+                "image/webp": string;
+            };
+        };
+        responses: {
+            /** @description The user record with the new `avatarUrl`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    removeAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller has no avatar. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    removeUserAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The username. `me` is reserved and addresses the caller where the path has a `me` form. */
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user has no avatar. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getAvatar: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The lower-case hexadecimal SHA-256 of the image, 64 characters. */
+                digest: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The avatar, a PNG of 256 x 256 pixels. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];

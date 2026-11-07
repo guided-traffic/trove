@@ -606,8 +606,9 @@ Priority: **MVP** · Covers: trove-only
 - Exempt, because they cannot lose another writer's change or carry no revision: DELETE (honors
   `If-Match` when sent), membership edits that send a delta or bind one pair
   (`{"add": [...], "remove": [...]}`, role bindings, the members of a project with their role), the move of a
-  repository to another project (it names its target), write-only secret slots, item properties, and file content
-  on `/files`.
+  repository to another project (it names its target), write-only secret slots, item properties, file content
+  on `/files`, and the avatar image of a user (R-API-055), which replaces the whole image by its content and is addressed
+  by its digest.
 - The UI sends the ETag it loaded on every write and never sends `If-Match: *` on its own
   (R-UI-042).
 - GET supports `If-None-Match` and answers 304.
@@ -1774,6 +1775,94 @@ Acceptance criteria:
 - The contents list `user` before `admin`; a page carries its headings and neighbours; both answer `304` for the ETag and
   an unknown page `404`; an anonymous caller gets `200` with anonymous access on and `401` with it off
   (`TestR_API_054_TheManualOperations`, `TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting`).
+
+### R-API-055 · User avatars
+Priority: **MVP** · Covers: trove-only
+
+The owner's requirement of 2026-11-07, in two parts. A user who has not uploaded an avatar gets a generated robot avatar in
+the UI (R-UI-051); the UI bundles the generator and loads nothing from outside trove's origin. A user can upload an avatar,
+and the owner fixed its shape: only PNG, JPEG and WebP and never SVG; the server decodes the image and stores a new one; at
+most 1 MiB is accepted; the image is stored as a blob; the `api` role serves it from trove's origin. Everything below that
+the owner did not say is the development agent's decision, recorded as Q-API-207 to Q-API-210, Q-AUTH-195 to Q-AUTH-197 and
+Q-STOR-166, Q-STOR-167.
+
+| Method | Path | Purpose | Permission |
+|---|---|---|---|
+| PUT | `/api/v1/users/me/avatar` | Set the caller's avatar; the body is the image, `Content-Type` is `image/png`, `image/jpeg` or `image/webp`; answers the user record | authenticated; a user or the break-glass account |
+| DELETE | `/api/v1/users/me/avatar` | Remove the caller's avatar; `204` also when there is none | as above |
+| DELETE | `/api/v1/users/{username}/avatar` | Remove another user's avatar (moderation); `204` also when there is none | `identities:write` (`admin`) |
+| GET | `/api/v1/avatars/{digest}` | The image, named by the lower-case hexadecimal SHA-256 of its bytes | authenticated |
+
+- **The user record names the image.** `User.avatarUrl` (R-AUTH-016) is `/api/v1/avatars/<sha256>` or `null` for a user
+  without an avatar; the UI shows the generated avatar for `null`. It is on `GET /api/v1/users/me`, `GET /api/v1/users/{username}`
+  and every item of `GET /api/v1/users`. Nothing else is needed to find another user's avatar: the digest is in the record.
+- **The input is untrusted and is never stored or served.** The server decides the format from the bytes, not from the
+  declared type (Q-API-208). In this order: the declared media type must be one of the three, else `415`; the body is read
+  through a reader that stops at 1 MiB (1,048,576 bytes), a longer body is `413 payload_too_large` and is not held; the first
+  512 bytes must sniff as PNG, JPEG or WebP, else `415`, and as the declared one, else `415` (an SVG, an HTML page, a GIF or
+  a polyglot never gets this far); an animated PNG or WebP is `422`; the size in the header is read before any pixel is
+  allocated and must be at least 32 x 32 and at most 4,194,304 pixels in all, else `422` (a header that declares 100,000 x
+  100,000 pixels in a few bytes costs nothing); the image is decoded with the Go decoders (`image/png`, `image/jpeg`,
+  `golang.org/x/image/webp`, decoder only), and one that does not decode, a truncated one included, is `422`.
+- **The result is a new image.** The centre square of the decoded pixels is scaled to 256 x 256 (Catmull-Rom) and encoded as a
+  PNG from the pixels alone: no metadata (EXIF, GPS position, ICC profile, text chunks), nothing appended, one frame. The
+  EXIF orientation of a JPEG is applied first, because the result has no EXIF to apply it later. Transparency is kept. The
+  same image always gives the same bytes, so it gives the same digest.
+- **Bounded cost.** A replica decodes two images at a time (`avatar.MaxConcurrent`); a request that finds no free slot within
+  2 s is `503 server_busy` with `Retry-After: 1`. With the pixel bound that keeps the decoding below 64 MiB (a decoder holds
+  at most 8 bytes per pixel). The management API's rate limits (R-API-016) apply as to any write.
+- **The image answer.** `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src
+  'none'; sandbox`, `Content-Disposition: inline; filename="avatar.png"`, `Cross-Origin-Resource-Policy: same-origin`,
+  `ETag: "<sha256>"` and `Cache-Control: private, max-age=31536000, immutable`: the answer is for a signed-in caller and the
+  URL never changes its content (Q-API-209). These replace the headers R-API-017 gives a JSON answer. A digest that is no
+  user's avatar, a replaced or removed one included, is `404`; the route reads no other blob of the store. The page's CSP
+  (`img-src 'self' data:`, R-UI-001) admits the URL, which is on trove's origin.
+- **Storage.** The PNG is a blob of the object store, committed by the protocol of R-STOR-005 and deduplicated; the table
+  `user_avatars` names it for the user, with `ON DELETE CASCADE` from the user (Q-STOR-166, Q-STOR-167). A replaced or removed
+  avatar's blob is queued for collection by the reference triggers (R-STOR-024); deleting a user does the same. The
+  table is exported by a backup (R-BAK-004, `data`).
+- **Audit.** `user.avatar.set` (`details.source` `self`, `sha256`, `size`) and `user.avatar.removed` (`source` `self` or
+  `admin`, `sha256`), transactional with the change (Q-AUTH-197). An upload of the image the user already has records nothing.
+- **Who.** A user changes only their own avatar. A service account and a CI token have no avatar and answer `403` on the two
+  `me` routes. An administrator removes, never sets, another user's avatar (Q-AUTH-196). Any authenticated caller reads an
+  image (Q-AUTH-195).
+- **Writes from the browser** are session writes: `X-CSRF-Token` is required (R-API-006), `If-Match` is not (the image is
+  replaced as a whole and addressed by its digest, R-API-012).
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `malformed_request` | The body is empty |
+| 403 | `forbidden` | The caller is a service account or a CI token; or lacks `identities:write` for another user's avatar |
+| 403 | `csrf_failed` | A session write without the CSRF header |
+| 404 | `not_found` | `GET`: no avatar has this digest; `DELETE` of another user: no such user |
+| 413 | `payload_too_large` | The body is longer than 1 MiB |
+| 415 | `unsupported_media_type` | The declared type is not PNG, JPEG or WebP; the content is not; the content is another of the three than declared |
+| 422 | `validation_failed` | `errors[0].code` `animated_image`, `invalid_dimensions` (under 32 x 32 or over 4,194,304 pixels) or `undecodable_image` (damaged or truncated) |
+| 503 | `server_busy` | No decoding slot became free within 2 s; `Retry-After: 1` |
+| 503 | `unavailable`, `object_store_unavailable` | The store or the object store cannot take the request |
+
+Acceptance criteria:
+
+- A PNG, a JPEG and a WebP (lossy, lossless and with alpha) each come out as a PNG of 256 x 256 pixels, the corner of the
+  source in the corner of the result; a 96 x 64 image is cropped to its centre square; the same input gives the same bytes
+  (`TestR_API_055_ReEncodesToTheFixedSquare`).
+- A JPEG with an EXIF block holding a position and a comment, and a PNG with a text chunk and an HTML page after `IEND`, come
+  out with no such byte, with the chunks `IHDR`, `IDAT` and `IEND` only and nothing after `IEND`
+  (`TestR_API_055_ResultCarriesNoMetadataAndNoAppendedData`); the orientation of a photo is applied
+  (`TestR_API_055_AppliesTheExifOrientationOfAPhoto`, `FuzzR_API_055_ExifOrientation`).
+- An SVG, an HTML page, a GIF and a GIF-and-script polyglot are refused whatever type they declare, and an image of another
+  accepted format than declared is refused (`TestR_API_055_RefusesWhatIsNotAPNGJPEGOrWebP`).
+- A body of 1 MiB + 1 byte is refused and one of 1 MiB is not (`TestR_API_055_RefusesABodyAboveTheLimit`); an image whose
+  header declares 100,000 x 100,000 pixels, or a canvas of 16,000 x 16,000, is refused by its size and not by a failed decode
+  (`TestR_API_055_RefusesTheDimensionsBeforeDecoding`); a truncated image (`TestR_API_055_RefusesAnImageThatDoesNotDecode`) and
+  an animated PNG or WebP (`TestR_API_055_RefusesAnimatedImages`) are refused; a replica with no free slot answers busy
+  (`TestR_API_055_BoundsTheImagesDecodedAtOnce`).
+- On a running `api` replica: an upload, the read with the headers above by the owner, another user and an administrator, the
+  `304` for the ETag, the replacement (the old URL is `404` and its blob queued), the removal by the owner and by an
+  administrator, the refusal for another user and for a service account, the cascade when the user is deleted, the refusals
+  of every error row, and the CSRF header for a session
+  (`TestR_API_055_AvatarLifecycle`, `TestR_API_055_AvatarRefusals`,
+  `TestR_API_055_AvatarWritesNeedTheCSRFHeaderOfASession`).
 
 ### R-API-031 · Users, groups and service accounts
 Priority: **MVP** · Covers: ADMAPI-004, ADMAPI-005, ADMAPI-006, ADMAPI-007, ADMAPI-008, ADMAPI-009, ADMAPI-012, ADMAPI-013, ADMAPI-014, ADMAPI-015, ADMAPI-016, ADMAPI-017, ADMAPI-018
@@ -8577,6 +8666,82 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The three choices follow from the existing code: the declared permission names, the reserved-name test and the generator's collision rule. A UUID never equals `summary`, so the reservation costs nothing. The development agent would revisit the string types when the generator keeps enum constants per type.
 
 **Applied:** R-API-050 table and permission column; `api/openapi.yaml` (M5 backup); `internal/api/v1/backups_api.go`.
+
+### Q-API-207 · An avatar is read at a path named by its digest
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner decided that a user can upload an avatar and that the `api` role serves it from trove's origin (R-API-055). The UI shows another user's avatar in lists, in members and in audit rows, so a read path must work for any user, and the user record has to tell the UI whether a user has an avatar or the generated one applies.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `GET /api/v1/avatars/{digest}`, the SHA-256 of the stored image; the user record carries the path (chosen) | The URL names the content; a replacement is a new URL | The answer can be cached forever (`immutable`) and the browser never asks again; no username in the URL, so a rename breaks nothing; a lookup by digest cannot be confused with any other user's data | The record has to carry the URL; the old URL is `404` after a replacement, so a page that was rendered before the change shows a broken image until it reloads |
+| (b) `GET /api/v1/users/{username}/avatar` | One stable URL per user | The UI can build the URL from the name | The URL is stable but the content is not: a cache needs revalidation on every use or a query string; a rename moves the URL; the UI still needs to know whether the user has one (a `404` per list row otherwise) |
+| (c) The image inline in the user record as a data URL | No second request | No new route | Every user list carries up to 100 images of tens of KiB, uncacheable; the JSON answers are `no-store` (R-API-017) |
+| (d) A configured URL per user from the identity provider (`picture` claim) | trove shows an external image | No upload, no storage | The owner decided on upload; a foreign origin in `img-src` and a third party that sees every page view (R-UI-001 loads nothing from outside) |
+
+**Choice:** (a). `PUT /api/v1/users/me/avatar` and `DELETE /api/v1/users/me/avatar` write, `DELETE /api/v1/users/{username}/avatar` is the moderation, `GET /api/v1/avatars/{digest}` reads. The route answers only for a digest that a user's avatar currently names (`AvatarByDigest`), so it is no way to read another blob of the store.
+
+**Rationale:** the content address turns the two hard parts of serving an image, caching and consistency, into properties of the URL. The cost is a dangling URL in a page that was rendered before a replacement; the UI re-reads the user record after its own upload, and another user's replacement reaches it with the next read of that record. Revisit when the avatar gets sizes (a 32 px and a 96 px rendition): then the digest stays and a `size` query parameter or a second digest is added.
+
+**Applied:** R-API-055; `api/openapi.yaml` (`setAvatar`, `removeAvatar`, `removeUserAvatar`, `getAvatar`, `User.avatarUrl`); `internal/api/v1/avatar_api.go`; `internal/meta/postgres/queries/avatars.sql`.
+
+### Q-API-208 · An upload is decoded, bounded and re-encoded as a 256 pixel PNG
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner fixed PNG, JPEG and WebP only, never SVG, re-encoded on the server, at most 1 MiB. The body is untrusted: a decoder reads attacker-chosen bytes, a header can declare a size that costs gigabytes, and an image carries metadata (a camera's GPS position) and can carry a payload after its end. Open were the bound on the size in pixels, the output, the animated case, the metadata and the cost bound.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sniff the content, read the size from the header and bound it, decode, crop to the centre square, scale to 256 x 256, encode a new PNG; animation is refused (chosen) | `internal/avatar.Process`; at most 4,194,304 pixels (2048 x 2048) and at least 32 x 32; two decodes at a time per replica | Nothing of the upload survives but its pixels; the size is refused before an allocation; one fixed output, so the UI needs no variants and the digest is stable; memory is bounded by 2 x 4 Mpixel x 8 bytes = 64 MiB | A 12 Mpixel photo under 1 MiB (rare, heavy compression) is refused and the user resizes it; 16-bit PNGs are reduced to 8 bits |
+| (b) Re-encode in the original format at the original size | Strip the metadata and keep the image | No scaling | A 1 MiB JPEG is served to a 32 px slot; the format and size vary; a stored JPEG is still a parser's input in the browser |
+| (c) Take the first frame of an animation | Decode as the decoders do | More uploads succeed | The decoders differ (the PNG decoder silently reads the default image, the WebP decoder refuses); a user who uploads an animation expects it to move, so a still is a surprise; refusal says so |
+| (d) A larger pixel bound (16 Mpixel) | Phone photos work | Fewer refusals | 128 MiB per decode at the widest pixel, 256 MiB for two; the replica's request memory is charged at 640 KiB (Q-ARCH-328), so the decode must bound itself |
+| (e) Decode in a separate process | An isolated image worker | A decoder bug cannot reach the API process | A second binary role and a pipe for a feature of 32 px images; the decoders are the Go standard library's and `golang.org/x/image`'s, which are memory safe. Not done: H-560 |
+
+**Choice:** (a). The numbers are constants of the product (`avatar.MaxUpload` 1 MiB, `OutputSide` 256, `MinSide` 32, `MaxPixels` 4,194,304, `MaxConcurrent` 2, `BusyWait` 2 s), not configuration: an operator should not be able to widen the input of an image decoder. 256 pixels is twice the larger of the two sizes the UI shows (32 and 96 px) at a display density of two. The Catmull-Rom filter of `golang.org/x/image/draw` scales; the centre square is the crop. Transparency is kept. The EXIF orientation of a JPEG is read from the first Exif segment, bounds-checked in the segment, and applied to the scaled square (the centre square of a turned image is the turned centre square of the stored one, so the turn costs 65,536 pixels, not the source). A panic of a decoder is caught and is an undecodable image. The request memory guard (Q-ARCH-328) charges a request the bytes of a download; it does not know the decode, so the processor bounds it itself (a slot per decode, waiting 2 s, `503 server_busy` with `Retry-After: 1`); the 1 MiB body is held in addition. `golang.org/x/image` is added to `go.mod` once, at the latest release, and only its `webp` decoder and `draw` are imported.
+
+**Rationale:** the safest handling of an image is to keep nothing of it but the pixels; everything the owner asked for (re-encode, only three formats, 1 MiB) follows from that, and the pixel bound is what turns a decompression bomb into a `422` before it costs anything. The development agent revisits the pixel bound when users report refusals of ordinary photos: the cost is linear, and 3 Mpixel more per slot is 24 MiB. It revisits the refusal of animations if the owner wants an animated avatar.
+
+**Applied:** R-API-055; `internal/avatar/process.go`, `internal/avatar/orient.go`; `go.mod` (`golang.org/x/image`). Tests: `TestR_API_055_*` in `internal/avatar/process_test.go`.
+
+### Q-API-209 · The image answer has its own headers and an immutable private cache
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-API-017 gives every `/api/v1/` answer `Cache-Control: no-store` and a CSP of `default-src 'none'; frame-ancestors 'none'`; the avatar is a picture shown many times on a page and in every list.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `private, max-age=31536000, immutable`, a strong ETag that is the digest, and the content headers of an image (chosen) | The browser keeps the picture for a year and does not revalidate; a shared cache does not keep it | One request per avatar per browser; a list of 100 rows costs nothing after the first | The picture stays in the browser of a user who was signed out; it is a 256 px avatar, and the digest is unguessable |
+| (b) `no-store` like the JSON answers | Every row of every list asks again | Nothing to reason about | 100 requests per page, each a database lookup and an object-store read |
+| (c) `private, no-cache` with the ETag | Revalidate each time | Always current | Still a request and a lookup per row; the URL changes with the content, so there is nothing to be current about |
+| (d) `public` | A proxy may keep it | Fewer reads | The answer needs a credential; a shared cache would hand it to callers without one |
+
+**Choice:** (a). The headers are `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Content-Disposition: inline; filename="avatar.png"` and `Cross-Origin-Resource-Policy: same-origin`. `If-None-Match` answers `304`. The bytes are read through the verifying path of the blob store and compared with the digest once more before they are sent, as for the shared UI assets (Q-UI-143).
+
+**Rationale:** the stored bytes are trove's own PNG, but the response is still defended as if it were not: nosniff and the sandboxing CSP keep a browser that is pointed at the URL from reading it as anything else, and `Content-Disposition: inline` with a fixed name keeps the name out of the answer. A removed avatar is `404` for any new request, and a browser that already has it keeps it until its cache entry ends (H-561). The development agent revisits `immutable` if avatars are ever removed for legal reasons that a browser's copy must not outlive.
+
+**Applied:** R-API-055 (the image answer); `internal/api/v1/avatar_api.go` (`GetAvatar`).
+
+### Q-API-210 · The user record carries avatarUrl and its ETag follows the avatar
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the UI reads the avatar of a user from the user record. The record has a strong ETag, the revision of the principal (R-API-012), and `GET /api/v1/users/{username}` answers `304` for it; a change of a member that the record shows must change the tag, or a client keeps the old URL (R-API-012, "a representation that carries a member which changes without a new revision has a tag that follows the member").
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The avatar row bumps `principal.revision`, as the identity links do (chosen) | A trigger on `user_avatars` calls `principal_revision_bump('user_id')` on insert, delete and a change of the blob | No writer can forget it; the tag is the revision as for every other member; one rule | An administrator who loaded the user, then sees the user change the avatar, gets `412` on the `PATCH` and reloads |
+| (b) A view part in the tag, `"<revision>-<digest8>"` | The tag follows the digest without touching the revision | No `412` for the administrator | `If-Match` of the `PATCH` compares the revision (`Precondition.Revision(view)`), so the view has to be threaded through the user handlers; two ways to tag one resource |
+| (c) `avatarUrl` outside the record, a call of its own | The UI asks `GET /users/{u}/avatar-info` | The record is untouched | A request per row of a list |
+
+**Choice:** (a). The trigger fires only when the blob changes, so the upload of the image a user already has leaves the revision and the record alone. `avatarUrl` is read-only: `PATCH /api/v1/users/{username}` accepts and ignores it (R-API-013). `toUser` fills it from `principal.User.AvatarSHA256`, which the manager reads for a batch of users in one statement (`AvatarDigests`), so a list of 500 users costs one query more, not 500.
+
+**Rationale:** a user changes the avatar at most a few times in a lifetime and an administrator edits profile data of a user rarely, so the race of (a) is real and cheap to repair, and (b) costs a second tagging scheme. Revisit when users change avatars often enough that administrators meet the `412`.
+
+**Applied:** R-API-055, R-AUTH-016 (the record); migration `user_avatars` (the triggers `user_avatars_revision_change` and `user_avatars_revision_replace`); `internal/auth/principal/manager.go` (`fillAvatars`), `internal/api/v1/users_api.go` (`toUser`). Test: `TestR_API_055_AvatarLifecycle`.
 
 ## What this does not cover
 

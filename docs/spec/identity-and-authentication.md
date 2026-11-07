@@ -1270,6 +1270,8 @@ Priority: **MVP** · Covers: IAM-001, IAM-003, IAM-004, IAM-009, ADMAPI-004, ADM
 - `isAdmin` and `adminVia` are read-only. They are derived from the role bindings of
   [authorization.md](authorization.md).
 - Users are addressed by username in paths. The record also returns the stable `id`.
+- `avatarUrl` is the path of the user's uploaded avatar, `/api/v1/avatars/<sha256>`, or `null` for a user without one (R-API-055,
+  Q-API-210). It is read-only and changes the revision of the record when the avatar changes.
 
 **The catalog's per-user options (IAM-003) map to trove as follows.** trove has none of the
 three switches; the table fixes the behavior that replaces each:
@@ -3292,6 +3294,7 @@ or authorization codes.
 | `token.rejected` | R-AUTH-023 for a revoked or expired token whose row exists | yes, at most one per token and hour in the whole cluster (R-AUTH-023 step 4); signals a leak or a stale client |
 | `token.created`, `token.rotated`, `token.revoked`, `token.expiring` | R-AUTH-027 to R-AUTH-032 | yes |
 | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning` | R-AUTH-007, R-AUTH-016, R-AUTH-021, R-AUTH-039 | yes; `details.source` is `jit`, `admin`, `scim`, `dormancy` or `admin-cli` |
+| `user.avatar.set`, `user.avatar.removed` | R-API-055 (Q-AUTH-197); `details.source` is `self` or `admin`, with the `sha256` of the image and, for a set, its `size`; never image bytes | yes |
 | `user.groups.synced` | R-AUTH-008, with added and removed lists | yes, only when something changed |
 | `user.groups.claim_missing` | R-AUTH-008, with provider and reason (`absent`, `wrong_type`, `overage`); severity `warning` | yes, once per affected login |
 | `group.created`, `group.updated`, `group.deleted`, `group.members.changed` | R-AUTH-018, R-AUTH-039 | yes |
@@ -5396,6 +5399,60 @@ Context: the internal-secrets-operator rotates `trove-break-glass` every 24 h on
 **Rationale:** the 503 is the contract of R-AUTH-014, and `Retry-After` is how a client is told when to ask again; a test client that honours it exercises that contract instead of avoiding it. The retry is not a blind one: only 503 with `break_glass_rotating` is waited for, the wait is bounded by the 2 m hold plus a minute, and every other answer (401, 429 `break_glass_locked`, 503 `server_busy`) reaches the test's own assertion unchanged. The development agent revisits (b) when the waits cost more than a minute per run on a cluster that rotates daily.
 
 **Applied in the spec:** R-AUTH-014 and Q-AUTH-14 are unchanged. Code: `test/e2e/rotationhold/rotationhold.go` (`Wait`, with `rotationhold_test.go`), `test/e2e/m1_env_test.go` (`localLogin`), `web/e2e/support.ts` (`submitLocalForm`, `signInLocal`), `web/e2e/tests/01-sign-in.spec.ts`. Documentation: [e2e.md](../developer/e2e.md#the-break-glass-rotation-hold), [local-profile.md](../developer/local-profile.md).
+
+### Q-AUTH-195 · Any authenticated caller reads an avatar
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the UI shows the avatar of other users: in the member lists of groups and projects, in the user list of an administrator, next to an audit row. The avatar is personal data a user chose to publish inside the installation (R-API-055).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every authenticated caller: a user, a service account, a CI token (chosen) | `x-trove-permission: authenticated` | The UI shows any user it can list; no capability to hold for a picture; consistent with the user's name, which an authenticated caller can read where it is shown | An image of a user is readable by every principal of the installation, a service account included |
+| (b) The user and holders of `identities:read` | The picture follows the user record's permission | Narrower | A member list a project Owner can read would show broken images; the capability is for the administration of identities, not for display |
+| (c) Anonymous too when anonymous access is on | `publicSwitch` | Works on a public instance | An anonymous reader learns pictures of users it cannot otherwise see; the digest is unguessable but the picture is personal |
+
+**Choice:** (a). An anonymous caller gets `401`, also with anonymous access on. The route answers only for a digest that some avatar names (Q-API-207). The image is in the user record of anyone allowed to read that record, and the pictures themselves are rendered wherever the UI shows a name.
+
+**Rationale:** whoever can sign in to an installation sees the people in it. The development agent revisits this if the owner wants a per-user setting to hide the avatar (today a user cannot hide it from other users: H-559).
+
+**Applied:** R-API-055 (Who); `api/openapi.yaml` (`getAvatar`: `x-trove-permission: {authenticated: true}`). Test: `TestR_API_055_AvatarLifecycle`.
+
+### Q-AUTH-196 · A user sets and removes only their own avatar, an administrator removes any
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an avatar is the user's own choice, and an image can be unwelcome (R-API-055); somebody has to be able to take it down.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A user sets and removes their own; the holder of `identities:write` removes another's; nobody sets another's (chosen) | `PUT`/`DELETE /users/me/avatar` for users and the break-glass account; `DELETE /users/{username}/avatar` for `identities:write` | Moderation without impersonation: an administrator cannot put a picture into another person's profile; the permission is the one that already edits profile data (`PATCH /users/{username}`) | A pre-provisioned user who has never signed in has no avatar to remove, and an administrator cannot give one |
+| (b) An administrator can also set | `PUT /users/{username}/avatar` | Provisioning with pictures | A picture that the person never chose, under their name |
+| (c) No removal by others | A user removes their own | Smaller API | Content nobody but its owner can take down; the owner could be gone |
+
+**Choice:** (a). Service accounts and CI tokens answer `403`: they have no user record. The break-glass account is a user and may set one. Removal by an administrator is recorded with `details.source` `admin`; the user's own with `self` (Q-AUTH-197). The permission for another user's avatar is `identities:write`, which the role `admin` holds.
+
+**Rationale:** the avatar is a member of the profile; the rule for the profile (an administrator corrects, the user is not asked) is kept for removal, and extended by no more than the harm requires. The development agent revisits this when SCIM provisioning (R-AUTH-039) is built and an avatar URL arrives from a directory.
+
+**Applied:** R-API-055 (the endpoint table, Who); `api/openapi.yaml`; `internal/api/v1/avatar_api.go` (`avatarOwner`, `RemoveUserAvatar`). Tests: `TestR_API_055_AvatarLifecycle`, `TestR_API_055_AvatarRefusals`.
+
+### Q-AUTH-197 · Setting and removing an avatar are two identity events without image bytes
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-016 requires every change of a user to be an audit event written with the change. An avatar is a member of the user's profile, set by the user and removed by the user or an administrator.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `user.avatar.set` and `user.avatar.removed`, category identity, transactional, no journal entry (chosen) | Two new types in `internal/audit/events_identity.go`; `details` `source` (`self`, `admin`), `sha256`, and `size` for a set | The log says who removed whose picture, and which; filterable by type | Two more types in the registry |
+| (b) `user.updated` with `fields: ["avatar"]` | One type | No new type | The event schema of `user.updated` has `source` `jit`, `admin`, `scim`, `dormancy`, `admin-cli`: a user's own change has no value; a moderation cannot be told from a profile correction without a reading of `fields` |
+| (c) No event | A picture is cosmetic | Nothing to write | An administrator's removal of a user's picture would leave no trace |
+
+**Choice:** (a). The event is written in the transaction that changes `user_avatars` (`RecordTx`), so a change has its record or fails (R-OPS-015). The upload of the image the user already has records nothing, because nothing changed. No event holds image bytes; the digest names the object. Neither type carries the journal flag: removing a picture takes no access away.
+
+**Rationale:** a distinct pair keeps `user.updated` meaning what its schema says, and the catalog is the place an auditor looks. The development agent revisits this when the log of avatar changes is read by a moderation workflow that wants the declared content type or the rejected uploads (a refused upload records nothing today).
+
+**Applied:** [operations-and-observability.md](operations-and-observability.md) R-OPS-016; the event table of R-AUTH-041; `internal/audit/events_identity.go`; `internal/avatar/store.go` (`record`); README (Audit event types). Test: `TestR_API_055_AvatarLifecycle`.
 
 ## What this does not cover
 
