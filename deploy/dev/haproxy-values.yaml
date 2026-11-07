@@ -52,3 +52,8 @@ controller:
     # (a client that closed during or right after the handshake, a reset). Those are the connections F-50 asks about, so
     # the dev edge logs them too, as a line with status -1.
     config-defaults: "no option dontlognull"
+    # How long the edge keeps an idle client connection open between two requests. It must be longer than the longest
+    # pause after which a client reuses a connection: npm waits up to 60 s between the attempts of a retried request
+    # (fetch-retry-maxtimeout), and with the controller's 1 m a retry that sent its request in the instant the edge
+    # closed the idle connection met a reset instead of the registry's answer (F-70).
+    timeout-keep-alive: 90s

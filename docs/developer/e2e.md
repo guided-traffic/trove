@@ -927,6 +927,13 @@ test/e2e/clients/
   (`TROVE_E2E_NPM_CLIENTS_TARGET`; verified on the 0.16.3 chart: the smoke test and the matrix reach the cluster through it).
   `fwd -target-file /tmp/target` makes a test pin the client to one `packages` pod
   ([Pinning a client to a replica](#pinning-a-client-to-a-replica)).
+  `fwd` logs one line, `target closed the connection first`, for a connection that the target ended before the client did, with
+  `age`, `idle_at_close` and `client_bytes_met_closed_connection` (the client sent bytes after the close). It is the witness for a keep-alive
+  connection that lost a request to the edge's idle limit: the client sees `ECONNRESET` / `socket hang up`, and the edge has no line for
+  the request. The dev edge keeps an idle connection for 90 s (`timeout-keep-alive` in
+  [haproxy-values.yaml](../../deploy/dev/haproxy-values.yaml)), longer than npm's last retry delay of 60 s
+  ([Q-HA-136](../spec/ha-and-helm.md#q-ha-136--the-dev-edge-keeps-an-idle-client-connection-longer-than-npms-longest-retry-delay)).
+  The lines are in the cluster-state artifact, `log-trove-trove-e2e-npm-<n>`.
 - **The CA is mounted, not baked.** `deploy/dev/e2e.sh` writes the dev CA into the ConfigMap `trove-e2e-npm-ca`, the pod
   mounts it at `/etc/trove-ca/ca.crt` and sets `NODE_EXTRA_CA_CERTS`, which Node.js itself reads (npm, pnpm 10 and 11,
   both Yarn lines). Verified: the native pnpm 12 verifies the dev CA's certificate with that variable alone; none of its

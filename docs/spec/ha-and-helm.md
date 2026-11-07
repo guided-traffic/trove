@@ -8226,6 +8226,42 @@ alerts and `TroveRevocationJournalBacklog` join the rule then) or when an instal
 [operations-and-observability.md](operations-and-observability.md) R-OPS-008 (rows for the spool, GC, pool and Valkey gauges). Code:
 `internal/blob/metrics.go`, `internal/meta/postgres/metrics.go`, `internal/app/wire_gauges.go`; chart: `templates/_rules.tpl`.
 
+### Q-HA-136 · The dev edge keeps an idle client connection longer than npm's longest retry delay
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: in the scheduled nightly run 42356771989 one `npm publish` of the 300 s object-store outage exited with `ECONNRESET` (`socket hang up`)
+instead of the registry's `503`, which R-HA-059's client condition and F-50 count as a failure. The command made three attempts through the
+forwarder of the clients pod to the edge: at 09:01:05.5 and 09:01:15.6 on one connection (both answered `503` and logged by the edge), and the
+third 60 s after the second, at 09:02:15.6 (the command ended at 09:02:15.638), which has no access line at the edge. npm waits
+`fetch-retry-maxtimeout` = 60 s before its last attempt, and HAProxy Ingress closes an idle client connection after `timeout-keep-alive`, 1 m by
+the controller's documentation (not verified in the pinned image). The client reused a connection in the instant the edge closed it. The three
+other commands of the run that retried through the whole outage (the `publish` commands 9, 10 and 11) made their third attempt 60.01 to 60.03 s
+after the answer to the second, every time on a new connection: the same race, lost the other way, so the edge had closed the idle connection by
+then and the client had seen it. No `packages` pod was involved: the replica deleted at 09:02:25 was deleted 10 s after the command had ended.
+The absence of an access line is weak evidence alone: the first attempt of command 10, on a connection that had just carried a request, has none
+either, so a missing line can also be a lost line (the access lines pass the controller's syslog socket); that is not known.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The dev edge's `timeout-keep-alive` is 90 s, longer than the 60 s of npm's last retry delay (chosen) | One key in `deploy/dev/haproxy-values.yaml` | The npm client with its default retries (R-HA-059's condition) never reuses a connection at the edge's idle limit; no test changes; the edge is not the system under test | A client that waits exactly the edge's limit still races; the key is the dev profile's, a production edge has its own |
+| (b) The publish loop runs `npm publish --fetch-retry-maxtimeout=30000` | The client waits less | Same effect without touching the edge | The condition is "npm's default retries" (R-HA-059); a changed client no longer shows what a user's client sees |
+| (c) `fetch-retries=0` in the loops, the test repeats | No retry in the client | No idle wait | The retry of the client is what the 503 contract (`retry`) is for; the outage tests would no longer show that npm survives the outage |
+| (d) The forwarder resets or reconnects an idle connection | The test hides the race | None | The forwarder is a byte relay on purpose; a client could not tell a closed connection from a live one |
+
+**Choice:** (a), and the forwarder writes a closing line for every connection that the target closed first (idle time, whether the client's bytes
+came after the close).
+
+**Rationale:** the race belongs to HTTP keep-alive and not to trove: any client that reuses an idle connection exactly at the server's limit can
+lose a request, and only an idempotent request is safe to repeat blindly. A production edge sets its own limit (the owner's controller); trove
+asks nothing of it. For the dev profile the limit is chosen so that the longest wait of the tested clients stays inside it. Not shown directly:
+which side closed first, because neither the controller nor the forwarder logged a close of an idle connection. The forwarder's line makes the
+next occurrence name itself. The development agent would revisit this when the closing line shows a reset with an idle time other than the
+edge's limit (then the cause is elsewhere) or when a client waits longer than 90 s between attempts.
+
+**Applied:** `deploy/dev/haproxy-values.yaml` (`timeout-keep-alive: 90s`), `test/e2e/clients/fwd/main.go` (closing line, tests in `main_test.go`),
+[developer/e2e.md](../developer/e2e.md) (forwarder), F-70 in [projektplan/promt.md](../projektplan/promt.md). No requirement text changed.
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
