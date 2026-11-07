@@ -98,3 +98,28 @@ func TestDoWithAClientThatIsReset(t *testing.T) {
 		t.Fatalf("err %v, body %q", err, body)
 	}
 }
+
+func TestStateShown(t *testing.T) {
+	doc := []byte(`{"status":"dismissed","n":2,"vulnerabilities":{"blockMalicious":false,"other":1},"gone":null}`)
+	for name, tc := range map[string]struct {
+		want    map[string]any
+		wantErr bool
+	}{
+		"a member":                  {map[string]any{"status": "dismissed"}, false},
+		"a number":                  {map[string]any{"n": 2}, false},
+		"a nested member":           {map[string]any{"vulnerabilities": map[string]any{"blockMalicious": false}}, false},
+		"null for an absent member": {map[string]any{"missing": nil, "gone": nil}, false},
+		"another value":             {map[string]any{"status": "confirmed"}, true},
+		"another nested value":      {map[string]any{"vulnerabilities": map[string]any{"blockMalicious": true}}, true},
+		"null for a present member": {map[string]any{"status": nil}, true},
+		"an object for a scalar":    {map[string]any{"status": map[string]any{"a": 1}}, true},
+		"a member that is absent":   {map[string]any{"missing": "x"}, true},
+	} {
+		if err := StateShown(doc, tc.want); (err != nil) != tc.wantErr {
+			t.Errorf("%s: err %v, want error %v", name, err, tc.wantErr)
+		}
+	}
+	if err := StateShown([]byte("nope"), map[string]any{}); err == nil {
+		t.Error("a body that is no JSON passed")
+	}
+}

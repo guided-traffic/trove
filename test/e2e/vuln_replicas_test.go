@@ -43,6 +43,19 @@ type replicaClients struct {
 	admin, reader []*api
 }
 
+// as returns the clients bound to t, the (sub)test that uses them: a client fails the test it was built for, and a subtest
+// that fails the parent through it ends the run with "subtest may have called FailNow on a parent test".
+func (rc replicaClients) as(t testing.TB) replicaClients {
+	var out replicaClients
+	for _, a := range rc.admin {
+		out.admin = append(out.admin, a.as(t))
+	}
+	for _, a := range rc.reader {
+		out.reader = append(out.reader, a.as(t))
+	}
+	return out
+}
+
 func (e *vulnEnv) replicaClients(t testing.TB) (replicaClients, func()) {
 	t.Helper()
 	apiAddrs, stopAPI := apiForwards(t)
@@ -62,7 +75,7 @@ func (e *vulnEnv) replicaClients(t testing.TB) (replicaClients, func()) {
 func patchRepo(t testing.TB, a *api, key string, patch map[string]any) {
 	t.Helper()
 	g := a.get(reposBase+key).want(t, "read "+key, 200)
-	a.do(http.MethodPatch, reposBase+key, patch, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "patch "+key, 200)
+	a.writeOverForward(http.MethodPatch, reposBase+key, patch, patch, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "patch "+key, 200)
 }
 
 // wantRefused checks the refusal of R-VULN-015 on the four kinds of request that must not differ: GET, HEAD, a conditional
@@ -98,7 +111,10 @@ func TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey(t *testing.T) {
 	defer stop()
 	a, b := 0, 1
 
+	dismissal := map[string]any{"status": "dismissed", "dismissalReason": "not_exploitable", "comment": "end-to-end test"}
+
 	blockAndDismiss := func(t *testing.T, label string) {
+		rc := rc.as(t)
 		name := e.npmTri[label]
 		path := tarballPath(npmRemoteKey, name)
 		fill := rc.reader[b].get(path).want(t, "the first download fills the cache", 200)
@@ -109,12 +125,13 @@ func TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey(t *testing.T) {
 		wantRefused(t, rc.reader[2], tarballPath(npmAllKey, name), etag)
 		// A dismisses the blocking finding; the very next download through B succeeds
 		g := rc.admin[a].get("/api/v1/vulnerabilities/findings/"+f.ID).want(t, "read the finding", 200)
-		rc.admin[a].do(http.MethodPatch, "/api/v1/vulnerabilities/findings/"+f.ID, map[string]any{"status": "dismissed", "dismissalReason": "not_exploitable", "comment": "end-to-end test"},
+		rc.admin[a].writeOverForward(http.MethodPatch, "/api/v1/vulnerabilities/findings/"+f.ID, dismissal, map[string]any{"status": "dismissed", "dismissalReason": "not_exploitable"},
 			"If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "dismiss the blocking finding", 200)
 		rc.reader[b].get(path).want(t, "the download through B after A's dismissal", 200)
 	}
 
 	maliciousSwitch := func(t *testing.T, label string) {
+		rc := rc.as(t)
 		name := e.npmTri[label]
 		path := tarballPath(npmRemoteKey, name)
 		defer patchRepo(t, rc.admin[a], npmRemoteKey, map[string]any{"vulnerabilities": map[string]any{"blockMalicious": true}})
@@ -151,7 +168,7 @@ func TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey(t *testing.T) {
 		wantRefused(t, rc.reader[b], path, etag)
 		// the dismissal lifts it
 		g := rc.admin[a].get("/api/v1/vulnerabilities/findings/"+f.ID).want(t, "read the finding", 200)
-		rc.admin[a].do(http.MethodPatch, "/api/v1/vulnerabilities/findings/"+f.ID, map[string]any{"status": "dismissed", "dismissalReason": "not_exploitable", "comment": "end-to-end test"},
+		rc.admin[a].writeOverForward(http.MethodPatch, "/api/v1/vulnerabilities/findings/"+f.ID, dismissal, map[string]any{"status": "dismissed", "dismissalReason": "not_exploitable"},
 			"If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "dismiss the malicious finding", 200)
 		rc.reader[b].get(path).want(t, "the download through B after A's dismissal", 200)
 	}

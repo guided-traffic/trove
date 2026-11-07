@@ -486,11 +486,11 @@ func (e *vulnEnv) findingVia(t testing.TB, adm *api, repo, pkg, version string) 
 	return got[0]
 }
 
-// setStatus triages a finding (JSON merge patch with If-Match) through the given client; an extra pair adds a member.
+// setStatus triages a finding (JSON merge patch with If-Match) through the given client; over the forward to one pod a transport error repeats the patch and verifies the status (writeOverForward).
 func (e *vulnEnv) setStatus(t testing.TB, a *api, id, status string) reply {
 	t.Helper()
 	g := a.get("/api/v1/vulnerabilities/findings/"+id).want(t, "read finding "+id, 200)
-	return a.do(http.MethodPatch, "/api/v1/vulnerabilities/findings/"+id, map[string]any{"status": status},
+	return a.writeOverForward(http.MethodPatch, "/api/v1/vulnerabilities/findings/"+id, map[string]any{"status": status}, map[string]any{"status": status},
 		"If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").want(t, "set "+status, 200)
 }
 

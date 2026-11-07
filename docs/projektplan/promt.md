@@ -320,6 +320,19 @@ Found on 2026-11-04 while cutting trove into task areas (phase 6a):
   `e2e-vuln (vuln)` in run 42160309458 (04:22 and 04:23 UTC, `vuln_npm_test.go:126` and `vuln_replicas_test.go:81`) whose request went
   through the port-forward of one `packages` pod (`apiAtPod`), not through the edge, and was not repeated at that commit (ee274214); both
   call sites repeat over a new forward now (`getOverForward`, `safeOverForward`). No run named a closing side yet.
+  Third occurrence (2026-11-07, Test and Release run 42363892759, `e2e-vuln (vuln)`): a WRITE through a forward, not a read. In
+  `TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey` "blockMalicious through A is in force on B within 2 s" the dismissal
+  `PATCH /api/v1/vulnerabilities/findings/<id>` (`vuln_replicas_test.go:154`) ended in `read: connection reset by peer` from
+  `127.0.0.1:42893`, the local listener of the `kubectl port-forward` to the api pod `trove-api-55c86f65f-k7w59` (the artifact
+  `e2e-vuln-artifacts-vuln` holds `portforward-pod_trove-api-55c86f65f-k7w59-127.0.0.1_42893-1.log`: the forward ended at 10:44:00Z with
+  `lost connection to pod` after a `connection reset by peer` between kubectl and the container's port 8080 and one from a client
+  connection; `localhost:8095` is only the URL's host, which the route replaces; which side of port 8080 reset first is not known), and the test failed with "subtest may have called
+  FailNow on a parent test" because the clients were bound to the parent's `t`. Writes were not repeated. They are now when they are
+  idempotent: `writeOverForward` repeats a PATCH with a merge patch (R-API-013) or a PUT over a new forward, then reads the resource back
+  and requires the state the write sets (`ctlretry.StateShown`), taking a 412 of the repeat (the first attempt had been applied and had
+  changed the ETag) as the answer when the state is shown; `patchRepo`, `setStatus` (`block`, `lift`) and the two dismissals use it, and
+  the replica clients are rebound to the subtest's `t` (`replicaClients.as`). The audit POSTs of `vuln_npm_test.go` (read-only queries
+  through a forward) and the rate-limit tests (which count requests) still send once.
 
 Found on 2026-11-03 while building phase 6:
 

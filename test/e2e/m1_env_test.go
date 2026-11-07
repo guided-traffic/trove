@@ -297,6 +297,13 @@ func (a *api) withToken(tok string) *api {
 	return &b
 }
 
+// as returns a copy of the client that fails t, the test that uses it, instead of the test it was built for.
+func (a *api) as(t testing.TB) *api {
+	b := *a
+	b.t = t
+	return &b
+}
+
 // withWriteBudget returns a copy of the client whose writes the guard of writeBudget counts; the guard fails t. Give
 // it a client whose token no other client uses, or the count misses the other's writes.
 func (a *api) withWriteBudget(t testing.TB) *api {
@@ -485,6 +492,57 @@ func (a *api) safeOverForward(method, path string, h ...string) reply {
 	})
 	if err != nil {
 		a.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	return r
+}
+
+// writeOverForward is the write counterpart of safeOverForward, for a write that is idempotent: a PATCH with a JSON merge
+// patch (R-API-013) or a PUT, which set a state and leave the same state when sent twice. A transport error before a
+// response renews the forward and repeats the write, twice at most, each repeat logged (overForward). The first attempt
+// may have reached trove before the connection broke, so after any repeat the helper reads the resource over the forward
+// and requires that it shows state (the members the write set, in the shape of a merge patch, ctlretry.StateShown): a
+// repeat answered 412 because the first attempt changed the ETag is accepted when the state is shown, and the resource
+// read back is returned as the answer; any other status of a repeat is left to the caller, and a 2xx whose resource does
+// not show the state fails here. A write that is not idempotent (POST, DELETE, a counter, an append) is never passed:
+// the method is checked, and the caller decides for its own whether a repeat is safe. A client of the edge or of several
+// forwards has no one forward to renew and sends once, as `do` does. The body is sent again for each attempt, so it must
+// not be a reader.
+func (a *api) writeOverForward(method, path string, body any, state map[string]any, h ...string) reply {
+	a.t.Helper()
+	if method != http.MethodPatch && method != http.MethodPut {
+		a.t.Fatalf("%s %s: only PATCH and PUT are repeated over a forward", method, path)
+	}
+	if _, ok := body.(io.Reader); ok {
+		a.t.Fatalf("%s %s: a body that is read once cannot be sent again", method, path)
+	}
+	f := a.forward()
+	if f == nil {
+		return a.do(method, path, body, h...)
+	}
+	attempts := 0
+	var r reply
+	err := overForward(a.t, f, method+" "+path, func() error {
+		attempts++
+		var err error
+		r, err = a.send(method, path, body, h...)
+		return err
+	})
+	if err != nil {
+		a.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	if attempts == 1 || (r.Status/100 != 2 && r.Status != http.StatusPreconditionFailed) {
+		return r
+	}
+	cur := a.getOverForward(path)
+	if cur.Status != http.StatusOK {
+		a.t.Fatalf("%s %s: repeated after a transport error and answered %s; reading the resource back: %s", method, path, r, cur)
+	}
+	if err := ctlretry.StateShown(cur.Body, state); err != nil {
+		a.t.Fatalf("%s %s: repeated after a transport error and answered %s; the resource does not show the state the write sets (%v): %s", method, path, r, err, cur)
+	}
+	if r.Status == http.StatusPreconditionFailed {
+		a.t.Logf("%s %s: the repeat was answered 412 because the first attempt had been applied; the state is shown, taking the resource read back as the answer", method, path)
+		return cur
 	}
 	return r
 }

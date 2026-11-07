@@ -5,11 +5,13 @@
 package ctlretry
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
+	"reflect"
 	"syscall"
 )
 
@@ -44,4 +46,51 @@ func Do(renewals int, attempt func() error, renew func() error) error {
 		err = attempt()
 	}
 	return err
+}
+
+// StateShown checks that the JSON document a resource answers with shows the state a write set. want is the members
+// the write meant to set, in the shape of a JSON merge patch: a member that is an object is checked member by member
+// (the other members of the document are not looked at), a nil member must be absent or null, any other value must be
+// equal after a JSON round trip. A write repeated after a transport error is accepted only when this holds, because
+// the first attempt may or may not have reached the server.
+func StateShown(doc []byte, want map[string]any) error {
+	var have any
+	if err := json.Unmarshal(doc, &have); err != nil {
+		return fmt.Errorf("the resource is no JSON: %w", err)
+	}
+	raw, err := json.Marshal(want)
+	if err != nil {
+		return err
+	}
+	var norm any
+	if err := json.Unmarshal(raw, &norm); err != nil {
+		return err
+	}
+	return shown("", have, norm)
+}
+
+func shown(path string, have, want any) error {
+	if wm, ok := want.(map[string]any); ok {
+		hm, ok := have.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s: want an object, have %v", pathOf(path), have)
+		}
+		for k, w := range wm {
+			if err := shown(path+"/"+k, hm[k], w); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if !reflect.DeepEqual(have, want) {
+		return fmt.Errorf("%s: have %v, want %v", pathOf(path), have, want)
+	}
+	return nil
+}
+
+func pathOf(p string) string {
+	if p == "" {
+		return "/"
+	}
+	return p
 }
