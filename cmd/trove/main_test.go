@@ -225,10 +225,18 @@ func TestBackupCommands(t *testing.T) {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
 	})
-	t.Run("R-NPM-047 admin npm reinstate is wired and fails with exit 1 until built", func(t *testing.T) {
-		code, _, stderr := runCmd(t, env, "admin", "npm", "reinstate", "web/npm-local", "@acme/ui@1.4.0")
-		if code != 1 || !strings.Contains(stderr, "not implemented yet") {
-			t.Fatalf("code %d stderr %q", code, stderr)
+	t.Run("R-NPM-047 admin npm reinstate takes a repository and name@version", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"admin", "npm", "reinstate", "web/npm-local"},
+			{"admin", "npm", "reinstate", "npm-local", "@acme/ui@1.4.0"},
+			{"admin", "npm", "reinstate", "web/npm-local", "@acme/ui"},
+			{"admin", "npm", "reinstate", "web/npm-local", "@acme/ui@"},
+			{"admin", "npm", "reinstate", "web/a/b", "@acme/ui@1.4.0"},
+			{"admin", "npm", "unpublish", "web/npm-local", "@acme/ui@1.4.0"},
+		} {
+			if code, _, stderr := runCmd(t, env, args...); code != 2 {
+				t.Errorf("%v: code %d stderr %q", args, code, stderr)
+			}
 		}
 	})
 }

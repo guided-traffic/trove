@@ -5306,6 +5306,24 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-AUTHZ-031, R-HA-054 update rule; `internal/journal/replay.go`.
 
+### Q-AUTHZ-234 · A format's replay names the entry it applied on what it writes, and takes no actor it cannot verify
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A replay handler of a format (npm withholds a version, NuGet reserves a number) changes durable state on the strength of a journal object that anyone with the runtime S3 credential can write (R-HA-054). `trove admin npm reinstate` reverses a withdrawal and writes `npm.reinstate`, which R-NPM-044 says names the journal entry that withheld the version. The question is what the replay leaves behind that ties the two together, and whose name the written rows carry.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Nothing beyond the tombstone | The reinstate event names the version and its integrity only; the link to the entry is the replay output | No schema change | The audit stream cannot tell which entry a reversal answers, and the replay output is not kept; R-NPM-044's text would have to drop the member |
+| (b) The entry's ID on the tombstone, the actor only as a verified identifier (chosen) | `npm_tombstones.journal_entry` (uuid, null unless `source = 'journal'`, an expand step); `unpublished_at` and `unpublished_by` hold the unpublish's time and, when it is a UUID, its actor, else the nil UUID. NuGet's tombstones carry the system principal of the restore (the nil UUID) | The reinstate event repeats the ID, so the audit stream links withdrawal and reversal; a forged actor name cannot enter a column; one nullable column | One migration |
+| (c) An audit event per replayed entry | The handler writes `npm.unpublish` / `package.deleted` events itself | The audit stream shows each application | The event is journal-flagged: it would enter the outbox again and ship a second object for one change; the replay summary and `system.restore.journal_replayed` already count every entry |
+
+**Choice:** (b).
+
+**Rationale:** The entry is untrusted input, so a handler stores from it only what it can verify: an identifier of the shape the column takes, a digest of the expected length, and a subject the restored database holds. The entry's own ID is not a claim about the world, only a pointer to the object, so it can be stored. (c) would feed the journal from the journal. The development agent would revisit this if the replay output is kept as an audit record of its own (then the ID is redundant with it).
+
+**Applied:** R-NPM-006 (`npm_tombstones.journal_entry`), R-NPM-047, R-NPM-044 (`npm.reinstate` carries `journal_entry`), R-NUGET-033; `internal/meta/postgres/migrations/00048_npm_tombstone_journal_entry.sql`, `internal/formatdata/npm/journal_replay.go`, `reinstate.go`, `internal/formatdata/nuget/journal_replay.go`.
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

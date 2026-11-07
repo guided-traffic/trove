@@ -79,6 +79,29 @@ sweep without a further delete. The manifest's own SHA-256 entries are in the sa
 `trove backup create` warns when a retained backup lists a key ID the new backup no longer uses (`EscrowWarnings`): it compares
 IDs only and says nothing about whether the key is in escrow. The listing prints `encryption` per backup, `none` included.
 
+### What the format handlers of the journal do with an entry
+
+The npm and NuGet handlers ([npm](../../internal/formatdata/npm/journal_replay.go), [NuGet](../../internal/formatdata/nuget/journal_replay.go))
+treat an entry as a claim about the restored database and act only on a local repository of their format, with a complete entry:
+a missing member, an oversized value or a digest that is not the expected shape is skipped before any statement runs.
+
+- **npm withholds, it does not delete** ([R-NPM-047](../spec/formats/npm.md#r-npm-047--npm-data-in-backups-and-restores)). A forged or mistaken
+  `npm.unpublish` entry can only write a `journal` tombstone, and only for a version the repository stores with exactly the integrity the
+  entry names; the version row, its items and its bytes stay. The cost is availability until an administrator runs `trove admin npm
+  reinstate`, which removes only a `journal` tombstone and only while the version is still stored with the tombstone's integrity, so it
+  brings back the same bytes and never admits new ones (Q-NPM-8). A tombstone of a client's unpublish is not reinstated. The version is
+  refused on every road that serves it: the version and package documents, the tarball route, `/files`, and the virtual repositories
+  that list the member ([servecheck.go](../../internal/formats/npm/servecheck.go), `TestR_NPM_047_ReplayWithholdsALiveVersionAndNoRouteServesIt`).
+  The actor the entry names is stored only when it is a UUID; the tombstone records the entry's ID, which the reinstate event repeats.
+- **NuGet reserves and keeps removed numbers removed** ([R-NUGET-033](../spec/formats/nuget.md#r-nuget-033--nuget-data-in-backups-and-restores)).
+  A forged `package.published` entry can burn a version number that no version holds (a `reserved` tombstone), and a forged `package.deleted`
+  can turn a reservation into a removal or write a `removed` tombstone; both cost the number, never data, and the replay never deletes a
+  stored version (it reports it `revived`). A reserved number admits only the identical `.nupkg`. The system principal of the restore (the
+  nil UUID) is the actor of what the replay writes.
+- **Remote-cache purgers** ([fixup](../../internal/backup/fixup/npm.go)) delete the cached items of the remote repositories of their format
+  through the storage delete path and the cache entries and index rows of those repositories; they read the remote repositories of the
+  format and nothing else, so a local repository, its tombstones and its reservations survive a purge.
+
 ## What a restore trusts
 
 A restore trusts the manifest and the files of the backup it is told to restore (H-46). It checks formats, sizes, schema steps and the key

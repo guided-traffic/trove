@@ -76,6 +76,10 @@ func layerTable() []layerRule {
 		{"internal/formats/nuget/version", layerLeaf},
 		{"internal/formats/nuget/nupkg", layerLeaf},
 		{"internal/formats/nuget/nuspec", layerLeaf},
+		// The npm version order imports only errs and the standard library. It is a leaf so that the format (edge) and its data
+		// port (domain) apply one dist-tag rule: the restore's journal replay withholds a version and moves the tags off it
+		// (R-NPM-016, R-NPM-047).
+		{"internal/formats/npm/semver", layerLeaf},
 		{"internal/auth/scope", layerLeaf},
 		// The CI federation's pure parts (R-CI-004, R-CI-010 to R-CI-014): reason names, the claim engine
 		// and the subject-token validation import only the standard library and each other, so that the

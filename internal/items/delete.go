@@ -465,6 +465,9 @@ func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, 
 			return err
 		}
 		done += int64(len(part))
+		if run == nil {
+			continue
+		}
 		if err := run.SaveProgress(ctx, done, max(total, done), "items"); err != nil {
 			return err
 		}

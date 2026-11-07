@@ -1,6 +1,10 @@
 package semver
 
-import "github.com/guided-traffic/trove/internal/errs"
+import (
+	"maps"
+
+	"github.com/guided-traffic/trove/internal/errs"
+)
 
 // MaxTagLength is the longest dist-tag name (R-NPM-007).
 const MaxTagLength = 128
@@ -36,4 +40,56 @@ func validTagText(tag string) bool {
 		}
 	}
 	return true
+}
+
+// TagsAfterRemoval moves the dist-tags off a version that is removed: the other tags that
+// pointed to it are dropped, and latest moves to the highest remaining non-pre-release
+// version, or to the highest version when all are pre-releases (R-NPM-016). With no
+// version left there is no latest. remaining lists the versions that stay. The result is a
+// new map. The unpublish and the restore's journal replay (R-NPM-047) apply this rule.
+func TagsAfterRemoval(cur map[string]string, removed string, remaining []string) map[string]string {
+	tags := maps.Clone(cur)
+	if tags == nil {
+		tags = map[string]string{}
+	}
+	for tag, v := range tags {
+		if v == removed && tag != "latest" {
+			delete(tags, tag)
+		}
+	}
+	if tags["latest"] == removed {
+		if v, ok := Highest(remaining); ok {
+			tags["latest"] = v
+		} else {
+			delete(tags, "latest")
+		}
+	}
+	return tags
+}
+
+// Highest returns the highest non-pre-release version of vs, or the highest version when
+// all are pre-releases; versions that do not parse are ignored.
+func Highest(vs []string) (string, bool) {
+	var best, bestPre *Version
+	for _, s := range vs {
+		v, err := Parse(s)
+		if err != nil {
+			continue
+		}
+		slot := &best
+		if v.IsPrerelease() {
+			slot = &bestPre
+		}
+		if *slot == nil || Compare(v, **slot) > 0 {
+			c := v
+			*slot = &c
+		}
+	}
+	switch {
+	case best != nil:
+		return best.Canonical(), true
+	case bestPre != nil:
+		return bestPre.Canonical(), true
+	}
+	return "", false
 }

@@ -22,9 +22,6 @@ type streams struct {
 	environ        []string
 }
 
-// errNotImplemented marks a subcommand whose body a later work package fills.
-var errNotImplemented = errors.New("not implemented yet")
-
 // usageError makes run exit with status 2 instead of 1.
 type usageError struct{ msg string }
 

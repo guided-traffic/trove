@@ -371,7 +371,10 @@ CREATE TABLE npm_tombstones (                     -- outlives trash and permanen
                                                   -- may still be stored, withheld (R-NPM-047)
   unpublished_at timestamptz NOT NULL,             -- time of the unpublish or the move out
   unpublished_by uuid        NOT NULL,             -- its actor
-  PRIMARY KEY (repo_id, name, version)
+  journal_entry  uuid,                             -- 'journal' only: the journal entry that withheld the version
+                                                  -- (R-NPM-047, Q-AUTHZ-234); npm.reinstate repeats it
+  PRIMARY KEY (repo_id, name, version),
+  CHECK (journal_entry IS NULL OR source = 'journal')
 );
 ```
 

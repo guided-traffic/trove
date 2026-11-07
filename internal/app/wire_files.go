@@ -168,3 +168,7 @@ func (a *App) registerFilesJobs(r *jobs.Registry) {
 			return store.RunDeleteJob(ctx, run)
 		})))
 }
+
+// Items returns the item store of the files area, nil on a replica without it. The restore hands it to the remote-cache
+// purgers as the storage delete path (fixup.Env.Items, R-BAK-008), and tests read it the same way.
+func (a *App) Items() *items.Store { s, _ := a.itemStore.get(); return s }

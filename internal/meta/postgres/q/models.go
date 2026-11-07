@@ -561,6 +561,7 @@ type NpmTombstone struct {
 	Source        string
 	UnpublishedAt pgtype.Timestamptz
 	UnpublishedBy pgtype.UUID
+	JournalEntry  pgtype.UUID
 }
 
 type NpmVersion struct {

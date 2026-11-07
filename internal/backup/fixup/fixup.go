@@ -27,6 +27,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/backup/format"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Env is what a fix-up may depend on.
@@ -40,6 +41,18 @@ type Env struct {
 	NewKeyspaceID, NewIncarnation string
 	// ExcludeRemoteCaches is options.excludeRemoteCaches of the manifest.
 	ExcludeRemoteCaches bool
+	// Items is the storage delete path (R-STOR-018) a [CachePurger] empties a remote repository's cache through. The
+	// restore sets it to the item store composed with the format hooks, so the hooks run in the removing
+	// transactions. A purger finds it nil only in a restore that runs no step 7.
+	Items CacheEraser
+}
+
+// CacheEraser removes every cached item of one remote repository through the storage delete path with the trash can
+// bypassed (R-STOR-018, R-BAK-008): the storage hook of the repository's format learns of the removed files in the
+// removing transaction, so its index rows and the packages' rev_seq follow. It is idempotent and resumable: it removes
+// what is left. The item store implements it.
+type CacheEraser interface {
+	EraseCache(ctx context.Context, repoID int64, name qname.Repo, format string) error
 }
 
 // Fixup is one step-6 fix-up.

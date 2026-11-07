@@ -155,7 +155,7 @@ func (s *Store) Publish(ctx context.Context, tx meta.Tx, in rows.PublishInput) e
 	}); err != nil {
 		return err
 	}
-	if err := s.setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
+	if err := setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
 		return err
 	}
 	details := map[string]any{"package": in.Name, "version": in.Version, "integrity": in.Integrity, "tag": in.Tag, "latest_guard": in.LatestKept}
@@ -207,7 +207,7 @@ func (s *Store) SetTag(ctx context.Context, tx meta.Tx, in rows.SetTagInput) err
 	if err != nil {
 		return err
 	}
-	if err := s.setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
+	if err := setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
 		return err
 	}
 	return s.record(ctx, tx, audit.EventNPMDistTagSet, in.Audit, in.Name,
@@ -220,7 +220,7 @@ func (s *Store) DeleteTag(ctx context.Context, tx meta.Tx, in rows.DeleteTagInpu
 	if err != nil {
 		return err
 	}
-	if err := s.setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
+	if err := setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
 		return err
 	}
 	return s.record(ctx, tx, audit.EventNPMDistTagDelete, in.Audit, in.Name,
@@ -239,7 +239,7 @@ func (s *Store) Tombstone(ctx context.Context, tx meta.Tx, in rows.TombstoneInpu
 	if err != nil {
 		return "", err
 	}
-	if err := s.setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
+	if err := setTags(ctx, qs, in.PackageID, in.Tags, in.At); err != nil {
 		return "", err
 	}
 	// The entry a restore's replay applies (Q-NPM-12, R-HA-054): the repository, the
@@ -255,7 +255,7 @@ func (s *Store) Tombstone(ctx context.Context, tx meta.Tx, in rows.TombstoneInpu
 }
 
 // setTags stores the complete dist-tags map.
-func (s *Store) setTags(ctx context.Context, qs *q.Queries, packageID int64, tags map[string]string, at time.Time) error {
+func setTags(ctx context.Context, qs *q.Queries, packageID int64, tags map[string]string, at time.Time) error {
 	if tags == nil {
 		tags = map[string]string{}
 	}

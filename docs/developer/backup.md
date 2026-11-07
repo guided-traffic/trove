@@ -2,8 +2,9 @@
 
 Status: the contracts of the lane are built (phase 7, first step): the schema, the on-target format, the ports, the run record with
 its lease, the configuration, the command tree, the API operations, the metric families, the audit events and the registries.
-The operations themselves are not: `trove backup create|restore`, `trove admin post-restore` and
-`trove admin npm reinstate` are wired and answer "not built yet" (exit 1) until their work packages replace the constructors. The
+The operations themselves are not all built: `trove backup create|restore` and `trove admin post-restore` are wired and answer
+"not built yet" (exit 1) until their work packages replace the constructors; `list`, `verify`, `delete`, `prune` and
+`trove admin npm reinstate` are built. The
 specification is [backup-and-restore.md](../spec/backup-and-restore.md); the decisions behind the cut are
 [ADR-157](../decisions.md#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own)
 and [ADR-158](../decisions.md#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers).
@@ -33,7 +34,7 @@ cmd/trove/
   backup_delete.go        delete, prune               -> newDeleter, newPruner
   backup_restore.go       restore                     -> newRestorer
   admin_postrestore.go    admin post-restore          -> newPostRestorer
-  admin_npm.go            admin npm reinstate         -> npmReinstate
+  admin_npm.go            admin npm reinstate         -> npmReinstate (built)
 internal/backup/
   listing/                the scan of a target (complete or incomplete), the blob-list reader that checks itself, `backup.Lister`; fixture/ writes test backups
   retention/              policy, the pruning stage, the pool sweep, delete and prune runs, the marker check
@@ -256,3 +257,34 @@ One reading of `backup_run` serves every replica-side view, so the API, the UI, 
 - **Tests.** Unit: `go test ./internal/backup/gauges/... ./internal/api/v1/ -run 'R_API_050|R_OPS_004|R_BAK_014'`. Integration:
   [test/integration/backup/api_gauges_test.go](../../test/integration/backup/api_gauges_test.go) inserts real `backup_run` rows and
   checks the collector over `PGStore` (stepping its clock over the 30 s reuse) and a replica's API, info block and `/metrics`.
+
+## npm and NuGet in backups and restores
+
+The format parts of the lane live in the data packages of the formats and register themselves from `init`; the composition roots
+link them (`internal/backup/fixup` imports both, `internal/app` binds them).
+
+| File | Responsibility |
+|---|---|
+| [formatdata/npm/journal_replay.go](../../internal/formatdata/npm/journal_replay.go) | the handler of `npm.unpublish` (R-NPM-047, Q-NPM-12): writes the `journal` tombstone with the entry's ID, applies the dist-tag rule (`semver.TagsAfterRemoval`), raises `rev_seq`; deletes nothing |
+| [formatdata/npm/reinstate.go](../../internal/formatdata/npm/reinstate.go) | `Store.Reinstate`: removes a `journal` tombstone only while the version is stored with the tombstone's integrity, gives a package without `latest` one, raises `rev_seq`, writes `npm.reinstate` |
+| [formatdata/npm/restore_purge.go](../../internal/formatdata/npm/restore_purge.go) | `PurgeRemoteCaches`: per npm remote repository the storage delete path, then `remote_cache_entries` and `npm_remote_packages` (R-BAK-008) |
+| [formatdata/nuget/journal_replay.go](../../internal/formatdata/nuget/journal_replay.go) | the handler of `package.published` / `package.deleted` (R-NUGET-033): the table of reserved / removed tombstones and `revived`, row by row in `published()` and `deleted()` |
+| [formatdata/nuget/restore_purge.go](../../internal/formatdata/nuget/restore_purge.go) | `PurgeRemoteCaches` for NuGet: no tombstone, no index rows beyond the cache entries |
+| [backup/fixup/npm.go](../../internal/backup/fixup/npm.go), [nuget.go](../../internal/backup/fixup/nuget.go) | the `fixup.RegisterPurger` registrations |
+| [meta/postgres/queries/backup_formats.sql](../../internal/meta/postgres/queries/backup_formats.sql) | the statements of all of the above |
+| [cmd/trove/admin_npm.go](../../cmd/trove/admin_npm.go) | `trove admin npm reinstate <projectKey>/<repoKey> <name>@<version>` |
+| [backup/tables/classes_test.go](../../internal/backup/tables/classes_test.go) | reads the export-class table of R-STOR-047 from the spec page and compares it with the registrations; the format tables are all `data` |
+
+- **The storage delete path of a purger.** A purger gets `fixup.Env.Items`, a `fixup.CacheEraser`; the restore sets it to the item store
+  (`App.Items()`, [wire_files.go](../../internal/app/wire_files.go)), whose `EraseCache` ([items/erase.go](../../internal/items/erase.go))
+  removes every file of a remote repository in batches, each in a transaction in which the format's storage hook runs (so the cached
+  version rows go and `packages.rev_seq` grows), then the folders. A purger does not delete items itself.
+- **`system_state.restored_at` is an RFC 3339 string.** `packages.RestoredAt` parses it with `time.RFC3339Nano`; the finishing transaction
+  of the restore must write that form (`to_jsonb(to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))`), not PostgreSQL's
+  text form. A value that does not parse makes the document revalidation fail and the stored marks decide (the "upstream unreachable"
+  branch of `BeforeArtifactWith`), which hides the restore from npm's tarball gate.
+- **Tests.** Unit: the entry validation of both handlers, the registrations, the table classes. Integration
+  ([test/integration/backup/formats_*_test.go](../../test/integration/backup)): every outcome of both replay tables against the shared
+  PostgreSQL with a replica serving the protocol routes on top, the producer's entry read by the handler, `trove admin npm reinstate` run
+  as a built binary, the purgers against the npm and NuGet test upstreams, and the restore bound of R-NPM-025. The restore-level client
+  runs (`npm`, `dotnet`) are the end-to-end suite's.

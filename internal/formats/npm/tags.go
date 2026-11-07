@@ -46,54 +46,12 @@ func lowersLatest(current, version string) bool {
 	return semver.Compare(next, cur) < 0 || next.IsPrerelease() && !cur.IsPrerelease()
 }
 
-// tagsAfterRemoval moves the tags off a version that is removed: the other tags that
-// pointed to it are dropped, and latest moves to the highest remaining
-// non-pre-release version, or to the highest version when all are pre-releases
-// (R-NPM-016). With no version left there is no latest. remaining lists the
-// versions that stay.
+// tagsAfterRemoval moves the tags off a version that is removed (R-NPM-016); the rule is
+// semver.TagsAfterRemoval, shared with the restore's journal replay (R-NPM-047).
 func tagsAfterRemoval(cur map[string]string, removed string, remaining []string) map[string]string {
-	tags := maps.Clone(cur)
-	if tags == nil {
-		tags = map[string]string{}
-	}
-	for tag, v := range tags {
-		if v == removed && tag != "latest" {
-			delete(tags, tag)
-		}
-	}
-	if tags["latest"] == removed {
-		if v, ok := highest(remaining); ok {
-			tags["latest"] = v
-		} else {
-			delete(tags, "latest")
-		}
-	}
-	return tags
+	return semver.TagsAfterRemoval(cur, removed, remaining)
 }
 
 // highest returns the highest non-pre-release version of vs, or the highest version
 // when all are pre-releases.
-func highest(vs []string) (string, bool) {
-	var best, bestPre *semver.Version
-	for _, s := range vs {
-		v, err := semver.Parse(s)
-		if err != nil {
-			continue
-		}
-		slot := &best
-		if v.IsPrerelease() {
-			slot = &bestPre
-		}
-		if *slot == nil || semver.Compare(v, **slot) > 0 {
-			c := v
-			*slot = &c
-		}
-	}
-	switch {
-	case best != nil:
-		return best.Canonical(), true
-	case bestPre != nil:
-		return bestPre.Canonical(), true
-	}
-	return "", false
-}
+func highest(vs []string) (string, bool) { return semver.Highest(vs) }
