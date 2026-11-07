@@ -45,6 +45,10 @@ func (f fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Reposi
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
 
+func (f fakeRepos) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}
+
 func (f fakeRepos) List(context.Context) ([]repository.Repository, error) { return f.list, nil }
 
 func (f fakeRepos) ListProject(_ context.Context, project string) ([]repository.Repository, error) {

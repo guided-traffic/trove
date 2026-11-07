@@ -240,6 +240,9 @@ func TestR_VULN_010_ClaimRule(t *testing.T) {
 		"npm/remote-one": {{Repository: "it/npm-remote"}},
 		"npm/ghost":      {{Repository: "it/missing"}},
 		"npm/two":        {{Repository: "it/npm-remote"}, {Repository: "it/npm-local"}},
+		// The claim index holds a repository id the snapshot lacks (created on another replica a moment ago): the claim
+		// comes without a name and withholds like any holder the snapshot does not hold.
+		"npm/unnamed": {{Repository: ""}},
 	}
 	rule := ClaimRule{Claims: claims, Repos: repos}
 	cases := map[string]struct {
@@ -247,6 +250,7 @@ func TestR_VULN_010_ClaimRule(t *testing.T) {
 		repo     string
 	}{
 		"@acme/ui": {true, "it/npm-local"}, "other": {false, ""}, "remote-one": {false, ""}, "ghost": {true, "it/missing"}, "two": {true, "it/npm-local"}, "free": {false, ""},
+		"unnamed": {true, ""},
 	}
 	for name, want := range cases {
 		repo, internal, err := rule.Claim(context.Background(), "npm", name)
@@ -395,4 +399,8 @@ func TestR_VULN_002_RepositoryHookIgnoresRepositoriesTheScanningDoesNotApplyTo(t
 	if err := h.OnDelete(context.Background(), nil, repository.Caller{}, repository.Repository{}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (f fakeRepos) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }

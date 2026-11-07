@@ -182,6 +182,10 @@ func (r repos) ByName(_ context.Context, name qname.Repo) (repository.Repository
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 }
 
+func (r repos) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}
+
 func (r repos) List(context.Context) ([]repository.Repository, error) { return nil, nil }
 
 func (r repos) ListProject(context.Context, string) ([]repository.Repository, error) { return nil, nil }

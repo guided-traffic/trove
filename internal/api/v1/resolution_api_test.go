@@ -46,6 +46,10 @@ func (r fakeReader) ByName(_ context.Context, name qname.Repo) (repository.Repos
 	return v, nil
 }
 
+func (r fakeReader) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
+}
+
 func (r fakeReader) List(context.Context) ([]repository.Repository, error) { return nil, nil }
 
 func (r fakeReader) ListProject(context.Context, string) ([]repository.Repository, error) {

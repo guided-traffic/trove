@@ -348,7 +348,8 @@ func coveredByOwn(cat *catalog.Registry, idx *claimIndex, local Repository, name
 
 // ClaimMatch is a claim that covers a name.
 type ClaimMatch struct {
-	// Repository is the key of the claiming repository.
+	// Repository is the qualified name of the claiming repository, empty when the claim index holds an id the replica's
+	// snapshot lacks (a repository created on another replica a moment ago): the holder is then unknown.
 	Repository string
 	Pattern    string
 	Scope      string
