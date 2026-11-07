@@ -88,20 +88,19 @@ func (s *Server) packageScope(r *http.Request, ps PackageServices, req view.Scop
 		return ctx, view.Scope{}, err
 	}
 	topo := view.NewTopology(repos)
-	keys := view.Names(append(topo.Physical(), topo.Virtual()...))
-	ctx, acc, err := requestHolder(ctx, ps.Decider, keys...)
+	ctx, acc, err := requestHolder(ctx, ps.Decider, topo.Names(append(topo.Physical(), topo.Virtual()...))...)
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	rs, err := ps.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, view.Names(topo.Physical()))
+	rs, err := ps.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, topo.Names(topo.Physical()))
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	virtuals, err := acc.Readable(ctx, view.Names(topo.Virtual()))
+	virtuals, err := acc.Readable(ctx, topo.Names(topo.Virtual()))
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	sc, err := ps.View.Scope(ctx, rs, topo, view.Strings(virtuals), req)
+	sc, err := ps.View.Scope(ctx, rs, topo, topo.IDs(virtuals), req)
 	return ctx, sc, err
 }
 
@@ -133,9 +132,30 @@ func writeTagged(w http.ResponseWriter, r *http.Request, v any) {
 func summaryOf(p view.Package) gen.PackageSummary {
 	return gen.PackageSummary{
 		Id: p.ID, Format: p.Format, Name: p.Name, Description: p.Description, LatestVersion: p.LatestVersion,
-		Keywords: p.Keywords, Repositories: p.Repositories, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		Keywords: p.Keywords, Repositories: repoTexts(p.Repositories), CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 		VersionCount: p.VersionCount, DownloadCount: p.DownloadCount,
 	}
+}
+
+// repoFilter reads the repositories a filter names. A text that is no repository name stands for nothing, as an unknown
+// repository does.
+func repoFilter(texts []string) []qname.Repo {
+	out := make([]qname.Repo, 0, len(texts))
+	for _, t := range texts {
+		if n, err := qname.ParseRepo(t); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// repoTexts renders repository names for the answer.
+func repoTexts(names []qname.Repo) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = n.String()
+	}
+	return out
 }
 
 // packageFilter reads the filters of the list.
@@ -146,7 +166,7 @@ func packageFilter(lq ListQuery) (view.Filter, error) {
 		Project: lq.First("project"),
 	}
 	if reps, ok := lq.Filter["repository"]; ok {
-		f.Repositories, f.HasRepositories = splitValues(reps), true
+		f.Repositories, f.HasRepositories = repoFilter(splitValues(reps)), true
 	}
 	for _, p := range []struct {
 		name string
@@ -290,7 +310,7 @@ func (s *Server) ListPackageVersions(w http.ResponseWriter, r *http.Request, id 
 			f.Prerelease = &b
 		}
 		if reps, ok := lq.Filter["repository"]; ok {
-			f.Repositories, f.HasRepositories = splitValues(reps), true
+			f.Repositories, f.HasRepositories = repoFilter(splitValues(reps)), true
 		}
 	}
 	if err != nil {
@@ -317,7 +337,7 @@ func (s *Server) ListPackageVersions(w http.ResponseWriter, r *http.Request, id 
 	WritePage(w, r, MapPage(NewPage(lq, rows, order.VersionKey), func(v view.VersionSummary) gen.PackageVersionSummary {
 		return gen.PackageVersionSummary{
 			Version: v.Version, Prerelease: v.Prerelease, PublishedAt: v.PublishedAt, SizeBytes: v.SizeBytes,
-			Repositories: v.Repositories, DownloadCount: v.DownloadCount,
+			Repositories: repoTexts(v.Repositories), DownloadCount: v.DownloadCount,
 		}
 	}))
 }
@@ -362,14 +382,14 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 	}
 	for _, r := range d.Repositories {
 		out.Repositories = append(out.Repositories, gen.PackageVersionRepository{
-			Key: r.Key, Class: gen.PackageVersionRepositoryClass(r.Class), PublishedAt: r.PublishedAt,
+			Key: r.Repo.String(), Class: gen.PackageVersionRepositoryClass(r.Class), PublishedAt: r.PublishedAt,
 		})
 	}
 	for _, f := range d.Files {
 		out.Files = append(out.Files, gen.PackageFile{
 			Path: f.Path, SizeBytes: f.SizeBytes, Sha256: f.SHA256, DownloadUrl: downloadURL(base, d.Format, f.Repo, f.Path),
 			// f.Path is the path of the file item in f.Repo, the repository that holds it (PackageViewFiles).
-			ContentUrl: edge.ContentPath(view.Name(f.Repo), f.Path),
+			ContentUrl: edge.ContentPath(f.Repo, f.Path),
 		})
 	}
 	return out
@@ -378,8 +398,7 @@ func versionOf(base string, d view.VersionDetail) gen.PackageVersion {
 // downloadURL is the URL a client downloads a file from: the format's protocol
 // path of the repository when the format has one, else the raw file path. Every
 // segment is escaped once (R-ARCH-007).
-func downloadURL(base, format, repoName, path string) string {
-	repo := view.Name(repoName)
+func downloadURL(base, format string, repo qname.Repo, path string) string {
 	segs := strings.Split(path, "/")
 	for i, s := range segs {
 		segs[i] = url.PathEscape(s)

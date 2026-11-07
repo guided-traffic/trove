@@ -3,6 +3,8 @@ package view
 import (
 	"context"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Adapter is the format's part of the view (formats.ViewAdapter), in the terms of
@@ -79,7 +81,7 @@ type Package struct {
 	Description   *string
 	LatestVersion string
 	Keywords      []string
-	Repositories  []string
+	Repositories  []qname.Repo
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	VersionCount  int64
@@ -92,13 +94,13 @@ type VersionSummary struct {
 	Prerelease    bool
 	PublishedAt   time.Time
 	SizeBytes     int64
-	Repositories  []string
+	Repositories  []qname.Repo
 	DownloadCount int64
 }
 
 // RepositoryEntry is a repository that holds a version.
 type RepositoryEntry struct {
-	Key         string
+	Repo        qname.Repo
 	Class       string
 	PublishedAt time.Time
 }
@@ -109,7 +111,7 @@ type File struct {
 	SizeBytes int64
 	SHA256    string
 	// Repo is the repository whose copy the file is.
-	Repo string
+	Repo qname.Repo
 }
 
 // VersionDetail is a version with everything the details page shows.
@@ -129,7 +131,7 @@ type VersionDetail struct {
 	Files         []File
 	// Repo is the repository the files and the metadata were read from: the one
 	// that stored the version first.
-	Repo string
+	Repo qname.Repo
 }
 
 // Readme is the README source of a version.

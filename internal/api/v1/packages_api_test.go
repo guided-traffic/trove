@@ -321,7 +321,7 @@ func TestR_API_029_DownloadURLs(t *testing.T) {
 		{"npm", "it/npm-local", "a b/-/a%b.tgz", "https://t.example/api/npm/it/npm-local/a%20b/-/a%25b.tgz"},
 		{"generic", "it/files", "tools/widget 2.3/w.bin", "https://t.example/files/it/files/tools/widget%202.3/w.bin"},
 	} {
-		if got := downloadURL("https://t.example/", tc.format, tc.repo, tc.path); got != tc.want {
+		if got := downloadURL("https://t.example/", tc.format, mustRepo(t, tc.repo), tc.path); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.path, got, tc.want)
 		}
 	}
@@ -332,12 +332,12 @@ func TestR_API_029_FilterParsing(t *testing.T) {
 	parse := func(query string) (ListQuery, error) {
 		return ParseList(httptest.NewRequest("GET", "/api/v1/packages?"+query, nil), spec, apiCfg())
 	}
-	lq, err := parse("format=npm&format=nuget&repository=a,b&q=x&createdFrom=2026-10-01T00:00:00Z&sort=-updatedAt")
+	lq, err := parse("format=npm&format=nuget&repository=it/aa,it/bb,bare&q=x&createdFrom=2026-10-01T00:00:00Z&sort=-updatedAt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	f, err := packageFilter(lq)
-	if err != nil || len(f.Formats) != 2 || !f.HasRepositories || len(f.Repositories) != 2 || f.Q != "x" || f.CreatedFrom == nil || f.CreatedTo != nil {
+	if err != nil || len(f.Formats) != 2 || !f.HasRepositories || len(f.Repositories) != 2 || f.Repositories[1] != (qname.Repo{Project: "it", Key: "bb"}) || f.Q != "x" || f.CreatedFrom == nil || f.CreatedTo != nil {
 		t.Fatalf("%+v %v", f, err)
 	}
 	if lq.Sort != "updatedAt" || !lq.Desc {
@@ -429,4 +429,13 @@ func (f packagesReader) ListProject(context.Context, string) ([]repository.Repos
 
 func (f packagesReader) ByID(context.Context, int64) (repository.Repository, error) {
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}
+
+func mustRepo(t *testing.T, text string) qname.Repo {
+	t.Helper()
+	n, err := qname.ParseRepo(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

@@ -65,9 +65,9 @@ func (s *Service) Summary(ctx context.Context, sc Scope, f store.Filter) (Summar
 	if err != nil {
 		return Summary{}, err
 	}
-	for _, key := range sc.Readable {
-		r, _ := sc.snap.Repository(key)
-		if f.HasRepos && !slices.Contains(f.Repos, r.NumericID()) {
+	for _, id := range sc.Readable {
+		r, _ := sc.snap.Repository(id)
+		if f.HasRepos && !slices.Contains(f.Repos, id) {
 			continue
 		}
 		switch s.evaluation(ctx, r, "", data) {

@@ -12,17 +12,16 @@ import (
 )
 
 const packageViewCandidates = `-- name: PackageViewCandidates :many
-SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
+SELECT p.repo_id, p.name, pv.version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
    AND p.repo_id = ANY($1::bigint[])
    AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
    AND ($3::text = '' OR starts_with(lower(p.name), lower($3::text)))
    AND ($4::text = '' OR p.name = $4::text)
- ORDER BY (rp.key || '/' || r.key), p.name, pv.version
+ ORDER BY p.repo_id, p.name, pv.version
  LIMIT $5::int
 `
 
@@ -35,7 +34,7 @@ type PackageViewCandidatesParams struct {
 }
 
 type PackageViewCandidatesRow struct {
-	RepoKey string
+	RepoID  int64
 	Name    string
 	Version string
 }
@@ -58,7 +57,7 @@ func (q *Queries) PackageViewCandidates(ctx context.Context, arg PackageViewCand
 	items := []PackageViewCandidatesRow{}
 	for rows.Next() {
 		var i PackageViewCandidatesRow
-		if err := rows.Scan(&i.RepoKey, &i.Name, &i.Version); err != nil {
+		if err := rows.Scan(&i.RepoID, &i.Name, &i.Version); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -270,7 +269,7 @@ func (q *Queries) PackageViewList(ctx context.Context, arg PackageViewListParams
 
 const packageViewVersions = `-- name: PackageViewVersions :many
 SELECT pv.id AS version_id, r.format, p.name, p.display_name, pv.version, pv.created_at,
-       r.id AS repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.class AS repo_class,
+       r.id AS repo_id, r.class AS repo_class,
        CASE WHEN $1::boolean
             THEN COALESCE((SELECT sum(i.size) FROM items i WHERE i.version_id = pv.id AND i.kind = 'file' AND i.trashed_at IS NULL), 0)
             ELSE 0 END::bigint AS size_bytes,
@@ -278,7 +277,6 @@ SELECT pv.id AS version_id, r.format, p.name, p.display_name, pv.version, pv.cre
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
    AND NOT (pv.id = ANY($2::bigint[]))
    AND concat_ws(chr(31), r.format, p.name) = ANY($3::text[])
@@ -306,7 +304,6 @@ type PackageViewVersionsRow struct {
 	Version     string
 	CreatedAt   pgtype.Timestamptz
 	RepoID      int64
-	RepoKey     string
 	RepoClass   string
 	SizeBytes   int64
 	Downloads   int64
@@ -340,7 +337,6 @@ func (q *Queries) PackageViewVersions(ctx context.Context, arg PackageViewVersio
 			&i.Version,
 			&i.CreatedAt,
 			&i.RepoID,
-			&i.RepoKey,
 			&i.RepoClass,
 			&i.SizeBytes,
 			&i.Downloads,

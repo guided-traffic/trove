@@ -78,27 +78,19 @@ func tooBroad(what string) error {
 
 // Scope is what a caller may read, as the statements of the view take it.
 type Scope struct {
-	topo            Topology
-	whole           []string
-	rows            []string
-	virtualReadable map[string]bool
+	topo  Topology
+	whole []int64
+	rows  []string
+	// rowRepos are the repositories that have any of rows, sorted.
+	rowRepos        []int64
+	virtualReadable map[int64]bool
 }
 
 // Repos returns the physical repositories the scope has any row of, sorted.
-func (sc Scope) Repos() []string {
-	out := append(slices.Clone(sc.whole), rowRepos(sc.rows)...)
+func (sc Scope) Repos() []int64 {
+	out := append(slices.Clone(sc.whole), sc.rowRepos...)
 	slices.Sort(out)
 	return slices.Compact(out)
-}
-
-func rowRepos(rows []string) []string {
-	var out []string
-	for _, r := range rows {
-		if k, _, ok := strings.Cut(r, "\x1f"); ok && !slices.Contains(out, k) {
-			out = append(out, k)
-		}
-	}
-	return out
 }
 
 // Topology returns the topology the scope was built on.
@@ -108,22 +100,22 @@ func (sc Scope) Topology() Topology { return sc.topo }
 // repositories: those, and the virtual repositories that contain them and that the
 // caller may read. Local repositories come first, then remote, then virtual; each
 // group is sorted.
-func (sc Scope) holders(physical []string) []string {
-	set := map[string]bool{}
-	for _, k := range physical {
-		set[k] = true
-		for _, v := range sc.topo.Containers(k) {
+func (sc Scope) holders(physical []int64) []int64 {
+	set := map[int64]bool{}
+	for _, id := range physical {
+		set[id] = true
+		for _, v := range sc.topo.Containers(id) {
 			if sc.virtualReadable[v] {
 				set[v] = true
 			}
 		}
 	}
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
+	out := make([]int64, 0, len(set))
+	for id := range set {
+		out = append(out, id)
 	}
-	rank := func(k string) int {
-		c, _ := sc.topo.Class(k)
+	rank := func(id int64) int {
+		c, _ := sc.topo.Class(id)
 		switch c {
 		case repository.Local:
 			return 0
@@ -136,7 +128,7 @@ func (sc Scope) holders(physical []string) []string {
 		if ri, rj := rank(out[i]), rank(out[j]); ri != rj {
 			return ri < rj
 		}
-		return out[i] < out[j]
+		return sc.topo.Less(out[i], out[j])
 	})
 	return out
 }
@@ -153,23 +145,23 @@ type ScopeRequest struct {
 // decision, and the readable rows of the others. virtualReadable are the virtual
 // repositories the caller may read; they decide which of them a version is shown
 // in.
-func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, virtualReadable []string, r ScopeRequest) (Scope, error) {
-	sc := Scope{topo: topo, virtualReadable: map[string]bool{}}
+func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, virtualReadable []int64, r ScopeRequest) (Scope, error) {
+	sc := Scope{topo: topo, virtualReadable: map[int64]bool{}}
 	for _, v := range virtualReadable {
 		sc.virtualReadable[v] = true
 	}
-	var rowKeys []string
-	for _, k := range topo.Physical() {
-		switch shape := rs.Shape(nameOf(k)); {
-		case shape == authz.ReadAll && !topo.Restricts(k):
-			sc.whole = append(sc.whole, k)
+	var rowIDs []int64
+	for _, id := range topo.Physical() {
+		switch shape := rs.Shape(topo.Name(id)); {
+		case shape == authz.ReadAll && !topo.Restricts(id):
+			sc.whole = append(sc.whole, id)
 		case shape != authz.ReadNone:
 			// A repository with include or exclude patterns serves only the names they
 			// admit (R-REPO-005), whatever the caller may read: it is decided row by row.
-			rowKeys = append(rowKeys, k)
+			rowIDs = append(rowIDs, id)
 		}
 	}
-	if len(rowKeys) == 0 {
+	if len(rowIDs) == 0 {
 		return sc, nil
 	}
 	formats := s.formatsOf(r.Formats)
@@ -179,7 +171,7 @@ func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, 
 	var cands []q.PackageViewCandidatesRow
 	err := s.read(ctx, func(qs *q.Queries) (err error) {
 		cands, err = qs.PackageViewCandidates(ctx, q.PackageViewCandidatesParams{
-			Keys: ids(topo.IDs(rowKeys)), Formats: keys(formats), NamePrefix: r.NamePrefix, ExactName: r.ExactName, MaxRows: rows32(s.maxRows + 1),
+			Keys: ids(rowIDs), Formats: keys(formats), NamePrefix: r.NamePrefix, ExactName: r.ExactName, MaxRows: rows32(s.maxRows + 1),
 		})
 		return err
 	})
@@ -190,10 +182,16 @@ func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, 
 		return Scope{}, tooBroad("The repositories you may read only in part")
 	}
 	for _, c := range cands {
-		if topo.Admits(c.RepoKey, c.Name) && (rs.Shape(nameOf(c.RepoKey)) == authz.ReadAll || rs.MayRead(nameOf(c.RepoKey), c.Name, c.Version)) {
-			sc.rows = append(sc.rows, rowKey(topo.ID(c.RepoKey), c.Name, c.Version))
+		if !topo.Admits(c.RepoID, c.Name) {
+			continue
+		}
+		if name := topo.Name(c.RepoID); rs.Shape(name) == authz.ReadAll || rs.MayRead(name, c.Name, c.Version) {
+			sc.rows = append(sc.rows, rowKey(c.RepoID, c.Name, c.Version))
+			sc.rowRepos = append(sc.rowRepos, c.RepoID)
 		}
 	}
+	slices.Sort(sc.rowRepos)
+	sc.rowRepos = slices.Compact(sc.rowRepos)
 	return sc, nil
 }
 
@@ -245,7 +243,7 @@ type Filter struct {
 	// Repositories are the keys as sent; a virtual repository stands for its
 	// members. HasRepositories distinguishes no filter from a filter that names
 	// nothing.
-	Repositories    []string
+	Repositories    []qname.Repo
 	HasRepositories bool
 	// Project narrows the list to the physical repositories of that project
 	// (Q-UI-129); it combines with Repositories by intersection.
@@ -316,12 +314,12 @@ func stamp(t *time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// reposOf expands the repository filter to physical keys.
-func (sc Scope) reposOf(f Filter) []string {
+// reposOf expands the repository filter to physical repositories.
+func (sc Scope) reposOf(f Filter) []int64 {
 	if !f.HasRepositories {
 		return nil
 	}
-	return sc.topo.Expand(f.Repositories)
+	return sc.topo.Expand(sc.topo.IDs(f.Repositories))
 }
 
 // List returns at most limit+1 packages after the position, in the order, so that
@@ -338,23 +336,23 @@ func (s *Service) List(ctx context.Context, sc Scope, f Filter, o Order, after *
 	var qIDs, kwIDs []int64
 	var err error
 	if f.Q != "" {
-		if qIDs, err = s.find(ctx, formats, Find{Repos: universe, Text: f.Q}, sc); err != nil {
+		if qIDs, err = s.find(ctx, formats, Find{Repos: sc.topo.Texts(universe), Text: f.Q}); err != nil {
 			return nil, err
 		}
 	}
 	if f.Keyword != "" {
-		if kwIDs, err = s.find(ctx, formats, Find{Repos: universe, Keyword: f.Keyword}, sc); err != nil {
+		if kwIDs, err = s.find(ctx, formats, Find{Repos: sc.topo.Texts(universe), Keyword: f.Keyword}); err != nil {
 			return nil, err
 		}
 	}
-	withheld, err := s.withheld(ctx, formats, universe)
+	withheld, err := s.withheld(ctx, sc, formats, universe)
 	if err != nil {
 		return nil, err
 	}
 	p := q.PackageViewListParams{
 		Sort: o.Sort, Descending: o.Desc, MaxRows: rows32(limit + 1),
-		Withheld: ids(withheld), Formats: keys(formats), HasRepos: f.HasRepositories, Repos: ids(sc.topo.IDs(repos)),
-		NamePrefix: f.NamePrefix, Whole: ids(sc.topo.IDs(sc.whole)), Rows: keys(sc.rows),
+		Withheld: ids(withheld), Formats: keys(formats), HasRepos: f.HasRepositories, Repos: ids(repos),
+		NamePrefix: f.NamePrefix, Whole: ids(sc.whole), Rows: keys(sc.rows),
 		Q: f.Q, QIds: ids(qIDs), Keyword: f.Keyword, KeywordIds: ids(kwIDs),
 		HasFrom: f.CreatedFrom != nil, CreatedFrom: stamp(f.CreatedFrom),
 		HasTo: f.CreatedTo != nil, CreatedTo: stamp(f.CreatedTo),
@@ -372,13 +370,13 @@ func (s *Service) Package(ctx context.Context, sc Scope, format, name string) (P
 		return Package{}, false, nil
 	}
 	universe := sc.Repos()
-	withheld, err := s.withheld(ctx, []string{format}, universe)
+	withheld, err := s.withheld(ctx, sc, []string{format}, universe)
 	if err != nil {
 		return Package{}, false, err
 	}
 	p := q.PackageViewListParams{
 		Sort: "name", MaxRows: 1, Withheld: ids(withheld), Formats: []string{format},
-		ExactFormat: format, ExactName: name, Whole: ids(sc.topo.IDs(sc.whole)), Rows: keys(sc.rows),
+		ExactFormat: format, ExactName: name, Whole: ids(sc.whole), Rows: keys(sc.rows),
 		Repos: []int64{}, QIds: []int64{}, KeywordIds: []int64{},
 	}
 	ps, err := s.packages(ctx, sc, p, withheld, false, nil)
@@ -388,11 +386,11 @@ func (s *Service) Package(ctx context.Context, sc Scope, format, name string) (P
 	return ps[0], true, nil
 }
 
-func intersectOrAll(all, only []string, restricted bool) []string {
+func intersectOrAll(all, only []int64, restricted bool) []int64 {
 	if !restricted {
 		return all
 	}
-	var out []string
+	var out []int64
 	for _, k := range all {
 		if slices.Contains(only, k) {
 			out = append(out, k)
@@ -404,7 +402,7 @@ func intersectOrAll(all, only []string, restricted bool) []string {
 // find asks the adapters of the formats for the versions that match and keeps the
 // ones in scope. The list is a superset the statement intersects with the rows the
 // caller may read.
-func (s *Service) find(ctx context.Context, formats []string, f Find, _ Scope) ([]int64, error) {
+func (s *Service) find(ctx context.Context, formats []string, f Find) ([]int64, error) {
 	var ids []int64
 	for _, fm := range formats {
 		a, ok := s.adapters.For(fm)
@@ -423,14 +421,15 @@ func (s *Service) find(ctx context.Context, formats []string, f Find, _ Scope) (
 	return ids, nil
 }
 
-func (s *Service) withheld(ctx context.Context, formats, repos []string) ([]int64, error) {
+func (s *Service) withheld(ctx context.Context, sc Scope, formats []string, repos []int64) ([]int64, error) {
+	texts := sc.topo.Texts(repos)
 	var ids []int64
 	for _, fm := range formats {
 		a, ok := s.adapters.For(fm)
 		if !ok {
 			continue
 		}
-		got, err := a.Withheld(ctx, repos)
+		got, err := a.Withheld(ctx, texts)
 		if err != nil {
 			return nil, err
 		}
@@ -440,7 +439,7 @@ func (s *Service) withheld(ctx context.Context, formats, repos []string) ([]int6
 }
 
 // packages runs the list statement and decorates its rows.
-func (s *Service) packages(ctx context.Context, sc Scope, p q.PackageViewListParams, withheld []int64, hasRepos bool, repos []string) ([]Package, error) {
+func (s *Service) packages(ctx context.Context, sc Scope, p q.PackageViewListParams, withheld []int64, hasRepos bool, repos []int64) ([]Package, error) {
 	var rows []q.PackageViewListRow
 	if err := s.read(ctx, func(qs *q.Queries) (err error) {
 		rows, err = qs.PackageViewList(ctx, p)
@@ -484,13 +483,13 @@ func (s *Service) packages(ctx context.Context, sc Scope, p q.PackageViewListPar
 		}
 		latests[i] = latest{version: l.Version, row: l}
 		pkgs[i].LatestVersion = l.Version
-		var held []string
+		held := make([]int64, 0, len(vs))
 		for _, v := range vs {
-			held = append(held, v.RepoKey)
+			held = append(held, v.RepoID)
 		}
-		pkgs[i].Repositories = sc.holders(held)
+		pkgs[i].Repositories = sc.topo.Names(sc.holders(held))
 		byFormat[pkgs[i].Format] = append(byFormat[pkgs[i].Format], Version{
-			ID: l.VersionID, Format: l.Format, Repo: l.RepoKey, Package: l.Name, Version: l.Version,
+			ID: l.VersionID, Format: l.Format, Repo: sc.topo.Name(l.RepoID).String(), Package: l.Name, Version: l.Version,
 		})
 	}
 	data := map[int64]Data{}
@@ -516,7 +515,7 @@ func (s *Service) packages(ctx context.Context, sc Scope, p q.PackageViewListPar
 			pkgs[i].Keywords = []string{}
 		}
 		if pkgs[i].Repositories == nil {
-			pkgs[i].Repositories = []string{}
+			pkgs[i].Repositories = []qname.Repo{}
 		}
 	}
 	return pkgs, nil
@@ -543,12 +542,12 @@ func latestOf(a Adapter, rows []q.PackageViewVersionsRow) (q.PackageViewVersions
 }
 
 // versionRows reads the rows of the given packages ("<format>\x1f<name>").
-func (s *Service) versionRows(ctx context.Context, sc Scope, pkgs []string, withSize bool, withheld []int64, hasRepos bool, repos []string) ([]q.PackageViewVersionsRow, error) {
+func (s *Service) versionRows(ctx context.Context, sc Scope, pkgs []string, withSize bool, withheld []int64, hasRepos bool, repos []int64) ([]q.PackageViewVersionsRow, error) {
 	var rows []q.PackageViewVersionsRow
 	err := s.read(ctx, func(qs *q.Queries) (err error) {
 		rows, err = qs.PackageViewVersions(ctx, q.PackageViewVersionsParams{
-			WithSize: withSize, Withheld: ids(withheld), Packages: pkgs, HasRepos: hasRepos, Repos: ids(sc.topo.IDs(repos)),
-			Whole: ids(sc.topo.IDs(sc.whole)), Rows: keys(sc.rows),
+			WithSize: withSize, Withheld: ids(withheld), Packages: pkgs, HasRepos: hasRepos, Repos: ids(repos),
+			Whole: ids(sc.whole), Rows: keys(sc.rows),
 		})
 		return err
 	})
@@ -571,10 +570,10 @@ func (g versionGroup) downloads() (n int64) {
 	return n
 }
 
-func (g versionGroup) repoKeys() []string {
-	out := make([]string, 0, len(g.rows))
+func (g versionGroup) repoIDs() []int64 {
+	out := make([]int64, 0, len(g.rows))
 	for _, r := range g.rows {
-		out = append(out, r.RepoKey)
+		out = append(out, r.RepoID)
 	}
 	return out
 }
@@ -586,7 +585,7 @@ func (s *Service) groups(ctx context.Context, sc Scope, format, name string, wit
 	if !ok {
 		return nil, nil, nil
 	}
-	withheld, err := s.withheld(ctx, []string{format}, sc.Repos())
+	withheld, err := s.withheld(ctx, sc, []string{format}, sc.Repos())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -611,7 +610,7 @@ func (s *Service) groups(ctx context.Context, sc Scope, format, name string, wit
 // VersionFilter narrows the versions of a package.
 type VersionFilter struct {
 	Prerelease      *bool
-	Repositories    []string
+	Repositories    []qname.Repo
 	HasRepositories bool
 }
 
@@ -637,9 +636,9 @@ func (s *Service) Versions(ctx context.Context, sc Scope, format, name string, f
 	if err != nil || len(gs) == 0 {
 		return nil, false, err
 	}
-	var only []string
+	var only []int64
 	if f.HasRepositories {
-		only = sc.topo.Expand(f.Repositories)
+		only = sc.topo.Expand(sc.topo.IDs(f.Repositories))
 	}
 	out := make([]VersionSummary, 0, len(gs))
 	for _, g := range gs {
@@ -647,12 +646,12 @@ func (s *Service) Versions(ctx context.Context, sc Scope, format, name string, f
 		if f.Prerelease != nil && *f.Prerelease != pre {
 			continue
 		}
-		if f.HasRepositories && !slices.ContainsFunc(g.rows, func(r q.PackageViewVersionsRow) bool { return slices.Contains(only, r.RepoKey) }) {
+		if f.HasRepositories && !slices.ContainsFunc(g.rows, func(r q.PackageViewVersionsRow) bool { return slices.Contains(only, r.RepoID) }) {
 			continue
 		}
 		out = append(out, VersionSummary{
 			Version: g.version, Prerelease: pre, PublishedAt: g.published,
-			SizeBytes: g.primary().SizeBytes, Repositories: sc.holders(g.repoKeys()), DownloadCount: g.downloads(),
+			SizeBytes: g.primary().SizeBytes, Repositories: sc.topo.Names(sc.holders(g.repoIDs())), DownloadCount: g.downloads(),
 		})
 	}
 	cmp := func(x, y VersionSummary) int {
@@ -705,29 +704,29 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 	d := VersionDetail{
 		PackageID: ID(format, name), Format: format, Name: pri.DisplayName, Version: version,
 		Prerelease: a.Prerelease(version), PublishedAt: g.published,
-		SizeBytes: pri.SizeBytes, DownloadCount: g.downloads(), Repo: pri.RepoKey,
+		SizeBytes: pri.SizeBytes, DownloadCount: g.downloads(), Repo: sc.topo.Name(pri.RepoID),
 		Licenses: []string{}, Metadata: map[string]any{},
 	}
-	earliest := map[string]time.Time{}
-	var held []string
+	earliest := map[int64]time.Time{}
+	var held []int64
 	for _, r := range g.rows {
-		held = append(held, r.RepoKey)
-		if t, ok := earliest[r.RepoKey]; !ok || r.CreatedAt.Time.Before(t) {
-			earliest[r.RepoKey] = r.CreatedAt.Time
+		held = append(held, r.RepoID)
+		if t, ok := earliest[r.RepoID]; !ok || r.CreatedAt.Time.Before(t) {
+			earliest[r.RepoID] = r.CreatedAt.Time
 		}
 	}
 	// A virtual repository shows the oldest copy of its members.
-	for _, key := range sc.holders(held) {
-		class, _ := sc.topo.Class(key)
-		at, ok := earliest[key]
+	for _, id := range sc.holders(held) {
+		class, _ := sc.topo.Class(id)
+		at, ok := earliest[id]
 		if !ok {
-			for _, m := range sc.topo.members[key] {
+			for _, m := range sc.topo.Members(id) {
 				if t, found := earliest[m]; found && (at.IsZero() || t.Before(at)) {
 					at = t
 				}
 			}
 		}
-		d.Repositories = append(d.Repositories, RepositoryEntry{Key: key, Class: string(class), PublishedAt: at})
+		d.Repositories = append(d.Repositories, RepositoryEntry{Repo: sc.topo.Name(id), Class: string(class), PublishedAt: at})
 	}
 	visible := map[string]bool{}
 	if all, _, err := s.groups(ctx, sc, format, name, false); err == nil {
@@ -735,7 +734,7 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 			visible[g.version] = true
 		}
 	}
-	got, err := a.Describe(ctx, []Version{{ID: pri.VersionID, Format: format, Repo: pri.RepoKey, Package: pri.Name, Version: version}},
+	got, err := a.Describe(ctx, []Version{{ID: pri.VersionID, Format: format, Repo: sc.topo.Name(pri.RepoID).String(), Package: pri.Name, Version: version}},
 		FieldSummary|FieldDetails, func(v string) bool { return visible[v] })
 	if err != nil {
 		return VersionDetail{}, false, err
@@ -752,7 +751,7 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 	err = s.read(ctx, func(qs *q.Queries) error {
 		files, err := qs.PackageViewFiles(ctx, pri.VersionID)
 		for _, f := range files {
-			d.Files = append(d.Files, File{Path: f.Path, SizeBytes: f.Size.Int64, SHA256: f.Sha256, Repo: pri.RepoKey})
+			d.Files = append(d.Files, File{Path: f.Path, SizeBytes: f.Size.Int64, SHA256: f.Sha256, Repo: sc.topo.Name(pri.RepoID)})
 		}
 		return err
 	})
@@ -776,7 +775,7 @@ func (s *Service) ReadmeOf(ctx context.Context, sc Scope, format, name, version 
 		return Readme{}, false, err
 	}
 	pri := g.primary()
-	got, err := a.Describe(ctx, []Version{{ID: pri.VersionID, Format: format, Repo: pri.RepoKey, Package: pri.Name, Version: version}},
+	got, err := a.Describe(ctx, []Version{{ID: pri.VersionID, Format: format, Repo: sc.topo.Name(pri.RepoID).String(), Package: pri.Name, Version: version}},
 		FieldDetails|FieldReadme, func(string) bool { return false })
 	if err != nil {
 		return Readme{}, false, err
@@ -799,33 +798,4 @@ func (s *Service) oneVersion(ctx context.Context, sc Scope, format, name, versio
 		}
 	}
 	return versionGroup{}, nil, false, nil
-}
-
-// Name reads the qualified name "<project>/<key>" the statements of this package use as the repository key; a
-// string that is none gives the zero name.
-func Name(k string) qname.Repo { return nameOf(k) }
-
-// Names is [Name] for a list.
-func Names(keys []string) []qname.Repo {
-	out := make([]qname.Repo, len(keys))
-	for i, k := range keys {
-		out[i] = nameOf(k)
-	}
-	return out
-}
-
-// Strings is the qualified texts of a list of names.
-func Strings(names []qname.Repo) []string {
-	out := make([]string, len(names))
-	for i, n := range names {
-		out[i] = n.String()
-	}
-	return out
-}
-
-// nameOf reads the qualified name "<project>/<key>" that the package statements and the topology use as the
-// repository key; a string that is none gives the zero name, which no scope admits.
-func nameOf(k string) qname.Repo {
-	r, _ := qname.ParseRepo(k)
-	return r
 }

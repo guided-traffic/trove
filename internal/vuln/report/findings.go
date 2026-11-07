@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
 	"github.com/guided-traffic/trove/internal/vuln/store"
@@ -67,7 +68,7 @@ func fallbackAdvisory(r store.Row) store.Advisory {
 type Detail struct {
 	Finding             Finding
 	Advisory            Advisory
-	VirtualRepositories []string
+	VirtualRepositories []qname.Repo
 	History             []store.Event
 }
 
@@ -91,7 +92,7 @@ func (s *Service) Detail(ctx context.Context, sc Scope, id string) (Detail, bool
 		return Detail{}, false, err
 	}
 	return Detail{
-		Finding: s.findings(sc.snap, rows)[0], Advisory: s.advisoryView(adv), VirtualRepositories: sc.VirtualContaining(row.Repository), History: hist,
+		Finding: s.findings(sc.snap, rows)[0], Advisory: s.advisoryView(adv), VirtualRepositories: sc.VirtualContaining(row.RepoID), History: hist,
 	}, true, nil
 }
 

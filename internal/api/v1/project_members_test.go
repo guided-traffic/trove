@@ -274,10 +274,10 @@ func TestR_AUTHZ_026_ProjectPolicyRoutesAreDeclaredForOwners(t *testing.T) {
 // bare repository key is 400, and both filters intersect.
 func TestR_VULN_020_TheProjectFilterOfTheFindings(t *testing.T) {
 	repos := []repository.Repository{
-		{Name: qname.Repo{Project: "web", Key: "npm-local"}, Class: repository.Local, Format: "npm"},
-		{Name: qname.Repo{Project: "web", Key: "npm-remote"}, Class: repository.Remote, Format: "npm"},
-		{Name: qname.Repo{Project: "docs", Key: "npm-local"}, Class: repository.Local, Format: "npm"},
-		{Name: qname.Repo{Project: "web", Key: "npm-all"}, Class: repository.Virtual, Format: "npm"},
+		{ID: "1", Name: qname.Repo{Project: "web", Key: "npm-local"}, Class: repository.Local, Format: "npm"},
+		{ID: "2", Name: qname.Repo{Project: "web", Key: "npm-remote"}, Class: repository.Remote, Format: "npm"},
+		{ID: "3", Name: qname.Repo{Project: "docs", Key: "npm-local"}, Class: repository.Local, Format: "npm"},
+		{ID: "4", Name: qname.Repo{Project: "web", Key: "npm-all"}, Class: repository.Virtual, Format: "npm"},
 	}
 	sn := &report.Snapshot{Repos: repos, Topo: view.NewTopology(repos)}
 	list := func(query string) ([]string, bool, error) {
@@ -286,7 +286,12 @@ func TestR_VULN_020_TheProjectFilterOfTheFindings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return findingRepoNames(lq, sn, report.Caller{})
+		ids, has, err := findingRepos(lq, sn, report.Caller{})
+		var names []string
+		for _, n := range sn.Topo.Names(ids) {
+			names = append(names, n.String())
+		}
+		return names, has, err
 	}
 	got, has, err := list("project=web")
 	if err != nil || !has || strings.Join(sortedCopy(got), ",") != "web/npm-local,web/npm-remote" {

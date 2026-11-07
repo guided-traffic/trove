@@ -115,6 +115,9 @@ func (l Locked) Project() string { return ProjectOf(l.Repository) }
 
 // Row is one finding as the list reads it, with the lookups of its advisory.
 type Row struct {
+	// RepoID is the database ID of the finding's repository, the key of the topology; Repository is its qualified name for
+	// the answer.
+	RepoID                                                        int64
 	ID, Repository, Format, Ecosystem, Package, Version, Advisory string
 	Aliases                                                       []string
 	Kind                                                          advisory.Kind
@@ -172,8 +175,11 @@ func tri(b *bool) (has, v bool) {
 	return true, *b
 }
 
-// Candidate is a (repository, package, version) triple a scope decides on.
-type Candidate struct{ Repository, Package, Version string }
+// Candidate is a (repository ID, package, version) triple a scope decides on.
+type Candidate struct {
+	RepoID           int64
+	Package, Version string
+}
 
 // Candidates returns the triples of the findings of the repositories that match the filter, at most max; the caller asks for
 // one more than it accepts.
@@ -188,13 +194,16 @@ func (a *API) Candidates(ctx context.Context, repoIDs []int64, f Filter, max int
 	})
 	out := make([]Candidate, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Candidate{Repository: r.RepoKey, Package: r.Name, Version: r.Version})
+		out = append(out, Candidate{RepoID: r.RepoID, Package: r.Name, Version: r.Version})
 	}
 	return out, err
 }
 
-// Pair is a (repository, package) pair a scope decides on once for every version.
-type Pair struct{ Repository, Package string }
+// Pair is a (repository ID, package) pair a scope decides on once for every version.
+type Pair struct {
+	RepoID  int64
+	Package string
+}
 
 // CandidatePackages returns the distinct pairs of the findings of the repositories that match the filter, read from at most max
 // findings, and the number of findings read; the caller asks for one more than it accepts and compares the findings, not the pairs,
@@ -211,7 +220,7 @@ func (a *API) CandidatePackages(ctx context.Context, repoIDs []int64, f Filter, 
 	})
 	seen := make(map[Pair]struct{}, len(rows)/4)
 	for _, r := range rows {
-		p := Pair{Repository: r.RepoKey, Package: r.Name}
+		p := Pair{RepoID: r.RepoID, Package: r.Name}
 		if _, dup := seen[p]; dup {
 			continue
 		}
@@ -232,7 +241,7 @@ func (a *API) PackageCandidates(ctx context.Context, repoIDs []int64, format, na
 	})
 	out := make([]Candidate, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Candidate{Repository: r.RepoKey, Package: r.Name, Version: r.Version})
+		out = append(out, Candidate{RepoID: r.RepoID, Package: r.Name, Version: r.Version})
 	}
 	return out, err
 }
@@ -295,7 +304,7 @@ func (a *API) ListTx(ctx context.Context, tx meta.Tx, sc Scope, f Filter, o Orde
 
 func rowOf(r q.VulnFindingsListRow) Row {
 	out := Row{
-		ID: r.ID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName, Version: r.Version,
+		ID: r.ID, RepoID: r.RepoID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName, Version: r.Version,
 		Advisory: r.AdvisoryID, Aliases: r.Aliases, Kind: advisory.Kind(r.Kind), Summary: r.Summary,
 		Severity: advisory.Severity(r.Severity), CVSSScore: r.CvssScore, CVSSVersion: r.CvssVersion, CVSSVector: r.CvssVector,
 		KnownExploited: r.KnownExploited, KnownExploitedAddedAt: r.KevAdded, FixAvailable: r.FixAvailable,
@@ -588,6 +597,7 @@ func (a *API) ClaimedMatches(ctx context.Context, after *ClaimedAfter, max int) 
 
 // Locked is a finding the caller may read, locked for a status change.
 type Locked struct {
+	RepoID                                                        int64
 	ID, Repository, Format, Ecosystem, Package, Version, Advisory string
 	Kind                                                          advisory.Kind
 	Status                                                        vuln.Status
@@ -632,7 +642,7 @@ func (a *API) Lock(ctx context.Context, tx meta.Tx, sc Scope, ids []string) ([]L
 	out := make([]Locked, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, Locked{
-			ID: r.ID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName,
+			ID: r.ID, RepoID: r.RepoID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName,
 			Version: r.Version, Advisory: r.AdvisoryID, Kind: advisory.Kind(r.Kind), Status: vuln.Status(r.Status),
 			DismissalReason: r.DismissalReason, Comment: r.Comment, Revision: r.Revision,
 		})

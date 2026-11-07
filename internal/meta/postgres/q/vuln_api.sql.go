@@ -395,7 +395,7 @@ func (q *Queries) VulnFindingsCount(ctx context.Context, arg VulnFindingsCountPa
 
 const vulnFindingsList = `-- name: VulnFindingsList :many
 WITH base AS NOT MATERIALIZED (
-  SELECT f.id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
+  SELECT f.id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
          f.severity_rank, f.cvss_score AS cvss_raw, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited, f.fix_available,
          f.fixed_versions, f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason,
          COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.comment, '')::text AS comment,
@@ -445,62 +445,62 @@ WITH base AS NOT MATERIALIZED (
                              OR position(lower($30::text) in lower(a.id)) > 0
                              OR EXISTS (SELECT 1 FROM unnest(a.aliases) al WHERE position(lower($30::text) in lower(al)) > 0))))
 ), p AS (
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint)::bigint AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint)::bigint AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text = 'severity' AND NOT $1::boolean
       AND (NOT $32::boolean OR ((b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint), b.id) > ($33::bigint, $34::text::uuid))
     ORDER BY (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint) ASC, b.id ASC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (extract(epoch FROM b.detected_at) * 1000000)::bigint AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (extract(epoch FROM b.detected_at) * 1000000)::bigint AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text = 'detectedAt' AND NOT $1::boolean
       AND (NOT $32::boolean OR (b.detected_at, b.id) > (('epoch'::timestamptz + $33::bigint * interval '1 microsecond'), $34::text::uuid))
     ORDER BY b.detected_at ASC, b.id ASC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text = 'status' AND NOT $1::boolean
       AND (NOT $32::boolean OR (((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint), b.id) > ($33::bigint, $34::text::uuid))
     ORDER BY ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) ASC, b.id ASC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, ((b.package_name || chr(31) || b.version) COLLATE "C")::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, ((b.package_name || chr(31) || b.version) COLLATE "C")::text AS k_txt FROM base b
     WHERE $31::text = 'package' AND NOT $1::boolean
       AND (NOT $32::boolean OR (((b.package_name || chr(31) || b.version) COLLATE "C"), b.id) > ($36::text COLLATE "C", $34::text::uuid))
     ORDER BY ((b.package_name || chr(31) || b.version) COLLATE "C") ASC, b.id ASC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, (b.advisory_id COLLATE "C")::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, (b.advisory_id COLLATE "C")::text AS k_txt FROM base b
     WHERE $31::text = 'advisory' AND NOT $1::boolean
       AND (NOT $32::boolean OR ((b.advisory_id COLLATE "C"), b.id) > ($36::text COLLATE "C", $34::text::uuid))
     ORDER BY (b.advisory_id COLLATE "C") ASC, b.id ASC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint)::bigint AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint)::bigint AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text = 'severity' AND $1::boolean
       AND (NOT $32::boolean OR ((b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint), b.id) < ($33::bigint, $34::text::uuid))
     ORDER BY (b.severity_rank::bigint * 1000 + (COALESCE(b.cvss_raw, 0) * 10)::bigint) DESC, b.id DESC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (extract(epoch FROM b.detected_at) * 1000000)::bigint AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, (extract(epoch FROM b.detected_at) * 1000000)::bigint AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text = 'detectedAt' AND $1::boolean
       AND (NOT $32::boolean OR (b.detected_at, b.id) < (('epoch'::timestamptz + $33::bigint * interval '1 microsecond'), $34::text::uuid))
     ORDER BY b.detected_at DESC, b.id DESC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text = 'status' AND $1::boolean
       AND (NOT $32::boolean OR (((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint), b.id) < ($33::bigint, $34::text::uuid))
     ORDER BY ((CASE b.status WHEN 'needs_triage' THEN 0 WHEN 'confirmed' THEN 1 WHEN 'blocked' THEN 2 WHEN 'dismissed' THEN 3 ELSE 4 END)::bigint) DESC, b.id DESC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, ((b.package_name || chr(31) || b.version) COLLATE "C")::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, ((b.package_name || chr(31) || b.version) COLLATE "C")::text AS k_txt FROM base b
     WHERE $31::text = 'package' AND $1::boolean
       AND (NOT $32::boolean OR (((b.package_name || chr(31) || b.version) COLLATE "C"), b.id) < ($36::text COLLATE "C", $34::text::uuid))
     ORDER BY ((b.package_name || chr(31) || b.version) COLLATE "C") DESC, b.id DESC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, (b.advisory_id COLLATE "C")::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, (b.advisory_id COLLATE "C")::text AS k_txt FROM base b
     WHERE $31::text = 'advisory' AND $1::boolean
       AND (NOT $32::boolean OR ((b.advisory_id COLLATE "C"), b.id) < ($36::text COLLATE "C", $34::text::uuid))
     ORDER BY (b.advisory_id COLLATE "C") DESC, b.id DESC LIMIT $35::int)
   UNION ALL
-  (SELECT b.id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, ''::text AS k_txt FROM base b
+  (SELECT b.id, b.repo_id, b.repo_key, b.format, b.ecosystem, b.package_name, b.version, b.advisory_id, b.kind, b.severity, b.severity_rank, b.cvss_raw, b.cvss_score, b.known_exploited, b.fix_available, b.fixed_versions, b.status, b.dismissal_reason, b.resolved_reason, b.comment, b.revision, b.detected_at, b.resolved_at, b.status_changed_at, b.status_changed_by, 0::bigint AS k_num, ''::text AS k_txt FROM base b
     WHERE $31::text NOT IN ('severity', 'detectedAt', 'status', 'package', 'advisory')
       AND (NOT $32::boolean OR b.id > $34::text::uuid)
     ORDER BY b.id ASC LIMIT $35::int)
 )
-SELECT p.id::text AS id, p.repo_key, p.format, p.ecosystem, p.package_name, p.version, p.advisory_id, p.kind, p.severity,
+SELECT p.id::text AS id, p.repo_id, p.repo_key, p.format, p.ecosystem, p.package_name, p.version, p.advisory_id, p.kind, p.severity,
        p.cvss_score, p.known_exploited, p.fix_available, p.fixed_versions, p.status, p.dismissal_reason, p.resolved_reason,
        p.comment, p.revision, p.detected_at, p.resolved_at, p.status_changed_at,
        COALESCE(p.status_changed_by::text, '')::text AS status_changed_by, COALESCE(pr.name, '')::text AS status_changed_by_name,
@@ -572,6 +572,7 @@ type VulnFindingsListParams struct {
 
 type VulnFindingsListRow struct {
 	ID                  string
+	RepoID              int64
 	RepoKey             string
 	Format              string
 	Ecosystem           string
@@ -656,6 +657,7 @@ func (q *Queries) VulnFindingsList(ctx context.Context, arg VulnFindingsListPara
 		var i VulnFindingsListRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.RepoID,
 			&i.RepoKey,
 			&i.Format,
 			&i.Ecosystem,
@@ -697,7 +699,7 @@ func (q *Queries) VulnFindingsList(ctx context.Context, arg VulnFindingsListPara
 }
 
 const vulnFindingsLock = `-- name: VulnFindingsLock :many
-SELECT f.id::text AS id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
+SELECT f.id::text AS id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f
@@ -720,6 +722,7 @@ type VulnFindingsLockParams struct {
 
 type VulnFindingsLockRow struct {
 	ID              string
+	RepoID          int64
 	RepoKey         string
 	Format          string
 	Ecosystem       string
@@ -751,6 +754,7 @@ func (q *Queries) VulnFindingsLock(ctx context.Context, arg VulnFindingsLockPara
 		var i VulnFindingsLockRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.RepoID,
 			&i.RepoKey,
 			&i.Format,
 			&i.Ecosystem,
@@ -774,17 +778,16 @@ func (q *Queries) VulnFindingsLock(ctx context.Context, arg VulnFindingsLockPara
 }
 
 const vulnPackageCandidates = `-- name: VulnPackageCandidates :many
-SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
+SELECT p.repo_id, p.name, pv.version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
    AND p.repo_id = ANY($1::bigint[])
    AND r.format = $2::text
    AND p.name = $3::text
    AND ($4::text = '' OR pv.version = $4::text)
- ORDER BY (rp.key || '/' || r.key), pv.version
+ ORDER BY p.repo_id, pv.version
  LIMIT $5::int
 `
 
@@ -797,7 +800,7 @@ type VulnPackageCandidatesParams struct {
 }
 
 type VulnPackageCandidatesRow struct {
-	RepoKey string
+	RepoID  int64
 	Name    string
 	Version string
 }
@@ -819,7 +822,7 @@ func (q *Queries) VulnPackageCandidates(ctx context.Context, arg VulnPackageCand
 	items := []VulnPackageCandidatesRow{}
 	for rows.Next() {
 		var i VulnPackageCandidatesRow
-		if err := rows.Scan(&i.RepoKey, &i.Name, &i.Version); err != nil {
+		if err := rows.Scan(&i.RepoID, &i.Name, &i.Version); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -887,10 +890,9 @@ func (q *Queries) VulnPackageCounts(ctx context.Context, arg VulnPackageCountsPa
 
 const vulnScopeCandidates = `-- name: VulnScopeCandidates :many
 
-SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name, f.version AS version
+SELECT f.repo_id, f.package_name AS name, f.version AS version
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE f.repo_id = ANY($1::bigint[])
    AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
    AND (cardinality($3::text[]) = 0 OR f.package_name = ANY($3::text[])
@@ -914,7 +916,7 @@ type VulnScopeCandidatesParams struct {
 }
 
 type VulnScopeCandidatesRow struct {
-	RepoKey string
+	RepoID  int64
 	Name    string
 	Version string
 }
@@ -961,7 +963,7 @@ func (q *Queries) VulnScopeCandidates(ctx context.Context, arg VulnScopeCandidat
 	items := []VulnScopeCandidatesRow{}
 	for rows.Next() {
 		var i VulnScopeCandidatesRow
-		if err := rows.Scan(&i.RepoKey, &i.Name, &i.Version); err != nil {
+		if err := rows.Scan(&i.RepoID, &i.Name, &i.Version); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -973,10 +975,9 @@ func (q *Queries) VulnScopeCandidates(ctx context.Context, arg VulnScopeCandidat
 }
 
 const vulnScopePackages = `-- name: VulnScopePackages :many
-SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name
+SELECT f.repo_id, f.package_name AS name
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE f.repo_id = ANY($1::bigint[])
    AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
    AND (cardinality($3::text[]) = 0 OR f.package_name = ANY($3::text[])
@@ -1000,8 +1001,8 @@ type VulnScopePackagesParams struct {
 }
 
 type VulnScopePackagesRow struct {
-	RepoKey string
-	Name    string
+	RepoID int64
+	Name   string
 }
 
 // The (repository, package) pair of every finding of the given repositories, for the scope of a caller whose decision does not
@@ -1028,7 +1029,7 @@ func (q *Queries) VulnScopePackages(ctx context.Context, arg VulnScopePackagesPa
 	items := []VulnScopePackagesRow{}
 	for rows.Next() {
 		var i VulnScopePackagesRow
-		if err := rows.Scan(&i.RepoKey, &i.Name); err != nil {
+		if err := rows.Scan(&i.RepoID, &i.Name); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -239,16 +239,6 @@ Found on 2026-11-07 while reading the scheduled nightly run 42356771989:
   time other than the edge's limit; if one does, the cause is elsewhere and this entry is reopened. Not related to F-66 (that is the 30 s
   outage; it passed here with no non-200 `/readyz`).
 
-Found on 2026-11-07 while reviewing the project model (T-3 to T-6):
-
-### Code
-
-- **F-69 · The package and vulnerability views key repositories by `<project>/<key>` strings and parse them per row** (read).
-  `packages/view/service.go` (`Name`, `Names`, `Strings`, `nameOf`) and `vuln/report/report.go` (`nameOf`) are adapters left by
-  the cut: the statements take repository IDs since the review (R9 of the review, measured in
-  [vulnerabilities.md](../developer/vulnerabilities.md#repositories-as-ids-in-the-statements-r-vuln-028)), the topologies above them still
-  hold names. Done when the topologies are keyed by `qname.Repo` or the ID and the adapters are gone.
-
 Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product

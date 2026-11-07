@@ -12,7 +12,6 @@ package report
 import (
 	"context"
 	"slices"
-	"sort"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/qname"
@@ -95,11 +94,11 @@ func New(o Options) (*Service, error) {
 	return s, nil
 }
 
-// Snapshot is the repositories of the replica's snapshot with their topology, read once per request.
+// Snapshot is the repositories of the replica's snapshot with their topology, read once per request. The topology is keyed by
+// the repositories' database IDs, the key of the statements and of the rows they return (R-VULN-028).
 type Snapshot struct {
 	Repos []repository.Repository
 	Topo  view.Topology
-	byKey map[string]repository.Repository
 }
 
 // Snapshot reads the repositories.
@@ -108,44 +107,24 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: make(map[string]repository.Repository, len(repos))}
-	for _, r := range repos {
-		sn.byKey[r.Name.String()] = r
-	}
-	return sn, nil
+	return newSnapshot(repos), nil
 }
 
-// Repository returns a repository of the snapshot.
-func (sn *Snapshot) Repository(key string) (repository.Repository, bool) {
-	r, ok := sn.byKey[key]
-	return r, ok
+func newSnapshot(repos []repository.Repository) *Snapshot {
+	return &Snapshot{Repos: repos, Topo: view.NewTopology(repos)}
 }
 
-// ID returns the database ID of the repository of a qualified name, 0 for a name the snapshot does not hold.
-func (sn *Snapshot) ID(key string) int64 {
-	r, _ := sn.byKey[key]
-	return r.NumericID()
-}
+// Repository returns a repository of the snapshot by its database ID.
+func (sn *Snapshot) Repository(id int64) (repository.Repository, bool) { return sn.Topo.Repository(id) }
 
-// IDs returns the database IDs of the repositories of the given qualified names; a name the snapshot does not hold is left out.
-func (sn *Snapshot) IDs(keys []string) []int64 {
-	out := make([]int64, 0, len(keys))
-	for _, k := range keys {
-		if id := sn.ID(k); id != 0 {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
-// Keys returns the keys of every repository of the snapshot, for the request's authorization index.
-func (sn *Snapshot) Keys() []string { return append(sn.Topo.Physical(), sn.Topo.Virtual()...) }
+// IDs returns the IDs of every repository of the snapshot, the physical ones first, for the request's authorization index.
+func (sn *Snapshot) IDs() []int64 { return append(sn.Topo.Physical(), sn.Topo.Virtual()...) }
 
 // Caller is what the decision point says about the caller: the classification of the physical repositories, and the virtual
 // repositories the caller may read.
 type Caller struct {
 	Reads           authz.ReadScope
-	VirtualReadable []string
+	VirtualReadable []int64
 }
 
 // Scope is what a caller may read, with the snapshot it was built on.
@@ -153,10 +132,10 @@ type Scope struct {
 	store.Scope
 	snap *Snapshot
 	// Readable are the physical repositories the caller may read at least in part, sorted.
-	Readable []string
+	Readable []int64
 	// Holders are, for a package view, the (repository, version) pairs of the package the caller may read.
 	Holders []store.Candidate
-	virtual map[string]bool
+	virtual map[int64]bool
 }
 
 func tooBroad() error {
@@ -175,28 +154,28 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 	load func(repoIDs []int64, max int) ([]store.Candidate, error),
 	loadPackages func(repoIDs []int64, max int) ([]store.Pair, int, error),
 ) (Scope, error) {
-	sc := Scope{snap: sn, virtual: map[string]bool{}}
+	sc := Scope{snap: sn, virtual: map[int64]bool{}}
 	for _, v := range c.VirtualReadable {
 		sc.virtual[v] = true
 	}
-	whole := map[string]bool{}
+	whole := map[int64]bool{}
 	var loadIDs []int64
-	for _, k := range sn.Topo.Physical() {
-		r := sn.byKey[k]
+	for _, id := range sn.Topo.Physical() {
+		r, _ := sn.Topo.Repository(id)
 		if len(formats) > 0 && !slices.Contains(formats, r.Format) {
 			continue
 		}
-		switch shape := c.Reads.Shape(nameOf(k)); {
-		case shape == authz.ReadAll && !sn.Topo.Restricts(k):
-			sc.Whole = append(sc.Whole, r.NumericID())
-			whole[k] = true
-			sc.Readable = append(sc.Readable, k)
+		switch shape := c.Reads.Shape(r.Name); {
+		case shape == authz.ReadAll && !sn.Topo.Restricts(id):
+			sc.Whole = append(sc.Whole, id)
+			whole[id] = true
+			sc.Readable = append(sc.Readable, id)
 			if withWhole {
-				loadIDs = append(loadIDs, r.NumericID())
+				loadIDs = append(loadIDs, id)
 			}
 		case shape != authz.ReadNone:
-			sc.Readable = append(sc.Readable, k)
-			loadIDs = append(loadIDs, r.NumericID())
+			sc.Readable = append(sc.Readable, id)
+			loadIDs = append(loadIDs, id)
 		}
 	}
 	if load == nil || len(loadIDs) == 0 {
@@ -217,15 +196,16 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 		if _, done := decided[cd]; done {
 			continue
 		}
-		if whole[cd.Repository] {
+		if whole[cd.RepoID] {
 			decided[cd] = true
 			sc.Holders = append(sc.Holders, cd)
 			continue
 		}
-		ok := sn.Topo.Admits(cd.Repository, cd.Package) && (c.Reads.Shape(nameOf(cd.Repository)) == authz.ReadAll || c.Reads.MayRead(nameOf(cd.Repository), cd.Package, cd.Version))
+		name := sn.Topo.Name(cd.RepoID)
+		ok := sn.Topo.Admits(cd.RepoID, cd.Package) && (c.Reads.Shape(name) == authz.ReadAll || c.Reads.MayRead(name, cd.Package, cd.Version))
 		decided[cd] = ok
 		if ok {
-			sc.Rows = append(sc.Rows, store.RowEntry(sn.ID(cd.Repository), cd.Package, cd.Version))
+			sc.Rows = append(sc.Rows, store.RowEntry(cd.RepoID, cd.Package, cd.Version))
 			sc.Holders = append(sc.Holders, cd)
 		}
 	}
@@ -244,8 +224,9 @@ func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadIDs []int6
 		return Scope{}, tooBroad()
 	}
 	for _, p := range pairs {
-		if sn.Topo.Admits(p.Repository, p.Package) && (c.Reads.Shape(nameOf(p.Repository)) == authz.ReadAll || c.Reads.MayRead(nameOf(p.Repository), p.Package, "")) {
-			sc.Packages = append(sc.Packages, store.PackageEntry(sn.ID(p.Repository), p.Package))
+		name := sn.Topo.Name(p.RepoID)
+		if sn.Topo.Admits(p.RepoID, p.Package) && (c.Reads.Shape(name) == authz.ReadAll || c.Reads.MayRead(name, p.Package, "")) {
+			sc.Packages = append(sc.Packages, store.PackageEntry(p.RepoID, p.Package))
 		}
 	}
 	return sc, nil
@@ -282,36 +263,34 @@ func (s *Service) PackageScope(ctx context.Context, sn *Snapshot, c Caller, form
 	}, nil)
 }
 
-// VirtualContaining returns the readable virtual repositories whose effective member list contains the repository, sorted.
-func (sc Scope) VirtualContaining(repo string) []string {
-	var out []string
+// VirtualContaining returns the readable virtual repositories whose effective member list contains the repository, sorted by name.
+func (sc Scope) VirtualContaining(repo int64) []qname.Repo {
+	var out []int64
 	for _, v := range sc.snap.Topo.Containers(repo) {
 		if sc.virtual[v] {
 			out = append(out, v)
 		}
 	}
-	sort.Strings(out)
-	return out
+	return sc.snap.Topo.Names(out)
 }
 
-// ExpandFor maps the repository keys of a filter to the physical repositories they stand for. A virtual repository the caller
+// ExpandFor maps the repositories of a filter to the physical repositories they stand for. A virtual repository the caller
 // cannot read stands for nothing: expanding it would tell the caller, by the findings that come back or not, which members
-// it has (R-AUTHZ-016); a key that is no virtual repository of the snapshot is left to the scope, which narrows it.
-func (sn *Snapshot) ExpandFor(c Caller, keys []string) []string {
-	virtual := sn.Topo.Virtual()
-	allowed := make([]string, 0, len(keys))
-	for _, k := range keys {
-		if slices.Contains(virtual, k) && !slices.Contains(c.VirtualReadable, k) {
+// it has (R-AUTHZ-016); a repository that is no virtual repository of the snapshot is left to the scope, which narrows it.
+func (sn *Snapshot) ExpandFor(c Caller, ids []int64) []int64 {
+	allowed := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if class, _ := sn.Topo.Class(id); class == repository.Virtual && !slices.Contains(c.VirtualReadable, id) {
 			continue
 		}
-		allowed = append(allowed, k)
+		allowed = append(allowed, id)
 	}
 	return sn.Topo.Expand(allowed)
 }
 
 // policy returns the download policy of a repository (R-VULN-015).
-func (s *Service) policy(sn *Snapshot, key string) vuln.Policy {
-	r, ok := sn.byKey[key]
+func (s *Service) policy(sn *Snapshot, id int64) vuln.Policy {
+	r, ok := sn.Topo.Repository(id)
 	if !ok {
 		return vuln.Policy{}
 	}
@@ -321,13 +300,13 @@ func (s *Service) policy(sn *Snapshot, key string) vuln.Policy {
 // withPolicy adds the policy of every physical repository to the filter, for the statements that filter and count by block.
 func (s *Service) withPolicy(sn *Snapshot, f store.Filter) store.Filter {
 	f.EnabledRepos, f.MaliciousRepos = nil, nil
-	for _, k := range sn.Topo.Physical() {
-		p := s.policy(sn, k)
+	for _, id := range sn.Topo.Physical() {
+		p := s.policy(sn, id)
 		if p.QueryEnforce() {
-			f.EnabledRepos = append(f.EnabledRepos, sn.ID(k))
+			f.EnabledRepos = append(f.EnabledRepos, id)
 		}
 		if p.QueryBlockMalicious() {
-			f.MaliciousRepos = append(f.MaliciousRepos, sn.ID(k))
+			f.MaliciousRepos = append(f.MaliciousRepos, id)
 		}
 	}
 	return f
@@ -344,7 +323,7 @@ type Finding struct {
 // taken as complete, since the finding's own block does not depend on it (a version of an ecosystem without data blocks as
 // missing_data through the version's verdict, not through a finding).
 func (s *Service) blockOf(sn *Snapshot, r store.Row) (vuln.BlockReason, bool) {
-	b := vuln.Verdict(s.policy(sn, r.Repository), vuln.BlockRow{FindingID: r.ID, AdvisoryID: r.Advisory, Kind: r.Kind, Status: r.Status},
+	b := vuln.Verdict(s.policy(sn, r.RepoID), vuln.BlockRow{FindingID: r.ID, AdvisoryID: r.Advisory, Kind: r.Kind, Status: r.Status},
 		advisory.DataState{Complete: true})
 	return b.Reason, b.Active()
 }
@@ -356,11 +335,4 @@ func (s *Service) findings(sn *Snapshot, rows []store.Row) []Finding {
 		out = append(out, Finding{Row: r, Blocked: blocked, BlockReason: reason})
 	}
 	return out
-}
-
-// nameOf reads the qualified name "<project>/<key>" the findings statements use as the repository key; a string
-// that is none gives the zero name, which no scope admits.
-func nameOf(k string) qname.Repo {
-	r, _ := qname.ParseRepo(k)
-	return r
 }

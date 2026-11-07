@@ -22,10 +22,9 @@
 -- decision point decides one by one; the request's filters narrow them. A triple repeats for each finding of the version, and
 -- the caller decides it once: sorting the triples apart in SQL would cost more than the repeat. At most max_rows findings; the
 -- caller asks for one more than it accepts.
-SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name, f.version AS version
+SELECT f.repo_id, f.package_name AS name, f.version AS version
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE f.repo_id = ANY(sqlc.arg(keys)::bigint[])
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
@@ -43,10 +42,9 @@ SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name, f.ver
 -- pair whose findings the list's own filters all exclude is decided for nothing. The statement does not group: with many distinct
 -- packages the planner sorts to group, and that costs more than the repeat it removes (Q-VULN-81). At most max_rows findings; the
 -- caller asks for one more than it accepts.
-SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name
+SELECT f.repo_id, f.package_name AS name
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE f.repo_id = ANY(sqlc.arg(keys)::bigint[])
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (cardinality(sqlc.arg(packages)::text[]) = 0 OR f.package_name = ANY(sqlc.arg(packages)::text[])
@@ -60,17 +58,16 @@ SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name
 -- name: VulnPackageCandidates :many
 -- The (repository, package, version) triples of one package in the given repositories, for the package views (the version
 -- report names every readable repository that holds the version, with or without a finding).
-SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
+SELECT p.repo_id, p.name, pv.version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
-  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
    AND p.repo_id = ANY(sqlc.arg(keys)::bigint[])
    AND r.format = sqlc.arg(format)::text
    AND p.name = sqlc.arg(name)::text
    AND (sqlc.arg(version)::text = '' OR pv.version = sqlc.arg(version)::text)
- ORDER BY (rp.key || '/' || r.key), pv.version
+ ORDER BY p.repo_id, pv.version
  LIMIT sqlc.arg(max_rows)::int;
 
 -- name: VulnFindingsList :many
@@ -80,7 +77,7 @@ SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
 -- same expression, so a page reads the first rows of one index in order and stops (Q-VULN-68); a branch whose sort is not
 -- asked does not run. The advisory's columns are looked up for the rows of the page only.
 WITH base AS NOT MATERIALIZED (
-  SELECT f.id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
+  SELECT f.id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
          f.severity_rank, f.cvss_score AS cvss_raw, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited, f.fix_available,
          f.fixed_versions, f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason,
          COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.comment, '')::text AS comment,
@@ -185,7 +182,7 @@ WITH base AS NOT MATERIALIZED (
       AND (NOT sqlc.arg(has_after)::boolean OR b.id > sqlc.arg(after_id)::text::uuid)
     ORDER BY b.id ASC LIMIT sqlc.arg(max_rows)::int)
 )
-SELECT p.id::text AS id, p.repo_key, p.format, p.ecosystem, p.package_name, p.version, p.advisory_id, p.kind, p.severity,
+SELECT p.id::text AS id, p.repo_id, p.repo_key, p.format, p.ecosystem, p.package_name, p.version, p.advisory_id, p.kind, p.severity,
        p.cvss_score, p.known_exploited, p.fix_available, p.fixed_versions, p.status, p.dismissal_reason, p.resolved_reason,
        p.comment, p.revision, p.detected_at, p.resolved_at, p.status_changed_at,
        COALESCE(p.status_changed_by::text, '')::text AS status_changed_by, COALESCE(pr.name, '')::text AS status_changed_by_name,
@@ -267,7 +264,7 @@ SELECT count(*)::bigint AS n
 -- name: VulnFindingsLock :many
 -- The findings of the given ids the caller can read, locked for a status change, in id order so that two bulk changes
 -- never wait for each other in a circle. The ids are UUIDs the caller validated; the array compares against the primary key.
-SELECT f.id::text AS id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
+SELECT f.id::text AS id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f

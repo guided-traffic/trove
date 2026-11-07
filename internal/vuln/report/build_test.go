@@ -7,7 +7,6 @@ import (
 	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/packages/view"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
@@ -41,8 +40,7 @@ func (i independent) VersionIndependent() bool { return i.free }
 
 func buildFixture() (*Service, *Snapshot) {
 	repos := []repository.Repository{{ID: "11", Name: qr("npm-part"), Class: repository.Local, Format: "npm"}}
-	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: map[string]repository.Repository{"it/npm-part": repos[0]}}
-	return &Service{cfg: Config{MaxScopeRows: 1000}}, sn
+	return &Service{cfg: Config{MaxScopeRows: 1000}}, newSnapshot(repos)
 }
 
 // TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide: report.build reads the (repository, package) pairs only for a scope that
@@ -51,11 +49,11 @@ func buildFixture() (*Service, *Snapshot) {
 // On the per-version path MayRead gets the version of each row, so a rule that reads it (an exposure range) is applied.
 func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 	triples := []store.Candidate{
-		{Repository: "it/npm-part", Package: "@acme/sdk", Version: "1.9.0"},
-		{Repository: "it/npm-part", Package: "@acme/sdk", Version: "2.1.0"},
-		{Repository: "it/npm-part", Package: "other", Version: "1.0.0"},
+		{RepoID: 11, Package: "@acme/sdk", Version: "1.9.0"},
+		{RepoID: 11, Package: "@acme/sdk", Version: "2.1.0"},
+		{RepoID: 11, Package: "other", Version: "1.0.0"},
 	}
-	pairs := []store.Pair{{Repository: "it/npm-part", Package: "@acme/sdk"}, {Repository: "it/npm-part", Package: "other"}}
+	pairs := []store.Pair{{RepoID: 11, Package: "@acme/sdk"}, {RepoID: 11, Package: "other"}}
 	// A rule of an endpoint: @acme/sdk only from 2.0.0.
 	rule := func(pkg, version string) bool { return pkg == "@acme/sdk" && version >= "2" }
 	byPackage := func(pkg, version string) bool { return pkg == "@acme/sdk" }

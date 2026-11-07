@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/guided-traffic/trove/internal/packages/view"
 	"github.com/guided-traffic/trove/internal/qname"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -62,22 +61,22 @@ func (s *Server) vulnRequest(r *http.Request, rep *report.Service) (context.Cont
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	ctx, acc, err := requestHolder(ctx, s.o.Vuln.Decider, view.Names(sn.Keys())...)
+	ctx, acc, err := requestHolder(ctx, s.o.Vuln.Decider, sn.Topo.Names(sn.IDs())...)
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
 	if acc == nil {
 		return ctx, nil, report.Caller{}, unavailable("The decision point")
 	}
-	rs, err := s.o.Vuln.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, view.Names(sn.Topo.Physical()))
+	rs, err := s.o.Vuln.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, sn.Topo.Names(sn.Topo.Physical()))
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	virtuals, err := acc.Readable(ctx, view.Names(sn.Topo.Virtual()))
+	virtuals, err := acc.Readable(ctx, sn.Topo.Names(sn.Topo.Virtual()))
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	return ctx, sn, report.Caller{Reads: rs, VirtualReadable: view.Strings(virtuals)}, nil
+	return ctx, sn, report.Caller{Reads: rs, VirtualReadable: sn.Topo.IDs(virtuals)}, nil
 }
 
 // findingFilters are the query parameters of the list and of the export (R-VULN-020).
@@ -192,18 +191,15 @@ func findingFilter(lq ListQuery, sn *report.Snapshot, caller report.Caller) (sto
 // its physical repositories, and the two together intersect. A project that does not exist, or that the caller
 // cannot read, gives an empty set, never a 404: the answer is that of a project without findings.
 func findingRepos(lq ListQuery, sn *report.Snapshot, caller report.Caller) (ids []int64, has bool, err error) {
-	names, has, err := findingRepoNames(lq, sn, caller)
-	return sn.IDs(names), has, err
-}
-
-// findingRepoNames is findingRepos by qualified name.
-func findingRepoNames(lq ListQuery, sn *report.Snapshot, caller report.Caller) (repos []string, has bool, err error) {
 	reps, hasRepo := lq.Filter["repository"]
 	projects := splitValues(lq.Filter["project"])
-	for _, key := range splitValues(reps) {
-		if _, perr := qname.ParseRepo(key); perr != nil {
+	var names []qname.Repo
+	for _, text := range splitValues(reps) {
+		n, perr := qname.ParseRepo(text)
+		if perr != nil {
 			return nil, false, badParam("repository", "must be a repository name <project>/<key>")
 		}
+		names = append(names, n)
 	}
 	for _, key := range projects {
 		if !qname.ValidProjectKey(key) {
@@ -211,15 +207,15 @@ func findingRepoNames(lq ListQuery, sn *report.Snapshot, caller report.Caller) (
 		}
 	}
 	if hasRepo {
-		repos, has = sn.ExpandFor(caller, splitValues(reps)), true
+		ids, has = sn.ExpandFor(caller, sn.Topo.IDs(names)), true
 	}
 	if len(projects) == 0 {
-		return repos, has, nil
+		return ids, has, nil
 	}
-	var inProject []string
-	for _, key := range sn.Topo.Physical() {
-		if n, perr := qname.ParseRepo(key); perr == nil && slices.Contains(projects, n.Project) && (!has || slices.Contains(repos, key)) {
-			inProject = append(inProject, key)
+	var inProject []int64
+	for _, id := range sn.Topo.Physical() {
+		if slices.Contains(projects, sn.Topo.Name(id).Project) && (!has || slices.Contains(ids, id)) {
+			inProject = append(inProject, id)
 		}
 	}
 	return inProject, true, nil
@@ -360,7 +356,7 @@ func (s *Server) findingDetail(r *http.Request, rep *report.Service, id string) 
 func (s *Server) toDetail(d report.Detail) gen.VulnerabilityFindingDetail {
 	f := toFinding(d.Finding)
 	out := gen.VulnerabilityFindingDetail{
-		Finding: f, Advisory: s.toAdvisory(d.Advisory), VirtualRepositories: orEmpty(d.VirtualRepositories),
+		Finding: f, Advisory: s.toAdvisory(d.Advisory), VirtualRepositories: virtualTexts(d.VirtualRepositories),
 		History: make([]gen.VulnerabilityFindingEvent, 0, len(d.History)),
 	}
 	changed := d.Finding.StatusChangedAt
@@ -817,4 +813,13 @@ func (s *Server) ExportVulnerabilityFindings(w http.ResponseWriter, r *http.Requ
 	if err := cw.Error(); err != nil {
 		return // the client went away
 	}
+}
+
+// virtualTexts renders the names of the virtual repositories that show a finding; the answer holds an array, never null.
+func virtualTexts(names []qname.Repo) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = n.String()
+	}
+	return out
 }

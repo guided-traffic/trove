@@ -76,34 +76,42 @@ type RepositoryVersion struct {
 // Version returns, per readable repository that holds the version, the evaluation state, the block and the findings
 // (R-VULN-020): the download status without downloading. found is false when the caller can read no repository that holds it.
 func (s *Service) Version(ctx context.Context, sc Scope, format, name, version string) ([]RepositoryVersion, bool, error) {
-	var repos []string
+	var repos []int64
 	for _, h := range sc.Holders {
-		if h.Version == version && !slices.Contains(repos, h.Repository) {
-			repos = append(repos, h.Repository)
+		if h.Version == version && !slices.Contains(repos, h.RepoID) {
+			repos = append(repos, h.RepoID)
 		}
 	}
 	if len(repos) == 0 {
 		return nil, false, nil
 	}
-	sort.Strings(repos)
+	slices.SortFunc(repos, func(a, b int64) int {
+		switch {
+		case sc.snap.Topo.Less(a, b):
+			return -1
+		case sc.snap.Topo.Less(b, a):
+			return 1
+		}
+		return 0
+	})
 	data, _, err := s.dataStates(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	rows, err := s.st.List(ctx, sc.Scope, s.withPolicy(sc.snap, store.Filter{
-		Formats: []string{format}, Packages: []string{name}, Versions: []string{version}, Repos: sc.snap.IDs(repos), HasRepos: true,
+		Formats: []string{format}, Packages: []string{name}, Versions: []string{version}, Repos: repos, HasRepos: true,
 	}), store.Order{Sort: "severity", Desc: true}, nil, 1000*len(repos))
 	if err != nil {
 		return nil, false, err
 	}
 	fs := s.findings(sc.snap, rows)
 	out := make([]RepositoryVersion, 0, len(repos))
-	for _, key := range repos {
-		r, _ := sc.snap.Repository(key)
-		rv := RepositoryVersion{Repository: key, Evaluation: s.evaluation(ctx, r, name, data), Findings: []Finding{}}
-		p := s.policy(sc.snap, key)
+	for _, id := range repos {
+		r, _ := sc.snap.Repository(id)
+		rv := RepositoryVersion{Repository: r.Name.String(), Evaluation: s.evaluation(ctx, r, name, data), Findings: []Finding{}}
+		p := s.policy(sc.snap, id)
 		for _, f := range fs {
-			if f.Repository == key {
+			if f.RepoID == id {
 				rv.Findings = append(rv.Findings, f)
 			}
 		}

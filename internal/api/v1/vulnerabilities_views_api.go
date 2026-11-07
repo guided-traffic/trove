@@ -392,7 +392,7 @@ func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.
 	sn, err := rep.Snapshot(r.Context())
 	var id int64
 	if err == nil {
-		repo, ok := sn.Repository(key.String())
+		repo, ok := sn.Repository(sn.Topo.ID(key))
 		switch {
 		case !ok:
 			err = errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key.")

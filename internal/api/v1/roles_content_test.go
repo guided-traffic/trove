@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/packages/view"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // TestR_OPS_004_SummaryPerRoleOfTheCut: replicas.roles has one entry per role of Q-OPS-161, api and packages included, and
@@ -48,8 +49,8 @@ func TestR_API_029_PackageFileContentURL(t *testing.T) {
 	d := view.VersionDetail{
 		Format: "npm", Name: "@team-a/ui", Version: "1.4.0",
 		Files: []view.File{
-			{Path: "@team-a/ui/-/ui-1.4.0.tgz", SizeBytes: 10, SHA256: "ab", Repo: "it/npm-local"},
-			{Path: "dir with space/a#b.bin", SizeBytes: 1, SHA256: "cd", Repo: "it/generic-1"},
+			{Path: "@team-a/ui/-/ui-1.4.0.tgz", SizeBytes: 10, SHA256: "ab", Repo: qname.Repo{Project: "it", Key: "npm-local"}},
+			{Path: "dir with space/a#b.bin", SizeBytes: 1, SHA256: "cd", Repo: qname.Repo{Project: "it", Key: "generic-1"}},
 		},
 	}
 	out := versionOf("https://trove.example.com", d)
