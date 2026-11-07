@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/backup/format"
 	"github.com/guided-traffic/trove/internal/backup/restore"
 	"github.com/guided-traffic/trove/internal/backup/target"
@@ -158,6 +159,7 @@ func (d *destination) restorer(o restorerOptions) (*restore.Restorer, *bytes.Buf
 	return restore.New(restore.Deps{
 		Session: session, Target: tgt, Layout: d.src.layout, TargetEndpoint: endpoint, TargetBucket: tgt.Bucket(),
 		Blobs: s3.NewBlobSink(client, cfg.Storage.S3, int64(cfg.Backup.Copy.PartSize)), Keys: ring,
+		Items:   app.RestoreItems(cfg, testenv.Quiet()),
 		Journal: func(context.Context, restore.JournalEnv) (restore.Journal, error) { return jrn, nil },
 		Config:  cfg.Backup, Log: testenv.Quiet(), Out: &out, Pod: "restore-pod", Hook: o.hook,
 	}), &out

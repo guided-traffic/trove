@@ -9269,6 +9269,20 @@ Status: Decided by the development agent — selected from the options below; th
 **Rationale:** The architecture test refuses (b). Revisit never; the rule is the point.
 **Applied:** `internal/journal/ship/outbox.go`, `internal/backup/postrestore`.
 
+### Q-ARCH-347 · The restore builds its item store through a narrow constructor of `internal/app`, not through a replica
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Start an `App` of the worker role against the restored database | The full composition, `App.Items()` | No new composition code | It would start the signals, the change-log poll, the job loops and the Valkey client on a database the restore is still writing, and a restore pod has no Valkey credential (R-BAK-022) |
+| (b) `app.RestoreItems(cfg, log)`: the item store and the storage hooks of every format over the restore's session (chosen) | Reuses `formatPorts`, `bindFormatPorts`, `formathost.NewHooks` and `items.New`, and nothing that serves, polls or publishes | The hooks that run in a restore are the ones that run in production; no listener, loop or connection is opened besides the session | The few collaborators it does not build are stand-ins that refuse (below) |
+| (c) A second implementation of the cache removal in the restore | SQL in the restore | No composition | The format hooks (index rows, `rev_seq`) would be written twice (R-BAK-008 wants the storage delete path) |
+
+**Choice:** (b), in `internal/app/wire_restore_items.go`. `cmd/trove/backup_restore.go` passes it as `restore.Deps.Items`.
+**Rationale:** The restore pod must reach the format hooks without becoming a replica. Revisit when a second command needs the item store headless: the constructor would then move into a shared headless composition.
+**Applied:** R-BAK-008, R-BAK-021 step 7, R-BAK-022; `internal/app/wire_restore_items.go`, `wire_formats.go` (`formatPorts` takes the NuGet job interface), `cmd/trove/backup_restore.go`, `internal/backup/restore/restore.go`.
+
 ## What this does not cover
 
 

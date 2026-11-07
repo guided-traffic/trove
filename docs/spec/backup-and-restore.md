@@ -2373,6 +2373,19 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-BAK-014 (`trove_backup_last_verify_*`); `internal/backup/gauges/collector.go`.
 
+### Q-BAK-43 · The restore's item store publishes nothing, refuses blob and job calls, and leaves the vulnerability hook out
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Real signals, blob store and queue | Valkey, a blob client with its guard and the job queue | Identical to a replica | Needs Valkey credentials and the worker's registry in a pod that must hold neither |
+| (b) Stand-ins that do nothing or refuse (chosen) | Signals that publish nothing; a blob store and a job queue that return an error; no vulnerability hook | A removal of cached files needs none of them: it releases references in the database and calls the format hooks; any other use fails loudly instead of writing | A future hook that enqueues a job on removal would fail the restore at step 7 until it is wired |
+
+**Choice:** (b). The change log is not written either: replicas that start after the restore read the epochs and tables from the database, and the fix-up raised `cluster_epoch` (R-BAK-022). The advisory tables are empty after a restore (R-VULN-026), so the vulnerability hook would evaluate nothing.
+**Rationale:** A refusing stand-in turns a wrong assumption into a failed restore with a message, which the Job reports and an operator can act on. Revisit when a storage hook enqueues a job.
+**Applied:** R-BAK-008, R-BAK-021 step 7; `internal/app/wire_restore_items.go`, `test/integration/backup/restore_caches_test.go`.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated

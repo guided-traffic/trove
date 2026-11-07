@@ -37,7 +37,7 @@ type Deps struct {
 	Keys                         *secrets.KeyRing
 	// Items builds the storage delete path the remote-cache purgers empty caches through (fixup.Env.Items, R-BAK-008) on the
 	// restore's session; nil means this binary cannot, and a restore that must purge fails at step 7.
-	Items func(ctx context.Context, db meta.Runner) (fixup.CacheEraser, error)
+	Items func(ctx context.Context, db meta.Runner, rec audit.Recorder) (fixup.CacheEraser, error)
 	// Journal builds the revocation journal of a source; nil means this binary cannot read one.
 	Journal func(ctx context.Context, env JournalEnv) (Journal, error)
 	Config  config.Backup
@@ -357,7 +357,11 @@ func (r *Restorer) stepCaches(ctx context.Context, st *state) error {
 		if r.d.Items == nil {
 			return backup.Failf(backup.ExitFailed, backup.CodeInternal, "the backup left out the remote caches, and this binary cannot empty them: no storage delete path is wired into the restore")
 		}
-		items, err := r.d.Items(ctx, r.d.Session)
+		rec, err := r.recorder()
+		if err != nil {
+			return err
+		}
+		items, err := r.d.Items(ctx, r.d.Session, rec)
 		if err != nil {
 			return fmt.Errorf("storage delete path: %w", err)
 		}

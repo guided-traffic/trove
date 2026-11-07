@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup"
-	"github.com/guided-traffic/trove/internal/backup/fixup"
 	"github.com/guided-traffic/trove/internal/backup/format"
 	"github.com/guided-traffic/trove/internal/backup/restore"
 	"github.com/guided-traffic/trove/internal/blob/s3"
@@ -17,7 +16,6 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/journal/replay"
-	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/outbound"
 	"github.com/guided-traffic/trove/internal/secrets"
@@ -105,7 +103,7 @@ func newRestorer(env *backupEnv) (backup.Restorer, error) {
 		Session: session, Target: tgt, Layout: format.Layout{Prefix: cfg.Backup.Target.Prefix},
 		TargetEndpoint: tgt.Endpoint(), TargetBucket: tgt.Bucket(),
 		Blobs: s3.NewBlobSink(client, cfg.Storage.S3, int64(cfg.Backup.Copy.PartSize)), Keys: ring,
-		Items: restoreItems, Journal: restoreJournal(cfg, out, env.log), Config: cfg.Backup, Log: env.log, Out: env.stdout, Pod: env.instance,
+		Items: app.RestoreItems(cfg, env.log), Journal: restoreJournal(cfg, out, env.log), Config: cfg.Backup, Log: env.log, Out: env.stdout, Pod: env.instance,
 	}), nil
 }
 
@@ -137,11 +135,4 @@ type journalSource struct {
 func (j journalSource) Reachable(ctx context.Context) error {
 	_, _, err := j.reader.Entries(ctx, time.Now())
 	return err
-}
-
-// restoreItems is the storage delete path the remote-cache purgers need when the backup left the remote caches out (R-BAK-008).
-// The item store is composed with the hooks of every format in internal/app, which the restore command does not start: the
-// step fails with this message until a headless composition exists.
-func restoreItems(context.Context, meta.Runner) (fixup.CacheEraser, error) {
-	return nil, errors.New("the item store is not composed in the restore command yet (it is part of internal/app's files area)")
 }

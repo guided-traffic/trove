@@ -180,10 +180,10 @@ stop the restore there, and the kill tests run the binary.
 **The journal.** `restoreJournal` in `cmd/trove/backup_restore.go` opens the reader of the source's bucket and prefix with
 `replay.OpenJournal` and builds the replayer over the restore's session; `Reachable` (check 8) lists today's day prefix.
 
-**The remote-cache purge (step 7).** The purgers need `fixup.Env.Items`, the item store composed with the format hooks, which lives in
-`internal/app`'s files area. `Deps.Items` builds it on the restore's session; `restoreItems` in `cmd/trove/backup_restore.go` returns an error
-until a headless composition exists, so a restore of a backup made with `exclude.remote_caches` stops at step 7 (exit 1) with that message.
-Every other restore never reaches it.
+**The remote-cache purge (step 7).** The purgers need `fixup.Env.Items`, the storage delete path. `Deps.Items` builds it on the restore's
+session; `app.RestoreItems` ([wire_restore_items.go](../../internal/app/wire_restore_items.go)) composes the item store with the format hooks
+and nothing else ([Q-ARCH-347](../spec/architecture.md), [Q-BAK-43](../spec/backup-and-restore.md)). A hook that enqueues a job or reads a blob
+on removal needs its stand-in replaced there. Test: `restore_caches_test.go`.
 
 **Tests.** Unit: `go test ./internal/backup/restore/ ./internal/meta/postgres/ -run 'R_BAK'` (the checks table, the phases, the load order).
 Integration, against the shared stack: `restore_full_test.go` (the end-to-end criteria and the derived state), `restore_checks_test.go`

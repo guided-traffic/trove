@@ -113,6 +113,11 @@ func keyRingOf(t *testing.T, s *testenv.Stack, id string, fill byte) (*secrets.K
 type exportOptions struct {
 	id      format.ID
 	damaged []format.Digest
+	// excludeCaches leaves out of the blob list and the pool the blobs that only remote-repository items reference
+	// (R-BAK-008) and records options.excludeRemoteCaches.
+	excludeCaches bool
+	// fetch supplies the content of a blob the blobs map does not hold, from the source's blob store.
+	fetch func(format.Digest) []byte
 }
 
 // exportBackup writes a backup of src's database the way trove backup create does, built by hand from the format package:
@@ -154,6 +159,7 @@ func exportBackup(t *testing.T, src *testenv.Stack, st target.Store, layout form
 	m.InstallationID = textOf(t, tx, "SELECT value #>> '{}' FROM system_state WHERE key = 'installation_id'")
 	m.Incarnation = textOf(t, tx, "SELECT value #>> '{}' FROM system_state WHERE key = 'incarnation'")
 
+	m.Options.ExcludeRemoteCaches = o.excludeCaches
 	rows, err := tx.Query(ctx, "SELECT version, name, encode(checksum, 'hex') FROM schema_migration ORDER BY version")
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +267,14 @@ func exportBackup(t *testing.T, src *testenv.Stack, st target.Store, layout form
 		m.Blobs.Damaged = append(m.Blobs.Damaged, format.DamagedBlob{SHA256: d.Hex(), Status: "missing"})
 	}
 	var entries []format.BlobEntry
-	brows, err := tx.Query(ctx, "SELECT sha256, size FROM blobs WHERE state = 'live' ORDER BY sha256")
+	blobSQL := "SELECT sha256, size FROM blobs WHERE state = 'live' ORDER BY sha256"
+	if o.excludeCaches {
+		blobSQL = `SELECT b.sha256, b.size FROM blobs b WHERE b.state = 'live'
+			AND (NOT EXISTS (SELECT 1 FROM items i JOIN repositories r ON r.id = i.repo_id WHERE i.blob_sha256 = b.sha256 AND r.class = 'remote')
+			     OR EXISTS (SELECT 1 FROM items i JOIN repositories r ON r.id = i.repo_id WHERE i.blob_sha256 = b.sha256 AND r.class <> 'remote'))
+			ORDER BY b.sha256`
+	}
+	brows, err := tx.Query(ctx, blobSQL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +302,10 @@ func exportBackup(t *testing.T, src *testenv.Stack, st target.Store, layout form
 			continue
 		}
 		content, ok := blobs[e.Digest]
-		if !ok {
+		if !ok && o.fetch != nil {
+			content, ok = o.fetch(e.Digest), true
+		}
+		if !ok || content == nil {
 			t.Fatalf("no content for blob %s", e.Digest.Hex())
 		}
 		if _, err := st.Put(ctx, layout.Pool(e.Digest), content, target.PutOptions{}); err != nil {

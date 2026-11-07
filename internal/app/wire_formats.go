@@ -126,7 +126,7 @@ type formatHostArea struct {
 // offers it (Q-NUGET-74); the PostgreSQL store must, or the scan pages by offset again.
 var _ nugetformat.Scanner = (*nugetdata.Store)(nil)
 
-func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue *jobs.Queue) (map[formats.ID]any, error) {
+func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },

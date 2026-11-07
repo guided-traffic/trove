@@ -4,6 +4,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -100,7 +101,7 @@ func (e *opsEnv) put(t *testing.T, s fixture.Spec) {
 func (e *opsEnv) exists(t *testing.T, key string) bool {
 	t.Helper()
 	_, err := e.store.Head(context.Background(), key)
-	if err != nil && err != target.ErrNotFound {
+	if err != nil && !errors.Is(err, target.ErrNotFound) {
 		t.Fatal(err)
 	}
 	return err == nil
@@ -204,9 +205,11 @@ func TestR_BAK_018_ListAgainstTheS3Store(t *testing.T) {
 func TestR_BAK_019_VerifyAgainstTheS3Store(t *testing.T) {
 	e := newOpsEnv(t, 7)
 	e.put(t, fixture.Spec{ID: fixture.ID(1), Blobs: []string{"aaaa", "bbbb"}})
-	v := &verify.Verifier{Store: e.store, Layout: e.layout, Runs: e.runs,
+	v := &verify.Verifier{
+		Store: e.store, Layout: e.layout, Runs: e.runs,
 		Timing:   backup.Timing{Lease: time.Minute, Heartbeat: time.Second, Stall: time.Hour, Finalize: time.Second},
-		NewRunID: func() string { return "00000000-0000-7000-8000-0000000000aa" }}
+		NewRunID: func() string { return "00000000-0000-7000-8000-0000000000aa" },
+	}
 	ctx := context.Background()
 	if rep, err := v.Verify(ctx, backup.VerifyOptions{Latest: true, Deep: true}); err != nil || len(rep.Findings) != 0 {
 		t.Fatalf("clean: %v %+v", err, rep)
