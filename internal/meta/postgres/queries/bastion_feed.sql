@@ -56,7 +56,8 @@ SELECT id::text AS id, occurred_at
 -- name: BastionVirtualClosure :many
 -- The repository and every virtual repository that includes it, recursively, at the time the feed is read
 -- (the content entry of R-BAS-015), by their qualified names "<projectKey>/<repoKey>". Unknown names return no
--- rows; the caller then reports the name alone. A virtual repository and its members may lie in other projects.
+-- rows; the caller then reports the name alone. A virtual repository lists only members of its own project (trigger AI006),
+-- so the closure stays within the project of the repository.
 WITH RECURSIVE up AS (
     SELECT r.id, p.key || '/' || r.key AS name
       FROM repositories r

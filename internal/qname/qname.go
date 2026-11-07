@@ -150,9 +150,6 @@ func (o Object) String() string {
 	return o.Project + "/" + o.Name
 }
 
-// InstanceWide reports whether the object belongs to no project.
-func (o Object) InstanceWide() bool { return o.Project == "" }
-
 // MarshalText implements encoding.TextMarshaler.
 func (o Object) MarshalText() ([]byte, error) { return []byte(o.String()), nil }
 

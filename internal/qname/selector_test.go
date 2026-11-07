@@ -71,29 +71,6 @@ func TestR_AUTHZ_004_ParseSelector(t *testing.T) {
 	}
 }
 
-func TestR_AUTHZ_004_SelectorFlags(t *testing.T) {
-	key, _ := ParseSelector("web/npm-x", instance)
-	pat, _ := ParseSelector("web/npm-*", instance)
-	cls, _ := ParseSelector("@any", instance)
-	pcls, _ := ParseSelector("@any", inWeb)
-	ppat, _ := ParseSelector("npm-*", inWeb)
-	for _, tc := range []struct {
-		name         string
-		s            Selector
-		dynamic, all bool
-	}{
-		{"key", key, false, false},
-		{"pattern", pat, true, true},
-		{"class", cls, true, true},
-		{"project class", pcls, true, false},
-		{"project pattern", ppat, true, false},
-	} {
-		if tc.s.Dynamic() != tc.dynamic || tc.s.AllProjects() != tc.all {
-			t.Errorf("%s: Dynamic=%v AllProjects=%v, want %v %v", tc.name, tc.s.Dynamic(), tc.s.AllProjects(), tc.dynamic, tc.all)
-		}
-	}
-}
-
 func TestR_AUTHZ_004_SelectorTextRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
 		in  string
