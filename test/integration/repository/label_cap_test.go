@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -55,5 +56,33 @@ func TestR_OPS_007_TheLabelCapFollowsTheRepositorySnapshot(t *testing.T) {
 		if got := m.Repos().Value("f", key); got != want {
 			t.Errorf("%s -> %q, want %q", key, got, want)
 		}
+	}
+}
+
+// R-REPO-060: a job holds its repository by the id. A replica that has not applied a creation yet polls the change log once
+// and answers, as it does for a name (R-ARCH-011 step 2); an id that exists nowhere is not found.
+func TestR_REPO_060_TheReaderResolvesARepositoryByItsID(t *testing.T) {
+	e := newStackEnv(t)
+	e.stack.Repository("first", "local", "generic", "")
+	web := e.newReplica("byid-web", stackOpts{})
+	p := e.newProbe("byid-probe", time.Hour)
+	ctx := context.Background()
+	if _, err := p.reader.List(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "by-id")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := st.Repository.NumericID()
+	if id == 0 {
+		t.Fatalf("the created repository has no id: %+v", st.Repository)
+	}
+	got, err := p.reader.ByID(ctx, id)
+	if err != nil || got.Name != qr("by-id") || got.NumericID() != id {
+		t.Fatalf("ByID(%d) = %+v, %v", id, got.Name, err)
+	}
+	if _, err := p.reader.ByID(ctx, id+1_000_000); errs.KindOf(err) != errs.NotFound {
+		t.Fatalf("an id that exists nowhere: %v", err)
 	}
 }

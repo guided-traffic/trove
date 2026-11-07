@@ -889,7 +889,10 @@ Rules for every metric family, including families that format pages and other sp
   further repository is reported as `repo="_other"` on every replica. `repository_label_include` takes the selectors
   of an instance context of [authorization.md](authorization.md) R-AUTHZ-004 (`web/npm-*`, `*/nuget-*`, `@any-remote`);
   a bare key stops startup and names the entry. The selection follows the snapshot,
-  so a deleted repository frees its place on every replica within the change-area bound. The same
+  so a deleted repository frees its place on every replica within the change-area bound. A repository that leaves the snapshot, deleted or renamed by a move, also takes its own series with it: the families with a
+  `repo` label that are gauges (`trove_remote_upstream_up`, `trove_mirror_concurrency`) and the counters of the remote engine and the
+  mirror delete the series of its old name when the snapshot is rebuilt, so that no gauge keeps reporting a repository that no
+  longer exists. The same
   rule applies to `subscription`, in subscription creation order. Each overflow increments
   `trove_metrics_label_overflow_total{family,label}`. Requests reach replicas at random
   (INV-12), so a selection made per replica, for example by first observation, would give each
