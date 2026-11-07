@@ -52,7 +52,7 @@ func isolationExempt(rel string) bool {
 // referencing columns from the catalog (R-STOR-024 rule 3). A file is listed by
 // exact path; the builder by its tree.
 func sqlBuilders() (trees, files []string) {
-	return []string{"internal/meta/postgres/listq"}, []string{"internal/meta/postgres/blobrefs.go", "internal/meta/postgres/backup_load.go", "internal/meta/postgres/backup_restore_state.go", "internal/meta/postgres/backup_snapshot.go"}
+	return []string{"internal/meta/postgres/listq"}, []string{"internal/meta/postgres/blobrefs.go", "internal/meta/postgres/backup_load.go", "internal/meta/postgres/backup_restore_state.go", "internal/meta/postgres/backup_snapshot.go", "internal/meta/postgres/backup_grants.go"}
 }
 
 // sqlStatementStart matches the start of a statement in a literal: the start of

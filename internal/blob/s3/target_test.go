@@ -117,6 +117,7 @@ func TestR_BAK_026_CheckSSE(t *testing.T) {
 		{"s3 reported", "s3", target.Object{Key: "k", SSE: "AES256"}, false},
 		{"s3 not reported", "s3", target.Object{Key: "k"}, true},
 		{"kms reported", "kms", target.Object{Key: "k", SSE: "aws:kms", KMSKeyID: "arn:aws:kms:eu:1:key/abc"}, false},
+		{"kms but the store names no key", "kms", target.Object{Key: "k", SSE: "aws:kms"}, true},
 		{"kms other mode", "kms", target.Object{Key: "k", SSE: "AES256"}, true},
 		{"kms other key", "kms", target.Object{Key: "k", SSE: "aws:kms", KMSKeyID: "arn:aws:kms:eu:1:key/zzz"}, true},
 		{"none accepts anything", "none", target.Object{Key: "k"}, false},

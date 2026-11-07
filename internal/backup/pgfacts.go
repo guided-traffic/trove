@@ -122,12 +122,11 @@ func requiredWrites() []string {
 	return []string{
 		"backup_run:INSERT", "backup_run:UPDATE", "backup_run:DELETE",
 		"backup_blob_pin:INSERT", "backup_blob_pin:UPDATE", "backup_blob_pin:DELETE",
-		"audit_event:INSERT",
 	}
 }
 
 // CheckGrants is the check of R-BAK-015 at the start of a create: SELECT on every table and sequence of the schema, the writes
-// of the run record, INSERT on the audit trail. The error names every privilege that is missing and is a usage error (exit 2).
+// of the run record, EXECUTE on the function that writes the backup events. The error names every privilege that is missing and is a usage error (exit 2).
 func (f *PGFacts) CheckGrants(ctx context.Context) error {
 	var missing []string
 	err := f.read(ctx, func(qs *q.Queries) error {
@@ -153,6 +152,13 @@ func (f *PGFacts) CheckGrants(ctx context.Context) error {
 		for _, w := range writes {
 			tbl, priv, _ := strings.Cut(w, ":")
 			missing = append(missing, priv+" on "+tbl)
+		}
+		ok, err := qs.BackupCanRecordEvents(ctx)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			missing = append(missing, "EXECUTE on backup_record_event()")
 		}
 		return nil
 	})

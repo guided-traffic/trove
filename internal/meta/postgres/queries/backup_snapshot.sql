@@ -75,5 +75,13 @@ SELECT p::text AS missing
   FROM unnest(sqlc.arg(pairs)::text[]) AS p
  WHERE NOT coalesce(pg_catalog.has_table_privilege(pg_catalog.to_regclass(split_part(p, ':', 1)), split_part(p, ':', 2)), false);
 
+-- name: RecordBackupEvent :exec
+-- The audit event of the backup lane (R-BAK-014) through the function that writes the four backup events and nothing else
+-- (Q-BAK-50); the backup login has EXECUTE on it and no INSERT on audit_event.
+SELECT backup_record_event(sqlc.arg(action)::text, sqlc.arg(outcome)::text, sqlc.arg(replica)::text, sqlc.arg(reason)::text, sqlc.arg(details)::text::jsonb);
+
+-- name: BackupCanRecordEvents :one
+SELECT coalesce(pg_catalog.has_function_privilege(pg_catalog.to_regprocedure('backup_record_event(text,text,text,text,jsonb)'), 'EXECUTE'), false)::boolean AS ok;
+
 -- name: BackupSchemaApplied :one
 SELECT applied FROM schema_state;

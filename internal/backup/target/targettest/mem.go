@@ -25,6 +25,8 @@ type Mem struct {
 	now  func() time.Time
 	// SSE is the encryption every write reports, "AES256" by default.
 	SSE string
+	// KMSKeyID is the key every write reports with SSE "aws:kms"; empty reports none.
+	KMSKeyID string
 	// Source resolves the ObjectRef of a server-side copy; nil makes Copy return target.ErrServerCopyUnavailable.
 	Source func(target.ObjectRef) ([]byte, bool)
 	// Calls counts the requests by name (put, writer, copy, head, get, list, delete), so a test can assert that a retry
@@ -83,7 +85,7 @@ func (m *Mem) count(name string) { m.Calls[name]++ }
 
 func (m *Mem) info(key string, e entry) target.Object {
 	sum := sha256.Sum256(e.data)
-	return target.Object{Key: key, Size: int64(len(e.data)), LastModified: e.at, SSE: e.sse, SHA256: hex.EncodeToString(sum[:]), ETag: hex.EncodeToString(sum[:8])}
+	return target.Object{Key: key, Size: int64(len(e.data)), LastModified: e.at, SSE: e.sse, KMSKeyID: m.KMSKeyID, SHA256: hex.EncodeToString(sum[:]), ETag: hex.EncodeToString(sum[:8])}
 }
 
 // Head implements target.Store.

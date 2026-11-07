@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/backup"
 	"github.com/guided-traffic/trove/internal/backup/create"
 	"github.com/guided-traffic/trove/internal/backup/format"
@@ -91,10 +90,7 @@ func (c *commandCreator) Create(ctx context.Context, opts backup.CreateOptions) 
 	if err != nil {
 		return nil, err
 	}
-	recorder, err := audit.New(audit.Options{DB: db, Replica: e.instance, Config: cfg.Audit, Log: e.log, AppLog: e.log})
-	if err != nil {
-		return nil, err
-	}
+	events := backup.NewPGEvents(db, e.instance, e.log)
 	metrics := observability.NewMetrics(meta.RoleBackup)
 	stopOps := serveBackupMetrics(cfg.Server.OpsListen, metrics, e.log)
 	defer stopOps()
@@ -104,7 +100,7 @@ func (c *commandCreator) Create(ctx context.Context, opts backup.CreateOptions) 
 	stage := &retention.Stage{
 		DeleteTimeout: b.FinalizeTimeout,
 		Store:         tgt, Layout: layout, Policy: retention.Policy{KeepLast: b.Retention.KeepLast, KeepWithin: b.Retention.KeepWithin},
-		SweepInterval: b.Retention.SweepInterval, Facts: facts, Audit: auditDeleted{db: db, rec: recorder},
+		SweepInterval: b.Retention.SweepInterval, Facts: facts, Audit: events,
 		Clock: retention.RunSweepClock{Runs: store}, Log: e.log,
 	}
 	info := buildinfo.Get()
@@ -116,7 +112,7 @@ func (c *commandCreator) Create(ctx context.Context, opts backup.CreateOptions) 
 		Store: store, Prune: stage, Facts: facts, Grants: facts, Pins: facts, BlobState: facts,
 		Snapshot: backup.NewPGSnapshotter(db),
 		Source:   backup.NewStoreSource(blobs, cfg.Storage.S3.Prefix, endpoint, cfg.Storage.S3.Bucket),
-		Target:   tgt, Events: create.TxEvents{DB: db, Recorder: recorder},
+		Target:   tgt, Events: events,
 		Metrics: backup.NewMetrics(metrics), Log: e.log,
 	})
 	if err != nil {

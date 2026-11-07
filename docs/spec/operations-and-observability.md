@@ -1740,7 +1740,7 @@ audit events, but it can neither change nor delete them, and it cannot shorten t
   startup (H-39).
 - **Writers.** `web` and `worker` replicas write events of the requests and jobs they run; the
   `backup` role writes its own run events with the grant of
-  [backup-and-restore.md](backup-and-restore.md) R-BAK-015 (`INSERT` on `audit_event` only).
+  [backup-and-restore.md](backup-and-restore.md) R-BAK-015 (`EXECUTE` on `backup_record_event()`, which writes the four backup events and no other).
 
 ```sql
 CREATE TABLE audit_policy (

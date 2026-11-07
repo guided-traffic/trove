@@ -1107,7 +1107,7 @@ Priority: **MVP** · Covers: OPS-033
 | Source blob reader | `create` (streaming copy) | `s3:GetObject` on `<blob prefix>/sha256/*`; with SSE-KMS `kms:Decrypt` | Any write or delete on the blob bucket |
 | Blob writer | `restore` | The runtime permissions of [storage.md](storage.md) R-STOR-031 on the new installation's prefix | — |
 | Journal reader | `restore` (R-BAK-024) | `s3:GetObject` on `<source blob prefix>/_journal/*` and `s3:ListBucket` conditioned on that prefix, in the source's blob bucket; with versioning also `s3:ListBucketVersions` and `s3:GetObjectVersion` | Any write |
-| Database: backup role | `create`, `delete`, `verify` | `SELECT` on every table of the schema; `INSERT`, `UPDATE`, `DELETE` on `backup_run` and `backup_blob_pin`; `INSERT` on `audit_event` | DDL; DML on other tables |
+| Database: backup role | `create`, `delete`, `verify` | `SELECT` on every table of the schema; `INSERT`, `UPDATE`, `DELETE` on `backup_run` and `backup_blob_pin`; `EXECUTE` on `backup_record_event()` (Q-BAK-50) | DDL; DML on other tables; `INSERT` on `audit_event` |
 | Database: owner | `restore` | The migration credential of [ha-and-helm.md](ha-and-helm.md) R-HA-014 | — |
 
 - **Separation.** Target credentials exist only in backup and restore pods. Web and worker pods
@@ -1135,9 +1135,15 @@ Priority: **MVP** · Covers: OPS-033
   GRANT SELECT ON ALL TABLES IN SCHEMA trove TO trove_backup;
   GRANT SELECT ON ALL SEQUENCES IN SCHEMA trove TO trove_backup;
   GRANT INSERT, UPDATE, DELETE ON backup_run, backup_blob_pin TO trove_backup;
-  GRANT INSERT ON audit_event TO trove_backup;
+  GRANT EXECUTE ON FUNCTION backup_record_event(text, text, text, text, jsonb) TO trove_backup;
   ALTER DEFAULT PRIVILEGES IN SCHEMA trove GRANT SELECT ON TABLES TO trove_backup;
   ```
+
+  The backup writes its audit events through `backup_record_event()`, a `SECURITY DEFINER` function of the schema owner that
+  accepts the four events of R-BAK-014 with the outcome `success` or `failure` and writes them as the actor `system:backup`
+  (Q-BAK-50); the login has no `INSERT` on `audit_event`, so a compromised backup pod cannot write any other event. The
+  migration records the role it granted (`system_state` key `backup_role`) and, when `database.backup_role` names another
+  role or none, revokes from the former role exactly what it granted.
 
   The default privileges cover tables the owner creates between two migration runs, such as the
   monthly `audit_event` partitions of `audit_maintain_partitions()`
@@ -2492,6 +2498,22 @@ R-BAK-010 let a starting pod treat a run with a heartbeat younger than 3 × `hea
 **Rationale:** The Job identity is the one fact that tells a retry from an overlap, and Kubernetes guarantees the premise. The wait for the lease is kept (instead of an immediate takeover) so that nothing changes for the fencing proof: the old run's hold ends by its lease as before. The development agent would revisit this if the Job is ever rendered with parallelism above 1.
 
 **Applied:** R-BAK-010 (text and acceptance criterion); migration `00049_backup_run_job.sql`, `queries/backup.sql`, `internal/backup/slot.go`, `internal/backup/create`, `cmd/trove/backup_create.go`; chart `templates/_backup.tpl` (`TROVE_JOB_NAME`), `test/chart/backup_test.go`.
+
+### Q-BAK-50 · The backup login writes its audit events through a function, not through INSERT on the audit trail
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `INSERT` on `audit_event` as before | The run uses the audit writer | The writer's log copy and registry checks | The login can write any event under any actor, including `authz.*` and `system.restored` |
+| (b) A `SECURITY DEFINER` function that writes the four backup events as `system:backup` (chosen) | `backup_record_event(action, outcome, replica, reason, details)`; `EXECUTE` for the backup login and the runtime role, none for PUBLIC | The login can forge a backup event at most, and only with the outcomes `success` and `failure`; no new role, no second connection | The writer's registry validation of `details` is not applied (the function does not check the schema), and the log copy is a line of the backup process |
+| (c) The run writes audit through the connection of another role | A second credential in the backup pod | Full writer | A second secret in the pod that holds the target credential: more to steal, not less |
+
+**Choice:** (b). Migration `00050_backup_audit_function.sql`; `backup.PGEvents` is the writer of the create and delete runs. Two findings of the same audit are settled with it: grants given to a role that `database.backup_role` no longer names are revoked (the migration records the role in `system_state` and revokes exactly what it granted), and `ALTER DEFAULT PRIVILEGES` without `FOR ROLE` was verified to reach the tables and audit partitions that a non-superuser migration login creates later (it applies to the login that ran it, which is also the owner of the `SECURITY DEFINER` function that attaches partitions).
+
+**Rationale:** The remaining forgery, a false `system.backup.completed`, is the one H-555 already names for the run record. The development agent would revisit this if the events gain fields that need the registry's schema check.
+
+**Applied:** R-BAK-015; `internal/meta/postgres/backup_grants.go`, `internal/backup/pgevents.go`, `internal/backup/pgfacts.go`; `test/integration/backup/create_audit_test.go`.
 
 ### Q-BAK-51 · A server-side copy is bounded by a deadline derived from the object's size, ticks the run through a callback on the object reference, and a copy that outlasts its bound makes the caller stream
 

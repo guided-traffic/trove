@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/backup"
 	"github.com/guided-traffic/trove/internal/backup/format"
@@ -54,24 +52,6 @@ func openRunDB(ctx context.Context, env *backupEnv) (*postgres.DB, error) {
 	return db, nil
 }
 
-// auditDeleted writes system.backup.deleted in a transaction of its own, as the actor system:backup.
-type auditDeleted struct {
-	db  *postgres.DB
-	rec audit.Recorder
-}
-
-func (a auditDeleted) BackupDeleted(ctx context.Context, id format.ID, reason string) error {
-	details, err := json.Marshal(map[string]string{"backupId": string(id), "reason": reason})
-	if err != nil {
-		return err
-	}
-	return a.db.InTx(ctx, func(tx meta.Tx) error {
-		return a.rec.RecordTx(ctx, tx, audit.Event{
-			Type: audit.EventBackupDeleted, Actor: audit.Actor{Kind: "system", Name: "backup"}, Outcome: audit.Success, Details: details,
-		})
-	})
-}
-
 // newRetentionRunner builds the runner of delete and prune.
 func newRetentionRunner(env *backupEnv) (*retention.Runner, error) {
 	ctx, stop := env.context()
@@ -84,15 +64,11 @@ func newRetentionRunner(env *backupEnv) (*retention.Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	rec, err := audit.New(audit.Options{DB: db, Replica: env.instance, Config: env.cfg.Audit, Log: env.log, AppLog: env.log})
-	if err != nil {
-		return nil, fmt.Errorf("audit writer: %w", err)
-	}
 	store := backup.NewPGStore(db)
 	b := env.cfg.Backup
 	stage := &retention.Stage{
 		Store: t, Layout: layout, Policy: retention.Policy{KeepLast: b.Retention.KeepLast, KeepWithin: b.Retention.KeepWithin},
-		SweepInterval: b.Retention.SweepInterval, DeleteTimeout: b.FinalizeTimeout, Facts: backup.NewPGFacts(db, env.cfg.Database.Schema), Audit: auditDeleted{db: db, rec: rec},
+		SweepInterval: b.Retention.SweepInterval, DeleteTimeout: b.FinalizeTimeout, Facts: backup.NewPGFacts(db, env.cfg.Database.Schema), Audit: backup.NewPGEvents(db, env.instance, env.log),
 		Clock: retention.RunSweepClock{Runs: store}, Log: env.log,
 	}
 	return &retention.Runner{

@@ -21,7 +21,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/backup"
 	"github.com/guided-traffic/trove/internal/backup/create"
 	"github.com/guided-traffic/trove/internal/backup/format"
@@ -325,10 +324,6 @@ func (in *install) pipeline(r *rig) (*create.Pipeline, *postgres.DB) {
 	if err != nil {
 		in.t.Fatalf("open the backup database: %v", err)
 	}
-	recorder, err := audit.New(audit.Options{DB: db, Replica: instance, Log: quiet, AppLog: quiet})
-	if err != nil {
-		in.t.Fatal(err)
-	}
 	facts := backup.NewPGFacts(db, cfgDB.Schema)
 	d := create.Deps{
 		Cfg: r.cfg, SourceRef: format.StorageRef{Endpoint: in.s3cfg.Endpoint, Bucket: in.s3cfg.Bucket, Prefix: in.s3cfg.Prefix},
@@ -336,7 +331,7 @@ func (in *install) pipeline(r *rig) (*create.Pipeline, *postgres.DB) {
 		Store: backup.NewPGStore(db), Facts: facts, Grants: facts, Pins: facts, BlobState: facts,
 		Snapshot: backup.NewPGSnapshotter(db),
 		Source:   backup.NewStoreSource(in.obj, in.s3cfg.Prefix, in.s3cfg.Endpoint, in.s3cfg.Bucket),
-		Target:   r.tgt, Events: create.TxEvents{DB: db, Recorder: recorder},
+		Target:   r.tgt, Events: backup.NewPGEvents(db, instance, quiet),
 		Metrics: r.metrics, Log: quiet,
 	}
 	if d.Metrics == nil {

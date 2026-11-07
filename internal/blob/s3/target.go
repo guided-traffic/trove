@@ -185,7 +185,12 @@ func (t *Target) CheckSSE(o target.Object) error {
 		if o.SSE != "aws:kms" {
 			return fmt.Errorf("the target reports server-side encryption %q for %s but backup.target.sse.mode is kms", o.SSE, o.Key)
 		}
-		if t.kmsKeyID != "" && o.KMSKeyID != "" && o.KMSKeyID != t.kmsKeyID && !strings.HasSuffix(o.KMSKeyID, "/"+t.kmsKeyID) {
+		// A store that reports no key ID cannot show which key encrypts: that is a mismatch, not a pass (R-BAK-026 asks for the
+		// configured key to be shown).
+		if t.kmsKeyID != "" && o.KMSKeyID == "" {
+			return fmt.Errorf("the target reports no KMS key for %s but backup.target.sse.kms_key_id is %q: backup.target.sse.mode kms needs a store that names the key", o.Key, t.kmsKeyID)
+		}
+		if t.kmsKeyID != "" && o.KMSKeyID != t.kmsKeyID && !strings.HasSuffix(o.KMSKeyID, "/"+t.kmsKeyID) {
 			return fmt.Errorf("the target reports KMS key %q for %s but backup.target.sse.kms_key_id is %q", o.KMSKeyID, o.Key, t.kmsKeyID)
 		}
 	}

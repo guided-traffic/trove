@@ -1337,7 +1337,7 @@ GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
     mode the runtime role owns every object, so the check is skipped there.
   - when `database.backup_role` is set (migration Job only, after the grants above), that the role
     exists and holds `SELECT` on every table and sequence of the schema, `INSERT`, `UPDATE` and
-    `DELETE` on `backup_run` and `backup_blob_pin`, and `INSERT` on `audit_event`. `trove backup
+    `DELETE` on `backup_run` and `backup_blob_pin`, and `EXECUTE` on `backup_record_event()`. `trove backup
     create` checks the same grants at start and exits `2` naming a missing one (R-BAK-015).
   - After migration 5 has applied (it revokes `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` on `schema_migration` and
     `schema_state` from the runtime role), that the runtime login cannot write either table. A login that can is refused
@@ -1374,7 +1374,7 @@ GRANT EXECUTE ON FUNCTION audit_maintain_partitions() TO trove_app;
   GRANT SELECT ON ALL TABLES IN SCHEMA trove TO trove_backup;
   GRANT SELECT ON ALL SEQUENCES IN SCHEMA trove TO trove_backup;
   GRANT INSERT, UPDATE, DELETE ON backup_run, backup_blob_pin TO trove_backup;
-  GRANT INSERT ON audit_event TO trove_backup;
+  GRANT EXECUTE ON FUNCTION backup_record_event(text, text, text, text, jsonb) TO trove_backup;
   ALTER DEFAULT PRIVILEGES IN SCHEMA trove GRANT SELECT ON TABLES TO trove_backup;
   ```
 

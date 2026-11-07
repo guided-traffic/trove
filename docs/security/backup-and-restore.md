@@ -72,8 +72,10 @@ The run reads the whole database in one `REPEATABLE READ READ ONLY` snapshot tha
 the database is exported; then `ACCESS SHARE` on every table of the catalog before the first `SELECT`, which keeps `TRUNCATE` and
 a rewriting `ALTER TABLE` from outside the runner away from the snapshot. The snapshot and the lock end with the last table, not
 with the blob copy. Every connection of the run is named `trove:<pod>:backup` and goes to the session host; a standby is refused.
-The statements assemble identifiers from the catalog with `pgx.Identifier`, never a value. The role writes only `backup_run`,
-`backup_blob_pin` and `audit_event` ([R-BAK-015](../spec/backup-and-restore.md#r-bak-015--credentials-and-privileges-of-the-backup-role)).
+The statements assemble identifiers from the catalog with `pgx.Identifier`, never a value. The role writes only `backup_run` and
+`backup_blob_pin`, and writes its audit events through `backup_record_event()`, which accepts the four events of the lane and
+no other ([Q-BAK-50](../spec/backup-and-restore.md#q-bak-50--the-backup-login-writes-its-audit-events-through-a-function-not-through-insert-on-the-audit-trail)); a role that is no
+longer `database.backup_role` loses what the migration granted it ([R-BAK-015](../spec/backup-and-restore.md#r-bak-015--credentials-and-privileges-of-the-backup-role)).
 
 The target marker keeps a run from writing into another installation's target: it is read at the start and again before the
 manifest, a mismatch is exit `4`, and a prefix with backups and no marker is refused as well. The marker is written only on an

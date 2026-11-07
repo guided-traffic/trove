@@ -67,7 +67,11 @@ func (r *runState) checkEncryption(ctx context.Context) error {
 		return backup.Failf(backup.ExitUsage, backup.CodeEncryptionMismatch,
 			"the backup target reports server-side encryption %q but backup.target.sse.mode %s asks for %q", obj.SSE, sse.Mode, want)
 	}
-	if sse.Mode == "kms" && sse.KMSKeyID != "" && obj.KMSKeyID != "" && !strings.HasSuffix(obj.KMSKeyID, sse.KMSKeyID) && !strings.HasSuffix(sse.KMSKeyID, obj.KMSKeyID) {
+	if sse.Mode == "kms" && sse.KMSKeyID != "" && obj.KMSKeyID == "" {
+		return backup.Failf(backup.ExitUsage, backup.CodeEncryptionMismatch,
+			"the backup target reports no KMS key but backup.target.sse.kms_key_id is %q: backup.target.sse.mode kms needs a store that names the key", sse.KMSKeyID)
+	}
+	if sse.Mode == "kms" && sse.KMSKeyID != "" && !strings.HasSuffix(obj.KMSKeyID, sse.KMSKeyID) && !strings.HasSuffix(sse.KMSKeyID, obj.KMSKeyID) {
 		return backup.Failf(backup.ExitUsage, backup.CodeEncryptionMismatch,
 			"the backup target encrypts with key %q but backup.target.sse.kms_key_id is %q", obj.KMSKeyID, sse.KMSKeyID)
 	}

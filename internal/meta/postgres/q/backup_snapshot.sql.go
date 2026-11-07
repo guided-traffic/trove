@@ -41,6 +41,17 @@ func (q *Queries) BackupBlobRow(ctx context.Context, sha256 []byte) ([]BackupBlo
 	return items, nil
 }
 
+const backupCanRecordEvents = `-- name: BackupCanRecordEvents :one
+SELECT coalesce(pg_catalog.has_function_privilege(pg_catalog.to_regprocedure('backup_record_event(text,text,text,text,jsonb)'), 'EXECUTE'), false)::boolean AS ok
+`
+
+func (q *Queries) BackupCanRecordEvents(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, backupCanRecordEvents)
+	var ok bool
+	err := row.Scan(&ok)
+	return ok, err
+}
+
 const backupCatalogTables = `-- name: BackupCatalogTables :many
 
 SELECT c.relname::text AS name,
@@ -312,4 +323,29 @@ func (q *Queries) ListBackupPins(ctx context.Context, arg ListBackupPinsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordBackupEvent = `-- name: RecordBackupEvent :exec
+SELECT backup_record_event($1::text, $2::text, $3::text, $4::text, $5::text::jsonb)
+`
+
+type RecordBackupEventParams struct {
+	Action  string
+	Outcome string
+	Replica string
+	Reason  string
+	Details string
+}
+
+// The audit event of the backup lane (R-BAK-014) through the function that writes the four backup events and nothing else
+// (Q-BAK-50); the backup login has EXECUTE on it and no INSERT on audit_event.
+func (q *Queries) RecordBackupEvent(ctx context.Context, arg RecordBackupEventParams) error {
+	_, err := q.db.Exec(ctx, recordBackupEvent,
+		arg.Action,
+		arg.Outcome,
+		arg.Replica,
+		arg.Reason,
+		arg.Details,
+	)
+	return err
 }
