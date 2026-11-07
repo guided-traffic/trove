@@ -21,6 +21,8 @@ export type PackageSort = 'name' | '-name' | 'createdAt' | '-createdAt' | 'updat
 
 /** The filters of `GET /api/v1/packages`; all optional. */
 export interface PackageFilters {
+  /** A project key: only the packages in that project's repositories (Q-UI-129). */
+  readonly project?: string;
   readonly format?: readonly string[];
   readonly repository?: readonly string[];
   readonly q?: string;

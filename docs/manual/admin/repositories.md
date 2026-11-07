@@ -20,7 +20,7 @@ Every repository belongs to exactly one [project](projects.md), and its key is u
 
 Each row offers **Edit**, **Browse** and, with `repositories:write-config`, **Delete**. **Create repository** opens the wizard.
 
-The page of a repository shows its **Project**. A repository is created in its project (`POST /api/v1/projects/<projectKey>/repositories`), and it changes project only through a move, which changes every address of it ([Move a repository to another project](projects.md#move-a-repository-to-another-project)).
+The page of a repository shows its **Project**. A repository is created in its project (`POST /api/v1/projects/<projectKey>/repositories`), and it changes project only through a move, which changes every address of it ([Move a repository to another project](projects.md#move-a-repository-to-another-project)). The list in the admin area names the project of each repository in a **Project** column, its filter panel limits the list to one project, and the project's own **Repositories** screen (`/projects/<key>/repositories`) lists the repositories of that project.
 
 ## Create a repository
 

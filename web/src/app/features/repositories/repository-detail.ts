@@ -474,7 +474,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
       const moved = await this.api.move(this.ref(), target, newIdempotencyKey());
       this.notifier.status($localize`:@@repo.move.done:Repository moved to project ${target}:project:.`);
       this.baseline.set(this.form());
-      await this.router.navigate(['/admin/repositories', target, moved.value.key]);
+      await this.router.navigate(['/projects', target, 'repositories', moved.value.key]);
     } catch (e) {
       this.failure.set(asApiError(e));
     } finally {
@@ -493,7 +493,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   private async deleted(): Promise<void> {
     this.notifier.status($localize`:@@repo.delete.done:Repository ${this.ref()}:key: deleted.`);
     this.baseline.set(this.form());
-    await this.router.navigate(['/admin/repositories']);
+    await this.router.navigate(['/projects', this.project(), 'repositories']);
   }
 
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;

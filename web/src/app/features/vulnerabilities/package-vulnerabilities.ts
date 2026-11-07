@@ -63,7 +63,7 @@ export function highestOpen(open: VulnerabilityPackageReport['versions'][number]
                 <ng-container i18n="@@pkg.vuln.blocked-reason">Downloads of this version are refused. Reason:</ng-container>
                 {{ repo.blockReason ? reason(repo.blockReason) : '' }}.
                 @for (f of blocking(repo.findings); track f.id) {
-                  <a [routerLink]="['/vulnerabilities', 'findings', f.id]" translate="no">{{ f.advisory }}</a>
+                  <a [routerLink]="['/projects', f.project, 'vulnerabilities', 'findings', f.id]" translate="no">{{ f.advisory }}</a>
                 }
               </span>
             </p>
@@ -91,7 +91,7 @@ export function highestOpen(open: VulnerabilityPackageReport['versions'][number]
                     <tr>
                       <td><trove-severity [severity]="f.severity" [score]="f.cvss?.score ?? null" /></td>
                       <th scope="row">
-                        <a [routerLink]="['/vulnerabilities', 'findings', f.id]" translate="no">{{ f.advisory }}</a>
+                        <a [routerLink]="['/projects', f.project, 'vulnerabilities', 'findings', f.id]" translate="no">{{ f.advisory }}</a>
                         <span class="secondary">{{ f.summary }}</span>
                       </th>
                       <td><trove-finding-status [finding]="f" /></td>

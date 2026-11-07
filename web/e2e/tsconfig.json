@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["*.ts", "tests/**/*.ts"]
+  "include": ["*.ts", "tests/**/*.ts", "vuln/**/*.ts", "bastion/**/*.ts", "upgrade/**/*.ts"]
 }

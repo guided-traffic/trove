@@ -1,3 +1,4 @@
+import { repositoryCommands } from '../../core/project-links';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   Component,
@@ -55,6 +56,7 @@ export function fillToken(content: string, token: string | null): string {
   styleUrl: './client-setup.scss',
 })
 export class ClientSetupPage {
+  protected readonly repositoryLink = repositoryCommands;
   private readonly setupApi = inject(ClientSetupApi);
   private readonly repositories = inject(RepositoriesApi);
   private readonly tokens = inject(TokensApi);

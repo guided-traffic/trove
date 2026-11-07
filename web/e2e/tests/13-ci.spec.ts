@@ -307,7 +307,7 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
       )
       .toBe(true);
 
-    await bob.goto(`/ui/en/admin/projects/${projectKey}/ci`);
+    await bob.goto(`/ui/en/projects/${projectKey}/ci`);
     await expect(bob.getByRole('heading', { name: 'CI identity', level: 1 })).toBeVisible();
     await expect(bob.getByText('Not available yet')).toHaveCount(0);
     await expect(bob.getByText('Issuers you can use')).toBeVisible();
@@ -335,8 +335,8 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await grant.getByRole('checkbox', { name: 'read' }).check();
     await accessible(bob, 'new project mapping');
     await bob.getByRole('button', { name: 'Create mapping' }).click();
-    await expect(bob).toHaveURL(new RegExp(`/ci/mappings/${projectMapping}(\\?|$)`));
-    await bob.goto(`/ui/en/admin/projects/${projectKey}/ci`);
+    await expect(bob).toHaveURL(new RegExp(`/projects/${projectKey}/ci/mappings/${projectMapping}(\\?|$)`));
+    await bob.goto(`/ui/en/projects/${projectKey}/ci`);
     const mappingRow = bob.getByRole('row', { name: new RegExp(projectMapping) });
     await expect(mappingRow).toBeVisible();
     await accessible(bob, 'project CI overview with a mapping');
@@ -352,7 +352,7 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await accessible(bob, 'project claim tester');
 
     // delete it again
-    await bob.goto(`/ui/en/admin/projects/${projectKey}/ci`);
+    await bob.goto(`/ui/en/projects/${projectKey}/ci`);
     await bob
       .getByRole('row', { name: new RegExp(projectMapping) })
       .getByRole('button', { name: 'Delete' })

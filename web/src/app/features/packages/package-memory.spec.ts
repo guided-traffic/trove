@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { ApiError } from '../../api/problem';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi, provideFakeApis } from '../../api/testing/fakes';
@@ -7,10 +7,12 @@ import { SessionStore } from '../../core/session-store';
 import { BrowserStorage } from '../../core/storage';
 import { PackageMemory, RECENT_PACKAGES_LIMIT, SAVED_VIEWS_LIMIT } from './package-memory';
 
+/** The memory of the project `web` (Q-UI-129): the router is at one of its screens. */
 async function memory(): Promise<PackageMemory> {
   TestBed.resetTestingModule();
   new BrowserStorage().clear('local');
-  TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeApis()] });
+  TestBed.configureTestingModule({ providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeApis()] });
+  await TestBed.inject(Router).navigateByUrl('/projects/web/packages');
   await TestBed.inject(SessionStore).load();
   return TestBed.inject(PackageMemory);
 }
@@ -28,7 +30,7 @@ describe('PackageMemory', () => {
   it('R-UI-006 the list is kept per signed-in principal and survives a new session of the service', async () => {
     const m = await memory();
     m.addRecent({ format: 'npm', name: 'left-pad' });
-    expect(new BrowserStorage().get('local', 'trove.packages.alice')).toContain('left-pad');
+    expect(new BrowserStorage().get('local', 'trove.packages.alice.web')).toContain('left-pad');
     expect(TestBed.inject(PackageMemory).recent()[0]?.name).toBe('left-pad');
   });
 
@@ -48,9 +50,10 @@ describe('PackageMemory', () => {
   });
 
   it('R-UI-006 stored data of a wrong shape is ignored', async () => {
-    new BrowserStorage().set('local', 'trove.packages.alice', '{"recent":[1,{"format":"npm"}],"views":"x"}');
+    new BrowserStorage().set('local', 'trove.packages.alice.web', '{"recent":[1,{"format":"npm"}],"views":"x"}');
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeApis()] });
+    TestBed.configureTestingModule({ providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeApis()] });
+    await TestBed.inject(Router).navigateByUrl('/projects/web/packages');
     await TestBed.inject(SessionStore).load();
     const m = TestBed.inject(PackageMemory);
     expect(m.recent()).toEqual([]);
@@ -68,6 +71,18 @@ describe('PackageMemory', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('Q-UI-129 the memory is kept per project: another project starts empty, and outside a project there is none', async () => {
+    const m = await memory();
+    m.addRecent({ format: 'npm', name: 'left-pad' });
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/projects/data/packages');
+    expect(m.recent()).toEqual([]);
+    await router.navigateByUrl('/projects/web/packages');
+    expect(m.recent()[0]?.name).toBe('left-pad');
+    await router.navigateByUrl('/projects');
+    expect(m.available()).toBe(false);
   });
 
   it('R-UI-006 nobody signed in means no remembered data', async () => {

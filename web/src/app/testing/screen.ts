@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { Provider, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { provideFakeApis } from '../api/testing/fakes';
 import { SessionApi } from '../api/session-api';
 import { FakeSessionApi } from '../api/testing/fakes';
@@ -88,6 +88,22 @@ export async function renderScreen<T>(
   }
   await settle(fixture);
   return { fixture, root: fixture.nativeElement as HTMLElement, get };
+}
+
+/**
+ * The options of a screen that lives in a project (Q-UI-129): the router is at `url`, so that the project context knows
+ * the project, and the project reaches the screen as the router would bind the parameter of `/projects/:project`.
+ */
+export function inProject(options: RenderOptions = {}, url = '/projects/web/packages'): RenderOptions {
+  const project = /^\/projects\/([^/]+)/.exec(url)?.[1] ?? 'web';
+  return {
+    ...options,
+    inputs: { project, ...options.inputs },
+    setup: async (get) => {
+      await get(Router).navigateByUrl(url);
+      await options.setup?.(get);
+    },
+  };
 }
 
 /** The text content of an element with whitespace collapsed. */

@@ -31,13 +31,13 @@ import { Layout } from './core/layout';
 import { NavGroup, Navigation } from './core/navigation';
 import { NavState } from './core/nav-state';
 import { PreferencesStore, UiTheme } from './core/preferences-store';
-import { ProjectFilter } from './core/project-filter';
 import { SessionStore } from './core/session-store';
 import { Banner } from './shared/banner';
 import { ErrorNotice } from './shared/error-notice';
 import { Notices } from './shared/notices';
 import { SessionDialog } from './shared/session-dialog';
 import { TroveMark } from './shared/brand/trove-mark';
+import { ProjectSwitcher } from './features/projects/project-switcher';
 
 /** Whether a route on the path to the active screen carries `data: { bare: true }`. */
 function isBare(route: ActivatedRouteSnapshot | null): boolean {
@@ -48,9 +48,9 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
 }
 
 /**
- * Root component (R-UI-002, Q-UI-68, Q-UI-127): skip link, the top bar (mark, repository search, project
- * filter, Admin button, help, theme, user menu), the sidebar of the current area (the content, or the
- * admin area behind the Admin button) with folding groups, collapsible where it is pinned and a drawer
+ * Root component (R-UI-002, Q-UI-68, Q-UI-127, Q-UI-129): skip link, the top bar (mark, repository search,
+ * Admin button, help, theme, user menu), the sidebar of the current area (the start, a project with its
+ * switcher, or the admin area behind the Admin button) with folding groups, collapsible where it is pinned and a drawer
  * below, and the content panel with the breadcrumb trail, banner area and router outlet. A screen whose route carries `data: { bare: true }`
  * (sign-in and signed out, Q-UI-125) stands alone: none of the shell renders around it.
  */
@@ -67,6 +67,7 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
     OpenSubmenuOnClick,
     CdkTrapFocus,
     TroveMark,
+    ProjectSwitcher,
     Banner,
     ErrorNotice,
     Notices,
@@ -82,7 +83,6 @@ export class App {
   protected readonly navigation = inject(Navigation);
   protected readonly preferences = inject(PreferencesStore);
   protected readonly navState = inject(NavState);
-  protected readonly projectFilter = inject(ProjectFilter);
   protected readonly breadcrumbs = inject(Breadcrumbs);
   private readonly router = inject(Router);
   private readonly dialog = inject(TroveDialog);
@@ -212,10 +212,6 @@ export class App {
 
   protected setTheme(theme: UiTheme | null): void {
     void this.preferences.setTheme(theme);
-  }
-
-  protected setProject(key: string | null): void {
-    void this.projectFilter.select(key);
   }
 
   protected setLocale(locale: 'en' | 'de'): void {

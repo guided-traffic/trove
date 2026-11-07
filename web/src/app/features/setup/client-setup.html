@@ -320,7 +320,7 @@
               </p>
               @if (canReadConfig()) {
                 <p>
-                  <a [routerLink]="['/admin/repositories', ...s.repository.split('/')]" i18n="@@setup.publish.members">Open the repository to see its members</a>
+                  <a [routerLink]="repositoryLink(s.repository)" i18n="@@setup.publish.members">Open the repository to see its members</a>
                 </p>
               }
             } @else {

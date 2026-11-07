@@ -11,6 +11,7 @@ import {
   buttonByText,
   expectAccessible,
   openFilters,
+  inProject,
   renderScreen,
   settle,
   text,
@@ -28,7 +29,7 @@ async function open(
   setup?: (packages: FakePackagesApi, repositories: FakeRepositoriesApi) => void,
 ) {
   new BrowserStorage().clear('local');
-  const r = await renderScreen(PackageList, {
+  const r = await renderScreen(PackageList, inProject({
     inputs,
     setup: (get) => {
       const repositories = get(RepositoriesApi) as FakeRepositoriesApi;
@@ -36,7 +37,7 @@ async function open(
       repositories.repositories = [...repositories.repositories, ...NPM_REPOSITORIES];
       setup?.(get(PackagesApi) as FakePackagesApi, repositories);
     },
-  });
+  }));
   return { ...r, fake: r.get(PackagesApi) as FakePackagesApi };
 }
 
@@ -100,7 +101,7 @@ describe('Packages list', () => {
     const link = rows(r)
       .map((row) => row.querySelector<HTMLAnchorElement>('th a')!)
       .find((a) => a.textContent === '@team-a/ui')!;
-    expect(link.getAttribute('href')).toBe('/packages/npm/@team-a/ui');
+    expect(link.getAttribute('href')).toBe('/projects/web/packages/npm/@team-a/ui');
   });
 
   it('R-UI-006 a format is shown as icon and text, never as icon alone', async () => {
@@ -279,7 +280,7 @@ describe('Packages list', () => {
       m.addRecent({ format: 'npm', name: '@team-a/ui' });
       await settle(r.fixture);
       const items = [...r.root.querySelectorAll('.plain-list a')];
-      expect(items.map((a) => a.getAttribute('href'))).toEqual(['/packages/npm/@team-a/ui', '/packages/npm/left-pad']);
+      expect(items.map((a) => a.getAttribute('href'))).toEqual(['/projects/web/packages/npm/@team-a/ui', '/projects/web/packages/npm/left-pad']);
       expect(r.root.querySelector('.view-tabs a[aria-current="page"]')?.textContent).toContain('Recently viewed');
       await expectAccessible(r.root);
     });
@@ -294,7 +295,7 @@ describe('Packages list', () => {
       expect(memory.views()).toHaveLength(1);
       expect(memory.views()[0]).toMatchObject({ name: 'Recent npm', query: { format: 'npm', sort: '-updatedAt' } });
       const view = r.root.querySelector('.plain-list a')!;
-      expect(view.getAttribute('href')).toBe('/packages?format=npm&sort=-updatedAt');
+      expect(view.getAttribute('href')).toBe('/projects/web/packages?format=npm&sort=-updatedAt');
 
       button(r.root, 'Rename').click();
       await settle(r.fixture);
@@ -332,15 +333,15 @@ describe('Packages list', () => {
     it('R-UI-006 a list opened without a query lands on the default saved view once', async () => {
       new BrowserStorage().set(
         'local',
-        'trove.packages.alice',
+        'trove.packages.alice.web',
         JSON.stringify({ recent: [], views: [{ id: 'v1', name: 'NuGet only', query: { format: 'nuget' } }], defaultView: 'v1' }),
       );
       let navigate: ReturnType<typeof navigateSpy> | undefined;
-      await renderScreen(PackageList, {
+      await renderScreen(PackageList, inProject({
         setup: (get) => {
           navigate = vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
         },
-      });
+      }));
       expect(navigate).toHaveBeenCalledWith([], { queryParams: { format: 'nuget' }, replaceUrl: true });
       expect(navigate).toHaveBeenCalledTimes(1);
     });
@@ -350,10 +351,10 @@ describe('Packages list', () => {
         throw new DOMException('blocked', 'SecurityError');
       });
       try {
-        const r = await renderScreen(PackageList);
+        const r = await renderScreen(PackageList, inProject());
         expect(r.root.querySelector('.view-tabs')).toBeNull();
         expect(rows({ root: r.root } as Opened)).toHaveLength(3);
-        const forced = await renderScreen(PackageList, { inputs: { tab: 'views' } });
+        const forced = await renderScreen(PackageList, inProject({ inputs: { tab: 'views' } }));
         expect(forced.root.querySelector('.save-view')).toBeNull();
         expect(rows({ root: forced.root } as Opened)).toHaveLength(3);
       } finally {

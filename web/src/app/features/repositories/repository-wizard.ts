@@ -11,7 +11,7 @@ import {
   untracked,
 } from '@angular/core';
 import { Listbox, Option } from '@angular/aria/listbox';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError, FieldProblem } from '../../api/problem';
 import {
@@ -139,8 +139,17 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private readonly serverAddress = inject(ServerAddress);
   private readonly destroyed = inject(DestroyRef);
 
-  /** Query parameter `project`: the project the form starts with (the project screen links here, R-AUTHZ-026). */
+  /**
+   * Route parameter `:project` below `/projects/:project/repositories`: the project the repository is created in, fixed
+   * (Q-UI-129). In the admin area it is the query parameter `project`, the project the form starts with.
+   */
   readonly project = input<string | undefined>();
+  private readonly route = inject(ActivatedRoute);
+  /** The wizard runs inside a project: the project is not chosen but given. */
+  protected readonly inProject = (): boolean => this.route.snapshot.paramMap.has('project');
+  protected readonly cancelLink = computed(() =>
+    this.inProject() ? ['/projects', this.chosenProject(), 'repositories'] : ['/admin/repositories'],
+  );
   /** The project the repository is created in (R-REPO-001); chosen in the basic step. */
   protected readonly chosenProject = linkedSignal(() => this.project() ?? '');
   private readonly projectsApi = inject(ProjectsApi);
@@ -480,7 +489,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
       this.notifier.status(
         $localize`:@@repo.wizard.created:Repository ${created.value.key}:key: created.`,
       );
-      await this.router.navigate(['/admin/repositories', this.chosenProject(), created.value.key]);
+      await this.router.navigate(['/projects', this.chosenProject(), 'repositories', created.value.key]);
     } catch (e) {
       const error = asApiError(e);
       this.failure.set(error);

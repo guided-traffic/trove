@@ -59,9 +59,9 @@ describe('The CI issuer list (R-UI-035)', () => {
     TestBed.inject(SessionStore);
     expect(helpFor('/admin/ci')).toEqual(['/help', 'admin', 'gitlab-ci']);
     expect(helpFor('/admin/ci/gitlab-com/mappings/x')).toEqual(['/help', 'admin', 'gitlab-ci']);
-    expect(helpFor('/admin/projects/web/ci')).toEqual(['/help', 'admin', 'gitlab-ci']);
-    expect(helpFor('/admin/projects/web/ci/mappings/new?issuer=a')).toEqual(['/help', 'admin', 'gitlab-ci']);
-    expect(helpFor('/admin/projects/web')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/ci')).toEqual(['/help', 'admin', 'gitlab-ci']);
+    expect(helpFor('/projects/web/ci/mappings/new?issuer=a')).toEqual(['/help', 'admin', 'gitlab-ci']);
+    expect(helpFor('/projects/web/settings')).toEqual(['/help', 'admin', 'projects']);
   });
 });
 

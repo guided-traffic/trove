@@ -5,7 +5,7 @@ import { IdentityApi } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
 import { PROJECT_KEY_PATTERN, Project, ProjectInput, ProjectsApi } from '../../api/projects-api';
 import { Versioned } from '../../api/repositories-api';
-import { ProjectFilter } from '../../core/project-filter';
+import { ProjectContext } from '../../core/project-context';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { fieldErrorAt } from '../../shared/field-errors';
@@ -152,7 +152,7 @@ export class ProjectDialog {
   private readonly api = inject(ProjectsApi);
   private readonly identity = inject(IdentityApi);
   private readonly conflicts = inject(ConflictResolver);
-  private readonly filter = inject(ProjectFilter);
+  private readonly context = inject(ProjectContext);
   private readonly ref = inject<DialogRef<Project, ProjectDialog>>(DialogRef);
   private readonly data = inject<ProjectDialogData>(DIALOG_DATA);
   /** Replaced after every refusal of the create: the server stores a 4xx outcome under its key (R-API-014). */
@@ -226,7 +226,7 @@ export class ProjectDialog {
     try {
       if (!(await this.saveProject())) return;
       const key = this.existing()?.value.key ?? this.key().trim();
-      this.filter.refresh().catch(() => undefined);
+      this.context.refresh().catch(() => undefined);
       this.ref.close((await this.api.get(key)).value);
     } catch (e) {
       this.error.set(asApiError(e));

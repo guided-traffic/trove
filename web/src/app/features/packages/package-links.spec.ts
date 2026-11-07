@@ -30,8 +30,8 @@ describe('package links', () => {
   });
 
   it('R-UI-003 a package page keeps the slash of a scoped name as a path separator', () => {
-    expect(packageCommands('npm', '@team-a/ui')).toEqual(['/packages', 'npm', '@team-a', 'ui']);
-    expect(packageCommands('nuget', 'Contoso.Logging')).toEqual(['/packages', 'nuget', 'Contoso.Logging']);
+    expect(packageCommands('web', 'npm', '@team-a/ui')).toEqual(['/projects', 'web', 'packages', 'npm', '@team-a', 'ui']);
+    expect(packageCommands('web', 'nuget', 'Contoso.Logging')).toEqual(['/projects', 'web', 'packages', 'nuget', 'Contoso.Logging']);
   });
 
   it('R-UI-006 the updated time is relative in the language of the build; a time within a minute reads "now"', () => {

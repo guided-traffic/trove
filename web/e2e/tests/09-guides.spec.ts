@@ -29,9 +29,10 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
 }) => {
   await signInLocal(page);
 
-  await test.step('the side bar opens the guides, which offer generic with curl and npm with its four clients', async () => {
-    await page.goto('/ui/en/packages');
-    await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Guides' }).click();
+  await test.step('the user menu opens the guides, which offer generic with curl and npm with its four clients', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/packages`);
+    await page.getByRole('button', { name: /User menu/ }).click();
+    await page.getByRole('menuitem', { name: 'Guides', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Guides', level: 1 })).toBeVisible();
     const formats = page.getByRole('group', { name: 'Package type' });
     // The catalog is ordered by name, so generic opens first.
@@ -47,7 +48,7 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
 
   let guideSnippet = '';
   await test.step('the repository screen shows the guide of the repository in its How to use tab', async () => {
-    await page.goto(`/ui/en/admin/repositories/${e2eProject}/${virtualKey}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${virtualKey}`);
     await page.getByRole('tab', { name: 'How to use' }).click();
     await expect(page.getByRole('heading', { name: 'What a virtual repository is', level: 2 })).toBeVisible();
     await expect(page.getByText(new RegExp(`For (${e2eProject}/)?${virtualKey} that is (${e2eProject}/)?${localKey}\\.`))).toBeVisible();

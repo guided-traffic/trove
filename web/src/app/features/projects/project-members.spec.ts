@@ -3,7 +3,7 @@ import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
 import { FakeProjectsApi } from '../../api/testing/fakes-projects';
 import { buttonByText, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
-import { ProjectDetail } from './project-detail';
+import { ProjectMembersPage } from './project-members-page';
 
 type Get = <A>(token: abstract new (...args: never[]) => A) => A;
 
@@ -21,8 +21,8 @@ function asMember(role: 'reader' | 'developer' | 'maintainer' | 'owner') {
 
 describe('Project members (R-UI-041, Q-AUTHZ-207, Q-AUTHZ-217)', () => {
   it('Q-AUTHZ-207 an Owner adds a member with a role, changes it and removes it', async () => {
-    const { fixture, root, get } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
+    const { fixture, root, get } = await renderScreen(ProjectMembersPage, {
+      inputs: { project: 'web' },
       capabilities: [],
       setup: asMember('owner'),
     });
@@ -49,8 +49,8 @@ describe('Project members (R-UI-041, Q-AUTHZ-207, Q-AUTHZ-217)', () => {
   });
 
   it('Q-AUTHZ-217 removing or demoting the last Owner is refused and the refusal is shown', async () => {
-    const { fixture, root, get } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
+    const { fixture, root, get } = await renderScreen(ProjectMembersPage, {
+      inputs: { project: 'web' },
       capabilities: [],
       setup: asMember('owner'),
     });
@@ -66,8 +66,8 @@ describe('Project members (R-UI-041, Q-AUTHZ-207, Q-AUTHZ-217)', () => {
   });
 
   it('Q-AUTHZ-207 a Reader sees the members and the roles as text', async () => {
-    const { root } = await renderScreen(ProjectDetail, {
-      inputs: { key: 'web' },
+    const { root } = await renderScreen(ProjectMembersPage, {
+      inputs: { project: 'web' },
       capabilities: [],
       setup: asMember('reader'),
     });

@@ -3,6 +3,7 @@ package view
 import (
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -115,6 +116,28 @@ func (t Topology) Expand(keys []string) []string {
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// InProject turns the project of a filter into a repository filter: the physical repositories of the project,
+// intersected with the repositories the filter names (a virtual repository standing for its members). A filter
+// without a project is returned as it is. A project whose repositories the filter excludes lists nothing.
+func (t Topology) InProject(f Filter) Filter {
+	if f.Project == "" {
+		return f
+	}
+	physical := t.Physical()
+	if f.HasRepositories {
+		physical = t.Expand(f.Repositories)
+	}
+	prefix := f.Project + "/"
+	var in []string
+	for _, k := range physical {
+		if strings.HasPrefix(k, prefix) {
+			in = append(in, k)
+		}
+	}
+	f.Repositories, f.HasRepositories, f.Project = in, true, ""
+	return f
 }
 
 // Containers returns the virtual repositories that contain a physical one.

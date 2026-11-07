@@ -1,11 +1,11 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository</h1>
-  <a class="btn btn-tertiary" routerLink="/admin/repositories" i18n="@@repo.detail.back">All repositories</a>
-  <a class="btn btn-tertiary" [routerLink]="['/browse', project(), key()]" i18n="@@repo.action.browse">Browse</a>
+  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'repositories']" i18n="@@repo.detail.back">All repositories</a>
+  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'browse', key()]" i18n="@@repo.action.browse">Browse</a>
   <!-- >>> M4b vulnerabilities -->
   @if (stored(); as repo) {
     @if (repo.format !== 'generic' && repo.class !== 'virtual') {
-      <a class="btn btn-tertiary" routerLink="/vulnerabilities" [queryParams]="{ repository: ref() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
+      <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'vulnerabilities']" [queryParams]="{ repository: ref() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
     }
   }
   <!-- <<< M4b vulnerabilities -->
@@ -66,7 +66,7 @@
       <dd>{{ classText(repo.class) }}</dd>
       @if (repo.project; as projectKey) {
         <dt i18n="@@repo.detail.project">Project</dt>
-        <dd><a [routerLink]="['/admin/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
+        <dd><a [routerLink]="['/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
       }
       <dt i18n="@@repo.col.format">Format</dt>
       <dd translate="no">{{ repo.format }}</dd>

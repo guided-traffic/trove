@@ -250,7 +250,7 @@ describe('Repository creation wizard', () => {
       'releases/**',
       'snapshots/**',
     ]);
-    expect(navigate).toHaveBeenCalledWith(['/admin/repositories', 'web', 'build-output']);
+    expect(navigate).toHaveBeenCalledWith(['/projects', 'web', 'repositories', 'build-output']);
   });
 
   it('R-REPO-002 R-UI-021 the review shows the client address and the curl command on the configured base URL, not on the origin of the page', async () => {

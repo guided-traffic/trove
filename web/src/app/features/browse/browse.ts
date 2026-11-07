@@ -119,9 +119,17 @@ export class Browse {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly title = inject(ActivatedRoute).snapshot.title ?? '';
 
-  /** Route parameters of the matcher and the query parameters, bound by the router. */
-  readonly repo = input<string | undefined>();
+  /**
+   * Route parameters, bound by the router: the project of `/projects/:project/browse`, the key of the repository and the
+   * path inside it (the matcher). The repository the screen speaks of is the qualified name `<project>/<key>`.
+   */
+  readonly project = input.required<string>();
+  readonly key = input<string | undefined>();
   readonly path = input<string | undefined>();
+  protected readonly repo = computed(() => {
+    const key = this.key();
+    return key ? repoRef(this.project(), key) : undefined;
+  });
   readonly q = input<string | undefined>();
   readonly class = input<string | undefined>();
   readonly format = input<string | undefined>();
@@ -321,10 +329,10 @@ export class Browse {
     if (!sel) return [];
     const parts = sel.path.split('/').filter((p) => p !== '');
     return [
-      { label: sel.repo, commands: ['/browse', ...sel.repo.split('/')] },
+      { label: sel.repo, commands: this.commandsOfRepo(sel.repo, []) },
       ...parts.map((p, i) => ({
         label: p,
-        commands: ['/browse', ...sel.repo.split('/'), ...parts.slice(0, i + 1)],
+        commands: this.commandsOfRepo(sel.repo, parts.slice(0, i + 1)),
       })),
     ];
   });
@@ -362,7 +370,7 @@ export class Browse {
   constructor() {
     this.destroyRef.onDestroy(() => clearTimeout(this.filterTimer));
     effect(() => {
-      const filters = { q: this.q(), class: this.class(), format: this.format() };
+      const filters = { q: this.q(), class: this.class(), format: this.format(), project: this.project() };
       untracked(() => {
         // The field keeps what the user typed, unless the address changed under it.
         if ((filters.q ?? '') !== this.search().trim()) this.search.set(filters.q ?? '');
@@ -623,14 +631,14 @@ export class Browse {
   }
 
   protected go(repo: string, path: string): void {
-    void this.router.navigate(['/browse', ...repo.split('/'), ...path.split('/').filter((s) => s !== '')], {
+    void this.router.navigate(this.commandsOfRepo(repo, path.split('/').filter((s) => s !== '')), {
       queryParams: { tab: null },
       queryParamsHandling: 'merge',
     });
   }
 
   protected goRoot(): void {
-    void this.router.navigate(['/browse'], { queryParamsHandling: 'preserve' });
+    void this.router.navigate(['/projects', this.project(), 'browse'], { queryParamsHandling: 'preserve' });
   }
 
   protected moreId(node: TreeNode): string {
@@ -736,7 +744,19 @@ export class Browse {
   }
 
   protected commandsOf(node: TreeNode): string[] {
-    return ['/browse', ...node.repository.split('/'), ...node.path.split('/').filter((s) => s !== '')];
+    return this.commandsOfRepo(node.repository, node.path.split('/').filter((s) => s !== ''));
+  }
+
+  /** The address of an item: inside the project of its repository (a member of a virtual repository may be in another). */
+  protected commandsOfRepo(repo: string, path: readonly string[]): string[] {
+    const { project, key } = splitRef(repo);
+    return ['/projects', project, 'browse', key, ...path];
+  }
+
+  /** The repository's own screen in its project. */
+  protected repositoryCommands(repo: string): string[] {
+    const { project, key } = splitRef(repo);
+    return ['/projects', project, 'repositories', key];
   }
 
   // --- actions ------------------------------------------------------------------------------

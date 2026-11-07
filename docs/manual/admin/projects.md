@@ -150,7 +150,15 @@ Only an administrator of trove deletes a project, and only when no repository, i
 
 ## The Projects screen
 
-**Admin area › Projects** lists the projects you can see. An administrator of trove and the holders of the permission to read projects see every project, the `auditor` read-only; a member without any system role sees the projects it is a member of. Select a project's key to open its page with the project's repositories, permission policies and service accounts.
+**Admin area › Projects** lists the projects you can see, with the admin area's other lists. An administrator of trove and the holders of the permission to read projects see every project, the `auditor` read-only; a member without any system role finds the projects it is a member of on the start page and has no admin area. Select a project's key to open it.
+
+## Where the project's screens are
+
+The project is the context of its screens. Open it from the start page or with the project switcher at the top of any project's side bar; its address is `/projects/<key>/…`. The side bar of a project holds **Packages**, **Browse**, **Repositories**, **Vulnerabilities**, **Members**, **Permission policies**, **Service accounts**, **CI identity** and **Settings**, each only if your role or permission allows it. The top bar has no project filter. **New policy** in a project's **Permission policies** creates a policy of that project; **New policy** in the admin area's list creates a global policy. The policy editor says which one it is: **Global policy — applies to every repository**, or **Project policy of** the key. The admin area's lists (repositories, service accounts, permission policies, audit log) name the project of each item in a **Project** column.
+
+## For a member without a system role
+
+A member has no admin area. After you sign in you see the start page or, with one project, that project; its side bar holds the screens your role allows, among them **Members**, **Permission policies**, **Service accounts**, **CI identity** and **Settings** for an Owner. The global lists, such as **Users**, are not offered.
 
 ## When an action is refused
 

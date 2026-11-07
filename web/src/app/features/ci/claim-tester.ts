@@ -334,15 +334,14 @@ function valueFor(previous: unknown, text: string): unknown {
 export class ClaimTester {
   /** Route parameter `:issuer`, or the query parameter of a project's tester. */
   readonly issuer = input<string | undefined>();
-  /** Route parameter `:key`: the project whose tier is tested. */
-  readonly key = input<string | undefined>();
+  /** Route parameter `:project`: the project whose tier is tested. */
+  readonly project = input<string | null>(null);
   /** Query parameter `mapping`: the mapping the tester was opened from; its candidate is marked and the claims start out matching it. */
   readonly mapping = input<string | undefined>();
 
   private readonly api = inject(CiApi);
   private readonly locale = inject(LOCALE_ID);
 
-  protected readonly project = computed(() => this.key() ?? null);
   protected readonly issuerChoice = signal('');
   protected readonly issuerName = computed(() => this.issuer() || this.issuerChoice());
   protected readonly issuerOptions = signal<readonly SelectOption[]>([]);
@@ -378,7 +377,7 @@ export class ClaimTester {
     });
     effect(() => {
       this.issuer();
-      this.key();
+      this.project();
       this.mapping();
       this.issuerChoice();
       untracked(() => void this.prepare());

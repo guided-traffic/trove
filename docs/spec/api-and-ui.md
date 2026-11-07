@@ -1252,7 +1252,9 @@ Preferences are owned here:
 ```
 
 `locale` is `en`, `de` or `null` (browser decides); `theme` is `light`, `dark` or `null` (system);
-`projectFilter` is a project key or `null` (P1, R-UI-041). PATCH takes a merge patch with
+`projectFilter` is a project key or `null`; the UI does not read or write it since the project is the context of the screens
+([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)), so the member is dead and goes with
+the next change of the preferences. PATCH takes a merge patch with
 `If-Match`. `user_preferences.revision` is the `ETag` and is registered with
 `meta.RegisterRevisionColumn` (R-API-012, [backup-and-restore.md](backup-and-restore.md)
 R-BAK-022).
@@ -2590,7 +2592,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-001, UI-004
 
 - Top bar (slim, on one fill with the side bar, Q-UI-127, in the colours of the design language, Q-UI-88): the
-  mark and the product name, a repository search field in the middle, the project filter, the **Admin** button (shown
+  mark and the product name, a repository search field in the middle, the **Admin** button (shown
   to a caller who has the admin area; it leads into it and looks the same inside it), the **Documentation** link, the
   theme button and the user menu. The search
   field takes a text and opens the repository list (R-UI-020) filtered by it; it is shown only to a caller who
@@ -2600,21 +2602,25 @@ Priority: **MVP** · Covers: UI-001, UI-004
   "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round badge with the
   first letter of the name, the name in its accessible name and on top of the menu, and holds profile, client setup,
   language and sign-out. The global
-  search over packages and files (P1, R-UI-015) and the project filter (P1, R-UI-041) take their place in the same
-  bar when their APIs exist. A configurable server name is P2 on
+  search over packages and files (P1, R-UI-015) takes its place in the same bar when its API exists. The project is not
+  chosen in the top bar but by the address and the project's side bar
+  ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)). A configurable server name is P2 on
   [operations-and-observability.md](operations-and-observability.md).
-- Navigation with two areas, each with a side bar of its own that shows while one of its routes is open (Q-UI-127):
-  **Artifacts** (named "Packages and files" until 2026-11-06; packages, browser, guides (R-UI-049), search, trash, builds; from
-  M4b also vulnerabilities, shown to every signed-in user,
-  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and the
-  **Admin area** (`/admin/…`, reached through the Admin button; shown when `/api/v1/authz/me` reports any
-  administrative capability or the role `owner` in a project). The
-  sections are the routes of R-UI-003. Inside the admin area, the single entries (repositories,
-  endpoints) come first and related screens are grouped under folding headings: identity (users,
-  groups, service accounts, tokens), access (permission policies, system roles) and system (system
-  status, audit log, settings). Every entry has an icon, which is decoration: the label is the
-  accessible name. Entries the caller may not use are hidden (R-UI-005); a group without a visible
-  entry disappears.
+- Navigation with three side bars, each shown while one of its routes is open (Q-UI-127, Q-UI-129): the **project**
+  (`/projects/{project}/…`), the **start** (everything else outside the admin area: the list of your projects, the guides,
+  the profile, the help) and the **Admin area** (`/admin/…`, reached through the Admin button; shown when
+  `/api/v1/authz/me` reports any administrative capability). The project's side bar starts with the **project switcher**
+  (the project's mark and name as a button; a panel with a search field, the recently visited projects and the matches,
+  opened and closed like a disclosure, closed by Escape with the focus back on the button) and lists the project's
+  screens: packages, browse, repositories, vulnerabilities
+  ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022), a folding group **Access** (members, permission
+  policies, service accounts and CI identity, the last three for the holder of their capability and for the Owner of the
+  project) and settings. The start side bar lists Projects and Guides (R-UI-049); the guides and the client setup also
+  open from the user menu. The sections are the routes of R-UI-003. Inside the admin area, the single entries
+  (repositories, endpoints) come first and related screens are grouped under folding headings: identity (users, groups,
+  service accounts, tokens, CI identity), access (permission policies, system roles) and system (system status, audit
+  log, settings, advisory sources). Every entry has an icon, which is decoration: the label is the accessible name.
+  Entries the caller may not use are hidden (R-UI-005); a group without a visible entry disappears.
 - Layout and density (Q-UI-2, Q-UI-68, Q-UI-127): the navigation is a left side bar below the top bar, on the
   same fill, and the content is a panel set into them; the side bar is visible at viewport widths of 1024 CSS px and
   more, and a drawer opened from a menu button in the top bar below that width. Where it is pinned, "Collapse sidebar"
@@ -2656,8 +2662,9 @@ Acceptance criteria:
   header's menu button opens it as a drawer that traps focus until closed.
 - Compacting the side bar at 1280 CSS px leaves only icons, every entry still has its label as
   accessible name, and the choice is still in force after a reload for the same user.
-- On `/admin/users/alice` the trail reads "Administration / Users / alice" and "Users" links to
-  the list.
+- On `/admin/users/alice` the trail reads "Admin area / Users / alice" and "Users" links to
+  the list. On `/projects/web/repositories/npm-local` it reads "Projects / web / Repositories / npm-local", and no step
+  links to a route that does not exist.
 - A user whose `authz/me` lacks `repositories:read-config` sees no search field in the top bar.
 
 ### R-UI-003 · Route map and deep links
@@ -2667,14 +2674,22 @@ Every screen and every object has a bookmarkable URL under `/ui/{locale}`. Filte
 selected tab and selected version live in query parameters.
 
 <details>
-<summary>Route table (30)</summary>
+<summary>Route table (38)</summary>
 
 | Route | Screen | Requirement |
 |---|---|---|
-| `/packages` | Packages list (start page) | R-UI-006 |
-| `/packages/{format}/{name…}` (`?version=`) | Package details | R-UI-007 |
-| `/vulnerabilities` (`?repository=&severity=&status=&…`), `/vulnerabilities/findings/{id}`, `/vulnerabilities/advisories/{ecosystem}/{id}`, `/vulnerabilities/sources` | Vulnerability report, finding, advisory, sources (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
-| `/browse/{project}/{repo}/{path…}` | File tree with selection | R-UI-010 |
+| `/` | Start: the only project of the caller, else the list of projects | R-UI-041 |
+| `/projects` | The projects of the caller (start page) | R-UI-041 |
+| `/projects/{project}` | Answers with the packages of the project | R-UI-041 |
+| `/projects/{project}/packages` | Packages list | R-UI-006 |
+| `/projects/{project}/packages/{format}/{name…}` (`?version=`) | Package details | R-UI-007 |
+| `/projects/{project}/vulnerabilities` (`?repository=&severity=&status=&…`), `/projects/{project}/vulnerabilities/findings/{id}`, `/projects/{project}/vulnerabilities/advisories/{ecosystem}/{id}` | Vulnerability report of the project, finding, advisory (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
+| `/projects/{project}/browse/{repo}/{path…}` | File tree with selection | R-UI-010 |
+| `/projects/{project}/repositories`, `/projects/{project}/repositories/new`, `/projects/{project}/repositories/{key}` | Repositories of the project | R-UI-020, R-UI-021 |
+| `/projects/{project}/members`, `/projects/{project}/settings` | Members and roles, settings of the project | R-UI-041 |
+| `/projects/{project}/policies`, `/projects/{project}/policies/new`, `/projects/{project}/policies/{name}` | Permission policies of the project | R-UI-027 |
+| `/projects/{project}/service-accounts`, `/projects/{project}/service-accounts/{name}` | Service accounts of the project | R-UI-026 |
+| `/projects/{project}/ci`, `/projects/{project}/ci/test`, `/projects/{project}/ci/mappings/{mapping}` | CI identity of the project | R-UI-035, R-UI-036 |
 | `/search` (`?type=&q=&…`) | Search results (P1) | R-UI-015 |
 | `/trash` | Trash can (P1) | R-UI-014 |
 | `/builds`, `/builds/{build}`, `/builds/{build}/{number}` | Builds (P1) | R-UI-040 |
@@ -2682,21 +2697,22 @@ selected tab and selected version live in query parameters.
 | `/guides` (`?format=&client=&repository=&class=`) | Guides | R-UI-049 |
 | `/profile`, `/profile/tokens`, `/profile/sessions` | Profile, personal tokens, sessions | R-UI-029 |
 | `/integrations/webhooks`, `/integrations/webhooks/{key}` | Webhooks (P1) | R-UI-039 |
-| `/admin/repositories`, `/admin/repositories/new`, `/admin/repositories/{project}/{key}` | Repositories | R-UI-020, R-UI-021 |
+| `/admin/repositories`, `/admin/repositories/new` | Repositories of every project, each row naming its project | R-UI-020, R-UI-021 |
 | `/admin/repositories/quick-setup` | Quick setup (P1) | R-UI-023 |
 | `/admin/users`, `/admin/users/{username}` | Users | R-UI-024 |
 | `/admin/groups`, `/admin/groups/{name}` | Groups | R-UI-025 |
-| `/admin/service-accounts`, `/admin/service-accounts/{name}` (an account of no project), `/admin/projects/{project}/service-accounts/{name}` | Service accounts | R-UI-026 |
-| `/admin/permissions`, `/admin/permissions/new`, `/admin/permissions/{name}` (a policy of no project), `/admin/projects/{project}/policies/{name}` | Permission policies | R-UI-027 |
+| `/admin/service-accounts`, `/admin/service-accounts/{name}` (an account of no project) | Service accounts of every project, with a project column | R-UI-026 |
+| `/admin/permissions`, `/admin/permissions/new`, `/admin/permissions/{name}` (a policy of no project) | Permission policies of every project, with a project column | R-UI-027 |
 | `/admin/permissions/explain` (`?principal=&action=&repository=&path=&package=`) | Explainer (P1) | R-UI-028 |
 | `/admin/roles` | System role bindings | R-UI-024 |
 | `/admin/tokens` | Token administration | R-UI-030 |
 | `/admin/ci`, `/admin/ci/{issuer}`, `/admin/ci/{issuer}/mappings/{mapping}`, `/admin/ci/{issuer}/test` | CI identity, claim tester | R-UI-035, R-UI-036 |
-| `/admin/audit` | Audit log | R-UI-037 |
+| `/admin/audit` | Audit log, with a project column | R-UI-037 |
+| `/admin/advisory-sources` | Advisory sources of the vulnerability data | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
 | `/admin/endpoints`, `/admin/endpoints/{endpoint}`, `/admin/endpoints/{endpoint}/rules/new`, `/admin/endpoints/{endpoint}/rules/{name}` | Endpoints and exposure rules | [endpoints.md](endpoints.md) R-EP-017 |
 | `/admin/system`, `/admin/system/jobs`, `/admin/system/backups` | System status, jobs, backups | R-UI-038, R-UI-048 |
 | `/admin/settings/auth`, `/admin/settings/general`, `/admin/settings/sign-in` (P1), `/admin/settings/storage` (P1) | Settings | R-UI-031 to R-UI-034 |
-| `/admin/projects`, `/admin/projects/{project}` (overview, members, repositories, policies, service accounts, CI mappings) | Projects | R-UI-041 |
+| `/admin/projects` | Every project, to create and edit them | R-UI-041 |
 | `/login` (`?auto_sign_in=false`), `/logged-out` | Sign-in, signed out | R-UI-004 |
 | `/cli-login/{publicId}` | Command-line login approval of `npm login` (P1; R-AUTH-034) | R-UI-004 |
 | `/device` (`?code=`) | Device-code login approval for other command-line tools (P1; R-AUTH-036) | R-UI-004 |
@@ -2706,9 +2722,12 @@ selected tab and selected version live in query parameters.
 
 - Routes with slash-containing parameters (npm scoped names, file paths) use a router `UrlMatcher`
   that captures the remaining segments.
-- A repository is named in a route by its project and key (`{project}/{repo}`), and in a query parameter (`?repository=`)
-  by the qualified name `<projectKey>/<repoKey>`. Moving the content routes under `/projects/{project}/…` is
-  [Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects) (not built yet, H-550).
+- A repository is named in a route by the project of the route and its key, and in a query parameter (`?repository=`)
+  by the qualified name `<projectKey>/<repoKey>`. The content routes live under `/projects/{project}/…`
+  ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)); `/projects/{project}`
+  answers with the packages, so that the step of the project in the breadcrumb links to a route that exists. A route
+  that existed before the project was the context (`/packages`, `/browse`, `/vulnerabilities`,
+  `/admin/repositories/{project}/{key}`, `/admin/projects/{project}`) is not found.
 - Route guards only shape navigation; the API decides (R-UI-005). When a screen's first API call
   answers 403, the screen shows a "no access" state with the missing permission and, for callers
   with `policies:read`, a link to the explainer.
@@ -2716,7 +2735,7 @@ selected tab and selected version live in query parameters.
 
 Acceptance criteria:
 
-- Opening `/ui/en/packages/npm/@team-a/ui?version=1.3.0` in a fresh tab shows that version.
+- Opening `/ui/en/projects/web/packages/npm/@team-a/ui?version=1.3.0` in a fresh tab shows that version.
 - Copying the URL of a filtered packages list into another browser reproduces the filters.
 
 ### R-UI-004 · Sign-in, session and sign-out
@@ -3417,13 +3436,15 @@ Acceptance criteria:
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: project, key, format, class, description, client URL with copy button, last activity. Filters in
-  the filter panel: project, format, class, text, disabled only. The list is ordered by key; the API takes
+- Table: key, project, format, class, description, client URL with copy button, last activity. Filters in
+  the filter panel: project, format, class, text, disabled only. The admin area lists every project's repositories with
+  the project in a column; the project's own list (`/projects/{project}/repositories`, Q-UI-129) is the same screen
+  for one project, without the project column and the project filter. The list is ordered by key; the API takes
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
 - Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
-  adapter: the repository's view of the report, `/vulnerabilities?repository=<projectKey>/<repoKey>`,
+  adapter: the repository's view of the report, `/projects/<projectKey>/vulnerabilities?repository=<projectKey>/<repoKey>`,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022),
   move to another project (for a caller who holds `repositories:write-config` or is Owner of both projects; R-REPO-060),
   delete. Delete requires typing the key, offers the `detach` choice of
@@ -3443,8 +3464,9 @@ Priority: **MVP** · Covers: UI-031
 - Steps: format, class, basic settings, class-specific settings, review. The format comes first
   because some features are technically impossible for some formats (Q-UI-112). The project is chosen in the basic
   settings, from the projects in which the caller may create repositories (every project for
-  `repositories:write-config`, the projects it owns otherwise), preset to the project filter; it is read-only on the
-  edit form, where a move to another project is its own action (R-UI-020).
+  `repositories:write-config`, the projects it owns otherwise); inside a project (`/projects/{project}/repositories/new`) the
+  project is given, shown as text and not chosen. It is read-only on the edit form, where a move to another project is its
+  own action (R-UI-020). A repository's own screen is `/projects/{project}/repositories/{key}`.
 - The format step is a grid of tiles from `GET /api/v1/formats`, each with the format's icon and its
   name, under a search field ("Search by package type") that filters the tiles by name, a title and
   a one-line hint. Only the formats the installation has appear. The grid is a single-choice listbox
@@ -4083,42 +4105,48 @@ Raised from P1 on 2026-11-02 with R-AUTHZ-026 (beta phase 5a). Follows the proje
 [authorization.md](authorization.md): every repository belongs to exactly one project, and users and groups are members
 with the role `reader`, `developer`, `maintainer` or `owner`
 ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
-[Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). Where the content
-screens live, inside the chosen project, is [Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)
-(not built yet, H-550); this requirement fixes what the model gives the screens:
+[Q-AUTHZ-208](authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)). The content
+screens live inside the project, `/projects/{project}/…`
+([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)); this requirement fixes what
+the model gives the screens:
 
-- A project filter in the header appears when the caller is a member of at least one project (the memberships of
-  `authz/me`, `projects`) or holds `projects:read`; it offers the caller's projects, every project to a holder of
-  `projects:read`. The selection is stored as `projectFilter` (R-API-021) and filters the repository, policy, service
-  account, webhook and retention lists through `project=`.
-- Projects overview: key, display name, the caller's role (for a member), the number of members and of repositories.
-  It lists the caller's memberships, every project for a holder of `projects:read` (`GET /api/v1/projects`).
+- The project is chosen, not filtered: the start page (`/projects`) lists the caller's projects (`GET /api/v1/projects`: the
+  memberships of `authz/me`, every project for a holder of `projects:read`) and a caller with exactly one project starts in
+  it; inside a project the project switcher at the top of the side bar changes it. There is no project filter in the top
+  bar, and no list of a project's content is narrowed by a stored choice.
+- Start page: key, display name, description, the caller's role (for a member), the number of repositories and of members.
+  The admin area's list of projects (`/admin/projects`, `projects:read`) keeps the owners and creates and edits projects.
 - Create dialog (administrators, `projects:write`): key (`^[a-z][a-z0-9-]{1,31}$`, immutable), display name,
   description, and the first Owner; repositories are created in the project afterwards. Edit dialog: display name and
   description, for administrators and the project's Owners. Delete is offered to administrators only, and only for
   projects without repositories, service accounts and CI mappings.
-- Members screen: the users and groups of the project with their roles, read for every member; an Owner and an
+- Members screen (`/projects/{project}/members`): the users and groups of the project with their roles, read for every member; an Owner and an
   administrator add a member through the principal lookup (Q-AUTHZ-182), change a role and remove a member. The last
   Owner cannot be removed or demoted except by an administrator: the action is shown disabled with the reason, and a
   `409 last_owner` from a concurrent change is reported as such
   ([Q-AUTHZ-217](authorization.md#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
-- For an Owner of a project, also without any capability, the administration area holds that project's screens (as
+- For an Owner of a project, also without any capability, the project's side bar holds the project's administration (as
   for the delegates of Q-AUTHZ-181): its repositories (create in the project, edit, delete and move to another project
-  it owns; R-UI-020, R-UI-021), its policies (named within the project; the editor offers the project's repositories as
-  bare keys, key globs and classes, and the principal lookup), its service accounts (named within the project, shown
-  as `sa:<projectKey>/<name>`; create, enable, disable and delete) and their tokens (issue, with the lifetime cap and
-  without a `system` scope, and revoke), and its CI mappings (R-UI-035). A member with another role sees the project's
-  overview and members read-only. An action the caller's role does not allow is not offered.
+  it owns; R-UI-020, R-UI-021), its policies (`/projects/{project}/policies`, named within the project; the editor offers the
+  project's repositories as bare keys, key globs and classes, and the principal lookup), its service accounts
+  (`/projects/{project}/service-accounts`, named within the project, shown as `sa:<projectKey>/<name>`; create, enable,
+  disable and delete) and their tokens (issue, with the lifetime cap and without a `system` scope, and revoke), its CI
+  mappings (`/projects/{project}/ci`, R-UI-035) and its settings (display name and description). An Owner without a
+  capability has no admin area (Q-UI-129). A member with another role sees the project's settings and members read-only. An
+  action the caller's role does not allow is not offered; the policies, service accounts and CI identity are listed in the
+  side bar only for the holder of their capability and for the Owner.
 - The `auditor` and the other holders of `projects:read` see every project, its members and its screens read-only.
+- The admin area's lists (repositories, service accounts, permission policies, audit log) name the project of each item in a
+  column and link to the project's screen; the project is also a filter of the repository and policy lists.
 
 Acceptance criteria:
 
 - An administrator creates project `team-a` with `user:alice` as its first Owner; alice adds `group:team-a-devs` as
-  `developer`; a member of that group sees `team-a` in the filter with the role `developer`, and the project's members
+  `developer`; a member of that group finds `team-a` on the start page with the role `developer`, and the project's members
   read-only.
-- alice, without any system role, sees the administration area with the project's screens and none of the global ones;
-  the global policy list is not offered to her; she creates a policy `npm-read` and a service account `partner` in
-  `team-a`, and the account is shown as `sa:team-a/partner`.
+- alice, without any system role, has no admin area; in `team-a` she sees the project's side bar and none of the global
+  screens; she creates a policy `npm-read` and a service account `partner` in `team-a`, and the account is shown as
+  `sa:team-a/partner`.
 - The remove action of alice's own membership is disabled while she is the only Owner.
 
 ### R-UI-042 · Errors, conflicts and feedback
@@ -8033,7 +8061,7 @@ badge's text and icon on its pill; the positive badge is the one other green).
 
 Status: **Decided by the development agent on 2026-11-06**, proposed to the owner with the membership of
 [Q-AUTHZ-207](authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-which he chose. Not built yet ([H-550](#h-550--the-project-is-a-filter-of-the-top-bar-not-the-context-of-the-content)).
+which he chose. Built (T-7).
 
 Context: every repository belongs to exactly one project and is addressed inside it (Q-AUTHZ-206, Q-REPO-212), and a user is a
 member of few projects, typically one to five; the platform team and the administrators see many. Today the project is a
@@ -8048,8 +8076,13 @@ filter of the top bar (R-UI-041), offered to administrators and project administ
 **Choice:** (a). A user with exactly one project starts in it; with several, on the list. A repository, package or file is
 always shown inside its project; the admin area's lists name the project in a column.
 
-**Applied in the spec:** nothing yet; R-UI-002 (the areas and the sidebar), R-UI-041 (the project filter) and the routes of
-the content screens change when it is built.
+**Applied in the spec:** R-UI-002 (the side bars, the project switcher), R-UI-003 (the route table), R-UI-020, R-UI-021,
+R-UI-041 (the start page, no project filter); the preference `projectFilter` of R-API-021 is no longer used. Code:
+`web/src/app/core/project-context.ts` (the project of the URL, the projects of the caller, the recent ones),
+`core/navigation.ts` (`projectEntries`), `features/projects/` (`project-context.routes.ts`, `projects-home.ts`,
+`project-switcher.ts`, `project-settings.ts`, `project-members-page.ts`, `project-list-pages.ts`), the content routes
+below `/projects/:project`, `GET /api/v1/packages?project=`. Tests: `app.projects.spec.ts`, `app.routes.spec.ts`,
+`core/breadcrumbs.spec.ts`; journeys 02, 03, 08, 09, 10, 12, 13 and 15 of `web/e2e`.
 
 ### Q-UI-130 · The auditor has an instance-wide vulnerability dashboard in the admin area
 
@@ -8349,6 +8382,51 @@ them), and the checkbox component if a form needs an indeterminate state.
 screens' specs, which query roles, labels and `[role="dialog"]`. Documented in
 [design-language.md](../developer/design-language.md#controls) and [web-ui.md](../developer/web-ui.md#controls).
 
+### Q-UI-163 · The URL is the project; what stays outside a project, and where the packages of a project come from
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: building [Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects) needed four answers
+it left open: how a screen learns its project, which content screens are not a project's, how the packages of one project are
+listed, and what becomes of the administration an Owner had in the admin area.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The route is the project; instance-wide screens stay outside (chosen) | `/projects/:project/…` is a componentless parent, so every screen below it gets `project` as an input from the router; the shell reads the key from the same URL for the side bar, the switcher and the recent projects. Guides, client setup, profile and help stay outside a project; the advisory sources (an instance-wide setting) move to `/admin/advisory-sources`; the packages list asks the server for `project=`; an Owner manages the project inside it and has no admin area | One source of truth that is also the bookmark; a screen cannot disagree with the address; no stored choice to go stale; the admin area is only for system capabilities | Every link to content names the project; a link from a place that knows only a repository (audit, endpoint rules, client setup) derives it from the qualified name |
+| (b) The project in a global store, the URL as before | A selected project in a service or a preference filters the content screens | No route changes | The state R-UI-041 had and Q-UI-129 rejected: the address does not say where you are |
+| (c) Everything under the project, guides and advisory sources too | The guides get the project, and the sources screen would need a project it does not have | One rule | The sources are the installation's, not a project's; the guides of a format or a class are not either, and the client setup page already takes a repository of any project |
+
+**Choice:** (a), with these consequences, each decided here:
+
+- **The key comes from the URL as soon as the router has recognised it.** `ProjectContext` follows `RoutesRecognized`, not
+  `NavigationEnd`, so a screen that asks for the project in its constructor (the remembered package views of
+  `PackageMemory`) gets the new one; a navigation that is cancelled or fails puts the old URL back. A key that names no project
+  the caller sees (a user who reads one repository through a policy) is still the context: the screen shows what the API
+  answers.
+- **The projects of the caller** are `GET /api/v1/projects`; the recently visited keys (five) are kept per signed-in principal
+  in browser storage (R-UI-043, R-UI-046), a convenience only. With exactly one project the start route redirects into it.
+- **The packages of a project** are `GET /api/v1/packages?project=<key>`: the filter is the physical repositories of the project,
+  intersected with `repository=`, in the view service (`Topology.InProject`) so the visibility rules of R-API-029 apply
+  unchanged. The package page itself (`/projects/:project/packages/:format/:name…`) is the package across the repositories the
+  caller may read, as the lookup returns it; its repositories tab names the project of each repository.
+- **The vulnerability report** is the project's (`project=` of the findings, summary and trend); the advisory page lists the
+  findings of the advisory the caller may read in any project, each linking to its finding in that finding's project. The
+  instance-wide search is [Q-UI-130](#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area).
+- **The Owner's administration moves into the project** (members, policies, service accounts, CI identity, settings), so the
+  admin area is shown to a caller with a capability only and `isProjectOwner` is gone from the session store.
+- **A project's setup of a page that serves both** (the repository list and wizard, the policy list) is one component that reads
+  whether the route carries `:project`; the admin area's list is the same component without it, with the project as a column
+  and a filter.
+
+Rationale: the address and the side bar then say where you are, which is what the owner asked for. The development agent
+revisits the package page if a project needs its own view of a package (versions only of its repositories), which needs the
+versions API to take `project=` as well, and the guides if they gain a notion of "the repositories of this project".
+
+**Applied in the spec:** R-UI-002, R-UI-003, R-UI-020, R-UI-021, R-UI-041 and the preference note of R-API-021; the gap H-550 is
+closed and its block removed; [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 (the routes). `GET /api/v1/packages`
+gained `project` (`api/openapi.yaml`, `internal/api/v1/packages_api.go`, `internal/packages/view/topology.go`; tests
+`TestR_API_029_ProjectNarrowsToThePhysicalRepositoriesOfTheProject`, `TestR_API_029_FilterParsing`).
+
 ## What this does not cover
 
 
@@ -8427,13 +8505,6 @@ snippets, besides the base URL that the format list already serves. The name is 
 read a developer's environment which variable holds a trove token. What makes it real: anonymous access on, a variable
 name other than the default, and an attacker with read access to process environments of developer machines or CI
 runners, who could read every variable anyway.
-
-### H-550 · The project is a filter of the top bar, not the context of the content
-
-The decided form ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)) shows the
-content inside its project, `/projects/<key>/…`, with the start page listing your projects and a switcher in the sidebar.
-Today the content screens are global, and the project filter of the top bar narrows the repository and policy lists for
-administrators and project administrators only. Live in every content screen.
 
 ### H-551 · The instance-wide vulnerability report is a content screen, not an admin dashboard
 

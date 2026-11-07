@@ -14987,6 +14987,11 @@ export interface operations {
             query?: {
                 /** @description Repeat the parameter for several formats (`npm`, `nuget`, …). */
                 format?: string[];
+                /**
+                 * @description A project key: only the versions in the physical repositories of that project count (Q-UI-129). It
+                 *     combines with `repository` by intersection. A project the caller cannot see lists nothing.
+                 */
+                project?: string;
                 /** @description Repeat the parameter for several repository keys. */
                 repository?: string[];
                 /** @description Case-insensitive substring of the name or the description. */

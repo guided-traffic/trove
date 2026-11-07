@@ -1,6 +1,6 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@repo.wizard.heading">New repository</h1>
-  <a class="btn btn-tertiary" routerLink="/admin/repositories" i18n="@@repo.wizard.cancel">Cancel</a>
+  <a class="btn btn-tertiary" [routerLink]="cancelLink()" i18n="@@repo.wizard.cancel">Cancel</a>
 </header>
 
 @if (loadFailure(); as f) {
@@ -126,13 +126,20 @@
     }
     @case (2) {
       <div class="form-grid">
-        <trove-select-field
-          i18n-label="@@repo.wizard.project"
-          label="Project"
-          name="project"
-          [options]="projectOptions()"
-          [(value)]="chosenProject"
-        />
+        @if (inProject()) {
+          <p class="subject">
+            <ng-container i18n="@@repo.wizard.project-fixed">In the project</ng-container>&ngsp;
+            <strong translate="no">{{ chosenProject() }}</strong>
+          </p>
+        } @else {
+          <trove-select-field
+            i18n-label="@@repo.wizard.project"
+            label="Project"
+            name="project"
+            [options]="projectOptions()"
+            [(value)]="chosenProject"
+          />
+        }
       </div>
       <div class="form-grid">
         <div class="field">

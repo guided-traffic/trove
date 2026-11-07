@@ -5,7 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { ApiError } from '../../api/problem';
 import { Project, ProjectRole, ProjectsApi } from '../../api/projects-api';
 import { projectRoleLabel } from './project-roles';
-import { ProjectFilter } from '../../core/project-filter';
+import { ProjectContext } from '../../core/project-context';
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
@@ -68,7 +68,7 @@ import { ProjectDialog } from './project-dialog';
         >
           @for (p of list.items(); track p.key) {
             <tr>
-              <th scope="row"><a [routerLink]="['/admin/projects', p.key]" translate="no">{{ p.key }}</a></th>
+              <th scope="row"><a [routerLink]="['/projects', p.key]" translate="no">{{ p.key }}</a></th>
               <td>{{ p.displayName }}</td>
               <td class="wrap" translate="no">{{ ownerSummary(p) }}</td>
               <td>{{ p.members }}</td>
@@ -108,7 +108,7 @@ export class ProjectList {
   private readonly api = inject(ProjectsApi);
   private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
-  private readonly filter = inject(ProjectFilter);
+  private readonly context = inject(ProjectContext);
   protected readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<Project>();
@@ -174,7 +174,7 @@ export class ProjectList {
       maxWidth: '40rem',
     });
     const created = await firstValueFrom(ref.closed);
-    if (created) await this.router.navigate(['/admin/projects', created.key]);
+    if (created) await this.router.navigate(['/projects', created.key, 'settings']);
   }
 
   protected async edit(p: Project): Promise<void> {
@@ -188,7 +188,7 @@ export class ProjectList {
       const saved = await firstValueFrom(ref.closed);
       if (saved) {
         this.list.replace((x) => x.key === saved.key, saved);
-        void this.filter.refresh();
+        void this.context.refresh();
       }
     } catch (e) {
       this.actionError.set(asApiError(e));

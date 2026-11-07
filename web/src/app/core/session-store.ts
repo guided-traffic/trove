@@ -57,10 +57,8 @@ export class SessionStore {
   readonly isAdministrator = computed(() => this.capabilities().length > 0);
   /** The projects the caller is a member of through this credential, with the role in force (`authz/me` `projects`, Q-AUTHZ-207). */
   readonly projects = computed<readonly Membership[]>(() => this._me()?.projects ?? []);
-  /** Owns at least one project: without any capability this still shows the project screens (R-UI-041). */
-  readonly isProjectOwner = computed(() => this.projects().some((p) => p.role === 'owner'));
-  /** The Administration area is shown: any capability, or the Owner role in a project (Q-AUTHZ-208). */
-  readonly hasAdminArea = computed(() => this.isAdministrator() || this.isProjectOwner());
+  /** The admin area is shown: any capability. A project's Owner manages the project inside it (Q-UI-129). */
+  readonly hasAdminArea = computed(() => this.isAdministrator());
 
   constructor() {
     this.channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL);

@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { PackageFilters, PackageSort, PackageSummary, PackagesApi } from '../../api/packages-api';
+import { collectAll } from '../../api/pagination';
 import { RepositoriesApi, refOf } from '../../api/repositories-api';
 import { PagedResource, valueOf } from '../../shared/paged-resource';
 import { formatIcon } from '../../shared/format-icon';
@@ -70,6 +71,8 @@ export class PackageList {
   private readonly locale = inject(LOCALE_ID);
 
   /** Query parameters, bound by the router's component input binding. */
+  /** Route parameter `:project` of `/projects/:project/packages` (Q-UI-129). */
+  readonly project = input.required<string>();
   readonly format = input<Param>();
   readonly repository = input<Param>();
   readonly q = input<string | undefined>();
@@ -81,7 +84,12 @@ export class PackageList {
   readonly tab = input<string | undefined>();
 
   protected readonly formats = resource({ loader: () => this.repositories.formats() });
-  protected readonly repositoryList = resource({ loader: () => this.repositories.listAll() });
+  protected readonly repositoryList = resource({
+    params: () => this.project(),
+    loader: ({ params }) => collectAll(this.repositories.list({ project: params })),
+  });
+  /** The address of the list; the tabs and saved views link to it. */
+  protected readonly listLink = computed(() => ['/projects', this.project(), 'packages']);
   protected readonly list = new PagedResource<PackageSummary>();
 
   protected readonly panelOpen = signal(false);
@@ -115,6 +123,7 @@ export class PackageList {
   protected readonly filters = computed<PackageFilters>(() => {
     const range = this.createdRange();
     return {
+      project: this.project(),
       format: this.formatNames(),
       repository: this.repositoryNames(),
       q: this.q(),
@@ -220,7 +229,7 @@ export class PackageList {
       help: $localize`:@@pkg.help.downloads:All downloads of the versions you may see.`,
     },
   ];
-  protected readonly commands = packageCommands;
+  protected commands = (format: string, name: string): string[] => packageCommands(this.project(), format, name);
   protected readonly periods: readonly { value: CreatedPeriod; label: string }[] = [
     { value: '7', label: $localize`:@@pkg.period.7:Last 7 days` },
     { value: '30', label: $localize`:@@pkg.period.30:Last 30 days` },

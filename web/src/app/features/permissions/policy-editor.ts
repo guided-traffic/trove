@@ -71,7 +71,7 @@ export class PolicyEditor {
   /** Route parameter `:name`; absent on `/new`. Within the project for a project policy. */
   readonly name = input<string | undefined>();
   /**
-   * Route parameter `:project` of a project's policy, or the query parameter `project` of `/new`: the key of the
+   * Route parameter `:project` below `/projects/:project/policies`: the key of the
    * project the policy belongs to (R-AUTHZ-026).
    */
   readonly project = input<string | undefined>();
@@ -121,10 +121,10 @@ export class PolicyEditor {
     const key = this.policyProject();
     return key ? createState(this.session, key, 'policies:write') : 'enabled';
   });
-  /** Where "back" leads: the project's screen for a project policy, the policy list otherwise. */
+  /** Where "back" leads: the project's policies for a project policy, the policy list otherwise. */
   protected readonly backLink = computed(() => {
     const key = this.policyProject();
-    return key ? ['/admin/projects', key] : ['/admin/permissions'];
+    return key ? ['/projects', key, 'policies'] : ['/admin/permissions'];
   });
   /** The repositories of the project, offered as selectors (Q-AUTHZ-179: a project policy covers nothing else). */
   protected readonly projectRepositories = signal<readonly string[]>([]);
@@ -456,7 +456,7 @@ export class PolicyEditor {
     const project = this.policyProject();
     const saved = await this.api.create(project, this.body(), this.idempotencyKey);
     this.afterWrite(saved, $localize`:@@policy.created:Policy created.`);
-    await this.router.navigate(project ? ['/admin/permissions', project, saved.policy.name] : ['/admin/permissions', saved.policy.name]);
+    await this.router.navigate(project ? ['/projects', project, 'policies', saved.policy.name] : ['/admin/permissions', saved.policy.name]);
   }
 
   private async replace(l: LoadedPolicy): Promise<void> {

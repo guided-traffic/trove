@@ -84,3 +84,4 @@ before using a new term in a German text.
 | rate-limit wait, bound (of a mirror), discovery (of names) | Rate-Limit-Wartezeit, Grenze, Ermittlung |
 | test connection, upstream URL, negative cache | Verbindung testen, Upstream-URL, negativer Cache |
 | licence (of the software the build bundles, its notices) | Lizenz (der eingebundenen Software, Hinweise) |
+| project switcher, start page of the projects ("Your work"), recently visited (projects) | Projektwechsler, "Ihre Arbeit", Zuletzt besucht |

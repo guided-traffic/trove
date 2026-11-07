@@ -174,7 +174,7 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
     await sleep(fixture, 300);
     expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('disableServiceAccount ci revokeTokens=false');
     expect((buttonByText(root, 'Enable') as HTMLButtonElement).disabled).toBe(false);
-    expect(root.querySelector('a[href="/admin/projects/web"]')).toBeTruthy();
+    expect(root.querySelector('a[href="/projects/web/service-accounts"]')).toBeTruthy();
   });
 
   it('R-UI-041 the token list of a project account asks for its qualified principal', async () => {
@@ -263,8 +263,8 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
   it('R-UI-041 projectRole, canWritePolicies and canWriteRepositories follow authz/me and the capabilities', async () => {
     const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectOwner() });
     const session = get(SessionStore);
-    expect(session.isProjectOwner()).toBe(true);
-    expect(session.hasAdminArea()).toBe(true);
+    // An Owner administers the project inside it; the admin area is for the holders of capabilities (Q-UI-129).
+    expect(session.hasAdminArea()).toBe(false);
     expect(session.isAdministrator()).toBe(false);
     expect(session.projectRole('web')).toBe('owner');
     expect(session.projectRole('data')).toBeNull();
@@ -278,7 +278,6 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
   it('R-UI-041 a Maintainer reads and does not administer', async () => {
     const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectOwner('maintainer') });
     const session = get(SessionStore);
-    expect(session.isProjectOwner()).toBe(false);
     expect(session.hasAdminArea()).toBe(false);
     expect(session.canWriteRepositories('web')).toBe(false);
   });
@@ -310,7 +309,15 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
 
   it('R-UI-050 the project screens open the manual page about projects', () => {
     expect(helpFor('/admin/projects')).toEqual(['/help', 'admin', 'projects']);
-    expect(helpFor('/admin/projects/web')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/settings')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/members')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/packages/npm/left-pad')).toEqual(['/help', 'user', 'packages']);
+    expect(helpFor('/projects/web/browse/npm-local/a')).toEqual(['/help', 'user', 'files']);
+    expect(helpFor('/projects/web/repositories/npm-local')).toEqual(['/help', 'user', 'repositories']);
+    expect(helpFor('/projects/web/vulnerabilities')).toEqual(['/help', 'user', 'vulnerabilities']);
+    expect(helpFor('/projects/web/policies/npm-read')).toEqual(['/help', 'admin', 'permissions']);
+    expect(helpFor('/projects/web/service-accounts')).toEqual(['/help', 'admin', 'sign-in-and-identity']);
+    expect(helpFor('/projects/web/ci/mappings/new?issuer=a')).toEqual(['/help', 'admin', 'gitlab-ci']);
   });
 
   it('Q-AUTHZ-217 the fake models a project: the key pattern, an existing key and the last Owner', async () => {

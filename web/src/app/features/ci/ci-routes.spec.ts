@@ -79,7 +79,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
 
   describe('under a project', () => {
     beforeEach(async () => {
-      h = await harness(PROJECT_CI_ROUTES, []);
+      h = await harness([{ path: ':project/ci', children: PROJECT_CI_ROUTES }], []);
     });
 
     it('Q-CI-26 the overview, the dry run and the editor take the project from the path and the issuer from the query', async () => {

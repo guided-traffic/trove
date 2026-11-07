@@ -55,18 +55,6 @@
     }
 
     <div class="topbar-actions">
-      @if (projectFilter.visible()) {
-        <!-- The project filter of R-UI-041: the selection filters the repository and policy lists. -->
-        <button type="button" class="btn btn-tertiary project-button" [cdkMenuTriggerFor]="projectMenu">
-          <span class="material-icons" aria-hidden="true">folder_shared</span>
-          @if (projectFilter.active(); as key) {
-            <span class="project-name" translate="no">{{ key }}</span>
-          } @else {
-            <span i18n="@@shell.project.all">All projects</span>
-          }
-          <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.project.menu">Project filter</ng-container></span>
-        </button>
-      }
       @if (session.hasAdminArea()) {
         <!-- The way into the admin area, for those who have one (Q-UI-127). -->
         <a class="btn btn-default admin-button" routerLink="/admin" [attr.aria-current]="area() === 'admin' ? 'true' : null">
@@ -112,34 +100,6 @@
   </header>
 }
 
-<!-- The selection is the `projectFilter` preference; "All projects" clears it. -->
-<ng-template #projectMenu>
-  <div class="menu project-menu" cdkMenu>
-    <button
-      type="button"
-      class="menu-item"
-      cdkMenuItemRadio
-      [cdkMenuItemChecked]="projectFilter.active() === null"
-      (cdkMenuItemTriggered)="setProject(null)"
-    >
-      <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === null ? 'check' : 'folder_open' }}</span>
-      <span i18n="@@shell.project.all">All projects</span>
-    </button>
-    @for (p of projectFilter.projects(); track p.key) {
-      <button
-        type="button"
-        class="menu-item"
-        cdkMenuItemRadio
-        [cdkMenuItemChecked]="projectFilter.active() === p.key"
-        (cdkMenuItemTriggered)="setProject(p.key)"
-      >
-        <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === p.key ? 'check' : 'folder_open' }}</span>
-        <span translate="no">{{ p.displayName }} ({{ p.key }})</span>
-      </button>
-    }
-  </div>
-</ng-template>
-
 <ng-template #userMenu>
   <div class="menu" cdkMenu>
     <p class="menu-heading" translate="no">{{ session.whoami()?.principal?.name }}</p>
@@ -150,6 +110,9 @@
     <!-- >>> M2 ui-packages -->
     <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="go('/setup')" i18n="@@shell.menu.setup">
       Client setup
+    </button>
+    <button type="button" class="menu-item" cdkMenuItem (cdkMenuItemTriggered)="go('/guides')" i18n="@@shell.menu.guides">
+      Guides
     </button>
     <!-- <<< M2 ui-packages -->
     <button type="button" class="menu-item" cdkMenuItem [cdkMenuTriggerFor]="languageMenu" troveOpenSubmenuOnClick>
@@ -209,9 +172,13 @@
       [cdkTrapFocusAutoCapture]="!layout.pinned()"
     >
       @if (sidebarArea(); as a) {
-        <p class="context-title" [id]="'nav-' + a.id">{{ a.label }}</p>
+        @if (a.id === 'project') {
+          <trove-project-switcher class="project-switcher" [label]="a.label" />
+        } @else {
+          <p class="context-title" [id]="'nav-' + a.id">{{ a.label }}</p>
+        }
         <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
-          <ul class="nav-list" [attr.aria-labelledby]="'nav-' + a.id">
+          <ul class="nav-list" [attr.aria-labelledby]="a.id === 'project' ? null : 'nav-' + a.id" [attr.aria-label]="a.id === 'project' ? a.label : null">
             @for (entry of a.entries; track entry.kind === 'group' ? entry.id : entry.route) {
               @if (entry.kind === 'item') {
                 <li>
@@ -285,7 +252,7 @@
                 @if (last || !crumb.commands) {
                   <span [attr.aria-current]="last ? 'page' : null" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</span>
                 } @else {
-                  <a [routerLink]="crumb.commands" [queryParams]="crumb.queryParams" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</a>
+                  <a [routerLink]="crumb.commands" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</a>
                 }
               </li>
             }

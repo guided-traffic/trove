@@ -46,7 +46,7 @@ const SEVERITY_COUNTS: readonly VulnerabilitySeverity[] = ['critical', 'high', '
         <span
           >{{ n.text }}
           @if (canSources()) {
-            <a routerLink="/vulnerabilities/sources" i18n="@@vuln.banner.sources">Open the advisory sources</a>
+            <a routerLink="/admin/advisory-sources" i18n="@@vuln.banner.sources">Open the advisory sources</a>
           }
         </span>
       </p>
@@ -77,6 +77,8 @@ export class ReportSummary {
   private readonly session = inject(SessionStore);
   private readonly locale = inject(LOCALE_ID);
 
+  /** The project whose findings are counted (Q-UI-129). */
+  readonly project = input.required<string>();
   readonly repository = input<readonly string[]>([]);
   readonly format = input<readonly string[]>([]);
   /** Counts up when the screen changed findings, so that the counts are read again. */
@@ -85,8 +87,8 @@ export class ReportSummary {
   protected readonly canSources = computed(() => this.session.has('settings:read'));
 
   protected readonly summary = resource({
-    params: () => ({ repository: this.repository(), format: this.format(), refresh: this.refresh() }),
-    loader: ({ params }) => this.api.summary({ repository: params.repository, format: params.format }),
+    params: () => ({ project: this.project(), repository: this.repository(), format: this.format(), refresh: this.refresh() }),
+    loader: ({ params }) => this.api.summary({ project: params.project, repository: params.repository, format: params.format }),
   });
   protected readonly sources = resource({
     params: () => (this.canSources() ? { refresh: this.refresh() } : undefined),

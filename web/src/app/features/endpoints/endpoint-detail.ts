@@ -1,3 +1,4 @@
+import { repositoryCommands } from '../../core/project-links';
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { EndpointsApi, ExposureRule, ruleEtag } from '../../api/endpoints-api';
@@ -25,6 +26,7 @@ import { endpointAddress, patternSummary, versionSummary } from './endpoint-mode
 })
 export class EndpointDetail {
   protected readonly valueOf = valueOf;
+  protected readonly repositoryLink = repositoryCommands;
   private readonly api = inject(EndpointsApi);
   private readonly repositories = inject(RepositoriesApi);
   private readonly session = inject(SessionStore);

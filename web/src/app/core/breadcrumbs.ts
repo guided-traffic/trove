@@ -8,8 +8,6 @@ export interface Crumb {
   readonly label: string;
   /** Router commands of the target; null for a step that is only a name (an area without a page). */
   readonly commands: readonly string[] | null;
-  /** Query parameters of the link: a step that has no page of its own links to the list filtered by its value. */
-  readonly queryParams?: Readonly<Record<string, string>>;
   /** The label is data (a repository key, a user name): not translated, not hyphenated by the browser. */
   readonly literal: boolean;
 }
@@ -28,11 +26,10 @@ export interface CrumbSpec {
  * - a route with a string `title` adds a step with that title;
  * - a parameter segment (`:key`) adds a step with the parameter's value, so a detail screen reads
  *   "Repositories > my-repo";
- * - a parameter named in the route's `data.crumbFilters` (`{ project: '/admin/repositories' }`) has no page at
- *   `…/<value>`: its step links to the list at that path with the parameter as a query parameter;
  * - the file tree's matcher route adds one step per path segment;
  * - a matcher route with `data.crumbParam` adds one step with that parameter's value (a package
- *   name such as `@team-a/ui`, whose slash belongs to the name).
+ *   name such as `@team-a/ui`, whose slash belongs to the name); so does a path route with
+ *   `data.crumbParam` (the project of `/projects/:project`), whose step links to that route itself.
  *
  * A trail of one step repeats the page title and is not shown.
  */
@@ -83,8 +80,11 @@ export function collect(root: ActivatedRouteSnapshot): Crumb[] {
 
     const title = typeof config?.title === 'string' ? config.title : undefined;
     const crumbParam = config?.data?.['crumbParam'] as string | undefined;
-    const filters = config?.data?.['crumbFilters'] as Readonly<Record<string, string>> | undefined;
-    if (config && config.path === undefined && config.matcher && crumbParam) {
+    if (config && config.path !== undefined && !config.matcher && crumbParam) {
+      // A path route whose parameter names the thing (the project of `/projects/:project`): one step whose target is
+      // that route itself, so the route has to answer there (it redirects to the project's first screen).
+      add({ label: route.params[crumbParam] ?? crumbParam, commands: [...before, ...own], literal: true });
+    } else if (config && config.path === undefined && config.matcher && crumbParam) {
       // A matcher route whose parameter names the thing (a package name with its slash): one step.
       add({ label: route.params[crumbParam] ?? crumbParam, commands: [...before, ...own], literal: true });
     } else if (config && config.path === undefined && config.matcher) {
@@ -95,14 +95,7 @@ export function collect(root: ActivatedRouteSnapshot): Crumb[] {
       pieces.forEach((piece, i) => {
         const here = [...before, ...own.slice(0, i + 1)];
         if (piece.startsWith(':')) {
-          const name = piece.slice(1);
-          const value = route!.params[name] ?? piece;
-          const list = filters?.[name];
-          add(
-            list === undefined
-              ? { label: value, commands: here, literal: true }
-              : { label: value, commands: [list], queryParams: { [name]: value }, literal: true },
-          );
+          add({ label: route!.params[piece.slice(1)] ?? piece, commands: here, literal: true });
         } else if (i === pieces.length - 1) {
           add({ label: title, commands: here, literal: false });
         }

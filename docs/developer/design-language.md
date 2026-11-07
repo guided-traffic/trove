@@ -93,7 +93,7 @@ the screens had.
 
 ## The two-pane browser
 
-The file browser (`/browse`, [Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header))
+The file browser (`/projects/<key>/browse`, [Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header))
 is the one screen built from two panes; a screen that browses a hierarchy beside its details takes the same pattern.
 Its styles are the global partial [_browse.scss](../../web/src/styles/_browse.scss).
 
@@ -199,7 +199,7 @@ parameter, run `node scripts/brand-logo.mjs` in `web/`, and the dev server reloa
 | [web/src/styles/_tokens.scss](../../web/src/styles/_tokens.scss) | trove's own properties: the page palette (`--trove-surface`, `--trove-on-surface`, `--trove-border`, `--trove-text-muted`, `--trove-accent`, `--trove-dialog-bg`, `--trove-error*`, `--trove-inverse-*`, `--trove-banner-*`), the type (`--trove-font-*`, `--trove-text-*`, `--trove-heading-*`, `--trove-type-*` as font shorthands), the radii (`--trove-radius-s` to `-full`), the link, the heading colour, the focus ring, the raised surface, the card, the table head, the frame (`--trove-nav-*`, the panel's radius and gap, the breadcrumb bar's height), the search field, the menus, the status colours |
 | [web/src/styles/_controls.scss](../../web/src/styles/_controls.scss) | The controls of the table above, from the `--trove-control-*`, `--trove-accent-fill`, `--trove-btn-*` and `--trove-danger-*` tokens |
 | [web/src/styles/_dialog.scss](../../web/src/styles/_dialog.scss) | The dialog panel: backdrop, container, title, body, actions |
-| [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the sidebar's entries (28 px, 8 px round, a 16 px icon in a 24 px box), the current entry, the panel, the breadcrumb bar (40 px), the top bar's actions and the avatar, the menus |
+| [web/src/styles/_shell.scss](../../web/src/styles/_shell.scss) | How the frame uses them: the sidebar's entries (28 px, 8 px round, a 16 px icon in a 24 px box), the current entry, the project switcher on top of a project's sidebar (a 40 px button with the project's initial in a 32 px rounded square on `--trove-accent-fill`, a panel on the menu's fill, [Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)), the panel, the breadcrumb bar (40 px), the top bar's actions and the avatar, the menus |
 | [web/scripts/build-embed.mjs](../../web/scripts/build-embed.mjs) | The notices of the bundled software: Angular's `3rdpartylicenses.txt` (the Inter font's OFL-1.1 notice among the libraries') plus the icon font's Apache-2.0 licence, which Angular does not collect; written as `<locale>/3rdpartylicenses.txt` into the embedded build, and the build fails when either licence is missing (Q-UI-144) |
 | [web/src/styles/palette.spec.ts](../../web/src/styles/palette.spec.ts) | The contrast of the pairs below, computed from the two stylesheets, and the rule that only `--trove-status-ok` is green |
 
@@ -294,6 +294,8 @@ Q-UI-96 and Q-UI-128 are computed only: the browser tier has not run against the
 | `--trove-nav-fg` | side bar | 4.5:1 | `#3a383f` on `#ececef`: 9.8:1 | `#ececef` on `#28272d`: 12.6:1 | sidebar entries, the top bar's quiet buttons |
 | `--trove-nav-fg` | top bar hover | 4.5:1 | `#3a383f` on `#dedee1`: 8.6:1 | `#ececef` on `#39383e`: 9.8:1 | a sidebar entry or a top bar button under the pointer |
 | `--trove-control-fg` | menu item hover | 4.5:1 | `#3a383f` on `#f0f0f1`: 10.2:1 | `#ececef` on `#4f4e53`: 7.0:1 | a menu item under the pointer |
+| `--trove-control-fg` | switcher panel | 4.5:1 | `#3a383f` on `#ffffff`: 11.6:1 | `#ececef` on `#28272d`: 12.6:1 | the projects in the switcher of the project sidebar |
+| `--trove-nav-fg-muted` | switcher panel | 4.5:1 | `#626168` on `#ffffff`: 6.1:1 | `#bfbfc3` on `#28272d`: 8.1:1 | the headings and keys in the switcher |
 | `--trove-search-fg` | search | 4.5:1 | `#3a383f` on `#ffffff`: 11.6:1 | `#ececef` on `#39383e`: 9.8:1 | the text typed into the top bar's search |
 | `--trove-search-muted` | search | 4.5:1 | `#626168` on `#ffffff`: 6.1:1 | `#bfbfc3` on `#39383e`: 6.3:1 | the search field's placeholder and icon |
 | `--trove-heading` | card | 4.5:1 | `#18171d` on `#ececef`: 15.1:1 | `#ffffff` on `#3a383f`: 11.6:1 | a card's title on its strong fill |
