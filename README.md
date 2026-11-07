@@ -20,11 +20,14 @@
 > from trove's data, and the report in the API and the UI; the client runs and the browser journeys run in the end-to-end sets `vuln` and
 > `vuln-long` ([vulnerability scanning](docs/developer/vulnerabilities.md)). The mirror mode of remote repositories (beta phase 6b) is
 > built: a remote can mirror the npm or NuGet packages its upstream offers in the background, bounded by its patterns and a byte
-> bound, throttled by the upstream's rate limits and pre-empted by client fetches ([mirror](docs/developer/mirror.md)). Not built yet: backup and restore, and the HA
-> hardening of phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
-> last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
-> from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
-> repository ([releasing](docs/developer/releasing.md)).
+> bound, throttled by the upstream's rate limits and pre-empted by client fetches ([mirror](docs/developer/mirror.md)). Backup and
+> restore with the revocation journal (the backup lane of M5) is built: `trove backup create`, `list`, `verify`, `delete`, `prune` and
+> `restore` against an S3 target of its own, the chart's backup CronJob (off by default, `backup.enabled`), restore Job and post-restore
+> hook Job, and the journal of revocations that a restore replays; the restore drill, the drain and the journal scenarios run in the
+> end-to-end set `backup`, nightly and on dispatch ([backup](docs/developer/backup.md)). Not built yet: the HA hardening of phase 7.
+> Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the last release made before the switch to
+> the organisation's CI and release standard; it was published to `ghcr.io`. Releases from now on are cut by Semantic Release from
+> the conventional commits on `main`, and published to Docker Hub and to the chart repository ([releasing](docs/developer/releasing.md)).
 
 trove is a self-hosted, highly available binary repository manager. Its target: host your own packages, proxy and cache public
 registries on demand (pull-through), and put both behind one URL per ecosystem. People sign in through your OpenID Connect
@@ -131,10 +134,20 @@ Built (M4b, vulnerability scanning, beta phase 6; [spec](docs/spec/vulnerability
 - 📊 **Vulnerability report and package-page tab.** The Vulnerabilities screen (counts, trend, filters, CSV export, finding, advisory and advisory-source pages), the API under `/api/v1/vulnerabilities/`, and a Vulnerabilities tab on the package page, each narrowed to the findings the caller can read. See [vulnerabilities](docs/manual/user/vulnerabilities.md).
 - 🚨 **Alerts.** Twelve `trove_vuln_*` metric families and the chart's PrometheusRule (`metrics.prometheusRule.enabled`) with `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`, the last for a malicious advisory that names a claimed internal name. See [operations](docs/security/vulnerability-scanning.md#operations-what-an-operator-sees-and-what-a-restore-leaves).
 
+Built (M5, the backup lane; [spec](docs/spec/backup-and-restore.md), [contracts](docs/developer/backup.md), [security](docs/security/backup-and-restore.md)):
+
+- 💾 **Consistent backups into a target of their own.** `trove backup create` exports every table from one PostgreSQL snapshot as zstd-compressed `COPY` files and copies the blobs that snapshot references into a content-addressed pool that every backup of the target shares, so the next backup copies only new content; a garbage-collection hold keeps a blob from being collected before the run has copied it, and a target marker refuses a target that another installation writes (exit `4`). See [R-BAK-002](docs/spec/backup-and-restore.md#r-bak-002--target-layout-backup-id-and-target-marker).
+- 🗂️ **List, verify and retention.** `trove backup list` reads the target, `verify` checks the files and pool objects of a backup (`--deep` downloads and hashes each one), and `prune` and every `create` keep the newest `retention.keep_last` backups (and those younger than `keep_within`) and sweep the pool objects no remaining backup lists.
+- ⏪ **Restore into an empty installation.** `trove backup restore <id>` checks eight preconditions before it writes (the key ring must open the backup's canary rows, the database and the blob prefix must be empty), copies the blobs, loads the tables in one transaction, rebuilds derived state, gives the installation a new incarnation and Valkey keyspace, and resumes where it stopped after an eviction. The chart's restore Job runs it with every role at zero.
+- 📜 **Revocation journal.** Every change that removes access (a revoked token, a disabled user, a removed binding or policy entry, a withdrawn package version) is written to an outbox in its own transaction, shipped by a job to `<storage.s3.prefix>/_journal/revocations/`, and replayed after a restore, so a restore does not bring back what was revoked after its snapshot; a replay never grants access and never deletes content. See [the revocation journal](docs/security/backup-and-restore.md#the-revocation-journal).
+- 🩹 **Platform restores.** After a point-in-time restore of PostgreSQL by the platform, `trove admin post-restore --restored-to <t>` (the chart's `postRestore` hook Job) puts running jobs back in the queue, gives the installation a new keyspace and replays the journal from `t`; `trove admin backup check` and the daily task `backup-check` verify the platform protection that `backup.recovery_window` and `backup.object_versioning` declare.
+- 📈 **Run visibility.** The Backups screen under System status, `GET /api/v1/system/backups` with the summary and its overdue mark, the `trove_backup_*` and `trove_revocation_journal_*` metric families and the backup alerts of the chart's PrometheusRule. See [Backups](docs/manual/admin/operations.md#backups).
+
 Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet; the P1 parts of vulnerability scanning
 (exploit-probability enrichment, time-limited dismissals, vulnerabilities in NuGet registrations: R-VULN-030 to R-VULN-032) and the
-pass-through of an upstream's NuGet vulnerability information (`vulnerabilityInfo: upstream`, R-NUGET-023); backup and restore and
-the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI screens of search, trash, builds and webhooks.
+pass-through of an upstream's NuGet vulnerability information (`vulnerabilityInfo: upstream`, R-NUGET-023); the P1 parts of the
+backup (client-side encryption of the database files, R-BAK-027, and a restore onto an existing blob store, R-BAK-025); the HA
+hardening of phase 7; remote and virtual repositories for the generic format; the UI screens of search, trash, builds and webhooks.
 
 ## 📛 Naming conventions
 
@@ -150,7 +163,10 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Ops listener | `:8081` (`server.ops_listen`) | `internal/config/server.go` |
 | Further endpoint listener | any free port, one per endpoint, name `^[a-z][a-z0-9-]{0,19}$` (`server.endpoints.<name>.listen`) | `internal/config/endpoints.go` |
 | Endpoint name in metrics, logs and spans | `default` for the default endpoint, the configured name otherwise; a name outside the configured set folds into `_other` | `internal/observability` |
-| Backup command | `trove backup …` reserved, "not implemented yet" (planned for M5) | `cmd/trove/main.go` |
+| Backup commands | `trove backup create`, `list`, `verify`, `delete`, `prune`, `restore`; commands of the binary, not roles: they serve nothing and open no port but the ops port of a `create` run, which exports its counters for as long as it lasts | `cmd/trove/backup*.go` |
+| Recovery commands of the backup lane | `trove admin post-restore`, `trove admin backup check`, `trove admin npm reinstate` | `cmd/trove/admin_postrestore.go`, `admin_backupcheck.go`, `admin_npm.go` |
+| Backup ID | `<yyyymmdd>T<hhmmss>Z-<4 lower-case hex>`, the UTC start of the run and 16 random bits, for example `20261028T020000Z-7f3a`; lexical order is chronological | `internal/backup/format/id.go` |
+| Backup actor | `system:backup`, the actor of the `system.backup.*` audit events | `internal/audit/events_backup.go` |
 
 ### URL paths
 
@@ -180,9 +196,11 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/v1/vulnerabilities/findings`, `…/findings/export`, `…/findings/{id}`, `…/findings/set-status`, `…/advisories/{ecosystem}/{id}`, `…/summary`, `…/trend`, `…/sources`, `…/claimed-name-matches` | GET; PATCH on `…/findings/{id}`, POST on `…/set-status` | yes (M4b; [the operations](#management-api)) |
 | `/api/v1/packages/{packageId}/vulnerabilities`, `/api/v1/packages/{packageId}/versions/{version}/vulnerabilities`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan` | GET; POST for the rescan | yes (M4b) |
 | `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`, `/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` | GET; POST | yes (phase 6b): the status of a remote repository's mirror and a request for a pass now ([mirror_api.go](internal/api/v1/mirror_api.go)); both answer `400 not_applicable` for a local or virtual repository |
+| `/api/v1/system/backups`, `/api/v1/system/backups/summary`, `/api/v1/system/backups/{runId}` | GET | yes (M5; [backups_api.go](internal/api/v1/backups_api.go)): the runs of the backup job from `backup_run`, the status of the job, one run; no path starts, deletes, verifies or restores a backup |
 | `/api/v1/avatars/{digest}` | GET | yes (R-API-055): the avatar image of a user, `{digest}` the 64 lower-case hex characters of the SHA-256 of the stored PNG; the `avatarUrl` of a user record is this path |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
 | `/ui/{locale}/vulnerabilities`, `…/vulnerabilities/findings/{id}`, `…/vulnerabilities/advisories/{ecosystem}/{id}`, `…/vulnerabilities/sources` | GET, HEAD | yes (M4b): the report, a finding, an advisory and the advisory sources ([vulnerabilities.routes.ts](web/src/app/features/vulnerabilities/vulnerabilities.routes.ts)) |
+| `/ui/{locale}/admin/system/backups` | GET, HEAD | yes (M5): the Backups screen, `settings:read` ([system.routes.ts](web/src/app/features/system/system.routes.ts)) |
 
 ### NuGet remote cache paths
 
@@ -233,6 +251,8 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Reserved names | `TROVE_CAC_*` and `TROVE_TEST_*` (ignored by the strict check), `TROVE_CONFIG_FILE`, `TROVE_POD_NAME`, `TROVE_POD_NAMESPACE`, `TROVE_NODE_NAME`, `TROVE_POOL_NAME` | yes |
 | Instance name | `TROVE_POD_NAME`, then `POD_NAME`, then `HOSTNAME` inside Kubernetes, otherwise `<hostname>-<pid>` | yes (`internal/app/identity.go`) |
 | Pool name | `TROVE_POOL_NAME`, set by the chart on every pool Deployment (the pool's name, `ep-<name>` for an endpoint pool; unset on the main Deployments) | yes (`deploy/helm/trove/templates/_deployment.tpl`) |
+| Job of a backup run | `TROVE_JOB_NAME`, set by the chart on the backup CronJob's pods from the label `job-name` and recorded in `backup_run`: the retry pod of the same Job waits for its predecessor's lease instead of exiting `3` ([R-BAK-010](docs/spec/backup-and-restore.md#r-bak-010--one-target-writing-operation-at-a-time)). Empty outside a Job | yes (`_backup.tpl`, `cmd/trove/backup_create.go`) |
+| Scratch of the backup, restore and post-restore pods | `TMPDIR=/tmp`, an `emptyDir` of `backup.tmpSizeLimit` (the commands use at most 64 MiB of it) | yes (`_backup.tpl`) |
 | Worker queues | `TROVE_JOBS_QUEUES='["vuln"]'` on a worker pool, `TROVE_JOBS_EXCLUDE_QUEUES='["index","vuln"]'` on the main worker beside pools (JSON lists) | yes (`_deployment.tpl`) |
 | Object-store settings from a Secret | `TROVE_STORAGE_S3_BUCKET`, `TROVE_STORAGE_S3_ENDPOINT`, `TROVE_STORAGE_S3_REGION`, each read from a key of `secrets.s3` when that key is set | yes (`deploy/helm/trove/templates/_endpoints.tpl`) |
 | Dev profile | `TROVE_DEV_HTTP_PORT` (edge port, default `8080`), `TROVE_PROFILE` (`default` or `scatter`) | yes (`deploy/dev/`) |
@@ -251,6 +271,10 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Break-glass password mount | `/var/run/secrets/trove/break-glass/password` (`secrets.breakGlass`; renders `auth.break_glass.password_file`; `api` pods only) | yes (`_secrets.tpl`) |
 | OIDC client secret mount | `/var/run/secrets/trove/oidc-<providerId>/client-secret` (`secrets.oidc[]`; renders `auth.oidc.providers.<providerId>.client_secret_file`; `api` pods only) | yes |
 | Valkey CA and client pair | `/var/run/secrets/trove/valkey-ca/ca.crt`, `/var/run/secrets/trove/valkey-client/tls.{crt,key}` | yes |
+| Backup target keys | `/var/run/secrets/trove/backup-target/{access-key-id,secret-access-key}`, and `session-token` with `secrets.backupTarget.sessionTokenKey` (`secrets.backupTarget`, with `config.backup.target.credentials.source: static`; renders `backup.target.credentials.*_file`; backup and restore pods only) | yes (`_secrets.tpl`, `_helpers.tpl`) |
+| Backup target CA | `/var/run/secrets/trove/backup-target-ca/ca.crt` (`secrets.backupTargetCA`; renders `backup.target.ca_file`, the target's whole trust store; backup and restore pods only) | yes |
+| Blob read login of the backup | `/var/run/secrets/trove/backup-source/{access-key-id,secret-access-key}` (`secrets.backupSource`, with `config.storage.s3.credentials.source: static` and `backup.enabled`; renders `backup.source`; backup pods only, in place of `secrets.s3`) | yes |
+| Journal reader | `/var/run/secrets/trove/journal-reader/{access-key-id,secret-access-key}` (`secrets.journalReader`, with `journalCredentials.source: static`), named by the credentials file `/etc/trove/restore/credentials.yaml` or `/etc/trove/post-restore/credentials.yaml` (ConfigMap `<fullname>-restore`, `<fullname>-post-restore`); restore and post-restore pods only | yes (`_backup.tpl`) |
 | Kubernetes Service port of an endpoint | `<fullname>-ep-<name>`, port from `endpoints.<name>.port` | yes (`endpoint-services.yaml`) |
 | Metric families | `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total`, `trove_tls_reload_errors_total`, labels `kind`, `listener`, `name` | yes (`internal/tlsfiles/metrics.go`) |
 
@@ -278,7 +302,24 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 |---|---|---|
 | Blob object | `<prefix>/sha256/<h0h1>/<h2h3>/<64 hex>`; `<prefix>` defaults to `trove` (`storage.s3.prefix`) | yes (`internal/blob/key.go`); npm publish, the generic `/files/` writes and the pull-through cache store their content here |
 | Readiness probe | `<prefix>/_probe/health`, a `HEAD` | yes (`internal/app/wire_blob.go`) |
-| Upload staging, revocation journal | `<prefix>/_uploads/…`, `<prefix>/_journal/revocations/…` | planned ([R-STOR-001](docs/spec/storage.md)) |
+| Revocation journal | `<prefix>/_journal/revocations/<yyyy>/<mm>/<dd>/<entry id>.json`, one object per entry, the date the UTC date of the change; written by the job `revocation-journal-ship`, listed and read by a restore and by `trove admin post-restore` | yes ([internal/journal/object.go](internal/journal/object.go), R-HA-054) |
+| Restore probe | `<prefix>/_probe/<pod>`, written and deleted by a restore's check 7 | yes (`internal/backup/restore/ports.go`, `checks.go`) |
+| Upload staging | `<prefix>/_uploads/…` | planned ([R-STOR-001](docs/spec/storage.md)) |
+
+### Backup target
+
+The objects `trove backup` writes below `backup.target.prefix` (default `trove`) in `backup.target.bucket`
+([R-BAK-002](docs/spec/backup-and-restore.md#r-bak-002--target-layout-backup-id-and-target-marker),
+[layout.go](internal/backup/format/layout.go)). Nothing under `backups/<id>/` or `pool/` is ever modified; a backup exists if and
+only if its `manifest.json` exists.
+
+| Object | Pattern | Holds |
+|---|---|---|
+| Target marker | `<prefix>/trove-backup-target.json` | `format`, `installationId`, `incarnation`, `createdAt`, `adoptedAt`; written by the first run on an empty prefix, read by every `create` and `delete` |
+| Blob pool | `<prefix>/pool/sha256/<h0h1>/<h2h3>/<64 hex>` | one object per blob, shared by every backup of the target, the fan-out of the blob store |
+| Table file | `<prefix>/backups/<backup id>/db/<table>.copy.zst` | one zstd-compressed PostgreSQL `COPY` text file per exported table |
+| Blob list | `<prefix>/backups/<backup id>/blobs.idx.zst` | `<64 hex> <size>` per line, sorted by digest |
+| Manifest | `<prefix>/backups/<backup id>/manifest.json` | written last; its schema is [manifest.schema.json](internal/backup/format/manifest.schema.json) |
 
 ### PostgreSQL
 
@@ -288,8 +329,9 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
 | Migration file headers | `-- trove:phase expand\|contract`, `-- trove:no-transaction`, `-- trove:requires-app >= <version>` and `-- trove:requires-background <name>` (contract steps) | yes (`internal/meta/postgres/steps.go`) |
 | Background data migrations | job kind `data_migration_<name>`, listed as `<name>` by `GET /api/v1/system/migrations`: `nuget_semver2` | yes (`internal/app/migration_report.go`); R-HA-022's table `background_migration` is planned |
-| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `data_migration_nuget_semver2` (a background data migration, once per installation), `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`, `vuln-evaluate`, `vuln-rescan` (one job per repository), `vuln-findings-retention`, `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
-| `system_state` keys | `installation_id`, `keyspace_id`, `incarnation` (the first migration writes them); `nuget_semver2_recomputed`, the completion of `data_migration_nuget_semver2`. `restore_in_progress`, `restored_at` and `deletions_paused_at` are read; nothing in this build writes them | yes (`internal/meta/postgres/migrations/00001_foundation.sql`, `internal/formatdata/nuget/semver2.go`) |
+| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `data_migration_nuget_semver2` (a background data migration, once per installation), `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`, `vuln-evaluate`, `vuln-rescan` (one job per repository), `vuln-findings-retention`, `backup-check` (task), `revocation-journal-ship` (enqueued while the outbox holds a row), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
+| `system_state` keys | `installation_id`, `keyspace_id`, `incarnation` (the first migration writes them; a restore and a post-restore write a new keyspace and incarnation); `nuget_semver2_recomputed`, the completion of `data_migration_nuget_semver2`; the backup lane's: `restore_in_progress` (the marker of a running restore, with its phase), `restored_from` (the installation, incarnation, backup ID and snapshot a restore came from), `restored_at`, `post_restore_in_progress`, `deletions_paused_at` and `deletions_paused_reason` (the deletion pause a post-restore sets), `journal_quarantined` (outbox rows the shipper could not encode), `journal_suppressed_bindings` (role bindings a replay removed), `backup_role` (the role `trove migrate` granted the backup's privileges to) and `backup_check` (the newest report of the task `backup-check`) | yes (`internal/meta/postgres/migrations/00001_foundation.sql`, `internal/formatdata/nuget/semver2.go`, `internal/backup/fixup/system_state.go`, [journal.sql](internal/meta/postgres/queries/journal.sql), [backup_restore.sql](internal/meta/postgres/queries/backup_restore.sql)) |
+| Backup tables | `backup_run` (one row per `create`, `delete` or `verify` run: state, lease, heartbeat, progress, result; at most one active `create` or `delete`), `backup_blob_pin` (the blobs a running backup still has to copy, kept from garbage collection); both export class `transient`. `revocation_outbox` (the journal entries not yet shipped, written in the transaction of the change; export class `data`) | yes (migrations 00006, 00046; [tables_backup.go](internal/meta/postgres/tables_backup.go)) |
 | Mirror tables | `mirror_state` (one row per remote in mode `mirror`: the pass in progress with its fence `pass_job_id` and `pass_holder`, the cursor of the last complete pass, failures, rate-limit waits, the bound; export class `data`), `mirror_pending` (the names a pass has discovered and not filled; export class `transient`) | yes (migration 00040) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
 | Roles and `application_name` | `trove_owner`, `trove_app`, `trove:<replica>:<class>` | planned ([R-HA-014](docs/spec/ha-and-helm.md)) for the role names; the `application_name` is built |
@@ -379,6 +421,27 @@ The families of the mirror mode (twelve, phase 6b, [R-REPO-057](docs/spec/reposi
 | `trove_mirror_consecutive_failures` | `repo`; gauge from PostgreSQL: failed pass attempts in a row; no series for a paused or disabled mirror |
 | `trove_mirror_next_pass_timestamp_seconds` | `repo`; gauge from PostgreSQL: when the mirror next acts (a due pass, or the last write of the pass in progress); no series for a paused or disabled mirror |
 
+The families of the backup lane (M5, [R-BAK-014](docs/spec/backup-and-restore.md#r-bak-014--run-visibility-api-metrics-alerts-and-audit), defined in
+[internal/backup/metrics.go](internal/backup/metrics.go) and [internal/journal/metrics.go](internal/journal/metrics.go)). The gauges are
+read from PostgreSQL by every replica, once per `metrics.db_gauge_interval` with one evaluation of `backup_run` reused for 30 seconds, so every
+replica reports the same value and dashboards use `max`; the two counters marked "backup pod" exist only in the pod of a `create` run, on
+its ops port, for as long as the run lasts:
+
+| Family | Labels |
+|---|---|
+| `trove_backup_last_success_timestamp_seconds`, `trove_backup_last_failure_timestamp_seconds` | none; no series until a create run succeeded or failed; an `interrupted` run (a drain) is no failure |
+| `trove_backup_expected_interval_seconds` | none; `backup.expected_interval` of the replica's configuration, the threshold of `TroveBackupStale` |
+| `trove_backup_last_duration_seconds`, `trove_backup_last_database_bytes`, `trove_backup_last_blob_bytes`, `trove_backup_last_copied_bytes`, `trove_backup_source_blobs_damaged` | none; from the newest successful create run |
+| `trove_backup_running` | `operation` (`create`, `delete`), `state`; 1 for the active run with a valid lease |
+| `trove_backup_running_seconds`, `trove_backup_pinned_blobs`, `trove_backup_snapshot_open_seconds` | none; of the active run, 0 without one |
+| `trove_backup_gc_hold` | `mode` (`all`, `pinned`); 1 while a valid hold of that mode exists |
+| `trove_backup_last_verify_timestamp_seconds`, `trove_backup_last_verify_findings` | none; the newest `verify` run |
+| `trove_backup_copied_objects_total`, `trove_backup_copied_bytes_total` | `mode` (`server`, `stream`); backup pod |
+| `trove_backup_check_ok` | `check` (`archive_mode`, `object_versioning`, `noncurrent_expiry`, `grace_period`); 1 when a declared platform protection holds, 0 when not, no series for a check that is not declared or not readable |
+| `trove_gc_candidates_held_total` | none; collection candidates a backup hold kept ([internal/blob/metrics.go](internal/blob/metrics.go)) |
+| `trove_revocation_journal_pending` | none; outbox rows not yet shipped |
+| `trove_revocation_journal_quarantined_total` | none; outbox rows that could not be encoded and were set aside: each one is a change missing from the journal |
+
 The label sets of the M1 families are not restated per family in this pass; read the file named in each row.
 
 ### Kubernetes and Helm
@@ -394,13 +457,18 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Upgrade bridge | `<fullname>-web` (`--role web`) and the Service `<fullname>`, only with `web.enabled` | yes |
 | Endpoint objects | `<fullname>-ep-<name>` (and `<fullname>-api-ep-<name>` for a surface over both roles) for the Services and the Ingress of a further endpoint | yes |
 | Disruption budgets, autoscalers | one per Deployment, named as the Deployment | yes |
-| Migration hook Job | `<fullname>-migrate` | yes |
+| Migration hook Job | `<fullname>-migrate`; not rendered while `restore.enabled`, because the restore applies the migrations itself | yes |
 | ConfigMap | `<fullname>-config`, holding `trove.yaml` | yes |
 | Services | `<fullname>-api`, `<fullname>-packages` (client port), `<fullname>-ops` (ops port) | yes |
-| Network policies | one per Deployment, named as it (ingress only, a rule per port), and `<fullname>-migrate` | yes |
+| Network policies | one per Deployment, named as it (ingress only, a rule per port), and `<fullname>-migrate`, `<fullname>-backup`, `<fullname>-restore`, `<fullname>-post-restore` with their Jobs (no rule: those pods accept nothing) | yes |
 | Edge | per host: `/` and `/api/v1` to `<fullname>-api`; `/api`, `/files`, `/v2`, `/.well-known` to `<fullname>-packages`; the paths of path pools to their Services | yes |
-| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); 23 alerts (`TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`, `TroveSpoolNearlyFull`, `TroveGCStale`, `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`, `TroveValkeyPrimaryDisagreement`, `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn`, `TroveBlobMissing`; the backup alerts and the revocation journal's wait for those features), every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
-| Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
+| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); 32 alerts: 26 always (`TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`, `TroveSpoolNearlyFull`, `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn`, `TroveBlobMissing`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`, `TroveRevocationJournalQuarantined`, `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`, `TroveValkeyPrimaryDisagreement`) and the six run alerts of the backup only with `backup.enabled` (`TroveBackupStale`, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage`, `TroveBackupVerifyFindings`), every selector scoped to the release namespace | yes (R-HA-045; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
+| Backup CronJob | `<fullname>-backup` with `backup.enabled` (default `false`), `trove backup create --trigger schedule`, `concurrencyPolicy: Forbid`; the controller names its Jobs `<fullname>-backup-<10 digits>`, so the render fails when `<fullname>-backup` exceeds 52 characters; a manual run is `kubectl create job --from=cronjob/<fullname>-backup <name>` | yes ([backup.yaml](deploy/helm/trove/templates/backup.yaml)) |
+| Restore Job | `<fullname>-restore` with `restore.enabled`, `trove backup restore <restore.backupId>`; an ordinary Job, not a Helm hook | yes ([restore.yaml](deploy/helm/trove/templates/restore.yaml)) |
+| Post-restore Job | `<fullname>-post-restore-<the first 8 hex digits of the SHA-256 of postRestore.restoredTo>` with `postRestore.enabled`, annotation `trove/restored-to`, a `post-install,post-upgrade` hook; one Job per restore point | yes ([post-restore.yaml](deploy/helm/trove/templates/post-restore.yaml)) |
+| ServiceAccounts of the Jobs | `<fullname>-backup`, `<fullname>-restore`, `<fullname>-post-restore` (`<key>.serviceAccount.name` overrides), without a token; one per Job, so a workload identity maps each to a cloud role of its own | yes ([_helpers.tpl](deploy/helm/trove/templates/_helpers.tpl)) |
+| Journal credentials ConfigMaps | `<fullname>-restore`, `<fullname>-post-restore`, key `credentials.yaml`, when `journalCredentials.source` is not `runtime` and the journal is not skipped | yes ([_backup.tpl](deploy/helm/trove/templates/_backup.tpl)) |
+| Labels of the Job pods | `app.kubernetes.io/component` `backup`, `restore` or `post-restore`; no `trove/serve` label, so no Service selects them; annotation `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` | yes |
 | Bastion chart | `deploy/helm/trove-bastion`, released with the chart `trove` at the same version; its own `<fullname>` (release name, or `<release>-trove-bastion`) | yes (phase 5b) |
 | Bastion workload | `<fullname>` (Deployment, or StatefulSet with `cacheVolume.type: persistent`), `--role bastion`, ports `https` 8443 and `ops` 8081 | yes |
 | Bastion objects | ConfigMap `<fullname>-config`, Services `<fullname>` and `<fullname>-ops`, Ingress, NetworkPolicy, PodDisruptionBudget, HorizontalPodAutoscaler, ServiceMonitor and PrometheusRule `<fullname>`; Certificate `<fullname>-tls` (cert-manager); no Secret, Role or RoleBinding | yes |
@@ -485,6 +553,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Files | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` |
 | Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
 | System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
+| Backup and restore | `system.backup.completed`, `system.backup.failed`, `system.backup.deleted` (`reason` `retention` or `manual`), `system.backup.target_adopted`, written by the backup commands as `system:backup` into the source database through `backup_record_event()`; `system.restored` (`source` `backup` or `pitr`) and `system.restore.journal_replayed` (the counts per outcome), written into the restored database ([internal/audit/events_backup.go](internal/audit/events_backup.go)) |
 | Bastion interface | `bastion.contact` (a Bastion replica reported for the first time or a reported value changed, R-BAS-010), `bastion.downloads.dropped` (a batch of download events reported or lost events, R-BAS-016); `artifact.downloaded` carries `origin: bastion`, `bastion` and `replica` for a download a Bastion served from its cache |
 | Mirror mode | `mirror.pass_completed` (a pass attempt ended `complete`, `partial`, `bound_reached`, `offline` or `stopped`), `mirror.pass_failed`, `mirror.bound_reached` (once per transition), `mirror.rate_limited` (at most once per pass and hour); all asynchronous with the system as actor ([internal/audit/events_mirror.go](internal/audit/events_mirror.go)); the details hold counts, codes and the upstream's host name, never a URL; `mirror.pass_requested` (transactional, the caller) belongs to the run operation |
 | Vulnerability scanning | `vulnerability.finding.status_changed` (a triager's change, each change of a bulk `set-status` with one `bulk` identifier), `vulnerability.finding.reopened` (trove reopens a dismissed finding), both transactional and carrying the journal entry when the change sets a download block; `vulnerability.download_blocked` (asynchronous, at most once a minute per repository, version and client address on each replica, `enforced: false` in mode `report`), `vulnerability.claimed_name_match` (asynchronous, once per advisory and name), `vulnerability.source.failed` (asynchronous, at most once an hour per source and ecosystem), `vulnerability.source.imported` (an import of mode `repository`, with the digest and `deployedBy`, or a run with `acceptShrink`), `vulnerability.advisory.kind_changed` (an alias group's canonical record changed kind) ([internal/audit/events_vuln.go](internal/audit/events_vuln.go)); `repository.updated` of a write that weakens the member `vulnerabilities` carries `block: lifted` and the members in `weakened` |
@@ -547,6 +616,8 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `audit-retention` | `internal/app/wire_audit.go` | task |
 | `idempotency-cleanup` | `internal/api/v1/cleanup.go` | task, `13 * * * *` |
 | `secrets-reencrypt` | `internal/app/wire_api.go` | manual only (`POST /api/v1/system/tasks/{name}/run`) |
+| `backup-check` | `internal/app/wire_backup_check.go` | task (`maintenance` queue, exclusive, 3 attempts), `40 5 * * *`: checks the platform protection that `backup.recovery_window` and `backup.object_versioning` declare (`archive_mode`, bucket versioning, the expiry of noncurrent versions, the garbage-collection grace period) and stores the report in `system_state` `backup_check`, which every replica exports as `trove_backup_check_ok`; a failed check is a result, not a failed job |
+| `revocation-journal-ship` | `internal/jobs/journal.go`, `internal/app/wire_journal.go` | not a task: a replica with job loops enqueues it every `backup.revocation_journal.ship_interval` while the outbox holds a row; queue `maintenance`, coalesce, 3 attempts, 5 minutes; writes the outbox rows to `<storage.s3.prefix>/_journal/revocations/` and deletes them |
 | `cluster-change-prune`, `replica-registry-prune` | `internal/jobs/builtin.go` | tasks, `*/10 * * * *` |
 | `system.probe` | `internal/jobs/probe.go` | probe kind |
 
@@ -560,11 +631,16 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
 | [docs/developer/ci-oidc.md](docs/developer/ci-oidc.md) | GitLab CI OIDC: the contracts laid for beta phase 5 (schema, packages, the token and evaluation seam, API, configuration, events), the work packages and their files |
 | [docs/developer/vulnerabilities.md](docs/developer/vulnerabilities.md) | Vulnerability scanning (M4b): the packages and layers, the ports, the download policy, the format contract's addition, the schema, the API, the configuration and the work packages with their files |
-| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit, vulnerability scanning |
+| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit, vulnerability scanning, backup and restore |
 | [docs/security/vulnerability-scanning.md](docs/security/vulnerability-scanning.md) | The download block, the client audits and what they reveal, who reads and triages findings, the advisory data as untrusted input, who decides the data in mode `repository`, and the open gaps of the scanning |
 | [docs/security/mirror.md](docs/security/mirror.md) | The mirror engine: the fence of a pass, what a pass takes from an upstream and what bounds it, what its state and messages show, what a restore leaves, and the gaps H-527 to H-529 |
 | [docs/security/user-avatars.md](docs/security/user-avatars.md) | The avatar upload: the order of the checks on an untrusted image, the bounds, what is stored (a new PNG made from the pixels), what a request can read, who can set and remove one |
 | [docs/developer/mirror.md](docs/developer/mirror.md) | The mirror mode: the work packages, the engine's files, how a pass runs and ends, what the status reads, the tests |
+| [docs/spec/backup-and-restore.md](docs/spec/backup-and-restore.md) | Target design of the backup lane: R-BAK-001 to R-BAK-029 (the format and target layout, the snapshot, the blob pool and the garbage-collection hold, the job and its exit codes, retention, list and verify, the restore and what it rebuilds, encryption and keys) and the decisions `Q-BAK-<n>`; the revocation journal and the platform restore are R-HA-054 and R-HA-023 to R-HA-026 of [ha-and-helm.md](docs/spec/ha-and-helm.md) |
+| [docs/developer/backup.md](docs/developer/backup.md) | The backup lane for contributors: the packages and their files, the create pipeline, the target operations, the restore and its fix-ups, the revocation journal and its producers, the read side, the tests |
+| [docs/security/backup-and-restore.md](docs/security/backup-and-restore.md) | Who holds which credential (backup pod, restore Job, post-restore Job, replicas), how the chart keeps the split, what a create run does to the source, the revocation journal and its replay rules, what a restore trusts, and the open gaps of the lane |
+| [docs/manual/admin/operations.md#backups](docs/manual/admin/operations.md#backups) | Administrator manual: the Backups screen, the run states, the stored backups and the manual run; [limitations](docs/manual/admin/limitations.md#backup-and-restore) lists the narrowings without a journal entry, which a restore brings back |
+| [docs/developer/helm-chart.md](docs/developer/helm-chart.md#the-backup-and-restore-jobs) | The chart side of the backup lane: the CronJob, the restore and post-restore Jobs, their Secrets per scope, the checks of the values, and the target of the dev profile |
 | [docs/manual/admin/vulnerability-sources.md](docs/manual/admin/vulnerability-sources.md) | Administrator manual: the advisory sources, their tasks, refused archives, the import for installations without internet access, the settings and the checks |
 | [docs/manual/user/vulnerabilities.md](docs/manual/user/vulnerabilities.md) | User manual: the vulnerability report, a finding, triage and the package page's tab |
 | [docs/spec/vulnerability-scanning.md](docs/spec/vulnerability-scanning.md) | Target design of the scanning: R-VULN-001 to R-VULN-032 (R-VULN-030 to R-VULN-032 are P1 and not built) and the decisions `Q-VULN-<n>` |
@@ -729,6 +805,52 @@ curl -s -H "Authorization: Bearer $TOKEN" 'https://trove.example.com/api/v1/vuln
 An installation without internet access sets `vulnerabilities.sources.osv.mode: repository` and uploads the archives instead
 ([advisory sources](docs/manual/admin/vulnerability-sources.md#installations-without-internet-access)).
 
+**6. Turn on the backup.** It is off by default. It needs a bucket of its own, in another account or project if you can, and a
+credential that may write there. Keep a copy of the key ring (`secrets.encryption`) outside the cluster too: a backup holds sealed
+values only, and a restore refuses a key ring that does not open them ([R-BAK-028](docs/spec/backup-and-restore.md#r-bak-028--stored-secret-key-ring-and-key-escrow)):
+
+```yaml
+backup:
+  enabled: true                           # default: false; renders the CronJob trove-backup, daily at 02:00 UTC
+config:
+  backup:
+    target:
+      bucket: trove-backups               # example; required with backup.enabled; not the blob bucket
+      region: eu-central-1                # example
+      credentials:
+        source: static                    # example: the keys of secrets.backupTarget; the default chain instead takes a workload identity of the ServiceAccount trove-backup
+secrets:
+  backupTarget:
+    existingSecret: trove-backup-target   # example; keys access-key-id and secret-access-key
+  backupSource:
+    existingSecret: trove-blob-reader     # example; required while config.storage.s3.credentials.source is static: a login that may only read the blob bucket
+```
+
+```shell
+kubectl -n trove create job --from=cronjob/trove-backup trove-backup-manual-$(date +%s)                     # a backup now, beside the schedule
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" https://trove.example.com/api/v1/system/backups/summary   # example: lastSuccessAt, overdue false
+kubectl -n trove create job trove-backup-verify --from=cronjob/trove-backup --dry-run=client -o json \
+  | jq '.spec.template.spec.containers[0].args = ["backup", "verify", "--latest"]' | kubectl -n trove create -f -
+kubectl -n trove wait --for=condition=complete job/trove-backup-verify --timeout=1h && kubectl -n trove logs job/trove-backup-verify
+```
+
+**Restore** into a new installation with an empty database schema, an empty blob prefix and the source's key ring:
+
+```shell
+helm install trove trove/trove -n trove -f values.yaml --version <v> \
+  --set api.replicaCount=0 --set api.autoscaling.enabled=false \
+  --set packages.replicaCount=0 --set packages.autoscaling.enabled=false \
+  --set worker.replicaCount=0 --set worker.autoscaling.enabled=false \
+  --set restore.enabled=true --set restore.backupId=20261028T020000Z-7f3a   # example: an ID of storedBackups in the summary
+kubectl -n trove wait --for=condition=complete job/trove-restore --timeout=24h       # repeat when the timeout passes: the Job keeps running
+helm upgrade trove trove/trove -n trove -f values.yaml --version <v>                 # your normal values: restore off, the roles start
+```
+
+A pool in the values needs `replicaCount: 0` as well; the render names every replica it refuses. The restore drill of the
+end-to-end set `backup` runs this sequence ([restore-ns.sh](deploy/dev/restore-ns.sh)), and its tests override the arguments with
+the same `jq` step ([backup_env_test.go](test/e2e/backup_env_test.go)); the commands above were not run for this README. After a
+point-in-time restore of PostgreSQL by your platform, run `postRestore` instead ([the Helm values](#helm-values)).
+
 <details>
 <summary>Upgrade, uninstall and the failure scripts</summary>
 
@@ -744,7 +866,9 @@ An installation without internet access sets `vulnerabilities.sources.osv.mode: 
 ## 📖 Full reference
 
 Every public interface of M0 and M1 is listed once here: the command line, every configuration key of `internal/config`, the
-management API by family, the system API and the ops endpoints, and the Helm values. The configuration keys are generated from the struct tags in
+management API by family, the system API and the ops endpoints, and the Helm values. The backup lane of M5 is listed in full: the
+`trove backup` and recovery commands with their exit codes, the `backup` configuration section, the backup operations of the API, and
+the chart's `backup`, `restore`, `postRestore` and backup Secret values. The configuration keys are generated from the struct tags in
 [internal/config](internal/config/); [schema.json](internal/config/schema.json) is the generated JSON Schema. A value marked
 `# default` is the default of its struct tag or of the code path that applies it; a value marked `# example` is illustrative. The vulnerability scanning of M4b is listed here in full: its configuration section and repository members, its operations and its chart values. The M2 keys of the remote engine, the virtual engine and npm are in [configuration.md](docs/developer/configuration.md#m2-keys), and the npm routes in [npm.md](docs/developer/npm.md).
 
@@ -763,9 +887,35 @@ management API by family, the system API and the ops endpoints, and the Helm val
 | `trove admin service-account …` | `create` with `--description`, `--admin` (bind the admin role); `revoke` | Bootstrap and recovery of service accounts. Source: [cmd/trove/admin_identity.go](cmd/trove/admin_identity.go). |
 | `trove admin token …` | `--service-account`, `--ttl` (default 15m, at most the SAT maximum), `--scope-file`, `--id`, `--value-stdin` | Flags of the token command; the subcommand names are in the source. Source: [cmd/trove/admin_identity.go](cmd/trove/admin_identity.go). |
 | `trove admin user …` | `--keep-tokens` | Keeps the user's tokens when the user is disabled; they then fail with `principal_disabled`. Source: [cmd/trove/admin_identity.go](cmd/trove/admin_identity.go). |
-| `trove backup …` | none | Reserved. Returns "not implemented yet" (planned for M5). |
+| `trove backup create` | `--trigger schedule\|manual` (default `manual`; the chart's CronJob passes `schedule`), `--exclude-remote-caches` (also `backup.exclude.remote_caches`), `--no-prune` (skips retention and the pool sweep), `--adopt-target` (chart: `backup.adoptTarget`) | Writes one backup to `backup.target` ([R-BAK-009](docs/spec/backup-and-restore.md#r-bak-009--trove-backup-create-phases-and-run-record)): the snapshot and the table files, the blob list, the copy into the pool, the manifest, then retention. Prints the backup ID, the outcome, the blobs and bytes copied and the damaged blobs. One `create` or `delete` runs at a time per installation (exit `3`); a target another installation writes is refused (exit `4`); a target in the blob store's bucket on the same endpoint is refused without `backup.target.allow_same_bucket` (exit `2`). |
+| `trove backup list` | `--all` (also the incomplete directories, which have no manifest) | Lists the backups of the target, newest first ([R-BAK-018](docs/spec/backup-and-restore.md#r-bak-018--listing-backups)); reads the target, not the database. |
+| `trove backup verify` | exactly one of `<id>`, `--latest`, `--all`; `--deep` (download every pool object and recompute its SHA-256), `--bytes-per-second N` (default `0`, unlimited; throttles `--deep`) | Checks backups without changing them ([R-BAK-019](docs/spec/backup-and-restore.md#r-bak-019--verifying-backups)) and prints one line per finding; exit `5` with findings, `6` for an unknown manifest format. The run is recorded in `backup_run` when the database can be reached. |
+| `trove backup delete <id>` | `--yes` (no confirmation; without it the command asks on the terminal), `--allow-last` (allow deleting the only complete backup) | Deletes one backup, manifest first, then sweeps the pool ([R-BAK-016](docs/spec/backup-and-restore.md#r-bak-016--retention-and-deletion-of-backups)). |
+| `trove backup prune` | none | Applies `backup.retention` and sweeps the pool ([R-BAK-017](docs/spec/backup-and-restore.md#r-bak-017--pool-sweep)); prints the backups, incomplete directories and pool objects deleted. |
+| `trove backup restore <id>` | `--check` (run the preconditions only, exit `0` or `6`), `--skip-revocation-journal` (only when the source's bucket is gone), `--journal-credentials-file <path>` (a credential that lists the source's journal when the blob-store credential cannot), `--identity-file <path>` (refused with exit `2`: client-side encrypted backups are not built, R-BAK-027) | Restores a backup into an empty installation ([R-BAK-020](docs/spec/backup-and-restore.md#r-bak-020--restore-preconditions), [R-BAK-021](docs/spec/backup-and-restore.md#r-bak-021--restore-procedure)): eight checks, then the schema up to the backup's step, the blobs, the load, the remaining migrations, the fix-ups and the journal replay; a second run of the same backup resumes, a finished one answers "already restored". Needs the owner database login and the key ring. |
+| `trove admin post-restore` | `--restored-to <RFC 3339 time>` (required), `--credentials-file <path>` (a credential that may list object versions, so a delete marker cannot hide a journal entry), `--skip-revocation-journal`, `--json` | The clean-up after a point-in-time restore of PostgreSQL by the platform ([R-HA-025](docs/spec/ha-and-helm.md)): jobs back to the queue, a new keyspace and incarnation, the deletion pause, `restored_at`, the journal replay from the restore point; prints one line per step and the quarantined outbox rows. A repeat for the same point runs no step again. Source: [cmd/trove/admin_postrestore.go](cmd/trove/admin_postrestore.go). |
+| `trove admin backup check` | `--json` | Runs the checks of the declared platform protection (`backup.recovery_window`, `backup.object_versioning`) and prints one line per check; changes and stores nothing (the task `backup-check` stores its report). Exit `5` when a declared protection does not hold. Source: [cmd/trove/admin_backupcheck.go](cmd/trove/admin_backupcheck.go). |
+| `trove admin npm reinstate <projectKey>/<repoKey> <name>@<version>` | `--config <file>`, `--log-level <level>` | Puts back an npm version that a journal replay withheld, while the version is stored with the integrity of the replay's tombstone; writes `npm.reinstate` (R-NPM-047). Source: [cmd/trove/admin_npm.go](cmd/trove/admin_npm.go). |
 
-Exit status: `0` success, `1` failed command, `2` usage error.
+Every `trove backup` command, `trove admin post-restore` and `trove admin backup check` take `--config <file>`, `--log-level <level>` and
+`--json` (the result as one JSON document). They load the configuration without a role and never open Valkey; every `trove backup`
+command needs `backup.target.bucket`, the two admin commands need no target. `SIGTERM` or `SIGINT` ends a run cleanly within
+the pod's grace period: a `create` sets its run `interrupted`, releases its pins and exits `75`.
+
+Exit status of the other commands: `0` success, `1` failed command, `2` usage error. The backup commands, `trove admin post-restore` and
+`trove admin backup check` use the codes of [R-BAK-013](docs/spec/backup-and-restore.md#r-bak-013--exit-codes-interruption-and-resumption),
+which the chart's Jobs read as their failure policy:
+
+| Code | Meaning | Job |
+|---|---|---|
+| `0` | success, also `completed_with_warnings` | complete |
+| `1` | failed: an error the run could not handle (`hold_lost`, `superseded`, `pool_damaged`, a store or database error after retries) | retried within `backoffLimit` |
+| `2` | usage or configuration error | failed, no retry |
+| `3` | another `create` or `delete` run is alive | failed, no retry |
+| `4` | the target belongs to another installation or incarnation, or an adoption's condition does not hold | failed, no retry |
+| `5` | `verify` or `backup check` found something | (not run by the chart) |
+| `6` | a restore or format precondition does not hold | failed, no retry |
+| `75` | temporary: database or target unreachable, a lock or migration wait timed out, a restore in progress, a stall, `SIGTERM` | retried within `backoffLimit`; an eviction or drain never counts |
 
 ### Configuration keys
 
@@ -866,7 +1016,7 @@ database:
   control_name: ""                      # default: empty = name
   name: ""                              # no default, required; example: trove
   schema: trove                         # default
-  backup_role: ""                       # default
+  backup_role: ""                       # default: empty = no grants; example: trove_backup, the login of secrets.databaseBackup, to which trove migrate grants the backup's privileges
   username_file: /var/run/secrets/trove/database/username   # default; file only
   password_file: /var/run/secrets/trove/database/password   # default; file only; read again on every new connection
   ssl_mode: verify-full                 # default: verify-full | verify-ca | require | disable | allow | prefer
@@ -1183,6 +1333,7 @@ maintenance:
     scrub:            {enabled: true, schedule: "0 4 * * *"}
     storage-summary:  {enabled: true, schedule: "17 * * * *"}
     remote-cache-cleanup: {enabled: true, schedule: "0 3 * * *"}
+    backup-check:         {enabled: true, schedule: "40 5 * * *"}     # the declared platform protection (backup.recovery_window, backup.object_versioning)
     vuln-sync-osv:        {enabled: true, schedule: "*/15 * * * *"}   # incremental OSV sync (M4b)
     vuln-sync-osv-full:   {enabled: true, schedule: "17 3 * * 0"}     # full OSV sync
     vuln-sync-kev:        {enabled: true, schedule: "41 */6 * * *"}   # CISA KEV catalog
@@ -1202,12 +1353,88 @@ proxy:
 </details>
 
 <details>
+<summary>Backup, restore and the revocation journal: the backup section (M5)</summary>
+
+The section of [internal/config/backup.go](internal/config/backup.go) ([R-BAK-011](docs/spec/backup-and-restore.md#r-bak-011--configuration)).
+Of this section the replicas use `expected_interval`, `manual_run`, `revocation_journal`, `recovery_window` and `object_versioning`;
+the target is used by the backup and restore pods alone, and its credential files exist only there.
+
+```yaml
+backup:
+  target:                               # the S3 location of the backups; a client and a credential of its own, never storage.s3's
+    endpoint: ""                        # default: empty = AWS endpoint resolution for the region; a host without a scheme means https://
+    region: ""                          # default; example: eu-central-1
+    bucket: ""                          # default: empty; required by every trove backup command; example: trove-backups
+    prefix: trove                       # default; in the blob store's bucket it must neither contain storage.s3.prefix nor lie inside it
+    force_path_style: false             # default; true for SeaweedFS, MinIO and Ceph RGW
+    allow_insecure_endpoint: false      # default: an http:// endpoint is refused
+    ca_file: ""                         # default: empty = the system trust store; else the whole trust store of the target client; the chart sets it from secrets.backupTargetCA
+    storage_class: ""                   # default: empty = the store's default class; example: STANDARD_IA
+    allow_same_bucket: false            # default; true accepts the blob store's bucket on the same endpoint, for single-bucket evaluation setups only, with a warning on every run
+    credentials:
+      source: default                   # default: default | webIdentity | static
+      role_arn: ""                      # default
+      web_identity_token_file: ""       # default; file only; required with webIdentity
+      sts_endpoint: ""                  # default
+      access_key_id_file: ""            # default; file only; required with static; the chart sets it from secrets.backupTarget
+      secret_access_key_file: ""        # default; file only; required with static
+      session_token_file: ""            # default; file only
+    sse:
+      mode: s3                          # default: s3 | kms | none (unlike storage.s3.sse, whose default is none)
+      kms_key_id: ""                    # default; required with kms
+      bucket_key: true                  # default
+  source:                               # the credential the backup reads the blob bucket with; it never writes or deletes there
+    separate_credentials: false         # default: false = storage.s3.credentials; the chart sets true with static S3 keys and secrets.backupSource
+    credentials: {source: default}      # default; the keys of backup.target.credentials; static needs access_key_id_file and secret_access_key_file
+  database:
+    parallel: 2                         # default: export connections besides the snapshot connection
+    lock_timeout: 60s                   # default: the wait for the table locks of the snapshot
+    migration_wait: 15m                 # default: the wait for a running migration's lock; must stay below stall_timeout
+    part_size: 16MiB                    # default; at least 5MiB: the multipart part size of the table files
+  copy:
+    concurrency: 16                     # default
+    server_side: auto                   # default: auto | always | never; a server-side copy needs read access on the blob bucket for the target credential
+    part_size: 256MiB                   # default; at least 5MiB, raised so that an object fits 10,000 parts
+    check_existing: auto                # default: auto | always | never; always on a target with Object Lock, so a copy again makes no extra version
+    bytes_per_second: 0                 # default: 0 = unlimited; a transfer cap per run
+  compression_level: 3                  # default: 1 to 19, the zstd level of the table files and the blob list
+  exclude:
+    remote_caches: false                # default; true leaves out blobs that only the caches of remote repositories reference (as --exclude-remote-caches)
+  retention:
+    keep_last: 7                        # default; at least 1
+    keep_within: 0s                     # default: 0s = count only; a backup is deleted only outside both keep_last and keep_within
+    sweep_interval: 168h                # default: a full pool sweep at least this often
+  expected_interval: 24h                # default; at least 1m; TroveBackupStale and the overdue mark of the API and the UI fire after 1.5 times this value
+  manual_run:                           # chart-managed with backup.enabled: the CronJob the manual-run command of the UI names
+    namespace: ""                       # default
+    cronjob: ""                         # default
+  lease_duration: 5m                    # default; at least 4 times heartbeat_interval and more than 2 times finalize_timeout
+  heartbeat_interval: 15s               # default; at least 1s
+  stall_timeout: 30m                    # default; at least 1m: a run without progress for this long cancels itself and exits 75
+  finalize_timeout: 30s                 # default: the request deadline of the manifest write
+  verify_sample: 1000                   # default: pool objects HEAD-checked before each manifest
+  run_history: 2160h                    # default; at least 1h: backup_run rows older than this are deleted by the next run
+  revocation_journal:
+    enabled: true                       # default; false deletes the outbox rows without writing them, and a restore then has no journal to replay
+    ship_interval: 5s                   # default; at least 1s
+    replay_margin: 5m                   # default: entries newer than the restore point minus this margin are replayed; longer than any transaction
+  recovery_window: 0s                   # default: 0s = undeclared; the point-in-time window the platform keeps. A replica refuses to start when it exceeds storage.gc.grace_period without object_versioning
+  object_versioning: false              # default; asserts that the blob bucket is versioned and keeps noncurrent versions for at least recovery_window
+```
+
+The chart sets `backup.manual_run`, `backup.source`, `backup.target.ca_file` and `access_key_id_file`, `secret_access_key_file` and
+`session_token_file` of `backup.target.credentials`; setting them under `config` fails the render. Client-side encryption of the table files (`backup.encryption`, R-BAK-027) is not built
+and has no key.
+
+</details>
+
+<details>
 <summary>Full list of the keys without a default in the tables above</summary>
 
 These keys are required by the command that uses them, and have no default in the struct tags:
 `process.role` (by `serve`), `database.host`, `database.name`, `valkey.sentinel.addresses` and `primary_name` (in sentinel mode),
 `valkey.address` (in standalone mode), `storage.s3.bucket` (to serve), `secrets.encryption_key_files` and `active_key_id` (to
-serve). The chart sets the secret-file paths and `storage.spool.dir` of the pods; those keys must not be set under `config`
+serve and to restore), `backup.target.bucket` (by every `trove backup` command). The chart sets the secret-file paths and `storage.spool.dir` of the pods; those keys must not be set under `config`
 (the comment of [values.yaml](deploy/helm/trove/values.yaml) says so, R-HA-029).
 
 </details>
@@ -1513,6 +1740,10 @@ transaction; `blockMalicious` and `onMissingData` act from the repository snapsh
 | Repository member `vulnerabilities.matchPublicAdvisories` | `auto` | `always` on a local repository applies public advisories to its claimed names: a public package published under an internal name can then make trove report, and with `blockMalicious` block, the internal package, and the name is no longer withheld from the audits. | [R-VULN-010](docs/spec/vulnerability-scanning.md#r-vuln-010--which-stored-versions-public-advisories-apply-to) |
 | Repository member `npm.audit.mode` (`local`, `forward`, `disabled`) | left out: `local` while scanning is on | `local` answers from trove's data and sends nothing out; withheld internal names are counted in `npm-notice`, so a reader can tell them apart (H-486). `forward` sends the audited names that nothing marks internal to the provider. | [client audits](docs/security/vulnerability-scanning.md#client-audits), [H-486](docs/security/vulnerability-scanning.md#h-486--a-reader-of-an-npm-repository-can-tell-internal-names-from-the-audit) |
 | Repository member `nuget.vulnerabilityInfo` | left out: local while scanning is on | `local` serves the public NuGet advisory set, without internal names, to every reader of a NuGet repository; the absences tell internal names apart (H-487). `off` lists nothing. | [H-487](docs/security/vulnerability-scanning.md#h-487--the-nuget-pages-absences-tell-internal-names-apart) |
+| `backup.target.allow_same_bucket` | `false` | `true` accepts a target in the blob store's bucket on the same endpoint: the backups then share the bucket's failure modes (a deleted bucket, a lifecycle rule, a compromised runtime credential), and every run warns. The prefixes still must not contain each other, or the orphan sweep of the blob store would delete the backups. | [R-BAK-002](docs/spec/backup-and-restore.md#r-bak-002--target-layout-backup-id-and-target-marker) |
+| `backup.target.allow_insecure_endpoint`, `backup.target.ca_file`, `backup.target.sse.mode` | `false`, empty, `s3` | An `http://` target is refused without the switch; `ca_file` is the target client's whole trust store; every write repeats the server-side encryption, and a preflight compares what the store reports with it. | [who holds what](docs/security/backup-and-restore.md#who-holds-what), [R-BAK-026](docs/spec/backup-and-restore.md#r-bak-026--encryption-in-transit-and-at-rest-on-the-target) |
+| `backup.revocation_journal.enabled` | `true` | `false` deletes the journal entries unshipped, so a restore brings back the revoked tokens, disabled users and removed permissions of everything after its snapshot. | [the revocation journal](docs/security/backup-and-restore.md#the-revocation-journal) |
+| `backup.recovery_window`, `backup.object_versioning` | `0s`, `false` | A declared window longer than `storage.gc.grace_period` stops a replica from starting unless the bucket keeps deleted objects (`object_versioning: true`): a restore to an older point could otherwise reference a deleted blob. The task `backup-check` and `TroveBackupCheckFailed` report a declared protection that does not hold. | [R-HA-023](docs/spec/ha-and-helm.md), [R-HA-024](docs/spec/ha-and-helm.md) |
 
 ### Management API
 
@@ -1537,6 +1768,9 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/system/migrations` | `getMigrationStatus` | `settings:read` |
 | `GET /api/v1/system/overview` | `getSystemOverview` | `settings:read` |
 | `GET /api/v1/system/encryption` | `getEncryptionStatus` | `settings:read` |
+| `GET /api/v1/system/backups` | `listBackupRuns` | `settings:read`; filters `operation`, `state`, `trigger`, `startedFrom`, `startedTo`; cursor paging, `includeTotal` |
+| `GET /api/v1/system/backups/summary` | `getBackupSummary` | `settings:read` |
+| `GET /api/v1/system/backups/{runId}` | `getBackupRun` | `settings:read` |
 
 **meta**
 
@@ -1880,6 +2114,9 @@ The OpenAPI 3.1 document is [api/openapi.yaml](api/openapi.yaml); the binary ser
 | `GET /api/v1/system/info` | Installation facts: version, base URL, replicas per role, database and schema versions, Valkey facts, and `vulnerabilityData` (the enforcement mode and the state of each advisory source; never affects readiness) | the capability `settings:read` ([R-AUTHZ-010](docs/spec/authorization.md)); anonymous on the default endpoint only with `system.bootstrap_anonymous_read` |
 | `GET /api/v1/system/replicas` | Replica registry: name, instance, node, version, revision, roles, state, checks, degraded checks, leases and the Valkey view of each replica | the same as `info` |
 | `GET /api/v1/system/migrations` | Migration report: schema version and compatibility floor, the answering replica's binary, pending steps with what the contract guard checks, applied steps, background data migrations with their states; the report of `trove migrate status` | `settings:read`; never anonymous |
+| `GET /api/v1/system/backups` | The runs of the backup job (`create`, `delete`, `verify`) from `backup_run`, newest first: state, trigger, pod, progress, result, error and `leaseExpired` for a run whose process is gone. What the runs recorded, not the live target: the replicas hold no target credential | `settings:read` |
+| `GET /api/v1/system/backups/summary` | `expectedIntervalSeconds`, `lastSuccessAt`, `overdue` (the last success older than 1.5 times the interval, the condition of `TroveBackupStale`), `lastFailure`, `active`, `target`, `retention`, `storedBackups` (from the newest run that listed the target), `restoredFrom`, `manualRun` (the `kubectl` command of a manual run) | `settings:read` |
+| `GET /api/v1/system/backups/{runId}` | One run | `settings:read` |
 | `GET /api/v1/problems/{code}` | Description of a problem code | as declared |
 
 Errors are `application/problem+json` (RFC 9457): `type` is `/api/v1/problems/<code>`, `code` is the stable identifier,
@@ -2069,6 +2306,10 @@ secrets:
     existingSecret: ""                  # default: empty = single-role mode (R-HA-014); example: trove-db-owner
     usernameKey: username               # default
     passwordKey: password               # default
+  databaseBackup:
+    existingSecret: ""                  # default: empty = secrets.database; example: trove-db-backup, the login of config.database.backup_role. Backup pods only
+    usernameKey: username               # default
+    passwordKey: password               # default
   databaseCA:
     existingSecret: ""                  # example: trove-db-ca; only ca.crt is projected
     key: ca.crt                         # default
@@ -2091,6 +2332,22 @@ secrets:
     existingSecret: ""                  # default: empty = Sentinels without a password; example: trove-valkey-sentinel
     usernameKey: ""                     # default: empty = no Sentinel user
     passwordKey: password               # default
+  backupTarget:
+    existingSecret: ""                  # default; required with config.backup.target.credentials.source static, whatever backup.enabled says; example: trove-backup-target. Backup and restore pods only
+    accessKeyIdKey: access-key-id       # default
+    secretAccessKeyKey: secret-access-key   # default
+    sessionTokenKey: ""                 # default: empty = no session token
+  backupSource:
+    existingSecret: ""                  # default; required with backup.enabled and config.storage.s3.credentials.source static; example: trove-blob-reader, a login that may only read the blob bucket (s3:GetObject, s3:ListBucket). Backup pods only, in place of secrets.s3
+    accessKeyIdKey: access-key-id       # default
+    secretAccessKeyKey: secret-access-key   # default
+  journalReader:
+    existingSecret: ""                  # default; required with journalCredentials.source static of restore or postRestore; example: trove-journal-reader, a login that may list the object versions of the blob bucket (s3:ListBucketVersions). Those Jobs only
+    accessKeyIdKey: access-key-id       # default
+    secretAccessKeyKey: secret-access-key   # default
+  backupTargetCA:
+    existingSecret: ""                  # default: empty = the system trust store; example: trove-backup-target-tls. Renders backup.target.ca_file; backup and restore pods only
+    key: ca.crt                         # default
   s3CA:
     existingSecret: ""                  # default: empty = the outbound trust store (system roots, config.proxy.outbound.tls.ca_files); example: trove-s3-tls
     key: ca.crt                         # default; mounted at /var/run/secrets/trove/s3-ca/ca.crt, renders storage.s3.ca_file (the whole trust store of the object-store client)
@@ -2267,7 +2524,128 @@ commonAnnotations: {}                   # default
 </details>
 
 <details>
-<summary>Monitoring and the chart's checks of the vulnerability scanning (M4b)</summary>
+<summary>Backup CronJob, restore Job and post-restore Job (M5)</summary>
+
+The three are Jobs of the binary's commands, not roles ([backup.yaml](deploy/helm/trove/templates/backup.yaml),
+[restore.yaml](deploy/helm/trove/templates/restore.yaml), [post-restore.yaml](deploy/helm/trove/templates/post-restore.yaml),
+[_backup.tpl](deploy/helm/trove/templates/_backup.tpl)): they serve nothing, have no probe, mount no volume but `/tmp` and their
+Secrets, take neither the global `extraEnv` nor `extraVolumes`, and run as a ServiceAccount of their own without a token. Their pod
+failure policy ignores a disruption (a drain, a preemption) first, then fails the Job on exit `2`, `3`, `4` and `6`; `1` and `75`
+are retried within `backoffLimit`.
+
+```yaml
+backup:
+  enabled: false                        # default; true renders the CronJob <fullname>-backup and needs config.backup.target.bucket
+  schedule: "0 2 * * *"                 # default; five fields or @yearly, @annually, @monthly, @weekly, @daily, @midnight, @hourly; no seconds field, no ?, L, W or #, day of week 0-6, no @every, no TZ= prefix
+  timeZone: Etc/UTC                     # default; the zone of schedule
+  suspend: false                        # default; rendered true while restore.enabled
+  adoptTarget: false                    # default; true adds --adopt-target: a restored installation takes over the target of the installation it came from, once its marker names that lineage
+  startingDeadlineSeconds: 3600         # default: a run missed by more than this is skipped, not started late
+  successfulJobsHistoryLimit: 3         # default
+  failedJobsHistoryLimit: 3             # default
+  backoffLimit: 2                       # default; a drain or an eviction does not count
+  activeDeadlineSeconds: 0              # default: 0 = not rendered; a first backup of a large installation takes hours, and a run without progress ends itself after config.backup.stall_timeout
+  terminationGracePeriodSeconds: 60     # default; at least 30: the time to end a run as interrupted
+  tmpSizeLimit: 256Mi                   # default: the /tmp emptyDir of the backup, restore and post-restore pods; the commands use at most 64 MiB
+  resources:
+    requests: {cpu: 500m, memory: 256Mi}   # default
+    limits: {memory: 1Gi}               # default
+  serviceAccount:
+    create: true                        # default
+    name: ""                            # default: <fullname>-backup
+    annotations: {}                     # default; example (IRSA, read on the blob bucket, write on the target): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-backup"}
+  nodeSelector: {}                      # default
+  tolerations: []                       # default
+  affinity: {}                          # default
+  priorityClassName: ""                 # default
+  podAnnotations: {}                    # default; cluster-autoscaler.kubernetes.io/safe-to-evict: "false" is always added
+  podLabels: {}                         # default
+  extraEnv: []                          # default
+restore:
+  enabled: false                        # default; true renders the Job <fullname>-restore, no migration Job and a suspended CronJob, and refuses any replica or autoscaler of a role, pool or the bridge
+  backupId: ""                          # default; required with enabled; example: 20261028T020000Z-7f3a
+  skipRevocationJournal: false          # default; true only when the source's blob bucket is gone: revocations after the snapshot then come back
+  extraArgs: []                         # default; appended to trove backup restore; example: [--check], a run of the preconditions only
+  journalCredentials:
+    source: runtime                     # default: runtime (the blob store's credential, a plain listing) | default (the Job's workload identity lists object versions) | static (secrets.journalReader)
+  backoffLimit: 2                       # default; a drain or an eviction does not count, and every retry resumes the restore
+  activeDeadlineSeconds: 0              # default: 0 = not rendered
+  terminationGracePeriodSeconds: 60     # default; at least 30
+  serviceAccount:
+    create: true                        # default
+    name: ""                            # default: <fullname>-restore
+    annotations: {}                     # default; example (IRSA, read on the target, write on the new blob prefix, read on the source's journal): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-restore"}
+  resources:
+    requests: {cpu: "1", memory: 1Gi}   # default
+    limits: {memory: 2Gi}               # default
+  podAnnotations: {}                    # default; safe-to-evict: "false" is always added
+  extraEnv: []                          # default
+postRestore:
+  enabled: false                        # default; true renders the post-install, post-upgrade hook Job <fullname>-post-restore-<hash>; every role, pool and the bridge must have no replica
+  restoredTo: ""                        # default; required with enabled: the time the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
+  skipRevocationJournal: false          # default; true only when the source's blob bucket is gone; journalCredentials.source must then stay runtime
+  journalCredentials:
+    source: runtime                     # default: runtime | default | static, as for restore
+  backoffLimit: 2                       # default; a retry applies the clean-up again, its steps are safe to repeat
+  activeDeadlineSeconds: 0              # default: 0 = not rendered
+  terminationGracePeriodSeconds: 60     # default; at least 30
+  serviceAccount:
+    create: true                        # default
+    name: ""                            # default: <fullname>-post-restore
+    annotations: {}                     # default; example (IRSA, s3:ListBucketVersions on the blob bucket with journalCredentials.source default): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-post-restore"}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}   # default
+    limits: {memory: 512Mi}             # default
+  podAnnotations: {}                    # default; safe-to-evict: "false" is always added
+  extraEnv: []                          # default
+config:
+  backup:                               # the keys the chart reads; the whole section is in the configuration reference above
+    target:
+      bucket: ""                        # default: empty; required with backup.enabled or restore.enabled; example: trove-backups
+      endpoint: ""                      # default: AWS resolution; compared with config.storage.s3.endpoint for the same-bucket rule
+      prefix: trove                     # default; in a shared bucket it must neither contain config.storage.s3.prefix nor lie inside it
+      allow_same_bucket: false          # default
+      credentials:
+        source: default                 # default: default | webIdentity | static (secrets.backupTarget)
+    expected_interval: 24h              # default; also the window of TroveBackupStale for a backup that never succeeded
+```
+
+What the render refuses ([_validate_backup.tpl](deploy/helm/trove/templates/_validate_backup.tpl)), each time naming the value:
+`backup.enabled` or `restore.enabled` without `config.backup.target.bucket`; a `<fullname>-backup` longer than 52 characters; a
+`backup.schedule` outside the dialect of trove's cron parser; the target in the blob store's bucket on the same endpoint without
+`allow_same_bucket`, or with prefixes that contain each other (the orphan sweep of the blob store would delete the backups);
+`config.backup.target.credentials.source: static` without `secrets.backupTarget`; `backup.enabled` with static S3 keys and no
+`secrets.backupSource`; `restore.enabled` without `restore.backupId`; `restore.enabled` or `postRestore.enabled` with a replica or an
+autoscaler on any role, pool, endpoint pool or the bridge; a `postRestore.restoredTo` that is not RFC 3339; `postRestore.enabled`
+together with `restore.enabled`; `journalCredentials.source: static` without `secrets.journalReader`; `skipRevocationJournal` with a
+`journalCredentials.source` other than `runtime`.
+
+Security notes ([backup and restore](docs/security/backup-and-restore.md#who-holds-what)):
+
+- **The backup pod** holds the target's credential, the backup's database login (`secrets.databaseBackup`, else the runtime login) and
+  a read-only login of the blob bucket: `secrets.backupSource` with static S3 keys, otherwise the identity of the ServiceAccount
+  `<fullname>-backup`. It never holds the key ring, a Valkey credential or, with static keys, the runtime credential of the blob bucket,
+  so a compromised backup pod can read the installation's content but cannot write or delete a blob or a journal entry. Give the target
+  credential no right to delete object versions, and the target bucket Object Lock where the store offers it: the backup then cannot
+  destroy what the lock keeps.
+- **The restore Job** holds the key ring (`secrets.encryption`, which check 3 opens against the backup), the owner login
+  (`secrets.databaseMigration`, else `secrets.database`), the blob store's credential, the target and, with `journalCredentials.source:
+  static`, the journal reader. It is the only Job with the key ring.
+- **The post-restore Job** holds the owner login, the blob store's credential and, with `journalCredentials.source: static`, the journal
+  reader; no key ring and nothing of the target.
+- **The replicas** never receive a target credential: the shared `trove.yaml` names the paths, and nothing exists under them outside the
+  backup and restore pods. The API shows what the runs recorded, never the target itself.
+- **`journalCredentials.source: runtime`** lists the journal with the blob store's own credential, which can also delete there: a deletion
+  or a delete marker made with it hides an entry from the replay. `default` or `static` lists object versions, which the runtime
+  credential deliberately lacks.
+- **`skipRevocationJournal`** restores without the replay: tokens revoked, users disabled and permissions removed after the snapshot come
+  back until an administrator removes them again.
+- **`allow_same_bucket`** puts the backups in the failure domain of the blobs they protect; it exists for single-bucket evaluation setups.
+
+</details>
+
+<details>
+<summary>Monitoring, the alerts of the backup lane and the chart's checks of the vulnerability scanning</summary>
 
 ```yaml
 metrics:
@@ -2279,7 +2657,7 @@ metrics:
     labels: {}                          # default; example: {release: kube-prometheus-stack}
     relabelings: []                     # default; appended after the fixed role and pool relabelings
     metricRelabelings: []               # default
-  prometheusRule:                       # R-HA-045; 23 alerts; the backup alerts and the revocation journal's follow with those features
+  prometheusRule:                       # R-HA-045; 32 alerts, of which the six TroveBackup* run alerts only with backup.enabled
     enabled: false                      # default; true renders the PrometheusRule <fullname>; needs the Prometheus operator's CRDs
     labels: {}                          # default; example: {release: kube-prometheus-stack}
     disabledAlerts: []                  # default; example: [TroveVulnerabilitySyncFailing]; a name that is no alert of the chart fails the render
@@ -2300,6 +2678,20 @@ config:
 | `TroveMirrorFailing` | `max by (repo) (trove_mirror_consecutive_failures) >= 3`: three failed pass attempts in a row, the status's `failing`; a complete pass resets it | warning |
 | `TroveMirrorStale` | `time() - max by (repo) (trove_mirror_next_pass_timestamp_seconds) > 3600` for 30m: the next pass was due an hour ago and nothing started it (no process claims the queue, a lost job), or the pass in progress has not written for an hour; a mirror that never completed a pass fires too; a paused mirror has no series | warning |
 | `TroveBridgeLeftOn` | `count(trove_build_info{role="web"}) > 0` for 24h: `web.enabled` stayed true for a day: the third step of the upgrade across the cut has not run | warning |
+| `TroveBackupCheckFailed` | `min(trove_backup_check_ok) == 0` for 1h: a platform protection that `backup.recovery_window` or `backup.object_versioning` declares does not hold; the label `check` names it, `trove admin backup check` prints the reason; an undeclared or unreadable check has no series | critical |
+| `TroveRevocationJournalBacklog` | `max(trove_revocation_journal_pending) > 0` for 15m: the shipper does not write `_journal/revocations/` of the blob bucket, so a restore taken now would replay a journal without those entries | warning |
+| `TroveRevocationJournalQuarantined` | `sum(increase(trove_revocation_journal_quarantined_total[1h])) > 0`: a change could not be written to the journal and was set aside in `system_state` `journal_quarantined`; `trove admin post-restore` prints it | critical |
+| `TroveBackupStale` | with `backup.enabled`: `time() - max(trove_backup_last_success_timestamp_seconds) > 1.5 * max(trove_backup_expected_interval_seconds)`, or no success one `config.backup.expected_interval` after the replicas first reported; the condition of the overdue mark in the API and the UI | critical |
+| `TroveBackupFailed` | with `backup.enabled`: `max(trove_backup_last_failure_timestamp_seconds) > (max(trove_backup_last_success_timestamp_seconds) or vector(0))`: the newest create run failed, was abandoned or lost its lease after the last success; a drain is no failure; resolves with the next success | critical |
+| `TroveBackupRunningLong` | with `backup.enabled`: `max(trove_backup_running_seconds) > 0.5 * max(trove_backup_expected_interval_seconds)`: a create or delete run holds the target's slot and its pins for more than half an interval | warning |
+| `TroveBackupGlobalHoldLong` | with `backup.enabled`: `max(trove_backup_gc_hold{mode="all"}) == 1` for 30m: the hold that stops the collection of every blob, meant to last minutes | warning |
+| `TroveBackupSourceDamage` | with `backup.enabled`: `max(trove_backup_source_blobs_damaged) > 0`: the newest successful backup lacks blobs whose objects it could not copy correctly | critical |
+| `TroveBackupVerifyFindings` | with `backup.enabled`: `max(trove_backup_last_verify_findings) > 0`: the newest `verify` found missing, damaged or mismatching objects | critical |
+
+The six alerts marked "with `backup.enabled`" read gauges that every replica exports whether a backup runs or not, so without the
+CronJob `TroveBackupStale` would fire one interval after the install; the chart renders them only while the CronJob is on. The other
+alerts of the chart (replicas, database, object store, Valkey, jobs, leases, spool, versions) are described in
+[operations](docs/manual/admin/operations.md#alerts).
 
 Every selector carries `namespace="<release namespace>"`, so one Prometheus that scrapes several installations does not blend them.
 The chart renders no ServiceMonitor; the scrape is the operator's.
@@ -2333,7 +2725,7 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 | `make chart-lint`, `make chart-test` | Helm lint over every value set; render assertions (`chart` build tag) |
 | `make integration-up`, `make test-integration`, `make integration-down` | Integration stack and tests (`integration` build tag, `test/integration/<area>`) |
 | `make coverage` | Regenerates the requirement checklist in `docs/coverage/` |
-| `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag; `SET=access` runs the access-core tests, `SET=ci` the GitLab CI reference pipeline, `SET=ci-ha` its long legs, `SET=mirror` the remote full mirror, `SET=mirror-long` its drain, `SET=upgrade` the upgrade across the cut and the rolling upgrade). A second `dev-up` rolls the pods when the loaded image changed |
+| `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag; `SET=access` runs the access-core tests, `SET=ci` the GitLab CI reference pipeline, `SET=ci-ha` its long legs, `SET=mirror` the remote full mirror, `SET=mirror-long` its drain, `SET=upgrade` the upgrade across the cut and the rolling upgrade, `SET=backup` the backup drill with a restore into the namespace `trove-restore`, the drain of a backup and of a restore, and the journal across a restore). A second `dev-up` rolls the pods when the loaded image changed |
 | `make dev-valkey-stop`, `make dev-valkey-start` | Stops Valkey and the Sentinels until the start target; the test holds the outage for a criterion of unknown length |
 | `make osv-stub-image` | The image of the test advisory source of the vulnerability-scanning tests (`test/osvstub`, `OSV_STUB_IMAGE`) |
 | `make osv-expected`, `make osv-real-refresh`, `make osv-reference-refresh` | Freeze the results of the pinned osv-scanner over the real OSV records of `internal/vuln/match/testdata`; fetch those records again; record the public npm bulk answer for the reference lock file again (the last two need network) |
