@@ -178,6 +178,13 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: Entries of the revocation journal have waited for shipping to the blob bucket for 15 minutes.
     description: The outbox grows while the object store is out and ships afterwards, so a backlog of 15 minutes means the shipper does not write the _journal/ prefix of the blob bucket, or writes slower than entries arrive (R-HA-054). A restore taken now would replay a journal that lacks those entries, and a revocation among them would not be applied again. Check that worker pods are ready, the object store alerts, the shipper's log records and the write access of the credential to the prefix.
+- alert: TroveRevocationJournalQuarantined
+  expr: sum(increase(trove_revocation_journal_quarantined_total{ {{ $ns }} }[1h])) > 0
+  labels:
+    severity: critical
+  annotations:
+    summary: A change could not be written to the revocation journal and was set aside.
+    description: An outbox row that cannot be encoded is moved to system_state.journal_quarantined so that it does not block the shipping of the rows behind it (R-HA-054). Any increase means that a change, possibly a revocation, is missing from the journal, and a restore from a backup or a platform restore would not apply it again. trove admin post-restore prints the quarantined rows; read the shipper's log records for the row and its error, repair or re-create the change, and take a new backup.
 - alert: TroveValkeyUnavailable
   expr: max(trove_valkey_available{ {{ $ns }} }) == 0
   for: 2m
@@ -264,5 +271,5 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
+{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveRevocationJournalQuarantined" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
 {{- end -}}

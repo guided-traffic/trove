@@ -19,7 +19,7 @@ of being silently ignored.
 | role Services `<fullname>-api` and `<fullname>-packages`, pool Services, ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | |
 | PodDisruptionBudget and HorizontalPodAutoscaler per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | |
 | one NetworkPolicy per Deployment and per Job (migration, backup, restore, post-restore), ingress only (R-HA-042, ADR-154) | |
-| PrometheusRule with 31 alerts, every row of the table of R-HA-045: the sixteen rows of R-HA-045 whose metrics the binary exports, `TroveRevocationJournalBacklog` and the six alerts of the backup runs (R-BAK-014), the three of the vulnerability scanning, `TroveMirrorFailing` and `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-171), `TroveBridgeLeftOn` (R-VULN-024, Q-HA-92) and `TroveBlobMissing` (R-HA-024, Q-STOR-152), `metrics.prometheusRule.*` | |
+| PrometheusRule with 32 alerts, every row of the table of R-HA-045: the sixteen rows of R-HA-045 whose metrics the binary exports, `TroveRevocationJournalBacklog` and the six alerts of the backup runs (R-BAK-014), the three of the vulnerability scanning, `TroveMirrorFailing` and `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-171), `TroveBridgeLeftOn` (R-VULN-024, Q-HA-92) and `TroveBlobMissing` (R-HA-024, Q-STOR-152), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019); not rendered while `restore.enabled` | |
 | post-restore hook Job `<fullname>-post-restore` with its ServiceAccount, policy and credentials file (R-HA-025 step 4), see [The post-restore Job](#the-post-restore-job) | |
 | backup CronJob `<fullname>-backup` and restore Job `<fullname>-restore`, each with its ServiceAccount and a policy that admits nothing (R-HA-060, R-BAK-012), see [The backup and restore Jobs](#the-backup-and-restore-jobs) | |
@@ -558,16 +558,16 @@ same change; a feature that arrives takes its prefix out of `unbuiltPrefixes`.
 
 `metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
 [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. The
-rule holds 31 alerts, in this order: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`,
+rule holds 32 alerts, in this order: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`,
 `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,
 `TroveMixedVersions`, `TroveSpoolNearlyFull` (rows of R-HA-045's table), `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`,
 `TroveVulnerabilityClaimedNameMalicious` (R-VULN-024), `TroveMirrorFailing`, `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-167),
 `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92), `TroveBlobMissing` (a read found the object of a blob missing within the
-hour, R-HA-024, Q-STOR-152), `TroveGCStale`, `TroveBackupCheckFailed` (R-HA-023), `TroveRevocationJournalBacklog` (R-HA-054), `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`,
+hour, R-HA-024, Q-STOR-152), `TroveGCStale`, `TroveBackupCheckFailed` (R-HA-023), `TroveRevocationJournalBacklog` (R-HA-054), `TroveRevocationJournalQuarantined` (a row set aside, Q-HA-162), `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`,
 `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`, `TroveValkeyPrimaryDisagreement` (rows of the table), `TroveBackupStale`,
 `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage` and `TroveBackupVerifyFindings` (R-BAK-014). Severities are in the spec's table (`critical`:
 `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveValkeyUnavailable`, `TroveValkeyPrimaryDisagreement`,
-`TroveVulnerabilityClaimedNameMalicious`, `TroveBlobMissing`, `TroveBackupCheckFailed`, `TroveBackupStale`, `TroveBackupFailed`,
+`TroveVulnerabilityClaimedNameMalicious`, `TroveBlobMissing`, `TroveBackupCheckFailed`, `TroveRevocationJournalQuarantined`, `TroveBackupStale`, `TroveBackupFailed`,
 `TroveBackupSourceDamage`, `TroveBackupVerifyFindings`; the others `warning`).
 
 **The platform check.** `TroveBackupCheckFailed` is `min(trove_backup_check_ok) == 0` for an hour. The gauge is exported by every replica
@@ -652,7 +652,7 @@ is where the coverage generator reads the IDs from.
 | `R-VULN-025` (`TestR_VULN_025_SpoolHoldsOneArchive`) | the worker spool must hold one archive: the defaults pass, a larger `max_archive_size` fails naming both values (also in mode `repository`), the headroom counts, mode `off` and a disabled scanning are not checked, the worker's `TROVE_STORAGE_SPOOL_MAX_BYTES` follows its own `sizeLimit` |
 | `R-VULN-025` (`TestR_VULN_025_ConfigurationPassesThrough`) | the `vulnerabilities` section reaches `trove.yaml` as set; `ci/monitoring.yaml` passes `trove admin config validate` with the other sets |
 | `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the alerts (the three of the vulnerability scanning, the two of the mirror, `TroveBridgeLeftOn`, `TroveBlobMissing`) and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
-| `R-HA-045` (`TestR_HA_045_PrometheusRule`) | the rule is rendered with `enabled` and carries the `labels`, none by default or with `enabled: false`; the 31 alerts and their severities, `for` durations, summaries and descriptions; the role regex follows `<fullname>`; the expressions of the three rows with a special shape; every `trove_*` name an expression reads is registered by code under `internal/`; `disabledAlerts` |
+| `R-HA-045` (`TestR_HA_045_PrometheusRule`) | the rule is rendered with `enabled` and carries the `labels`, none by default or with `enabled: false`; the 32 alerts and their severities, `for` durations, summaries and descriptions; the role regex follows `<fullname>`; the expressions of the three rows with a special shape; every `trove_*` name an expression reads is registered by code under `internal/`; `disabledAlerts` |
 | `R-VULN-024` (`TestR_VULN_024_PromtoolRules`) | `promtool check rules` and `promtool test rules` over the rendered rules, and one firing and one silent test per alert; the backup alerts' tests are `TroveBackupStale` at 90 minutes after the last success (and for a backup that never ran), `TroveBackupFailed` for a failure after the last success and for a first failure (silent after an interrupted run), `TroveRevocationJournalBacklog` and the others |
 | `R-HA-060`, `R-BAK-012` (`TestR_HA_060_BackupCronJob`) | the CronJob's fields, `Forbid`, the pod failure policy (an eviction ignored first, then 2, 3, 4, 6), `restartPolicy: Never`, no `activeDeadlineSeconds` by default, the grace period, the autoscaler annotation, `TMPDIR` and the one `emptyDir`, the memory limit, no port or probe, its own ServiceAccount, the values |
 | `R-HA-060` (`TestR_HA_060_RestoreJob`) | the Job (not a hook), the arguments, the failure handling, the account, no migration Job, the suspended CronJob, the roles at zero, pools and the bridge |

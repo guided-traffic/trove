@@ -35,6 +35,7 @@ func alertSeverities() []alertSeverity {
 		{"TroveGCStale", "warning"},
 		{"TroveBackupCheckFailed", "critical"},
 		{"TroveRevocationJournalBacklog", "warning"},
+		{"TroveRevocationJournalQuarantined", "critical"},
 		{"TroveValkeyUnavailable", "critical"},
 		{"TroveValkeyUnavailableSingleReplica", "warning"},
 		{"TroveValkeySentinelsDegraded", "warning"},
@@ -124,7 +125,7 @@ func TestR_HA_045_PrometheusRule(t *testing.T) {
 			"TroveJobsStuck": "5m", "TroveLeaseLost": "", "TroveMixedVersions": "2h", "TroveSpoolNearlyFull": "10m",
 			"TroveBlobMissing": "", "TroveGCStale": "1h", "TroveValkeyUnavailable": "2m", "TroveValkeyUnavailableSingleReplica": "5m",
 			"TroveValkeySentinelsDegraded": "5m", "TroveValkeyFailoverFlapping": "", "TroveValkeyPrimaryDisagreement": "5m",
-			"TroveBackupCheckFailed": "1h", "TroveRevocationJournalBacklog": "15m", "TroveBackupStale": "", "TroveBackupFailed": "", "TroveBackupRunningLong": "",
+			"TroveBackupCheckFailed": "1h", "TroveRevocationJournalBacklog": "15m", "TroveRevocationJournalQuarantined": "", "TroveBackupStale": "", "TroveBackupFailed": "", "TroveBackupRunningLong": "",
 			"TroveBackupGlobalHoldLong": "30m", "TroveBackupSourceDamage": "", "TroveBackupVerifyFindings": "",
 		}
 		for _, r := range renderedRules(t) {

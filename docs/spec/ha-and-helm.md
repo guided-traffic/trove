@@ -5174,6 +5174,7 @@ templates over metrics the MVP already exports, so the change adds no backend wo
 | `TroveGCStale` | `time() - max(trove_gc_last_success_timestamp_seconds) > 172800` | 1h | warning |
 | `TroveBackupCheckFailed` | `min(trove_backup_check_ok) == 0` | 1h | critical |
 | `TroveRevocationJournalBacklog` | `max(trove_revocation_journal_pending) > 0` (R-HA-054) | 15m | warning |
+| `TroveRevocationJournalQuarantined` | `sum(increase(trove_revocation_journal_quarantined_total[1h])) > 0`: an outbox row that could not be encoded was set aside, so a change is missing from the journal (R-HA-054, Q-HA-162) | 0m | critical |
 | `TroveValkeyUnavailable` | `max(trove_valkey_available) == 0` (every replica degraded, R-HA-057) | 2m | critical |
 | `TroveValkeyUnavailableSingleReplica` | `min(trove_valkey_available) == 0 and max(trove_valkey_available) == 1` | 5m | warning |
 | `TroveValkeySentinelsDegraded` | `min(trove_valkey_sentinels_reachable) < 2` (no majority of three, R-HA-056; the gauge counts the answers to a probe of every configured Sentinel, R-HA-057) | 5m | warning |
@@ -8337,6 +8338,21 @@ edge's limit (then the cause is elsewhere) or when a client waits longer than 90
 
 **Applied:** `deploy/dev/haproxy-values.yaml` (`timeout-keep-alive: 90s`), `test/e2e/clients/fwd/main.go` (closing line, tests in `main_test.go`),
 [developer/e2e.md](../developer/e2e.md) (forwarder), F-70 in [projektplan/promt.md](../projektplan/promt.md). No requirement text changed.
+
+### Q-HA-162 · A quarantined journal row is a critical alert that stays for an hour
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Fold it into `TroveRevocationJournalBacklog` | One alert | None added | The backlog gauge counts rows still to ship; a quarantined row has left the outbox, so the gauge returns to 0 and the gap is invisible |
+| (b) `TroveRevocationJournalQuarantined` on `increase(…_quarantined_total[1h]) > 0`, critical, no `for` (chosen) | Fires on the scrape that sees an increase and resolves an hour later | A journal gap is a security gap: a revocation missing from it comes back after a restore; the counter is the only trace besides the row | An increase is seen once per replica restart at worst; the hour is the time to read the row, and the row stays in `system_state` until someone handles it |
+
+**Choice:** (b).
+
+**Rationale:** The development agent would revisit this with a gauge of the rows set aside, which would stay up until they are handled.
+
+**Applied:** R-HA-045 (table), R-OPS-008; `templates/_rules.tpl`, `tests/rules_test.yaml`.
 
 ### Q-HA-159 · The restore Job has a journal reader of its own, switched on by a credentials file
 
