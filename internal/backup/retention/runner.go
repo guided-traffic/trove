@@ -56,7 +56,7 @@ func (r *Runner) Delete(ctx context.Context, opts backup.DeleteOptions) (*backup
 		if err := CheckMarker(ctx, s.Store, s.Layout, s.Facts); err != nil {
 			return err
 		}
-		scan, err := listing.Scan(ctx, s.Store, s.Layout)
+		scan, err := listing.ScanTicking(ctx, s.Store, s.Layout, h.Tick)
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func (r *Runner) execute(ctx context.Context, id format.ID, body func(context.Co
 		Target: r.Target, Pod: r.Pod, TroveVersion: r.TroveVersion, Lease: r.Timing.Lease,
 	}, r.Timing, r.Sleep)
 	if err != nil {
-		return nil, err
+		return nil, backup.Classify(err)
 	}
 	started := time.Now()
 	h, hctx := backup.StartHandle(ctx, r.Runs, run, r.Timing, s.log())
@@ -132,6 +132,7 @@ func (r *Runner) execute(ctx context.Context, id format.ID, body func(context.Co
 
 // finish writes the end state of the run and maps the error to its exit.
 func (r *Runner) finish(ctx, hctx context.Context, runID string, res *backup.Result, runErr error) (*backup.Result, error) {
+	runErr = backup.Classify(runErr)
 	cause := context.Cause(hctx)
 	if runErr != nil && cause != nil && (errors.Is(cause, backup.ErrSuperseded) || errors.Is(cause, backup.ErrStalled)) {
 		runErr = fmt.Errorf("%w: %w", cause, runErr)

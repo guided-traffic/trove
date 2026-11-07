@@ -54,6 +54,15 @@ type Stage struct {
 	Clock SweepClock
 	Now   func() time.Time
 	Log   *slog.Logger
+	// DeleteTimeout is the deadline of every delete request of the pruning phase: backup.finalize_timeout, the figure the
+	// lease fence leaves room for (R-BAK-010). Zero means no deadline.
+	DeleteTimeout time.Duration
+}
+
+// del sends one delete request under the stage's deadline. A request that outlives it must not go on in a run whose slot a
+// later run may already hold.
+func (s *Stage) del(ctx context.Context, keys []string) error {
+	return deleteWithin(ctx, s.Store, s.DeleteTimeout, keys)
 }
 
 var _ backup.PruneStage = (*Stage)(nil)
@@ -88,7 +97,7 @@ func (s *Stage) prune(ctx context.Context, f Fencer, into *backup.Result, create
 	if err := CheckMarker(ctx, s.Store, s.Layout, s.Facts); err != nil {
 		return err
 	}
-	scan, err := listing.Scan(ctx, s.Store, s.Layout)
+	scan, err := listing.ScanTicking(ctx, s.Store, s.Layout, f.Tick)
 	if err != nil {
 		return err
 	}
@@ -126,7 +135,7 @@ func (s *Stage) finish(ctx context.Context, f Fencer, into *backup.Result, scan 
 	var err error
 	due := changed
 	if changed {
-		if scan, err = listing.Scan(ctx, s.Store, s.Layout); err != nil {
+		if scan, err = listing.ScanTicking(ctx, s.Store, s.Layout, f.Tick); err != nil {
 			return err
 		}
 	} else if due, err = s.sweepDue(ctx); err != nil {
@@ -135,7 +144,7 @@ func (s *Stage) finish(ctx context.Context, f Fencer, into *backup.Result, scan 
 	complete := listing.Complete(scan)
 	if due {
 		sw := &Sweeper{
-			Store: s.Store, Layout: s.Layout, Tick: f.Tick,
+			Store: s.Store, Layout: s.Layout, Tick: f.Tick, DeleteTimeout: s.DeleteTimeout,
 			Fence: func(ctx context.Context) error { return f.Fence(ctx, backup.StatePruning) },
 		}
 		rep, err := sw.Sweep(ctx, complete)
@@ -190,7 +199,11 @@ func (s *Stage) sweepDue(ctx context.Context) (bool, error) {
 // other object of the directory (R-BAK-016). Each request is preceded by the lease fence.
 func (s *Stage) deleteBackup(ctx context.Context, f Fencer, id format.ID, complete bool, reason string) error {
 	var keys []string
+	n := 0
 	err := s.Store.List(ctx, s.Layout.Dir(id), func(o target.Object) error {
+		if n++; n%listing.PageSize == 0 {
+			f.Tick()
+		}
 		if o.Key != s.Layout.Manifest(id) {
 			keys = append(keys, o.Key)
 		}
@@ -203,7 +216,7 @@ func (s *Stage) deleteBackup(ctx context.Context, f Fencer, id format.ID, comple
 		if err := f.Fence(ctx, backup.StatePruning); err != nil {
 			return err
 		}
-		if err := s.Store.Delete(ctx, []string{s.Layout.Manifest(id)}); err != nil {
+		if err := s.del(ctx, []string{s.Layout.Manifest(id)}); err != nil {
 			return fmt.Errorf("deleting the manifest of backup %s: %w", id, err)
 		}
 		f.Tick()
@@ -212,7 +225,7 @@ func (s *Stage) deleteBackup(ctx context.Context, f Fencer, id format.ID, comple
 		if err := f.Fence(ctx, backup.StatePruning); err != nil {
 			return err
 		}
-		if err := s.Store.Delete(ctx, batch); err != nil {
+		if err := s.del(ctx, batch); err != nil {
 			return fmt.Errorf("deleting backup %s: %w", id, err)
 		}
 		f.Tick()

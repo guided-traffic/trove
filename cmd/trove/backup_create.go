@@ -98,7 +98,8 @@ func (c *commandCreator) Create(ctx context.Context, opts backup.CreateOptions) 
 	store := backup.NewPGStore(db)
 	b := cfg.Backup
 	stage := &retention.Stage{
-		Store: tgt, Layout: layout, Policy: retention.Policy{KeepLast: b.Retention.KeepLast, KeepWithin: b.Retention.KeepWithin},
+		DeleteTimeout: b.FinalizeTimeout,
+		Store:         tgt, Layout: layout, Policy: retention.Policy{KeepLast: b.Retention.KeepLast, KeepWithin: b.Retention.KeepWithin},
 		SweepInterval: b.Retention.SweepInterval, Facts: facts, Audit: auditDeleted{db: db, rec: recorder},
 		Clock: retention.RunSweepClock{Runs: store}, Log: e.log,
 	}

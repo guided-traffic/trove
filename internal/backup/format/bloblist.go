@@ -65,9 +65,14 @@ type BlobListWriter struct {
 	line [64 + 1 + 20 + 1]byte
 }
 
+// blobListWindow is the zstd window of a blob list. A decoder allocates its history from the frame's window, and the sweep and
+// verify --all hold one decoder per retained backup, so the writer keeps the window small instead of the default of its level
+// (8 MiB at level 3, which cost about 10 MiB per open reader). Sorted hex lines gain nothing from a longer window.
+const blobListWindow = 1 << 20
+
 // NewBlobListWriter compresses into w at the given zstd level (backup.compression_level, 1 to 19).
 func NewBlobListWriter(w io.Writer, level int) (*BlobListWriter, error) {
-	zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level)))
+	zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level)), zstd.WithWindowSize(blobListWindow))
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +116,7 @@ type BlobListReader struct {
 
 // NewBlobListReader decompresses r.
 func NewBlobListReader(r io.Reader) (*BlobListReader, error) {
-	zr, err := zstd.NewReader(r)
+	zr, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true), zstd.WithDecoderMaxWindow(64<<20))
 	if err != nil {
 		return nil, err
 	}

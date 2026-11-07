@@ -54,12 +54,18 @@ type recorder struct {
 	deletes [][]string
 	// list, when set, replaces the order in which List reports the keys of a prefix.
 	list func(prefix string, keys []string) []string
+	// onKey runs for every key a listing reports, before the callback.
+	onKey func()
+	// deadlines records the deadline of the context of every delete request.
+	deadlines []deadline
 	// onList runs before every listing; an error fails it.
 	onList func() error
 }
 
 func (r *recorder) Delete(ctx context.Context, keys []string) error {
 	r.deletes = append(r.deletes, slices.Clone(keys))
+	dl, ok := ctx.Deadline()
+	r.deadlines = append(r.deadlines, deadline{ok, time.Until(dl)})
 	return r.Mem.Delete(ctx, keys)
 }
 
@@ -68,6 +74,10 @@ func (r *recorder) List(ctx context.Context, prefix string, fn func(target.Objec
 		if err := r.onList(); err != nil {
 			return err
 		}
+	}
+	if r.onKey != nil {
+		inner := fn
+		fn = func(o target.Object) error { r.onKey(); return inner(o) }
 	}
 	if r.list == nil {
 		return r.Mem.List(ctx, prefix, fn)
@@ -136,4 +146,9 @@ func (e *env) poolKeys() []string {
 		}
 	}
 	return out
+}
+
+type deadline struct {
+	set  bool
+	left time.Duration
 }

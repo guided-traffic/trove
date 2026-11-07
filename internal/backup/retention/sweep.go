@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/backup/format"
 	"github.com/guided-traffic/trove/internal/backup/listing"
@@ -34,6 +35,18 @@ type Sweeper struct {
 	Fence func(context.Context) error
 	// Tick reports progress to the run's heartbeat.
 	Tick func()
+	// DeleteTimeout is the deadline of every delete request; zero means none.
+	DeleteTimeout time.Duration
+}
+
+// deleteWithin sends one delete request under a deadline.
+func deleteWithin(ctx context.Context, st target.Store, d time.Duration, keys []string) error {
+	if d > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d)
+		defer cancel()
+	}
+	return st.Delete(ctx, keys)
 }
 
 // Sweep merges the blob lists of the given complete backups (minus their blobs.damaged) into the keep set and lists the pool
@@ -92,7 +105,7 @@ func (s *Sweeper) Sweep(ctx context.Context, complete []listing.Backup) (SweepRe
 				return err
 			}
 		}
-		if err := s.Store.Delete(ctx, batch); err != nil {
+		if err := deleteWithin(ctx, s.Store, s.DeleteTimeout, batch); err != nil {
 			return fmt.Errorf("deleting pool objects: %w", err)
 		}
 		rep.Deleted += int64(len(batch))
@@ -104,7 +117,11 @@ func (s *Sweeper) Sweep(ctx context.Context, complete []listing.Backup) (SweepRe
 
 	var prev format.Digest
 	havePrev := false
+	listed := 0
 	err := s.Store.List(ctx, s.Layout.PoolPrefix(), func(o target.Object) error {
+		if listed++; listed%listing.PageSize == 0 {
+			s.tick() // a listing page is progress even when it holds nothing to delete (R-BAK-013)
+		}
 		d, ok := s.Layout.ParsePool(o.Key)
 		switch {
 		case !ok:

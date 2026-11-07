@@ -112,7 +112,7 @@ func (v *Verifier) tick(h *backup.Handle) {
 
 func (v *Verifier) verify(ctx context.Context, opts backup.VerifyOptions, h *backup.Handle) (*backup.VerifyReport, error) {
 	rep := &backup.VerifyReport{Verified: []format.ID{}, Findings: []backup.Finding{}}
-	ids, err := v.selectBackups(ctx, opts)
+	ids, err := v.selectBackups(ctx, opts, h)
 	if err != nil {
 		return rep, err
 	}
@@ -143,7 +143,7 @@ func (v *Verifier) verify(ctx context.Context, opts backup.VerifyOptions, h *bac
 	return rep, err
 }
 
-func (v *Verifier) selectBackups(ctx context.Context, opts backup.VerifyOptions) ([]format.ID, error) {
+func (v *Verifier) selectBackups(ctx context.Context, opts backup.VerifyOptions, h *backup.Handle) ([]format.ID, error) {
 	if opts.ID != "" {
 		_, err := v.Store.Head(ctx, v.Layout.Manifest(opts.ID))
 		if errors.Is(err, target.ErrNotFound) {
@@ -154,7 +154,11 @@ func (v *Verifier) selectBackups(ctx context.Context, opts backup.VerifyOptions)
 		}
 		return []format.ID{opts.ID}, nil
 	}
-	dirs, err := listing.Dirs(ctx, v.Store, v.Layout)
+	var tick func()
+	if h != nil {
+		tick = h.Tick
+	}
+	dirs, err := listing.DirsTicking(ctx, v.Store, v.Layout, tick)
 	if err != nil {
 		return nil, err
 	}

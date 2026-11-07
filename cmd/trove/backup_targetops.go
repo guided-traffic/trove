@@ -92,7 +92,7 @@ func newRetentionRunner(env *backupEnv) (*retention.Runner, error) {
 	b := env.cfg.Backup
 	stage := &retention.Stage{
 		Store: t, Layout: layout, Policy: retention.Policy{KeepLast: b.Retention.KeepLast, KeepWithin: b.Retention.KeepWithin},
-		SweepInterval: b.Retention.SweepInterval, Facts: backup.NewPGFacts(db, env.cfg.Database.Schema), Audit: auditDeleted{db: db, rec: rec},
+		SweepInterval: b.Retention.SweepInterval, DeleteTimeout: b.FinalizeTimeout, Facts: backup.NewPGFacts(db, env.cfg.Database.Schema), Audit: auditDeleted{db: db, rec: rec},
 		Clock: retention.RunSweepClock{Runs: store}, Log: env.log,
 	}
 	return &retention.Runner{

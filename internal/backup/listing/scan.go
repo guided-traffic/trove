@@ -31,7 +31,15 @@ func (b Backup) Complete() bool { return b.Manifest != nil }
 // tell what to keep, and the sweep could not build the keep set. A manifest of a higher format yields a
 // [*format.UnknownFormatError] (exit 6).
 func Scan(ctx context.Context, store target.Store, l format.Layout) ([]Backup, error) {
-	dirs, err := Dirs(ctx, store, l)
+	return ScanTicking(ctx, store, l, nil)
+}
+
+// PageSize is how many keys a listing page holds; a listing reports progress once per page (R-BAK-013).
+const PageSize = 1000
+
+// ScanTicking is [Scan] for a run that must report progress: tick is called once per page of keys and after every manifest.
+func ScanTicking(ctx context.Context, store target.Store, l format.Layout, tick func()) ([]Backup, error) {
+	dirs, err := DirsTicking(ctx, store, l, tick)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +52,9 @@ func Scan(ctx context.Context, store target.Store, l format.Layout) ([]Backup, e
 				return nil, err
 			}
 			b.Manifest = m
+			if tick != nil {
+				tick()
+			}
 		}
 		out = append(out, b)
 	}
@@ -58,8 +69,17 @@ type Dir struct {
 
 // Dirs lists backups/ once without reading any manifest, newest first.
 func Dirs(ctx context.Context, store target.Store, l format.Layout) ([]Dir, error) {
+	return DirsTicking(ctx, store, l, nil)
+}
+
+// DirsTicking is [Dirs] for a run that must report progress: tick is called once per [PageSize] keys.
+func DirsTicking(ctx context.Context, store target.Store, l format.Layout, tick func()) ([]Dir, error) {
 	hasManifest := map[format.ID]bool{}
+	n := 0
 	err := store.List(ctx, l.BackupsPrefix(), func(o target.Object) error {
+		if n++; tick != nil && n%PageSize == 0 {
+			tick()
+		}
 		id, inner, ok := l.ParseBackupKey(o.Key)
 		if !ok {
 			return nil

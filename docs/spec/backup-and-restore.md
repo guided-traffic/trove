@@ -2478,6 +2478,21 @@ R-BAK-010 let a starting pod treat a run with a heartbeat younger than 3 × `hea
 
 **Applied:** R-BAK-010 (text and acceptance criterion); migration `00049_backup_run_job.sql`, `queries/backup.sql`, `internal/backup/slot.go`, `internal/backup/create`, `cmd/trove/backup_create.go`; chart `templates/_backup.tpl` (`TROVE_JOB_NAME`), `test/chart/backup_test.go`.
 
+### Q-BAK-52 · The pruning phase reports a listing page as progress, bounds every delete by `finalize_timeout`, and keeps blob-list decoders small
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Tick only on deletions | As built first | No change | A pool with many kept keys and few orphans lists for minutes without a tick; the lease is not renewed and the fence before the first delete batch fails as `superseded`, so the sweep never completes |
+| (b) Tick per listing page, bound each delete, small decoders (chosen) | `listing.PageSize` (1,000 keys) is one tick in the pool listing, the scan of `backups/` and the listing of a backup directory; every delete request of the phase runs under `finalize_timeout`; blob lists are written with a 1 MiB zstd window | The fence margin of R-BAK-010 holds for the whole phase; a zombie delete run cannot finish a batch after a later run has taken the slot | The window shortens the match range of a list, which is sorted hex lines and does not need one |
+
+**Choice:** (b). A delete that reaches its deadline is a temporary failure (exit 75), as is any database or target error that `backup.Classify` calls temporary; other errors stay exit 1. Measured: with the default window an open blob-list reader held about 10 MiB, so a sweep or `verify --all` over 100 retained backups held about 1 GB; with the 1 MiB window about 2.4 MiB (`TestR_BAK_017_OpenBlobListReadersStayInBoundedMemory`, 100 readers: 240 MB). Memory still grows with the number of retained backups.
+
+**Rationale:** R-BAK-013 names a listing page as progress. The development agent would revisit the memory bound when retained backups reach the hundreds; the merge would then run in bounded groups of lists.
+
+**Applied:** R-BAK-010, R-BAK-013, R-BAK-016, R-BAK-017; `internal/backup/retention`, `internal/backup/listing`, `internal/backup/classify.go`, `format.NewBlobListWriter`.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated
