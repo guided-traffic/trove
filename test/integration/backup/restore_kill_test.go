@@ -262,7 +262,7 @@ func TestR_BAK_020_CommandExitCodes(t *testing.T) {
 		}
 	})
 
-	t.Run("R-BAK-021 the whole command restores and a second pod after the first finished exits 6", func(t *testing.T) {
+	t.Run("R-BAK-021 the whole command restores and a second pod after the first finished exits 0 saying so", func(t *testing.T) {
 		dst := src.destination()
 		p := dst.startTrove(t, "restore-one", "restore", id, "--skip-revocation-journal")
 		if code := p.wait(t, 3*time.Minute); code != 0 {
@@ -272,11 +272,11 @@ func TestR_BAK_020_CommandExitCodes(t *testing.T) {
 			t.Errorf("%d items", n)
 		}
 		p = dst.startTrove(t, "restore-two", "restore", id, "--skip-revocation-journal")
-		if code := p.wait(t, time.Minute); code != 6 {
-			t.Fatalf("second restore exit %d, want 6\n%s", code, p.stderr.String())
+		if code := p.wait(t, time.Minute); code != 0 {
+			t.Fatalf("second restore exit %d, want 0\n%s", code, p.stderr.String())
 		}
-		if !strings.Contains(p.stderr.String(), "check 4") {
-			t.Errorf("stderr = %q", p.stderr.String())
+		if !strings.Contains(p.stdout.String(), "already restored") {
+			t.Errorf("stdout = %q", p.stdout.String())
 		}
 	})
 }

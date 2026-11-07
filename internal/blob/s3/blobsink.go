@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/guided-traffic/trove/internal/backup/format"
 	"github.com/guided-traffic/trove/internal/backup/target"
@@ -25,11 +26,72 @@ type BlobSink struct {
 	prefix   string
 	partSize int64
 	maxSmall int64
+	mem      *memBudget
+}
+
+// maxInMemory caps the objects the sink buffers whole, whatever storage.s3.multipart.threshold says: a restore streams with many
+// workers at once, and the threshold (100 MiB by default) times the workers would not fit the Job's memory.
+const maxInMemory int64 = 8 << 20
+
+// defaultBuffered bounds the bytes all concurrent Puts of a sink hold in memory together.
+const defaultBuffered int64 = 256 << 20
+
+// SinkOption changes a BlobSink.
+type SinkOption func(*BlobSink)
+
+// WithMemoryBudget bounds the bytes the concurrent Puts of the sink hold in memory together; a Put that would exceed it waits
+// for the others.
+func WithMemoryBudget(n int64) SinkOption { return func(s *BlobSink) { s.mem = newMemBudget(n) } }
+
+// memBudget is a byte budget that callers wait on.
+type memBudget struct {
+	mu          sync.Mutex
+	used, limit int64
+	peak        int64
+	wake        chan struct{}
+}
+
+func newMemBudget(limit int64) *memBudget { return &memBudget{limit: limit, wake: make(chan struct{})} }
+
+// acquire waits until n bytes fit (n is clamped to the limit, so a single request always can) and returns the amount held.
+func (b *memBudget) acquire(ctx context.Context, n int64) (int64, error) {
+	n = min(n, b.limit)
+	for {
+		b.mu.Lock()
+		if b.used+n <= b.limit {
+			b.used += n
+			b.peak = max(b.peak, b.used)
+			b.mu.Unlock()
+			return n, nil
+		}
+		wait := b.wake
+		b.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+}
+
+func (b *memBudget) release(n int64) {
+	b.mu.Lock()
+	b.used -= n
+	close(b.wake)
+	b.wake = make(chan struct{})
+	b.mu.Unlock()
+}
+
+// PeakBuffered is the most bytes the sink held in memory at once, for the tests of the bound.
+func (s *BlobSink) PeakBuffered() int64 {
+	s.mem.mu.Lock()
+	defer s.mem.mu.Unlock()
+	return s.mem.peak
 }
 
 // NewBlobSink wraps the blob-store client c of storage.s3 (cfg.Prefix is the key prefix). copyPart is backup.copy.part_size,
 // the part size of a server-side copy above 5 GiB.
-func NewBlobSink(c *Client, cfg config.StorageS3, copyPart int64) *BlobSink {
+func NewBlobSink(c *Client, cfg config.StorageS3, copyPart int64, opts ...SinkOption) *BlobSink {
 	if copyPart <= 0 {
 		copyPart = 256 << 20
 	}
@@ -41,7 +103,13 @@ func NewBlobSink(c *Client, cfg config.StorageS3, copyPart int64) *BlobSink {
 	if small <= 0 || small < part {
 		small = part
 	}
-	return &BlobSink{c: c, copier: newCopier(c, copyPart), prefix: cfg.Prefix, partSize: part, maxSmall: small}
+	s := &BlobSink{c: c, copier: newCopier(c, copyPart), prefix: cfg.Prefix, partSize: part, maxSmall: min(small, maxInMemory), mem: newMemBudget(defaultBuffered)}
+	for _, o := range opts {
+		o(s)
+	}
+	// A part must fit the budget whole: S3 takes no part below 5 MiB but the last.
+	s.mem.limit = max(s.mem.limit, s.partSize)
+	return s
 }
 
 func (s *BlobSink) key(d format.Digest) string { return blob.Key(s.prefix, blob.Digest(d)) }
@@ -99,6 +167,11 @@ func (s *BlobSink) Put(ctx context.Context, d format.Digest, size int64, r io.Re
 		return nil
 	}
 	if size <= s.maxSmall {
+		held, err := s.mem.acquire(ctx, size)
+		if err != nil {
+			return err
+		}
+		defer s.mem.release(held)
 		buf, err := io.ReadAll(io.LimitReader(io.TeeReader(r, h), size+1))
 		if err != nil {
 			return err
@@ -111,7 +184,13 @@ func (s *BlobSink) Put(ctx context.Context, d format.Digest, size int64, r io.Re
 		}
 		return s.confirm(ctx, d, size)
 	}
-	part := blob.PartSize(size, s.partSize)
+	part := min(blob.PartSize(size, s.partSize), size)
+	held, err := s.mem.acquire(ctx, part)
+	if err != nil {
+		return err
+	}
+	defer s.mem.release(held)
+	r = io.LimitReader(r, size+1)
 	id, err := s.c.CreateMultipart(ctx, key, "")
 	if err != nil {
 		return err
@@ -126,7 +205,7 @@ func (s *BlobSink) Put(ctx context.Context, d format.Digest, size int64, r io.Re
 	}()
 	var parts []blob.Part
 	var total int64
-	buf := make([]byte, part)
+	buf := make([]byte, held)
 	for {
 		n, rerr := io.ReadFull(io.TeeReader(r, h), buf)
 		if n > 0 {

@@ -18,6 +18,7 @@ import (
 	"github.com/guided-traffic/trove/internal/backup/format"
 	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/backup/target"
+	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -90,6 +91,42 @@ func (r *Restorer) hook(event string) {
 // progress records that the restore made progress (R-BAK-013 stall detection).
 func (r *Restorer) progress() { r.last.Store(time.Now().UnixNano()) }
 
+// longStatementBound is how long a single statement or transaction of the restore that reads no file may run, reported as
+// progress while it does, before the stall watchdog counts it as hung again: four times backup.stall_timeout (R-BAK-013).
+func (r *Restorer) longStatementBound() time.Duration { return 4 * r.d.Config.StallTimeout }
+
+// whileTicking runs f, one long statement or transaction (the insert from a stage table, a fix-up, a backfilling migration
+// step), and reports progress while it runs, for at most [Restorer.longStatementBound]. A statement that runs longer than
+// that is a stall like any other, so a hung database still ends the restore.
+func (r *Restorer) whileTicking(f func() error) error {
+	limit := r.d.Config.StallTimeout
+	if limit <= 0 {
+		return f()
+	}
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(min(max(limit/10, 5*time.Millisecond), 5*time.Second))
+		defer t.Stop()
+		end := time.Now().Add(r.longStatementBound())
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				if time.Now().Before(end) {
+					r.progress()
+				}
+			}
+		}
+	}()
+	err := f()
+	close(stop)
+	<-done
+	r.progress()
+	return err
+}
+
 // Restore runs the restore, or with opts.Check only its checks.
 func (r *Restorer) Restore(parent context.Context, opts backup.RestoreOptions) (*backup.RestoreReport, error) {
 	if opts.IdentityFile != "" {
@@ -149,8 +186,10 @@ func (r *Restorer) classify(ctx context.Context, err error) error {
 		return backup.Fail(backup.ExitPrecondition, backup.CodeSchemaStepMismatch, err)
 	case errors.As(err, &mm):
 		return backup.Fail(backup.ExitPrecondition, backup.CodeKeyRingMismatch, err)
-	case postgres.IsUnavailable(err):
+	case postgres.IsUnavailable(err), blob.IsTransient(err), errors.Is(err, blob.ErrCircuitOpen):
 		return backup.Fail(backup.ExitTemporary, backup.CodeTemporary, err)
+	case blob.IsConfig(err):
+		return backup.Fail(backup.ExitUsage, backup.CodeConfig, fmt.Errorf("the object store refuses the restore (check the credentials and the bucket): %w", err))
 	}
 	return err
 }
@@ -166,6 +205,12 @@ func (r *Restorer) run(ctx context.Context, opts backup.RestoreOptions) (*backup
 		return nil, err
 	}
 	st := &state{id: opts.ID, m: m}
+	if done, err := r.alreadyRestored(ctx, opts.ID); err != nil {
+		return nil, err
+	} else if done {
+		r.d.Log.Info("the backup is already restored into this database", "backup", opts.ID)
+		return &backup.RestoreReport{BackupID: opts.ID, SnapshotAt: m.SnapshotAt, AlreadyRestored: true}, nil
+	}
 	if err := r.runChecks(ctx, st, opts); err != nil {
 		return nil, err
 	}
@@ -245,7 +290,11 @@ func (r *Restorer) stepSchema(ctx context.Context, st *state) (*postgres.Restore
 // stepForward is step 5: the binary's remaining migrations.
 func (r *Restorer) stepForward(ctx context.Context) error {
 	r.hook("step5")
-	res, err := r.d.Session.MigrateTo(ctx, postgres.RestoreMigration{After: func(postgres.StepResult) { r.progress() }})
+	var res postgres.Result
+	err := r.whileTicking(func() (err error) {
+		res, err = r.d.Session.MigrateTo(ctx, postgres.RestoreMigration{After: func(postgres.StepResult) { r.progress() }})
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -262,7 +311,7 @@ func (r *Restorer) stepLoad(ctx context.Context, st *state, marker *postgres.Res
 	m := st.m
 	plan := postgres.LoadPlan{
 		Damaged: m.DamagedSet(), Marker: *marker, Registry: r.d.Registry,
-		LockTimeout: r.d.Config.Database.LockTimeout, OnTable: func(string) { r.progress() },
+		LockTimeout: r.d.Config.Database.LockTimeout, OnTable: func(string) { r.progress() }, Keepalive: r.whileTicking,
 	}
 	for _, t := range m.Tables {
 		lt := postgres.LoadTable{Name: t.Name, Columns: t.Columns, Rows: t.Rows}
@@ -294,14 +343,8 @@ func (r *Restorer) stepFixups(ctx context.Context, st *state, marker *postgres.R
 		return err
 	}
 	env := r.fixupEnv(st)
-	err := r.d.Session.Fix(ctx, func(tx meta.Tx) error {
-		for _, f := range fixup.Fixups() {
-			if err := f.Apply(ctx, tx, env); err != nil {
-				return fmt.Errorf("fix-up %s: %w", f.Name, err)
-			}
-			r.d.Log.Info("fix-up applied", "fixup", f.Name)
-		}
-		return nil
+	err := r.whileTicking(func() error {
+		return r.d.Session.Fix(ctx, func(tx meta.Tx) error { return r.applyFixups(ctx, tx, env) })
 	})
 	if err != nil {
 		return err
@@ -310,11 +353,33 @@ func (r *Restorer) stepFixups(ctx context.Context, st *state, marker *postgres.R
 	return nil
 }
 
+// applyFixups runs the registered fix-ups in the transaction of step 6.
+func (r *Restorer) applyFixups(ctx context.Context, tx meta.Tx, env fixup.Env) error {
+	for _, f := range fixup.Fixups() {
+		if err := f.Apply(ctx, tx, env); err != nil {
+			return fmt.Errorf("fix-up %s: %w", f.Name, err)
+		}
+		r.d.Log.Info("fix-up applied", "fixup", f.Name)
+	}
+	return nil
+}
+
 func (r *Restorer) fixupEnv(st *state) fixup.Env {
 	return fixup.Env{
 		Manifest: st.m, Now: r.d.Now().UTC(), NewKeyspaceID: randomUUID(), NewIncarnation: randomUUID(),
 		ExcludeRemoteCaches: st.m.Options.ExcludeRemoteCaches,
 	}
+}
+
+// alreadyRestored reports a database that holds the finished restore of this backup: no anchor, no marker, and restored_from
+// naming the backup. A pod killed after the commit of step 9 and before its exit leaves exactly that; the Job's next pod must
+// end with success, not with the refusal of check 4 (R-BAK-021).
+func (r *Restorer) alreadyRestored(ctx context.Context, id format.ID) (bool, error) {
+	in, err := r.d.Session.Inspect(ctx)
+	if err != nil {
+		return false, err
+	}
+	return in.SchemaExists && in.Anchor == "" && in.Marker == nil && in.RelationCount > 0 && in.RestoredFromBackup == string(id), nil
 }
 
 // recorder is the audit writer over the restore's session, shared by the replay and the finish.
@@ -368,16 +433,18 @@ func (r *Restorer) stepCaches(ctx context.Context, st *state) error {
 		env.Items = items
 	}
 	for _, p := range fixup.Purgers() {
-		if err := p.Purge(ctx, r.d.Session, env); err != nil {
+		if err := r.whileTicking(func() error { return p.Purge(ctx, r.d.Session, env) }); err != nil {
 			return fmt.Errorf("purging the %s remote caches: %w", p.Name, err)
 		}
 		r.d.Log.Info("remote caches purged", "format", p.Name)
 		r.progress()
 	}
 	var n int64
-	err := r.d.Session.InTx(ctx, func(tx meta.Tx) (err error) {
-		n, err = postgres.DeleteUnreferencedBlobs(ctx, tx)
-		return err
+	err := r.whileTicking(func() error {
+		return r.d.Session.InTx(ctx, func(tx meta.Tx) (err error) {
+			n, err = postgres.DeleteUnreferencedBlobs(ctx, tx)
+			return err
+		})
 	})
 	if err != nil {
 		return err

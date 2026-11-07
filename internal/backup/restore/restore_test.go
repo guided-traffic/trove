@@ -42,6 +42,8 @@ type fakeSession struct {
 	migrated  []postgres.RestoreMigration
 	loaded    bool
 	loadErr   error
+	// fixDelay, migrateDelay and loadStatement make the matching call take that long, until the context ends.
+	fixDelay, migrateDelay, loadStatement time.Duration
 }
 
 func (f *fakeSession) rec(s string) { f.mu.Lock(); f.calls = append(f.calls, s); f.mu.Unlock() }
@@ -76,18 +78,44 @@ func (f *fakeSession) Steps() ([]postgres.RestoreStep, error) {
 	return f.steps, nil
 }
 func (f *fakeSession) SetAnchor(context.Context, string) error { f.rec("anchor"); return nil }
-func (f *fakeSession) MigrateTo(_ context.Context, m postgres.RestoreMigration) (postgres.Result, error) {
+func (f *fakeSession) MigrateTo(ctx context.Context, m postgres.RestoreMigration) (postgres.Result, error) {
 	f.rec("migrate")
+	if err := sleepCtx(ctx, f.migrateDelay); err != nil {
+		return postgres.Result{}, err
+	}
 	f.migrated = append(f.migrated, m)
 	return postgres.Result{}, nil
 }
 
-func (f *fakeSession) Load(context.Context, postgres.LoadPlan, postgres.LoadSource) (postgres.LoadResult, error) {
+func (f *fakeSession) Load(ctx context.Context, plan postgres.LoadPlan, _ postgres.LoadSource) (postgres.LoadResult, error) {
 	f.rec("load")
+	if plan.Keepalive != nil && f.loadStatement > 0 {
+		if err := plan.Keepalive(func() error { return sleepCtx(ctx, f.loadStatement) }); err != nil {
+			return postgres.LoadResult{}, err
+		}
+	}
 	f.loaded = true
 	return postgres.LoadResult{}, f.loadErr
 }
-func (f *fakeSession) Fix(context.Context, func(meta.Tx) error) error { f.rec("fix"); return nil }
+
+func (f *fakeSession) Fix(ctx context.Context, _ func(meta.Tx) error) error {
+	f.rec("fix")
+	return sleepCtx(ctx, f.fixDelay)
+}
+
+// sleepCtx waits d or until the context ends, whichever comes first, and reports the context's error.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
 func (f *fakeSession) Finish(context.Context, func(meta.Tx) error) error {
 	f.rec("finish")
 	return nil
@@ -111,6 +139,8 @@ type fakeBlobs struct {
 	copies     int
 	streams    int
 	allowSeen  bool
+	// progressSet records that a copy source carried the Progress callback.
+	progressSet bool
 }
 
 func (b *fakeBlobs) Has(_ context.Context, d format.Digest, size int64) (bool, error) {
@@ -135,7 +165,13 @@ func (b *fakeBlobs) Put(_ context.Context, d format.Digest, size int64, r io.Rea
 	return nil
 }
 
-func (b *fakeBlobs) CopyFrom(context.Context, target.ObjectRef, format.Digest, int64) error {
+func (b *fakeBlobs) CopyFrom(_ context.Context, ref target.ObjectRef, _ format.Digest, _ int64) error {
+	if ref.Progress != nil {
+		ref.Progress(1)
+		b.mu.Lock()
+		b.progressSet = true
+		b.mu.Unlock()
+	}
 	if !b.serverCopy {
 		return target.ErrServerCopyUnavailable
 	}
@@ -559,6 +595,16 @@ func TestR_BAK_021_Blobs(t *testing.T) {
 		}
 		if e.blobs.copies != 2 || e.blobs.streams != 0 {
 			t.Fatalf("copies %d streams %d", e.blobs.copies, e.blobs.streams)
+		}
+	})
+	t.Run("R-BAK-013 a server-side copy reports its progress to the watchdog", func(t *testing.T) {
+		e := newEnv(t)
+		e.blobs.serverCopy = true
+		if err := run(e); err != nil {
+			t.Fatal(err)
+		}
+		if !e.blobs.progressSet {
+			t.Fatal("the copy source carries no Progress callback")
 		}
 	})
 	t.Run("R-BAK-021 server_side always fails when the copy is unavailable; never streams without asking", func(t *testing.T) {

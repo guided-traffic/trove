@@ -127,7 +127,7 @@ func (c *copier) one(ctx context.Context, e format.BlobEntry) error {
 	}
 	key := c.r.d.Layout.Pool(e.Digest)
 	if !c.streamOnly.Load() {
-		src := target.ObjectRef{Endpoint: c.r.d.TargetEndpoint, Bucket: c.r.d.TargetBucket, Key: key, Size: e.Size}
+		src := target.ObjectRef{Endpoint: c.r.d.TargetEndpoint, Bucket: c.r.d.TargetBucket, Key: key, Size: e.Size, Progress: func(int64) { c.r.progress() }}
 		err := sink.CopyFrom(ctx, src, e.Digest, e.Size)
 		switch {
 		case err == nil:

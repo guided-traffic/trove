@@ -1449,7 +1449,7 @@ What `trove backup restore` does:
   (R-BAK-012), or the same command run again, resumes: check 4 accepts the anchor, the runner
   applies only missing steps (each step commits with its `schema_migration` row, R-ARCH-026),
   step 3 skips objects already copied, step 4 is one transaction and is skipped once committed,
-  step 6 is guarded by the phase `fixed`, and steps 5, 7 and 8 are idempotent. There is no flag. A
+  step 6 is guarded by the phase `fixed`, and steps 5, 7 and 8 are idempotent. There is no flag. A pod that finds no anchor and no marker, and `restored_from` naming this very backup, ends with exit `0` and "already restored" (it was killed after step 9's commit, Q-BAK-53). A
   restore of another backup into the same database refuses (check 4), and so does every restore
   after step 9, which removes the anchor. To start over instead, the operator drops and recreates
   the schema and empties the blob prefix.
@@ -2524,6 +2524,24 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** R-BAK-013 names a listing page as progress. The development agent would revisit the memory bound when retained backups reach the hundreds; the merge would then run in bounded groups of lists.
 
 **Applied:** R-BAK-010, R-BAK-013, R-BAK-016, R-BAK-017; `internal/backup/retention`, `internal/backup/listing`, `internal/backup/classify.go`, `format.NewBlobListWriter`.
+
+### Q-BAK-53 · A long statement of the restore is progress for a bound, the streaming sink is bounded in memory, and a finished restore of the same backup is not an error
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Progress only per file read and per phase | The text of R-BAK-013 for the restore as built | Nothing to add | A statement that reads no file (the insert from a stage table, a fix-up, `storage_usage_recount()`, a backfilling migration step, the deletion of unreferenced blob rows) can run longer than `backup.stall_timeout`; the watchdog cancels it, it rolls back, and the next pod repeats it forever |
+| (b) A keepalive around exactly those statements, bounded by four times `backup.stall_timeout` (chosen) | `Restorer.whileTicking` reports progress while the statement runs, for at most the bound | A long but healthy statement is not a stall; a hung one still is, after the bound | The bound is a constant multiple, not a key |
+| (c) No watchdog during the database phases | Hang detection only in the transfers | Simple | A hung database connection holds the migration lock and the Job for ever |
+
+The streaming sink buffers an object whole only up to 8 MiB whatever `storage.s3.multipart.threshold` is, uploads larger objects in parts of `multipart.part_size`, and bounds the bytes all concurrent writes hold together by a budget of 256 MiB (a part always fits). A restore Job with 16 copy workers and a 2 GiB limit therefore cannot be pushed out of memory by many large blobs.
+
+A pod killed after the commit of step 9 and before its exit leaves a database with no anchor, no marker and `restored_from.backupId` equal to the backup: the next pod ends with exit 0 and says "already restored". Without `restored_from` of that ID the database is a foreign one and check 4 refuses it as before. Errors of the object store are mapped like the database's: a transient one or an open circuit exits 75, a refused credential or bucket exits 2, the rest exits 1.
+
+**Choice:** (b), the memory bound, the already-restored rule and the mapping.
+**Rationale:** A restore that is retried by the Job must make progress on every attempt; each of the three cases would otherwise repeat for ever or fail a Job that succeeded. Revisit if the bound needs to be a key, or if a statement of the restore needs more than four times the stall timeout.
+**Applied:** R-BAK-013, R-BAK-021; `internal/backup/restore/restore.go` (`whileTicking`, `alreadyRestored`, `classify`), `internal/meta/postgres/backup_load.go` (`LoadPlan.Keepalive`), `internal/blob/s3/blobsink.go`.
 
 ## What this does not cover
 

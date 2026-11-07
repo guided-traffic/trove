@@ -219,8 +219,16 @@ func TestR_BAK_021_RestoreEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("R-BAK-021 a second restore of the finished installation exits 6 at check 4", func(t *testing.T) {
-		_, err := dst.restore(backup.RestoreOptions{SkipRevocationJournal: true})
+	t.Run("R-BAK-021 a second restore of the same backup finds it restored and exits 0; another backup exits 6 at check 4", func(t *testing.T) {
+		rep, err := dst.restore(backup.RestoreOptions{SkipRevocationJournal: true})
+		if err != nil || !rep.AlreadyRestored {
+			t.Fatalf("report %+v, err %v", rep, err)
+		}
+		if got := s.Number("SELECT count(*) FROM audit_event WHERE action = 'system.restored'"); got != 1 {
+			t.Errorf("%d system.restored events", got)
+		}
+		other := exportBackup(t, src.stack, src.target, src.layout, src.seed.blobs, exportOptions{})
+		_, err = dst.restore(backup.RestoreOptions{ID: other.BackupID, SkipRevocationJournal: true})
 		wantExit(t, err, backup.ExitPrecondition, "check 4")
 	})
 }

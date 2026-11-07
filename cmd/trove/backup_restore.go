@@ -60,6 +60,10 @@ func backupRestoreCmd(args []string, s streams) error {
 	if env.json {
 		return env.printJSON(rep)
 	}
+	if rep.AlreadyRestored {
+		_, err = fmt.Fprintf(s.stdout, "backup %s is already restored into this database; nothing to do\n", rep.BackupID)
+		return err
+	}
 	if rep.Checked {
 		_, err = fmt.Fprintf(s.stdout, "restore of %s: every precondition holds\n", rep.BackupID)
 		return err

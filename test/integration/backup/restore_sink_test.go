@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func TestR_BAK_021_RestoreStreamsWhenTheStoreCannotCopy(t *testing.T) {
 	}
 }
 
-func sinkFor(t *testing.T, dst *destination, threshold, part int64) *s3.BlobSink {
+func sinkFor(t *testing.T, dst *destination, threshold, part int64, opts ...s3.SinkOption) *s3.BlobSink {
 	t.Helper()
 	cfg := dst.cfg.Storage.S3
 	cfg.Multipart.Threshold, cfg.Multipart.PartSize = config.ByteSize(threshold), config.ByteSize(part)
@@ -45,7 +46,7 @@ func sinkFor(t *testing.T, dst *destination, threshold, part int64) *s3.BlobSink
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s3.NewBlobSink(c, cfg, 5<<20)
+	return s3.NewBlobSink(c, cfg, 5<<20, opts...)
 }
 
 func TestR_BAK_021_BlobSink(t *testing.T) {
@@ -127,6 +128,60 @@ func TestR_BAK_021_BlobSink(t *testing.T) {
 		}
 		if key, err := sink.FirstForeign(ctx, true); err != nil || key != "" {
 			t.Fatalf("after a probe: %q, %v", key, err)
+		}
+	})
+}
+
+// The streaming path of a restore runs with many workers; the bytes it holds in memory stay bounded whatever the multipart
+// threshold of the configuration says (R-BAK-021 step 3).
+func TestR_BAK_021_BlobSinkMemoryIsBounded(t *testing.T) {
+	src := newSource(t, 1)
+	dst := src.destination()
+	ctx := context.Background()
+	content := func(n int) ([]byte, format.Digest) {
+		b := make([]byte, n)
+		if _, err := rand.Read(b); err != nil {
+			t.Fatal(err)
+		}
+		return b, format.Digest(sha256.Sum256(b))
+	}
+
+	t.Run("R-BAK-021 concurrent streams share one budget", func(t *testing.T) {
+		const budget = 12 << 20
+		sink := sinkFor(t, dst, 100<<20, 5<<20, s3.WithMemoryBudget(budget))
+		var wg sync.WaitGroup
+		for range 8 {
+			b, d := content(6 << 20)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := sink.Put(ctx, d, int64(len(b)), bytes.NewReader(b)); err != nil {
+					t.Error(err)
+				}
+			}()
+			t.Cleanup(func() {
+				if got := dst.blobObject(d); !bytes.Equal(got, b) {
+					t.Errorf("object %s has %d bytes", d.Hex(), len(got))
+				}
+			})
+		}
+		wg.Wait()
+		if peak := sink.PeakBuffered(); peak == 0 || peak > budget {
+			t.Fatalf("peak %d bytes, budget %d", peak, budget)
+		}
+	})
+
+	t.Run("R-BAK-021 an object above the cap goes up in parts although the threshold is 100 MiB", func(t *testing.T) {
+		sink := sinkFor(t, dst, 100<<20, 5<<20)
+		b, d := content(20 << 20)
+		if err := sink.Put(ctx, d, int64(len(b)), bytes.NewReader(b)); err != nil {
+			t.Fatal(err)
+		}
+		if peak := sink.PeakBuffered(); peak > 5<<20 {
+			t.Fatalf("peak %d bytes: the object was buffered whole", peak)
+		}
+		if got := dst.blobObject(d); !bytes.Equal(got, b) {
+			t.Fatalf("object has %d bytes", len(got))
 		}
 	})
 }

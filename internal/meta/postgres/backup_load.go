@@ -65,6 +65,17 @@ type LoadPlan struct {
 	LockTimeout time.Duration
 	// OnTable is called before each table is copied, for the progress log and the tests.
 	OnTable func(name string)
+	// Keepalive runs f, one long statement of the load that reads no file (the insert from a stage table, the fill of a
+	// CycleBreak column), and reports progress while it runs, within a bound of its own (R-BAK-013). Nil runs f.
+	Keepalive func(f func() error) error
+}
+
+// keepalive runs f under the plan's keepalive, or plainly without one.
+func (p LoadPlan) keepalive(f func() error) error {
+	if p.Keepalive == nil {
+		return f()
+	}
+	return p.Keepalive(f)
 }
 
 // LoadSource opens the COPY text of a table: the decompressed bytes of its file. The reader's Close reports whether what it
@@ -158,7 +169,7 @@ func (s *RestoreSession) Load(ctx context.Context, plan LoadPlan, src LoadSource
 			plan.OnTable(name)
 		}
 		started := time.Now()
-		n, err := s.loadTable(ctx, tx, t, src)
+		n, err := s.loadTable(ctx, tx, t, src, plan.keepalive)
 		if err != nil {
 			return res, fmt.Errorf("table %s: %w", name, err)
 		}
@@ -173,7 +184,9 @@ func (s *RestoreSession) Load(ctx context.Context, plan LoadPlan, src LoadSource
 	}
 	// The CycleBreak columns are filled once every table of the cycle exists.
 	for _, t := range deferred {
-		if err := s.fillCycleBreak(ctx, tx, t, pgx.Identifier{s.cfg.Schema, t.Name}.Sanitize()); err != nil {
+		if err := plan.keepalive(func() error {
+			return s.fillCycleBreak(ctx, tx, t, pgx.Identifier{s.cfg.Schema, t.Name}.Sanitize())
+		}); err != nil {
 			return res, fmt.Errorf("table %s: %w", t.Name, err)
 		}
 	}
@@ -292,7 +305,7 @@ func columnList(cols [][2]string, except string) string {
 // loadTable copies one table and returns the rows it holds. A plain table is copied directly. The audit table and a table
 // with a CycleBreak column go through a temporary table: the audit rows to learn which monthly partitions they need, the
 // others to set the column once every row of the cycle's other table exists.
-func (s *RestoreSession) loadTable(ctx context.Context, tx pgx.Tx, t LoadTable, src LoadSource) (int64, error) {
+func (s *RestoreSession) loadTable(ctx context.Context, tx pgx.Tx, t LoadTable, src LoadSource, alive func(func() error) error) (int64, error) {
 	rc, err := src.Open(ctx, t.Name)
 	if err != nil {
 		return 0, err
@@ -320,18 +333,24 @@ func (s *RestoreSession) loadTable(ctx context.Context, tx pgx.Tx, t LoadTable, 
 	if !staged {
 		return rows, nil
 	}
-	if t.Name == auditTable && rows > 0 {
-		if _, err := tx.Exec(ctx, "SELECT audit_create_partitions((SELECT min(occurred_at) FROM "+stage+"), (SELECT max(occurred_at) FROM "+stage+"))"); err != nil {
-			return 0, fmt.Errorf("audit partitions: %w", err)
+	err = alive(func() error {
+		if t.Name == auditTable && rows > 0 {
+			if _, err := tx.Exec(ctx, "SELECT audit_create_partitions((SELECT min(occurred_at) FROM "+stage+"), (SELECT max(occurred_at) FROM "+stage+"))"); err != nil {
+				return fmt.Errorf("audit partitions: %w", err)
+			}
 		}
-	}
-	insertCols := columnList(t.Columns, t.CycleBreak)
-	insert, err := tx.Exec(ctx, "INSERT INTO "+qualified+" ("+insertCols+") OVERRIDING SYSTEM VALUE SELECT "+insertCols+" FROM "+stage)
+		insertCols := columnList(t.Columns, t.CycleBreak)
+		insert, err := tx.Exec(ctx, "INSERT INTO "+qualified+" ("+insertCols+") OVERRIDING SYSTEM VALUE SELECT "+insertCols+" FROM "+stage)
+		if err != nil {
+			return err
+		}
+		if insert.RowsAffected() != rows {
+			return fmt.Errorf("%d rows staged, %d inserted", rows, insert.RowsAffected())
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, err
-	}
-	if insert.RowsAffected() != rows {
-		return 0, fmt.Errorf("%d rows staged, %d inserted", rows, insert.RowsAffected())
 	}
 	if t.CycleBreak == "" {
 		if _, err := tx.Exec(ctx, "DROP TABLE "+stage); err != nil {

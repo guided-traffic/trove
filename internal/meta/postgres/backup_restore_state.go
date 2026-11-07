@@ -34,6 +34,9 @@ type RestoreInspection struct {
 	Marker *RestoreMarker
 	// ServerVersion is the server_version string, for the log.
 	ServerVersion string
+	// RestoredFromBackup is the backup ID of system_state restored_from, empty when the key is absent: a restore that
+	// finished (R-BAK-022) leaves it behind, the marker and the anchor gone.
+	RestoredFromBackup string
 }
 
 // Inspect reads the database state the restore decides on. It writes nothing.
@@ -70,8 +73,34 @@ func (s *RestoreSession) Inspect(ctx context.Context) (RestoreInspection, error)
 		in.Relations = append(in.Relations, r.Name)
 		in.RelationCount = int(r.Total)
 	}
-	in.Marker, err = s.readMarker(ctx)
+	if in.Marker, err = s.readMarker(ctx); err != nil {
+		return in, err
+	}
+	in.RestoredFromBackup, err = s.readRestoredFrom(ctx)
 	return in, err
+}
+
+// readRestoredFrom reads the backup ID of restored_from; empty when the table or the key is missing.
+func (s *RestoreSession) readRestoredFrom(ctx context.Context) (string, error) {
+	qs := q.New(s.conn)
+	found, err := qs.TableExists(ctx, "system_state")
+	if err != nil || !found {
+		return "", err
+	}
+	row, err := qs.GetSystemState(ctx, "restored_from")
+	if isNoRows(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var v struct {
+		BackupID string `json:"backupId"`
+	}
+	if err := json.Unmarshal(row.Value, &v); err != nil {
+		return "", fmt.Errorf("system_state restored_from: %w", err)
+	}
+	return v.BackupID, nil
 }
 
 // ServerCheck is the server half of check 6: a supported PostgreSQL major version (R-HA-013), UTF8, and a role that is not a

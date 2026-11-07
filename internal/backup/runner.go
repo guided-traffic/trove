@@ -140,6 +140,9 @@ type RestoreReport struct {
 	Phases map[string]float64 `json:"phasesSeconds,omitempty"`
 	// Checked is true for --check, which changed nothing.
 	Checked bool `json:"checked,omitempty"`
+	// AlreadyRestored is true when the database holds the finished restore of this very backup: an earlier pod committed step 9
+	// and was killed before it exited, so the Job's next pod finds nothing to do (R-BAK-021).
+	AlreadyRestored bool `json:"alreadyRestored,omitempty"`
 }
 
 // Restorer restores a backup into an empty installation, or resumes an interrupted restore of the same backup.
