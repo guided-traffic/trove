@@ -118,24 +118,25 @@ func Failed(currentRevision int64) error { return errs.Stale("The resource", cur
 // answer. If-None-Match: * matches every existing resource. Weak comparison
 // applies, as RFC 9110 section 13.1.2 says for If-None-Match.
 func NotModified(w http.ResponseWriter, r *http.Request, etag string) bool {
-	vals := r.Header.Values("If-None-Match")
-	if len(vals) == 0 {
-		return false
-	}
-	match := false
-	for _, v := range vals {
-		for _, tag := range strings.Split(v, ",") {
-			tag = strings.TrimSpace(tag)
-			if tag == "*" || strings.TrimPrefix(tag, "W/") == etag {
-				match = true
-			}
-		}
-	}
-	if !match {
+	if !IfNoneMatchHits(r, etag) {
 		return false
 	}
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNotModified)
 	return true
+}
+
+// IfNoneMatchHits reports whether the request's If-None-Match matches etag (weak comparison, * matches every existing
+// resource). A handler that answers 304 with a cache policy of its own uses it instead of NotModified.
+func IfNoneMatchHits(r *http.Request, etag string) bool {
+	for _, v := range r.Header.Values("If-None-Match") {
+		for _, tag := range strings.Split(v, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag == "*" || strings.TrimPrefix(tag, "W/") == etag {
+				return true
+			}
+		}
+	}
+	return false
 }

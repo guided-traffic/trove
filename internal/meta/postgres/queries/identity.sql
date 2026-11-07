@@ -70,6 +70,17 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
   FROM principal p JOIN app_user u ON u.principal_id = p.id
  WHERE p.kind = 'user' AND p.name = sqlc.arg(name)::text;
 
+-- name: IdentityGetUserByID :many
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision,
+       coalesce(u.email, '')::text AS email, u.email_verified, coalesce(u.display_name, '')::text AS display_name,
+       u.origin, u.is_break_glass, coalesce(u.disabled_reason, '')::text AS disabled_reason,
+       u.last_login_at, coalesce(u.scim_external_id, '')::text AS scim_external_id,
+       coalesce((SELECT i.last_claims -> 'groupClaimMissing' FROM user_identity i
+                  WHERE i.user_id = u.principal_id AND i.last_claims ? 'groupClaimMissing'
+                  ORDER BY i.id DESC LIMIT 1), 'null'::jsonb)::text AS group_claim_missing
+  FROM principal p JOIN app_user u ON u.principal_id = p.id
+ WHERE p.kind = 'user' AND p.id = sqlc.arg(id)::text::uuid;
+
 -- name: IdentityListUsers :many
 -- Keyset order by name. status is active, disabled, locked (the break-glass account
 -- while its lockout is in force, R-AUTH-038) or ''; origin and group are '' for any;

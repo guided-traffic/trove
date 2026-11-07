@@ -68,6 +68,7 @@ describe('Profile avatar (R-UI-051)', () => {
     [{ status: 422, code: 'validation_failed', field: 'animated_image' }, 'Animated images are not accepted.'],
     [{ status: 422, code: 'validation_failed', field: 'invalid_dimensions' }, 'at least 32 by 32 pixels'],
     [{ status: 422, code: 'validation_failed', field: 'undecodable_image' }, 'could not be read as an image'],
+    [{ status: 422, code: 'validation_failed', field: 'too_complex' }, 'takes too long to process'],
     [{ status: 503, code: 'server_busy', field: '' }, 'The server is busy processing other images.'],
   ])('R-UI-051 the answer %j is shown in words and the avatar stays', async (answer, expected) => {
     const { api, store, section, choose } = await render();

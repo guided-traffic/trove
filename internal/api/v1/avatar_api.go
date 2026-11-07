@@ -26,6 +26,7 @@ import (
 type AvatarService interface {
 	Put(ctx context.Context, u avatar.User, who avatar.Who, declared string, body []byte) (string, error)
 	Remove(ctx context.Context, u avatar.User, who avatar.Who) (bool, error)
+	Has(ctx context.Context, hexDigest string) error
 	Open(ctx context.Context, hexDigest string) ([]byte, error)
 }
 
@@ -53,6 +54,11 @@ func avatarOwner(r *http.Request) (avatar.User, error) {
 	p := httpserver.PrincipalFrom(r.Context())
 	if p.Kind != httpserver.KindUser && p.Kind != httpserver.KindBreakGlass {
 		return avatar.User{}, errs.E(errs.Forbidden, errs.CodeForbidden, "Service accounts and CI tokens have no avatar.")
+	}
+	// A token whose scope is narrower than its owner's rights (a token made for one repository or one capability) does not
+	// change the owner's profile picture; a session and a token that inherits the owner's rights do (Q-API-211).
+	if sc := p.Credential.Scope; sc != nil && !sc.Inherit {
+		return avatar.User{}, errs.E(errs.Forbidden, errs.CodeForbidden, "A token limited to part of its owner's rights cannot change the avatar; sign in or use a token that inherits the owner's rights.")
 	}
 	return avatar.User{ID: p.ID, Name: p.Name}, nil
 }
@@ -100,7 +106,9 @@ func avatarErr(err error) error {
 		return invalid("animated_image", "only a still image is accepted")
 	case errors.Is(err, avatar.ErrDimensions):
 		return invalid("invalid_dimensions", "the image must be at least "+strconv.Itoa(avatar.MinSide)+" x "+strconv.Itoa(avatar.MinSide)+
-			" pixels and at most "+strconv.Itoa(avatar.MaxPixels)+" pixels in all")
+			" pixels and at most "+strconv.Itoa(avatar.MaxPixels)+" pixels in all; a progressive or four-component JPEG, or a 16-bit PNG, fewer")
+	case errors.Is(err, avatar.ErrComplex):
+		return invalid("too_complex", "the image has too many scans or takes too long to decode")
 	case errors.Is(err, avatar.ErrCorrupt):
 		return invalid("undecodable_image", "the image is damaged or truncated")
 	case errors.Is(err, avatar.ErrBusy):
@@ -133,7 +141,7 @@ func (s *Server) SetAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	var u principal.User
 	if err == nil {
-		u, err = s.o.Auth.Manager.GetUser(r.Context(), owner.Name)
+		u, err = s.o.Auth.Manager.GetUserByID(r.Context(), owner.ID)
 	}
 	if err != nil {
 		failAvatar(w, r, err)
@@ -207,9 +215,8 @@ const avatarCache = "private, max-age=31536000, immutable"
 // GetAvatar implements GET /api/v1/avatars/{digest} (R-API-055).
 func (s *Server) GetAvatar(w http.ResponseWriter, r *http.Request, digest string, _ gen.GetAvatarParams) {
 	svc, err := s.avatars()
-	var img []byte
 	if err == nil {
-		img, err = svc.Open(r.Context(), digest)
+		err = svc.Has(r.Context(), digest)
 	}
 	switch {
 	case errors.Is(err, avatar.ErrNotFound):
@@ -220,6 +227,24 @@ func (s *Server) GetAvatar(w http.ResponseWriter, r *http.Request, digest string
 		return
 	}
 	h := w.Header()
+	tag := `"` + strings.ToLower(digest) + `"`
+	// The answers of this route keep the cache policy of the image, a 304 included: a 304 that said no-store would replace
+	// the stored entry's immutable policy (RFC 9111 section 4.3.4). A 304 does not read the blob.
+	if IfNoneMatchHits(r, tag) {
+		h.Set("ETag", tag)
+		h.Set("Cache-Control", avatarCache)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	img, err := svc.Open(r.Context(), digest)
+	if errors.Is(err, avatar.ErrNotFound) {
+		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No avatar has this digest."))
+		return
+	}
+	if err != nil {
+		httpserver.Problem(w, r, avatarErr(err))
+		return
+	}
 	// The image answer is not a JSON answer: it replaces the headers of R-API-017 with those of a response the browser
 	// renders as a picture and nothing else.
 	h.Set("Content-Type", avatar.ContentType)
@@ -228,11 +253,7 @@ func (s *Server) GetAvatar(w http.ResponseWriter, r *http.Request, digest string
 	h.Set("Content-Disposition", `inline; filename="avatar.png"`)
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	h.Set("Cache-Control", avatarCache)
-	tag := `"` + strings.ToLower(digest) + `"`
 	h.Set("ETag", tag)
-	if NotModified(w, r, tag) {
-		return
-	}
 	h.Set("Content-Length", strconv.Itoa(len(img)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {

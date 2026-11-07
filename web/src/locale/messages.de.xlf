@@ -25688,11 +25688,20 @@
     </unit>
     <unit id="avatar.err.busy">
       <notes>
-        <note category="location">src/app/features/profile/avatar-messages.ts:23</note>
+        <note category="location">src/app/features/profile/avatar-messages.ts:25</note>
       </notes>
       <segment>
         <source>The server is busy processing other images. Try again in a moment.</source>
         <target>Der Server verarbeitet gerade andere Bilder. Versuchen Sie es gleich noch einmal.</target>
+      </segment>
+    </unit>
+    <unit id="avatar.err.complex">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:23</note>
+      </notes>
+      <segment>
+        <source>The image takes too long to process. Choose a simpler or smaller image.</source>
+        <target>Das Bild braucht zu lange zur Verarbeitung. Wählen Sie ein einfacheres oder kleineres Bild.</target>
       </segment>
     </unit>
     <unit id="avatar.err.dimensions">

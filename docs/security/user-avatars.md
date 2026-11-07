@@ -31,13 +31,22 @@ answers.
    4,194,304 pixels in all, the product taken in 64 bits, else `422`. A PNG that declares 100,000 x 100,000 pixels in a few dozen
    bytes, a JPEG frame header of 65,535 x 65,535 and a WebP canvas of 16,000 x 16,000 are refused here, and the tests assert the
    refusal is the size and not a failed decode.
-6. **A decoding slot.** A replica decodes two images at a time; a request waits up to 2 s for a slot and then answers `503
+6. **The work and the memory, from the header.** A JPEG is walked marker by marker, stepping over the entropy-coded data, and one
+   with more than 64 scans is `422` `too_complex`: the decoder walks every block of the image once per scan, so a progressive
+   file of 2048 x 2048 pixels with tens of thousands of tiny scans would cost minutes of CPU for under 1 MiB of upload. Then the
+   memory of the decode is estimated from the header (`decodeCost`): the decoded image at 4 bytes a pixel for an 8-bit PNG, 8 for
+   a 16-bit PNG or a WebP, the components of a baseline JPEG (3, or 4 for CMYK), 5 per component for a progressive JPEG (which
+   keeps the coefficients of every block), plus the scaler's buffer of 256 x short side x 32 bytes. Above 48 MiB the answer is
+   `422` `invalid_dimensions`; a progressive three-component JPEG is therefore accepted up to about 1,600 x 1,600 pixels, a
+   progressive four-component one up to about 1,400 x 1,400, an 8-bit PNG or a baseline JPEG up to 2048 x 2048.
+7. **A decoding slot.** A replica decodes two images at a time; a request waits up to 2 s for a slot and then answers `503
    server_busy` with `Retry-After: 1`. The admission memory guard of the chain charges a request what a download holds
-   (Q-ARCH-328), not a decode, so the processor bounds its own memory: two slots times 4,194,304 pixels times at most 8 bytes per
-   pixel is 64 MiB.
-7. **The decode.** `image/png` and `image/jpeg` of the standard library, and the decoder of `golang.org/x/image/webp` (the encoder
-   is not imported). A decoder that panics on a crafted file is recovered and counts as an image that does not decode. A truncated
-   or damaged image is `422` `undecodable_image`.
+   (Q-ARCH-328), not a decode, so the processor bounds its own memory: two slots times at most 48 MiB is 96 MiB (H-563).
+8. **The decode, with a deadline.** `image/png` and `image/jpeg` of the standard library, and the decoder of
+   `golang.org/x/image/webp` (the encoder is not imported). The decoders read their input as they go, through a reader that fails
+   once the decode's context is done: 5 s after it started, or when the client leaves. A decode that exceeds the deadline is `422`
+   `too_complex`; a client that left gets no answer. A decoder that panics on a crafted file is recovered and counts as an image
+   that does not decode. A truncated or damaged image is `422` `undecodable_image`.
 
 ## What is stored: the pixels and nothing else
 
@@ -81,7 +90,7 @@ deleted with its user.
 
 | Operation | Who | Why |
 |---|---|---|
-| `PUT /api/v1/users/me/avatar` | the user, or the break-glass account | the caller's own record; a service account or a CI token has no user record and answers `403` |
+| `PUT /api/v1/users/me/avatar` | the user, or the break-glass account, by a session or by a token that inherits the owner's rights | the caller's own record; a service account or a CI token has no user record and answers `403`, and so does a token whose scope is narrower than its owner's rights (Q-API-213) |
 | `DELETE /api/v1/users/me/avatar` | the same | the same |
 | `DELETE /api/v1/users/{username}/avatar` | the holder of `identities:write` (the role `admin`) | moderation: an unwelcome picture can be taken down by someone other than its owner |
 | setting another user's avatar | nobody | an administrator cannot put a picture into another person's profile |
@@ -93,10 +102,13 @@ upload records nothing.
 
 ## What it costs a replica
 
-- One upload holds the body (1 MiB at most), the decoded image (4 Mpixel at most, 32 MiB at the widest pixel) and the 256 x 256
-  result; at most two uploads decode at once on a replica. The CPU of a decode of the largest accepted image is a few hundred
-  milliseconds; the rate limits of the management API (R-API-016) apply per caller as to any write.
-- A read is one database lookup and one verified object-store read, for the first request of each browser: the rest are cache hits.
+- One upload holds the body (1 MiB at most), the decoded image and the scaler's buffer (48 MiB at most by the estimate of step 6)
+  and the 256 x 256 result; at most two uploads decode at once on a replica. A decode of the largest accepted image takes a
+  fraction of a second, a decode is cut off after 5 s, and a JPEG is refused above 64 scans; the rate limits of the management API
+  (R-API-016) apply per caller as to any write.
+- A read is one database lookup and, for the first request of each browser, one verified object-store read. A conditional request
+  that matches is answered `304` from the lookup alone, with the cache policy of the image (not `no-store`, which would replace the
+  immutable policy of the entry the browser holds, RFC 9111 section 4.3.4), and the rest are cache hits.
 
 ## What the browser does with it
 
@@ -128,12 +140,39 @@ today, bounded.
 
 The decoders are the standard library's `image/png` and `image/jpeg` and `golang.org/x/image/webp`, written in a memory-safe
 language, and a panic is recovered. They still run in the process that serves the management API, with its credentials and its
-memory. The bounds (1 MiB, 4 Mpixel, two at a time) limit what a hostile file can cost, but not what a defect in a decoder could do
-that the Go runtime does not prevent, such as a long loop on a crafted stream: a decode in progress cannot be interrupted, so a
-request that holds one of the two slots can hold it for the length of that decode, and a burst of uploads from many accounts is
-bounded only by the per-caller rate limits (R-API-016, H-43) and the slot wait of 2 s. Moving the decode to a separate, resource
+memory. The bounds (1 MiB, 4 Mpixel, 64 scans, 48 MiB, two at a time, 5 s a decode) limit what a hostile file can cost, but not what a
+defect in a decoder could do that the Go runtime does not prevent. A request holds one of the two slots for at most the 5 s of
+the decode (the decoders stop at their next read, so a long stretch of work between two reads can run past it), and a burst of
+uploads from many accounts is bounded only by the per-caller rate limits (R-API-016, H-43) and the slot wait of 2 s. Moving the decode to a separate, resource
 limited process was considered and not done (Q-API-208, option (e)). What would make it matter is a published defect in one of
 the decoders; the dependency is pinned in `go.mod` and covered by `govulncheck`.
+
+### H-562 · A user who alternates avatars makes an administrator's conditional edit fail
+
+Component: the trigger `user_avatars_revision_change` and `user_avatars_revision_replace` on `principal.revision` (Q-API-210).
+Subject: `PATCH /api/v1/users/{username}` by an administrator, with `If-Match`. Live today.
+
+Every change of a user's avatar bumps the revision that is the ETag of the user record, so an administrator who loaded the record
+and then sends a `PATCH` with that tag gets `412` when the user changed the avatar in between. A user who uploads two different
+pictures in turn, as often as the rate limits allow, can keep such edits failing; the administrator's remedy is `If-Match: *`,
+which is a deliberate blind write, or a read and a retry. Nothing is lost and nothing is changed by the failed edit. It would matter
+for an administrator who edits profile data of users who are hostile to it, or in a script that cannot retry. The avatar is part of
+the record's representation, so keeping its change out of the revision would leave the ETag of `GET` stale (Q-API-210, option (b)
+needs a second tagging scheme).
+
+### H-563 · The memory of a decode is bounded but not charged to the admission guard
+
+Component: [Process](../../internal/avatar/process.go) and the memory guard of the chain (Q-ARCH-328). Subject: the replica's
+memory limit. Live today, bounded.
+
+The guard charges a request the bytes of a download (640 KiB with the defaults) and, while a request is in flight, cannot see
+what a decode holds. The processor bounds it itself, to 96 MiB at the worst (two decodes of 48 MiB by the estimate of the header),
+beside the 1 MiB body of each upload. On a replica whose limit is 256 MiB that is a large part of the limit that the guard counts
+as free, so the heap gate (H-539) is what closes the replica when other work arrives during two large decodes. The estimate is
+made from the header and is conservative for the formats it knows (progressive JPEG, CMYK, 16-bit PNG); a decoder that allocates
+more than the estimate for a file that follows its header would exceed it. What would make it matter is a small memory limit with
+traffic that also runs large decodes; the guard does not take a charge larger than the request bytes for one reader
+(`Ticket.Settle`), so the fix is a charge of the estimate at the door, which is not built.
 
 ### H-561 · A removed or replaced picture outlives its removal in the bucket and in browsers
 

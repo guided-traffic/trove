@@ -1802,15 +1802,18 @@ Q-STOR-166, Q-STOR-167.
   512 bytes must sniff as PNG, JPEG or WebP, else `415`, and as the declared one, else `415` (an SVG, an HTML page, a GIF or
   a polyglot never gets this far); an animated PNG or WebP is `422`; the size in the header is read before any pixel is
   allocated and must be at least 32 x 32 and at most 4,194,304 pixels in all, else `422` (a header that declares 100,000 x
-  100,000 pixels in a few bytes costs nothing); the image is decoded with the Go decoders (`image/png`, `image/jpeg`,
-  `golang.org/x/image/webp`, decoder only), and one that does not decode, a truncated one included, is `422`.
+  100,000 pixels in a few bytes costs nothing); a JPEG with more than 64 scans is `422` `too_complex`, and one whose estimated
+  decode memory (Q-API-211) is above 48 MiB is `422` `invalid_dimensions`; the image is decoded with the Go decoders
+  (`image/png`, `image/jpeg`, `golang.org/x/image/webp`, decoder only) under a deadline of 5 s, which on expiry is `422`
+  `too_complex`, and one that does not decode, a truncated one included, is `422`.
 - **The result is a new image.** The centre square of the decoded pixels is scaled to 256 x 256 (Catmull-Rom) and encoded as a
   PNG from the pixels alone: no metadata (EXIF, GPS position, ICC profile, text chunks), nothing appended, one frame. The
   EXIF orientation of a JPEG is applied first, because the result has no EXIF to apply it later. Transparency is kept. The
   same image always gives the same bytes, so it gives the same digest.
 - **Bounded cost.** A replica decodes two images at a time (`avatar.MaxConcurrent`); a request that finds no free slot within
-  2 s is `503 server_busy` with `Retry-After: 1`. With the pixel bound that keeps the decoding below 64 MiB (a decoder holds
-  at most 8 bytes per pixel). The management API's rate limits (R-API-016) apply as to any write.
+  2 s is `503 server_busy` with `Retry-After: 1`. The memory of one decode is estimated from the header and bounded to 48 MiB,
+  so the decoding of a replica holds at most 96 MiB, which the admission guard does not charge (H-563). The decode stops at its
+  next read after 5 s or when the client leaves. The management API's rate limits (R-API-016) apply as to any write.
 - **The image answer.** `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src
   'none'; sandbox`, `Content-Disposition: inline; filename="avatar.png"`, `Cross-Origin-Resource-Policy: same-origin`,
   `ETag: "<sha256>"` and `Cache-Control: private, max-age=31536000, immutable`: the answer is for a signed-in caller and the
@@ -1824,7 +1827,8 @@ Q-STOR-166, Q-STOR-167.
 - **Audit.** `user.avatar.set` (`details.source` `self`, `sha256`, `size`) and `user.avatar.removed` (`source` `self` or
   `admin`, `sha256`), transactional with the change (Q-AUTH-197). An upload of the image the user already has records nothing.
 - **Who.** A user changes only their own avatar. A service account and a CI token have no avatar and answer `403` on the two
-  `me` routes. An administrator removes, never sets, another user's avatar (Q-AUTH-196). Any authenticated caller reads an
+  `me` routes, and so does a token whose scope is narrower than its owner's rights (`scope.Inherit` false, Q-API-213); a session
+  and a token that inherits the owner's rights may. An administrator removes, never sets, another user's avatar (Q-AUTH-196). Any authenticated caller reads an
   image (Q-AUTH-195).
 - **Writes from the browser** are session writes: `X-CSRF-Token` is required (R-API-006), `If-Match` is not (the image is
   replaced as a whole and addressed by its digest, R-API-012).
@@ -1832,12 +1836,12 @@ Q-STOR-166, Q-STOR-167.
 | Status | `code` | When |
 |---|---|---|
 | 400 | `malformed_request` | The body is empty |
-| 403 | `forbidden` | The caller is a service account or a CI token; or lacks `identities:write` for another user's avatar |
+| 403 | `forbidden` | The caller is a service account or a CI token, or a token limited to part of its owner's rights; or lacks `identities:write` for another user's avatar |
 | 403 | `csrf_failed` | A session write without the CSRF header |
 | 404 | `not_found` | `GET`: no avatar has this digest; `DELETE` of another user: no such user |
 | 413 | `payload_too_large` | The body is longer than 1 MiB |
 | 415 | `unsupported_media_type` | The declared type is not PNG, JPEG or WebP; the content is not; the content is another of the three than declared |
-| 422 | `validation_failed` | `errors[0].code` `animated_image`, `invalid_dimensions` (under 32 x 32 or over 4,194,304 pixels) or `undecodable_image` (damaged or truncated) |
+| 422 | `validation_failed` | `errors[0].code` `animated_image`, `invalid_dimensions` (under 32 x 32, over 4,194,304 pixels, or above the decode memory bound), `too_complex` (more than 64 JPEG scans, or a decode over 5 s) or `undecodable_image` (damaged or truncated) |
 | 503 | `server_busy` | No decoding slot became free within 2 s; `Retry-After: 1` |
 | 503 | `unavailable`, `object_store_unavailable` | The store or the object store cannot take the request |
 
@@ -8746,13 +8750,13 @@ Context: the owner fixed PNG, JPEG and WebP only, never SVG, re-encoded on the s
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Sniff the content, read the size from the header and bound it, decode, crop to the centre square, scale to 256 x 256, encode a new PNG; animation is refused (chosen) | `internal/avatar.Process`; at most 4,194,304 pixels (2048 x 2048) and at least 32 x 32; two decodes at a time per replica | Nothing of the upload survives but its pixels; the size is refused before an allocation; one fixed output, so the UI needs no variants and the digest is stable; memory is bounded by 2 x 4 Mpixel x 8 bytes = 64 MiB | A 12 Mpixel photo under 1 MiB (rare, heavy compression) is refused and the user resizes it; 16-bit PNGs are reduced to 8 bits |
+| (a) Sniff the content, read the size from the header and bound it, decode, crop to the centre square, scale to 256 x 256, encode a new PNG; animation is refused (chosen) | `internal/avatar.Process`; at most 4,194,304 pixels (2048 x 2048) and at least 32 x 32; two decodes at a time per replica | Nothing of the upload survives but its pixels; the size is refused before an allocation; one fixed output, so the UI needs no variants and the digest is stable; memory is bounded by an estimate from the header, 48 MiB a decode and 96 MiB a replica (Q-API-211) | A 12 Mpixel photo under 1 MiB (rare, heavy compression) is refused and the user resizes it; 16-bit PNGs are reduced to 8 bits |
 | (b) Re-encode in the original format at the original size | Strip the metadata and keep the image | No scaling | A 1 MiB JPEG is served to a 32 px slot; the format and size vary; a stored JPEG is still a parser's input in the browser |
 | (c) Take the first frame of an animation | Decode as the decoders do | More uploads succeed | The decoders differ (the PNG decoder silently reads the default image, the WebP decoder refuses); a user who uploads an animation expects it to move, so a still is a surprise; refusal says so |
-| (d) A larger pixel bound (16 Mpixel) | Phone photos work | Fewer refusals | 128 MiB per decode at the widest pixel, 256 MiB for two; the replica's request memory is charged at 640 KiB (Q-ARCH-328), so the decode must bound itself |
+| (d) A larger pixel bound (16 Mpixel) | Phone photos work | Fewer refusals | 128 MiB per decode at the widest pixel, 256 MiB for two (more for a progressive JPEG); the replica's request memory is charged at 640 KiB (Q-ARCH-328), so the decode must bound itself |
 | (e) Decode in a separate process | An isolated image worker | A decoder bug cannot reach the API process | A second binary role and a pipe for a feature of 32 px images; the decoders are the Go standard library's and `golang.org/x/image`'s, which are memory safe. Not done: H-560 |
 
-**Choice:** (a). The numbers are constants of the product (`avatar.MaxUpload` 1 MiB, `OutputSide` 256, `MinSide` 32, `MaxPixels` 4,194,304, `MaxConcurrent` 2, `BusyWait` 2 s), not configuration: an operator should not be able to widen the input of an image decoder. 256 pixels is twice the larger of the two sizes the UI shows (32 and 96 px) at a display density of two. The Catmull-Rom filter of `golang.org/x/image/draw` scales; the centre square is the crop. Transparency is kept. The EXIF orientation of a JPEG is read from the first Exif segment, bounds-checked in the segment, and applied to the scaled square (the centre square of a turned image is the turned centre square of the stored one, so the turn costs 65,536 pixels, not the source). A panic of a decoder is caught and is an undecodable image. The request memory guard (Q-ARCH-328) charges a request the bytes of a download; it does not know the decode, so the processor bounds it itself (a slot per decode, waiting 2 s, `503 server_busy` with `Retry-After: 1`); the 1 MiB body is held in addition. `golang.org/x/image` is added to `go.mod` once, at the latest release, and only its `webp` decoder and `draw` are imported.
+**Choice:** (a). The numbers are constants of the product (`avatar.MaxUpload` 1 MiB, `OutputSide` 256, `MinSide` 32, `MaxPixels` 4,194,304, `MaxDecodeBytes` 48 MiB, `MaxScans` 64, `DecodeTimeout` 5 s, `MaxConcurrent` 2, `BusyWait` 2 s), not configuration; the first version of this decision bounded the memory by the pixels alone and was corrected by Q-API-211: an operator should not be able to widen the input of an image decoder. 256 pixels is twice the larger of the two sizes the UI shows (32 and 96 px) at a display density of two. The Catmull-Rom filter of `golang.org/x/image/draw` scales; the centre square is the crop. Transparency is kept. The EXIF orientation of a JPEG is read from the first Exif segment, bounds-checked in the segment, and applied to the scaled square (the centre square of a turned image is the turned centre square of the stored one, so the turn costs 65,536 pixels, not the source). A panic of a decoder is caught and is an undecodable image. The request memory guard (Q-ARCH-328) charges a request the bytes of a download; it does not know the decode, so the processor bounds it itself (a slot per decode, waiting 2 s, `503 server_busy` with `Retry-After: 1`); the 1 MiB body is held in addition. `golang.org/x/image` is added to `go.mod` once, at the latest release, and only its `webp` decoder and `draw` are imported.
 
 **Rationale:** the safest handling of an image is to keep nothing of it but the pixels; everything the owner asked for (re-encode, only three formats, 1 MiB) follows from that, and the pixel bound is what turns a decompression bomb into a `422` before it costs anything. The development agent revisits the pixel bound when users report refusals of ordinary photos: the cost is linear, and 3 Mpixel more per slot is 24 MiB. It revisits the refusal of animations if the owner wants an animated avatar.
 
@@ -8791,7 +8795,7 @@ Context: the UI reads the avatar of a user from the user record. The record has 
 
 **Choice:** (a). The trigger fires only when the blob changes, so the upload of the image a user already has leaves the revision and the record alone. `avatarUrl` is read-only: `PATCH /api/v1/users/{username}` accepts and ignores it (R-API-013). `toUser` fills it from `principal.User.AvatarSHA256`, which the manager reads for a batch of users in one statement (`AvatarDigests`), so a list of 500 users costs one query more, not 500.
 
-**Rationale:** a user changes the avatar at most a few times in a lifetime and an administrator edits profile data of a user rarely, so the race of (a) is real and cheap to repair, and (b) costs a second tagging scheme. Revisit when users change avatars often enough that administrators meet the `412`.
+**Rationale:** the avatar is part of the representation, so the tag has to follow it, and (b) costs a second tagging scheme; a user changes the avatar a few times in a lifetime and an administrator edits profile data rarely, so the race of (a) is real and cheap to repair. A user who alternates two pictures on purpose can keep an administrator's conditional edit failing, which is recorded as H-562 and not closed: the remedy is a read and a retry, or `If-Match: *`. Revisit when administrators meet the `412` in practice.
 
 **Applied:** R-API-055, R-AUTH-016 (the record); migration `user_avatars` (the triggers `user_avatars_revision_change` and `user_avatars_revision_replace`); `internal/auth/principal/manager.go` (`fillAvatars`), `internal/api/v1/users_api.go` (`toUser`). Test: `TestR_API_055_AvatarLifecycle`.
 
@@ -8885,6 +8889,61 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-API-050 (`leaseExpired`, `overdue`); `internal/api/v1/backups_api.go`.
 
+### Q-API-211 · The work and the memory of a decode are bounded from the header, and a decode has a deadline
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a security audit of Q-API-208 found that it bounded the pixels but not what a decoder does with them. The standard JPEG decoder walks every block once per scan, so a progressive 2048 x 2048 file with about 65,000 one-block scans, which fits in 1 MiB, takes minutes of CPU, holds one of the two decode slots, ignores that the client left and passes the 30 s of R-API-017. A progressive or four-component JPEG also holds more per pixel than the 8 bytes the decision counted (four bytes of coefficients for every component of every pixel: about 96 MiB for a CMYK image of 2048 x 2048), and the scaler adds a buffer of 256 x side x 32 bytes (16 MiB), so a slot could hold about 110 MiB, a replica 220 MiB, which the memory guard does not see.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Walk the JPEG markers before the slot and refuse more than 64 scans; estimate the memory of a decode from the header and refuse above 48 MiB; give every decode a 5 s deadline through the reader (chosen) | `walkJPEG`, `decodeCost`, `ctxReader` in `internal/avatar/process.go`; the new `422` code `too_complex` | The bomb is refused in microseconds without a slot; the deadline ends any long decode of any format at its next read, and a client that left stops the work; the bound on memory is a number the tests pin | A 1,600 x 1,600 progressive photo is accepted but a 2048 x 2048 one is not; the estimate is a table of bytes per pixel that has to follow the decoders |
+| (b) Only the deadline | A reader that fails after 5 s | Little code | Each such upload still burns 5 s of a slot, and two uploads at a time starve the others of slots; the memory stays unbounded by the header |
+| (c) Charge the estimate to the admission guard | `SettleMemory` with the estimate | One accounting for memory | `Ticket.Settle` caps one reader at the admission charge (640 KiB), so it cannot charge 48 MiB; a charge at the door needs a guard change (H-563) |
+| (d) A smaller pixel bound for everything | 1 Mpixel | One number | Refuses ordinary 1600 x 1200 photos to protect against a rare class |
+| (e) Scale in two steps | A cheap first pass | A smaller scaler buffer | The decoded image, not the scaler, is the larger part; more code on untrusted pixels |
+
+**Choice:** (a). `MaxScans` is 64 (encoders write about ten), `DecodeTimeout` 5 s, `MaxDecodeBytes` 48 MiB, so two slots hold 96 MiB at the worst. The estimate is 4 bytes a pixel for an 8-bit PNG, 8 for a 16-bit PNG or a WebP, the number of components for a baseline JPEG, five times that for a progressive one, plus 256 x short side x 32 bytes. A decode that exceeds its deadline and a file with too many scans answer `422` with `errors[0].code` `too_complex`; a decode above the memory bound answers `422` `invalid_dimensions`, whose text says that a progressive JPEG, a four-component JPEG or a 16-bit PNG may have fewer pixels. The UI has the sentence for `too_complex` in both locales.
+
+**Rationale:** the cheapest defence against a decompression bomb is to refuse what the header already shows; the deadline is the defence for what it does not. The bound of 96 MiB is still invisible to the admission guard and is recorded as H-563. The development agent revisits the numbers when users report refusals of ordinary photos, and the charge when the guard can take an estimate at the door.
+
+**Applied:** R-API-055; [user-avatars.md](../security/user-avatars.md) (steps 5 to 8, H-563); `internal/avatar/process.go`; UI: `web/src/app/features/profile/avatar-messages.ts`, `web/src/locale/messages.xlf`, `messages.de.xlf`. Tests: `TestR_API_055_RefusesAJPEGWithManyScans`, `TestR_API_055_StopsADecodeAtItsDeadline`, `TestR_API_055_BoundsTheMemoryOfADecodeFromTheHeader`.
+
+### Q-API-212 · A conditional read of an avatar is answered from the lookup, with the cache policy of the image
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `GET /api/v1/avatars/{digest}` opened the blob (a database lookup and a verified object-store read) before it compared `If-None-Match`, and the shared `NotModified` puts `Cache-Control: no-store` on the 304, which by RFC 9111 section 4.3.4 replaces the `immutable` policy of the stored entry.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Look the digest up first; on a match answer 304 with the image's `Cache-Control` and the ETag, without opening the blob; open only for a 200 (chosen) | `AvatarService.Has`, `IfNoneMatchHits` | A revalidation costs one row; the browser keeps its policy | Two lookups for a 200 (the lookup of `Has` and the one of `Open`) |
+| (b) Keep the order, fix the header | Only the 304 header changes | Smaller change | Every revalidation still reads the object store |
+| (c) Answer 304 for any digest that matches, without a lookup | No database | Cheapest | A removed avatar would be revalidated as current, and the route would confirm digests it does not serve |
+
+**Choice:** (a). A digest that no avatar names is `404` also when the tag matches.
+
+**Rationale:** the 304 is the common answer for an immutable resource; it should not cost an object-store read and must not weaken what the browser stored. The second lookup of a 200 is one primary-key read. Revisit when the lookup becomes a measurable cost of list pages.
+
+**Applied:** R-API-055; `internal/api/v1/avatar_api.go` (`GetAvatar`), `internal/api/v1/etag.go` (`IfNoneMatchHits`), `internal/avatar/store.go` (`Has`). Tests: `TestR_API_055_AConditionalReadAnswers304WithTheImagesCachePolicyAndWithoutReadingTheBlob`, `TestR_API_055_AvatarLifecycle`.
+
+### Q-API-213 · A token limited to part of its owner's rights does not change the owner's avatar
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the two `me` routes declared `authenticated: true` and the handler checked only that the principal is a user, so a token made for one repository or one capability (R-AUTH-024: the scope is a ceiling on the owner's rights) could change the owner's profile picture, a right the scope never names.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A token must inherit the owner's rights (`scope.Inherit`); a session always may (chosen) | `avatarOwner` answers `403` for a token with a narrower scope | A token made for one task cannot do an unrelated thing as its owner; a script with a full personal token still can | A restricted token can never set an avatar, though the avatar is harmless |
+| (b) Only a session | Tokens refused | The strictest | A script cannot provision its owner's avatar; the API would have a browser-only write |
+| (c) Leave it | Any token of a user | No code | The scope is a ceiling only where a handler remembers to apply it |
+
+**Choice:** (a). The administrator's removal of another user's avatar is a permission route and follows the token scope through the decision point as every `identities:write` operation does.
+
+**Rationale:** the scope is the owner's promise that a token does only what it was made for; an `authenticated` route that changes the owner's data has to keep it. The same pattern exists on the routes of the UI preferences (`preferences_api.go`, `preferencesUser`), which check the principal kind only; that is recorded as a finding of its own and not changed with this decision.
+
+**Applied:** R-API-055 (Who), [user-avatars.md](../security/user-avatars.md); `internal/api/v1/avatar_api.go` (`avatarOwner`). Tests: `TestR_API_055_ATokenLimitedToPartOfItsOwnersRightsDoesNotChangeTheAvatar`, `TestR_API_055_AvatarRefusals`.
 
 ## What this does not cover
 

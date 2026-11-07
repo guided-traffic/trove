@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -34,12 +36,21 @@ const (
 	OutputSide = 256
 	// MinSide is the shortest side an upload may have, in pixels.
 	MinSide = 32
-	// MaxPixels is the largest area an upload may declare, in pixels (2048 x 2048). The decoders allocate by it; at the
-	// widest pixel they hold, 8 bytes, it is 32 MiB.
+	// MaxPixels is the largest area an upload may declare, in pixels (2048 x 2048).
 	MaxPixels = 4 << 20
-	// MaxConcurrent is the number of images one replica decodes at a time. With MaxPixels it bounds what the decoding
-	// holds to 64 MiB.
+	// MaxDecodeBytes is the most memory one decode may need, estimated from the header (decodeCost): the decoded image
+	// and the buffer of the scaler. A PNG of 2048 x 2048 pixels with 16 bits per channel just fits; a progressive JPEG,
+	// which keeps the coefficients of every block, or a four-component one, is bounded to fewer pixels.
+	MaxDecodeBytes = 48 << 20
+	// MaxConcurrent is the number of images one replica decodes at a time. With MaxDecodeBytes it bounds what the decoding
+	// holds to 96 MiB.
 	MaxConcurrent = 2
+	// MaxScans is the most scans (SOS segments) a JPEG may have. The decoder walks every block of the image once per
+	// scan, so the number of scans multiplies the time; encoders write about ten for a progressive image.
+	MaxScans = 64
+	// DecodeTimeout is how long one decode may take; the decoders read their input as they go, so a decode that exceeds
+	// it stops at its next read.
+	DecodeTimeout = 5 * time.Second
 	// BusyWait is how long a request waits for a decoding slot before it is told to try again.
 	BusyWait = 2 * time.Second
 
@@ -66,6 +77,8 @@ var (
 	ErrDimensions = errors.New("avatar: the dimensions are outside the bounds")
 	// ErrCorrupt is an upload that does not decode.
 	ErrCorrupt = errors.New("avatar: the image does not decode")
+	// ErrComplex is an upload that would take too long to decode: too many scans, or a decode that exceeded DecodeTimeout.
+	ErrComplex = errors.New("avatar: the image takes too long to decode")
 	// ErrBusy is returned when no decoding slot became free within BusyWait.
 	ErrBusy = errors.New("avatar: the replica is decoding other images")
 )
@@ -125,12 +138,21 @@ func (p *Processor) Process(ctx context.Context, declared string, data []byte) (
 	if err := bounds(cfg); err != nil {
 		return nil, err
 	}
+	var shape jpegShape
+	if f == formatJPEG {
+		if shape, err = walkJPEG(data); err != nil {
+			return nil, err
+		}
+	}
+	if decodeCost(f, cfg, shape) > MaxDecodeBytes {
+		return nil, ErrDimensions
+	}
 	release, err := p.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	src, err := decode(f, data)
+	src, err := decode(ctx, f, data)
 	if err != nil {
 		return nil, err
 	}
@@ -217,13 +239,15 @@ func (p *Processor) acquire(ctx context.Context) (release func(), err error) {
 }
 
 // decode runs the decoder of the format. A decoder that panics on a crafted file is an image that does not decode.
-func decode(f format, data []byte) (img image.Image, err error) {
+func decode(parent context.Context, f format, data []byte) (img image.Image, err error) {
+	ctx, cancel := context.WithTimeout(parent, DecodeTimeout)
+	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
 			img, err = nil, fmt.Errorf("%w: decoder panic: %v", ErrCorrupt, r)
 		}
 	}()
-	r := bytes.NewReader(data)
+	r := &ctxReader{ctx: ctx, r: bytes.NewReader(data)}
 	switch f {
 	case formatPNG:
 		img, err = png.Decode(r)
@@ -233,9 +257,34 @@ func decode(f format, data []byte) (img image.Image, err error) {
 		img, err = webp.Decode(r)
 	}
 	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, decodeStopped(parent, cerr)
+		}
 		return nil, fmt.Errorf("%w: %w", ErrCorrupt, err)
 	}
 	return img, nil
+}
+
+// decodeStopped is the error of a decode that the context ended: the request's own end (the client left) is passed on, the
+// deadline of the decode is ErrComplex.
+func decodeStopped(parent context.Context, err error) error {
+	if perr := parent.Err(); perr != nil {
+		return perr
+	}
+	return fmt.Errorf("%w: %w", ErrComplex, err)
+}
+
+// ctxReader fails a read once its context is done, so a decoder that works through the input stops at its next read.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c *ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
 }
 
 // scale takes the largest centred square of src and scales it to OutputSide.
@@ -285,4 +334,96 @@ func apngControl(data []byte) bool {
 func webpAnimation(data []byte) bool {
 	const flags = 20
 	return len(data) > flags && string(data[12:16]) == "VP8X" && data[flags]&(1<<1) != 0
+}
+
+// jpegShape is what the marker walk learns of a JPEG without decoding it.
+type jpegShape struct {
+	progressive bool
+	components  int
+	scans       int
+}
+
+// walkJPEG reads the markers of a JPEG, stepping over the entropy-coded data of every scan, and returns whether the frame is
+// progressive, its number of components and its number of scans. More than MaxScans scans is ErrComplex. A file that is
+// malformed past what was seen is left to the decoder to refuse.
+func walkJPEG(data []byte) (jpegShape, error) {
+	var sh jpegShape
+	for off := 2; off+2 <= len(data); {
+		if data[off] != 0xFF {
+			return sh, nil
+		}
+		m := data[off+1]
+		switch {
+		case m == 0xFF:
+			off++
+			continue
+		case m == 0x00 || m == 0x01 || m >= 0xD0 && m <= 0xD8:
+			off += 2
+			continue
+		case m == 0xD9:
+			return sh, nil
+		}
+		if off+4 > len(data) {
+			return sh, nil
+		}
+		n := int(data[off+2])<<8 | int(data[off+3])
+		if n < 2 || off+2+n > len(data) {
+			return sh, nil
+		}
+		seg := data[off+4 : off+2+n]
+		off += 2 + n
+		switch {
+		case m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC:
+			sh.progressive = m == 0xC2 || m == 0xCA
+			if len(seg) >= 6 {
+				sh.components = int(seg[5])
+			}
+		case m == 0xDA:
+			sh.scans++
+			if sh.scans > MaxScans {
+				return sh, ErrComplex
+			}
+			off = skipEntropy(data, off)
+		}
+	}
+	return sh, nil
+}
+
+// skipEntropy returns the offset of the first marker after the entropy-coded data that starts at off: a 0xFF followed by
+// neither 0x00 (a stuffed byte) nor a restart marker.
+func skipEntropy(data []byte, off int) int {
+	for off < len(data) {
+		i := bytes.IndexByte(data[off:], 0xFF)
+		if i < 0 || off+i+1 >= len(data) {
+			return len(data)
+		}
+		off += i
+		if n := data[off+1]; n == 0x00 || n >= 0xD0 && n <= 0xD7 {
+			off += 2
+			continue
+		}
+		return off
+	}
+	return off
+}
+
+// decodeCost estimates, from the header, the memory one decode needs: the decoded image, the buffers the format keeps
+// beside it, and the scaler's buffer for the crop (OutputSide x side x 32 bytes). A progressive JPEG keeps four bytes of
+// coefficients and about one of samples for every component of every pixel; a baseline one the samples (a CMYK or YCCK image
+// has four components); a PNG four bytes a pixel, eight with 16 bits per channel; a WebP is taken at eight.
+func decodeCost(f format, cfg image.Config, sh jpegShape) int64 {
+	px := int64(cfg.Width) * int64(cfg.Height)
+	perPixel := int64(8)
+	switch f {
+	case formatPNG:
+		if cfg.ColorModel != color.NRGBA64Model && cfg.ColorModel != color.RGBA64Model && cfg.ColorModel != color.Gray16Model {
+			perPixel = 4
+		}
+	case formatJPEG:
+		perPixel = int64(max(sh.components, 1))
+		if sh.progressive {
+			perPixel *= 5
+		}
+	}
+	return px*perPixel + int64(OutputSide)*int64(min(cfg.Width, cfg.Height))*32
 }

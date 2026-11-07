@@ -149,6 +149,9 @@ func TestR_API_055_AvatarLifecycle(t *testing.T) {
 		if again.Status != http.StatusNotModified {
 			t.Errorf("revalidation: %d, want 304", again.Status)
 		}
+		if got := again.Header.Get("Cache-Control"); got != "private, max-age=31536000, immutable" {
+			t.Errorf("the 304 has Cache-Control %q, want the immutable policy of the image", got)
+		}
 		if n := count("SELECT count(*) FROM trove.audit_event WHERE action = 'user.avatar.set' AND resource_id = $1", e.alice.ID); n != 1 {
 			t.Errorf("%d user.avatar.set events, want 1", n)
 		}
@@ -331,6 +334,15 @@ func TestR_API_055_AvatarRefusals(t *testing.T) {
 	t.Run("R-API-055 a request without a credential", func(t *testing.T) {
 		if got := e.putAvatar(r, "", "image/png", valid); got.Status != http.StatusUnauthorized {
 			t.Fatalf("%d %s", got.Status, got.Body)
+		}
+	})
+	t.Run("R-API-055 a token limited to part of its owner's rights does not change the avatar", func(t *testing.T) {
+		narrow := e.stack.Token(e.carol.Person, scope.Scope{System: []string{"settings:read"}})
+		if got := e.putAvatar(r, narrow, "image/png", valid); got.Status != http.StatusForbidden {
+			t.Fatalf("PUT: %d %s", got.Status, got.Body)
+		}
+		if got := e.stack.Do(r, "DELETE", "/api/v1/users/me/avatar", narrow, nil); got.Status != http.StatusForbidden {
+			t.Fatalf("DELETE: %d %s", got.Status, got.Body)
 		}
 	})
 	t.Run("R-API-055 a service account has no avatar", func(t *testing.T) {

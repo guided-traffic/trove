@@ -327,7 +327,7 @@ A user uploads a picture for their own record; the server keeps a new image made
 
 | File | Responsibility |
 |---|---|
-| [internal/avatar/process.go](../../internal/avatar/process.go) | The constants (`MaxUpload`, `OutputSide`, `MinSide`, `MaxPixels`, `MaxConcurrent`, `BusyWait`), the refusals (`ErrTooLarge`, `ErrUnsupportedType`, `ErrTypeMismatch`, `ErrAnimated`, `ErrDimensions`, `ErrCorrupt`, `ErrBusy`) and `Processor.Process`: sniff, header size, slot, decode, crop, scale, encode |
+| [internal/avatar/process.go](../../internal/avatar/process.go) | The constants (`MaxUpload`, `OutputSide`, `MinSide`, `MaxPixels`, `MaxDecodeBytes`, `MaxScans`, `DecodeTimeout`, `MaxConcurrent`, `BusyWait`), the refusals (`ErrTooLarge`, `ErrUnsupportedType`, `ErrTypeMismatch`, `ErrAnimated`, `ErrDimensions`, `ErrCorrupt`, `ErrBusy`) and `Processor.Process`: sniff, header size, JPEG marker walk (`walkJPEG`) and memory estimate (`decodeCost`), slot, decode under a deadline (`ctxReader`), crop, scale, encode |
 | [internal/avatar/orient.go](../../internal/avatar/orient.go) | The EXIF orientation reader and `orient`, applied to the scaled square |
 | [internal/avatar/store.go](../../internal/avatar/store.go) | `Store`: `Put` (process, spool, `Commit` with a link that upserts `user_avatars` and records the event), `Remove`, `Open` (lookup by digest, verified read) |
 | [internal/api/v1/avatar_api.go](../../internal/api/v1/avatar_api.go) | The four handlers, `readImage`, `avatarErr` (the mapping of refusals to problems), the image headers; `AvatarService` is the seam the handlers take |

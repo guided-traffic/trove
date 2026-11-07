@@ -132,13 +132,17 @@ func (s *Store) record(ctx context.Context, tx meta.Tx, event string, u User, wh
 	})
 }
 
-// Open returns the stored image whose SHA-256 is hexDigest. Only a digest that some user's avatar names is served: the route
-// is not a way to read any other blob. The bytes are read through the verifying path of the blob store and compared with the
-// digest once more, so an object changed in the bucket is never served.
-func (s *Store) Open(ctx context.Context, hexDigest string) ([]byte, error) {
+// Has reports whether some user's avatar is the image whose SHA-256 is hexDigest (ErrNotFound if none). It reads one row and
+// not the blob, so a conditional request that matches is answered without the object store.
+func (s *Store) Has(ctx context.Context, hexDigest string) error {
+	_, _, err := s.lookup(ctx, hexDigest)
+	return err
+}
+
+func (s *Store) lookup(ctx context.Context, hexDigest string) (blob.Digest, int64, error) {
 	d, ok := blob.ParseDigest(hexDigest)
 	if !ok {
-		return nil, ErrNotFound
+		return d, 0, ErrNotFound
 	}
 	var rows []int64
 	err := s.db.Read(ctx, func(tx q.DBTX) (err error) {
@@ -146,12 +150,22 @@ func (s *Store) Open(ctx context.Context, hexDigest string) ([]byte, error) {
 		return err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("look up the avatar: %w", err)
+		return d, 0, fmt.Errorf("look up the avatar: %w", err)
 	}
 	if len(rows) == 0 {
-		return nil, ErrNotFound
+		return d, 0, ErrNotFound
 	}
-	size := rows[0]
+	return d, rows[0], nil
+}
+
+// Open returns the stored image whose SHA-256 is hexDigest. Only a digest that some user's avatar names is served: the route
+// is not a way to read any other blob. The bytes are read through the verifying path of the blob store and compared with the
+// digest once more, so an object changed in the bucket is never served.
+func (s *Store) Open(ctx context.Context, hexDigest string) ([]byte, error) {
+	d, size, err := s.lookup(ctx, hexDigest)
+	if err != nil {
+		return nil, err
+	}
 	if size <= 0 || size > MaxUpload {
 		return nil, fmt.Errorf("avatar %s: the row names %d bytes", hexDigest, size)
 	}

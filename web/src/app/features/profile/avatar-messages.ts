@@ -19,6 +19,8 @@ export function avatarRefusalText(code: string | null): string | null {
       return $localize`:@@avatar.err.dimensions:The image must be at least 32 by 32 pixels and at most 4,194,304 pixels in all.`;
     case 'undecodable_image':
       return $localize`:@@avatar.err.undecodable:The file could not be read as an image. It may be damaged or cut off.`;
+    case 'too_complex':
+      return $localize`:@@avatar.err.complex:The image takes too long to process. Choose a simpler or smaller image.`;
     case 'server_busy':
       return $localize`:@@avatar.err.busy:The server is busy processing other images. Try again in a moment.`;
     default:

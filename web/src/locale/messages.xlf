@@ -11936,9 +11936,17 @@
         <source>The file could not be read as an image. It may be damaged or cut off.</source>
       </segment>
     </unit>
-    <unit id="avatar.err.busy">
+    <unit id="avatar.err.complex">
       <notes>
         <note category="location">src/app/features/profile/avatar-messages.ts:23</note>
+      </notes>
+      <segment>
+        <source>The image takes too long to process. Choose a simpler or smaller image.</source>
+      </segment>
+    </unit>
+    <unit id="avatar.err.busy">
+      <notes>
+        <note category="location">src/app/features/profile/avatar-messages.ts:25</note>
       </notes>
       <segment>
         <source>The server is busy processing other images. Try again in a moment.</source>

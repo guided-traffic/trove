@@ -316,6 +316,45 @@ func userFrom(id, name, status, email string, emailVerified bool, displayName, o
 	return u
 }
 
+// GetUserByID returns the user record of a user ID, or a 404.
+func (m *Manager) GetUserByID(ctx context.Context, id string) (User, error) {
+	var u User
+	err := m.db.Read(ctx, func(db q.DBTX) error {
+		qs := q.New(db)
+		rows, err := qs.IdentityGetUserByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return ErrNotFound
+		}
+		r := rows[0]
+		u = userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
+			r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, r.GroupClaimMissing)
+		return finishUser(ctx, qs, &u)
+	})
+	if errors.Is(err, ErrNotFound) {
+		return User{}, NotFound("The user")
+	}
+	return u, DBErr("principal.GetUserByID", err)
+}
+
+// finishUser adds the identities, memberships, administrator flags and avatar to a user row.
+func finishUser(ctx context.Context, qs *q.Queries, u *User) error {
+	if err := fillUser(ctx, qs, u); err != nil {
+		return err
+	}
+	one := []User{*u}
+	if err := fillAdmin(ctx, qs, one); err != nil {
+		return err
+	}
+	if err := fillAvatars(ctx, qs, one); err != nil {
+		return err
+	}
+	*u = one[0]
+	return nil
+}
+
 func loadUser(ctx context.Context, qs *q.Queries, name string) (User, error) {
 	rows, err := qs.IdentityGetUser(ctx, name)
 	if err != nil {
@@ -327,15 +366,8 @@ func loadUser(ctx context.Context, qs *q.Queries, name string) (User, error) {
 	r := rows[0]
 	u := userFrom(r.ID, r.Name, r.Status, r.Email, r.EmailVerified, r.DisplayName, r.Origin, r.IsBreakGlass, r.DisabledReason,
 		r.ScimExternalID, r.LastLoginAt.Time, r.CreatedAt.Time, r.Revision, r.GroupClaimMissing)
-	if err := fillUser(ctx, qs, &u); err != nil {
-		return u, err
-	}
-	one := []User{u}
-	err = fillAdmin(ctx, qs, one)
-	if err == nil {
-		err = fillAvatars(ctx, qs, one)
-	}
-	return one[0], err
+	err = finishUser(ctx, qs, &u)
+	return u, err
 }
 
 // fillAvatars sets the avatar digest of a batch of users: one query however many users there are (R-API-055).
