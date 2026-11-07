@@ -153,8 +153,10 @@ func TestR_AUTHZ_026_AnOwnerWritesRemoteRepositoriesWithinTheRules(t *testing.T)
 		for i, member := range []map[string]any{{"enabled": false}, {"blockMalicious": false}, {"matchPublicAdvisories": "never"}} {
 			key := "owner-weak-" + string(rune('a'+i))
 			wantStatus(t, f.do(f.alice, "POST", repos, remote(key, section, map[string]any{"vulnerabilities": member})), 403, "vulnerability_weakening_refused")
-			wantStatus(t, f.do(f.alice, "POST", repos, map[string]any{"key": key + "-local", "class": "local", "format": "npm",
-				"vulnerabilities": member}), 403, "vulnerability_weakening_refused")
+			wantStatus(t, f.do(f.alice, "POST", repos, map[string]any{
+				"key": key + "-local", "class": "local", "format": "npm",
+				"vulnerabilities": member,
+			}), 403, "vulnerability_weakening_refused")
 		}
 		if n := f.e.Number("SELECT count(*) FROM repositories WHERE key LIKE 'owner-weak-%'"); n != 0 {
 			t.Fatalf("%d repositories", n)

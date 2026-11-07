@@ -131,8 +131,10 @@ func TestR_REPO_060_MoveARepository(t *testing.T) {
 		// cannot remove it: only a holder of repositories:write-config carries it there.
 		const policies = "/api/v1/permission-policies"
 		policy := func(selector string) map[string]any {
-			return map[string]any{"name": "libs-global", "resources": map[string]any{"repositories": []string{selector}},
-				"entries": []map[string]any{{"principal": "user:bob", "actions": []string{"read"}}}}
+			return map[string]any{
+				"name": "libs-global", "resources": map[string]any{"repositories": []string{selector}},
+				"entries": []map[string]any{{"principal": "user:bob", "actions": []string{"read"}}},
+			}
 		}
 		created := f.do(f.admin, "POST", policies, policy("web/npm-libs"))
 		wantStatus(t, created, 201, "")
