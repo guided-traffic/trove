@@ -286,6 +286,14 @@ func TestR_AUTHZ_026_RolesDecideOnEveryReplica(t *testing.T) {
 		if !p.may(p.a, readOnly, "web/web-npm", authz.Read) || p.may(p.a, readOnly, "web/web-npm", authz.Deploy) {
 			t.Error("the token's scope does not bound the role")
 		}
+		if m := p.a.engine.MembershipsOn(idx, readOnly); len(m) != 1 || m[0].Key != "web" {
+			t.Errorf("a token scoped to a repository of web is a member of %v", m)
+		}
+		elsewhere := owner
+		elsewhere.Scope = &scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"shop/*"}, Actions: []string{"read"}}}}
+		if m := p.a.engine.MembershipsOn(idx, elsewhere); len(m) != 0 || p.a.engine.RoleOn(idx, elsewhere, "web") != authz.ProjectRoleNone {
+			t.Errorf("a token whose scope names no repository of web reaches the role there: %v", m)
+		}
 		inherit := owner
 		inherit.Scope = &scope.Scope{Inherit: true}
 		admin := owner

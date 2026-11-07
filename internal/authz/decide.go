@@ -894,34 +894,51 @@ func (c *patternCache) full() bool { return len(c.sels)+len(c.res) > patternCach
 // project (R-AUTHZ-004). A text that does not parse in its context covers nothing.
 func (c *patternCache) selectorsMatch(texts []string, in qname.Context, r repoView) bool {
 	for _, t := range texts {
-		k := selKeyIn{project: in.Project, text: t}
-		c.mu.RLock()
-		s, ok := c.sels[k]
-		bad := c.bad[k]
-		c.mu.RUnlock()
-		if bad {
-			continue
-		}
-		if !ok {
-			var err error
-			s, err = parseSelector(t, in)
-			c.mu.Lock()
-			if c.full() {
-				c.reset()
-			}
-			if err != nil {
-				c.bad[k] = true
-				c.mu.Unlock()
-				continue
-			}
-			c.sels[k] = s
-			c.mu.Unlock()
-		}
-		if s.matches(r) {
+		if s, ok := c.selector(t, in); ok && s.matches(r) {
 			return true
 		}
 	}
 	return false
+}
+
+// selectorsCoverProject reports whether any selector text of an instance context (a token scope) names the project:
+// a key of a repository of it, a pattern whose project glob matches it, or a class, which covers every project
+// (Q-AUTHZ-215). A text that does not parse covers nothing.
+func (c *patternCache) selectorsCoverProject(texts []string, project string) bool {
+	for _, t := range texts {
+		if s, ok := c.selector(t, instanceContext); ok && s.coversProject(project) {
+			return true
+		}
+	}
+	return false
+}
+
+// selector is the selector text read in the context in, from the cache when seen before; ok is false for a text
+// that does not parse there.
+func (c *patternCache) selector(t string, in qname.Context) (selector, bool) {
+	k := selKeyIn{project: in.Project, text: t}
+	c.mu.RLock()
+	s, ok := c.sels[k]
+	bad := c.bad[k]
+	c.mu.RUnlock()
+	if bad {
+		return selector{}, false
+	}
+	if ok {
+		return s, true
+	}
+	s, err := parseSelector(t, in)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.full() {
+		c.reset()
+	}
+	if err != nil {
+		c.bad[k] = true
+		return selector{}, false
+	}
+	c.sels[k] = s
+	return s, true
 }
 
 // set compiles one dimension's lists, from the cache when seen before. format

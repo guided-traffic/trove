@@ -468,7 +468,8 @@ func (s *Server) hideProject(r *http.Request, key string, refusal error) error {
 // projectRoleAdmits is the extra way in of a declaration that names projectRole (Q-AUTHZ-207): the
 // caller does not hold the capability, as a question without an audit event, and is an Owner of the
 // addressed project (projectRole owner), or a member of it (reader); without a project source a member
-// of any project. A caller that holds the capability, or is no member, is left to Access.Require, so the
+// of any project. A token is a member only of the projects its scope reaches (Q-AUTHZ-215: no scope,
+// inherit, admin: true, the system item projects:read, or a repository element that names the project). A caller that holds the capability, or is no member, is left to Access.Require, so the
 // refusal and its audit event are the ones of any capability. An Access that cannot answer the question
 // admits nobody here.
 func (s *Server) projectRoleAdmits(r *http.Request, q Requirement) bool {

@@ -126,6 +126,52 @@ func TestR_AUTHZ_013_ATokenScopeIntersectsTheRole(t *testing.T) {
 	})
 }
 
+// TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope: the projects a personal access token is a member of, and its
+// role in each, are the ones its scope reaches (R-AUTHZ-013): a session, an inheriting token, a token with admin: true
+// or with the system item projects:read reach every membership; a restricted token reaches a project one of its
+// repository elements covers, whatever the element's actions, and no other. A token scoped to one repository's
+// deploy does not read the other projects of its owner and their members.
+func TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope(t *testing.T) {
+	e := roleEngine(t, roleFixture().member(pWeb, idDave, "reader").member(pShop, idDave, "owner"))
+	idx := e.Index()
+	dave := userSub(idDave, "dave")
+	el := func(sel string, actions ...string) scope.Grant {
+		return scope.Grant{Repositories: []string{sel}, Actions: actions}
+	}
+	for _, c := range []struct {
+		name string
+		sub  Subject
+		want []string
+	}{
+		{"a session", dave, []string{"shop", "web"}},
+		{"an inheriting token", tokenScop(dave, scope.Scope{Inherit: true}), []string{"shop", "web"}},
+		{"an admin token", tokenScop(dave, scope.Scope{Admin: true}), []string{"shop", "web"}},
+		{"the system item projects:read", tokenScop(dave, scope.Scope{System: []string{string(ProjectsRead)}}), []string{"shop", "web"}},
+		{"one repository's deploy", tokenScop(dave, scope.Scope{Repositories: []scope.Grant{el("web/web-npm", "deploy")}}), []string{"web"}},
+		{"a key glob of one project", tokenScop(dave, scope.Scope{Repositories: []scope.Grant{el("shop/*", "read")}}), []string{"shop"}},
+		{"a project glob", tokenScop(dave, scope.Scope{Repositories: []scope.Grant{el("*/npm-*", "read")}}), []string{"shop", "web"}},
+		{"a class covers every project", tokenScop(dave, scope.Scope{Repositories: []scope.Grant{el("@any-local:npm", "read")}}), []string{"shop", "web"}},
+		{"a project of no membership", tokenScop(dave, scope.Scope{Repositories: []scope.Grant{el("it/npm-internal", "read")}}), nil},
+		{"another system item", tokenScop(dave, scope.Scope{System: []string{string(PoliciesRead)}}), nil},
+		{"an empty scope", tokenScop(dave, scope.Scope{}), nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			for _, m := range e.MembershipsOn(idx, c.sub) {
+				got = append(got, m.Key)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Fatalf("memberships %v, want %v", got, c.want)
+			}
+			for _, p := range []string{"web", "shop"} {
+				if role := e.RoleOn(idx, c.sub, p); (role != ProjectRoleNone) != slices.Contains(c.want, p) {
+					t.Errorf("RoleOn(%s) = %s against memberships %v", p, role, c.want)
+				}
+			}
+		})
+	}
+}
+
 // TestQ_AUTHZ_215_OnlyUsersCarryARole: a service account, a CI token, a Bastion registration and anonymous are
 // never members; a membership row of a principal that is neither a user nor a group is skipped by the build.
 func TestQ_AUTHZ_215_OnlyUsersCarryARole(t *testing.T) {

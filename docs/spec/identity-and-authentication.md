@@ -1957,7 +1957,10 @@ structure, its validation and who may request what.
 the resource types the grant model has ([authorization.md](authorization.md) R-AUTHZ-013,
 Q-AUTHZ-10). `inherit` and `admin` are switches and `endpoints` is a binding, not resource types. There is no project resource
 type (TOK-011, TOK-013, P2): a scope selects the repositories of a project with `<projectKey>/*`, and what the owner's
-project roles grant reaches the token through the repository part like every other grant ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)). There
+project roles grant reaches the token through the repository part like every other grant ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
+The token reads a project it is a member of, and that project's members, only when an element of the repository part
+names the project, or with `inherit`, `admin: true` or the system item `projects:read`, which here is effective through
+the membership. There
 is no per-repository configuration type either: repository configuration rights are system capabilities, which apply in
 every project, or come from the Owner role of a project ([authorization.md](authorization.md) R-AUTHZ-026).
 

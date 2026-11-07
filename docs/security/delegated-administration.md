@@ -47,6 +47,13 @@ project's objects inside it. It does not repeat the model of permissions ([permi
   The administration of an Owner needs a session or a token with `admin: true` (`mayAdminister`); through any other credential an Owner
   holds what a Maintainer holds, which is what `RoleOn` and `MembershipsOn` answer. A leaked everyday token of an Owner reads and writes
   content within its scope and changes no member, policy or setting.
+- **What a token sees of its projects.** The scope also bounds the role outside the content: `MembershipsOn` and `RoleOn` answer a
+  token only for the projects its scope reaches (`scopeReachesProject` in [project.go](../../internal/authz/project.go)): every
+  membership for no scope (a session), `inherit`, `admin: true` or the system item `projects:read`; otherwise the projects one of its
+  repository elements names (a key of the project, a pattern whose project glob matches it, or a class, which names every project),
+  whatever the element's actions. The project list, `GET /projects/{projectKey}`, its members, `/authz/me` and the 404 of a hidden
+  project all read these memberships, so a token scoped to one repository's `deploy` does not read its owner's other projects and their
+  members; to them it is no member, so their routes answer 404 (`TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope`).
 - **Who is never a member.** A service account, a CI mapping, a Bastion registration and `anonymous` carry no role
   (`carriesRoles`). The member write refuses every principal but a user or a group, and an auto-join group, with 422
   `principal_not_allowed` ([members.go](../../internal/project/members.go)); the table refuses a principal of another kind

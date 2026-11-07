@@ -148,7 +148,7 @@ func (a *Access) Holds(permission string) bool {
 }
 
 // Memberships lists the projects the subject is a member of, with its role, on the
-// request's index (Q-AUTHZ-207).
+// request's index (Q-AUTHZ-207), as far as the credential's scope reaches them (Q-AUTHZ-215).
 func (a *Access) Memberships() []authz.Membership {
 	return a.D.MembershipsOn(a.Index(), a.Subject)
 }

@@ -873,8 +873,9 @@ requirement fixes how the evaluator applies a scope:
   | `builds` | Build records: `{"builds": {"include": [...], "exclude": [...]}, "actions": [...]}` with the name globs of R-AUTHZ-027 | P1 |
 
   There is no project resource type (TOK-011, TOK-013, P2): a project role reaches a personal
-  access token through the token's `repositories` part like any grant, and the Owner's
-  administration only through `admin: true` (R-AUTHZ-026,
+  access token through the token's `repositories` part like any grant, the reading of a project
+  and its members through an element that names the project or the system item `projects:read`,
+  and the Owner's administration only through `admin: true` (R-AUTHZ-026,
   [Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
   There is no per-repository configuration type: repository configuration is the system capability pair
   `repositories:read-config` and `repositories:write-config` and applies to every project;
@@ -1916,8 +1917,12 @@ of its partners without a system administrator. Delegation per policy (`manage`,
   (the union, R-AUTHZ-015), and the explanation names them as source `role:<projectKey>:<role>` (R-AUTHZ-024). A `deploy`
   through a role makes the publishing identity the owner as a grant does (R-AUTHZ-018).
 - A role reaches every credential through which the member acts as itself, the UI session and its personal access tokens,
-  intersected with the token's scope like any grant (R-AUTHZ-013). The Owner's administration, its reads included, is
-  exercised only through a UI session or a token with `admin: true`, as for a system role. Service-account and CI tokens
+  intersected with the token's scope like any grant (R-AUTHZ-013). Outside the content, a token is a member, with its role,
+  only of the projects its scope reaches: every project for `inherit`, `admin: true` or the system item `projects:read`,
+  otherwise those one of its `repositories` elements names (a key of the project, a pattern whose project glob matches
+  it, or a class), whatever the element's actions. The project list, the read of a project and its members, `GET
+  /authz/me` and the `404` of a project the caller is no member of read these memberships. The Owner's administration, its
+  reads included, is exercised only through a UI session or a token with `admin: true`, as for a system role. Service-account and CI tokens
   never carry a role; they reach a project's repositories through its policies
   ([Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - A project keeps at least one Owner: removing or demoting the last one answers 409 `last_owner` unless the caller holds
@@ -5159,16 +5164,23 @@ out of groups and system roles so that no broad grant reaches it
 | (d) Service accounts as members too | People and machines in one list | One mechanism | A role hands a machine every repository of the project, and a project account would be reached by what Q-AUTHZ-175 keeps away from it |
 
 **Choice:** (a). The source of a role's actions in the explanation is `role:<projectKey>:<role>`; the token's scope
-intersects it as it intersects a grant.
+intersects it as it intersects a grant. Outside the content, where no repository coordinate is decided (the project
+list, a project and its members, `GET /authz/me`, the `404` of a hidden project), the scope reaches a project when it is
+`inherit`, `admin: true` or lists the system item `projects:read`, or when one of its `repositories` elements names the
+project, whatever the element's actions: a token scoped to `web/npm-internal` with `deploy` reads project `web` and its
+members, and no other project of its owner.
 
 **Rationale:** a role is a set of grants the project decides, so it should reach what a grant reaches, under the same
 ceiling. Administration changes who may act, which the installation already guards with `admin: true` for the system
 roles; the project gets the same bar, so an Owner's leaked everyday token cannot add members. Keeping service accounts and
 CI tokens out of roles keeps every machine's rights in a policy that names it. The development agent would revisit this if
 Owners need automation that administers a project (then an administering project service account, a decision of its own),
-or if a token should carry a role but not the grants of global policies.
+or if a token should carry a role but not the grants of global policies. Reading a project is no repository action, so it
+cannot be intersected element by element; naming the project in an element is the narrowest form a scope already has, and
+the system item `projects:read` is the one a script that only lists its projects uses. The development agent would revisit this part when token
+scopes gain a project resource type (TOK-011, P2).
 
-**Applied in the spec:** R-AUTHZ-026 (members and roles), R-AUTHZ-013 (the scope over a role);
+**Applied in the spec:** R-AUTHZ-026 (members and roles, what a token sees of its projects), R-AUTHZ-013 (the scope over a role);
 [api-and-ui.md](api-and-ui.md) R-API-008 (the declaration); [identity-and-authentication.md](identity-and-authentication.md)
 R-AUTH-024 (what a scope narrows).
 

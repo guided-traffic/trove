@@ -75,8 +75,8 @@ func (x authzAccess) RequireAction(ctx context.Context, c authz.Coordinate) erro
 // audit nothing; an Access that does not implement them (or a replica without a decision point)
 // knows no membership, so a declaration that names projectRole admits nobody through it.
 type ProjectAccess interface {
-	// Memberships lists the projects the caller is a member of, with its role
-	// (authz.Decider.MembershipsOn).
+	// Memberships lists the projects the caller is a member of, with its role, that the
+	// credential's scope reaches (authz.Decider.MembershipsOn, Q-AUTHZ-215).
 	Memberships(ctx context.Context) ([]authz.Membership, error)
 	// Owns reports whether the caller may administer the project: an Owner of it through a
 	// session or a token with admin: true (authz.Decider.OwnsOn).
