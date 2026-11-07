@@ -420,8 +420,8 @@ func TestR_AUTHZ_026_ManyMembershipsMergeToTheHighestRole(t *testing.T) {
 	if len(ms) != 3*smallRoles || ms[0] != (Membership{Key: "q000", Role: ProjectRoleDeveloper}) {
 		t.Errorf("%+v", ms[:2])
 	}
-	for _, m := range roles.list {
-		if got := roles.in(m.p); got != m.role || (m.p.key != "q020" && m.role != ProjectRoleDeveloper) {
+	for i, m := range roles.list {
+		if roles.find(m.p) != i || m.role != m.p.roleOf(sub) || (m.p.key != "q020" && m.role != ProjectRoleDeveloper) {
 			t.Errorf("%s: %s", m.p.key, m.role)
 		}
 	}

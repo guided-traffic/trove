@@ -68,17 +68,6 @@ func (r *subjectRoles) find(p *projectInfo) int {
 	return -1
 }
 
-// in is the subject's role in the project, ProjectRoleNone for no membership and for no project.
-func (r *subjectRoles) in(p *projectInfo) ProjectRole {
-	if p == nil {
-		return ProjectRoleNone
-	}
-	if i := r.find(p); i >= 0 {
-		return r.list[i].role
-	}
-	return ProjectRoleNone
-}
-
 // merge adds one membership row, keeping the higher role of a project the list holds.
 func (r *subjectRoles) merge(m membership) {
 	if i := r.find(m.p); i >= 0 {
