@@ -120,7 +120,7 @@ the writers of those objects take as well: a policy write binds its key selector
 the repository's FOR SHARE (`bindKeySelectors` in [store.go](../../internal/authz/store.go)), and a virtual repository's write its
 members FOR SHARE, so a write that names the repository runs before the move, which then sees it, or after it, when the key no longer
 names it. The database holds the same rule for every writer (SQLSTATE `AI007`, migration 00024): a repository its project holds by ID
-does not change its project, and a project policy's key selector names a repository of its own project. Nothing is rewritten on the caller's behalf,
+does not change its project, and a project policy's key selector names a repository of its own project. A member, pin member or deployment target of a virtual repository and a key selector of a project policy additionally lock both repositories FOR SHARE in the database (migration 00045), so the move and a write that skipped the locks above meet in either order and one of them is refused. Nothing is rewritten on the caller's behalf,
 so no grant or resolution changes behind the back of the people who wrote those objects. The move notifies `authz` and `repo_config`
 with the repository's ID and raises its `config_version`, so the old address answers 404 and every cache keyed by the configuration
 version drops what it built, on every replica within the bound of R-AUTHZ-028; it records `repository.moved` in the source project with

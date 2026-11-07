@@ -294,7 +294,7 @@ of CI mappings (R-CI-013), the members and the deployment target of a virtual re
   share lock of the policy's project and of the repository row, never through a replica's cached view of another
   moment, so a policy write and a move of the repository run one after the other: a key the project no longer holds
   is `unknown_repository`, and a selector written first refuses the move (R-REPO-060). The database refuses a project
-  policy's key selector on a repository of another project (SQLSTATE `AI007`). A key selector of an instance context keeps naming its repository when the repository
+  policy's key selector on a repository of another project (SQLSTATE `AI007`); the guard locks the repository `FOR SHARE` before it reads its project, so a selector write that skipped the locks above and a move meet in either order and one is refused (Q-REPO-234). A key selector of an instance context keeps naming its repository when the repository
   moves to another project ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)
   R-REPO-060) and reads back with the new project. Deleting a repository removes its key selectors (audited). A
   policy left without selectors stays stored, matches nothing and is reported with `"inert": true`. A repository

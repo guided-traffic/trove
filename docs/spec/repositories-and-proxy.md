@@ -737,7 +737,11 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   share locks, so such a write and a move run one after the other and the move sees what the write named. The database
   holds the rule for every writer: a repository that a key selector of a policy of its project or a virtual repository of
   its project holds by ID does not change its project (SQLSTATE `AI007`; a move that meets it answers 409
-  `repository_in_use`).
+  `repository_in_use`). That is the second line: the same-project guard on the member tables of a virtual repository
+  locks the member repository and the virtual repository `FOR SHARE` before it reads their projects, and the guard on the
+  key selectors of project policies locks the selected repository the same way, so a member or selector write that skips
+  the service's locks still meets a move in either order, and the move or the write is refused
+  ([Q-REPO-234](#q-repo-234--a-member-write-locks-its-repositories-in-the-database-so-the-move-guard-sees-every-order)).
 - **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
   repository's `project_id`, raises its `config_version`, writes the audit events `repository.moved` (project: the source,
   repository: the former name, journaled) and `repository.moved_in` (project: the target, repository: the new name), both
@@ -7184,6 +7188,39 @@ event; then one event would serve both views.
 
 **Applied in the spec:** R-REPO-060 (the events); [authorization.md](authorization.md) R-AUTHZ-026 (the project's events), the
 event table of R-AUTHZ-029.
+
+### Q-REPO-234 · A member write locks its repositories in the database, so the move guard sees every order
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-68 asked whether the guard of a move (`AI007`) sees a member write that does not take `LockRepositoriesByKeys …
+FOR SHARE`. Reproduced against PostgreSQL with two connections and raw SQL. A member write in flight makes the move wait:
+`project_id` is a column of the unique index `(project_id, key)`, so its update takes the strongest row lock, which conflicts
+with the `FOR KEY SHARE` that the member's foreign key takes; the move then re-runs its guard and refuses (`AI007`). The
+other order was open: the same-project guard of the member row (`AI006`, migration 00024) read the repository's project
+before the foreign key waited, so a move in flight was invisible to it, the write passed on the old project and landed
+next to a repository of another project once the move committed. `policy_selector_project_guard` (`AI007`) read the project
+of a key selector's repository the same way, and the same test reproduced it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A test pins every member write path to the locks | A test reads the Go write paths | No schema change | Holds only for today's Go paths; a new path or a manual write is unguarded, and the order that failed is the one the guard itself got wrong |
+| (b) A separate trigger that locks the member repository | A `BEFORE` trigger per member table | Explicit | Fires before or after the same-project guard by trigger name, so the order needs a naming rule |
+| (c) The same-project guard locks first (chosen) | `virtual_same_project_guard` locks the referenced repository and the virtual repository `FOR SHARE` in ID order, then reads both projects | One indexed row lock per row and no new trigger; the read follows the lock, so both orders end in one state; also covers pin members and deployment targets, which share the function | The member write now waits for an uncommitted move of either repository |
+
+**Choice:** (c), migration 00045. `FOR SHARE` rather than `FOR KEY SHARE`, so the lock conflicts with every update of the row,
+not only with a key update. Locking in ID order keeps two writers from waiting on each other. `policy_selector_project_guard`
+locks the selected repository `FOR SHARE` before it reads its project; the project of a policy never changes (`AI003`), so its
+row is not locked.
+
+**Rationale:** the database is the only place that sees every writer, and the defect was an order inside the guard, which a
+test of the Go paths would not have found. Revisit when another guard reads a referenced row's attributes before its
+foreign key has waited.
+
+**Applied:** R-REPO-060 (the second line); migration `00045_virtual_member_locks_repository.sql`;
+`TestR_REPO_060_AMemberWriteAndAMoveOfItsRepositoryAreSerialisedByTheDatabase` (member and key selector writes, both orders)
+([test/integration/postgres/move_guard_race_test.go](../../test/integration/postgres/move_guard_race_test.go));
+[database.md](../developer/database.md), [delegated-administration.md](../security/delegated-administration.md).
 
 ## What this does not cover
 

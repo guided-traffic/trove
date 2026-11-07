@@ -609,9 +609,19 @@ Guards that the database enforces whatever the API checked. Together with the ea
 | `AI003` | `project_key_immutable`, `service_account_project_guard`, `authz_policy_project_guard` | a change of a project's key; a stored name of a project's service account or policy that is not `<key>/<name>` of its project, a `/` in the name of an instance-wide one, a change of their project |
 | `AI004` | `authz_policy_entry_global_only` on `authz_policy_entry` | a row for a project policy |
 | `AI005` | `project_account_principal_guard` on `authz_role_binding`, `authz_policy_entry` and `authz_project_policy_entry` | a project service account as the principal of a role binding or of an entry of a global policy, and of an entry of a policy of another project (Q-AUTHZ-175); a global service account and the project's own accounts pass |
-| `AI006` | `virtual_same_project_guard` on `virtual_members`, `virtual_deploy_targets`, `virtual_pin_members` | a member, pin member or deployment target of another project than the virtual repository's (Q-AUTHZ-206); a move that would leave one is refused by the service (409 `repository_in_use`) |
+| `AI006` | `virtual_same_project_guard` on `virtual_members`, `virtual_deploy_targets`, `virtual_pin_members` | a member, pin member or deployment target of another project than the virtual repository's (Q-AUTHZ-206); a move that would leave one is refused by the service (409 `repository_in_use`); the function locks both repositories `FOR SHARE` before it reads their projects (00045, Q-REPO-234) |
 
 Tested in [projects_test.go](../../test/integration/postgres/projects_test.go).
+
+## Member and selector writes lock their repositories (00045)
+
+[00045_virtual_member_locks_repository](../../internal/meta/postgres/migrations/00045_virtual_member_locks_repository.sql)
+replaces `virtual_same_project_guard` (`AI006`): it locks the referenced repository and the virtual repository `FOR SHARE`,
+in ID order, before it reads their projects. A member, pin member or deployment target written beside a move of either
+repository then waits for it and is refused (`AI006`), and a move that meets a write in flight waits and is refused by
+`AI007`, whatever locks the Go path took (Q-REPO-234, R-REPO-060). The same migration replaces `policy_selector_project_guard`
+(`AI007`) so that it locks the selected repository `FOR SHARE` before it reads its project. The integration test
+[move_guard_race_test.go](../../test/integration/postgres/move_guard_race_test.go) drives both orders with raw SQL on two connections.
 
 ## Replica runtime (00044) and the overview statements (Q-OPS-175)
 

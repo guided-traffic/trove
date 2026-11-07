@@ -241,14 +241,6 @@ Found on 2026-11-07 while reading the scheduled nightly run 42356771989:
 
 Found on 2026-11-07 while reviewing the project model (T-3 to T-6):
 
-### Product
-
-- **F-68 · The database guard of a move does not see a virtual-member write that skips the share locks** (read). `AI007`
-  (migration 00024) refuses a `project_id` change while a policy of the project or a virtual repository holds the repository
-  by ID; a virtual-member write that does not take `LockRepositoriesByKeys … FOR SHARE` could race it. Every write path takes
-  the locks today, so the gap is a missing second line, not a live defect. Done when the guard also covers that order (a
-  trigger on the member tables that locks the member repository) or a test pins every member write path to the locks.
-
 ### Code
 
 - **F-69 · The package and vulnerability views key repositories by `<project>/<key>` strings and parse them per row** (read).
