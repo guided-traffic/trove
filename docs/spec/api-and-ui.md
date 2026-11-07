@@ -4497,7 +4497,7 @@ Acceptance criteria:
 ### R-UI-048 · Backups
 Priority: **MVP** · Covers: OPS-032
 
-`/admin/system/backups`, for callers with `system.read`, renders R-API-050. It shows the backup job
+`/admin/system/backups`, for callers with `settings:read` (as R-API-050), renders R-API-050. It shows the backup job
 of INV-19 and changes nothing: backups are started by the CronJob or by hand with `kubectl`,
 configured through the chart and the configuration file, and restored by a Helm hook Job
 ([backup-and-restore.md](backup-and-restore.md) R-BAK-011, R-BAK-012; Q-API-10).

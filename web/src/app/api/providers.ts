@@ -33,6 +33,9 @@ import { BastionsApi, HttpBastionsApi } from './bastions-api';
 // >>> M4b vulnerabilities
 import { HttpVulnerabilitiesApi, VulnerabilitiesApi } from './vulnerabilities-api';
 // <<< M4b vulnerabilities
+// >>> G2 backups
+import { BackupsApi, HttpBackupsApi } from './backups-api';
+// <<< G2 backups
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -77,5 +80,8 @@ export function provideApiServices(): Provider[] {
     // >>> M4b vulnerabilities
     { provide: VulnerabilitiesApi, useClass: HttpVulnerabilitiesApi },
     // <<< M4b vulnerabilities
+    // >>> G2 backups
+    { provide: BackupsApi, useClass: HttpBackupsApi },
+    // <<< G2 backups
   ];
 }

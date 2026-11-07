@@ -1,0 +1,381 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@backups.heading">Backups</h1>
+  <button class="btn btn-default" type="button" [attr.aria-pressed]="paused()" (click)="paused.set(!paused())">
+    @if (paused()) {
+      <ng-container i18n="@@system.resume">Resume automatic refresh</ng-container>
+    } @else {
+      <ng-container i18n="@@system.pause">Pause automatic refresh</ng-container>
+    }
+  </button>
+  <button class="btn btn-tertiary" type="button" (click)="refresh()" i18n="@@system.refresh">Refresh now</button>
+  <a class="btn btn-tertiary" routerLink="/admin/system" i18n="@@jobs.back">System status</a>
+</header>
+
+@if (statusFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="refresh()" />
+}
+
+@if (summary(); as s) {
+  @if (s.restoredFrom; as r) {
+    <p class="restored" role="status">
+      <span class="material-icons" aria-hidden="true">history</span>
+      <span>
+        <ng-container i18n="@@backups.restored"
+          >This installation was restored from backup <code translate="no">{{ r.backupId }}</code> (snapshot of
+          <time [attr.datetime]="r.snapshotAt">{{ r.snapshotAt | date: 'medium' }}</time>).</ng-container
+        >
+        <ng-container i18n="@@backups.restored-docs"
+          >Restoring is a Helm operation on an empty installation; this screen offers no restore action.</ng-container
+        >
+        <a routerLink="/help/admin/operations" i18n="@@backups.docs-link">Operator documentation</a>
+      </span>
+    </p>
+  }
+
+  <div class="cards">
+    <section class="card" aria-labelledby="bk-status">
+      <h2 id="bk-status" i18n="@@backups.status.heading">Status</h2>
+      <dl>
+        <dt i18n="@@backups.status.last-success">Last success</dt>
+        <dd>
+          @if (s.lastSuccessAt; as at) {
+            <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+            (<ng-container i18n="@@backups.status.age">{{ lastSuccessAge() }} ago</ng-container>)
+            @if (s.overdue) {
+              <span class="badge warn">
+                <span class="material-icons" aria-hidden="true">warning</span>
+                <ng-container i18n="@@backups.status.overdue">Overdue</ng-container>
+              </span>
+            }
+          } @else {
+            <span class="badge warn">
+              <span class="material-icons" aria-hidden="true">warning</span>
+              <ng-container i18n="@@backups.status.none">No backup yet</ng-container>
+            </span>
+          }
+        </dd>
+        <dt i18n="@@backups.status.interval">Expected interval</dt>
+        <dd translate="no">{{ durationText(s.expectedIntervalSeconds) }}</dd>
+        @if (s.lastFailure; as failure) {
+          <dt i18n="@@backups.status.last-failure">Last failure</dt>
+          <dd>
+            <time [attr.datetime]="failure.at">{{ failure.at | date: 'medium' }}</time>
+            <span class="badge bad">
+              <span class="material-icons" aria-hidden="true">error</span>
+              <ng-container i18n="@@backups.status.failed">Failed</ng-container>
+            </span>
+            @if (lastFailureText(); as text) {
+              <span class="reason">{{ text }}</span>
+            }
+            @if (failure.code) {
+              <code translate="no">{{ failure.code }}</code>
+            }
+          </dd>
+        }
+      </dl>
+    </section>
+
+    @if (s.active; as running) {
+      <section class="card" aria-labelledby="bk-active">
+        <h2 id="bk-active" i18n="@@backups.active.heading">Run in progress</h2>
+        <dl>
+          <dt i18n="@@backups.col.state">State</dt>
+          <dd><trove-backup-state [state]="running.state" [leaseExpired]="running.leaseExpired" [showHint]="true" /></dd>
+          <dt i18n="@@backups.col.operation">Operation</dt>
+          <dd>{{ operationText(running.operation) }}</dd>
+          @if (activeRun(); as run) {
+            <dt i18n="@@backups.active.phase">Phase</dt>
+            <dd>{{ phaseText(run.progress.phase) }}</dd>
+            @if (run.progress.tablesTotal !== undefined) {
+              <dt i18n="@@backups.active.tables">Tables exported</dt>
+              <dd translate="no">{{ run.progress.tablesDone ?? 0 }} / {{ run.progress.tablesTotal }}</dd>
+            }
+            @if (run.progress.blobsToCopy !== undefined) {
+              <dt i18n="@@backups.active.blobs">Blobs copied</dt>
+              <dd>
+                <span translate="no">{{ run.progress.blobsCopied ?? 0 }} / {{ run.progress.blobsToCopy }}</span>
+                @if (run.progress.blobsToCopy > 0) {
+                  <progress
+                    [attr.aria-label]="blobsLabel"
+                    [value]="run.progress.blobsCopied ?? 0"
+                    [max]="run.progress.blobsToCopy"
+                  ></progress>
+                }
+              </dd>
+            }
+            @if (run.progress.bytesCopied !== undefined) {
+              <dt i18n="@@backups.active.bytes">Bytes copied</dt>
+              <dd translate="no">{{ formatSize(run.progress.bytesCopied) }}</dd>
+            }
+            <dt i18n="@@backups.col.pod">Pod</dt>
+            <dd translate="no">{{ run.pod }}</dd>
+          }
+          <dt i18n="@@backups.active.started">Started</dt>
+          <dd><time [attr.datetime]="running.startedAt">{{ running.startedAt | date: 'medium' }}</time></dd>
+        </dl>
+      </section>
+    }
+  </div>
+}
+
+  <section class="block" aria-labelledby="bk-runs">
+    <h2 id="bk-runs" i18n="@@backups.runs.heading">Runs</h2>
+    <form class="toolbar" role="search" (submit)="apply($event)">
+      <div class="field">
+        <label class="field-label" for="bk-op" i18n="@@backups.filter.operation">Operation</label>
+        <select
+          id="bk-op"
+          class="select-input"
+          [value]="operationDraft()"
+          (change)="operationDraft.set($any($event.target).value)"
+        >
+          <option value="" [selected]="operationDraft() === ''" i18n="@@backups.filter.any">Any</option>
+          @for (o of operations; track o) {
+            <option [value]="o" [selected]="operationDraft() === o">{{ operationText(o) }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="bk-state" i18n="@@backups.filter.state">State</label>
+        <select
+          id="bk-state"
+          class="select-input"
+          [value]="stateDraft()"
+          (change)="stateDraft.set($any($event.target).value)"
+        >
+          <option value="" [selected]="stateDraft() === ''" i18n="@@backups.filter.any">Any</option>
+          @for (st of states; track st) {
+            <option [value]="st" [selected]="stateDraft() === st">{{ stateName(st) }}</option>
+          }
+        </select>
+      </div>
+      <button class="btn btn-confirm" type="submit" i18n="@@repo.filter.apply">Search</button>
+    </form>
+
+    @if (runs.error(); as f) {
+      <trove-error-notice [error]="f" (retry)="refresh()" />
+    }
+    @if (runs.loaded()) {
+      @if (runs.items().length === 0) {
+        <p class="empty" i18n="@@backups.runs.empty">No backup run matches the filters.</p>
+      } @else {
+        <div class="scroll" tabindex="0" role="region" [attr.aria-label]="caption">
+          <table class="data">
+            <caption class="visually-hidden">
+              {{ caption }}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@backups.col.started">Started</th>
+                <th scope="col" i18n="@@backups.col.operation">Operation</th>
+                <th scope="col" i18n="@@backups.col.pod">Pod</th>
+                <th scope="col" i18n="@@backups.col.state">State</th>
+                <th scope="col" i18n="@@backups.col.backup-id">Backup ID</th>
+                <th scope="col" i18n="@@backups.col.snapshot">Snapshot</th>
+                <th scope="col" i18n="@@backups.col.duration">Duration</th>
+                <th scope="col" i18n="@@backups.col.database">Database</th>
+                <th scope="col" i18n="@@backups.col.blobs-copied">Blobs copied</th>
+                <th scope="col" i18n="@@backups.col.warnings">Warnings</th>
+                <th scope="col" i18n="@@repo.col.actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of runs.items(); track r.id) {
+                <tr>
+                  <th scope="row">
+                    <time [attr.datetime]="r.startedAt">{{ r.startedAt | date: 'medium' }}</time>
+                  </th>
+                  <td>{{ operationText(r.operation) }}</td>
+                  <td translate="no">{{ r.pod }}</td>
+                  <td><trove-backup-state [state]="r.state" [leaseExpired]="r.leaseExpired" [showHint]="true" /></td>
+                  <td translate="no">{{ r.backupId ?? '–' }}</td>
+                  <td>
+                    @if (r.snapshotAt) {
+                      <time [attr.datetime]="r.snapshotAt">{{ r.snapshotAt | date: 'medium' }}</time>
+                    } @else {
+                      –
+                    }
+                  </td>
+                  <td translate="no">{{ duration(r) }}</td>
+                  <td translate="no">{{ databaseBytes(r) }}</td>
+                  <td translate="no">{{ blobsCopied(r) }}</td>
+                  <td translate="no">{{ resultWarnings(r).length }}</td>
+                  <td>
+                    <button
+                      class="btn btn-tertiary"
+                      type="button"
+                      [attr.aria-label]="detailLabel(r)"
+                      (click)="open(r)"
+                      i18n="@@backups.details"
+                    >
+                      Details
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (runs.hasMore()) {
+          <p>
+            <button
+              class="btn btn-default"
+              type="button"
+              [disabled]="runs.loading()"
+              (click)="runs.more()"
+              i18n="@@list.load-more"
+            >
+              Load more
+            </button>
+          </p>
+        }
+      }
+    } @else if (runs.loading()) {
+      <p role="status" i18n="@@system.loading">Loading.</p>
+    }
+  </section>
+
+  @if (selectedId() !== null) {
+    <section class="card detail" aria-labelledby="bk-detail">
+      <div class="detail-head">
+        <h2 id="bk-detail" tabindex="-1" i18n="@@backups.detail.heading">Run</h2>
+        <button class="btn btn-tertiary" type="button" (click)="close()" i18n="@@backups.detail.close">Close</button>
+      </div>
+      @if (detailFailure(); as f) {
+        <trove-error-notice [error]="f" (retry)="detail.reload()" />
+      }
+      @if (detailRun(); as run) {
+        <dl>
+          <dt i18n="@@backups.detail.id">Run ID</dt>
+          <dd translate="no">{{ run.id }}</dd>
+          <dt i18n="@@backups.col.state">State</dt>
+          <dd><trove-backup-state [state]="run.state" [leaseExpired]="run.leaseExpired" [showHint]="true" /></dd>
+          <dt i18n="@@backups.col.operation">Operation</dt>
+          <dd>{{ operationText(run.operation) }}</dd>
+          <dt i18n="@@backups.detail.trigger">Trigger</dt>
+          <dd translate="no">{{ run.trigger }}</dd>
+          <dt i18n="@@backups.col.pod">Pod</dt>
+          <dd translate="no">{{ run.pod }}</dd>
+          <dt i18n="@@backups.detail.version">trove version</dt>
+          <dd translate="no">{{ run.troveVersion }}</dd>
+          <dt i18n="@@backups.detail.target">Target</dt>
+          <dd translate="no">{{ run.target }}</dd>
+          <dt i18n="@@backups.detail.heartbeat">Last heartbeat</dt>
+          <dd><time [attr.datetime]="run.heartbeatAt">{{ run.heartbeatAt | date: 'medium' }}</time></dd>
+          @if (run.finishedAt; as end) {
+            <dt i18n="@@backups.detail.finished">Finished</dt>
+            <dd><time [attr.datetime]="end">{{ end | date: 'medium' }}</time></dd>
+          }
+        </dl>
+        @if (run.error; as error) {
+          <h3 i18n="@@backups.detail.error">Error</h3>
+          @if (errorCode(error); as code) {
+            @if (describeBackupProblem(code); as text) {
+              <p>{{ text }}</p>
+            }
+            <p><code translate="no">{{ code }}</code></p>
+          }
+        }
+        @if (resultWarnings(run).length > 0) {
+          <h3 i18n="@@backups.detail.warnings">Warnings</h3>
+          <ul translate="no">
+            @for (w of resultWarnings(run); track $index) {
+              <li>{{ w }}</li>
+            }
+          </ul>
+        }
+        <h3 i18n="@@backups.detail.result">Result</h3>
+        @if (run.result) {
+          <pre class="code-block" translate="no" tabindex="0">{{ resultJson(run) }}</pre>
+        } @else {
+          <p class="empty" i18n="@@backups.detail.no-result">The run has no result yet.</p>
+        }
+      }
+    </section>
+  }
+
+@if (summary(); as s) {
+  <section class="card" aria-labelledby="bk-stored">
+    <h2 id="bk-stored" i18n="@@backups.stored.heading">Stored backups</h2>
+    @if (storedAsOf(); as stored) {
+      <p>
+        <ng-container i18n="@@backups.stored.as-of"
+          >As recorded by run <code translate="no">{{ stored.runId }}</code> at
+          <time [attr.datetime]="stored.asOf">{{ stored.asOf | date: 'medium' }}</time>.</ng-container
+        >
+        <ng-container i18n="@@backups.stored.note"
+          >Backups written or removed outside trove appear after the next run; <code translate="no">trove backup list</code> reads
+          the target itself.</ng-container
+        >
+      </p>
+      @if (stored.items.length === 0) {
+        <p class="empty" i18n="@@backups.stored.empty">The target held no complete backup then.</p>
+      } @else {
+        <div class="scroll" tabindex="0" role="region" [attr.aria-label]="storedCaption">
+          <table class="data">
+            <caption class="visually-hidden">
+              {{ storedCaption }}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@backups.col.backup-id">Backup ID</th>
+                <th scope="col" i18n="@@backups.col.snapshot">Snapshot</th>
+                <th scope="col" i18n="@@backups.stored.version">trove version</th>
+                <th scope="col" i18n="@@backups.stored.schema">Schema step</th>
+                <th scope="col" i18n="@@backups.col.database">Database</th>
+                <th scope="col" i18n="@@backups.stored.blobs">Blobs</th>
+                <th scope="col" i18n="@@backups.stored.blob-size">Blob size</th>
+                <th scope="col" i18n="@@backups.stored.damaged">Damaged</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (b of stored.items; track b.backupId) {
+                <tr>
+                  <th scope="row" translate="no">{{ b.backupId }}</th>
+                  <td><time [attr.datetime]="b.snapshotAt">{{ b.snapshotAt | date: 'medium' }}</time></td>
+                  <td translate="no">{{ b.troveVersion }}</td>
+                  <td translate="no">{{ b.schemaStep }}</td>
+                  <td translate="no">{{ formatSize(b.databaseBytes) }}</td>
+                  <td translate="no">{{ b.blobCount }}</td>
+                  <td translate="no">{{ formatSize(b.blobBytes) }}</td>
+                  <td>
+                    @if (b.damaged) {
+                      <span class="badge bad">
+                        <span class="material-icons" aria-hidden="true">error</span>
+                        <ng-container i18n="@@backups.stored.damaged-mark">Damaged</ng-container>
+                      </span>
+                    } @else {
+                      –
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    } @else {
+      <p class="empty" i18n="@@backups.stored.none">No run has listed the target yet.</p>
+    }
+    <dl class="policy">
+      <dt i18n="@@backups.detail.target">Target</dt>
+      <dd translate="no">{{ s.target ?? '–' }}</dd>
+      @if (s.retention; as retention) {
+        <dt i18n="@@backups.retention.keep-last">Keep the newest</dt>
+        <dd translate="no">{{ retention.keepLast }}</dd>
+        <dt i18n="@@backups.retention.keep-within">Keep newer than</dt>
+        <dd>
+          @if (retention.keepWithinSeconds > 0) {
+            <span translate="no">{{ durationText(retention.keepWithinSeconds) }}</span>
+          } @else {
+            <ng-container i18n="@@backups.retention.keep-within-off">Not set</ng-container>
+          }
+        </dd>
+      }
+      <dt i18n="@@backups.status.interval">Expected interval</dt>
+      <dd translate="no">{{ durationText(s.expectedIntervalSeconds) }}</dd>
+    </dl>
+  </section>
+
+  <trove-manual-run-panel [manualRun]="s.manualRun" />
+}

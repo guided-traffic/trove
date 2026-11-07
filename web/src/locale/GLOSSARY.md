@@ -87,3 +87,5 @@ before using a new term in a German text.
 | licence (of the software the build bundles, its notices) | Lizenz (der eingebundenen Software, Hinweise) |
 | project switcher, start page of the projects ("Your work"), recently visited (projects) | Projektwechsler, "Ihre Arbeit", Zuletzt besucht |
 | storage (the logical size a project is charged), physical size | Speicher (logische Größe, die dem Projekt angerechnet wird), physische Größe |
+| backup, backup run, stored backup, backup target | Backup, Backup-Lauf, gespeichertes Backup, Backup-Ziel |
+| blob, snapshot, pod (as in the backups screen) | Blob, Snapshot, Pod |

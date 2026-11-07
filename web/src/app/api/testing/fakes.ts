@@ -34,6 +34,9 @@ import { provideBastionFakes } from './fakes-bastions';
 // >>> M4b vulnerabilities
 import { provideVulnerabilityFakes } from './fakes-vulnerabilities';
 // <<< M4b vulnerabilities
+// >>> G2 backups
+import { provideBackupFakes } from './fakes-backups';
+// <<< G2 backups
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -352,5 +355,8 @@ export function provideFakeApis(): Provider[] {
     // >>> M4b vulnerabilities
     ...provideVulnerabilityFakes(),
     // <<< M4b vulnerabilities
+    // >>> G2 backups
+    ...provideBackupFakes(),
+    // <<< G2 backups
   ];
 }

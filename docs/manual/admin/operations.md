@@ -117,11 +117,22 @@ Every answer carries `X-Request-Id`. Problem answers repeat it as `requestId`, a
 - **Scheduled tasks**: each task with **Schedule (UTC)**, **Next run** and **Last run**. **Run now** (capability `settings:write`) queues one run; a worker executes it.
 - **Recent jobs**, with a link to **Jobs**.
 
-The screen cannot see disruption budgets or free capacity on other nodes, because trove holds no Kubernetes permissions. The **Backups** link leads to a placeholder.
+The screen cannot see disruption budgets or free capacity on other nodes, because trove holds no Kubernetes permissions. The **Backups** link leads to the [Backups](#backups) screen.
 
 ### Jobs
 
 **Jobs** lists background jobs newest first, filtered by **Kind (comma separated)** and **State** (queued, running, cancelling, succeeded, failed, cancelled). A holder of `settings:read` sees every job, anyone else only the jobs they started. **Cancel** is offered for queued and running jobs to holders of `settings:write` and to whoever started the job; a running job shows cancelling until it reaches its next checkpoint.
+
+### Backups
+
+**Admin area › System › System status › Backups** (capability `settings:read`) shows the backup job and changes nothing: no control starts, deletes, verifies or restores a backup. It refreshes on the same interval as the status screen, with the same **Pause automatic refresh** and **Refresh now**.
+
+- **Status**: the last success with its age and the **Expected interval**. **Overdue** appears when the last success is older than 1.5 times that interval, the condition of the `TroveBackupStale` alert; **No backup yet** appears while no run has succeeded. **Last failure** appears when a failed or abandoned run, or a run whose process has stopped, is newer than the last success, with the reason in words and its code. A drain or an eviction ends a run as **Interrupted**, which is not a failure: the Job retries it.
+- **Run in progress**: the state, the phase, the tables exported, the blobs and bytes copied against the totals, the pod and the start time. **Stopped** means the run's process has gone without finishing; the next run marks it abandoned.
+- **Runs**: the runs newest first, filtered by **Operation** and **State**, with **Load more**. **Details** opens a run with its error and its result.
+- **Stored backups**: the complete backups that the newest run found in the target, headed "As recorded by run … at …". Backups written or removed outside trove appear after the next run; `trove backup list` reads the target itself. Next to them: the target, how many of the newest backups are kept, the age below which backups are kept, and the expected interval.
+- **Start a backup now**: the `kubectl` command that creates a Job from the CronJob, with a copy button. Run it with access to the cluster. The namespace and the CronJob name come from the chart; if the installation does not provide them, the command shows `<namespace>` and `<cronjob>` for you to replace. The run appears in the list once its pod has started. One backup runs at a time.
+- After a restore, a notice names the backup and the snapshot time this installation was restored from.
 
 ## The audit log
 

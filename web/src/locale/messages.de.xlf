@@ -26119,5 +26119,1124 @@
         <target>Verwerfen und verlassen</target>
       </segment>
     </unit>
+    <unit id="problem.backup.hold-lost">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:10</note>
+      </notes>
+      <segment>
+        <source>The hold that keeps garbage collection from deleting the blobs was lost, and a blob that still had to be copied left the source.</source>
+        <target>Der Hold, der die Garbage Collection daran hindert, die Blobs zu löschen, ging verloren, und ein Blob, der noch kopiert werden musste, hat die Quelle verlassen.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.superseded">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:12</note>
+      </notes>
+      <segment>
+        <source>Another run took over this one after its lease had passed.</source>
+        <target>Ein anderer Lauf hat diesen übernommen, nachdem seine Lease abgelaufen war.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.pool-damaged">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:14</note>
+      </notes>
+      <segment>
+        <source>A blob of an earlier backup is missing in the target. Run trove backup verify.</source>
+        <target>Ein Blob eines früheren Backups fehlt im Ziel. Führen Sie trove backup verify aus.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.invariant-violation">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:16</note>
+      </notes>
+      <segment>
+        <source>The exported data breaks a rule of trove&apos;s schema, so no backup was written.</source>
+        <target>Die exportierten Daten verletzen eine Regel des trove-Schemas, deshalb wurde kein Backup geschrieben.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.stalled">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:18</note>
+      </notes>
+      <segment>
+        <source>The run made no progress for the stall timeout and was stopped.</source>
+        <target>Der Lauf hat für die Dauer des Stall-Timeouts keinen Fortschritt gemacht und wurde gestoppt.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.lease-expired">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:20</note>
+      </notes>
+      <segment>
+        <source>The run stopped without finishing, and a later run marked it abandoned.</source>
+        <target>Der Lauf wurde beendet, ohne fertig zu werden, und ein späterer Lauf hat ihn als abgebrochen markiert.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.config">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:22</note>
+      </notes>
+      <segment>
+        <source>The backup configuration is not valid.</source>
+        <target>Die Backup-Konfiguration ist nicht gültig.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.busy">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:24</note>
+      </notes>
+      <segment>
+        <source>Another backup run was writing to the target.</source>
+        <target>Ein anderer Backup-Lauf hat in das Ziel geschrieben.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.foreign-target">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:26</note>
+      </notes>
+      <segment>
+        <source>The target belongs to another installation or incarnation.</source>
+        <target>Das Ziel gehört zu einer anderen Installation oder Inkarnation.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.findings">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:28</note>
+      </notes>
+      <segment>
+        <source>The verification found problems in the stored backups.</source>
+        <target>Die Prüfung hat Probleme in den gespeicherten Backups gefunden.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.precondition">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:30</note>
+      </notes>
+      <segment>
+        <source>A precondition of the operation does not hold.</source>
+        <target>Eine Voraussetzung der Operation ist nicht erfüllt.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.temporary">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:32</note>
+      </notes>
+      <segment>
+        <source>The database or the target was not reachable. The Job retries the run.</source>
+        <target>Die Datenbank oder das Ziel war nicht erreichbar. Der Job wiederholt den Lauf.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.restore-in-progress">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:34</note>
+      </notes>
+      <segment>
+        <source>A restore is in progress.</source>
+        <target>Eine Wiederherstellung läuft.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.interrupted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:36</note>
+      </notes>
+      <segment>
+        <source>Interrupted by a drain or eviction. The Job retries the run.</source>
+        <target>Durch einen Drain oder eine Eviction unterbrochen. Der Job wiederholt den Lauf.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.internal">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:38</note>
+      </notes>
+      <segment>
+        <source>An internal error stopped the run. The log of its pod has the details.</source>
+        <target>Ein interner Fehler hat den Lauf gestoppt. Das Log des Pods enthält die Einzelheiten.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.deletion-not-allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:40</note>
+      </notes>
+      <segment>
+        <source>The deletion was refused: the only complete backup is not deleted without saying so.</source>
+        <target>Das Löschen wurde abgelehnt: Das einzige vollständige Backup wird nicht gelöscht, ohne dass dies ausdrücklich gesagt wird.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.key-ring-mismatch">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:42</note>
+      </notes>
+      <segment>
+        <source>The key files of this installation do not match the key IDs of the backup.</source>
+        <target>Die Schlüsseldateien dieser Installation passen nicht zu den Schlüssel-IDs des Backups.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.journal-unavailable">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:44</note>
+      </notes>
+      <segment>
+        <source>The revocation journal could not be read or written.</source>
+        <target>Das Widerrufsjournal konnte nicht gelesen oder geschrieben werden.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.format-unknown">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:46</note>
+      </notes>
+      <segment>
+        <source>The backup has a format this version does not know.</source>
+        <target>Das Backup hat ein Format, das diese Version nicht kennt.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.schema-step-mismatch">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:48</note>
+      </notes>
+      <segment>
+        <source>The schema step of the backup is newer than this version supports.</source>
+        <target>Der Schemaschritt des Backups ist neuer, als diese Version unterstützt.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.database-not-empty">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:50</note>
+      </notes>
+      <segment>
+        <source>The database is not empty, so nothing was restored into it.</source>
+        <target>Die Datenbank ist nicht leer, deshalb wurde nichts in sie wiederhergestellt.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.blob-prefix-not-empty">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:52</note>
+      </notes>
+      <segment>
+        <source>The blob bucket or prefix is not empty, so nothing was restored into it.</source>
+        <target>Der Blob-Bucket oder das Präfix ist nicht leer, deshalb wurde nichts in ihn wiederhergestellt.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.owner-privilege-missing">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:54</note>
+      </notes>
+      <segment>
+        <source>The database role of the backup does not own the tables it has to export.</source>
+        <target>Die Datenbankrolle des Backups besitzt die Tabellen nicht, die sie exportieren muss.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.grant-missing">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:56</note>
+      </notes>
+      <segment>
+        <source>The database role of the backup lacks a grant it needs.</source>
+        <target>Der Datenbankrolle des Backups fehlt eine benötigte Berechtigung.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.target-same-bucket">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:58</note>
+      </notes>
+      <segment>
+        <source>The backup target is the bucket that holds the blobs. Use a separate bucket.</source>
+        <target>Das Backup-Ziel ist der Bucket, der die Blobs enthält. Verwenden Sie einen eigenen Bucket.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.encryption-mismatch">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:60</note>
+      </notes>
+      <segment>
+        <source>The encryption of the target does not match the configuration.</source>
+        <target>Die Verschlüsselung des Ziels passt nicht zur Konfiguration.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.database-in-recovery">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:62</note>
+      </notes>
+      <segment>
+        <source>The database is a standby in recovery and cannot be exported.</source>
+        <target>Die Datenbank ist ein Standby in der Recovery und kann nicht exportiert werden.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.migration-wait">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:64</note>
+      </notes>
+      <segment>
+        <source>A schema migration was running longer than the run waits for it. The Job retries the run.</source>
+        <target>Eine Schemamigration lief länger, als der Lauf auf sie wartet. Der Job wiederholt den Lauf.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.table-lock-timeout">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:66</note>
+      </notes>
+      <segment>
+        <source>A table stayed locked for longer than the run waits for it. The Job retries the run.</source>
+        <target>Eine Tabelle blieb länger gesperrt, als der Lauf darauf wartet. Der Job wiederholt den Lauf.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.catalog-changed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:68</note>
+      </notes>
+      <segment>
+        <source>The schema changed while the run exported it.</source>
+        <target>Das Schema hat sich geändert, während der Lauf es exportiert hat.</target>
+      </segment>
+    </unit>
+    <unit id="problem.backup.missing-pool-object">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-backup.ts:70</note>
+      </notes>
+      <segment>
+        <source>A blob that the backup lists is missing in the target.</source>
+        <target>Ein Blob, den das Backup auflistet, fehlt im Ziel.</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.stopped">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:22</note>
+      </notes>
+      <segment>
+        <source>Stopped</source>
+        <target>Gestoppt</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.stopped-hint">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:23</note>
+      </notes>
+      <segment>
+        <source>Stopped without finishing; the next run marks it abandoned.</source>
+        <target>Ohne Abschluss gestoppt; der nächste Lauf markiert ihn als abgebrochen.</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.starting">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:28</note>
+      </notes>
+      <segment>
+        <source>Starting</source>
+        <target>Startet</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.snapshot">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:30</note>
+      </notes>
+      <segment>
+        <source>Snapshot</source>
+        <target>Snapshot</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.copying">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:32</note>
+      </notes>
+      <segment>
+        <source>Copying</source>
+        <target>Kopiert</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.finalizing">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:34</note>
+      </notes>
+      <segment>
+        <source>Finalizing</source>
+        <target>Schließt ab</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.pruning">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:36</note>
+      </notes>
+      <segment>
+        <source>Pruning</source>
+        <target>Bereinigt</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.completed">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:38</note>
+      </notes>
+      <segment>
+        <source>Completed</source>
+        <target>Abgeschlossen</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.completed-with-warnings">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:43</note>
+      </notes>
+      <segment>
+        <source>Completed with warnings</source>
+        <target>Abgeschlossen mit Warnungen</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.failed">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:47</note>
+      </notes>
+      <segment>
+        <source>Failed</source>
+        <target>Fehlgeschlagen</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.interrupted">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:52</note>
+      </notes>
+      <segment>
+        <source>Interrupted</source>
+        <target>Unterbrochen</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.interrupted-hint">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:53</note>
+      </notes>
+      <segment>
+        <source>Interrupted by a drain or eviction; the Job retries it.</source>
+        <target>Durch einen Drain oder eine Eviction unterbrochen; der Job wiederholt ihn.</target>
+      </segment>
+    </unit>
+    <unit id="backups.state.abandoned">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:56</note>
+      </notes>
+      <segment>
+        <source>Abandoned</source>
+        <target>Abgebrochen</target>
+      </segment>
+    </unit>
+    <unit id="backups.op.create">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:70</note>
+      </notes>
+      <segment>
+        <source>Create</source>
+        <target>Erstellen</target>
+      </segment>
+    </unit>
+    <unit id="backups.op.delete">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:72</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+        <target>Löschen</target>
+      </segment>
+    </unit>
+    <unit id="backups.op.verify">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:74</note>
+      </notes>
+      <segment>
+        <source>Verify</source>
+        <target>Prüfen</target>
+      </segment>
+    </unit>
+    <unit id="backups.phase.starting">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:84</note>
+      </notes>
+      <segment>
+        <source>starting</source>
+        <target>startet</target>
+      </segment>
+    </unit>
+    <unit id="backups.phase.snapshot">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:86</note>
+      </notes>
+      <segment>
+        <source>snapshot</source>
+        <target>Snapshot</target>
+      </segment>
+    </unit>
+    <unit id="backups.phase.copying">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:88</note>
+      </notes>
+      <segment>
+        <source>copying</source>
+        <target>kopiert</target>
+      </segment>
+    </unit>
+    <unit id="backups.phase.finalizing">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:90</note>
+      </notes>
+      <segment>
+        <source>finalizing</source>
+        <target>schließt ab</target>
+      </segment>
+    </unit>
+    <unit id="backups.phase.pruning">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-model.ts:92</note>
+      </notes>
+      <segment>
+        <source>pruning</source>
+        <target>bereinigt</target>
+      </segment>
+    </unit>
+    <unit id="backups.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:2,3</note>
+      </notes>
+      <segment>
+        <source>Backups</source>
+        <target>Backups</target>
+      </segment>
+    </unit>
+    <unit id="backups.restored">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:24,26</note>
+      </notes>
+      <segment>
+        <source>This installation was restored from backup <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ r.backupId }}"/></pc> (snapshot of <pc id="2" equivStart="START_TAG_TIME" equivEnd="CLOSE_TAG_TIME" type="other" dispStart="&lt;time [attr.datetime]=&quot;r.snapshotAt&quot;&gt;" dispEnd="&lt;/time&gt;"><ph id="3" equiv="INTERPOLATION_1" disp="{{ r.snapshotAt | date: &apos;medium&apos; }}"/></pc>).</source>
+        <target>Diese Installation wurde aus dem Backup <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ r.backupId }}"/></pc> wiederhergestellt (Snapshot vom <pc id="2" equivStart="START_TAG_TIME" equivEnd="CLOSE_TAG_TIME" type="other" dispStart="&lt;time [attr.datetime]=&quot;r.snapshotAt&quot;&gt;" dispEnd="&lt;/time&gt;"><ph id="3" equiv="INTERPOLATION_1" disp="{{ r.snapshotAt | date: &apos;medium&apos; }}"/></pc>).</target>
+      </segment>
+    </unit>
+    <unit id="backups.restored-docs">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:28,30</note>
+      </notes>
+      <segment>
+        <source>Restoring is a Helm operation on an empty installation; this screen offers no restore action.</source>
+        <target>Die Wiederherstellung ist eine Helm-Operation auf einer leeren Installation; diese Ansicht bietet keine Wiederherstellung an.</target>
+      </segment>
+    </unit>
+    <unit id="backups.docs-link">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:30,34</note>
+      </notes>
+      <segment>
+        <source>Operator documentation</source>
+        <target>Betriebsdokumentation</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:37,39</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+        <target>Status</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.last-success">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:39,41</note>
+      </notes>
+      <segment>
+        <source>Last success</source>
+        <target>Letzter Erfolg</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.age">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:43,44</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="INTERPOLATION" disp="{{ lastSuccessAge() }}"/> ago</source>
+        <target>vor <ph id="0" equiv="INTERPOLATION" disp="{{ lastSuccessAge() }}"/></target>
+      </segment>
+    </unit>
+    <unit id="backups.status.overdue">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:47,48</note>
+      </notes>
+      <segment>
+        <source>Overdue</source>
+        <target>Überfällig</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.none">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:53,54</note>
+      </notes>
+      <segment>
+        <source>No backup yet</source>
+        <target>Noch kein Backup</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.interval">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:57,58</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:375,376</note>
+      </notes>
+      <segment>
+        <source>Expected interval</source>
+        <target>Erwartetes Intervall</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.last-failure">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:60,62</note>
+      </notes>
+      <segment>
+        <source>Last failure</source>
+        <target>Letzter Fehler</target>
+      </segment>
+    </unit>
+    <unit id="backups.status.failed">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:65,67</note>
+      </notes>
+      <segment>
+        <source>Failed</source>
+        <target>Fehlgeschlagen</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:80,82</note>
+      </notes>
+      <segment>
+        <source>Run in progress</source>
+        <target>Laufender Lauf</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.state">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:82,83</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:172,173</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:251,252</note>
+      </notes>
+      <segment>
+        <source>State</source>
+        <target>Zustand</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.operation">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:84,85</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:170,171</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:253,254</note>
+      </notes>
+      <segment>
+        <source>Operation</source>
+        <target>Operation</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.phase">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:87,88</note>
+      </notes>
+      <segment>
+        <source>Phase</source>
+        <target>Phase</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.tables">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:90,91</note>
+      </notes>
+      <segment>
+        <source>Tables exported</source>
+        <target>Exportierte Tabellen</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.blobs">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:94,96</note>
+      </notes>
+      <segment>
+        <source>Blobs copied</source>
+        <target>Kopierte Blobs</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.bytes">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:107,108</note>
+      </notes>
+      <segment>
+        <source>Bytes copied</source>
+        <target>Kopierte Bytes</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.pod">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:111</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:172</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:258</note>
+      </notes>
+      <segment>
+        <source>Pod</source>
+        <target>Pod</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.started">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:113,114</note>
+      </notes>
+      <segment>
+        <source>Started</source>
+        <target>Gestartet</target>
+      </segment>
+    </unit>
+    <unit id="backups.runs.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:122,123</note>
+      </notes>
+      <segment>
+        <source>Runs</source>
+        <target>Läufe</target>
+      </segment>
+    </unit>
+    <unit id="backups.filter.operation">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:125,127</note>
+      </notes>
+      <segment>
+        <source>Operation</source>
+        <target>Operation</target>
+      </segment>
+    </unit>
+    <unit id="backups.filter.any">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:132,133</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:146,147</note>
+      </notes>
+      <segment>
+        <source>Any</source>
+        <target>Beliebig</target>
+      </segment>
+    </unit>
+    <unit id="backups.filter.state">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:139,141</note>
+      </notes>
+      <segment>
+        <source>State</source>
+        <target>Zustand</target>
+      </segment>
+    </unit>
+    <unit id="backups.runs.empty">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:160,162</note>
+      </notes>
+      <segment>
+        <source>No backup run matches the filters.</source>
+        <target>Kein Backup-Lauf passt zu den Filtern.</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.started">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:169,170</note>
+      </notes>
+      <segment>
+        <source>Started</source>
+        <target>Gestartet</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.backup-id">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:173,174</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:321,322</note>
+      </notes>
+      <segment>
+        <source>Backup ID</source>
+        <target>Backup-ID</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.snapshot">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:174,175</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:322,323</note>
+      </notes>
+      <segment>
+        <source>Snapshot</source>
+        <target>Snapshot</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.duration">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:175,176</note>
+      </notes>
+      <segment>
+        <source>Duration</source>
+        <target>Dauer</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.database">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:176,177</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:325,326</note>
+      </notes>
+      <segment>
+        <source>Database</source>
+        <target>Datenbank</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.blobs-copied">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:177,178</note>
+      </notes>
+      <segment>
+        <source>Blobs copied</source>
+        <target>Kopierte Blobs</target>
+      </segment>
+    </unit>
+    <unit id="backups.col.warnings">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:178,179</note>
+      </notes>
+      <segment>
+        <source>Warnings</source>
+        <target>Warnungen</target>
+      </segment>
+    </unit>
+    <unit id="backups.details">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:211,212</note>
+      </notes>
+      <segment>
+        <source> Details </source>
+        <target> Details </target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:242</note>
+      </notes>
+      <segment>
+        <source>Run</source>
+        <target>Lauf</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.close">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:242,244</note>
+      </notes>
+      <segment>
+        <source>Close</source>
+        <target>Schließen</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.id">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:249,250</note>
+      </notes>
+      <segment>
+        <source>Run ID</source>
+        <target>Lauf-ID</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.trigger">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:255,256</note>
+      </notes>
+      <segment>
+        <source>Trigger</source>
+        <target>Auslöser</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.version">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:259,260</note>
+      </notes>
+      <segment>
+        <source>trove version</source>
+        <target>trove-Version</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.target">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:261,262</note>
+        <note category="location">src/app/features/system/backups/backups-page.html:361,362</note>
+      </notes>
+      <segment>
+        <source>Target</source>
+        <target>Ziel</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.heartbeat">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:263,264</note>
+      </notes>
+      <segment>
+        <source>Last heartbeat</source>
+        <target>Letzter Heartbeat</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.finished">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:266,267</note>
+      </notes>
+      <segment>
+        <source>Finished</source>
+        <target>Beendet</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.error">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:271,272</note>
+      </notes>
+      <segment>
+        <source>Error</source>
+        <target>Fehler</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.warnings">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:280,282</note>
+      </notes>
+      <segment>
+        <source>Warnings</source>
+        <target>Warnungen</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.result">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:287,289</note>
+      </notes>
+      <segment>
+        <source>Result</source>
+        <target>Ergebnis</target>
+      </segment>
+    </unit>
+    <unit id="backups.detail.no-result">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:291,295</note>
+      </notes>
+      <segment>
+        <source>The run has no result yet.</source>
+        <target>Der Lauf hat noch kein Ergebnis.</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:299,300</note>
+      </notes>
+      <segment>
+        <source>Stored backups</source>
+        <target>Gespeicherte Backups</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.as-of">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:303,305</note>
+      </notes>
+      <segment>
+        <source>As recorded by run <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ stored.runId }}"/></pc> at <pc id="2" equivStart="START_TAG_TIME" equivEnd="CLOSE_TAG_TIME" type="other" dispStart="&lt;time [attr.datetime]=&quot;stored.asOf&quot;&gt;" dispEnd="&lt;/time&gt;"><ph id="3" equiv="INTERPOLATION_1" disp="{{ stored.asOf | date: &apos;medium&apos; }}"/></pc>.</source>
+        <target>Aufgezeichnet vom Lauf <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ stored.runId }}"/></pc> um <pc id="2" equivStart="START_TAG_TIME" equivEnd="CLOSE_TAG_TIME" type="other" dispStart="&lt;time [attr.datetime]=&quot;stored.asOf&quot;&gt;" dispEnd="&lt;/time&gt;"><ph id="3" equiv="INTERPOLATION_1" disp="{{ stored.asOf | date: &apos;medium&apos; }}"/></pc>.</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.note">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:307,308</note>
+      </notes>
+      <segment>
+        <source>Backups written or removed outside trove appear after the next run; <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">trove backup list</pc> reads the target itself.</source>
+        <target>Außerhalb von trove geschriebene oder entfernte Backups erscheinen erst nach dem nächsten Lauf; <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;">trove backup list</pc> liest das Ziel selbst.</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.empty">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:312,314</note>
+      </notes>
+      <segment>
+        <source>The target held no complete backup then.</source>
+        <target>Das Ziel enthielt damals kein vollständiges Backup.</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.version">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:323,324</note>
+      </notes>
+      <segment>
+        <source>trove version</source>
+        <target>trove-Version</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.schema">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:324,325</note>
+      </notes>
+      <segment>
+        <source>Schema step</source>
+        <target>Schemaschritt</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.blobs">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:326,327</note>
+      </notes>
+      <segment>
+        <source>Blobs</source>
+        <target>Blobs</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.blob-size">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:327,328</note>
+      </notes>
+      <segment>
+        <source>Blob size</source>
+        <target>Blob-Größe</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.damaged">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:328,330</note>
+      </notes>
+      <segment>
+        <source>Damaged</source>
+        <target>Beschädigt</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.damaged-mark">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:345,346</note>
+      </notes>
+      <segment>
+        <source>Damaged</source>
+        <target>Beschädigt</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.none">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:358,360</note>
+      </notes>
+      <segment>
+        <source>No run has listed the target yet.</source>
+        <target>Noch kein Lauf hat das Ziel aufgelistet.</target>
+      </segment>
+    </unit>
+    <unit id="backups.retention.keep-last">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:364,365</note>
+      </notes>
+      <segment>
+        <source>Keep the newest</source>
+        <target>Die neuesten behalten</target>
+      </segment>
+    </unit>
+    <unit id="backups.retention.keep-within">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:366,368</note>
+      </notes>
+      <segment>
+        <source>Keep newer than</source>
+        <target>Neuere behalten als</target>
+      </segment>
+    </unit>
+    <unit id="backups.retention.keep-within-off">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.html:371,374</note>
+      </notes>
+      <segment>
+        <source>Not set</source>
+        <target>Nicht gesetzt</target>
+      </segment>
+    </unit>
+    <unit id="backups.runs.caption">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.ts:61</note>
+      </notes>
+      <segment>
+        <source>Backup runs, newest first</source>
+        <target>Backup-Läufe, neueste zuerst</target>
+      </segment>
+    </unit>
+    <unit id="backups.active.blobs-label">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.ts:62</note>
+      </notes>
+      <segment>
+        <source>Blobs copied</source>
+        <target>Kopierte Blobs</target>
+      </segment>
+    </unit>
+    <unit id="backups.stored.caption">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.ts:63</note>
+      </notes>
+      <segment>
+        <source>Complete backups found in the target</source>
+        <target>Vollständige Backups im Ziel</target>
+      </segment>
+    </unit>
+    <unit id="backups.details.label">
+      <notes>
+        <note category="location">src/app/features/system/backups/backups-page.ts:175</note>
+      </notes>
+      <segment>
+        <source>Details of the run of pod <ph id="0" equiv="pod" disp="run.pod"/></source>
+        <target>Details des Laufs von Pod <ph id="0" equiv="pod" disp="run.pod"/></target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.heading">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:17,18</note>
+      </notes>
+      <segment>
+        <source>Start a backup now</source>
+        <target>Backup jetzt starten</target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.intro">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:19,21</note>
+      </notes>
+      <segment>
+        <source> No button on this screen starts a backup. Run this command with access to the cluster: </source>
+        <target> Keine Schaltfläche dieser Ansicht startet ein Backup. Führen Sie diesen Befehl mit Zugriff auf den Cluster aus: </target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.placeholders">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:30,34</note>
+      </notes>
+      <segment>
+        <source> The installation does not say its namespace or its CronJob name. Replace the placeholders in angle brackets. </source>
+        <target> Die Installation nennt ihren Namespace oder den Namen ihres CronJobs nicht. Ersetzen Sie die Platzhalter in spitzen Klammern. </target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.appears">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:34,35</note>
+      </notes>
+      <segment>
+        <source>The run appears in the list below once its pod has started.</source>
+        <target>Der Lauf erscheint in der Liste darunter, sobald sein Pod gestartet ist.</target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.trigger">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:36,38</note>
+      </notes>
+      <segment>
+        <source> It records the trigger schedule, like a scheduled run, and is told apart by its pod name, which is the name of the Job. </source>
+        <target> Er zeichnet den Auslöser schedule auf wie ein geplanter Lauf und ist am Namen seines Pods zu erkennen, der dem Namen des Jobs entspricht. </target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.one-at-a-time">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:39,42</note>
+      </notes>
+      <segment>
+        <source> One backup runs at a time. A run started while another is active ends without writing. </source>
+        <target> Es läuft immer nur ein Backup. Ein Lauf, der startet, während ein anderer aktiv ist, endet ohne zu schreiben. </target>
+      </segment>
+    </unit>
+    <unit id="backups.manual.copy">
+      <notes>
+        <note category="location">src/app/features/system/backups/manual-run-panel.ts:62</note>
+      </notes>
+      <segment>
+        <source>Copy the command</source>
+        <target>Befehl kopieren</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

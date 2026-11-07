@@ -147,6 +147,29 @@ test fails otherwise (R-BAK-004).
   store, the hold check and `storage_usage_recount()` against the shared PostgreSQL (`make test-integration`).
 - Command wiring: `TestBackupCommands` in [cmd/trove/main_test.go](../../cmd/trove/main_test.go).
 
+## The backups screen
+
+`/admin/system/backups` (R-UI-048) renders the three operations of R-API-050 and sends nothing but `GET`. It lives with the other
+system screens in [web/src/app/features/system/backups/](../../web/src/app/features/system/backups/).
+
+| File | Responsibility |
+|---|---|
+| [api/backups-api.ts](../../web/src/app/api/backups-api.ts) | `BackupsApi` (`runs`, `run`, `summary`) over the generated shapes; no method that is not a GET |
+| [api/testing/fakes-backups.ts](../../web/src/app/api/testing/fakes-backups.ts) | `FakeBackupsApi`, `sampleRun`, `sampleSummary` for the component specs |
+| [backups-page.ts](../../web/src/app/features/system/backups/backups-page.ts), `.html`, `.scss` | the screen: status, run in progress, runs with filters (`operation`, `state` query parameters) and "Load more", the open run, stored backups, restore notice; refresh on the status screen's interval (Q-BAK-36) |
+| [backups-model.ts](../../web/src/app/features/system/backups/backups-model.ts) | pure functions: `stateView` (badge tone, icon, word and hint per state, Q-BAK-37), durations, result accessors, `manualRunCommand` |
+| [backup-state.ts](../../web/src/app/features/system/backups/backup-state.ts) | the state as the standard badge |
+| [manual-run-panel.ts](../../web/src/app/features/system/backups/manual-run-panel.ts) | the `kubectl` command with the copy button; placeholders while `manualRun` is empty |
+| [core/http/problem-messages-backup.ts](../../web/src/app/core/http/problem-messages-backup.ts) | one translated sentence per failure code of [exit.go](../../internal/backup/exit.go) (R-UI-042) |
+
+- The Job name of the manual command is `<cronjob>-manual-<unix seconds>`; `manualRunCommand` cuts the CronJob part to 45 characters
+  (and drops a trailing separator) so that the name has at most 63. `--from=cronjob/…` keeps the full name.
+- A new failure code in `exit.go` needs a case in `describeBackupProblem` and a German unit in `messages.de.xlf`; the build fails
+  on a missing translation, and `backups-page.spec.ts` lists the codes it expects to be translated.
+- Tests: `backups-page.spec.ts` (component tier, fixtures) and the journey [16-backups.spec.ts](../../web/e2e/tests/16-backups.spec.ts),
+  which asserts that every request of the visit is a `GET`. The states that need a cluster (a run in progress, an interrupted
+  run, a lease-expired run) are covered by fixtures in the component tier and by the backup suite of `test/e2e`.
+
 ## Conventions
 
 - Test names carry requirement IDs (`R-BAK-010`), never decision IDs.

@@ -2215,6 +2215,37 @@ A conditional create sends `If-None-Match: *` (PutObject, CompleteMultipartUploa
 
 **Applied:** R-BAK-002, R-BAK-015, R-BAK-026; `internal/blob/s3/target*.go`, `internal/backup/target/targettest/conformance.go`, `test/integration/backup/target_adapter_test.go`, `docs/developer/backup.md`, `docs/security/backup-and-restore.md`.
 
+### Q-BAK-36 · The backups screen refreshes as one load on the status screen's interval, and keeps pages the user has loaded
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The screen's own faster interval while a run is active | 2 to 5 s polling of the summary and the active run | The blob count moves visibly | A second interval and pause rule beside the status screen's (R-UI-038); a running create changes its progress at the heartbeat, which is seconds apart anyway |
+| (b) The status screen's interval and pause control; the summary and the active run are fetched together, and the first page of the list is reloaded unless the user has loaded further pages (chosen) | One `load` returns the summary and, when `active` is set, `GET /system/backups/{runId}` for its `progress`; "Refresh now" does the same | One rule for every status screen (R-UI-048 names it); the status and the progress of the active run never disagree; a list the user has paged into is not thrown away | A run is up to one interval behind; a user who wants it faster presses "Refresh now" |
+| (c) Server-sent events | The API pushes progress | No polling | A streaming endpoint for a screen an administrator opens rarely; every replica would need the run's progress (R-API-050 reads PostgreSQL only) |
+
+**Choice:** (b). The `summary` carries the active run's `id` only, so the screen reads the run once per load for the progress that R-UI-048 lists; an auto-refresh reloads the first page of the list only while the list holds at most one page.
+
+**Rationale:** R-UI-048 says "refreshed with the status screen's interval and pause control", and the heartbeat is the resolution of the data. The development agent would revisit this when the summary carries the active run's progress itself, which would save the second request.
+
+**Applied:** R-UI-048 (no text change; the behaviour was specified), `web/src/app/features/system/backups/backups-page.ts`.
+
+### Q-BAK-37 · How the badge of a run reads: green only for a run that ended well, `interrupted` neutral, a lease-expired run as stopped
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One badge per state with the state's colour: green completed, red every ended state that is not completed | `interrupted` red | Two colours | A drain would look like a failure, against R-BAK-012 and R-UI-048 |
+| (b) `completed` green; `completed_with_warnings` and a run whose lease has passed in the warning colour; `failed` and `abandoned` red; the five active states blue; `interrupted` neutral, with its sentence (chosen) | Icon and word on every badge; a lease-expired active run reads "Stopped" with "stopped without finishing; the next run marks it abandoned" | Follows the rule "green only for positive status" and the summary's failure rule (`interrupted` never counts; an expired lease does); the colour only reinforces the word | Seven distinct looks |
+
+**Choice:** (b). The status uses the standard badge of the design language; the failure badge of "Last failure" repeats the summary's rule, so the screen shows a failure only where `TroveBackupFailed` would fire. The text of a stored `error.code` comes from the table of `web/src/app/core/http/problem-messages-backup.ts`, which holds one sentence for every failure code of `internal/backup/exit.go` (R-UI-042); a code the table does not know is shown as the code alone.
+
+**Rationale:** The state of a run is the one fact an administrator reads first, and a false red trains people to ignore the colour. The development agent would revisit this when a state is added to R-BAK-009.
+
+**Applied:** R-UI-048 (the screen's permission is named `settings:read`, as in R-API-050 and as the System status screen has it, not `system.read`), R-UI-042, `web/src/app/features/system/backups/backups-model.ts`, `backup-state.ts`.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated

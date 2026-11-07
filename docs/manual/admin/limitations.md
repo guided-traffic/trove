@@ -23,7 +23,7 @@ This page lists what this version of trove does not do, and the known weak spots
 
 ## Backup and restore
 
-- There is no backup or restore. `trove backup` answers "not implemented yet", the **Backups** link on the System status screen leads to a placeholder, and the chart renders no backup CronJob or restore Job.
+- There is no backup or restore. `trove backup` answers "not implemented yet", the **Backups** screen lists no run, and the chart renders no backup CronJob or restore Job.
 - Until then, protect the PostgreSQL database with your database platform's backups, the bucket with your object store's own protection, and keep the Secret with the stored-secret keys (`secrets.encryption`): values sealed with a key that is lost cannot be opened. trove has not tested a restore from such copies.
 - A database restored to an earlier point brings back what was removed after that point: revoked tokens, removed permissions and role bindings, and narrowed exposure rules. Review and revoke them after a restore.
 
