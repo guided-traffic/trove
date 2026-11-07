@@ -285,7 +285,7 @@ func TestR_VULN_020_TheProjectFilterOfTheFindings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return findingRepos(lq, sn, report.Caller{})
+		return findingRepoNames(lq, sn, report.Caller{})
 	}
 	got, has, err := list("project=web")
 	if err != nil || !has || strings.Join(sortedCopy(got), ",") != "web/npm-local,web/npm-remote" {

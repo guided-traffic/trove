@@ -91,7 +91,7 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 		return nil, false, err
 	}
 	rows, err := s.st.List(ctx, sc.Scope, s.withPolicy(sc.snap, store.Filter{
-		Formats: []string{format}, Packages: []string{name}, Versions: []string{version}, Repos: repos, HasRepos: true,
+		Formats: []string{format}, Packages: []string{name}, Versions: []string{version}, Repos: sc.snap.IDs(repos), HasRepos: true,
 	}), store.Order{Sort: "severity", Desc: true}, nil, 1000*len(repos))
 	if err != nil {
 		return nil, false, err

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/qname"
@@ -88,6 +89,12 @@ type Repository struct {
 	// vulnerability adapter, "" for a virtual repository or a format without one (R-VULN-002).
 	vulnerabilities vuln.Settings
 	vulnEcosystem   string
+}
+
+// NumericID is the repository's database ID (ID as a number), 0 when ID is not one.
+func (r Repository) NumericID() int64 {
+	n, _ := strconv.ParseInt(r.ID, 10, 64)
+	return n
 }
 
 // VulnerabilitySettings returns the repository's member `vulnerabilities` with the defaults of the members it does not set

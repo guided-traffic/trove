@@ -2,9 +2,9 @@
 --
 -- Every statement counts only the versions the caller may read, in the statement
 -- that counts them. The caller's right is passed in as data, three ways:
---   whole        keys of the repositories whose every package and version the caller
+--   whole        IDs of the repositories whose every package and version the caller
 --                may read (authz.ReadAll);
---   rows         one entry "<project>/<repository key>\x1f<package name>\x1f<version>" per
+--   rows         one entry "<repository id>\x1f<package name>\x1f<version>" per
 --                version the caller may read in the other repositories
 --                (authz.ReadRows), decided by the decision point row by row;
 --   withheld     ids of stored versions the format does not serve.
@@ -26,15 +26,14 @@ WITH vis AS (
     FROM package_versions pv
     JOIN packages p ON p.id = pv.package_id
     JOIN repositories r ON r.id = p.repo_id
-    JOIN project rp ON rp.id = r.project_id
    WHERE pv.trashed_at IS NULL
      AND NOT (pv.id = ANY(sqlc.arg(withheld)::bigint[]))
      AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
-     AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
+     AND (NOT sqlc.arg(has_repos)::boolean OR p.repo_id = ANY(sqlc.arg(repos)::bigint[]))
      AND (sqlc.arg(name_prefix)::text = '' OR starts_with(lower(p.name), lower(sqlc.arg(name_prefix)::text)))
      AND (sqlc.arg(exact_name)::text = '' OR (r.format = sqlc.arg(exact_format)::text AND p.name = sqlc.arg(exact_name)::text))
-     AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
-          OR concat_ws(chr(31), (rp.key || '/' || r.key), p.name, pv.version) = ANY(sqlc.arg(rows)::text[]))
+     AND (p.repo_id = ANY(sqlc.arg(whole)::bigint[])
+          OR concat_ws(chr(31), p.repo_id::text, p.name, pv.version) = ANY(sqlc.arg(rows)::text[]))
 ), grouped AS (
   SELECT v.format, v.name, min(v.display_name)::text AS display_name,
          min(v.created_at)::timestamptz AS created_at, max(v.created_at)::timestamptz AS updated_at,
@@ -88,9 +87,9 @@ SELECT pv.id AS version_id, r.format, p.name, p.display_name, pv.version, pv.cre
  WHERE pv.trashed_at IS NULL
    AND NOT (pv.id = ANY(sqlc.arg(withheld)::bigint[]))
    AND concat_ws(chr(31), r.format, p.name) = ANY(sqlc.arg(packages)::text[])
-   AND (NOT sqlc.arg(has_repos)::boolean OR (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]))
-   AND ((rp.key || '/' || r.key) = ANY(sqlc.arg(whole)::text[])
-        OR concat_ws(chr(31), (rp.key || '/' || r.key), p.name, pv.version) = ANY(sqlc.arg(rows)::text[]))
+   AND (NOT sqlc.arg(has_repos)::boolean OR p.repo_id = ANY(sqlc.arg(repos)::bigint[]))
+   AND (p.repo_id = ANY(sqlc.arg(whole)::bigint[])
+        OR concat_ws(chr(31), p.repo_id::text, p.name, pv.version) = ANY(sqlc.arg(rows)::text[]))
  ORDER BY pv.created_at, pv.id;
 
 -- name: PackageViewFiles :many
@@ -110,7 +109,7 @@ SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
   JOIN repositories r ON r.id = p.repo_id
   JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND (rp.key || '/' || r.key) = ANY(sqlc.arg(keys)::text[])
+   AND p.repo_id = ANY(sqlc.arg(keys)::bigint[])
    AND (cardinality(sqlc.arg(formats)::text[]) = 0 OR r.format = ANY(sqlc.arg(formats)::text[]))
    AND (sqlc.arg(name_prefix)::text = '' OR starts_with(lower(p.name), lower(sqlc.arg(name_prefix)::text)))
    AND (sqlc.arg(exact_name)::text = '' OR p.name = sqlc.arg(exact_name)::text)

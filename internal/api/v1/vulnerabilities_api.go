@@ -191,7 +191,13 @@ func findingFilter(lq ListQuery, sn *report.Snapshot, caller report.Caller) (sto
 // narrowed to (R-VULN-020, R-VULN-021): a repository is a qualified name (a bare key is 400), a project stands for
 // its physical repositories, and the two together intersect. A project that does not exist, or that the caller
 // cannot read, gives an empty set, never a 404: the answer is that of a project without findings.
-func findingRepos(lq ListQuery, sn *report.Snapshot, caller report.Caller) (repos []string, has bool, err error) {
+func findingRepos(lq ListQuery, sn *report.Snapshot, caller report.Caller) (ids []int64, has bool, err error) {
+	names, has, err := findingRepoNames(lq, sn, caller)
+	return sn.IDs(names), has, err
+}
+
+// findingRepoNames is findingRepos by qualified name.
+func findingRepoNames(lq ListQuery, sn *report.Snapshot, caller report.Caller) (repos []string, has bool, err error) {
 	reps, hasRepo := lq.Filter["repository"]
 	projects := splitValues(lq.Filter["project"])
 	for _, key := range splitValues(reps) {
