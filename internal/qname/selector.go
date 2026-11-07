@@ -68,13 +68,6 @@ type Selector struct {
 	Format string
 }
 
-// Dynamic reports whether the selector covers repositories created later.
-func (s Selector) Dynamic() bool { return s.Kind != SelectorKey }
-
-// AllProjects reports whether the selector reaches beyond one project: a pattern or class
-// selector of the instance context.
-func (s Selector) AllProjects() bool { return s.Kind != SelectorKey && s.Project == "" }
-
 // Text renders the selector in the form of context c, as ParseSelector reads it.
 func (s Selector) Text(c Context) string {
 	suffix := ""

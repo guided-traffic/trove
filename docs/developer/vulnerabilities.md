@@ -345,12 +345,12 @@ advisories port), tests in [test/integration/vulnapi](../../test/integration/vul
 How it works:
 | Part | What it does |
 |---|---|
-| `report.Service.Scope` / `PackageScope` | classifies the physical repositories with `authz.ReadScope`; a repository read whole goes to the statements as `whole`, the versions read in part as `rows` (`repo\x1fname\x1fversion`), decided once per distinct version; the package views load the stored versions of the package as candidates ([Q-VULN-50](../spec/vulnerability-scanning.md)) |
-| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`. `VulnFindingsList` is `WITH base AS NOT MATERIALIZED (filter)` and ten branches, one per sort and direction, each ordering by the expression of an index of [00039](../../internal/meta/postgres/migrations/00039_vulnerabilities_list_indexes.sql) and comparing the cursor against it ([Q-VULN-68](../spec/vulnerability-scanning.md)); a new sort is a branch and an index. `package` also matches the lowercased filter value for NuGet. `blocked`/`blockReason` filters take the repositories' policy as arrays (`enabled_repos`, `malicious_repos`) |
+| `report.Service.Scope` / `PackageScope` | classifies the physical repositories with `authz.ReadScope`; a repository read whole goes to the statements as `whole` (its numeric ID), the versions read in part as `rows` (`repositoryId\x1fname\x1fversion`, built by `store.RowEntry`), decided once per distinct version; the package views load the stored versions of the package as candidates ([Q-VULN-50](../spec/vulnerability-scanning.md)) |
+| `queries/vuln_api.sql` | the filter block is generated into `VulnFindingsList` and `VulnFindingsCount` (the same text); the sort key is `(k_num, k_txt, id)` compared bytewise, so the cursor is `[k_num, k_txt, id]`. `VulnFindingsList` is `WITH base AS NOT MATERIALIZED (filter)` and ten branches, one per sort and direction, each ordering by the expression of an index of [00039](../../internal/meta/postgres/migrations/00039_vulnerabilities_list_indexes.sql) and comparing the cursor against it ([Q-VULN-68](../spec/vulnerability-scanning.md)); a new sort is a branch and an index. `package` also matches the lowercased filter value for NuGet. `blocked`/`blockReason` filters take the repositories' policy as arrays of repository IDs (`enabled_repos`, `malicious_repos`). Every repository set that enters a statement (`whole`, `repos`, `keys`, the policy arrays and the leading part of each `rows` and `package_rows` entry) is a list of repository IDs compared with `f.repo_id` (`p.repo_id` in the package view); the statements still return the qualified name as `repo_key`, and Go keeps its topology keyed by name (`Snapshot.ID`, `Topology.ID`, `Repository.NumericID` translate). See [Repositories as IDs in the statements](#repositories-as-ids-in-the-statements-r-vuln-028) |
 | one scope function | `report.evaluation` calls `evaluate.ScopeOf` ([scope.go](../../internal/vuln/evaluate/scope.go)) with `Options.Rule` (the `evaluate.ClaimRule` of the audits); `ClaimedMatches` asks the same rule for the holder ([Q-VULN-70](../spec/vulnerability-scanning.md)) |
 | one view of the source state | `store.ReadSources` is the one statement over `vuln_source_state`; `report.SourceViews` the one view, for `Sources`, the `vulnerabilityData` facts (`app/vuln_facts.go`) and the gauges |
 | the repository filter | `Snapshot.ExpandFor(caller, keys)` expands a virtual repository only when the caller reads it |
-| the project filter | `findingRepos` ([vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go)) turns `project` and `repository` into the physical repository keys of the statement (they intersect; an unknown or unreadable project is an empty set, never a 404); list, count, export, summary and trend share it |
+| the project filter | `findingRepos` ([vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go)) turns `project` and `repository` into the physical repositories of the statement, as IDs (`findingRepoNames` is the name form; they intersect; an unknown or unreadable project is an empty set, never a 404); list, count, export, summary and trend share it |
 | search by advisory | `advisory` is a semi-join: `(f.ecosystem, f.advisory_id) IN (the groups whose id is X or whose aliases contain X, union the findings with canonical id X when no record names X)` ([Q-VULN-111](../spec/vulnerability-scanning.md#q-vuln-111--a-search-by-advisory-is-driven-from-the-advisory-side-not-by-walking-the-sort-index)). The planner starts at `vuln_advisory` (primary key, the GIN index on `aliases`) and reaches the findings through `vuln_finding_advisory`; an `OR` against the finding's own column would walk the sort index and read the whole scope. `TestR_VULN_028_TheSearchesOfTheDashboardAtScale` bounds it, and the package, prefix and project searches, at 100,000 findings |
 | weakening a repository's member | `repository.Write.MayWeakenVulnerabilities` (set by `writeRepository` from `vulnerabilities:triage`) and `delegatedVulnerabilities` ([delegated.go](../../internal/repository/delegated.go)): `403 vulnerability_weakening_refused`; every weakening write adds `block: lifted` and `weakened` to `repository.updated` ([Q-VULN-69](../spec/vulnerability-scanning.md)) |
 | block of a finding | `vuln.Verdict` over `Repository.VulnerabilityPolicy`, in every mode (Q-VULN-49); a version's verdict adds `missing_data` |
@@ -366,6 +366,41 @@ export, the auditor, the scoped service-account token, 412, the bulk results, th
 `403` of an auditor on the download (the file service's) and the browser journeys. The rescan's `202` and `409` (`TestR_VULN_011_RescanAnswers202ThenTheRunningJobWith409`) and the evaluation states
 (`TestR_VULN_001_TheEvaluationStatesOfAVersion`: `pending_data`, `evaluated`, `internal`, `not_covered`) run against the kind and the adapters of work package B; the findings of those tests are inserted by SQL, and the flow that has the
 evaluation write them is [vulnflow](../../test/integration/vulnflow).
+
+#### Repositories as IDs in the statements (R-VULN-028)
+
+The statements first compared `(project.key || '/' || repositories.key) = ANY($names)`. The planner cannot move that predicate to
+`vuln_finding.repo_id`: it is a filter on the join of findings, repositories and projects, evaluated for every finding that survives
+the join, and it estimates its selectivity with the default. Measured on a scratch database with the schema of this tree and 20
+projects with 25 repositories each (500), 9,000 packages, 100,000 package versions and 100,000 findings (the scale of R-VULN-028;
+PostgreSQL 18 of the integration stack, no parallel workers, best of 5 executions, milliseconds; the statements are the
+`base` filter of `VulnFindingsList` and the statements of the same names, with the arrays as constants):
+
+| Statement | Caller | names | IDs |
+|---|---|---|---|
+| `VulnSummaryCounts` | admin, 500 whole | 58.0 | 52.5 |
+| | owner, 25 whole | 57.3 | 4.2 |
+| | grants, 2,000 rows + 500 package rows | 64.7 | 40.3 |
+| `VulnFindingsList`, severity ascending, 51 rows | admin | 0.42 | 0.38 |
+| | owner | 24.1 | 11.0 |
+| | grants | 4.8 | 3.5 |
+| `VulnFindingsList`, detectedAt descending, 51 rows | owner | 1.77 | 0.51 |
+| `VulnFindingsCount` (cap 10,001) | admin | 5.9 | 5.3 |
+| | owner | 62.9 | 3.9 |
+| | grants | 71.0 | 45.4 |
+| `VulnScopeCandidates` | 25 keys | 4.2 | 3.1 |
+| | 500 keys | 30.0 | 18.7 |
+| `PackageViewCandidates` | 25 keys | 8.0 | 6.5 |
+| `PackageViewList` (the visible versions grouped by name) | admin | 182 | 162 |
+| | owner | 69.7 | 39.9 |
+| | grants | 67.1 | 37.2 |
+
+The name form scans all 80,000 open findings and applies the filter in the join (`Rows Removed by Join Filter: 75990` for the owner of
+25 repositories); the ID form reads the findings of the 25 repositories through the index that starts with `repo_id` and, for an admin,
+costs the same. No case is worse. The first page of the list stays far below the 300 ms of V-7 in both forms at this scale; the ID form
+is what keeps the narrow caller's cost proportional to what it may read. `BastionVirtualClosure` keeps the names (0.3 ms: a handful of
+names against 500 repositories, and the audit events it reads carry names). To reproduce, apply the migrations to an empty database, insert the projects, repositories, packages, versions and findings
+in the proportions above and run `EXPLAIN (ANALYZE, BUFFERS)` on the statement with each predicate.
 
 ### F · The UI (R-VULN-022, R-VULN-023)
 

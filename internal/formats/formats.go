@@ -14,15 +14,17 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // ContractVersion changes whenever a method of the contract changes meaning or
-// leaves it (R-ARCH-025). The contract is frozen at 1 since the end of M3 (E3.3,
-// ADR-141): an addition keeps the version, and a breaking change raises it and moves
-// every format in the same change. A format declares the literal it was written
-// against in [Descriptor.ContractVersion], and Register panics on a mismatch.
-const ContractVersion = 1
+// leaves it (R-ARCH-025). The contract is frozen since the end of M3 (E3.3, ADR-141): an
+// addition keeps the version, and a breaking change raises it and moves every format in the
+// same change. Version 2 is the project model's (ADR-156): the repository is named by its
+// qualified name, the read scope, the link builder and the refusals changed. A format declares the literal it was
+// written against in [Descriptor.ContractVersion], and Register panics on a mismatch.
+const ContractVersion = 2
 
 // The types of other packages under the names a format spells them: one type
 // each, no mirrors (Q-ARCH-188, Q-ARCH-189). A format imports this package and
@@ -308,7 +310,7 @@ func Validate(f Format) error {
 	d := f.Descriptor()
 	id := d.ID
 	switch {
-	case !catalog.ValidID(string(id)):
+	case !qname.ValidFormat(string(id)):
 		return fmt.Errorf("invalid or reserved format ID %q", id)
 	case d.ContractVersion != ContractVersion:
 		return fmt.Errorf("%q was written against contract version %d, this is %d", id, d.ContractVersion, ContractVersion)

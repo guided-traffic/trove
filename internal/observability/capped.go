@@ -32,8 +32,10 @@ type CappedLabels struct {
 	limit   int
 	include []qname.Selector
 
-	mu  sync.RWMutex
-	set map[string]struct{}
+	mu     sync.RWMutex
+	set    map[string]struct{}
+	known  map[string]struct{} // every name of the last snapshot, chosen or not
+	forget []func(name string)
 }
 
 // newCappedLabels builds the cap. An include entry that is no selector of an instance context
@@ -62,6 +64,16 @@ func (c *CappedLabels) Update(keys []string) {
 // the repository snapshot is rebuilt.
 func (c *CappedLabels) UpdateRepositories(repos []RepoLabel) { c.install(repos) }
 
+// OnForget registers fn to be called, once per name, with each repository name that was in the previous snapshot and is not
+// in the new one: a deleted repository, or a moved one under its old name. The owner of a family with a repo label deletes the
+// series of that name, so that a gauge such as trove_remote_upstream_up does not keep reporting a repository that no longer
+// exists (R-OPS-007). The functions run in the caller of UpdateRepositories and must not block.
+func (c *CappedLabels) OnForget(fn func(name string)) {
+	c.mu.Lock()
+	c.forget = append(c.forget, fn)
+	c.mu.Unlock()
+}
+
 func (c *CappedLabels) install(repos []RepoLabel) {
 	chosen := make(map[string]struct{}, min(c.limit, len(repos)))
 	add := func(k string) {
@@ -80,9 +92,24 @@ func (c *CappedLabels) install(repos []RepoLabel) {
 	for _, r := range repos {
 		add(r.Name)
 	}
+	known := make(map[string]struct{}, len(repos))
+	for _, r := range repos {
+		known[r.Name] = struct{}{}
+	}
 	c.mu.Lock()
 	c.set = chosen
+	previous := c.known
+	c.known = known
+	forget := c.forget
 	c.mu.Unlock()
+	for name := range previous {
+		if _, ok := known[name]; ok {
+			continue
+		}
+		for _, fn := range forget {
+			fn(name)
+		}
+	}
 }
 
 // selects reports whether the selector of an instance context covers the repository.

@@ -254,6 +254,11 @@ type noRepositories struct{}
 func (noRepositories) ByName(context.Context, qname.Repo) (repository.Repository, error) {
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
+
+func (noRepositories) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}
+
 func (noRepositories) List(context.Context) ([]repository.Repository, error) { return nil, nil }
 func (noRepositories) ListProject(context.Context, string) ([]repository.Repository, error) {
 	return nil, nil

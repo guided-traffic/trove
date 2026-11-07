@@ -70,6 +70,20 @@ func physicalMembers(v repository.Repository, depth int) []string {
 	return out
 }
 
+// ID returns the database ID of the repository of a qualified name, 0 for a name the topology does not know.
+func (t Topology) ID(key string) int64 { return t.repos[key].NumericID() }
+
+// IDs returns the database IDs of the repositories of the given qualified names; a name the topology does not know is left out.
+func (t Topology) IDs(keys []string) []int64 {
+	out := make([]int64, 0, len(keys))
+	for _, k := range keys {
+		if id := t.ID(k); id != 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // Physical lists the keys of the repositories that hold package rows, sorted.
 func (t Topology) Physical() []string {
 	var out []string

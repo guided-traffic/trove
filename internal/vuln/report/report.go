@@ -121,6 +121,23 @@ func (sn *Snapshot) Repository(key string) (repository.Repository, bool) {
 	return r, ok
 }
 
+// ID returns the database ID of the repository of a qualified name, 0 for a name the snapshot does not hold.
+func (sn *Snapshot) ID(key string) int64 {
+	r, _ := sn.byKey[key]
+	return r.NumericID()
+}
+
+// IDs returns the database IDs of the repositories of the given qualified names; a name the snapshot does not hold is left out.
+func (sn *Snapshot) IDs(keys []string) []int64 {
+	out := make([]int64, 0, len(keys))
+	for _, k := range keys {
+		if id := sn.ID(k); id != 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // Keys returns the keys of every repository of the snapshot, for the request's authorization index.
 func (sn *Snapshot) Keys() []string { return append(sn.Topo.Physical(), sn.Topo.Virtual()...) }
 
@@ -155,15 +172,15 @@ func tooBroad() error {
 // made per package, and the statements that narrow by scope compare the pair, so a request costs by the packages the caller
 // reads and not by the versions they have. loadPackages is nil where the versions themselves are needed (the package views).
 func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool,
-	load func(keys []string, max int) ([]store.Candidate, error),
-	loadPackages func(keys []string, max int) ([]store.Pair, int, error),
+	load func(repoIDs []int64, max int) ([]store.Candidate, error),
+	loadPackages func(repoIDs []int64, max int) ([]store.Pair, int, error),
 ) (Scope, error) {
 	sc := Scope{snap: sn, virtual: map[string]bool{}}
 	for _, v := range c.VirtualReadable {
 		sc.virtual[v] = true
 	}
 	whole := map[string]bool{}
-	var loadKeys []string
+	var loadIDs []int64
 	for _, k := range sn.Topo.Physical() {
 		r := sn.byKey[k]
 		if len(formats) > 0 && !slices.Contains(formats, r.Format) {
@@ -171,24 +188,24 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 		}
 		switch shape := c.Reads.Shape(nameOf(k)); {
 		case shape == authz.ReadAll && !sn.Topo.Restricts(k):
-			sc.Whole = append(sc.Whole, k)
+			sc.Whole = append(sc.Whole, r.NumericID())
 			whole[k] = true
 			sc.Readable = append(sc.Readable, k)
 			if withWhole {
-				loadKeys = append(loadKeys, k)
+				loadIDs = append(loadIDs, r.NumericID())
 			}
 		case shape != authz.ReadNone:
 			sc.Readable = append(sc.Readable, k)
-			loadKeys = append(loadKeys, k)
+			loadIDs = append(loadIDs, r.NumericID())
 		}
 	}
-	if load == nil || len(loadKeys) == 0 {
+	if load == nil || len(loadIDs) == 0 {
 		return sc, nil
 	}
 	if vi, ok := c.Reads.(authz.VersionIndependent); ok && vi.VersionIndependent() && loadPackages != nil && !withWhole {
-		return s.buildPackages(sn, c, sc, loadKeys, loadPackages)
+		return s.buildPackages(sn, c, sc, loadIDs, loadPackages)
 	}
-	cands, err := load(loadKeys, s.cfg.MaxScopeRows+1)
+	cands, err := load(loadIDs, s.cfg.MaxScopeRows+1)
 	if err != nil {
 		return Scope{}, err
 	}
@@ -208,7 +225,7 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 		ok := sn.Topo.Admits(cd.Repository, cd.Package) && (c.Reads.Shape(nameOf(cd.Repository)) == authz.ReadAll || c.Reads.MayRead(nameOf(cd.Repository), cd.Package, cd.Version))
 		decided[cd] = ok
 		if ok {
-			sc.Rows = append(sc.Rows, cd.Repository+"\x1f"+cd.Package+"\x1f"+cd.Version)
+			sc.Rows = append(sc.Rows, store.RowEntry(sn.ID(cd.Repository), cd.Package, cd.Version))
 			sc.Holders = append(sc.Holders, cd)
 		}
 	}
@@ -216,10 +233,10 @@ func (s *Service) build(sn *Snapshot, c Caller, formats []string, withWhole bool
 }
 
 // buildPackages decides the packages of the repositories read in part once each (the decision does not depend on the version).
-func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadKeys []string,
-	loadPackages func(keys []string, max int) ([]store.Pair, int, error),
+func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadIDs []int64,
+	loadPackages func(repoIDs []int64, max int) ([]store.Pair, int, error),
 ) (Scope, error) {
-	pairs, findings, err := loadPackages(loadKeys, s.cfg.MaxScopeRows+1)
+	pairs, findings, err := loadPackages(loadIDs, s.cfg.MaxScopeRows+1)
 	if err != nil {
 		return Scope{}, err
 	}
@@ -228,7 +245,7 @@ func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadKeys []str
 	}
 	for _, p := range pairs {
 		if sn.Topo.Admits(p.Repository, p.Package) && (c.Reads.Shape(nameOf(p.Repository)) == authz.ReadAll || c.Reads.MayRead(nameOf(p.Repository), p.Package, "")) {
-			sc.Packages = append(sc.Packages, p.Repository+"\x1f"+p.Package)
+			sc.Packages = append(sc.Packages, store.PackageEntry(sn.ID(p.Repository), p.Package))
 		}
 	}
 	return sc, nil
@@ -237,22 +254,21 @@ func (s *Service) buildPackages(sn *Snapshot, c Caller, sc Scope, loadKeys []str
 // Scope builds what the caller may read of the findings the filter selects: the candidates of the repositories read in part
 // are the versions that have such a finding.
 func (s *Service) Scope(ctx context.Context, sn *Snapshot, c Caller, f store.Filter) (Scope, error) {
-	return s.build(sn, c, f.Formats, false, func(keys []string, max int) ([]store.Candidate, error) {
-		keys = narrowKeys(keys, f)
-		return s.st.Candidates(ctx, keys, f, max)
-	}, func(keys []string, max int) ([]store.Pair, int, error) {
-		return s.st.CandidatePackages(ctx, narrowKeys(keys, f), f, max)
+	return s.build(sn, c, f.Formats, false, func(repoIDs []int64, max int) ([]store.Candidate, error) {
+		return s.st.Candidates(ctx, narrowIDs(repoIDs, f), f, max)
+	}, func(repoIDs []int64, max int) ([]store.Pair, int, error) {
+		return s.st.CandidatePackages(ctx, narrowIDs(repoIDs, f), f, max)
 	})
 }
 
-func narrowKeys(keys []string, f store.Filter) []string {
+func narrowIDs(ids []int64, f store.Filter) []int64 {
 	if !f.HasRepos {
-		return keys
+		return ids
 	}
-	var out []string
-	for _, k := range keys {
-		if slices.Contains(f.Repos, k) {
-			out = append(out, k)
+	var out []int64
+	for _, id := range ids {
+		if slices.Contains(f.Repos, id) {
+			out = append(out, id)
 		}
 	}
 	return out
@@ -261,8 +277,8 @@ func narrowKeys(keys []string, f store.Filter) []string {
 // PackageScope builds what the caller may read of one package (every version when version is ""), and the repositories that
 // hold it, for the package views.
 func (s *Service) PackageScope(ctx context.Context, sn *Snapshot, c Caller, format, name, version string) (Scope, error) {
-	return s.build(sn, c, []string{format}, true, func(keys []string, max int) ([]store.Candidate, error) {
-		return s.st.PackageCandidates(ctx, keys, format, name, version, max)
+	return s.build(sn, c, []string{format}, true, func(repoIDs []int64, max int) ([]store.Candidate, error) {
+		return s.st.PackageCandidates(ctx, repoIDs, format, name, version, max)
 	}, nil)
 }
 
@@ -308,10 +324,10 @@ func (s *Service) withPolicy(sn *Snapshot, f store.Filter) store.Filter {
 	for _, k := range sn.Topo.Physical() {
 		p := s.policy(sn, k)
 		if p.QueryEnforce() {
-			f.EnabledRepos = append(f.EnabledRepos, k)
+			f.EnabledRepos = append(f.EnabledRepos, sn.ID(k))
 		}
 		if p.QueryBlockMalicious() {
-			f.MaliciousRepos = append(f.MaliciousRepos, k)
+			f.MaliciousRepos = append(f.MaliciousRepos, sn.ID(k))
 		}
 	}
 	return f

@@ -93,6 +93,11 @@ func (r ClaimRule) Claim(ctx context.Context, format, name string) (claimRepo st
 	holders, _ := r.Claims.(HolderIndex)
 	for _, m := range matches {
 		var h ClaimHolder
+		if m.Repository == "" {
+			// The claim index knows the holder's id and this replica's snapshot does not (a repository created on another
+			// replica a moment ago): the holder is unknown, and an unknown holder withholds.
+			return "", true, nil
+		}
 		if holders != nil {
 			var ok bool
 			if h, ok = holders.Holder(m.Repository); !ok {

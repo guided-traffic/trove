@@ -260,7 +260,8 @@ SELECT name::text AS name FROM up ORDER BY name
 
 // The repository and every virtual repository that includes it, recursively, at the time the feed is read
 // (the content entry of R-BAS-015), by their qualified names "<projectKey>/<repoKey>". Unknown names return no
-// rows; the caller then reports the name alone. A virtual repository and its members may lie in other projects.
+// rows; the caller then reports the name alone. A virtual repository lists only members of its own project (trigger AI006),
+// so the closure stays within the project of the repository.
 func (q *Queries) BastionVirtualClosure(ctx context.Context, names []string) ([]string, error) {
 	rows, err := q.db.Query(ctx, bastionVirtualClosure, names)
 	if err != nil {

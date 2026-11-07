@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The field codes of a project's validation errors (R-AUTHZ-026), in errors[] of
@@ -26,10 +27,10 @@ const (
 // immutable, and a replace compares it in the handler).
 func problems(in Input, create bool) error {
 	var fields []errs.FieldError
-	if create && !KeyRE.MatchString(in.Key) {
+	if create && !qname.ValidProjectKey(in.Key) {
 		fields = append(fields, errs.FieldError{
 			Pointer: "/key", Code: fieldInvalidKey,
-			Detail: "The key matches ^[a-z][a-z0-9-]{1,31}$.",
+			Detail: "The key has " + qname.ProjectKeyRule + ".",
 		})
 	}
 	if n := utf8.RuneCountInString(in.DisplayName); strings.TrimSpace(in.DisplayName) == "" || n > MaxDisplayName {

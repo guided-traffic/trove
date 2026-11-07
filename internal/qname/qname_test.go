@@ -159,8 +159,8 @@ func TestR_AUTHZ_026_ParseObject(t *testing.T) {
 			t.Errorf("ParseObject(%q) = %+v, %v; want %+v, %v", tc.in, got, err, tc.want, tc.wantErr)
 		}
 	}
-	if (Object{"web", "bot"}).String() != "web/bot" || (Object{"", "bot"}).String() != "bot" || !(Object{Name: "bot"}).InstanceWide() {
-		t.Error("String/InstanceWide")
+	if (Object{"web", "bot"}).String() != "web/bot" || (Object{"", "bot"}).String() != "bot" {
+		t.Error("String")
 	}
 	var o Object
 	if err := json.Unmarshal([]byte(`"web/bot"`), &o); err != nil || o != (Object{"web", "bot"}) {

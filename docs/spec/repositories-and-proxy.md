@@ -748,7 +748,9 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   nothing changes. A target equal to the source changes nothing and answers 200 without an event
   ([authorization.md](authorization.md) Q-AUTHZ-193). A repository being deleted is not addressable and answers 404.
 - **What moves with it.** Items, packages, cached entries, claims, package owners, findings, mirror state and running jobs
-  are held by the repository's ID and stay as they are; no content is copied. The key becomes free in the source project
+  are held by the repository's ID and stay as they are; no content is copied. A pass of a mirror in progress, or queued with the old name in its arguments, goes on: it
+  resolves its repository by the ID at its start and before every package ([R-REPO-053](#r-repo-053--mirror-passes-as-jobs-on-the-queue-mirror)),
+  and the name is for logs, audit events and metrics only. The key becomes free in the source project
   and is taken in the target project.
 - **What changes.** Every address of the repository changes (R-REPO-002): the old address answers 404 from the move's
   epoch on, on every replica within the bound of R-AUTHZ-028. The roles and policies of the source project stop reaching

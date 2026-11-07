@@ -15,7 +15,6 @@ import (
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 	"github.com/guided-traffic/trove/internal/bastion/metrics"
 	"github.com/guided-traffic/trove/internal/qname"
-	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // TestR_BAS_003_OnlyThePackagePathFamiliesReachTheReadFlow sends every row of INV-6's path table: only
@@ -160,11 +159,11 @@ func TestR_BAS_018_TheBlockListAnswersBeforeThePathIsRead(t *testing.T) {
 }
 
 func TestR_BAS_018_TheKeyRuleIsTheOneOfINV5(t *testing.T) {
-	// The Bastion reads keys through qname, which may not import repository: the two rules are held equal here.
-	kp := regexp.MustCompile(repository.KeyPattern)
+	// The Bastion and the main installation read keys through the one grammar of qname; the pattern of INV-5 is the oracle here.
+	kp := regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
 	for _, k := range []string{"a", "ab", "npm-all", "a.b_c-d", "-npm", "NPM", strings.Repeat("a", 64), strings.Repeat("a", 65), "a~cache", "a b"} {
 		if kp.MatchString(k) != qname.ValidKey(k) {
-			t.Fatalf("qname.ValidKey(%q) = %v differs from repository.KeyPattern", k, qname.ValidKey(k))
+			t.Fatalf("qname.ValidKey(%q) = %v differs from the key pattern of INV-5", k, qname.ValidKey(k))
 		}
 	}
 	s := newSiteHarness(t, options{})

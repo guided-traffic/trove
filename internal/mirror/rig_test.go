@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -440,15 +441,25 @@ func (s *memStore) Usage(_ context.Context, id int64) (Usage, error) {
 // memRepos is a repository reader the test changes.
 type memRepos struct {
 	mu    sync.Mutex
-	repos map[string]repository.Repository
+	repos map[qname.Repo]repository.Repository
 }
 
 func (r *memRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
-	key := name.Key
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if repo, ok := r.repos[key]; ok {
+	if repo, ok := r.repos[name]; ok {
 		return repo, nil
+	}
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
+}
+
+func (r *memRepos) ByID(_ context.Context, id int64) (repository.Repository, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, repo := range r.repos {
+		if repo.ID == strconv.FormatInt(id, 10) {
+			return repo, nil
+		}
 	}
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
@@ -478,13 +489,29 @@ func (r *memRepos) ListProject(ctx context.Context, project string) ([]repositor
 func (r *memRepos) set(repo repository.Repository) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.repos[repo.Name.Key] = repo
+	r.repos[repo.Name] = repo
 }
 
-func (r *memRepos) remove(key string) {
+func (r *memRepos) remove(name qname.Repo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.repos, key)
+	delete(r.repos, name)
+}
+
+// move gives the repository of the id a new name, as a move to another project does: the id stays.
+func (r *memRepos) move(id int64, to qname.Repo, doc []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for name, repo := range r.repos {
+		if repo.ID == strconv.FormatInt(id, 10) {
+			delete(r.repos, name)
+		}
+	}
+	moved, err := repository.Build(id, rigVersion.Add(1), to, repository.Remote, "npm", doc, nil)
+	if err != nil {
+		panic(err)
+	}
+	r.repos[to] = moved
 }
 
 // memQueue is a job queue with the exclusive dedup key.
@@ -815,7 +842,7 @@ func newRig(t *testing.T, include []string, mirrorSettings string) *rig {
 	}
 	clock := newClock()
 	g := &rig{
-		t: t, clock: clock, store: newMemStore(clock), repos: &memRepos{repos: map[string]repository.Repository{}}, queue: &memQueue{},
+		t: t, clock: clock, store: newMemStore(clock), repos: &memRepos{repos: map[qname.Repo]repository.Repository{}}, queue: &memQueue{},
 		lister: &fakeLister{methods: []discover.Method{discover.MethodFeed}}, rec: &recorder{},
 	}
 	g.host = &fakeHost{lister: g.lister}

@@ -180,7 +180,7 @@ PostgreSQL through `mirror.Store`.
    (`SelectItems`), checks the byte bound and fills each artifact through `Host.Fill` (a `*RefusedError` is counted `refused` and skipped; a transient failure lets the other
    artifacts go on and the package fails once, Q-REPO-185; `ErrShuttingDown` stops the pass without a write, Q-ARCH-320); a finished
    package deletes its row and raises the counters in one statement. The snapshot is read before each package: a deleted, disabled, paused, offline or switched
-   repository halts the attempt.
+   repository halts the attempt. The pass holds its repository by the id of its arguments (`Reader.ByID`), at its start and at every such read: a move to another project (R-REPO-060) renames the repository and neither halts a running pass nor ends a queued one as `repository_gone`; the audit events carry the name the snapshot holds at that moment, the metric series the name the pass began with (the series of the old name are deleted when the repository leaves the snapshot under it, `Metrics.Forget`, so a running pass brings them back until it ends).
 6. **The end** (`finish`): one of the ends in the table below; the summary, the cursor of the last complete pass, the next pass and
    the event are written in one statement.
 

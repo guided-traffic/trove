@@ -40,8 +40,8 @@ the client setup page of the admin UI ([web-ui.md](web-ui.md#package-screens-and
    index (`requestHolder`, so every question of the request is answered on one index), `ReadScopeOn` for the physical repositories (no addressed repository: a
    listing across repositories decides each on its own, Q-AUTHZ-168), `Readable` for the
    virtual ones, then `view.Service.Scope`.
-3. `Scope` takes the repositories that are `ReadAll` and have no include or exclude patterns (`Repository.Restricts`, R-REPO-005) as a list of keys. For every other repository that is not `ReadNone` it reads their version triples (`PackageViewCandidates`,
-   at most 200 000, narrowed by format and name prefix), keeps the ones the repository's patterns admit (`Topology.Admits`) and the caller may read (`ReadScope.MayRead`; skipped for a `ReadAll` repository) as `repo US name US version` strings.
+3. `Scope` takes the repositories that are `ReadAll` and have no include or exclude patterns (`Repository.Restricts`, R-REPO-005) as a list of repository IDs (`Topology.IDs`; the statements compare `packages.repo_id`, see [Repositories as IDs in the statements](vulnerabilities.md#repositories-as-ids-in-the-statements-r-vuln-028)). For every other repository that is not `ReadNone` it reads their version triples (`PackageViewCandidates`,
+   at most 200 000, narrowed by format and name prefix), keeps the ones the repository's patterns admit (`Topology.Admits`) and the caller may read (`ReadScope.MayRead`; skipped for a `ReadAll` repository) as `repositoryId US name US version` strings (`rowKey`).
 4. `Service.List` asks the adapters for the versions that match `q` and `keyword` (`Find`) and for the withheld versions (`Withheld`), then runs
    `PackageViewList`: the CTE `vis` holds the versions that are live, not withheld, in the scope and inside the filters; `grouped` aggregates per format and
    name; the keyset condition and the order depend on the sort. Names are compared with collation `C`.

@@ -33,7 +33,7 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
   check before a handler sees the request; `Host.Ingest().Commit` runs the hook in the item's transaction.
 - **A format with no routes has no prefix.** generic's protocol is `/files/` ([Q-GENERIC-7](../spec/formats/generic.md)); `/files/` is the
   raw view of every repository and is served by the generic layer, not by the dispatcher.
-- **The contract is frozen at `ContractVersion` 1** since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)):
+- **The contract is frozen** since the end of M3 (version 1; version 2 since the project model, ADR-156) ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)):
   every change of its exported surface, an addition included, is an ADR, and
   [testdata/contract.txt](../../internal/formats/testdata/contract.txt) is regenerated in the same change (see [Changing the contract](#changing-the-contract)).
 - **Unbound seams fail closed.** `Claim` and `AutoClaim` refuse until the composition root binds the ownership rule and the namespace auto
@@ -456,7 +456,7 @@ test of its own).
 
 ## Changing the contract
 
-The contract is frozen at version 1 since the end of M3 (E3.3, [ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)): it only grows,
+The contract is frozen since the end of M3 (E3.3; version 1, and version 2 since the project model, ADR-156, [ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)): it only grows,
 and every change of its exported surface is an ADR (R-ARCH-025, Q-ARCH-256, Q-ARCH-280). Ordered steps for a new behaviour:
 
 1. Ask first whether it is a service a format calls (a method of `Host`, `PackageWriter` or a store): adding one breaks no format. Do that, with the in-memory twin in

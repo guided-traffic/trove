@@ -426,3 +426,7 @@ func TestR_API_030_NpmPublishSnippets(t *testing.T) {
 func (f packagesReader) ListProject(context.Context, string) ([]repository.Repository, error) {
 	return nil, nil
 }
+
+func (f packagesReader) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}

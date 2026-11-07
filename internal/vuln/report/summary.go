@@ -12,7 +12,7 @@ import (
 )
 
 // SummaryFilter is the filter of the summary: repositories and formats, narrowed to the open findings.
-func SummaryFilter(repos []string, hasRepos bool, formats []string) store.Filter {
+func SummaryFilter(repos []int64, hasRepos bool, formats []string) store.Filter {
 	return store.Filter{Repos: repos, HasRepos: hasRepos, Formats: formats, Statuses: vuln.OpenStatuses()}
 }
 
@@ -66,10 +66,10 @@ func (s *Service) Summary(ctx context.Context, sc Scope, f store.Filter) (Summar
 		return Summary{}, err
 	}
 	for _, key := range sc.Readable {
-		if f.HasRepos && !slices.Contains(f.Repos, key) {
+		r, _ := sc.snap.Repository(key)
+		if f.HasRepos && !slices.Contains(f.Repos, r.NumericID()) {
 			continue
 		}
-		r, _ := sc.snap.Repository(key)
 		switch s.evaluation(ctx, r, "", data) {
 		case vuln.EvaluationEvaluated:
 			out.Coverage.Evaluated++

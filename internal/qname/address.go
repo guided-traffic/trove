@@ -8,11 +8,14 @@ import (
 // Family is the path family of an address.
 type Family string
 
-// The families that address a repository: the protocol routes /api/<format>/<project>/<key>
-// and the raw-file routes /files/<project>/<key>.
+// The families that address a repository: the protocol routes /api/<format>/<project>/<key>,
+// the raw-file routes /files/<project>/<key> and the UI's content route of the management API.
 const (
 	FamilyAPI   Family = "api"
 	FamilyFiles Family = "files"
+	// FamilyContent is the content route of the management API,
+	// /api/v1/projects/<project>/repositories/<key>/content/<rest>, which serves the raw files of a repository to the UI.
+	FamilyContent Family = "content"
 )
 
 // Address is a repository address read from a request path.
@@ -83,6 +86,40 @@ func ParseAddress(escapedPath string) (Address, bool) {
 	a.CacheView = cache
 	a.Rest = rest
 	return a, true
+}
+
+// The frame of the content route's address.
+const (
+	contentPrefix       = "/api/v1/projects/"
+	repositoriesSegment = "/repositories/"
+	contentSegment      = "/content/"
+)
+
+// ParseContentAddress is the parser of the content route of the management API:
+//
+//	/api/v1/projects/<project>/repositories/<key>/content/<rest>
+//
+// The path is the escaped path as received, and the rules are those of [ParseAddress]: a project or key that holds a "%"
+// is no name, and the key carries no cache suffix (the content route has no cache view). Rest stays escaped and is empty
+// for the repository root. The result has [FamilyContent].
+func ParseContentAddress(escapedPath string) (Address, bool) {
+	tail, ok := strings.CutPrefix(escapedPath, contentPrefix)
+	if !ok {
+		return Address{}, false
+	}
+	project, tail, ok := strings.Cut(tail, repositoriesSegment)
+	if !ok {
+		return Address{}, false
+	}
+	key, rest, ok := strings.Cut(tail, contentSegment)
+	if !ok {
+		return Address{}, false
+	}
+	name := Repo{Project: project, Key: key}
+	if !name.Valid() {
+		return Address{}, false
+	}
+	return Address{Family: FamilyContent, Repo: name, Rest: rest}, true
 }
 
 // ProtocolBase renders a protocol base path template of a format ("/api/npm/{project}/{key}/",

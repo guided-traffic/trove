@@ -32,6 +32,12 @@ var (
 // remote repository (R-REPO-032). It belongs to the repository segment of a path only.
 const CacheSuffix = "~cache"
 
+// The rules of the keys in words, for the messages of a refusal. The parsers below are the one source of the grammar.
+const (
+	ProjectKeyRule = "2 to 32 characters: lower-case letters, digits and hyphens, starting with a letter"
+	KeyRule        = "2 to 64 characters: lower-case letters, digits, dots, underscores and hyphens, starting with a letter or digit, without \"..\" and not ending in \".\""
+)
+
 // ValidProjectKey reports whether s is a project key: ^[a-z][a-z0-9-]{1,31}$.
 func ValidProjectKey(s string) bool {
 	if len(s) < 2 || len(s) > 32 || !isLower(s[0]) {
@@ -143,9 +149,6 @@ func (o Object) String() string {
 	}
 	return o.Project + "/" + o.Name
 }
-
-// InstanceWide reports whether the object belongs to no project.
-func (o Object) InstanceWide() bool { return o.Project == "" }
 
 // MarshalText implements encoding.TextMarshaler.
 func (o Object) MarshalText() ([]byte, error) { return []byte(o.String()), nil }

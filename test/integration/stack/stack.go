@@ -367,6 +367,17 @@ func (s repositories) ByName(ctx context.Context, name qname.Repo) (repository.R
 	return rs[0], nil
 }
 
+func (s repositories) ByID(ctx context.Context, id int64) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE r.id = $1", id)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+	if len(rs) == 0 {
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
+	}
+	return rs[0], nil
+}
+
 func (s repositories) List(ctx context.Context) ([]repository.Repository, error) {
 	return s.list(ctx, "")
 }

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -431,5 +432,28 @@ func TestBuildInfoRoleValuesOfTheCut(t *testing.T) {
 				t.Errorf("build info lacks role=%q:\n%s", role, grepLines(body, "build_info"))
 			}
 		})
+	}
+}
+
+// R-OPS-007: a repository that left the snapshot (deleted, or moved and so renamed) is announced once to the owners of the
+// families with a repo label, which delete its series.
+func TestR_OPS_007_RepositoriesThatLeftTheSnapshotAreForgotten(t *testing.T) {
+	m := NewMetrics("web", WithMetricsConfig(config.Metrics{Enabled: true, LabelLimits: config.MetricsLabelLimits{Repository: 1}}))
+	var forgotten []string
+	m.Repos().OnForget(func(name string) { forgotten = append(forgotten, name) })
+	m.Repos().UpdateRepositories(repoLabels([]string{"web/a", "web/b", "web/c"}))
+	if len(forgotten) != 0 {
+		t.Fatalf("the first snapshot forgot %v", forgotten)
+	}
+	// web/b is deleted and web/c moved to ops/c; web/b lay beyond the cap and is announced all the same.
+	m.Repos().UpdateRepositories(repoLabels([]string{"web/a", "ops/c"}))
+	sort.Strings(forgotten)
+	if strings.Join(forgotten, ",") != "web/b,web/c" {
+		t.Fatalf("forgotten = %v, want web/b and web/c", forgotten)
+	}
+	forgotten = nil
+	m.Repos().UpdateRepositories(repoLabels([]string{"web/a", "ops/c"}))
+	if len(forgotten) != 0 {
+		t.Errorf("an unchanged snapshot forgot %v", forgotten)
 	}
 }

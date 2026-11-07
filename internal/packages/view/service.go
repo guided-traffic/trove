@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,7 +179,7 @@ func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, 
 	var cands []q.PackageViewCandidatesRow
 	err := s.read(ctx, func(qs *q.Queries) (err error) {
 		cands, err = qs.PackageViewCandidates(ctx, q.PackageViewCandidatesParams{
-			Keys: keys(rowKeys), Formats: keys(formats), NamePrefix: r.NamePrefix, ExactName: r.ExactName, MaxRows: rows32(s.maxRows + 1),
+			Keys: ids(topo.IDs(rowKeys)), Formats: keys(formats), NamePrefix: r.NamePrefix, ExactName: r.ExactName, MaxRows: rows32(s.maxRows + 1),
 		})
 		return err
 	})
@@ -190,7 +191,7 @@ func (s *Service) Scope(ctx context.Context, rs authz.ReadScope, topo Topology, 
 	}
 	for _, c := range cands {
 		if topo.Admits(c.RepoKey, c.Name) && (rs.Shape(nameOf(c.RepoKey)) == authz.ReadAll || rs.MayRead(nameOf(c.RepoKey), c.Name, c.Version)) {
-			sc.rows = append(sc.rows, rowKey(c.RepoKey, c.Name, c.Version))
+			sc.rows = append(sc.rows, rowKey(topo.ID(c.RepoKey), c.Name, c.Version))
 		}
 	}
 	return sc, nil
@@ -216,7 +217,11 @@ func ids(in []int64) []int64 {
 // rows32 is a row limit as the statements take it.
 func rows32(n int) int32 { return int32(min(max(n, 0), math.MaxInt32)) }
 
-func rowKey(repo, name, version string) string { return repo + "\x1f" + name + "\x1f" + version }
+// rowKey is the entry of the readable rows: "<repository id>\x1f<name>\x1f<version>", the form the statements compare
+// (packages.repo_id, never the qualified name they return).
+func rowKey(repoID int64, name, version string) string {
+	return strconv.FormatInt(repoID, 10) + "\x1f" + name + "\x1f" + version
+}
 
 // formatsOf narrows the asked formats to those with an adapter; no asked format
 // means every format that has one.
@@ -348,8 +353,8 @@ func (s *Service) List(ctx context.Context, sc Scope, f Filter, o Order, after *
 	}
 	p := q.PackageViewListParams{
 		Sort: o.Sort, Descending: o.Desc, MaxRows: rows32(limit + 1),
-		Withheld: ids(withheld), Formats: keys(formats), HasRepos: f.HasRepositories, Repos: keys(repos),
-		NamePrefix: f.NamePrefix, Whole: keys(sc.whole), Rows: keys(sc.rows),
+		Withheld: ids(withheld), Formats: keys(formats), HasRepos: f.HasRepositories, Repos: ids(sc.topo.IDs(repos)),
+		NamePrefix: f.NamePrefix, Whole: ids(sc.topo.IDs(sc.whole)), Rows: keys(sc.rows),
 		Q: f.Q, QIds: ids(qIDs), Keyword: f.Keyword, KeywordIds: ids(kwIDs),
 		HasFrom: f.CreatedFrom != nil, CreatedFrom: stamp(f.CreatedFrom),
 		HasTo: f.CreatedTo != nil, CreatedTo: stamp(f.CreatedTo),
@@ -373,8 +378,8 @@ func (s *Service) Package(ctx context.Context, sc Scope, format, name string) (P
 	}
 	p := q.PackageViewListParams{
 		Sort: "name", MaxRows: 1, Withheld: ids(withheld), Formats: []string{format},
-		ExactFormat: format, ExactName: name, Whole: keys(sc.whole), Rows: keys(sc.rows),
-		Repos: []string{}, QIds: []int64{}, KeywordIds: []int64{},
+		ExactFormat: format, ExactName: name, Whole: ids(sc.topo.IDs(sc.whole)), Rows: keys(sc.rows),
+		Repos: []int64{}, QIds: []int64{}, KeywordIds: []int64{},
 	}
 	ps, err := s.packages(ctx, sc, p, withheld, false, nil)
 	if err != nil || len(ps) == 0 {
@@ -542,8 +547,8 @@ func (s *Service) versionRows(ctx context.Context, sc Scope, pkgs []string, with
 	var rows []q.PackageViewVersionsRow
 	err := s.read(ctx, func(qs *q.Queries) (err error) {
 		rows, err = qs.PackageViewVersions(ctx, q.PackageViewVersionsParams{
-			WithSize: withSize, Withheld: ids(withheld), Packages: pkgs, HasRepos: hasRepos, Repos: keys(repos),
-			Whole: keys(sc.whole), Rows: keys(sc.rows),
+			WithSize: withSize, Withheld: ids(withheld), Packages: pkgs, HasRepos: hasRepos, Repos: ids(sc.topo.IDs(repos)),
+			Whole: ids(sc.topo.IDs(sc.whole)), Rows: keys(sc.rows),
 		})
 		return err
 	})

@@ -1,4 +1,4 @@
-contract version 1
+contract version 2
 formats.Action: alias authz.Action
 formats.AutoClaimResult: alias repository.AutoClaimResult
 formats.Base: method Exposure() ExposureAdapter
@@ -509,7 +509,7 @@ formats.ActionRead: value = authz.Read
 formats.Admin: value = (repeated, place 5 of its group)
 formats.Computed: value = (repeated, place 2 of its group)
 formats.Content: value PathKind = iota + 1 (place 0 of its group)
-formats.ContractVersion: value = 1
+formats.ContractVersion: value = 2
 formats.Current: value Currency = iota + 1 (place 0 of its group)
 formats.Delete: value = (repeated, place 4 of its group)
 formats.Download: value RouteKind = iota + 1 (place 0 of its group)
@@ -623,7 +623,6 @@ catalog.NewRegistry: func() *Registry
 catalog.Or: func(*Registry) *Registry
 catalog.PackageChanged: func(int64, string) string
 catalog.ParsePackageChanged: func(string) (int64, [32]byte, bool)
-catalog.ValidID: func(string) bool
 catalog.FormatAreas: value = []string{MetadataChangedArea}
 catalog.KindArtifact: value RequestKind = "artifact"
 catalog.KindMetadata: value RequestKind = "metadata"

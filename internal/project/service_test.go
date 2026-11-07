@@ -28,12 +28,12 @@ func fieldsOf(t *testing.T, err error) map[string]string {
 
 func TestR_AUTHZ_026_KeyRule(t *testing.T) {
 	for _, key := range []string{"web", "ab", "a-b", "web-app-2", "a" + strings.Repeat("b", 31)} {
-		if !KeyRE.MatchString(key) {
+		if !qname.ValidProjectKey(key) {
 			t.Errorf("%q should be a key", key)
 		}
 	}
 	for _, key := range []string{"", "a", "1web", "-web", "Web", "web_app", "web.app", "a" + strings.Repeat("b", 32), "web app"} {
-		if KeyRE.MatchString(key) {
+		if qname.ValidProjectKey(key) {
 			t.Errorf("%q should not be a key", key)
 		}
 	}

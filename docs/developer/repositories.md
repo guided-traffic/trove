@@ -18,10 +18,10 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 
 | File | Responsibility |
 |---|---|
-| [repository.go](../../internal/repository/repository.go) | the shared contract: `Repository`, `Class` (the catalog's), `Lifecycle`, `Reader`, `KeyPattern`, `ReservedKeys()`; `Repository.Admits` |
+| [repository.go](../../internal/repository/repository.go) | the shared contract: `Repository`, `Class` (the catalog's), `Lifecycle`, `Reader`, `ReservedKeys()`; `Repository.Admits` |
 | [document.go](../../internal/repository/document.go) | `Document` (its read-only `project`, R-REPO-001) and `Settings` (the configuration document of R-REPO-004, with the settings member of each format that has some, `formatMembers`), `DecodeDocument` (strict: unknown and duplicate members), `ConsumerView`, `canonicalObject` (the stored form of a format member), `IsReservedMember` |
 | [validate.go](../../internal/repository/validate.go) | `validate`: every rule of R-REPO-008 in one pass; the error shape (one violation under its own code, several under `validation_failed`) |
-| [key.go](../../internal/repository/key.go), [path.go](../../internal/repository/path.go) | `ValidKeyShape`, `IsReservedKey` (the key within a project, [qname](../../internal/qname/qname.go) names the pair); `CleanPath` (R-ARCH-005) |
+| [key.go](../../internal/repository/key.go), [path.go](../../internal/repository/path.go) | `IsReservedKey` and the key check of a create (the grammar of a key is `qname.ValidKey`, the only source; [qname](../../internal/qname/qname.go) names the pair); `CleanPath` (R-ARCH-005) |
 | [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `PatternSubject` (the catalog's), `Pattern.Match`, `Admission` (include and exclude lists, folder admission). Matching allocates nothing for the sizes in use and refuses an input without the pattern's literal lead first ([Q-EP-64](../spec/endpoints.md#q-ep-64--pattern-matching-in-the-decision-path-allocates-nothing-and-a-literal-lead-refuses-before-any-state-is-built)); [pattern_alloc_test.go](../../internal/repository/pattern_alloc_test.go) holds the former matcher as the reference and a fuzz target |
 | [store.go](../../internal/repository/store.go) | rows to `Repository` and `Document`; the sqlc `queries(tx)` seam; fail-closed load of an undecodable row |
 | [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, the `Hooks` seam (`OnUpdated`, `OnDelete`, `MultiHooks`); `ChangeEviction`, the reader of a `repo_config` payload for the caches keyed by version; a stale version is `errs.Stale` |
@@ -47,6 +47,8 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 
 `Reader.ByName(ctx, name qname.Repo)` is what the files transfer, the format dispatcher and the grant index call per request
 (R-ARCH-011 step 2). It never authorizes: callers decide first (R-AUTHZ-016) and only then look the repository up.
+
+`Reader.ByID(ctx, id int64)` is what a running job holds its repository by (R-REPO-060): the mirror pass resolves its repository by the id in its arguments, at its start and before every package, because a move changes the name and never the id. The name it finds is for logs, audit events and metrics only. An id the snapshot lacks makes the replica poll the change log once and rebuild before it answers `repository_not_found`, so a job queued by the replica that created the repository is not lost.
 
 1. A name whose project or key is outside its syntax (`qname.Repo.Valid`) is `repository_not_found` without a query. The same key in two projects is two repositories; `Reader.ListProject(ctx, project)` lists one project.
 2. The snapshot is one cache entry (`repositories`, registered on the replica's `cache.Registry`) holding the whole table.

@@ -13,6 +13,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/guided-traffic/trove/internal/mirror/discover"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -516,7 +517,7 @@ func TestR_REPO_053_ADocumentThatDoesNotLoadIsAPauseNotAModeChange(t *testing.T)
 // that is in service, and none for one that its operator paused; the pending names and the last complete pass are exported for
 // both; a repository that is not a mirror has no series.
 func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *testing.T) {
-	repos := &memRepos{repos: map[string]repository.Repository{}}
+	repos := &memRepos{repos: map[qname.Repo]repository.Repository{}}
 	mk := func(key string, id int64, doc string) repository.Repository {
 		r, err := repository.Build(id, 1, qr(key), repository.Remote, "npm", []byte(doc), nil)
 		if err != nil {

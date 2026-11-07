@@ -85,11 +85,6 @@ func TestValidateKeys(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	t.Run("R-REPO-002 the key pattern of the contract is the one of INV-5", func(t *testing.T) {
-		if KeyPattern != `^[a-z0-9][a-z0-9._-]{1,63}$` {
-			t.Fatal(KeyPattern)
-		}
-	})
 }
 
 func quote(s string) string { b, _ := json.Marshal(s); return string(b) }

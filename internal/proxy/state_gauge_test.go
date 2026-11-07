@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -33,5 +34,41 @@ func TestR_REPO_029_TheUpstreamGaugeCarriesTheQualifiedName(t *testing.T) {
 	}
 	if got := read("mobile/npm-remote"); got != 1 {
 		t.Errorf("mobile/npm-remote = %v, want 1", got)
+	}
+}
+
+// R-OPS-007: a repository that left the snapshot takes its series with it, and the engine publishes nothing under its name
+// afterwards: a gauge of 0 for a deleted repository would keep an alert firing for ever.
+func TestR_OPS_007_TheSeriesOfADeletedRepositoryAreForgotten(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	reg := prometheus.NewRegistry()
+	e := &Engine{m: newMetrics(reg), o: Options{Now: func() time.Time { return now }}}
+	e.keys.Store(int64(1), "web/gone")
+	e.keys.Store(int64(2), "web/kept")
+	open := &repoState{hasOpen: true, openUntil: now.Add(time.Minute)}
+	e.publishUp(1, open)
+	e.publishUp(2, open)
+	e.m.lookups.WithLabelValues("web/gone", "metadata", resultHit).Inc()
+	e.m.upstreamReqs.WithLabelValues("web/gone", "200").Inc()
+
+	e.Forget("web/gone")
+	e.publishUp(1, open) // the circuit reload of a repository that is gone
+
+	fams, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fams {
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "repo" && strings.HasSuffix(l.GetValue(), "gone") {
+					t.Errorf("%s still has a series for %s", f.GetName(), l.GetValue())
+				}
+			}
+		}
+	}
+	var m dto.Metric
+	if err := e.m.upstreamUp.WithLabelValues("web/kept").Write(&m); err != nil || m.GetGauge().GetValue() != 0 {
+		t.Errorf("the series of a repository that stays: %v, %v", m.GetGauge().GetValue(), err)
 	}
 }
