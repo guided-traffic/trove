@@ -75,6 +75,16 @@ type snapshot struct {
 	// <<< M2 virtual
 }
 
+// byID returns the repository of an id the snapshot holds.
+func (s *snapshot) byID(id int64) (Repository, bool) {
+	name, ok := s.keys[id]
+	if !ok {
+		return Repository{}, false
+	}
+	repo, ok := s.byName[name]
+	return repo, ok
+}
+
 // nameOf returns the name of a repository id, the zero name for an id the snapshot lacks.
 func (s *snapshot) nameOf(id int64) qname.Repo { return s.keys[id] }
 
@@ -158,6 +168,37 @@ func (r *SnapshotReader) ByName(ctx context.Context, name qname.Repo) (Repositor
 		// first one's request.
 		return r.lookup(context.WithoutCancel(ctx), name)
 	})
+}
+
+// ByID implements [Reader]. A repository the snapshot does not hold may have been created on another replica a moment
+// ago: the replica polls the change log once and rebuilds the snapshot before it answers not found, so a job that was
+// queued by the creating replica does not end as "gone".
+func (r *SnapshotReader) ByID(ctx context.Context, id int64) (Repository, error) {
+	s, err := r.snapshot(ctx)
+	if err != nil {
+		return Repository{}, err
+	}
+	if repo, ok := s.byID(id); ok {
+		return repo, nil
+	}
+	if r.poll != nil {
+		pctx, cancel := context.WithTimeout(ctx, r.wait)
+		err := r.poll.PollNow(pctx)
+		cancel()
+		if err != nil {
+			return Repository{}, errs.E(errs.Unavailable, errs.CodeUnavailable,
+				"this replica could not confirm the repository in time; retry",
+				errs.WithRetryAfter(time.Second), errs.WithCause(err))
+		}
+		r.snap.Flush("lookup")
+		if s, err = r.snapshot(ctx); err != nil {
+			return Repository{}, err
+		}
+		if repo, ok := s.byID(id); ok {
+			return repo, nil
+		}
+	}
+	return Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
 
 // List implements [Reader]: every repository of the snapshot, sorted by project key and key.

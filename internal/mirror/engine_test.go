@@ -12,6 +12,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/mirror/discover"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -889,7 +890,7 @@ func TestR_REPO_057_APresentArtifactIsCountedAndAddsNoBytes(t *testing.T) {
 // R-REPO-053: a repository that is gone, one that is no mirror and a format without discovery start no pass.
 func TestR_REPO_053_ANoopJobStartsNoPass(t *testing.T) {
 	g := newRig(t, nil, "")
-	g.repos.remove("npm-mirror")
+	g.repos.remove(qr("npm-mirror"))
 	res, err := g.run()
 	if err != nil || fmt.Sprint(res.get("skipped")) != "repository_gone" {
 		t.Fatalf("a deleted repository: %v, %+v", err, res.v)
@@ -907,6 +908,34 @@ func TestR_REPO_053_ANoopJobStartsNoPass(t *testing.T) {
 }
 
 var _ repository.Reader = (*memRepos)(nil)
+
+// R-REPO-060: a move changes the name and not the id, and the running job holds the repository by its id: a queued pass whose
+// arguments carry the old name still runs, and a running pass is not halted by the move.
+func TestR_REPO_060_APassSurvivesAMoveOfItsRepository(t *testing.T) {
+	g := newRig(t, nil, "")
+	g.names("a", "b")
+	g.plan("a", "1.0.0")
+	g.plan("b", "1.0.0")
+	to := qname.Repo{Project: "other", Key: "npm-mirror"}
+	moved := false
+	g.host.fill = func(item discover.Item, _ int) (FillResult, error) {
+		if !moved {
+			moved = true
+			g.repos.move(rigRepoID, to, mirrorDoc(t, nil, `{"concurrency":1}`))
+		}
+		return FillResult{Bytes: 100}, nil
+	}
+	if _, err := g.run(); err != nil {
+		t.Fatal(err)
+	}
+	mustEqual(t, "stored", g.item(ResultStored), 2)
+
+	// A job queued before the move carries the old name; the pass starts on the repository of the id.
+	res, err := g.run()
+	if err != nil || fmt.Sprint(res.get("skipped")) == "repository_gone" {
+		t.Fatalf("a queued pass after the move: %v, %+v", err, res.v)
+	}
+}
 
 // R-REPO-057: the series of a repository exist from the first pass attempt on, at 0, so that increase() of the counters the
 // alerts read sees the first failure; every family is labelled by repository and no package.
@@ -956,7 +985,7 @@ func TestR_REPO_053_AnEmptySnapshotClearsNoPass(t *testing.T) {
 	if _, err := g.run(); err != nil {
 		t.Fatal(err)
 	}
-	g.repos.remove("npm-mirror")
+	g.repos.remove(qr("npm-mirror"))
 	if _, err := g.eng.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}

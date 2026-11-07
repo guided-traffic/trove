@@ -137,6 +137,10 @@ type Reader interface {
 	// repository_not_found. It does not apply authorization: callers decide
 	// first (R-AUTHZ-016: authorization runs before the existence lookup).
 	ByName(ctx context.Context, name qname.Repo) (Repository, error)
+	// ByID returns the repository of a numeric id, or an *errs.Error of kind NotFound with code repository_not_found.
+	// A running job holds its repository by the id, which a move does not change (R-REPO-060); the name is only for logs
+	// and metrics. Like ByName it applies no authorization.
+	ByID(ctx context.Context, id int64) (Repository, error)
 	// List returns every repository, sorted by project key and key. Callers filter
 	// it through authz; a listing contains only what the caller may read
 	// (R-AUTHZ-016).

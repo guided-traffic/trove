@@ -7,11 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
-
-	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/mirror/discover"
@@ -47,7 +44,6 @@ type pass struct {
 	m   repoMetrics
 
 	id    int64
-	key   qname.Repo
 	fence Fence
 	args  PassArgs
 
@@ -107,14 +103,14 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 		// The host cannot serve passes: the job fails with the cause and the dispatch tries again (Q-ARCH-312).
 		return nil, "", fmt.Errorf("mirror: the host is not ready: %w", err)
 	}
-	repo, err := e.o.Repos.ByName(ctx, a.Repository)
+	// The pass holds the repository by its id: a move changes the name (R-REPO-060), the arguments carry the name of the
+	// enqueue only for the logs.
+	repo, err := e.o.Repos.ByID(ctx, a.RepositoryID)
 	switch {
 	case err != nil && notFound(err):
 		return nil, "repository_gone", nil
 	case err != nil:
 		return nil, "", err
-	case repo.ID != strconv.FormatInt(a.RepositoryID, 10):
-		return nil, "repository_gone", nil
 	}
 	rs, ok := mirrored(repo)
 	switch {
@@ -160,7 +156,7 @@ func (e *Engine) begin(ctx context.Context, jobID string, a PassArgs, res Result
 		return nil, "", errors.Join(err, errors.New("mirror: the state row is gone after the claim"))
 	}
 	p = &pass{
-		e: e, res: res, id: fence.RepoID, key: repo.Name, fence: fence, args: a, repo: repo, settings: rs, state: st,
+		e: e, res: res, id: fence.RepoID, fence: fence, args: a, repo: repo, settings: rs, state: st,
 		fingerprint: fp, kind: st.PassKind, method: st.PassMethod, done: st.PassDiscoveryDone, deferred: map[string]time.Time{},
 		c: counters{names: st.PassNames, done: st.PassPackagesDone, failed: st.PassPackagesFailed, items: st.PassItemsStored, bytes: st.PassBytesStored},
 		m: e.o.Metrics.of(repo.Name.String()),
@@ -396,7 +392,7 @@ func (p *pass) checkStop(ctx context.Context) bool {
 	if p.isHalted() {
 		return true
 	}
-	repo, err := p.e.o.Repos.ByName(ctx, p.key)
+	repo, err := p.e.o.Repos.ByID(ctx, p.id)
 	switch {
 	case err != nil && notFound(err):
 		p.setHalt(haltMode, nil)
@@ -404,8 +400,6 @@ func (p *pass) checkStop(ctx context.Context) bool {
 		if ctx.Err() == nil {
 			p.fatal(&passError{code: CodeInternal, err: err})
 		}
-	case repo.ID != strconv.FormatInt(p.id, 10):
-		p.setHalt(haltMode, nil)
 	default:
 		p.applySnapshot(ctx, repo)
 	}
