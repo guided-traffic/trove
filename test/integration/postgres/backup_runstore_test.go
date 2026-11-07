@@ -240,7 +240,7 @@ func TestBackupRoleGrants(t *testing.T) {
 		}{
 			{"items", "SELECT", true},
 			{"audit_event", "SELECT", true},
-			{"audit_event", "INSERT", true},
+			{"audit_event", "INSERT", false},
 			{"backup_run", "INSERT", true},
 			{"backup_run", "UPDATE", true},
 			{"backup_blob_pin", "DELETE", true},
@@ -252,6 +252,10 @@ func TestBackupRoleGrants(t *testing.T) {
 			if got := can(c.table, c.priv); got != c.want {
 				t.Errorf("%s on %s = %v, want %v", c.priv, c.table, got, c.want)
 			}
+		}
+		// The backup writes its audit events through the function and not through INSERT (Q-BAK-50).
+		if !scalar[bool](t, admin, "SELECT has_function_privilege($1, 'trove.backup_record_event(text, text, text, text, jsonb)', 'EXECUTE')", role) {
+			t.Error("EXECUTE on backup_record_event() = false, want true")
 		}
 		// A table the owner creates later is readable at once (the monthly audit partitions, R-OPS-015).
 		mustExec(t, admin, "CREATE TABLE trove.zz_later (id int)")
