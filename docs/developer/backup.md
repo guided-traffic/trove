@@ -2,9 +2,8 @@
 
 Status: the contracts of the lane are built (phase 7, first step): the schema, the on-target format, the ports, the run record with
 its lease, the configuration, the command tree, the API operations, the metric families, the audit events and the registries.
-The operations themselves are not all built: `trove backup create|restore` and `trove admin post-restore` are wired and answer
-"not built yet" (exit 1) until their work packages replace the constructors; `list`, `verify`, `delete`, `prune` and
-`trove admin npm reinstate` are built. The
+`create`, `list`, `verify`, `delete` and `prune` are built; the other operations answer "not built yet" (exit 1) until their work
+packages replace the constructors. The
 specification is [backup-and-restore.md](../spec/backup-and-restore.md); the decisions behind the cut are
 [ADR-157](../decisions.md#adr-157--the-backup-lane-is-cut-into-ports-formats-and-registries-that-its-work-packages-fill-in-files-of-their-own)
 and [ADR-158](../decisions.md#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers).
@@ -380,3 +379,40 @@ works only together with the restore package's fix-ups.
   at *t* with `CREATE DATABASE … TEMPLATE` ([journal_ci_twin_test.go](../../test/integration/backup/journal_ci_twin_test.go)); a second
   replay, hand-written forged entries and a replay without a notifier. The restore-level runs (an `npm view` on every replica, a merge
   request pipeline exchanging against the restored installation) are the end-to-end suite's.
+
+## The create pipeline
+
+`trove backup create` is [internal/backup/create](../../internal/backup/create), written against the ports of `internal/backup` and
+`target.Store`; [cmd/trove/backup_create.go](../../cmd/trove/backup_create.go) joins PostgreSQL, the blob store and the S3 target and
+opens the connections when the run starts, with the run's context (a SIGTERM ends it).
+
+| File | Responsibility |
+|---|---|
+| [create.go](../../internal/backup/create/create.go) | `Deps`, `New`, `Create`: facts, grants, the run row, `finish` (completed, warnings, failed, interrupted; audit events; hold and pins released by `Finish`) |
+| [run.go](../../internal/backup/create/run.go) | the phase machine, the snapshot phase with the `all` hold in the `onLocked` callback, cleanup of open uploads and the snapshot |
+| [preflight.go](../../internal/backup/create/preflight.go) | the probe and the encryption check (R-BAK-026), the marker, adoption, the listing that finds the previous backup |
+| [diff.go](../../internal/backup/create/diff.go) | the merge of the referenced set with the previous list: new blob list, pins in batches, the reservoir of the spot check, hold `all` to `pinned` |
+| [export.go](../../internal/backup/create/export.go) | table export with `database.parallel` workers into zstd and a multipart upload, sequences, release of the lock, close of the snapshot |
+| [copy.go](../../internal/backup/create/copy.go) | the blob copy: pages through the pins, server-side or streaming with the digest check, damage versus lost hold, batched pin deletion |
+| [finalize.go](../../internal/backup/create/finalize.go) | the fences, the spot check, the manifest, the pruning stage |
+| [util.go](../../internal/backup/create/util.go) | error classification (R-BAK-013), the rate limiter, a small error group |
+
+The database side: [backup_snapshot.go](../../internal/meta/postgres/backup_snapshot.go) (pgx: the backup role's pool, the shared migration
+lock, `LOCK TABLE`, the snapshot, the export connections, `COPY`, the referenced-blob stream) and the adapters in
+`internal/backup` (`pgsnapshot.go`, `pgfacts.go`, `blobsource.go`) that give it the shapes and exit codes of the ports
+([Q-BAK-23](../spec/backup-and-restore.md#q-bak-23--the-database-half-of-the-snapshot-is-pgx-code-in-internalmetapostgres-its-session-settings-are-startup-parameters-and-the-backup-role-holds-one-pooled-connection)).
+Its queries are [backup_snapshot.sql](../../internal/meta/postgres/queries/backup_snapshot.sql). The collector's side of the hold is in
+[blob/gc.go](../../internal/blob/gc.go) (`claim`, `globalHold`).
+
+The order that matters, with `Deps.Fault` points for tests between the steps: shared migration lock, hold `all` committed
+(`hold-all`), table locks and snapshot (`snapshot`), pins inserted and committed (`pins-committed`), hold `pinned`
+(`hold-pinned`), copy, last pin gone and hold `none` (`copied`), fence (`finalizing`), manifest. A pause at a point is how the
+integration tests hold a run between two steps of R-BAK-007.
+
+Tests: `go test -race ./internal/backup/...` (fakes: an in-memory run store with the fencing, a fake snapshotter, `targettest.Mem`);
+the integration files `test/integration/backup/create_*_test.go` run the pipeline and the real binary against PostgreSQL and the S3
+store: the hold criteria and the property test over random interleavings (`create_hold_test.go`), the snapshot criteria
+(`create_run_test.go`), the copy criteria (`create_copy_test.go`), exit codes, `kill -9` and a second Job (`create_process_test.go`),
+SIGTERM and the backup role (`create_signal_test.go`), and a restore of a backup the pipeline wrote (`create_roundtrip_test.go`).
+The stack's SeaweedFS rejects SSE-S3, so they run with `backup.target.sse.mode: none`. Nothing in the stack is a standby: the refusal
+of a standby is covered by the error mapping unit tests only. The kind drain and crash criteria are the end-to-end suite's.

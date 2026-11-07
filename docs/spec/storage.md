@@ -4708,6 +4708,21 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** A restore must finish at the speed of the store. Revisit if the store reports the full-object SHA-256 of a copy: the sink would compare it, as R-BAK-006 requires of the create run.
 **Applied:** R-BAK-006, R-BAK-021 step 3, R-STOR-047 (the recount after the load); `internal/blob/s3/blobsink.go`.
 
+### Q-STOR-163 · The collector's hold check is part of its claim transaction, and a valid global hold ends a run before its candidates
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the `Hold` hook of the collector and let the composition root set it | Any function decides | Testable with a fake | Nothing sets it; a collector built without it deletes blobs a running backup holds |
+| (b) `BackupBlobHeld` is called by the claim itself, after the reference check and before the state change, as a statement of its own (chosen) | The hook is removed; the early exit reads `BackupGlobalHoldValid` after the interrupted deletions are finished and before the candidates | A collector cannot be built without the check; the order of R-STOR-024 steps 2 and 2b is in one function | The unit tests of the collector's ordering need the database (they already do) |
+
+**Choice:** (b). A dry run counts a held blob as held. `GCResult.holdSkipped` says that a run ended at the early exit. The batch form (`BackupHeldDigests`) is not used: the collector claims one blob per transaction.
+
+**Rationale:** The proof of R-BAK-007 needs only that (2b) starts after (2) of the same blob, which the single transaction gives. The property test of `test/integration/backup/create_hold_test.go` fails when the check is removed. The development agent would revisit this if the collector claims batches in one transaction.
+
+**Applied:** R-STOR-024 step 2b; `internal/blob/gc.go`.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

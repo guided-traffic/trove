@@ -170,6 +170,8 @@ Objects trove writes below `backup.target.prefix`:
   harmless. Without `restored_from`, or with a marker of another lineage, the flag exits `4`. A
   restored installation that shall back up into its predecessor's target sets the value once
   (R-BAK-021 step 9).
+- **Empty prefix only.** The marker is written only on a prefix that holds nothing below `backups/` and `pool/`. A prefix that
+  holds objects there but no marker was not written by this lane, and the run exits `4` (Q-BAK-25).
 - **Separate failure domain.** At start, `create` MUST refuse with exit `2` a target on the same
   endpoint and bucket as the source blob store, unless `backup.target.allow_same_bucket: true`.
   With that setting the two prefixes still must not contain each other. A backup inside the blob
@@ -364,6 +366,10 @@ The export MUST read every table from one snapshot taken after the run's hold is
    SELECT pg_export_snapshot(), clock_timestamp(), current_setting('server_version');
    ```
 
+   - **Session settings.** The three `SET` statements above are the settings of the snapshot and export connections. They
+     travel as startup parameters of those connections, because session-level `SET` is reserved for the migration runner
+     ([architecture.md](architecture.md) R-ARCH-019), and the wait for the migration lock polls `pg_try_advisory_lock_shared`
+     for at most `backup.database.migration_wait` (Q-BAK-23).
    - **Migrations.** `trove migrate` takes the same advisory lock exclusively
      ([ha-and-helm.md](ha-and-helm.md) R-HA-019), so no migration step runs while the database is
      exported, and the export never sees a half-applied migration. A running migration makes the
@@ -727,6 +733,8 @@ Phases of a `create` run:
 - **Spot check.** Before the manifest, the run sends `HeadObject` for `backup.verify_sample`
   random digests of the blob list that it did not copy itself (they come from earlier backups);
   a missing object fails the run with `pool_damaged` and the advice to run `trove backup verify`.
+- **Pruning failure.** The manifest is the commit point. A failure of the pruning phase after it ends the run
+  `completed_with_warnings` with the cause in `result.warnings`, not `failed`; only a run that was taken over stops (Q-BAK-24).
 - **History.** `backup_run` rows older than `backup.run_history` are deleted by the next run.
 - `--json` prints the result object on standard output; the log stream (R-OPS-009) carries one
   record per phase change.
@@ -2386,6 +2394,66 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** A refusing stand-in turns a wrong assumption into a failed restore with a message, which the Job reports and an operator can act on. Revisit when a storage hook enqueues a job.
 **Applied:** R-BAK-008, R-BAK-021 step 7; `internal/app/wire_restore_items.go`, `test/integration/backup/restore_caches_test.go`.
 
+### Q-BAK-23 · The database half of the snapshot is pgx code in `internal/meta/postgres`, its session settings are startup parameters, and the backup role holds one pooled connection
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The `Snapshotter` implemented in `internal/meta/postgres` as the cut said | The pgx file implements the port of `internal/backup` | One file | `internal/meta/postgres` is infrastructure and cannot import the domain package that defines the port, its exit codes and `format.BlobIterator` |
+| (b) `postgres.BackupSnapshot` with plain types in `internal/meta/postgres/backup_snapshot.go`; `backup.PGSnapshotter` adapts it and maps its errors to the exit codes (chosen) | The pgx half knows connections, locks, `COPY` and the catalog; the adapter in `internal/backup` (like `PGStore`) gives it the port's shapes | Layering holds; the snapshot protocol is in one file | Two files for one port |
+
+**Choice:** (b). The session settings of R-BAK-005 step 2 are not issued as `SET` statements: the architecture test reserves session-level `SET` for the migration runner (R-ARCH-019), so `statement_timeout = 0`, `idle_in_transaction_session_timeout = 0` and `lock_timeout = backup.database.lock_timeout` are startup parameters of the snapshot and export connections, and the wait for the migration lock polls `pg_try_advisory_lock_shared(3, 0)` for at most `backup.database.migration_wait` instead of one `pg_advisory_lock_shared` under a 15-minute `lock_timeout` (the same effect, and the wait can name the holder). For the role `backup`, `postgres.Open` opens one pooled connection of class `backup` on the session host (it serves the run row, the heartbeat and the pins) instead of the request and control pools, so a run holds `2 + backup.database.parallel` connections, all named `trove:<pod>:backup`; export connections open on first use. A server in recovery is refused before the pool opens, by a probe with any target session attribute (exit `2`, `pg_is_in_recovery`).
+
+**Rationale:** The criterion "never more than 4 connections of the class `backup`" holds only if the pod's own pool is one of them. The development agent would revisit this if a run needs a second control connection, for example to let the heartbeat bypass a long pin insert.
+
+**Applied:** R-BAK-005; `internal/meta/postgres/backup_snapshot.go`, `db.go`, `internal/backup/pgsnapshot.go`.
+
+### Q-BAK-24 · A failure of the pruning phase after the manifest is a warning of the run, not a failed backup
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The run fails (exit `1`) | Retention and the sweep are part of the run | A broken retention is loud | The Job retries and writes a second, identical backup; the first is complete and stays |
+| (b) `completed_with_warnings`, exit `0`, the cause in `result.warnings` (chosen) | The manifest is the commit point; what follows cannot undo it | No duplicate backups; the API and the UI show the warning | A retention that never works is only a warning, visible on the screen and in the log |
+
+**Choice:** (b). A run that was taken over (`ErrSuperseded`) still stops: it must not delete. The next run prunes again.
+
+**Rationale:** The completeness of a backup does not depend on the pruning (R-BAK-007 safety). The development agent would revisit this if operators report storage growing unnoticed, which would call for an alert on a warning of the pruning phase.
+
+**Applied:** R-BAK-009 (state `pruning`); `internal/backup/create/finalize.go`.
+
+### Q-BAK-25 · A prefix that holds backups or pool objects but no marker is exit 4
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Write the marker whenever it is missing | Any run that finds no marker writes one | Self-healing after a deleted marker | A target someone else filled is claimed silently; two installations with the same prefix and no marker both claim it |
+| (b) Write it only on an empty prefix; a prefix with objects below `backups/` or `pool/` and no marker is exit `4` naming the prefix (chosen) | R-BAK-002's "the first run on an empty prefix writes it" taken literally | A foreign target is never mixed into | An operator who deleted the marker by hand writes it again by hand |
+
+**Choice:** (b).
+
+**Rationale:** The marker is the only guard between two installations on one target (Q-BAK-4 leaves that case to it). The development agent would revisit this if restores of hand-copied targets turn out to be common.
+
+**Applied:** R-BAK-002; `internal/backup/create/preflight.go`.
+
+### Q-BAK-26 · The lease handle serialises a state change with a heartbeat
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave the handle as the contract commit built it | A heartbeat reads the state, then writes fenced on it | No change | A `Transition` or `Fence` that commits between the read and the write makes the heartbeat match no row, which reads as a superseded run: a healthy run cancels itself (found by the integration test of the backup role, once in several runs) |
+| (b) One mutex around a state change (database write and assignment) and around a heartbeat's read and write (chosen) | `Handle.move` | The fence means what R-BAK-010 says | A heartbeat waits for a state change that is a single short statement |
+
+**Choice:** (b).
+
+**Rationale:** The fenced heartbeat is the mechanism that cancels a stalled run; it must not fire for the run's own transitions. A unit test moves the state 400 times against a 1 ms heartbeat. The development agent would revisit this if a transition ever becomes a long operation.
+
+**Applied:** R-BAK-010; `internal/backup/handle.go`, `internal/backup/create/run_test.go`.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated
@@ -2433,6 +2501,11 @@ bytes would be served until the blob is checked (R-STOR-027) or `trove backup ve
 every restore that finds the server-side copy available, whenever someone can write to the pool (H-46); the clients' own digest checks
 (npm integrity, NuGet package hash) catch most of it. Mitigation: Object Lock on the target, and `trove backup verify --deep` before
 a restore whose source is not trusted.
+
+### H-556 · Adopting a target and writing its marker are not atomic on a store without conditional writes
+
+Component: the target marker and `--adopt-target` (R-BAK-002). Subject: the lineage of the backups of an installation. The marker is written with a conditional create where the store supports it; adoption rewrites it after a compare in the process, with a plain write, because the target port has no write conditional on the version of the existing object. Two restored installations that adopt the same target at the same moment can both pass the compare, and the later write wins; the first one's next run then exits `4`. On a store that answers a conditional create with `501`, two installations that start on an empty prefix at the same moment can both write a marker. Live in the MVP only for a drill that restores one backup twice and starts both `create` runs together, or for two installations configured with one empty prefix on such a store; the loser is refused by the marker check before it writes its manifest. Mitigation: start adopting runs one after the other, use a prefix per installation, and run the target on a store with conditional writes.
+
 
 ### H-553 · A journal object can be overwritten with the runtime credential
 

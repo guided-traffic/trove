@@ -36,6 +36,10 @@ type Handle struct {
 	stop   chan struct{}
 	done   chan struct{}
 
+	// move serialises a state change and a heartbeat: the heartbeat is fenced on the state, so one that read the old state
+	// while Transition or Fence already moved the row would match no row and falsely read as a superseded run.
+	move sync.Mutex
+
 	mu         sync.Mutex
 	state      State
 	progress   Progress
@@ -104,6 +108,8 @@ func (h *Handle) Progress() Progress {
 
 // Transition moves the run to the next active state.
 func (h *Handle) Transition(ctx context.Context, to State, backupID string) error {
+	h.move.Lock()
+	defer h.move.Unlock()
 	h.mu.Lock()
 	from := h.state
 	h.mu.Unlock()
@@ -131,6 +137,8 @@ func (h *Handle) SetHold(ctx context.Context, from, to Hold) error {
 // manifest and before every deletion of the pruning phase (R-BAK-010). A run that fails the fence has lost its slot or is
 // about to; it returns [ErrSuperseded] and writes nothing.
 func (h *Handle) Fence(ctx context.Context, to State) error {
+	h.move.Lock()
+	defer h.move.Unlock()
 	h.mu.Lock()
 	from := h.state
 	h.mu.Unlock()
@@ -172,6 +180,7 @@ func (h *Handle) loop(ctx context.Context) {
 			return
 		case <-tk.C:
 		}
+		h.move.Lock()
 		h.mu.Lock()
 		renew := h.ticks != h.seen
 		h.seen = h.ticks
@@ -179,11 +188,13 @@ func (h *Handle) loop(ctx context.Context) {
 		state, p, snap := h.state, h.progress, h.snapshotAt
 		h.mu.Unlock()
 		if !renew && idle >= h.t.Stall {
+			h.move.Unlock()
 			h.log.Error("backup run made no progress", "stall_timeout", h.t.Stall, "run", h.id)
 			h.cancel(ErrStalled)
 			return
 		}
 		err := h.store.Heartbeat(ctx, h.id, state, p, snap, renew, h.t.Lease)
+		h.move.Unlock()
 		switch {
 		case err == nil:
 			failingSince = time.Time{}

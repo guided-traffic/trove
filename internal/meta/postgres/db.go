@@ -75,6 +75,11 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 	db := &DB{cfg: cfg, log: log, instance: instance, role: role, retry: newRetrier(cfg.Retry)}
 	db.retry.metrics = o.metrics
 	var err error
+	if role == meta.RoleBackup {
+		if err := refuseStandby(ctx, cfg, instance); err != nil {
+			return nil, err
+		}
+	}
 	if db.tls, err = newDBTLS(cfg, tlsfiles.WithLogger(log), tlsfiles.WithMetrics(o.tlsMetrics)); err != nil {
 		return nil, err
 	}
@@ -100,16 +105,25 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		idleTime: cfg.Pool.MaxConnIdleTime, healthEach: cfg.Pool.HealthCheckPeriod,
 	}
 
-	ms := common
-	ms.kind, ms.ep, ms.maxConns, ms.minConns = connKind{class: classMain, pooled: pooled}, mainEndpoint(cfg), mainMax, mainMin
-	if db.main, err = pool(ms, poolRequest); err != nil {
-		return nil, err
-	}
-	cs := common
-	cs.kind, cs.ep, cs.maxConns, cs.minConns = connKind{class: classMain, pooled: pooled}, controlEndpoint(cfg), 1, 1
-	if db.control, err = pool(cs, poolControl); err != nil {
-		db.Close()
-		return nil, err
+	if role == meta.RoleBackup {
+		// The backup pod's one pooled connection is its control connection (run row, heartbeat, pins): class backup, on the
+		// session host, shared by the request path and the control path. The snapshot and export connections come on top of
+		// it, so a run holds 2 + backup.database.parallel connections, all named trove:<pod>:backup (R-BAK-005).
+		if err := db.openBackupPool(ctx, common, pool); err != nil {
+			return nil, err
+		}
+	} else {
+		ms := common
+		ms.kind, ms.ep, ms.maxConns, ms.minConns = connKind{class: classMain, pooled: pooled}, mainEndpoint(cfg), mainMax, mainMin
+		if db.main, err = pool(ms, poolRequest); err != nil {
+			return nil, err
+		}
+		cs := common
+		cs.kind, cs.ep, cs.maxConns, cs.minConns = connKind{class: classMain, pooled: pooled}, controlEndpoint(cfg), 1, 1
+		if db.control, err = pool(cs, poolControl); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	if meta.RunsWorkers(role) {
 		ls := common

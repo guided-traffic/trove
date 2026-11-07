@@ -41,9 +41,10 @@ func restoreFile(rel string) bool {
 }
 
 // isolationExempt are the trees R-ARCH-019 lets run at REPEATABLE READ READ ONLY:
-// the backup's snapshot (R-BAK-005) and the grant-index build (R-AUTHZ-028).
+// the backup's snapshot (R-BAK-005, whose pgx half is internal/meta/postgres/backup_snapshot.go) and the grant-index build
+// (R-AUTHZ-028).
 func isolationExempt(rel string) bool {
-	return underAny(rel, []string{"internal/backup", "internal/authz"})
+	return underAny(rel, []string{"internal/backup", "internal/authz", "internal/meta/postgres/backup_snapshot.go"})
 }
 
 // sqlBuilders are the only places that assemble SQL text at run time: the
@@ -51,7 +52,7 @@ func isolationExempt(rel string) bool {
 // referencing columns from the catalog (R-STOR-024 rule 3). A file is listed by
 // exact path; the builder by its tree.
 func sqlBuilders() (trees, files []string) {
-	return []string{"internal/meta/postgres/listq"}, []string{"internal/meta/postgres/blobrefs.go", "internal/meta/postgres/backup_load.go", "internal/meta/postgres/backup_restore_state.go"}
+	return []string{"internal/meta/postgres/listq"}, []string{"internal/meta/postgres/blobrefs.go", "internal/meta/postgres/backup_load.go", "internal/meta/postgres/backup_restore_state.go", "internal/meta/postgres/backup_snapshot.go"}
 }
 
 // sqlStatementStart matches the start of a statement in a literal: the start of

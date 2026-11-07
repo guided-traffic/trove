@@ -54,8 +54,35 @@ The hold keeps garbage collection from deleting a blob a running `create` still 
 backup is complete whatever the hold did, because the manifest is written only after every listed digest is confirmed in the pool
 (R-BAK-007). A hold counts only while its lease is valid, so a dead run's hold ends by itself. Verified in this repo: the integration
 test [backup_runstore_test.go](../../test/integration/postgres/backup_runstore_test.go) shows that an expired lease ends the hold and
-the pins and that a pin holds only its digest. Not verified, because the collector does not call the check yet: that a collection run
-keeps a held blob live.
+the pins and that a pin holds only its digest. Verified in this repo with the real collector, PostgreSQL and S3:
+[create_hold_test.go](../../test/integration/backup/create_hold_test.go) shows that with a grace period of 0 a pinned blob stays live while
+the run copies it and goes at the next collection, that a collection run ends at once under a global hold, that a run stalled past its
+lease loses the hold and then fails with `hold_lost` without a manifest, and, over random interleavings of uploads, deletes,
+collections and runs, that no completed backup lacks a listed digest in its pool (the test fails when the collector's check is
+removed). Not verified: the proof for a collector that claims batches in one transaction, which this collector does not do.
+
+## What a create run does to the source
+
+The run reads the whole database in one `REPEATABLE READ READ ONLY` snapshot that it takes after the `all` hold has committed
+([backup_snapshot.go](../../internal/meta/postgres/backup_snapshot.go)): the shared migration lock first, so no migration step runs while
+the database is exported; then `ACCESS SHARE` on every table of the catalog before the first `SELECT`, which keeps `TRUNCATE` and
+a rewriting `ALTER TABLE` from outside the runner away from the snapshot. The snapshot and the lock end with the last table, not
+with the blob copy. Every connection of the run is named `trove:<pod>:backup` and goes to the session host; a standby is refused.
+The statements assemble identifiers from the catalog with `pgx.Identifier`, never a value. The role writes only `backup_run`,
+`backup_blob_pin` and `audit_event` ([R-BAK-015](../spec/backup-and-restore.md#r-bak-015--credentials-and-privileges-of-the-backup-role)).
+
+The target marker keeps a run from writing into another installation's target: it is read at the start and again before the
+manifest, a mismatch is exit `4`, and a prefix with backups and no marker is refused as well. The marker is written only on an
+empty prefix; adopting a restored installation's target is a compare in the process followed by a write
+([H-556](../spec/backup-and-restore.md#h-556--adopting-a-target-and-writing-its-marker-are-not-atomic-on-a-store-without-conditional-writes)).
+A streamed blob is hashed before it becomes a pool object; a blob that does not hash to its digest is recorded as damaged and is
+never copied. A blob copied inside the store is confirmed by size and, where the store reports one, its SHA-256.
+
+Verified in this repo: [create_run_test.go](../../test/integration/backup/create_run_test.go) (connection count, lock timeout, the
+rewrite refused during the export, the migration lock, partitioned `audit_event`),
+[create_signal_test.go](../../test/integration/backup/create_signal_test.go) (the grants of the role, SIGTERM) and
+[create_process_test.go](../../test/integration/backup/create_process_test.go) (the command's exit codes, `kill -9`). Not verified:
+a standby (the stack has none; the mapping is unit tested) and the Kubernetes behaviour of the Job.
 
 ## The revocation journal
 
@@ -191,4 +218,5 @@ The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--bac
 - [H-564](../spec/ha-and-helm.md#h-564--the-platform-check-reads-settings-not-outcomes): the platform check reads settings, not outcomes.
 - [H-565](ci-federation.md#h-565--a-replayed-disable-of-a-configuration-declared-ci-issuer-is-undone-by-trove-migrate-when-the-restore-runs-with-an-older-configuration): a replayed disable of a configuration-declared CI issuer is undone by `trove migrate` when the restore runs with an older configuration.
 - [H-555](../spec/backup-and-restore.md#h-555--the-run-history-is-only-as-trustworthy-as-the-backup-role): the run history is only as trustworthy as the backup role.
+- [H-556](../spec/backup-and-restore.md#h-556--adopting-a-target-and-writing-its-marker-are-not-atomic-on-a-store-without-conditional-writes): adopting a target and writing its marker are not atomic on a store without conditional writes.
 - [H-558](../spec/backup-and-restore.md#h-558--a-server-side-copy-into-the-blob-store-is-checked-by-size-not-by-content): a server-side copy into the blob store is checked by size, not by content.

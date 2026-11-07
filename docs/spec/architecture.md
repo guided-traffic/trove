@@ -9283,6 +9283,21 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The restore pod must reach the format hooks without becoming a replica. Revisit when a second command needs the item store headless: the constructor would then move into a shared headless composition.
 **Applied:** R-BAK-008, R-BAK-021 step 7, R-BAK-022; `internal/app/wire_restore_items.go`, `wire_formats.go` (`formatPorts` takes the NuGet job interface), `cmd/trove/backup_restore.go`, `internal/backup/restore/restore.go`.
 
+### Q-ARCH-343 · Ports of the backup lane that need the driver are adapted in `internal/backup`, and two files are named exceptions of the SQL rules
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Loosen the layer rule so that `internal/meta/postgres` may import `internal/backup` | The adapter sits beside the driver code | One place | The infrastructure layer would import a domain package; R-ARCH-002 exists to forbid it |
+| (b) Plain types in the infrastructure file; adapters (`PGSnapshotter`, `PGFacts`, `StoreSource`) in `internal/backup` (chosen), and `backup_snapshot.go` listed beside `blobrefs.go` as a file that assembles SQL from catalog names and as an exempt tree of the REPEATABLE READ rule | The pattern of `PGStore` | The rules stay; the exceptions are two exact file names | A new exception for the architecture test |
+
+**Choice:** (b). The `COPY (SELECT ...)` statements and the `LOCK TABLE` list are assembled from catalog names with `pgx.Identifier`, never from a value; the snapshot transaction is the stated exception of R-ARCH-019.
+
+**Rationale:** Only the backup's snapshot needs either. The development agent would revisit this if a second file needs REPEATABLE READ.
+
+**Applied:** `internal/archtest/sqlrules.go` (`isolationExempt`, `sqlBuilders`); `internal/backup/pgsnapshot.go`, `pgfacts.go`, `blobsource.go`.
+
 ## What this does not cover
 
 

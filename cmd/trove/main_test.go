@@ -73,7 +73,7 @@ func TestMigrate(t *testing.T) {
 			t.Fatal(err)
 		}
 		// A refused connection: the runner reports it after the retry bound.
-		env := baseEnv("TROVE_DATABASE_USERNAME_FILE="+user, "TROVE_DATABASE_PASSWORD_FILE=", "TROVE_DATABASE_HOST=127.0.0.1", "TROVE_DATABASE_PORT=1", "TROVE_DATABASE_RETRY_MAX_ELAPSED=1s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=0s",
+		env := baseEnv("TROVE_DATABASE_USERNAME_FILE="+user, "TROVE_DATABASE_PASSWORD_FILE=", "TROVE_DATABASE_HOST=127.0.0.1", "TROVE_DATABASE_PORT=1", "TROVE_DATABASE_RETRY_MAX_ELAPSED=2s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=1s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=0s",
 			"TROVE_DATABASE_SSL_MODE=disable", "TROVE_DATABASE_ALLOW_INSECURE=true")
 		for _, args := range [][]string{{"migrate"}, {"migrate", "up"}, {"migrate", "status"}} {
 			code, _, stderr := runCmd(t, env, append(args, "--config", cfg)...)
@@ -149,20 +149,6 @@ func TestDispatch(t *testing.T) {
 func TestBackupCommands(t *testing.T) {
 	id := "20261028T020000Z-7f3a"
 	env := baseEnv("TROVE_BACKUP_TARGET_BUCKET=backups")
-	cases := []struct {
-		name string
-		args []string
-	}{
-		{"create", []string{"create", "--trigger", "schedule", "--no-prune"}},
-	}
-	for _, c := range cases {
-		t.Run("R-BAK-013 "+c.name+" is wired and, until its work package lands, fails with exit 1 saying so", func(t *testing.T) {
-			code, _, stderr := runCmd(t, env, append([]string{"backup"}, c.args...)...)
-			if code != 1 || !strings.Contains(stderr, "not built yet") {
-				t.Fatalf("code %d stderr %q", code, stderr)
-			}
-		})
-	}
 	t.Run("R-BAK-020 restore builds its collaborators first: a key ring that does not load is exit 2 naming the file", func(t *testing.T) {
 		code, _, stderr := runCmd(t, env, "backup", "restore", id, "--check", "--skip-revocation-journal")
 		if code != 2 || !strings.Contains(stderr, "2026-10.key") {
@@ -182,6 +168,12 @@ func TestBackupCommands(t *testing.T) {
 			}
 		}
 	})
+	t.Run("R-BAK-013 create with a database it cannot reach is exit 75", func(t *testing.T) {
+		code, _, stderr := runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=backups", "TROVE_DATABASE_RETRY_MAX_ELAPSED=2s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=1s"), "backup", "create", "--trigger", "schedule", "--no-prune")
+		if code != 75 {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
 	t.Run("R-BAK-011 a configuration error is exit 2 and names the key", func(t *testing.T) {
 		code, _, stderr := runCmd(t, baseEnv(), "backup", "list")
 		if code != 2 || !strings.Contains(stderr, "backup.target.bucket") {
@@ -199,8 +191,8 @@ func TestBackupCommands(t *testing.T) {
 		if code != 2 || !strings.Contains(stderr, "backup.target.bucket") {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
-		code, _, stderr = runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=blobs", "TROVE_BACKUP_TARGET_ALLOW_SAME_BUCKET=true", "TROVE_BACKUP_TARGET_PREFIX=bk"), "backup", "create")
-		if code != 1 {
+		code, _, stderr = runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=blobs", "TROVE_BACKUP_TARGET_ALLOW_SAME_BUCKET=true", "TROVE_BACKUP_TARGET_PREFIX=bk", "TROVE_DATABASE_RETRY_MAX_ELAPSED=2s", "TROVE_HEALTH_DATABASE_OUTAGE_GRACE=1s"), "backup", "create")
+		if code != 75 {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
 	})

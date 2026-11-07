@@ -16,7 +16,6 @@ import (
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
-	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/outbound"
 )
 
@@ -53,29 +52,6 @@ func openRunDB(ctx context.Context, env *backupEnv) (*postgres.DB, error) {
 		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, err)
 	}
 	return db, nil
-}
-
-// dbFacts reads the identity facts and the restore marker the delete runs check. SchemaBehind is not checked here: a delete
-// run does not read the schema.
-type dbFacts struct{ db *postgres.DB }
-
-func (f dbFacts) SystemFacts(ctx context.Context) (backup.SystemFacts, error) {
-	sf, err := f.db.SystemFacts(ctx)
-	if err != nil {
-		return backup.SystemFacts{}, err
-	}
-	out := backup.SystemFacts{InstallationID: sf.InstallationID, Incarnation: sf.Incarnation}
-	err = f.db.Read(ctx, func(c q.DBTX) error {
-		_, err := q.New(c).GetSystemState(ctx, "restore_in_progress")
-		switch {
-		case err == nil:
-			out.RestoreInProgress = true
-		case postgres.IsNoRows(err):
-			return nil
-		}
-		return err
-	})
-	return out, err
 }
 
 // auditDeleted writes system.backup.deleted in a transaction of its own, as the actor system:backup.
@@ -116,7 +92,7 @@ func newRetentionRunner(env *backupEnv) (*retention.Runner, error) {
 	b := env.cfg.Backup
 	stage := &retention.Stage{
 		Store: t, Layout: layout, Policy: retention.Policy{KeepLast: b.Retention.KeepLast, KeepWithin: b.Retention.KeepWithin},
-		SweepInterval: b.Retention.SweepInterval, Facts: dbFacts{db}, Audit: auditDeleted{db: db, rec: rec},
+		SweepInterval: b.Retention.SweepInterval, Facts: backup.NewPGFacts(db, env.cfg.Database.Schema), Audit: auditDeleted{db: db, rec: rec},
 		Clock: retention.RunSweepClock{Runs: store}, Log: env.log,
 	}
 	return &retention.Runner{

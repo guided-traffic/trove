@@ -45,6 +45,9 @@ type GCResult struct {
 	BytesReclaimed int64 `json:"bytesReclaimed"`
 	Errors         int   `json:"errors"`
 	Paused         bool  `json:"paused,omitempty"`
+	// HoldSkipped is a run that found a valid global hold of a running backup before it claimed its candidates and ended
+	// without them (R-BAK-007 "Skipping a run").
+	HoldSkipped bool `json:"holdSkipped,omitempty"`
 }
 
 // RunOptions are the parameters of one run.
@@ -74,10 +77,6 @@ type Collector struct {
 	// Paused reports the deletion pause of R-HA-025. The default reads the
 	// system_state key deletions_paused_at.
 	Paused func(ctx context.Context) (bool, error)
-	// Hold reports whether a running backup holds the digest (R-STOR-024 step
-	// 2b). It runs inside the claim transaction, after the reference check. A
-	// nil Hold holds nothing.
-	Hold func(ctx context.Context, tx meta.Tx, d Digest) (bool, error)
 	// Fault is a test hook called at named points of a run. A non-nil error ends
 	// the run at once as if the process had been killed there: no hand-over, no
 	// bookkeeping. It returns ErrFault wrapped.
@@ -190,8 +189,13 @@ func (c *Collector) Run(ctx context.Context, o RunOptions) (res GCResult, err er
 			return r.res, err
 		}
 	}
-	if err = r.candidates(ctx); err != nil || r.res.Paused {
+	if r.res.HoldSkipped, err = r.globalHold(ctx); err != nil {
 		return r.res, err
+	}
+	if !r.res.HoldSkipped {
+		if err = r.candidates(ctx); err != nil || r.res.Paused {
+			return r.res, err
+		}
 	}
 	if !o.DryRun {
 		err = r.settle(ctx)
@@ -207,6 +211,27 @@ func (r *run) fault(point string) error {
 		return fmt.Errorf("%w at %s: %w", ErrFault, point, err)
 	}
 	return nil
+}
+
+// globalHold reports a valid 'all' hold of a running backup (R-BAK-007 "Skipping a run"). It is an optimisation only: the
+// per-blob check in claim still guards the race, so a hold that starts right after this read costs nothing in safety.
+func (r *run) globalHold(ctx context.Context) (bool, error) {
+	var held bool
+	err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		held, err = qs.BackupGlobalHoldValid(ctx)
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("read the backup hold: %w", err)
+	}
+	if held {
+		r.c.log.Info("garbage collection skips its candidates: a running backup holds every blob")
+	}
+	return held, nil
 }
 
 // paused reads the deletion pause before a batch of state changes.
@@ -350,7 +375,7 @@ func (r *run) process(ctx context.Context, batch []candidate) error {
 
 func (r *run) dryRun(ctx context.Context, batch []candidate, refs *postgres.BlobRefs) error {
 	for _, cand := range batch {
-		var ref, live bool
+		var ref, live, held bool
 		var size int64
 		err := r.c.db.InTx(ctx, func(tx meta.Tx) error {
 			qs, err := queries(tx)
@@ -366,13 +391,18 @@ func (r *run) dryRun(ctx context.Context, batch []candidate, refs *postgres.Blob
 				return nil
 			}
 			size = rows[0].Size
-			ref, err = refs.Referenced(ctx, tx, cand.digest.Bytes())
+			if ref, err = refs.Referenced(ctx, tx, cand.digest.Bytes()); err != nil || ref {
+				return err
+			}
+			held, err = qs.BackupBlobHeld(ctx, cand.digest.Bytes())
 			return err
 		})
 		if err != nil {
 			return err
 		}
-		if live && !ref {
+		if live && !ref && held {
+			r.res.Held++
+		} else if live && !ref {
 			r.res.Deleted++
 			r.res.BytesReclaimed += size
 		} else {
@@ -424,15 +454,18 @@ func (r *run) claim(ctx context.Context, cand candidate, refs *postgres.BlobRefs
 		if ref {
 			return dequeue()
 		}
-		if r.c.Hold != nil {
-			held, err := r.c.Hold(ctx, tx, cand.digest)
-			if err != nil {
-				return err
-			}
-			if held {
-				out = outHeld
-				return nil
-			}
+		// Step (2b): a separate statement after the reference check (R-STOR-024, R-BAK-007). A held blob stays live and keeps
+		// its queue entry.
+		held, err := qs.BackupBlobHeld(ctx, cand.digest.Bytes())
+		if err != nil {
+			return err
+		}
+		if err := r.fault("claim:held-checked"); err != nil {
+			return err
+		}
+		if held {
+			out = outHeld
+			return nil
 		}
 		if err := qs.ClaimBlob(ctx, cand.digest.Bytes()); err != nil {
 			return err
