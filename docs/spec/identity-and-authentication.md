@@ -2935,7 +2935,9 @@ the grants that policies give that principal ([authorization.md](authorization.m
 
 **Hard limits.** These hold regardless of policies:
 
-- `anonymous` never passes unsafe methods on `/api/v1/…`;
+- `anonymous` never passes unsafe methods on `/api/v1/…`, read on the unescaped path the router routes by, so
+  `POST /api/v%31/…` is refused like `POST /api/v1/…`; the always-open routes below are matched on the path as
+  received, so an escape never opens one;
 - it never holds an administration role or system scope;
 - it cannot call token, session, profile or settings endpoints (401).
 
@@ -2978,7 +2980,7 @@ Acceptance criteria:
   gets 200. `curl -si https://trove.test/api/npm/web/no-such-repo/lodash` and
   `curl -si https://trove.test/api/npm/no-such-project/npm-all/lodash` get 401, not 404.
 - `curl -X POST https://trove.test/api/v1/projects/web/repositories` without credentials gets 401 even if
-  a policy grants `anonymous` `manage`.
+  a policy grants `anonymous` `manage`, and so does `curl -X POST https://trove.test/api/v%31/projects/web/repositories`.
 
 ### R-AUTH-038 · Brute-force protection and rate limiting
 Priority: **MVP** · Covers: IAM-042, ADMAPI-012, ADMAPI-050
