@@ -513,6 +513,9 @@ func (s *Server) listRepositories(w http.ResponseWriter, r *http.Request, projec
 	}
 	f.IncludeDeleting = own.global || own.anyOwned()
 	rows, err := s.visibleRepositories(ctx, acc, svc, f, own, view == "full")
+	if err == nil && project != "" && len(rows) == 0 {
+		err = s.projectSeen(ctx, acc, svc, project, own)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -524,6 +527,49 @@ func (s *Server) listRepositories(w http.ResponseWriter, r *http.Request, projec
 		return
 	}
 	WritePage(w, r, MapPage(page, func(st repository.Stored) any { return toSummary(base, st, own.sees(st.Repository.Name.Project)) }))
+}
+
+// projectSeen decides the empty list of a project's repositories (R-REPO-012) as hideProject decides a refusal
+// (R-AUTHZ-016): 404 for a project that does not exist, and for one the caller cannot see, so that the answer tells
+// the two apart for nobody. A caller sees the project when it holds projects:read or repositories:read-config, is a
+// member of it (as far as its token's scope reaches, Q-AUTHZ-215), or reads one of its repositories whatever the
+// filters and the cursor of the request; to the others the project answers like an unknown one. It runs only for an
+// empty page, so a list that shows a repository costs nothing more.
+func (s *Server) projectSeen(ctx context.Context, acc *edge.Access, svc *repository.Service, project string, own *configScope) error {
+	missing := errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", project))
+	sees := own.global || own.owned[project]
+	if !sees {
+		held, err := s.holds(ctx, string(authz.ProjectsRead))
+		if err != nil {
+			return err
+		}
+		sees = held
+	}
+	if pa, ok := s.o.Access.(ProjectAccess); ok && !sees {
+		members, err := pa.Memberships(ctx)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			sees = sees || m.Key == project
+		}
+	}
+	if sees {
+		// The index of the request holds every project, so a member and a holder of a capability learn whether it
+		// exists on the same index their decisions are made on.
+		if acc == nil || !acc.Index().HasProject(project) {
+			return missing
+		}
+		return nil
+	}
+	rows, err := s.visibleRepositories(ctx, acc, svc, repository.ListFilter{Project: project}, own, false)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return missing
+	}
+	return nil
 }
 
 // configScope is what the caller sees of the configuration: all of it with repositories:read-config, otherwise
@@ -896,7 +942,8 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, projec
 // MoveRepository implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move (R-REPO-060, Q-REPO-217):
 // the address of the repository changes, its content does not. The declaration admits the holder of
 // repositories:write-config and an Owner of the source project; the second must own the target as well
-// (checkMoveTarget). The answer is the document at the new address.
+// (checkMoveTarget) and is restricted: a key selector of a global policy keeps it from moving the repository
+// (Q-REPO-232). The answer is the document at the new address.
 func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string) {
 	svc, err := s.projects()
 	var rs *repository.Service
@@ -911,13 +958,14 @@ func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectK
 		err = errs.E(errs.Invalid, errs.CodeValidation, "The target project is not a project key.",
 			errs.WithFields(errs.FieldError{Pointer: "/project", Code: "invalid_key", Detail: "must be a project key"}))
 	}
+	var restricted bool
 	if err == nil {
-		err = s.checkMoveTarget(r, in.Project)
+		restricted, err = s.checkMoveTarget(r, in.Project)
 	}
 	var to qname.Repo
 	var epoch int64
 	if err == nil {
-		to, epoch, err = svc.MoveRepository(r.Context(), caller(r), qname.Repo{Project: projectKey, Key: repoKey}, in.Project)
+		to, epoch, err = svc.MoveRepository(r.Context(), caller(r), qname.Repo{Project: projectKey, Key: repoKey}, in.Project, restricted)
 	}
 	var st repository.Stored
 	if err == nil {
@@ -934,31 +982,32 @@ func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectK
 }
 
 // checkMoveTarget is the second half of the move's permission: the holder of repositories:write-config moves to
-// any project; an Owner of the source project must own the target as well. A target project the caller is no
-// member of answers like a missing one (404), a member whose role is below Owner 403 (R-REPO-060).
-func (s *Server) checkMoveTarget(r *http.Request, target string) error {
+// any project; an Owner of the source project must own the target as well, and is restricted (Q-REPO-232). A
+// target project the caller is no member of answers like a missing one (404), a member whose role is below Owner
+// 403 (R-REPO-060).
+func (s *Server) checkMoveTarget(r *http.Request, target string) (restricted bool, err error) {
 	ctx := r.Context()
 	held, err := s.holds(ctx, "repositories:write-config")
 	if err != nil || held {
-		return err
+		return false, err
 	}
 	refused := errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	pa, ok := s.o.Access.(ProjectAccess)
 	if !ok {
-		return refused
+		return true, refused
 	}
 	owns, err := pa.Owns(ctx, target)
 	if err != nil || owns {
-		return err
+		return true, err
 	}
 	members, err := pa.Memberships(ctx)
 	if err != nil {
-		return err
+		return true, err
 	}
 	for _, m := range members {
 		if m.Key == target {
-			return refused
+			return true, refused
 		}
 	}
-	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", target))
+	return true, errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", target))
 }

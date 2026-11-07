@@ -37,9 +37,9 @@ project's objects inside it. It does not repeat the model of permissions ([permi
 ## What a role grants, and through which credential
 
 - **The role is decided, not stored as a grant.** The index keeps every membership row by principal
-  ([index.go](../../internal/authz/index.go), `addProjects`). A decision derives the subject's roles once from its user ID and its
-  group IDs, the highest per project ([project.go](../../internal/authz/project.go), `projectRoles`), and looks the repository's
-  project up in them ([decide.go](../../internal/authz/decide.go), `grantedBy`). The role's actions join the policy grants as one more
+  ([index.go](../../internal/authz/index.go), `addProjects`) and by project. A decision reads the subject's role in the one project of
+  the repository it decides, the highest over its user ID and its group IDs ([project.go](../../internal/authz/project.go), `roleOf`;
+  [decide.go](../../internal/authz/decide.go), `evalState.roleIn` in `grantedBy`). The role's actions join the policy grants as one more
   source, `role:<projectKey>:<role>`, so the refusal and audit of a decision are the same as for a grant. On a virtual repository a role
   has the effect of `read` and `manage` only, as a grant does (R-AUTHZ-009).
 - **Credentials.** A role reaches a user's UI session and personal access tokens; a token's scope is the ceiling over it as over a
@@ -47,6 +47,13 @@ project's objects inside it. It does not repeat the model of permissions ([permi
   The administration of an Owner needs a session or a token with `admin: true` (`mayAdminister`); through any other credential an Owner
   holds what a Maintainer holds, which is what `RoleOn` and `MembershipsOn` answer. A leaked everyday token of an Owner reads and writes
   content within its scope and changes no member, policy or setting.
+- **What a token sees of its projects.** The scope also bounds the role outside the content: `MembershipsOn` and `RoleOn` answer a
+  token only for the projects its scope reaches (`scopeReachesProject` in [project.go](../../internal/authz/project.go)): every
+  membership for no scope (a session), `inherit`, `admin: true` or the system item `projects:read`; otherwise the projects one of its
+  repository elements names (a key of the project, a pattern whose project glob matches it, or a class, which names every project),
+  whatever the element's actions. The project list, `GET /projects/{projectKey}`, its members, `/authz/me` and the 404 of a hidden
+  project all read these memberships, so a token scoped to one repository's `deploy` does not read its owner's other projects and their
+  members; to them it is no member, so their routes answer 404 (`TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope`).
 - **Who is never a member.** A service account, a CI mapping, a Bastion registration and `anonymous` carry no role
   (`carriesRoles`). The member write refuses every principal but a user or a group, and an auto-join group, with 422
   `principal_not_allowed` ([members.go](../../internal/project/members.go)); the table refuses a principal of another kind
@@ -56,15 +63,21 @@ project's objects inside it. It does not repeat the model of permissions ([permi
   membership carries the role, or the user for its own membership ([ownership.go](../../internal/authz/ownership.go), `roleClaimers`,
   R-AUTHZ-018 rule 2). A role is never an owner identity of its own, so a member who leaves the project keeps owning what it published
   through its own membership.
-- **Cost.** The derivation reads a map entry per user and group ID and merges per membership; nothing depends on the number of projects
-  of the installation and nothing is queried (`TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`).
+- **Cost.** A decision reads a map entry of the repository's project per user and group ID and allocates nothing for the role; nothing
+  depends on the number of projects of the installation or of the subject's memberships, and nothing is queried; a listing decides every
+  key on one state derived from the subject (`ReadableOn`) (`TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`,
+  `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheMemberships`, `TestR_AUTHZ_015_AListingDerivesTheSubjectOnce`). Only `MembershipsOn`,
+  which lists them, walks the subject's memberships (`projectRoles`).
 
 ## The members and the last Owner
 
 - The writes run under the project's row lock ([members.go](../../internal/project/members.go), `lockProject`). A write that would take
   the role `owner` from the last membership with it (a group counts as one, whatever its members) answers 409 `last_owner` unless the
   caller holds `projects:write` ([Q-AUTHZ-217](../spec/authorization.md#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
-  Two Owners who remove each other at once run one after the other, and the second is refused.
+  Two Owners who remove each other at once run one after the other: one removal commits and one Owner remains. The second request
+  is refused as what its caller then is: 409 `last_owner` while the index it is decided on still holds the caller's role, the 404
+  of a non-member once its own removal is in force there. The member write does not read the caller's role again under the lock,
+  like every write decided on its request's index (R-AUTHZ-028).
 - Every member write notifies the change area `authz` in its transaction, so the role takes effect or ends on every replica within the
   bound of R-AUTHZ-028. An addition records `authz.project.member_added`; a change and a removal record `member_changed` and
   `member_removed` with the journal entry of R-AUTHZ-031 (the project and the principal by ID, the roles of a change), so a restore
@@ -102,13 +115,25 @@ refused with 409 `repository_in_use`, the member `references` listing each objec
 project names the repository: a virtual repository's member list, pin rule or deployment target, a key selector of a project policy, an
 inline grant of a project CI mapping that names its key; a virtual repository moves only without members and deployment target. A
 shared ownership domain, which R-REPO-060 counts as well, cannot be set yet (`ownershipDomain` is 422 `not_applicable`). A
-target that holds the key, also by a repository being deleted, is 409 `already_exists`. Nothing is rewritten on the caller's behalf,
+target that holds the key, also by a repository being deleted, is 409 `already_exists`. The references are read under the row locks
+the writers of those objects take as well: a policy write binds its key selectors in its own transaction, the project's row and then
+the repository's FOR SHARE (`bindKeySelectors` in [store.go](../../internal/authz/store.go)), and a virtual repository's write its
+members FOR SHARE, so a write that names the repository runs before the move, which then sees it, or after it, when the key no longer
+names it. The database holds the same rule for every writer (SQLSTATE `AI007`, migration 00024): a repository its project holds by ID
+does not change its project, and a project policy's key selector names a repository of its own project. Nothing is rewritten on the caller's behalf,
 so no grant or resolution changes behind the back of the people who wrote those objects. The move notifies `authz` and `repo_config`
 with the repository's ID and raises its `config_version`, so the old address answers 404 and every cache keyed by the configuration
-version drops what it built, on every replica within the bound of R-AUTHZ-028; it records `repository.moved` with the journal entry of
-R-AUTHZ-031. What holds the repository by its ID outside the project (a key selector of a global policy, an exposure rule) follows it.
+version drops what it built, on every replica within the bound of R-AUTHZ-028; it records `repository.moved` in the source project with
+the journal entry of R-AUTHZ-031, and `repository.moved_in` in the target project, so the audit of each project shows the move
+([Q-REPO-233](../spec/repositories-and-proxy.md#q-repo-233--a-move-is-recorded-in-the-audit-of-both-projects)). What holds the repository by its ID outside the project (a key selector of a global policy, an exposure rule) follows it.
 Who may move is the API's decision: `repositories:write-config`, or an Owner of both projects (403 for a member with a lower role in
-the target, 404 for a caller that is no member there).
+the target, 404 for a caller that is no member there). The Owner's move is restricted (`checkMoveTarget` in
+[repositories_api.go](../../internal/api/v1/repositories_api.go) passes `restricted`): while a key selector of a global policy names
+the repository it is refused as well, with the reference `{"kind": "global_policy", "name": "<policy>"}` (`globalReferences`,
+[Q-REPO-232](../spec/repositories-and-proxy.md#q-repo-232--an-owners-move-is-refused-while-a-global-policy-names-the-repository-by-key)),
+so an administrator's grant never follows the repository into a project whose other Owners cannot see or remove it. The answer names
+the global policy to an Owner who may not read it, and nothing of its entries. An exposure rule follows without a refusal: it is a
+ceiling and grants nothing.
 
 ## Remote repositories of a project
 

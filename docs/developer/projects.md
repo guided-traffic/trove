@@ -17,13 +17,18 @@ remote repositories are applied by the repository service to a `Restricted` call
 - **A member is a user or a group with one role.** `reader < developer < maintainer < owner` (`authz.ProjectRole`), each holding
   what the one before holds. A user's role in a project is the highest over its own row and its groups' rows. Service accounts, CI
   mappings, Bastion registrations, `anonymous`, `authenticated` and auto-join groups are never members.
-- **A role is decided, never stored as a grant.** The index keeps the membership rows by principal; a decision derives the subject's
-  roles once (`Index.projectRoles`, in `newEvalState`) and `grantedBy` adds the source `role:<projectKey>:<role>` when the role's
+- **A role is decided, never stored as a grant.** The index keeps the membership rows by principal and by project; a decision reads
+  the subject's role in the repository's project only (`evalState.roleIn`, `projectInfo.roleOf`: a map lookup per user and group ID,
+  no allocation; `newEvalState` notes once whether the subject is a member anywhere, `Index.isMember`), so neither a decision nor
+  `ReadableOn`, which decides every key on one state, grows with the subject's memberships; `grantedBy` adds the source `role:<projectKey>:<role>` when the role's
   actions (`roleActions`: `read` and `manage` only on a virtual repository) hold the action. The token scope intersects it like a
   grant (`allowedAction`); content:metadata-read, ownership claims (`roleClaimers`) and listings (`readShape`) see it too.
 - **The credential decides the administration.** `RoleOn`, `OwnsOn` and `MembershipsOn` answer the role in force for the credential:
   an Owner through a token without `admin: true` is a Maintainer there (`inForce`), so a declaration `projectRole: owner` refuses it.
-  Content decisions give the Owner's and the Maintainer's actions alike.
+  Content decisions give the Owner's and the Maintainer's actions alike. `MembershipsOn` and `RoleOn` answer a token only for the
+  projects its scope reaches (`scopeReachesProject`: no scope, `inherit`, `admin: true`, the system item `projects:read`, or a
+  repository element whose selector names the project, `selector.coversProject`), so every reader of the memberships (the project
+  list, `projectRole: reader`, `hideProject`, `/authz/me`) narrows alike (Q-AUTHZ-215).
 - **Two selector contexts.** A global policy, a token scope, the system CI tier and an exposure rule name `<project>/<key>`,
   `<projectGlob>/<keyGlob>[:format]` or a class (`@any…`); a project policy, a project CI tier, a virtual repository's members and
   deployment target a bare key, a bare key glob or a class. `authz.ValidateSelectorIn(text, project)` validates either; its error wraps
@@ -35,7 +40,8 @@ remote repositories are applied by the repository service to a `Restricted` call
 - **The last Owner.** The member writes take the project's row lock and refuse to take `owner` from the last membership with it
   unless the caller holds `projects:write` (the handler passes `bypassLastOwner`).
 - **A move refuses, it never rewrites.** Anything of the source project that names the repository refuses it with
-  `repository_in_use` and the list of references.
+  `repository_in_use` and the list of references; for a restricted caller (an Owner without `repositories:write-config`, the
+  handler passes `restricted`) a key selector of a global policy as well (`global_policy`, Q-REPO-232).
 
 ## The contracts
 
@@ -48,7 +54,7 @@ remote repositories are applied by the repository service to a `Restricted` call
 | [internal/authz/index.go](../../internal/authz/index.go), [source.go](../../internal/authz/source.go) | `Snapshot.Projects`, `Snapshot.ProjectMembers`; `projectInfo{members, sources}`, `Index.memberships` (by principal), `repoInfo.proj`; the build skips a member row of another kind than user or group and an auto-join group |
 | [internal/authz/selector.go](../../internal/authz/selector.go) | `ValidateSelector` (instance), `ValidateSelectorIn(text, project)`, `SelectorProblemCode`; `selector.text` and `instanceText` (the CI exchange's items in the grammar of an instance context) |
 | [internal/authz/policy.go](../../internal/authz/policy.go), [store.go](../../internal/authz/store.go), [validate.go](../../internal/authz/validate.go) | `StoredPolicyName`; the policy store by stored name; `AsProjectOwner(project)` (an Owner without a policies capability: another project's service account answers `unknown_principal`; a global policy 403, another project's 404 under the lock); `ExpectProject`; `ListFilter.ProjectOwner` |
-| [internal/project](../../internal/project/service.go) | `Service`: `List`, `Get`, `CreateIn` (with `Input.Owners`, the first Owners), `Replace`, `Delete`, `Members`, `AddMember`, `SetRole`, `RemoveMember`, `MoveRepository`, `LookupPrincipals`; `Member`, `Role` (= `authz.ProjectRole`), `Reference{Kind, Name}` and the kinds `RefVirtualMember`, `RefPinRule`, `RefVirtualDeploymentTarget`, `RefPolicy`, `RefCIMapping`, `RefMember`, `RefDeploymentTarget` |
+| [internal/project](../../internal/project/service.go) | `Service`: `List`, `Get`, `CreateIn` (with `Input.Owners`, the first Owners), `Replace`, `Delete`, `Members`, `AddMember`, `SetRole`, `RemoveMember`, `MoveRepository`, `LookupPrincipals`; `Member`, `Role` (= `authz.ProjectRole`), `Reference{Kind, Name}` and the kinds `RefVirtualMember`, `RefPinRule`, `RefVirtualDeploymentTarget`, `RefPolicy`, `RefCIMapping`, `RefMember`, `RefDeploymentTarget`, `RefGlobalPolicy` |
 
 The functions the management API calls, with their signatures:
 
@@ -65,7 +71,7 @@ SetRole(ctx context.Context, actor authz.Subject, key, ref string, role project.
 RemoveMember(ctx context.Context, actor authz.Subject, key, ref string, bypassLastOwner bool) (int64, error)
 
 // The move (POST /projects/{projectKey}/repositories/{repoKey}/move); the caller decided the permission first.
-MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (qname.Repo, int64, error)
+MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string, restricted bool) (qname.Repo, int64, error)
 ```
 
 ### Error codes
@@ -76,7 +82,7 @@ All in [codes.go](../../internal/errs/codes.go).
 |---|---|---|
 | `principal_not_allowed` | 422 field at `/principalRef` | a member that is not a user or a group, an auto-join group, a Bastion registration |
 | `last_owner` | 409 | removing or demoting the last membership with the role `owner` without `projects:write` |
-| `repository_in_use` | 409, member `references: [{kind, name}]` | a move while something of the source project names the repository, or a virtual repository with members or a deployment target |
+| `repository_in_use` | 409, member `references: [{kind, name}]` | a move while something of the source project names the repository, or a virtual repository with members or a deployment target; a restricted move while a key selector of a global policy names it (`global_policy`) |
 | `already_exists` | 409 | a project key that exists; a move into a project that holds the key (also by a repository being deleted); a policy name that exists in its project or instance-wide |
 | `project_not_empty` | 409 | delete of a project with repositories (any lifecycle), service accounts or CI mappings of its tier |
 | `unknown_repository` | 422 field | a key selector that names no repository (in a project policy: of the project) |
@@ -98,7 +104,8 @@ All in [codes.go](../../internal/errs/codes.go).
 | `authz.project.member_added` | no | project, projectId, principal, principalId, role |
 | `authz.project.member_changed` | project, principal, before, after | as above with before and after |
 | `authz.project.member_removed` | project, principal | as above with role |
-| `repository.moved` | repositoryId, from and to by ID and key | repository (key), repositoryId, from, fromId, to, toId, configVersion |
+| `repository.moved` (project: the source, repository: the former name) | repositoryId, from and to by ID and key | repository (key), repositoryId, from, fromId, to, toId, configVersion |
+| `repository.moved_in` (project: the target, repository: the new name; `movedEvents` in [move.go](../../internal/project/move.go), Q-REPO-233) | no | as `repository.moved` |
 
 The display name and the description are not access-bearing, so `authz.project.updated` is not journaled.
 
@@ -125,7 +132,7 @@ Tests are named after the requirement; the integration tier needs the stack (`ma
 
 | Test | Where | What it pins |
 |---|---|---|
-| `TestR_AUTHZ_026_EachRoleGrantsItsActionsOnTheProjectsRepositories`, `…_TheHighestRoleOverTheUserAndItsGroups`, `TestR_AUTHZ_013_ATokenScopeIntersectsTheRole`, `TestQ_AUTHZ_215_OnlyUsersCarryARole`, `TestR_AUTHZ_026_AdministratorsAndAuditorsSeeEveryProject`, `TestR_AUTHZ_009_ARoleOnAVirtualRepository`, `TestR_API_029_AListingReadsWhatARoleReads`, `TestR_AUTHZ_018_ADeployThroughARoleClaimsForTheMember`, `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`, `TestR_AUTHZ_026_ManyMembershipsMergeToTheHighestRole`, `BenchmarkRoleDecide` | [project_roles_test.go](../../internal/authz/project_roles_test.go) | the role in the decision path |
+| `TestR_AUTHZ_026_EachRoleGrantsItsActionsOnTheProjectsRepositories`, `…_TheHighestRoleOverTheUserAndItsGroups`, `TestR_AUTHZ_013_ATokenScopeIntersectsTheRole`, `TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope`, `TestQ_AUTHZ_215_OnlyUsersCarryARole`, `TestR_AUTHZ_026_AdministratorsAndAuditorsSeeEveryProject`, `TestR_AUTHZ_009_ARoleOnAVirtualRepository`, `TestR_API_029_AListingReadsWhatARoleReads`, `TestR_AUTHZ_018_ADeployThroughARoleClaimsForTheMember`, `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`, `TestR_AUTHZ_026_ManyMembershipsMergeToTheHighestRole`, `BenchmarkRoleDecide`; `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheMemberships`, `TestR_AUTHZ_015_AListingDerivesTheSubjectOnce`, `BenchmarkRoleDecideMemberships50`, `BenchmarkReadableOnMemberships50` ([role_cost_test.go](../../internal/authz/role_cost_test.go)) | [project_roles_test.go](../../internal/authz/project_roles_test.go) | the role in the decision path |
 | `TestR_AUTHZ_026_ProjectPolicyIsScopedToItsProject`, `…_MatchCacheKeyIncludesTheProject`, `…_ProjectPolicyValidation`, `…_ListFilterByProject`, `…_TheBuildSkipsAnAutoJoinGroupAsAMember` | [project_test.go](../../internal/authz/project_test.go), [project_oracle_test.go](../../internal/authz/project_oracle_test.go) | selectors, stored names, the fail-closed build |
 | `TestR_AUTHZ_026_MemberReferences`, `TestR_AUTHZ_031_MemberEventsCarryTheirJournalEntries`, `TestR_REPO_060_TheMovedEvent`, `…_ACIMappingNamesTheRepositoryByKey`, `…_RefusalsOfAMove` | [service_test.go](../../internal/project/service_test.go) | the service without a database |
 | `TestR_AUTHZ_026_AnOwnerWritesThePoliciesOfItsProject`, `TestR_AUTHZ_022_AuthzMeListsTheMemberships`, `TestR_AUTHZ_026_RolesDecideOnEveryReplica`, `TestR_AUTHZ_028_AMemberChangeReachesAnotherReplica`, `TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles`, `TestR_AUTHZ_026_AnAutoJoinGroupGrantsNothingInAProject` | [test/integration/authz/projects_test.go](../../test/integration/authz/projects_test.go) | roles, policies and moves against the tables, on two replicas and over HTTP |

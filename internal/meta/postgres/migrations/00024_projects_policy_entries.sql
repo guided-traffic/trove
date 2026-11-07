@@ -69,3 +69,51 @@ CREATE TRIGGER virtual_deploy_targets_project BEFORE INSERT OR UPDATE OF target_
     FOR EACH ROW EXECUTE FUNCTION virtual_same_project_guard('target_id', 'virtual_id');
 CREATE TRIGGER virtual_pin_members_project BEFORE INSERT OR UPDATE OF member_id ON virtual_pin_members
     FOR EACH ROW EXECUTE FUNCTION virtual_same_project_guard('member_id', 'virtual_id');
+
+-- A repository changes its project only while nothing of its project holds it by ID
+-- (R-REPO-060, Q-REPO-217): a key selector of a policy of the project, a virtual
+-- repository that lists it as a member, pins a rule to it or deploys into it, and for
+-- a virtual repository its own members and deployment target; a global policy's key
+-- selector follows it. A project policy's key selector names a repository of the
+-- policy's project only, as AI006 holds it for virtual repositories. SQLSTATE AI007;
+-- the move answers 409 repository_in_use first and a policy write 422
+-- unknown_repository, both under the row locks of the project and the repository, and
+-- this guard holds for every write that would not.
+CREATE FUNCTION repository_move_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.project_id IS NOT DISTINCT FROM OLD.project_id THEN
+        RETURN NEW;
+    END IF;
+    IF EXISTS (SELECT 1 FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+                WHERE s.repository_id = OLD.id AND a.project_id = OLD.project_id)
+       OR EXISTS (SELECT 1 FROM virtual_members WHERE member_id = OLD.id OR virtual_id = OLD.id)
+       OR EXISTS (SELECT 1 FROM virtual_pin_members WHERE member_id = OLD.id)
+       OR EXISTS (SELECT 1 FROM virtual_deploy_targets WHERE target_id = OLD.id OR virtual_id = OLD.id) THEN
+        RAISE EXCEPTION 'the repository % is held by its project and does not change it', OLD.id USING ERRCODE = 'AI007';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER repositories_move_guard BEFORE UPDATE OF project_id ON repositories
+    FOR EACH ROW EXECUTE FUNCTION repository_move_guard();
+
+CREATE FUNCTION policy_selector_project_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    own   uuid;
+    other uuid;
+BEGIN
+    IF NEW.repository_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    SELECT project_id INTO own FROM authz_policy WHERE id = NEW.policy_id;
+    IF own IS NULL THEN
+        RETURN NEW;
+    END IF;
+    SELECT project_id INTO other FROM repositories WHERE id = NEW.repository_id;
+    IF other IS DISTINCT FROM own THEN
+        RAISE EXCEPTION 'authz_policy_selector.repository_id must name a repository of the project of the policy'
+              USING ERRCODE = 'AI007';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER authz_policy_selector_project BEFORE INSERT OR UPDATE OF repository_id, policy_id ON authz_policy_selector
+    FOR EACH ROW EXECUTE FUNCTION policy_selector_project_guard();

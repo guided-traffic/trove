@@ -5,10 +5,12 @@ package projects
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/test/integration/stack"
 )
 
 // TestR_AUTHZ_026_Members: the members of a project and their roles over HTTP (R-AUTHZ-026, Q-AUTHZ-207,
@@ -97,7 +99,8 @@ func TestR_AUTHZ_026_Members(t *testing.T) {
 
 // TestQ_AUTHZ_217_TheLastOwner: the last membership with the role owner, a group among them, is removed or demoted
 // only by a holder of projects:write (409 last_owner otherwise); two Owners who remove each other at once run one
-// after the other under the project's lock, and the second is refused.
+// after the other under the project's lock: one removal commits, and the second request is refused as what its caller
+// is when it is decided (409 last_owner, or the 404 of a non-member once its own removal is in force).
 func TestQ_AUTHZ_217_TheLastOwner(t *testing.T) {
 	f := newFixture(t)
 	f.create("web")
@@ -116,28 +119,56 @@ func TestQ_AUTHZ_217_TheLastOwner(t *testing.T) {
 		wantStatus(t, f.do(f.alice, "PUT", base+"/web/members/group:web-leads", map[string]any{"role": "developer"}, authz.HeaderMinEpoch, fmt.Sprint(r.Epoch())), 200, "")
 		wantStatus(t, f.member("web", "group:web-leads", "owner"), 200, "")
 	})
-	t.Run("Q-AUTHZ-217 two Owners who remove each other at once: one wins, the other answers last_owner", func(t *testing.T) {
+	t.Run("Q-AUTHZ-217 two Owners who remove each other at once: one removal commits, the other is refused as what its caller then is", func(t *testing.T) {
+		// The spec (Q-AUTHZ-217, R-AUTHZ-026): the loser answers 409 last_owner while the index its request is decided on
+		// still holds its role, and the 404 of a non-member once the winner's removal of its membership is in force there.
+		// Either way exactly one removal commits and the winner stays the only Owner.
+		nonMember := f.do(f.bob, "GET", base+"/nothing-here/members", nil)
+		wantStatus(t, nonMember, 404, "not_found")
+		hidden := strings.ReplaceAll(fmt.Sprint(nonMember.JSON(t)["detail"]), "nothing-here", "web")
 		for trial := range 3 {
 			f.e.Exec("DELETE FROM project_member WHERE project_id = (SELECT id FROM project WHERE key = 'web')")
 			wantStatus(t, f.member("web", "user:alice", "owner"), 201, "")
 			wantStatus(t, f.member("web", "user:bob", "owner"), 201, "")
 			e := fmt.Sprint(f.epoch())
+			removed := f.events("authz.project.member_removed")
 			var wg sync.WaitGroup
-			res := make([]int, 2)
-			for i, pair := range [][2]string{{"alice", "user:bob"}, {"bob", "user:alice"}} {
+			res := make([]stack.Response, 2)
+			pairs := [][2]string{{"alice", "user:bob"}, {"bob", "user:alice"}}
+			for i, pair := range pairs {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					res[i] = f.cl.Do(pair[0], "DELETE", base+"/web/members/"+pair[1], nil, authz.HeaderMinEpoch, e).Status
+					res[i] = f.cl.Do(pair[0], "DELETE", base+"/web/members/"+pair[1], nil, authz.HeaderMinEpoch, e)
 				}()
 			}
 			wg.Wait()
-			slices.Sort(res)
-			if !slices.Equal(res, []int{204, 409}) {
-				t.Fatalf("trial %d: statuses %v, want one 204 and one 409", trial, res)
+			winner := -1
+			for i, r := range res {
+				if r.Status == 204 {
+					if winner >= 0 {
+						t.Fatalf("trial %d: both removals committed", trial)
+					}
+					winner = i
+				}
 			}
-			if n := f.e.Number("SELECT count(*) FROM project_member m JOIN project p ON p.id = m.project_id WHERE p.key = 'web' AND m.role = 'owner'"); n != 1 {
-				t.Fatalf("trial %d: %d Owners left", trial, n)
+			if winner < 0 {
+				t.Fatalf("trial %d: no removal committed: %d %s, %d %s", trial, res[0].Status, res[0].Body, res[1].Status, res[1].Body)
+			}
+			loser := res[1-winner]
+			switch {
+			case loser.Status == 409 && loser.Code() == "last_owner":
+			case loser.Status == 404 && loser.Code() == "not_found" && loser.JSON(t)["detail"] == hidden:
+			default:
+				t.Fatalf("trial %d: the loser %s answered %d %s, want 409 last_owner or the 404 of a non-member", trial, pairs[1-winner][0], loser.Status, loser.Body)
+			}
+			t.Logf("trial %d: %s won, the loser answered %d", trial, pairs[winner][0], loser.Status)
+			owners := f.e.Text("SELECT string_agg(pr.name, ',') FROM project_member m JOIN project p ON p.id = m.project_id JOIN principal pr ON pr.id = m.principal_id WHERE p.key = 'web' AND m.role = 'owner'")
+			if owners != pairs[winner][0] {
+				t.Fatalf("trial %d: the Owners are %q, want the winner %s alone", trial, owners, pairs[winner][0])
+			}
+			if n := f.events("authz.project.member_removed"); n != removed+1 {
+				t.Fatalf("trial %d: %d removals recorded, want 1", trial, n-removed)
 			}
 		}
 	})

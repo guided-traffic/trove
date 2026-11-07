@@ -621,7 +621,7 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
 | Request | `GET /api/v1/repositories?class=&format=&q=&state=&project=&view=&limit=&cursor=` (every project); `GET /api/v1/projects/{projectKey}/repositories?class=&format=&q=&state=&view=&limit=&cursor=` (one project) |
 | Success | 200, `{"items": [...], "nextCursor": "…"}` (paging per [api-and-ui.md](api-and-ui.md) R-API-010, Q-API-6) |
 | Errors | 400 invalid filter; 401 |
-| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` by a grant or a role ([R-AUTHZ-016](authorization.md)), every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19), and every repository of its project for an Owner; `view=full` requires `repositories:read-config`, or on the project's list the role `owner`. The project's list answers 404 for a project the caller cannot see |
+| Permission | any caller, anonymous included; the result contains only repositories on which the caller holds `read` by a grant or a role ([R-AUTHZ-016](authorization.md)), every repository, those being deleted included, for a holder of `repositories:read-config` (Q-REPO-19), and every repository of its project for an Owner; `view=full` requires `repositories:read-config`, or on the project's list the role `owner`. The project's list answers 404 for a project the caller cannot see, exactly as for one that does not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member of it, or reads one of its repositories whatever the filters and the cursor ([authorization.md](authorization.md) R-AUTHZ-016) |
 
 - Filters: `class` and `format` take comma-separated lists; `q` matches key and description
   case-insensitively; `project` filters by project key; `state=inactive` returns disabled
@@ -725,9 +725,24 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   (a key selector of the source project's policy, by its name within the project), `ci_mapping` (an inline grant of a mapping of
   the source project's tier names its key), and for a virtual repository that moves `member` and `deployment_target` (its own,
   which keep it from moving).
+- **A global grant does not ride along with an Owner's move.** A caller without `repositories:write-config`, an Owner of both
+  projects, is refused with 409 `repository_in_use` as well while a key selector of a global policy names the repository: the
+  reference has the kind `global_policy` and the name of the global policy. That grant is held by the repository's ID and would
+  follow it into the target project, whose other Owners can neither see nor remove it; an administrator of trove moves the
+  repository, or removes the selector, and the Owner moves it then
+  ([Q-REPO-232](#q-repo-232--an-owners-move-is-refused-while-a-global-policy-names-the-repository-by-key)). A pattern or class
+  selector of a global policy matches by address and refuses no move.
+- **Serialised with the writers that name it.** A policy write binds its key selectors under share locks of its project and
+  of the repository ([authorization.md](authorization.md) R-AUTHZ-004), and a virtual repository's write its members under
+  share locks, so such a write and a move run one after the other and the move sees what the write named. The database
+  holds the rule for every writer: a repository that a key selector of a policy of its project or a virtual repository of
+  its project holds by ID does not change its project (SQLSTATE `AI007`; a move that meets it answers 409
+  `repository_in_use`).
 - **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
-  repository's `project_id`, raises its `config_version`, writes the audit event `repository.moved` with the source and the
-  target project, and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
+  repository's `project_id`, raises its `config_version`, writes the audit events `repository.moved` (project: the source,
+  repository: the former name, journaled) and `repository.moved_in` (project: the target, repository: the new name), both
+  with the source and the target project, so the audit of each project shows the move
+  ([Q-REPO-233](#q-repo-233--a-move-is-recorded-in-the-audit-of-both-projects)), and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
   ([architecture.md](architecture.md) R-ARCH-018), as the change of an input of the grant index (Repository management
   API above). A target project that holds the key, also a repository being deleted there, answers 409 `already_exists` and
   nothing changes. A target equal to the source changes nothing and answers 200 without an event
@@ -746,6 +761,10 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
 
 Acceptance criteria:
 
+- An administrator creates the global policy `libs-global` with the key selector `web/npm-libs`; the move of `web/npm-libs` to
+  `mobile` by an Owner of both projects answers 409 `repository_in_use` with `references: [{"kind": "global_policy", "name":
+  "libs-global"}]`, the same move by the administrator answers 200, and with the selector replaced by `web/npm-*` the Owner's
+  move answers 200.
 - An Owner of `web` and of `mobile` moves `web/npm-libs` to `mobile` (200). `npm view @acme/util --registry
   https://trove.example.com/api/npm/web/npm-libs/` then fails with `E404` on every replica, the same command against
   `https://trove.example.com/api/npm/mobile/npm-libs/` shows the versions published before the move, and no blob is
@@ -7106,6 +7125,63 @@ and removing references by hand a burden; then (c) with an explicit `"detach": t
 [authorization.md](authorization.md) R-AUTHZ-004 (key selectors follow the ID), R-AUTHZ-026 (the Owner's table, the audit
 event), R-AUTHZ-031 (the journal); [api-and-ui.md](api-and-ui.md) R-API-007, R-API-022; [bastion.md](bastion.md) R-BAS-015;
 [endpoints.md](endpoints.md) R-EP-006, R-EP-012. Q-AUTHZ-179 and Q-AUTHZ-205 are marked superseded.
+
+### Q-REPO-232 · An Owner's move is refused while a global policy names the repository by key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a key selector of a global policy is stored by the repository's ID and keeps naming the repository when it moves
+([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)),
+and [Q-REPO-217](#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)
+checks only what the source project names. An Owner of two projects who moves a repository so carries a grant an administrator
+of trove wrote for one project into the other, where its other Owners neither see the global policy nor can remove it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The grant follows, as for an administrator | Nothing changes | No refusal | An Owner moves an administrator's grant into a project whose Owners did not agree to it and cannot undo it |
+| (b) Refuse every move while a global key selector names it | The kind `global_policy` for every caller | One rule | An administrator who wrote the grant moves the repository with it on purpose, and is the one who could remove it anyway |
+| (c) Refuse an Owner's move without `repositories:write-config` while a global key selector names it (chosen) | 409 `repository_in_use`, kind `global_policy`, the policy's name; an administrator moves it | The grant moves only by the hand of someone who may change it; the Owner learns whom to ask | The Owner learns the name of a global policy on a repository of its project, not its entries |
+| (d) Drop the global grant from the moved repository | The move deletes the selector or the policy's hold on the ID | The Owner is not blocked | A move would rewrite an administrator's policy behind its back, which Q-REPO-217 refused for project objects |
+
+**Choice:** (c). The handler tells the service whether the caller holds `repositories:write-config`
+(`MoveRepository(…, restricted)`); a restricted move lists, after the references of the source project, every global policy
+with a key selector on the repository's ID as `{"kind": "global_policy", "name": "<policy>"}`. A pattern or class selector is
+stored without the ID and refuses nothing. An exposure rule, which also holds the repository by ID
+([endpoints.md](endpoints.md) R-EP-012), refuses nothing either: it is a ceiling and grants no one anything.
+
+**Rationale:** whoever moves a grant into a project should be someone who may change that grant; an administrator of trove is,
+an Owner is not. The policy's name is what the Owner gives the administrator, and it tells no more than that a global policy
+names its own repository. The development agent would revisit this if Owners get a read of the global policies that touch their
+projects, or if exposure rules start to grant.
+
+**Applied in the spec:** R-REPO-060 (the refusal, the kind, the criterion); `api/openapi.yaml` (`moveRepository`,
+`RepositoryReference.kind`).
+
+### Q-REPO-233 · A move is recorded in the audit of both projects
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an audit event names one project (`audit_event.project`, the `project` filter of `GET /api/v1/audit/events`,
+[authorization.md](authorization.md) Q-AUTHZ-209). `repository.moved` named the source project only, so the audit of the
+target project showed a repository that arrived without any event: no `repository.created` there, and no move.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The source only (as before) | One event, `project` the source | No new type | The target's audit cannot tell where a repository came from |
+| (b) The target only | One event, `project` the target, the new name | The repository's history continues under its new name | The source's audit loses a repository without an event |
+| (c) The same type twice | `repository.moved` in each project | One type to filter | A filter on the type counts every move twice; the journal entry, which the restore reads once, is on one of two equal events |
+| (d) Two types, one per project (chosen) | `repository.moved` in the source under the former name, journaled; `repository.moved_in` in the target under the new name, without a journal entry; equal details | Each project's audit shows the move once; the type `repository.moved` still counts every move once and carries the one journal entry | One more event type |
+
+**Choice:** (d). Both events are written in the move's transaction with the same details (the repository's ID and key, both
+projects by ID and key, the epoch, the configuration version); `repository.moved_in` has the subject and the `repository` column
+of the new name. The restore and the Bastion's feed read the journal entry of `repository.moved` only.
+
+**Rationale:** the audit of a project should explain every repository it holds and every one it lost, and a journal entry is a
+fact about the installation, recorded once. The development agent would revisit this if `audit_event` gains several projects per
+event; then one event would serve both views.
+
+**Applied in the spec:** R-REPO-060 (the events); [authorization.md](authorization.md) R-AUTHZ-026 (the project's events), the
+event table of R-AUTHZ-029.
 
 ## What this does not cover
 

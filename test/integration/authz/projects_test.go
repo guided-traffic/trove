@@ -24,6 +24,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/project"
 	"github.com/guided-traffic/trove/internal/qname"
+	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/test/integration/stack"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -286,6 +287,14 @@ func TestR_AUTHZ_026_RolesDecideOnEveryReplica(t *testing.T) {
 		if !p.may(p.a, readOnly, "web/web-npm", authz.Read) || p.may(p.a, readOnly, "web/web-npm", authz.Deploy) {
 			t.Error("the token's scope does not bound the role")
 		}
+		if m := p.a.engine.MembershipsOn(idx, readOnly); len(m) != 1 || m[0].Key != "web" {
+			t.Errorf("a token scoped to a repository of web is a member of %v", m)
+		}
+		elsewhere := owner
+		elsewhere.Scope = &scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"shop/*"}, Actions: []string{"read"}}}}
+		if m := p.a.engine.MembershipsOn(idx, elsewhere); len(m) != 0 || p.a.engine.RoleOn(idx, elsewhere, "web") != authz.ProjectRoleNone {
+			t.Errorf("a token whose scope names no repository of web reaches the role there: %v", m)
+		}
 		inherit := owner
 		inherit.Scope = &scope.Scope{Inherit: true}
 		admin := owner
@@ -378,7 +387,7 @@ func TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	from := qname.Repo{Project: "web", Key: "web-files"}
-	_, _, err := p.projects.MoveRepository(ctx, p.root, from, "shop")
+	_, _, err := p.projects.MoveRepository(ctx, p.root, from, "shop", false)
 	problem(t, err, 409, errs.CodeRepositoryInUse)
 	if e, _ := errs.As(err); fmt.Sprint(e.Extensions["references"]) != fmt.Sprint([]project.Reference{{Kind: project.RefPolicy, Name: "files-read"}}) {
 		t.Fatalf("references %v", e.Extensions["references"])
@@ -388,7 +397,7 @@ func TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles(t *testing.T) {
 	}
 	owner := sub(p.dave, p.leads)
 	waitFor(t, "replica b granting the web Owner", 3*time.Second, func() bool { return p.may(p.b, owner, "web/web-files", authz.Read) })
-	to, epoch, err := p.projects.MoveRepository(ctx, p.root, from, "shop")
+	to, epoch, err := p.projects.MoveRepository(ctx, p.root, from, "shop", false)
 	if err != nil || to != (qname.Repo{Project: "shop", Key: "web-files"}) || epoch == 0 {
 		t.Fatalf("%v %d %v", to, epoch, err)
 	}
@@ -599,4 +608,107 @@ func TestR_AUTHZ_026_AnAutoJoinGroupGrantsNothingInAProject(t *testing.T) {
 	waitFor(t, "the new auto-join group is skipped", 3*time.Second, func() bool {
 		return !p.may(p.a, member, "web/web-npm", authz.Read) && !p.may(p.a, member, "shop/shop-npm", authz.Read)
 	})
+}
+
+// staleRepositories is the repository snapshot of a replica that has not caught up: the names it was given keep the
+// repository they named when it was taken.
+type staleRepositories struct {
+	sqlRepositories
+	frozen map[qname.Repo]repository.Repository
+}
+
+func (s staleRepositories) ByName(ctx context.Context, name qname.Repo) (repository.Repository, error) {
+	if r, ok := s.frozen[name]; ok {
+		return r, nil
+	}
+	return s.sqlRepositories.ByName(ctx, name)
+}
+
+// TestR_AUTHZ_004_AKeySelectorIsBoundInTheTransactionOfTheWrite: a policy write binds its key selectors to the
+// repositories the database holds in its own transaction, under a share lock of the project and the repository rows,
+// never through a snapshot of another moment. A replica whose snapshot still holds web/web-files after the repository
+// moved to shop binds neither a project policy of web nor a global policy to it: the key names no repository (R-AUTHZ-004,
+// R-REPO-060).
+func TestR_AUTHZ_004_AKeySelectorIsBoundInTheTransactionOfTheWrite(t *testing.T) {
+	p := newProjectEnv(t)
+	ctx := context.Background()
+	name := qname.Repo{Project: "web", Key: "web-files"}
+	before, err := sqlRepositories{p.env}.ByName(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := authz.NewService(authz.ServiceOptions{
+		DB: p.a.db, Changes: p.a.changes, Principals: sqlPrincipals{p.env}, Formats: integrationFormats(),
+		Repositories: staleRepositories{sqlRepositories{p.env}, map[qname.Repo]repository.Repository{name: before}},
+	})
+	if _, _, err := p.projects.MoveRepository(ctx, p.root, name, "shop", false); err != nil {
+		t.Fatal(err)
+	}
+	web := "web"
+	carol := []authz.Entry{{Principal: "user:carol", Actions: []string{"read"}}}
+	_, _, err = svc.Create(ctx, p.root, authz.PolicyInput{Name: "web/files", Project: &web, Resources: authz.Resources{Repositories: []string{"web-files"}}, Entries: carol})
+	problem(t, err, 422, errs.CodeUnknownRepository)
+	_, _, err = svc.Create(ctx, p.root, authz.PolicyInput{Name: "files-global", Resources: authz.Resources{Repositories: []string{"web/web-files"}}, Entries: carol})
+	problem(t, err, 422, errs.CodeUnknownRepository)
+	// An update binds in its transaction too.
+	if _, _, err := svc.Create(ctx, p.root, authz.PolicyInput{Name: "web/files", Project: &web, Resources: authz.Resources{Repositories: []string{"web-npm"}}, Entries: carol}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = svc.Update(ctx, p.root, "web/files", errs.AnyRevision, authz.PolicyInput{Project: &web, Resources: authz.Resources{Repositories: []string{"web-files"}}, Entries: carol})
+	problem(t, err, 422, errs.CodeUnknownRepository)
+	if n := p.number("SELECT count(*) FROM authz_policy_selector WHERE repository_id = $1::bigint", before.ID); n != 0 {
+		t.Fatalf("%d selectors hold the moved repository", n)
+	}
+}
+
+// TestR_REPO_060_TheDatabaseRefusesAMoveWhileItsProjectHoldsTheRepository: the guard of the move in the database (AI007)
+// holds for every write, also one that raced the service's check: a repository whose project holds it by ID (a key
+// selector of a project policy, a virtual repository's member list) does not change its project, and a project
+// policy's key selector names a repository of the policy's project only. A global policy's key selector follows the
+// repository (R-REPO-060, Q-REPO-217).
+func TestR_REPO_060_TheDatabaseRefusesAMoveWhileItsProjectHoldsTheRepository(t *testing.T) {
+	p := newProjectEnv(t)
+	ctx := context.Background()
+	web := "web"
+	carol := []authz.Entry{{Principal: "user:carol", Actions: []string{"read"}}}
+	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{Name: "web/files", Project: &web, Resources: authz.Resources{Repositories: []string{"web-files"}}, Entries: carol}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.a.svc.Create(ctx, p.root, authz.PolicyInput{Name: "npm-global", Resources: authz.Resources{Repositories: []string{"web/web-npm"}}, Entries: carol}); err != nil {
+		t.Fatal(err)
+	}
+	exec := func(sql string, args ...any) error {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		_, err := p.admin.Exec(ctx, sql, args...)
+		return err
+	}
+	state := func(err error) string {
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) {
+			return pe.Code
+		}
+		return fmt.Sprint(err)
+	}
+	move := `UPDATE repositories SET project_id = $1::uuid WHERE id = (SELECT r.id FROM repositories r JOIN project p ON p.id = r.project_id WHERE p.key = 'web' AND r.key = $2)`
+	if got := state(exec(move, p.shopID, "web-files")); got != "AI007" {
+		t.Errorf("a move of a repository a project policy names: %s, want AI007", got)
+	}
+	if err := exec(move, p.shopID, "web-npm"); err != nil {
+		t.Errorf("a global policy's key selector does not hold a repository in its project: %v", err)
+	}
+	p.exec(`INSERT INTO repositories (key, class, format, config, project_id) VALUES ('web-all', 'virtual', 'npm', '{}'::jsonb, $1::uuid)`, p.webID)
+	p.exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
+	          SELECT v.id, 0, m.id FROM repositories v, repositories m WHERE v.key = 'web-all' AND m.key = 'npm-web'`)
+	for _, key := range []string{"npm-web", "web-all"} {
+		if got := state(exec(move, p.shopID, key)); got != "AI007" {
+			t.Errorf("a move of %s, which a member list holds: %s, want AI007", key, got)
+		}
+	}
+	insert := `INSERT INTO authz_policy_selector (policy_id, ordinal, kind, repository_id)
+	           SELECT a.id, 9, 'key', r.id FROM authz_policy a, repositories r JOIN project p ON p.id = r.project_id
+	            WHERE a.name = 'web/files' AND p.key = 'shop' AND r.key = 'shop-npm'`
+	if got := state(exec(insert)); got != "AI007" {
+		t.Errorf("a project policy's key selector on a repository of another project: %s, want AI007", got)
+	}
 }

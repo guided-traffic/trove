@@ -166,6 +166,18 @@ func TestProjectsMigration(t *testing.T) {
 			SELECT v.id, 0, m.id FROM trove.repositories v, trove.repositories m WHERE v.key = 'npm-all' AND m.key = 'npm' AND m.project_id = $1`, web)
 	})
 
+	t.Run("R-REPO-060 a repository its project holds by ID keeps its project, and a project policy's key selector names its own project (AI007)", func(t *testing.T) {
+		wantState(t, admin, "AI007", "UPDATE trove.repositories SET project_id = $1 WHERE key = 'npm' AND project_id = $2", mobile, web)
+		wantState(t, admin, "AI007", "UPDATE trove.repositories SET project_id = $1 WHERE key = 'npm-all' AND project_id = $2", mobile, web)
+		wantState(t, admin, "AI007", `INSERT INTO trove.authz_policy_selector (policy_id, ordinal, kind, repository_id)
+			SELECT $1::uuid, 90, 'key', id FROM trove.repositories WHERE key = 'npm' AND project_id = $2`, webRead, mobile)
+		mustExec(t, admin, `INSERT INTO trove.authz_policy_selector (policy_id, ordinal, kind, repository_id)
+			SELECT $1::uuid, 90, 'key', id FROM trove.repositories WHERE key = 'npm' AND project_id = $2`, webRead, web)
+		mustExec(t, admin, `INSERT INTO trove.authz_policy_selector (policy_id, ordinal, kind, repository_id)
+			SELECT $1::uuid, 90, 'key', id FROM trove.repositories WHERE key = 'npm' AND project_id = $2`, globalRead, mobile)
+		mustExec(t, admin, "DELETE FROM trove.authz_policy_selector WHERE ordinal = 90")
+	})
+
 	t.Run("R-AUTHZ-026 a project with a repository or a service account cannot be deleted; its policies and members go with it", func(t *testing.T) {
 		wantState(t, admin, "23503", "DELETE FROM trove.project WHERE key = 'web'")
 		mustExec(t, admin, "DELETE FROM trove.virtual_members")

@@ -672,6 +672,38 @@ func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipa
 	return items, nil
 }
 
+const projectRepositoryGlobalPolicies = `-- name: ProjectRepositoryGlobalPolicies :many
+SELECT DISTINCT a.name
+  FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+ WHERE s.repository_id = $1::bigint AND a.project_id IS NULL
+ ORDER BY a.name
+`
+
+// The global policies with a key selector on the repository (Q-REPO-232): their grant
+// is held by the repository's ID and would follow it into the target project, so an
+// Owner who moves it without repositories:write-config is refused while one exists
+// (409 repository_in_use, kind global_policy). A pattern or class selector matches by
+// address and is not stored with the ID.
+func (q *Queries) ProjectRepositoryGlobalPolicies(ctx context.Context, id int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryGlobalPolicies, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const projectRepositoryKeyTaken = `-- name: ProjectRepositoryKeyTaken :one
 SELECT EXISTS (SELECT 1 FROM repositories WHERE project_id = $1::text::uuid AND key = $2::text)
 `

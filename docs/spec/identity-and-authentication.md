@@ -1957,7 +1957,10 @@ structure, its validation and who may request what.
 the resource types the grant model has ([authorization.md](authorization.md) R-AUTHZ-013,
 Q-AUTHZ-10). `inherit` and `admin` are switches and `endpoints` is a binding, not resource types. There is no project resource
 type (TOK-011, TOK-013, P2): a scope selects the repositories of a project with `<projectKey>/*`, and what the owner's
-project roles grant reaches the token through the repository part like every other grant ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)). There
+project roles grant reaches the token through the repository part like every other grant ([Q-AUTHZ-215](authorization.md#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
+The token reads a project it is a member of, and that project's members, only when an element of the repository part
+names the project, or with `inherit`, `admin: true` or the system item `projects:read`, which here is effective through
+the membership. There
 is no per-repository configuration type either: repository configuration rights are system capabilities, which apply in
 every project, or come from the Owner role of a project ([authorization.md](authorization.md) R-AUTHZ-026).
 
@@ -2935,7 +2938,9 @@ the grants that policies give that principal ([authorization.md](authorization.m
 
 **Hard limits.** These hold regardless of policies:
 
-- `anonymous` never passes unsafe methods on `/api/v1/…`;
+- `anonymous` never passes unsafe methods on `/api/v1/…`, read on the unescaped path the router routes by, so
+  `POST /api/v%31/…` is refused like `POST /api/v1/…`; the always-open routes below are matched on the path as
+  received, so an escape never opens one;
 - it never holds an administration role or system scope;
 - it cannot call token, session, profile or settings endpoints (401).
 
@@ -2978,7 +2983,7 @@ Acceptance criteria:
   gets 200. `curl -si https://trove.test/api/npm/web/no-such-repo/lodash` and
   `curl -si https://trove.test/api/npm/no-such-project/npm-all/lodash` get 401, not 404.
 - `curl -X POST https://trove.test/api/v1/projects/web/repositories` without credentials gets 401 even if
-  a policy grants `anonymous` `manage`.
+  a policy grants `anonymous` `manage`, and so does `curl -X POST https://trove.test/api/v%31/projects/web/repositories`.
 
 ### R-AUTH-038 · Brute-force protection and rate limiting
 Priority: **MVP** · Covers: IAM-042, ADMAPI-012, ADMAPI-050

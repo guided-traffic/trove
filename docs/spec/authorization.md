@@ -290,7 +290,11 @@ of CI mappings (R-CI-013), the members and the deployment target of a virtual re
   replicas have picked up the change (R-AUTHZ-028), without touching the policy.
 - Key selectors MUST name an existing repository when the policy is written (422
   `unknown_repository` otherwise; in a project context a key of another project cannot be written at all) and are
-  stored by repository ID. A key selector of an instance context keeps naming its repository when the repository
+  stored by repository ID. The write binds the key to the repository the database holds in its own transaction, under a
+  share lock of the policy's project and of the repository row, never through a replica's cached view of another
+  moment, so a policy write and a move of the repository run one after the other: a key the project no longer holds
+  is `unknown_repository`, and a selector written first refuses the move (R-REPO-060). The database refuses a project
+  policy's key selector on a repository of another project (SQLSTATE `AI007`). A key selector of an instance context keeps naming its repository when the repository
   moves to another project ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)
   R-REPO-060) and reads back with the new project. Deleting a repository removes its key selectors (audited). A
   policy left without selectors stays stored, matches nothing and is reported with `"inert": true`. A repository
@@ -873,8 +877,9 @@ requirement fixes how the evaluator applies a scope:
   | `builds` | Build records: `{"builds": {"include": [...], "exclude": [...]}, "actions": [...]}` with the name globs of R-AUTHZ-027 | P1 |
 
   There is no project resource type (TOK-011, TOK-013, P2): a project role reaches a personal
-  access token through the token's `repositories` part like any grant, and the Owner's
-  administration only through `admin: true` (R-AUTHZ-026,
+  access token through the token's `repositories` part like any grant, the reading of a project
+  and its members through an element that names the project or the system item `projects:read`,
+  and the Owner's administration only through `admin: true` (R-AUTHZ-026,
   [Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
   There is no per-repository configuration type: repository configuration is the system capability pair
   `repositories:read-config` and `repositories:write-config` and applies to every project;
@@ -1916,13 +1921,21 @@ of its partners without a system administrator. Delegation per policy (`manage`,
   (the union, R-AUTHZ-015), and the explanation names them as source `role:<projectKey>:<role>` (R-AUTHZ-024). A `deploy`
   through a role makes the publishing identity the owner as a grant does (R-AUTHZ-018).
 - A role reaches every credential through which the member acts as itself, the UI session and its personal access tokens,
-  intersected with the token's scope like any grant (R-AUTHZ-013). The Owner's administration, its reads included, is
-  exercised only through a UI session or a token with `admin: true`, as for a system role. Service-account and CI tokens
+  intersected with the token's scope like any grant (R-AUTHZ-013). Outside the content, a token is a member, with its role,
+  only of the projects its scope reaches: every project for `inherit`, `admin: true` or the system item `projects:read`,
+  otherwise those one of its `repositories` elements names (a key of the project, a pattern whose project glob matches
+  it, or a class), whatever the element's actions. The project list, the read of a project and its members, `GET
+  /authz/me` and the `404` of a project the caller is no member of read these memberships. The Owner's administration, its
+  reads included, is exercised only through a UI session or a token with `admin: true`, as for a system role. Service-account and CI tokens
   never carry a role; they reach a project's repositories through its policies
   ([Q-AUTHZ-215](#q-authz-215--a-members-role-acts-through-its-session-and-personal-tokens-within-their-scope-and-service-accounts-are-not-members)).
 - A project keeps at least one Owner: removing or demoting the last one answers 409 `last_owner` unless the caller holds
   `projects:write`, whose holder may leave a project without an Owner and administers it alone
   ([Q-AUTHZ-217](#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
+  Two Owners who remove each other at once: exactly one removal commits and the other Owner remains. The other request is
+  refused as what its caller is when it is decided: with 409 `last_owner` while the index it is decided on still holds the
+  caller's role, and with the `404` of a non-member (R-AUTHZ-016) once the first removal, which took the caller's own
+  membership, is in force there.
 
 What the Owner may do, within its project and nowhere else:
 
@@ -2083,7 +2096,7 @@ Operations of other pages below a project, each declared with `project: path.pro
 - Every write above answers `Trove-Authz-Epoch` (R-AUTHZ-032). The writes of a project and its members, and the creation
   and deletion of project service accounts, are audited in the transaction of the change (R-AUTHZ-029):
   `authz.project.created`, `.updated`, `.deleted`, `.member_added`, `.member_changed` and `.member_removed`; a move is
-  `repository.moved` (R-REPO-060). Every event of a project's object carries the member `project`. A removed member, a
+  `repository.moved` in the source project and `repository.moved_in` in the target project (R-REPO-060). Every event of a project's object carries the member `project`. A removed member, a
   lowered role and a move narrow rights and are journaled as narrowings (R-AUTHZ-031).
 - Recent authentication (R-API-007) is required for the project writes that change who may act: replace, delete, add,
   change and remove a member, and a move.
@@ -2538,7 +2551,7 @@ This requirement says which events authorization emits and what they contain.
 | `authz.role.bound`, `.unbound` | role bindings | in the transaction of the change |
 | `authz.ownership.claimed`, `.added`, `.removed`, `.released` | ownership changes, CI claims included | in the transaction of the change |
 | `authz.project.created`, `.updated`, `.deleted`, `.member_added`, `.member_changed`, `.member_removed` | project and membership changes, with the epoch and the role before and after; a deletion, a removed member and a lowered role are journaled | in the transaction of the change |
-| `repository.moved` | the move of a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060), with the source and the target project and the epoch; journaled | in the transaction of the change |
+| `repository.moved`, `repository.moved_in` | the move of a repository to another project ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060), with the source and the target project and the epoch: `repository.moved` in the source project under the former name, journaled; `repository.moved_in` in the target project under the new name, not journaled ([Q-REPO-233](repositories-and-proxy.md#q-repo-233--a-move-is-recorded-in-the-audit-of-both-projects)) | in the transaction of the change |
 | `authz.settings.changed` | changes to authorization settings stored in PostgreSQL, today the authorization settings of a repository (R-AUTHZ-031), with before and after | in the transaction of the change |
 
 Fields of `authz.decision`:
@@ -5159,16 +5172,23 @@ out of groups and system roles so that no broad grant reaches it
 | (d) Service accounts as members too | People and machines in one list | One mechanism | A role hands a machine every repository of the project, and a project account would be reached by what Q-AUTHZ-175 keeps away from it |
 
 **Choice:** (a). The source of a role's actions in the explanation is `role:<projectKey>:<role>`; the token's scope
-intersects it as it intersects a grant.
+intersects it as it intersects a grant. Outside the content, where no repository coordinate is decided (the project
+list, a project and its members, `GET /authz/me`, the `404` of a hidden project), the scope reaches a project when it is
+`inherit`, `admin: true` or lists the system item `projects:read`, or when one of its `repositories` elements names the
+project, whatever the element's actions: a token scoped to `web/npm-internal` with `deploy` reads project `web` and its
+members, and no other project of its owner.
 
 **Rationale:** a role is a set of grants the project decides, so it should reach what a grant reaches, under the same
 ceiling. Administration changes who may act, which the installation already guards with `admin: true` for the system
 roles; the project gets the same bar, so an Owner's leaked everyday token cannot add members. Keeping service accounts and
 CI tokens out of roles keeps every machine's rights in a policy that names it. The development agent would revisit this if
 Owners need automation that administers a project (then an administering project service account, a decision of its own),
-or if a token should carry a role but not the grants of global policies.
+or if a token should carry a role but not the grants of global policies. Reading a project is no repository action, so it
+cannot be intersected element by element; naming the project in an element is the narrowest form a scope already has, and
+the system item `projects:read` is the one a script that only lists its projects uses. The development agent would revisit this part when token
+scopes gain a project resource type (TOK-011, P2).
 
-**Applied in the spec:** R-AUTHZ-026 (members and roles), R-AUTHZ-013 (the scope over a role);
+**Applied in the spec:** R-AUTHZ-026 (members and roles, what a token sees of its projects), R-AUTHZ-013 (the scope over a role);
 [api-and-ui.md](api-and-ui.md) R-API-008 (the declaration); [identity-and-authentication.md](identity-and-authentication.md)
 R-AUTH-024 (what a scope narrows).
 
@@ -5224,14 +5244,22 @@ Owners. The installation guards its own administration the same way (`last_admin
 
 **Choice:** (a). The count is of membership rows with the role `owner`, a group among them, whatever the group's members:
 the write reads it under the project's row lock, so two Owners who remove each other at the same instant run one after
-the other and the second is refused.
+the other, exactly one removal commits and one Owner remains. The second request is refused as what its caller is when it is
+decided. Admission is decided on the request's index like every write (R-AUTHZ-028): an index that still holds the caller's
+role admits it, and the count under the lock answers 409 `last_owner`; an index that already holds the first removal knows
+the caller as no member, and the request answers the `404` of a non-member (R-AUTHZ-016). The member write does not read the
+caller's role again under the lock.
 
 **Rationale:** the rule protects the delegation, not the data: the project is administered by its team, and only the
 administrator who can name a new Owner may leave it without one. Counting rows keeps the check a property of what the
 project itself states. An Owner group that its identity provider empties leaves the project without an acting Owner, as
 an identity-provider group bound to a system role can (H-394); the administrators of trove remain. The development agent
 would revisit this if projects end up unadministered that way in practice; then the count would follow `last_admin`
-(active members only, Q-AUTHZ-70).
+(active members only, Q-AUTHZ-70). The loser of the race is refused either way and the invariant holds under the lock;
+reading the caller's role again there would make the answer the `404` in every case, but only for member writes, while
+every other write of an Owner or an administrator of trove is decided on the index of its request. The development agent would revisit that if
+writes decided on a stale role turn out to matter beyond this race; then every administering write reads the caller's role
+under the lock of what it changes.
 
 **Applied in the spec:** R-AUTHZ-026 (members and roles, the API table); [api-and-ui.md](api-and-ui.md) R-API-047,
 R-UI-041.

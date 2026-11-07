@@ -33,6 +33,7 @@ const (
 	RefCIMapping               = "ci_mapping"                // an inline grant of a CI mapping of the project's tier
 	RefMember                  = "member"                    // a member of the virtual repository that moves
 	RefDeploymentTarget        = "deployment_target"         // the deployment target of the virtual repository that moves
+	RefGlobalPolicy            = "global_policy"             // a key selector of a global policy, for a restricted caller (Q-REPO-232)
 )
 
 // Reference is one object that keeps a repository from moving: its kind and its name within the source
@@ -44,6 +45,11 @@ type Reference struct {
 
 // pgUniqueViolation is the SQLSTATE of a key taken in the target project.
 const pgUniqueViolation = "23505"
+
+// stateHeldByProject is the SQLSTATE of the database guard of a move (AI007, migration 00024): something of the source
+// project holds the repository by ID. The references refuse the move first; the guard holds for a write that did not
+// take the row locks a move waits for.
+const stateHeldByProject = "AI007"
 
 // opMoved is the op of the repo_config change of a move: the repository's addresses changed and its
 // config_version moved, so a cache keyed by the repository and its version drops what it built before.
@@ -59,10 +65,12 @@ const opMoved = "moved"
 //
 // Refusals: 404 for a source repository that does not exist or is being deleted and for a target project
 // that does not exist; 409 repository_in_use with the member `references` while an object of the source
-// project names the repository, or the repository is virtual and has members or a deployment target; 409
+// project names the repository, or the repository is virtual and has members or a deployment target, and,
+// for a restricted caller, while a key selector of a global policy names it (Q-REPO-232); 409
 // already_exists when the target project holds the key, also by a repository being deleted. The caller
-// decided before that the actor may move it: repositories:write-config, or Owner of both projects.
-func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (qname.Repo, int64, error) {
+// decided before that the actor may move it: repositories:write-config, or Owner of both projects, which
+// is restricted.
+func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string, restricted bool) (qname.Repo, int64, error) {
 	to := qname.Repo{Project: toProject, Key: from.Key}
 	var epoch int64
 	err := s.inTx(ctx, func(tx meta.Tx, qs *q.Queries) error {
@@ -86,6 +94,13 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 		if err != nil {
 			return err
 		}
+		if restricted {
+			global, err := globalReferences(ctx, qs, repo.ID)
+			if err != nil {
+				return err
+			}
+			refs = append(refs, global...)
+		}
 		if len(refs) > 0 {
 			return inUse(from, refs)
 		}
@@ -103,6 +118,11 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 			if postgres.IsState(err, pgUniqueViolation) {
 				return keyTaken(to)
 			}
+			if postgres.IsState(err, stateHeldByProject) {
+				// The transaction is aborted, so the references cannot be read again in it: the answer lists none,
+				// and the next attempt lists them.
+				return inUse(from, []Reference{})
+			}
 			return err
 		}
 		if len(versions) == 0 {
@@ -116,7 +136,11 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 			return err
 		}
 		afterEpoch(tx, &epoch, func(ctx context.Context, tx meta.Tx, epoch int64) error {
-			return s.o.Recorder.RecordTx(ctx, tx, movedEvent(actor, from, to, id, fromID, toID, versions[0], epoch))
+			out, in := movedEvents(actor, from, to, id, fromID, toID, versions[0], epoch)
+			if err := s.o.Recorder.RecordTx(ctx, tx, out); err != nil {
+				return err
+			}
+			return s.o.Recorder.RecordTx(ctx, tx, in)
 		})
 		return nil
 	})
@@ -180,6 +204,23 @@ func references(ctx context.Context, qs *q.Queries, repoID int64, projectID stri
 	return out, nil
 }
 
+// globalReferences lists the global policies whose key selector names the repository (Q-REPO-232). Their
+// grant is held by the repository's ID and follows it into the target project, whose other Owners cannot
+// remove it; an Owner who moves without repositories:write-config is therefore refused while one exists,
+// and asks an administrator of trove, who sees the policy by this name. A pattern or a class names no
+// repository and is not listed.
+func globalReferences(ctx context.Context, qs *q.Queries, repoID int64) ([]Reference, error) {
+	names, err := qs.ProjectRepositoryGlobalPolicies(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Reference, 0, len(names))
+	for _, n := range names {
+		out = append(out, Reference{Kind: RefGlobalPolicy, Name: n})
+	}
+	return out, nil
+}
+
 // specNames reports whether an inline grant of a CI mapping's grant document names the key as a key
 // selector of the project context. A document that does not parse names nothing it can be held to; the CI
 // service validated it when it was written.
@@ -200,12 +241,17 @@ func specNames(doc string, in qname.Context, key string) bool {
 }
 
 func inUse(from qname.Repo, refs []Reference) error {
+	if len(refs) == 0 {
+		return errs.E(errs.Conflict, errs.CodeRepositoryInUse,
+			fmt.Sprintf("The repository %q was named in its project while it moved; move it again to see the references.", from.String()),
+			errs.WithExtension("references", refs))
+	}
 	names := make([]string, 0, len(refs))
 	for _, r := range refs {
 		names = append(names, r.Kind+" "+r.Name)
 	}
 	return errs.E(errs.Conflict, errs.CodeRepositoryInUse,
-		fmt.Sprintf("The repository %q is named in its project by %s; remove the references, then move it.", from.String(), strings.Join(names, ", ")),
+		fmt.Sprintf("The repository %q is named by %s; remove the references, then move it.", from.String(), strings.Join(names, ", ")),
 		errs.WithExtension("references", refs))
 }
 
@@ -213,21 +259,30 @@ func keyTaken(to qname.Repo) error {
 	return errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("The project %q has a repository %q already.", to.Project, to.Key))
 }
 
-// movedEvent is repository.moved (R-REPO-060): the repository's ID and key, the source and the target
-// project; the journal entry carries the same by ID (R-AUTHZ-031: a restore suspends the repository rather
-// than move it back or keep it). The event names the source project and the repository's former address.
-func movedEvent(actor authz.Subject, from, to qname.Repo, id, fromID, toID string, version, epoch int64) audit.Event {
-	details := map[string]any{
+// movedEvents are the two records of a move (R-REPO-060, Q-REPO-233), each in the audit of one project:
+// repository.moved in the source project under the repository's former address, with the journal entry
+// (R-AUTHZ-031: a restore suspends the repository rather than move it back or keep it), and
+// repository.moved_in in the target project under its new address, without one, so the restore reads the
+// move once. Both carry the repository's ID and key and the source and the target project.
+func movedEvents(actor authz.Subject, from, to qname.Repo, id, fromID, toID string, version, epoch int64) (out, in audit.Event) {
+	details := mustJSON(map[string]any{
 		"epoch": epoch, "repository": from.Key, "repositoryId": id,
 		"from": from.Project, "fromId": fromID, "to": to.Project, "toId": toID, "configVersion": version,
-	}
-	return audit.Event{
+	})
+	out = audit.Event{
 		Type: audit.EventRepositoryMoved, Actor: actorOf(actor), Outcome: audit.Success,
 		Subject:    audit.Subject{Kind: "repository", ID: id, Name: from.String()},
 		Repository: from.String(), Project: from.Project,
-		Details: mustJSON(details),
+		Details: details,
 		Journal: mustJSON(map[string]any{
 			"repositoryId": id, "from": map[string]string{"id": fromID, "key": from.Project}, "to": map[string]string{"id": toID, "key": to.Project},
 		}),
 	}
+	in = audit.Event{
+		Type: audit.EventRepositoryMovedIn, Actor: actorOf(actor), Outcome: audit.Success,
+		Subject:    audit.Subject{Kind: "repository", ID: id, Name: to.String()},
+		Repository: to.String(), Project: to.Project,
+		Details: details,
+	}
+	return out, in
 }

@@ -2186,6 +2186,7 @@ func (e RepositoryConsumerViewClass) Valid() bool {
 const (
 	RepositoryReferenceKindCiMapping               RepositoryReferenceKind = "ci_mapping"
 	RepositoryReferenceKindDeploymentTarget        RepositoryReferenceKind = "deployment_target"
+	RepositoryReferenceKindGlobalPolicy            RepositoryReferenceKind = "global_policy"
 	RepositoryReferenceKindMember                  RepositoryReferenceKind = "member"
 	RepositoryReferenceKindPinRule                 RepositoryReferenceKind = "pin_rule"
 	RepositoryReferenceKindPolicy                  RepositoryReferenceKind = "policy"
@@ -2199,6 +2200,8 @@ func (e RepositoryReferenceKind) Valid() bool {
 	case RepositoryReferenceKindCiMapping:
 		return true
 	case RepositoryReferenceKindDeploymentTarget:
+		return true
+	case RepositoryReferenceKindGlobalPolicy:
 		return true
 	case RepositoryReferenceKindMember:
 		return true
@@ -6564,7 +6567,7 @@ type Problem struct {
 	Instance *string       `json:"instance,omitempty"`
 	Job      *JobReference `json:"job,omitempty"`
 
-	// References Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository (R-REPO-060).
+	// References Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository, and for an Owner without `repositories:write-config` the global policies that name it by key (R-REPO-060, Q-REPO-232).
 	References *[]RepositoryReference `json:"references,omitempty"`
 
 	// RequestId Equals the `X-Request-Id` response header.
@@ -7051,7 +7054,7 @@ type RepositoryRead struct {
 type RepositoryReference struct {
 	Kind RepositoryReferenceKind `json:"kind"`
 
-	// Name The name of the object within the source project.
+	// Name The name of the object within the source project; for `global_policy` the name of the global policy.
 	Name string `json:"name"`
 }
 

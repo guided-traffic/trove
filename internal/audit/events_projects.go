@@ -20,8 +20,13 @@ const (
 	EventProjectMemberChanged = "authz.project.member_changed"
 	EventProjectMemberRemoved = "authz.project.member_removed"
 	// EventRepositoryMoved is the move of a repository to another project (R-REPO-060): the
-	// repository's ID, the source and the target project.
+	// repository's ID, the source and the target project. It is recorded in the source project
+	// under the repository's former name and carries the journal entry.
 	EventRepositoryMoved = "repository.moved"
+	// EventRepositoryMovedIn is the same move recorded in the target project under the
+	// repository's new name, so that the audit of each project shows it (Q-REPO-233). It has the
+	// details of repository.moved and no journal entry: the restore reads the move once.
+	EventRepositoryMovedIn = "repository.moved_in"
 )
 
 func init() {
@@ -51,4 +56,5 @@ func init() {
 		`"configVersion":{"type":"integer"}},` +
 		`"required":["epoch","repository","repositoryId","from","fromId","to","toId"],"additionalProperties":false}`
 	Register(EventType{Name: EventRepositoryMoved, Category: CategoryRepository, Mode: Transactional, Journal: JournalRevocation, Schema: moved})
+	Register(EventType{Name: EventRepositoryMovedIn, Category: CategoryRepository, Mode: Transactional, Schema: moved})
 }

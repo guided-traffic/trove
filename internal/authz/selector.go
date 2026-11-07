@@ -186,6 +186,20 @@ func (s selector) suffix() string {
 	return ":" + s.format
 }
 
+// coversProject reports whether the selector names the project: the project of a key and of a selector read in a
+// project context, a pattern whose project glob matches it, and a class of the instance context, which covers every
+// project. The key glob and the format filter do not narrow it: the question is which projects a selector reaches,
+// not which repositories it matches today.
+func (s selector) coversProject(project string) bool {
+	if s.project != "" {
+		return s.project == project
+	}
+	if s.kind == selPattern {
+		return qname.Glob(s.projectGlob, project)
+	}
+	return s.kind == selClass
+}
+
 // matches reports whether the selector covers the repository.
 func (s selector) matches(r repoView) bool {
 	if s.format != "" && s.format != r.Format {

@@ -18,6 +18,13 @@ invalid one is a 401 that never falls through to a lower source or to anonymous:
 | 3 | Session cookie `__Host-trv_session` | Only where the endpoint's surface holds `ui` and the path allows it (`/api/v1/` all methods, `/files/` GET HEAD PUT DELETE, `/api/<format>/` GET HEAD), and never on a route that declares the API key, whatever its method; CSRF is the session validator's. A replica without a session validator ignores the cookie. |
 | 4 | none | Anonymous only if the endpoint, `auth.anonymous.allowed` and the runtime switch `anonymousAccess` allow it, and never an unsafe method on `/api/v1/`; or a route that is always open or declared public. |
 
+The path rules read two forms of the path (`rulePaths` in [stage.go](../../internal/auth/stage.go)). The rules that limit a
+request - the hard limit on an unsafe anonymous request to `/api/v1/`, the cookie's path rule of order 3 and the challenge -
+read the unescaped path, the one `ServeMux` routes by: it unescapes each segment, so `POST /api/v%31/projects` reaches the
+management API and is refused like `POST /api/v1/projects`. The rules that open a route - the always-open routes, the npm login
+start and the exchange routes - read the escaped path as received, so `POST /api/v1/tokens/revok%65` is not open, and a `%` in
+a named segment of a repository address is no address, as the dispatcher reads it.
+
 The stage runs before the dispatcher, so it learns whether a request reaches an API-key route from the dispatcher's own match
 (`EndpointRules.APIKeyRoute`, wired to `Dispatcher.APIKeyRoute` in [wire_identity.go](../../internal/app/wire_identity.go),
 Q-AUTH-186): the endpoint's surface, the prefix, the key shape, the clean path and the format's `Match`. The header is therefore

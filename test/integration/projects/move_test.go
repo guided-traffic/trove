@@ -103,12 +103,61 @@ func TestR_REPO_060_MoveARepository(t *testing.T) {
 			f.detail("repository.moved", "from") != "web" || f.detail("repository.moved", "to") != "mobile" {
 			t.Errorf("events %d, journal %d", f.events("repository.moved"), f.journal("repository.moved"))
 		}
+		// Q-REPO-233: the move shows in the audit of both projects, once each: the source records the repository leaving
+		// under its former name, the target its arrival under the new one; only the leaving is journaled.
+		for _, c := range []struct{ project, action, repository string }{
+			{"web", "repository.moved", "web/npm-libs"}, {"mobile", "repository.moved_in", "mobile/npm-libs"},
+		} {
+			n := f.e.Number(`SELECT count(*) FROM audit_event WHERE project = $1 AND action = $2 AND repository = $3
+			                  AND details->>'repositoryId' = $4 AND details->>'from' = 'web' AND details->>'to' = 'mobile'`,
+				c.project, c.action, c.repository, fmt.Sprint(id))
+			if n != 1 {
+				t.Errorf("the audit of %s holds %d %s events of %s", c.project, n, c.action, c.repository)
+			}
+		}
+		if f.journal("repository.moved_in") != 0 {
+			t.Error("the arrival is journaled as well")
+		}
 		wantStatus(t, f.do(f.admin, "POST", base+"/web/repositories/npm-libs/move", map[string]any{"project": "mobile"}), 404, "")
 	})
 	t.Run("R-REPO-060 the holder of repositories:write-config moves without a membership", func(t *testing.T) {
 		wantStatus(t, f.do(f.admin, "POST", base+"/mobile/repositories/npm-libs/move", map[string]any{"project": "web"}), 200, "")
 		if f.projectOfRepo(id) != "web" {
 			t.Error("not moved back")
+		}
+	})
+	t.Run("Q-REPO-232 a global policy's key selector keeps an Owner from moving the repository, not an administrator", func(t *testing.T) {
+		// The administrator's grant is held by the repository's ID and would follow it into mobile, whose other Owners
+		// cannot remove it: only a holder of repositories:write-config carries it there.
+		const policies = "/api/v1/permission-policies"
+		policy := func(selector string) map[string]any {
+			return map[string]any{
+				"name": "libs-global", "resources": map[string]any{"repositories": []string{selector}},
+				"entries": []map[string]any{{"principal": "user:bob", "actions": []string{"read"}}},
+			}
+		}
+		created := f.do(f.admin, "POST", policies, policy("web/npm-libs"))
+		wantStatus(t, created, 201, "")
+		epoch = fmt.Sprint(created.Epoch())
+		moved := f.events("repository.moved")
+		status, body, code := move(f.alice.Name, "web/repositories/npm-libs", "mobile")
+		if status != 409 || code != "repository_in_use" || fmt.Sprint(body["references"]) != "[map[kind:global_policy name:libs-global]]" {
+			t.Fatalf("%d %s %v", status, code, body)
+		}
+		if f.projectOfRepo(id) != "web" || f.events("repository.moved") != moved {
+			t.Fatal("a refused move changed something")
+		}
+		for _, target := range []string{"mobile", "web"} {
+			if status, body, _ := move(f.admin.Name, f.projectOfRepo(id)+"/repositories/npm-libs", target); status != 200 {
+				t.Fatalf("the administrator's move to %s: %d %v", target, status, body)
+			}
+		}
+		// A pattern names no repository: it matches by address and keeps nobody from moving it.
+		replaced := f.do(f.admin, "PUT", policies+"/libs-global", policy("web/npm-*"), "If-Match", "*")
+		wantStatus(t, replaced, 200, "")
+		epoch = fmt.Sprint(replaced.Epoch())
+		if status, body, _ := move(f.alice.Name, "web/repositories/npm-libs", "mobile"); status != 200 {
+			t.Fatalf("an Owner's move under a pattern: %d %v", status, body)
 		}
 	})
 }

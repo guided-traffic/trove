@@ -208,14 +208,24 @@ type evalState struct {
 	// contributions with their caps and bounds, never the plain principal set.
 	isCI bool
 	ci   CIGrantSet
-	// roles are the subject's project roles, the highest over its user and its groups per
-	// project (R-AUTHZ-026), derived once; empty for a credential that carries no role
-	// (Q-AUTHZ-215). A decision looks a repository's project up in it.
-	roles subjectRoles
+	// member says the subject may hold a project role: it carries roles (Q-AUTHZ-215) and its user or one
+	// of its groups is a member of some project. A subject that is none skips every role lookup.
+	member bool
+}
+
+// roleIn is the subject's role in the project of a repository, the highest over its user and its groups
+// (R-AUTHZ-026), ProjectRoleNone for a credential that carries no role (Q-AUTHZ-215). It is read from the
+// one project a decision asks about, a map lookup per user and group ID, and allocates nothing: neither a
+// decision nor a listing of many repositories derives the subject's other memberships (R-AUTHZ-015).
+func (st *evalState) roleIn(p *projectInfo) ProjectRole {
+	if !st.member {
+		return ProjectRoleNone
+	}
+	return p.roleOf(st.sub)
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
-	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub), roles: idx.projectRoles(sub)}
+	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub), member: idx.isMember(sub)}
 	if kindOf(sub) == kindCI {
 		st.isCI, st.ci = true, idx.CIGrants(sub)
 	}
@@ -329,7 +339,7 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
-	if role := st.roles.in(r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
+	if role := st.roleIn(r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
 		out = append(out, r.proj.source(role))
 	}
 	return out
@@ -658,8 +668,14 @@ func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys [
 		return nil, nil
 	}
 	out := make([]qname.Repo, 0, len(keys))
+	// One state for every key, as a read scope builds it (readScope.MayRead): it is immutable, so each
+	// answer is the one evaluate gives, and a key more costs one decision, not one derivation of the subject.
+	var st *evalState
+	if len(keys) > 0 {
+		st = e.newEvalState(idx, sub)
+	}
 	for _, k := range keys {
-		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
+		d := e.evaluateWith(idx, sub, st, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
 		switch {
 		case d.Outcome == Allow:
 			out = append(out, k)
@@ -894,34 +910,51 @@ func (c *patternCache) full() bool { return len(c.sels)+len(c.res) > patternCach
 // project (R-AUTHZ-004). A text that does not parse in its context covers nothing.
 func (c *patternCache) selectorsMatch(texts []string, in qname.Context, r repoView) bool {
 	for _, t := range texts {
-		k := selKeyIn{project: in.Project, text: t}
-		c.mu.RLock()
-		s, ok := c.sels[k]
-		bad := c.bad[k]
-		c.mu.RUnlock()
-		if bad {
-			continue
-		}
-		if !ok {
-			var err error
-			s, err = parseSelector(t, in)
-			c.mu.Lock()
-			if c.full() {
-				c.reset()
-			}
-			if err != nil {
-				c.bad[k] = true
-				c.mu.Unlock()
-				continue
-			}
-			c.sels[k] = s
-			c.mu.Unlock()
-		}
-		if s.matches(r) {
+		if s, ok := c.selector(t, in); ok && s.matches(r) {
 			return true
 		}
 	}
 	return false
+}
+
+// selectorsCoverProject reports whether any selector text of an instance context (a token scope) names the project:
+// a key of a repository of it, a pattern whose project glob matches it, or a class, which covers every project
+// (Q-AUTHZ-215). A text that does not parse covers nothing.
+func (c *patternCache) selectorsCoverProject(texts []string, project string) bool {
+	for _, t := range texts {
+		if s, ok := c.selector(t, instanceContext); ok && s.coversProject(project) {
+			return true
+		}
+	}
+	return false
+}
+
+// selector is the selector text read in the context in, from the cache when seen before; ok is false for a text
+// that does not parse there.
+func (c *patternCache) selector(t string, in qname.Context) (selector, bool) {
+	k := selKeyIn{project: in.Project, text: t}
+	c.mu.RLock()
+	s, ok := c.sels[k]
+	bad := c.bad[k]
+	c.mu.RUnlock()
+	if bad {
+		return selector{}, false
+	}
+	if ok {
+		return s, true
+	}
+	s, err := parseSelector(t, in)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.full() {
+		c.reset()
+	}
+	if err != nil {
+		c.bad[k] = true
+		return selector{}, false
+	}
+	c.sels[k] = s
+	return s, true
 }
 
 // set compiles one dimension's lists, from the cache when seen before. format

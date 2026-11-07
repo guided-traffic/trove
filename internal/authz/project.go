@@ -1,8 +1,10 @@
 package authz
 
 import (
+	"slices"
 	"sort"
 
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/qname"
 )
 
@@ -66,17 +68,6 @@ func (r *subjectRoles) find(p *projectInfo) int {
 	return -1
 }
 
-// in is the subject's role in the project, ProjectRoleNone for no membership and for no project.
-func (r *subjectRoles) in(p *projectInfo) ProjectRole {
-	if p == nil {
-		return ProjectRoleNone
-	}
-	if i := r.find(p); i >= 0 {
-		return r.list[i].role
-	}
-	return ProjectRoleNone
-}
-
 // merge adds one membership row, keeping the higher role of a project the list holds.
 func (r *subjectRoles) merge(m membership) {
 	if i := r.find(m.p); i >= 0 {
@@ -93,6 +84,23 @@ func (r *subjectRoles) merge(m membership) {
 			r.at[o.p] = i
 		}
 	}
+}
+
+// isMember reports whether the subject carries roles and its user or one of its groups is a member of some
+// project: a map lookup per ID, no allocation, nothing per membership.
+func (x *Index) isMember(sub Subject) bool {
+	if len(x.memberships) == 0 || !carriesRoles(sub) {
+		return false
+	}
+	if len(x.memberships[sub.ID]) > 0 {
+		return true
+	}
+	for _, g := range sub.Groups {
+		if len(x.memberships[g.ID]) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // projectRoles derives the roles of the subject from its user ID and its group IDs through the index's
@@ -132,7 +140,10 @@ func inForce(role ProjectRole, sub Subject) ProjectRole {
 // MembershipsOn returns the projects the subject is a member of with its role in force for the
 // credential, sorted by key (Q-AUTHZ-207): GET /authz/me lists it, and the project list and the
 // declarations of the management API read it. It is empty for anonymous, a service account, a CI
-// identity, a Bastion registration and a user without a membership.
+// identity, a Bastion registration and a user without a membership. A token lists only the projects
+// its scope reaches ([Engine.scopeReachesProject]): a role reaches a personal access token within its
+// scope (Q-AUTHZ-215), so a token scoped to one repository's deploy does not see its owner's other
+// projects and their members.
 func (e *Engine) MembershipsOn(idx *Index, sub Subject) []Membership {
 	if idx == nil {
 		return nil
@@ -143,21 +154,42 @@ func (e *Engine) MembershipsOn(idx *Index, sub Subject) []Membership {
 	}
 	out := make([]Membership, 0, len(roles.list))
 	for _, m := range roles.list {
-		out = append(out, Membership{Key: m.p.key, Role: inForce(m.role, sub)})
+		if e.scopeReachesProject(sub.Scope, m.p.key) {
+			out = append(out, Membership{Key: m.p.key, Role: inForce(m.role, sub)})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
 }
 
 // RoleOn returns the subject's role in the project in force for its credential (as MembershipsOn names
-// it): ProjectRoleNone for a project it is no member of and for one the index does not hold, so the
-// answer does not tell them apart. It is a question and audits nothing. The declaration of an operation
-// with projectRole compares it (R-API-008): reader admits every role, owner only ProjectRoleOwner.
+// it): ProjectRoleNone for a project it is no member of, for one its token's scope does not reach and
+// for one the index does not hold, so the answer does not tell them apart. It is a question and audits
+// nothing. The declaration of an operation with projectRole compares it (R-API-008): reader admits
+// every role, owner only ProjectRoleOwner.
 func (e *Engine) RoleOn(idx *Index, sub Subject, project string) ProjectRole {
-	if idx == nil {
+	if idx == nil || !e.scopeReachesProject(sub.Scope, project) {
 		return ProjectRoleNone
 	}
 	return inForce(idx.projects[project].roleOf(sub), sub)
+}
+
+// scopeReachesProject reports whether a credential's scope reaches the project for the member's role
+// outside the repositories' content, which the scope decides per repository (R-AUTHZ-013): reading the
+// project and its members, and being known as its member (Q-AUTHZ-215). No scope (a session), inherit,
+// admin: true and the system item projects:read reach every project; a restricted scope reaches the
+// projects one of its repository elements names, whatever the element's actions, since the token acts
+// in them.
+func (e *Engine) scopeReachesProject(sc *scope.Scope, project string) bool {
+	if sc == nil || sc.Inherit || sc.Admin || slices.Contains(sc.System, string(ProjectsRead)) {
+		return true
+	}
+	for _, el := range sc.Repositories {
+		if e.compile.selectorsCoverProject(el.Repositories, project) {
+			return true
+		}
+	}
+	return false
 }
 
 // OwnsOn reports whether the subject may administer the project: an Owner of it, through a session or a
@@ -177,6 +209,11 @@ func mayAdminister(sub Subject) bool {
 	}
 	return sub.Scope == nil || sub.Scope.Admin
 }
+
+// HasProject reports whether the index holds the project (R-AUTHZ-026): every project is on the index, with or
+// without members and repositories. The management API answers a missing project on the index a request's
+// decisions are made on.
+func (x *Index) HasProject(key string) bool { return x != nil && x.projects[key] != nil }
 
 // ProjectOf returns the key of the project of a repository on this index, "" for an unknown one.
 func (x *Index) ProjectOf(name qname.Repo) string {

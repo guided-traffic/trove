@@ -61,8 +61,25 @@ SELECT m.project_id::text AS project_id, m.principal_id::text AS principal_id, p
  ORDER BY m.project_id, m.principal_id;
 
 -- name: AuthzProjectByKey :many
--- The ID of a project by its key; no row when it does not exist (R-AUTHZ-026).
-SELECT id::text AS id FROM project WHERE key = sqlc.arg(key)::text;
+-- The ID of a project by its key; no row when it does not exist (R-AUTHZ-026). The
+-- row is taken FOR SHARE: a policy write of the project holds it until it commits,
+-- so a move into or out of the project (ProjectLock, FOR UPDATE) runs before or
+-- after the write and never between the binding of its key selectors and its
+-- commit, and the lock comes before the repository rows AuthzBindRepository takes,
+-- in the order the move takes them.
+SELECT id::text AS id FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
+
+-- name: AuthzBindRepository :many
+-- The repository a key selector of a policy write names, by project and key, in the
+-- transaction of the write and under a share lock of its row (R-AUTHZ-004,
+-- R-REPO-060): a move of it (ProjectRepositoryLock, FOR UPDATE) waits for the write,
+-- whose selector then keeps it from moving, or the write waits for the move and the
+-- row no longer matches the project. No row when the project holds no such key.
+SELECT r.id, r.class
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = sqlc.arg(key)::text
+   FOR SHARE OF r;
 
 -- name: AuthzServiceAccountProject :many
 -- The key of the project a service account belongs to, empty for a global account;
