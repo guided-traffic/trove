@@ -34,6 +34,15 @@ func podNode(t testing.TB, ns, pod string) string {
 	return strings.TrimSpace(out)
 }
 
+// podNodeIfAny is podNode for a pod that may be deleted while it is looked up: an error (the pod is gone) is the empty node.
+func podNodeIfAny(ns, pod string) string {
+	out, err := kubectl("-n", ns, "get", "pod", pod, "-o", "jsonpath={.spec.nodeName}")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // bakDrainNode picks a worker node that hosts neither the PostgreSQL primary of the main installation nor the database of the
 // restored one: a PodDisruptionBudget refuses the eviction of a primary, and the drain would not finish.
 func bakDrainNode(t testing.TB) string {
@@ -198,7 +207,8 @@ func TestBackupDrain(t *testing.T) {
 		// once the pod is evicted the other nodes take the next one
 		waitFor(t, "the restore pod to leave "+node, 2*time.Minute, time.Second, func() bool {
 			p := bakPodOf(t, restoreNS, "trove-restore")
-			return p == "" || podNode(t, restoreNS, p) != node
+			// the evicted pod can be gone between the two lookups; a pod that no longer exists has left the node
+			return p == "" || podNodeIfAny(restoreNS, p) != node
 		})
 		for _, n := range others {
 			_, _ = kubectl("uncordon", n)

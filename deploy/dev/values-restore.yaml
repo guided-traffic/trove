@@ -116,6 +116,8 @@ secrets:
     key: ca.crt
   s3:
     existingSecret: trove-s3
+  backupSource:
+    existingSecret: trove-s3                    # backup.enabled with static S3 keys needs the backup's own blob login (Q-BAK-49); the profile has one SeaweedFS login
   backupTarget:
     existingSecret: trove-s3
   s3CA:

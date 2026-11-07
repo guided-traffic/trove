@@ -76,7 +76,7 @@ func TestBackupJournal(t *testing.T) {
 	// ── after the snapshot ───────────────────────────────────────────────────
 	adm.do(http.MethodDelete, "/api/v1/tokens/"+victim.ID, nil).want(t, "revoke the token", 200, 204)
 	adm.do(http.MethodPost, "/api/v1/users/alice/disable", map[string]any{"revokeTokens": true}).want(t, "disable alice", 200, 204)
-	if out, err := npmClientRun(t, "localhost:8080", token, "unpublish", unp+"@1.1.0", "--force"); err != nil {
+	if out, err := npmClientRun(t, "localhost:"+edgePort(t), token, "unpublish", unp+"@1.1.0", "--force"); err != nil {
 		t.Fatalf("npm unpublish: %v: %s", err, tail(out, 600))
 	}
 	reserved := "Bak.Res" + strings.ToUpper(run)
