@@ -23,7 +23,10 @@ remote repositories are applied by the repository service to a `Restricted` call
   grant (`allowedAction`); content:metadata-read, ownership claims (`roleClaimers`) and listings (`readShape`) see it too.
 - **The credential decides the administration.** `RoleOn`, `OwnsOn` and `MembershipsOn` answer the role in force for the credential:
   an Owner through a token without `admin: true` is a Maintainer there (`inForce`), so a declaration `projectRole: owner` refuses it.
-  Content decisions give the Owner's and the Maintainer's actions alike.
+  Content decisions give the Owner's and the Maintainer's actions alike. `MembershipsOn` and `RoleOn` answer a token only for the
+  projects its scope reaches (`scopeReachesProject`: no scope, `inherit`, `admin: true`, the system item `projects:read`, or a
+  repository element whose selector names the project, `selector.coversProject`), so every reader of the memberships (the project
+  list, `projectRole: reader`, `hideProject`, `/authz/me`) narrows alike (Q-AUTHZ-215).
 - **Two selector contexts.** A global policy, a token scope, the system CI tier and an exposure rule name `<project>/<key>`,
   `<projectGlob>/<keyGlob>[:format]` or a class (`@any…`); a project policy, a project CI tier, a virtual repository's members and
   deployment target a bare key, a bare key glob or a class. `authz.ValidateSelectorIn(text, project)` validates either; its error wraps
@@ -125,7 +128,7 @@ Tests are named after the requirement; the integration tier needs the stack (`ma
 
 | Test | Where | What it pins |
 |---|---|---|
-| `TestR_AUTHZ_026_EachRoleGrantsItsActionsOnTheProjectsRepositories`, `…_TheHighestRoleOverTheUserAndItsGroups`, `TestR_AUTHZ_013_ATokenScopeIntersectsTheRole`, `TestQ_AUTHZ_215_OnlyUsersCarryARole`, `TestR_AUTHZ_026_AdministratorsAndAuditorsSeeEveryProject`, `TestR_AUTHZ_009_ARoleOnAVirtualRepository`, `TestR_API_029_AListingReadsWhatARoleReads`, `TestR_AUTHZ_018_ADeployThroughARoleClaimsForTheMember`, `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`, `TestR_AUTHZ_026_ManyMembershipsMergeToTheHighestRole`, `BenchmarkRoleDecide` | [project_roles_test.go](../../internal/authz/project_roles_test.go) | the role in the decision path |
+| `TestR_AUTHZ_026_EachRoleGrantsItsActionsOnTheProjectsRepositories`, `…_TheHighestRoleOverTheUserAndItsGroups`, `TestR_AUTHZ_013_ATokenScopeIntersectsTheRole`, `TestQ_AUTHZ_215_AMembershipReachesATokenWithinItsScope`, `TestQ_AUTHZ_215_OnlyUsersCarryARole`, `TestR_AUTHZ_026_AdministratorsAndAuditorsSeeEveryProject`, `TestR_AUTHZ_009_ARoleOnAVirtualRepository`, `TestR_API_029_AListingReadsWhatARoleReads`, `TestR_AUTHZ_018_ADeployThroughARoleClaimsForTheMember`, `TestR_AUTHZ_015_ARoleDecisionDoesNotGrowWithTheProjects`, `TestR_AUTHZ_026_ManyMembershipsMergeToTheHighestRole`, `BenchmarkRoleDecide` | [project_roles_test.go](../../internal/authz/project_roles_test.go) | the role in the decision path |
 | `TestR_AUTHZ_026_ProjectPolicyIsScopedToItsProject`, `…_MatchCacheKeyIncludesTheProject`, `…_ProjectPolicyValidation`, `…_ListFilterByProject`, `…_TheBuildSkipsAnAutoJoinGroupAsAMember` | [project_test.go](../../internal/authz/project_test.go), [project_oracle_test.go](../../internal/authz/project_oracle_test.go) | selectors, stored names, the fail-closed build |
 | `TestR_AUTHZ_026_MemberReferences`, `TestR_AUTHZ_031_MemberEventsCarryTheirJournalEntries`, `TestR_REPO_060_TheMovedEvent`, `…_ACIMappingNamesTheRepositoryByKey`, `…_RefusalsOfAMove` | [service_test.go](../../internal/project/service_test.go) | the service without a database |
 | `TestR_AUTHZ_026_AnOwnerWritesThePoliciesOfItsProject`, `TestR_AUTHZ_022_AuthzMeListsTheMemberships`, `TestR_AUTHZ_026_RolesDecideOnEveryReplica`, `TestR_AUTHZ_028_AMemberChangeReachesAnotherReplica`, `TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles`, `TestR_AUTHZ_026_AnAutoJoinGroupGrantsNothingInAProject` | [test/integration/authz/projects_test.go](../../test/integration/authz/projects_test.go) | roles, policies and moves against the tables, on two replicas and over HTTP |
