@@ -273,14 +273,19 @@ versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, th
 # The unit tests run under the race detector and write two things for the run's reports:
 # .out/test-unit.json (go test -json, the requirement IDs of the test names) and the coverage
 # profile of the unit tier (merged by `make coverage-report`).
+# The unit tier runs without the host's AWS configuration, as on the CI runner: a region or a credential from
+# ~/.aws or the shell made TestBackupCommands pass locally and fail in Test and Release run 42387599073.
+UNIT_ENV := env -u AWS_REGION -u AWS_DEFAULT_REGION -u AWS_PROFILE -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY \
+  -u AWS_SESSION_TOKEN AWS_CONFIG_FILE=/nonexistent AWS_SHARED_CREDENTIALS_FILE=/nonexistent AWS_EC2_METADATA_DISABLED=true
+
 .PHONY: test
-test: ## Unit tests with the race detector; .out/test-unit.json for the coverage generator, .out/coverage/unit.out for the report
+test: ## Unit tests with the race detector, without the host's AWS configuration; .out/test-unit.json for the coverage generator, .out/coverage/unit.out for the report
 	@mkdir -p .out $(COVERAGE_DIR)
-	@set -o pipefail; go test -race -count=1 -covermode=atomic -coverpkg=./... \
+	@set -o pipefail; $(UNIT_ENV) go test -race -count=1 -covermode=atomic -coverpkg=./... \
 	  -coverprofile=$(COVERAGE_DIR)/unit.out -json $(PKGS) | tee .out/test-unit.json | $(TESTLOG)
 	@# The time bounds of the conformance kit (R-ARCH-028: a crafted input is rejected within 5 s) hold for the code as it
 	@# ships: the race run above stretches them, this plain run of the kit holds them as specified.
-	go test -count=1 -run 'TestR_ARCH_010' ./internal/formats/...
+	$(UNIT_ENV) go test -count=1 -run 'TestR_ARCH_010' ./internal/formats/...
 
 .PHONY: integration-up
 integration-up: ## Start PostgreSQL, PgBouncer, Valkey with Sentinel (TLS) and SeaweedFS; write .dev/integration/env
