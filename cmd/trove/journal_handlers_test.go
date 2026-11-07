@@ -9,10 +9,7 @@ import (
 
 // handlerPending are the journaled events whose replay handler is not built yet, each with the gap that says so. The list
 // keeps itself honest: an event that has a handler must leave it.
-var handlerPending = map[string]string{
-	audit.EventVulnFindingStatusChanged: "H-489: the vulnerability block of a finding is journaled and not replayed yet",
-	audit.EventVulnFindingReopened:      "H-489: the vulnerability block of a finding is journaled and not replayed yet",
-}
+var handlerPending = map[string]string{}
 
 // TestR_HA_054_EveryJournaledEventHasAReplayHandler: the trove binary, which runs both replays (`trove backup restore`,
 // `trove admin post-restore`), holds a replay handler for every event the audit registry flags for the revocation journal.

@@ -212,9 +212,20 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-07 by the security audit of the avatar upload (R-API-055):
+Found on 2026-11-07 by the security audit of the avatar upload (R-API-055) and of the revocation journal (R-HA-054):
 
 ### Product
+
+- **F-72 · Narrowings that a restore undoes because they write no journal entry** (read in the code by the journal's audit and
+  the agent that closed its producer gaps; listed as
+  [H-569](../security/backup-and-restore.md#what-this-does-not-cover)). Each is recorded as an audit event without an entry, so
+  a restore of a backup or a platform restore brings the wider state back: a pending identity link removed (`IdentityReplaceIdentities`
+  in `UpdateUser`, `internal/auth/principal/manager.go`), a group renamed away from the name the identity provider fills
+  (`internal/auth/principal/groups.go`), a repository's content narrowed (include/exclude patterns, a virtual member removed,
+  `internal/repository/members.go`, a stronger `vulnerabilities` member; all `repository.updated`), claims and pin rules added
+  (`internal/repository/claims.go`), token lifetime ceilings lowered (not journaled by R-AUTH-041's own decision, to be revisited with the
+  rest). Done when each narrowing writes an entry with a fail-closed replay handler (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`
+  then holds them), or a decision states why one need not, and H-569 is narrowed to what is left.
 
 - **F-71 · A token scoped down to part of its owner's rights can write its owner's preferences** (read in the code by the audit,
   not reproduced). The routes of `users/me/preferences` are `authenticated: true` and their handler checks only the principal's kind
