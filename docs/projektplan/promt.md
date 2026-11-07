@@ -272,6 +272,11 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   Still missing and to be added with the next reading if the logs do not name it: the pods' CPU throttling (`cpu.stat`) and
   memory (`/metrics` `go_memstats`, `trove_http_in_flight`) at the time. Done when the cause is named and fixed and the set
   passes in a nightly run.
+  The dispatched nightly run 42338478182 (2026-11-07, release v0.22.0, `sets=ha-suite`, runner class `large`) passed the whole set,
+  `TestHASuite_ObjectStoreOutage` included (30 s and 5 min, no replica unready), with the monitor that keeps a failing pod's
+  logs; it did not reproduce the stall. Done when the scheduled nightly runs pass the set too (then removed as not reproduced),
+  or a recurrence names the cause through the kept logs.
+
 - **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
   the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
   14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197). Cause: the leg ran on a GitHub-hosted runner (4 vCPUs for the cluster, both stubs and the
