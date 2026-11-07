@@ -16,6 +16,14 @@ The configuration keeps the split: `backup.target.credentials` is a section the 
 ([internal/config/backup.go](../../internal/config/backup.go)); the API reads rows, never the target
 ([backups_api.go](../../internal/api/v1/backups_api.go) answers from `backup_run` once built).
 
+The target client ([target.go](../../internal/blob/s3/target.go)) is built from `backup.target` alone and signs every request with
+`backup.target.credentials` or the default chain of the backup pod's environment; it has no path to `storage.s3.credentials`, so the
+runtime blob-store credential never signs a request to the target (R-BAK-015; `TestR_BAK_015_TargetSignsWithItsOwnCredential`,
+`TestR_BAK_015_TargetOwnCredentials`). `backup.target.ca_file` is the target's whole trust store, and a plain-http endpoint is refused
+without `allow_insecure_endpoint` (R-BAK-026). Every write, multipart start and copy repeats `backup.target.sse`; the preflight
+compares what the store reports with it (`Target.CheckSSE`). A store without a conditional create gets a `HeadObject` check before the
+marker is written, which is not atomic; the one-run rule in PostgreSQL, not the store, keeps two runs apart (Q-BAK-27).
+
 ## The run record and the hold
 
 `backup_run` is the one place that says which backup operation is active. A partial unique index admits one `create` or `delete`

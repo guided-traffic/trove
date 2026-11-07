@@ -50,6 +50,15 @@ var _ blob.ObjectStore = (*Client)(nil)
 // the outbound layer takes a proxy credential, use a proxy that authenticates by
 // address.
 func NewFromFactory(ctx context.Context, cfg config.StorageS3, f *outbound.Factory) (*Client, error) {
+	hc, err := factoryClient(cfg, f)
+	if err != nil {
+		return nil, err
+	}
+	return New(ctx, cfg, hc)
+}
+
+// factoryClient builds the HTTP client of an object-store section through the factory.
+func factoryClient(cfg config.StorageS3, f *outbound.Factory) (*http.Client, error) {
 	var opts []outbound.ClientOption
 	if cfg.CAFile != "" {
 		trust, err := f.TrustStore(outbound.PurposeObjectStore, cfg.CAFile)
@@ -79,7 +88,7 @@ func NewFromFactory(ctx context.Context, cfg config.StorageS3, f *outbound.Facto
 		}
 		opts = append(opts, outbound.WithProxyURL(u, bypass...))
 	}
-	return New(ctx, cfg, f.Client(outbound.PurposeObjectStore, opts...))
+	return f.Client(outbound.PurposeObjectStore, opts...), nil
 }
 
 // New builds a client that sends its requests with hc, which must come from

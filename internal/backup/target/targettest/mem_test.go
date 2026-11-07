@@ -9,6 +9,10 @@ import (
 	"github.com/guided-traffic/trove/internal/backup/target"
 )
 
+func TestMemConformance(t *testing.T) {
+	Conformance(t, New(), Options{Prefix: "p/", PartSize: 1 << 10, SSE: "AES256"})
+}
+
 func TestMem(t *testing.T) {
 	ctx := context.Background()
 	m := New()

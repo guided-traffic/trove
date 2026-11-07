@@ -2198,6 +2198,23 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-BAK-007, R-BAK-009, R-BAK-010, R-BAK-013; `internal/backup/runstore.go`, `handle.go`, `slot.go`, `internal/meta/postgres/migrations/00046_backup.sql`.
 
+### Q-BAK-27 · The S3 target is a second client of the blob store's client code, and a store without conditional writes gets a HEAD check
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A separate S3 client in the backup package | `internal/backup` imports the AWS SDK | Independent of the blob store's client | R-ARCH-002 allows the SDK in `internal/blob/s3` only; the retry classification, error mapping, stall detector and credential files would be written twice |
+| (b) `s3.Target` in `internal/blob/s3` over a second `Client` built from `backup.target` (chosen) | `target.go`, `target_writer.go`, `target_copy.go` implement `target.Store`; the constructor maps `backup.target` to the object-store section and builds its own HTTP client, credential chain and retryer | One place for the SDK, one error classification, the rotation of credential files of R-STOR-031 applies unchanged | The transport and retry settings of the target are the storage.s3 defaults, since `backup.target` has no keys for them |
+
+A conditional create sends `If-None-Match: *` (PutObject, CompleteMultipartUpload). A `412` is `ErrExists`. A store that answers `501`, `NotImplemented` or `400 InvalidArgument` is remembered for the life of the `Target`, and every later conditional create does a `HeadObject` first and writes unconditionally: not atomic, and `ErrConditionalUnsupported` is not returned. The marker and the pool never need the atomic form, because the one-run rule is held in PostgreSQL (Q-BAK-4) and every key below the target is immutable (R-BAK-002). A store that ignores the header silently gets the same guarantee as the fallback.
+
+**Choice:** (b), with the HEAD fallback.
+
+**Rationale:** The target needs the same classification of store answers as the blob store, and the backup lane must run against stores without conditional writes (older MinIO, Ceph, Garage). The development agent would revisit this when the lane needs an atomic create for correctness, which would make a store without conditional writes a configuration error.
+
+**Applied:** R-BAK-002, R-BAK-015, R-BAK-026; `internal/blob/s3/target*.go`, `internal/backup/target/targettest/conformance.go`, `test/integration/backup/target_adapter_test.go`, `docs/developer/backup.md`, `docs/security/backup-and-restore.md`.
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated

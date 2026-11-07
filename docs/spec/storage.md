@@ -4678,6 +4678,23 @@ Context: a blob that a row references must not be collected (R-STOR-003), and on
 
 **Applied:** R-API-055 (Storage); migration `user_avatars`; `internal/meta/postgres/tables_avatar.go`; `internal/meta/postgres/queries/avatars.sql`; [backup-and-restore.md](backup-and-restore.md) R-BAK-004 (the table is `data` by default). Tests: `TestR_API_055_AvatarLifecycle` (the replaced blob and the blob of a deleted user are queued), the migration test that every table is registered.
 
+### Q-STOR-165 · R-STOR-030 to R-STOR-033 hold for the backup target's client as they do for the blob store's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The target is configured like `storage.s3`, with every key | `backup.target` repeats the transport, retry and checksum sections | Full control per target | A large section for a client that runs for minutes a day; the chart renders it twice |
+| (b) The target takes the endpoint, TLS, credential and encryption keys of `backup.target` and the transport defaults of `storage.s3` (chosen) | `s3.NewTarget` builds a `config.StorageS3` from `backup.target` with the default timeouts (5 s dial, 30 s response header, 60 s idle transfer), five attempts with a 20 s backoff cap and `when_supported` checksums; `backup.target.ca_file` is the target's whole trust store | The rules of R-STOR-030 (https, normalized endpoint, own CA), R-STOR-031 (credential sources, file rotation) and R-STOR-033 (timeouts, stall detector) apply by construction | A target behind a proxy or with a tuned retry has no key for it until one is added to `backup.target` |
+
+The runtime credential is never read: the target's credential comes from `backup.target.credentials` and the SDK default chain of the backup pod's environment, and the target section is not derived from `storage.s3` (R-BAK-015).
+
+**Choice:** (b).
+
+**Rationale:** The second client needs the same hardening as the first, and the backup pod is the only place it runs. The development agent would revisit this when an operator needs a proxy or other transport settings for the target.
+
+**Applied:** R-STOR-030, R-STOR-031, R-STOR-033, R-BAK-015; `internal/blob/s3/target.go` (`targetStorage`), `internal/blob/s3/client.go` (`factoryClient`).
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

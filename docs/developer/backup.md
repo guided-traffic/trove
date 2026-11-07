@@ -62,6 +62,10 @@ internal/api/v1/backups_api.go  the three read-only operations (stubs that answe
 | [format/manifest.schema.json](../../internal/backup/format/manifest.schema.json) | the JSON Schema a test validates every manifest against |
 | [format/bloblist.go](../../internal/backup/format/bloblist.go) | `BlobListWriter`/`Reader` (zstd text), `Diff` (referenced vs known: new list and to-copy set), `Union` (the keep set), `SumWriter` |
 | [target/store.go](../../internal/backup/target/store.go) | `target.Store`: Head, Get, Put, Writer, List (ordered), Delete, Copy, Probe; the errors |
+| [target/targettest/conformance.go](../../internal/backup/target/targettest/conformance.go) | `Conformance`: the contract suite the in-memory target and the S3 adapter both run |
+| [blob/s3/target.go](../../internal/blob/s3/target.go) | `s3.Target`, `NewTarget`: Head, Get, Put (conditional create), List, Delete, Probe, `CheckSSE` |
+| [blob/s3/target_writer.go](../../internal/blob/s3/target_writer.go) | the multipart streaming `Writer` |
+| [blob/s3/target_copy.go](../../internal/blob/s3/target_copy.go) | `Copy`: `CopyObject`, or `UploadPartCopy` above the single-copy limit |
 | [fixup/fixup.go](../../internal/backup/fixup/fixup.go) | `Register`, `RegisterPurger`, `Fixups`, `Purgers`; the orders of the core fix-ups |
 | [exit.go](../../internal/backup/exit.go) | exit codes, failure codes, `ExitCode`, `ErrorCode`, `BusyError`, sentinel errors |
 | [state.go](../../internal/backup/state.go) | `Operation`, `State`, `Hold`, `Trigger`, `Progress`, `Run`, `NewRun` |
@@ -87,6 +91,32 @@ pool to a `BlobSink`, loads, migrates forward, runs the fix-ups of `fixup.Fixups
 The revocation journal is independent of the backup: the audit writer inserts a `revocation_outbox` row in the transaction of the
 change, a worker job (`journal.Shipper`) writes `journal.Object`s to the blob bucket, and a replay (`journal.Replayer`) applies the
 handlers that the domains registered. `trove backup restore` and `trove admin post-restore` run the same replay.
+
+### The S3 target adapter
+
+`s3.NewTarget(ctx, cfg config.Backup, f *outbound.Factory, opts ...s3.TargetOption) (*s3.Target, error)` is how `cmd/trove` turns the
+configuration into a `target.Store`; `NewTargetWithClient` takes an HTTP client from `internal/outbound` instead of a factory. The
+`Target` builds its own client from `backup.target` only (endpoint, region, `ca_file`, credential chain, encryption): it never
+reads `storage.s3`, so the runtime blob-store credential cannot reach it (R-BAK-015, Q-STOR-165). `Endpoint()` and `Bucket()` give
+the same-bucket check of R-BAK-002 what it compares against the source.
+
+- **Keys** are full object keys; the caller joins `backup.target.prefix` (`format.Layout`). The adapter adds nothing.
+- **Writer** collects `backup.database.part_size` bytes, uploads each full part with `UploadPart` and creates the multipart upload
+  only when a second part follows; an object that fits one part is one `PutObject`. `Close` returns the object as `HeadObject` reports
+  it and sets `SHA256` from the stream; `Head` reports `SHA256` only for a single-request object (a multipart checksum is composite).
+- **Conditional create** (`PutOptions.IfAbsent`) sends `If-None-Match: *`; on a store that rejects it the adapter checks with a
+  `HeadObject` first (Q-BAK-27). `ErrConditionalUnsupported` is not returned by this adapter.
+- **Delete** sends 1,000 keys per request and accepts any number of keys; a missing key is no error.
+- **Copy** is `CopyObject` up to the single-copy limit (5 GiB) and `UploadPartCopy` parts of `backup.copy.part_size` above it, both
+  with the target's encryption headers. A source on another endpoint, `AccessDenied` or `NotImplemented` return
+  `target.ErrServerCopyUnavailable`; the caller decides by `backup.copy.server_side` whether to stream. Tests lower the limit and the
+  parts with `s3.WithSingleCopyLimit` and `s3.WithCopyPartSize`, and the writer's part with `s3.WithWritePartSize`.
+- **Probe** writes, reads back, heads and deletes one object and returns the Head result. `CheckSSE(o)` compares it with
+  `backup.target.sse` and names `backup.target.sse.mode` on a mismatch; a store that rejects the encryption headers fails the probe
+  with the same hint (R-BAK-026). The stack's SeaweedFS has no KMS and answers an SSE-S3 write with a 500, so the integration tests
+  use mode `none` there and `s3` against a store that encrypts (`workingSSE` in the test).
+- Conformance: `targettest.Conformance` runs against `targettest.Mem` and against the adapter
+  ([target_adapter_test.go](../../test/integration/backup/target_adapter_test.go), `make test-integration`).
 
 ## How to add
 
