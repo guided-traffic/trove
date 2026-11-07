@@ -2150,10 +2150,10 @@ their favour.
     number configured), `tls`, `keyPrefix`, `keyspace` and `degradedReplicas`. `serverVersion` and
     each replica's client state are not in it; they live in the registry above. No Sentinel
     address and no credential appears in either answer;
-  - the `backup` block: `expectedInterval` (in R-OPS-004's documented duration form, for example
-    `"24h"`), `lastSuccessAt`, `overdue` and `lastRunState`, read from `backup_run`. `overdue`
-    follows the rule of R-API-050 (1.5 × the expected interval), so this block, the backup summary
-    of R-API-050, the UI and `TroveBackupStale` agree.
+  - the `backup` block: `expectedIntervalSeconds`, `lastSuccessAt`, `overdue` and `lastRunState`,
+    read from `backup_run` (Q-API-205). `overdue` follows the rule of R-API-050 (1.5 × the
+    expected interval), so this block, the backup summary of R-API-050, the UI and
+    `TroveBackupStale` agree.
 - **Drain safety.** The screen decides whether a role is drain-safe from the items of
   `/system/replicas`: its ready replicas that are not `lost`, and their distinct nodes (R-UI-038).
   `replicas.roles.<role>.nodes` is the installation-wide summary for scripts and monitoring.
@@ -2546,7 +2546,10 @@ Summary:
   `keep_within` it applied (Q-API-11; the run result's `retained` and `retention`, cross-page to
   R-BAK-016). `asOf` and `runId` name that run, so the view says how old it is. Backups written or
   removed outside trove appear only after the next run; `trove backup list` reads the target
-  itself (R-BAK-018). `null` until such a run exists.
+  itself (R-BAK-018). `null` until such a run exists. The run is the one with the newest finish
+  among the 25 newest successful create and delete runs of each operation that recorded a
+  `retention` (a create with `--no-prune` records none, Q-BAK-41).
+- `leaseExpired` and `overdue` are judged on the database's clock (Q-API-206).
 - `restoredFrom` is `system_state.restored_from` (`installationId`, `incarnation`, `backupId`,
   `snapshotAt`) after a restore (R-BAK-022), otherwise `null`.
 - `manualRun` holds the namespace and the CronJob name that the chart renders into the
@@ -8851,6 +8854,37 @@ guess from the file name, and the server checks the bytes against it anyway.
 revisit this when users report animated images as a common mistake.
 **Applied:** R-UI-051. Code: `web/src/app/features/profile/avatar-file.ts`, `avatar-messages.ts`. Tests: `profile-avatar.spec.ts`;
 the browser journey `web/e2e/tests/15-avatar.spec.ts`.
+
+### Q-API-205 · The backup block of the system information uses `expectedIntervalSeconds` and has nullable members
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `expectedInterval` as a duration string such as `"24h"` | The form that R-API-050 named | One form with the configuration | R-API-003 puts the unit into the name of a duration, and R-OPS-004's example and the summary already use `expectedIntervalSeconds`; two spellings for one value |
+| (b) `expectedIntervalSeconds` (chosen) | The same name and unit as the summary and the gauge | One spelling; a script reads both answers the same way | The configuration key is a duration string |
+
+**Choice:** (b). The block is an object with the members `expectedIntervalSeconds`, `lastSuccessAt`, `overdue` and `lastRunState` (the state of the newest run of any operation, `null` before one exists). The block itself is `null` on a replica that does not read the runs and when the table cannot be read: the other database facts of the answer are best effort too, and a failing read of this block must not take the diagnostic answer down.
+
+**Rationale:** R-OPS-004 and R-API-050 disagreed; the unit-in-the-name rule decides it. The development agent would revisit the `null` block if a client needs to tell "unreadable" from "not wired".
+
+**Applied:** R-API-050 and R-OPS-004 text; `api/openapi.yaml` (`BackupInfo`, `SystemInfo.backup`); `internal/api/v1/backups_api.go` (`backupInfo`).
+
+### Q-API-206 · A run's `leaseExpired` and the overdue mark are judged on the database's clock
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The replica's clock | `time.Now()` | No extra read | The lease is written relative to the database's `now()` (R-BAK-010); a replica whose clock is a minute off would disagree with the backup pod, the next run and the gauges |
+| (b) The database's clock (chosen) | `RunReader.ActiveRuns` returns it; a list or a single run reads it only when a run of the answer is in an active state | Every replica, the gauge and the abandon rule judge a lease at the same instant | One more read when an active run is in the answer |
+
+**Choice:** (b).
+
+**Rationale:** The lease is the database's decision (Q-BAK-4); the API only reports it. At most one create or delete run is active, so the extra read is bounded. The development agent would revisit this if a verify storm makes active runs common in lists.
+
+**Applied:** R-API-050 (`leaseExpired`, `overdue`); `internal/api/v1/backups_api.go`.
+
 
 ## What this does not cover
 

@@ -4292,8 +4292,8 @@ export interface components {
             database: components["schemas"]["DatabaseFacts"] | null;
             valkey: components["schemas"]["ValkeyFacts"];
             objectStore: components["schemas"]["ObjectStoreFacts"];
-            /** @description Always `null` until the backup runs exist. */
-            backup: null;
+            /** @description The backup job in short form, read from `backup_run` (R-OPS-004, R-API-050); `null` on a replica that does not read the runs. */
+            backup: components["schemas"]["BackupInfo"] | null;
             features: {
                 tracing: boolean;
                 webhooks: boolean;
@@ -8336,6 +8336,20 @@ export interface components {
             /** Format: date-time */
             startedAt: string;
             leaseExpired: boolean;
+        };
+        /** @description The `backup` block of the system information (R-OPS-004): the short form of the summary, under the same overdue rule. */
+        BackupInfo: {
+            /**
+             * Format: int64
+             * @description `backup.expected_interval` in seconds.
+             */
+            expectedIntervalSeconds: number;
+            /** Format: date-time */
+            lastSuccessAt: string | null;
+            /** @description True when `lastSuccessAt` is older than 1.5 times the expected interval; `null` with no successful run. */
+            overdue: boolean | null;
+            /** @description The state of the newest run of any operation (R-BAK-009); `null` before any run. */
+            lastRunState: string | null;
         };
         BackupRetention: {
             keepLast: number;

@@ -52,7 +52,10 @@ internal/meta/postgres/
   queries/backup.sql            run record, pins, hold check, outbox
   tables_backup.go              export classes of the two tables
 internal/audit/events_backup.go the six audit events of the lane
-internal/api/v1/backups_api.go  the three read-only operations (stubs that answer "no runs yet")
+internal/backup/gauges/   the shared reading of the job (ReadJobs, Overdue, LastFailure) and the Collector that sets the gauges
+  gaugestest/             an in-memory backup.RunReader for tests
+internal/api/v1/backups_api.go  the three read-only operations and the backup block of /system/info
+internal/app/wire_backup_gauges.go  registers the lane's families, the gauge source and the API's sources
 ```
 
 ## Responsibilities
@@ -218,3 +221,29 @@ Not built: a Facts implementation for the delete runs reads `installation_id`, `
 [backup_targetops.go](../../cmd/trove/backup_targetops.go) and does not check the schema step; the create package's `Facts` replaces it.
 R-BAK-027 (client-side encryption) is P1 and left: `trove backup list` prints the field when a manifest carries it.
 
+## The read side: API, info block and gauges
+
+One reading of `backup_run` serves every replica-side view, so the API, the UI, the info block and the alerts agree
+([Q-BAK-35](../spec/backup-and-restore.md#q-bak-35--the-gauges-of-the-job-are-one-evaluation-of-single-row-reads-per-replica-and-30-seconds)).
+
+| File | Responsibility |
+|---|---|
+| [gauges/jobs.go](../../internal/backup/gauges/jobs.go) | `ReadJobs`: newest success, newest failure (an ended `failed`/`abandoned` create run, or an active create run whose lease expired; `interrupted` never), the active runs and the database's clock. `Jobs.Overdue` (1.5 x the expected interval, `nil` without a success), `Jobs.LastFailure` (only when newer than the last success), `Jobs.ActiveRun` |
+| [gauges/collector.go](../../internal/backup/gauges/collector.go) | `Collector.Refresh`: one evaluation that sets `backup.Metrics` and `journal.Metrics`, reused for `gauges.Reuse` (30 s); a failed read keeps the previous values and is retried at the next call. The last-success and last-failure families are reset first, so they have no series until the event exists |
+| [gauges/gaugestest/mem.go](../../internal/backup/gauges/gaugestest/mem.go) | `Mem`: an in-memory `RunReader` with the ordering, filters and keyset of the SQL, a database clock and a call counter |
+| [../../internal/api/v1/backups_api.go](../../internal/api/v1/backups_api.go) | `ListBackupRuns`, `GetBackupRun`, `GetBackupSummary`, `backupInfo` (the `backup` block of `GET /system/info`), `BackupServices` (the options: reader, expected interval, `manual_run`, the `restored_from` reader) |
+| [../../internal/app/wire_backup_gauges.go](../../internal/app/wire_backup_gauges.go) | `laneMetrics` (registers `backup.NewMetrics` and `journal.NewMetrics` once per replica), `registerBackupGauges` (the database gauge source `backup`), `backupAPI` (the options of the API) |
+
+- **Where the numbers come from.** The pins left (`trove_backup_pinned_blobs`) are `progress.pinsLeft` of the active run, written by
+  its heartbeat; no read names the pin table, and a test of the package fails if one does. The duration is `finished_at - started_at`;
+  the sizes and the damaged count are the newest successful create run's `result`.
+- **Clocks.** A lease is compared with the database's clock, which `RunReader.ActiveRuns` returns
+  ([Q-API-206](../spec/api-and-ui.md#q-api-206--a-runs-leaseexpired-and-the-overdue-mark-are-judged-on-the-databases-clock)). A list
+  or a single run reads it only when a run of the answer is active.
+- **The stored backups** of the summary are the `retained` list of the newest successful create or delete run that recorded a
+  `retention`, found among the newest 25 runs of each operation (Q-BAK-41).
+- **Who registers the families.** `App.laneMetrics` is the one place; the worker job that ships the revocation journal takes
+  `journal.Metrics` from it, because a second `journal.NewMetrics` on the registry panics.
+- **Tests.** Unit: `go test ./internal/backup/gauges/... ./internal/api/v1/ -run 'R_API_050|R_OPS_004|R_BAK_014'`. Integration:
+  [test/integration/backup/api_gauges_test.go](../../test/integration/backup/api_gauges_test.go) inserts real `backup_run` rows and
+  checks the collector over `PGStore` (stepping its clock over the 30 s reuse) and a replica's API, info block and `/metrics`.

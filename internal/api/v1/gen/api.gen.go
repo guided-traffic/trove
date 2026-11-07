@@ -4146,6 +4146,19 @@ type BackupActiveRun struct {
 	State string `json:"state"`
 }
 
+// BackupInfo The `backup` block of the system information (R-OPS-004): the short form of the summary, under the same overdue rule.
+type BackupInfo struct {
+	// ExpectedIntervalSeconds `backup.expected_interval` in seconds.
+	ExpectedIntervalSeconds int64 `json:"expectedIntervalSeconds"`
+
+	// LastRunState The state of the newest run of any operation (R-BAK-009); `null` before any run.
+	LastRunState  *string    `json:"lastRunState"`
+	LastSuccessAt *time.Time `json:"lastSuccessAt"`
+
+	// Overdue True when `lastSuccessAt` is older than 1.5 times the expected interval; `null` with no successful run.
+	Overdue *bool `json:"overdue"`
+}
+
 // BackupLastFailure defines model for BackupLastFailure.
 type BackupLastFailure struct {
 	At    time.Time          `json:"at"`
@@ -7460,8 +7473,8 @@ type SystemInfo struct {
 		Role SystemInfoAnsweredByRole `json:"role"`
 	} `json:"answeredBy"`
 
-	// Backup Always `null` until the backup runs exist.
-	Backup any `json:"backup"`
+	// Backup The backup job in short form, read from `backup_run` (R-OPS-004, R-API-050); `null` on a replica that does not read the runs.
+	Backup *BackupInfo `json:"backup"`
 
 	// BaseUrl The origin generated URLs are built from.
 	BaseUrl string `json:"baseUrl"`

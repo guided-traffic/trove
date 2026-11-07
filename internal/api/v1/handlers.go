@@ -215,6 +215,12 @@ type Options struct {
 	// <<< package 2
 	// <<< M13 bastion
 
+	// >>> M5 backup
+	// Backup holds the sources of the backup operations and of the backup block of the system information
+	// (backups_api.go); a zero value answers the operations with 503 and the block with null.
+	Backup BackupServices
+	// <<< M5 backup
+
 	// >>> M4b vulnerabilities
 	// Vuln holds the services of the vulnerability scanning's operations (vulnerabilities_api.go); a zero value answers them
 	// with 503.
@@ -354,6 +360,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	out.Runtime.Goos, out.Runtime.Goarch, out.Runtime.Gomaxprocs = runtime.GOOS, runtime.GOARCH, runtime.GOMAXPROCS(0)
 	out.Runtime.MemoryLimitBytes = facts.MemoryLimit
 	out.VulnerabilityData = facts.VulnerabilityData
+	out.Backup = s.backupInfo(ctx)
 	writeJSON(w, r, http.StatusOK, out)
 }
 

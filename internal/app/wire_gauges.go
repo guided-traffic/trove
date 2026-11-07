@@ -94,6 +94,7 @@ func (a *App) registerGauges() {
 	if err := a.registerCIMetrics(); err != nil {
 		a.log.Error("the CI metrics are not registered", "error", err)
 	}
+	a.registerBackupGauges()
 	m.Registry().MustRegister(newPoolCollector(a.database))
 	jobs := newJobDescs()
 	m.DBGauges().Add(observability.GaugeSource{

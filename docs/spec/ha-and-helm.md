@@ -5124,7 +5124,7 @@ Valkey metrics of R-HA-057. The `trove_backup_*` gauges are
 [backup-and-restore.md](backup-and-restore.md)'s (R-BAK-014); every `web` and `worker` replica
 reads them from the run records in PostgreSQL, because a finished backup pod cannot be scraped. The
 backup thresholds come from `backup.expected_interval` through the gauge
-`trove_backup_expected_interval_seconds`, the same value that drives the API's `expectedInterval`
+`trove_backup_expected_interval_seconds`, the same value that drives the API's `expectedIntervalSeconds`
 and the UI's overdue mark, so the chart has no threshold value of its own.
 `trove_valkey_primary_views` and the `db_pool` label are
 [operations-and-observability.md](operations-and-observability.md)'s (R-OPS-008). The alert

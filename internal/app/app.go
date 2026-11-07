@@ -85,6 +85,8 @@ type App struct {
 	// bastionMetrics (wire_bastion.go).
 	bastionMx     *bastionmain.Metrics
 	bastionMxOnce sync.Once
+	// backupMx are the families of the backup lane on this replica's registry (wire_backup_gauges.go).
+	backupMx backupMetrics
 	// budget splits the margin after the server phase (shutdown.go); tests scale it.
 	budget shutdownBudget
 	// warnInterval overrides warnEvery in tests.
@@ -528,6 +530,8 @@ func (a *App) startClient() error {
 			Bastion:  a.bastionServices(rt),
 			// The vulnerability scanning's operations (wire_vuln_api.go).
 			Vuln: part[vulnAPIArea](a.parts).services,
+			// The backup runs, the summary and the backup block of the system information (wire_backup_gauges.go).
+			Backup: a.backupAPI(),
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

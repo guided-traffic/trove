@@ -5897,6 +5897,22 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-BAK-014, R-OPS-008; `internal/backup/metrics.go`, `internal/journal/metrics.go`.
 
+### Q-OPS-181 · The families of the backup lane are registered once per replica and set by a database gauge source without descriptors
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Const metrics returned by the gauge source | Like `trove_jobs_queued`: the source builds `MustNewConstMetric` values per evaluation | Same shape as the other database gauges; no series survives its row | The families are already contracts in `backup.Metrics` (Q-OPS-180: gauge vectors without a series until the event happened) and the backup pod sets the same fields |
+| (b) Registered families, set by the source (chosen) | `registerBackupGauges` builds the families once (`laneMetrics`), and the source `backup` calls `gauges.Collector.Refresh`, which resets and sets the gauges; it returns no metric of its own | One definition of the names for the pod and the replicas; the reuse floor of 30 s lives in the collector | A failed evaluation leaves the previous values, like every database gauge source |
+
+**Choice:** (b). The wiring is `internal/app/wire_backup_gauges.go`, called from `registerGauges`, so it covers every role that registers database gauges. The expected-interval gauge is set at registration, before the first evaluation.
+
+**Rationale:** R-OPS-007 requires that a gauge is read from PostgreSQL in the background, never on a scrape; the source is that background step. `App.laneMetrics` is the one place that registers the families on the replica's registry: a second registration panics, so the worker that ships the journal must take `journal.Metrics` from it. The development agent would revisit this if a family of the lane needs a label set that outlives its row.
+
+**Applied:** R-OPS-007, R-OPS-008, R-BAK-014; `internal/app/wire_backup_gauges.go`.
+
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy

@@ -11955,8 +11955,10 @@ components:
         objectStore:
           $ref: "#/components/schemas/ObjectStoreFacts"
         backup:
-          type: "null"
-          description: Always `null` until the backup runs exist.
+          oneOf:
+            - $ref: "#/components/schemas/BackupInfo"
+            - type: "null"
+          description: The backup job in short form, read from `backup_run` (R-OPS-004, R-API-050); `null` on a replica that does not read the runs.
         features:
           type: object
           required: [tracing, webhooks, configAsCode]
@@ -17794,6 +17796,24 @@ components:
           format: date-time
         leaseExpired:
           type: boolean
+    BackupInfo:
+      type: object
+      description: "The `backup` block of the system information (R-OPS-004): the short form of the summary, under the same overdue rule."
+      required: [expectedIntervalSeconds, lastSuccessAt, overdue, lastRunState]
+      properties:
+        expectedIntervalSeconds:
+          type: integer
+          format: int64
+          description: "`backup.expected_interval` in seconds."
+        lastSuccessAt:
+          type: [string, "null"]
+          format: date-time
+        overdue:
+          type: [boolean, "null"]
+          description: True when `lastSuccessAt` is older than 1.5 times the expected interval; `null` with no successful run.
+        lastRunState:
+          type: [string, "null"]
+          description: The state of the newest run of any operation (R-BAK-009); `null` before any run.
     BackupRetention:
       type: object
       required: [keepLast, keepWithinSeconds]

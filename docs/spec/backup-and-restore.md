@@ -1016,9 +1016,9 @@ shows the runs, the last success, the stored backups and an overdue mark after
 **Metrics** (families for [operations-and-observability.md](operations-and-observability.md)
 R-OPS-008). Gauges are read from PostgreSQL by every web and worker replica, so every replica
 reports the same value and dashboards use `max` (R-OPS-007). A replica computes all `backup_run`
-gauges with one query on that small table and reuses the result for 30 s, so the database load of
-these gauges grows with the replica count only by one cheap query per replica and interval; no
-gauge counts `backup_blob_pin`, which holds one row per blob during a first backup. Counters are
+gauges in one evaluation of single-row reads on that small table (Q-BAK-35) and reuses the result
+for 30 s, so the database load of these gauges grows with the replica count only by one cheap
+evaluation per replica and interval; no gauge counts `backup_blob_pin`, which holds one row per blob during a first backup. Counters are
 exported by the backup pod for the duration of its run on its operations port, for clusters that
 scrape Jobs.
 
@@ -2294,6 +2294,52 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The state of a run is the one fact an administrator reads first, and a false red trains people to ignore the colour. The development agent would revisit this when a state is added to R-BAK-009.
 
 **Applied:** R-UI-048 (the screen's permission is named `settings:read`, as in R-API-050 and as the System status screen has it, not `system.read`), R-UI-042, `web/src/app/features/system/backups/backups-model.ts`, `backup-state.ts`.
+
+### Q-BAK-35 · The gauges of the job are one evaluation of single-row reads per replica and 30 seconds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One aggregate statement | A new query returns the newest success, failure, verify, the active runs and both holds in one round trip | Literally "one query" | `RunReader` is a contract the other packages build against; a statement that returns six facts needs its own row type and tests, and the API reads the same facts separately anyway |
+| (b) One evaluation of the reader's single-row reads, reused for 30 s (chosen) | `gauges.Collector.Refresh` reads the newest success, the newest ended failure, the active runs, the newest verify, both holds and the outbox backlog, then keeps the values for 30 s | The reads are the ones the API and the collector's hold check already use; one rule set (`gauges.ReadJobs`) serves the gauges, the summary and the info block, so they agree by construction | Six to eight cheap statements per replica and interval instead of one |
+
+**Choice:** (b). R-BAK-014 says "one evaluation of single-row reads on that small table" where it said "one query".
+
+**Rationale:** The load that the requirement protects against is a cost that grows with the pins or with the scrape rate. Neither does: no read names the pin table (a test fails if a file of the package does), the pins left come from the active run's `progress` written by its heartbeat, the table is pruned to `backup.run_history`, and the evaluation runs once per `metrics.db_gauge_interval` with a 30 s reuse floor whatever the scrape rate. The development agent would revisit this if `pg_stat_statements` on a large installation shows the eight statements as a cost.
+
+**Applied:** R-BAK-014 (metrics paragraph); `internal/backup/gauges/jobs.go`, `collector.go`.
+
+### Q-BAK-41 · The summary finds the run that last listed the target among the newest runs of each operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The newest successful create or delete run | One `Last` per operation | Cheapest | A `create --no-prune` records neither `retention` nor `retained` (R-BAK-016), so the newest run would blank the stored backups until the next pruning run |
+| (b) The newest 25 runs of each of the two operations, the one with the newest finish that recorded a retention (chosen) | `List` per operation, decode `result`, keep the newest with `retention` | A run without pruning or a failed run never hides the last listing; `asOf` and `runId` stay honest | Two small reads with 25 results decoded; more than 25 runs of an operation in a row without a listing leave both fields `null` |
+| (c) A column on `backup_run` that marks the listing run | Migration and a write by the backup pod | Exact | A schema change for a display |
+
+**Choice:** (b).
+
+**Rationale:** The result already carries what is needed, and the lookback is bounded by the history that the table keeps anyway. Only a successful run counts: a failed run stores no result. The development agent would revisit this if the schedule ever runs far more often than pruning.
+
+**Applied:** R-API-050 (`storedBackups`, `retention`); `internal/api/v1/backups_api.go` (`listedTarget`).
+
+### Q-BAK-42 · The verify gauges come from the newest finished verify run and the findings its result stores
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Any finished verify run | Includes `interrupted` and `abandoned` runs | Simple | A drained verify would reset the findings to zero and move the timestamp without having checked anything |
+| (b) `completed`, `completed_with_warnings` and `failed` (chosen) | A verify that exits 5 ends `failed` with its report in `result` (R-BAK-019); the findings are `len(result.findings)` | A verify that found something keeps the alert on until a clean verify runs; interrupted and abandoned runs leave the gauges alone | A `failed` verify that stored no report (an error before the checks) reads as zero findings with a new timestamp |
+
+**Choice:** (b).
+
+**Rationale:** `backup.VerifyReport` is the object the verify package stores, and its `findings` array is the count the alert needs. The development agent would revisit this when the verify package records an explicit findings count or distinguishes an aborted verify from a clean one.
+
+**Applied:** R-BAK-014 (`trove_backup_last_verify_*`); `internal/backup/gauges/collector.go`.
 
 ## What this does not cover
 
