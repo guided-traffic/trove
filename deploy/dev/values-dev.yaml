@@ -158,6 +158,7 @@ config:
     expected_interval: 6h                         # the schedule below
 
 backup:
+  enabled: true                  # the chart's default is off; this profile, and every e2e set layered on it, renders the CronJob
   schedule: "0 */6 * * *"
 
 secrets:

@@ -470,7 +470,7 @@ secrets:
     usernameKey: ""                     # empty = no Sentinel user, the file is not mounted
     passwordKey: password
   backupTarget:
-    existingSecret: ""                  # required with config.backup.target.credentials.source static; the backup and restore pods only
+    existingSecret: ""                  # required with config.backup.target.credentials.source static while backup.enabled or restore.enabled; the backup and restore pods only
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
     sessionTokenKey: ""                 # empty = no session token
@@ -730,7 +730,7 @@ postRestore:
 # ── Backup CronJob and restore Job (R-HA-060, R-BAK-012) ──────────────────────
 # Both are Jobs of the binary's command `trove backup`, not roles. They serve nothing, open no port and mount no volume but /tmp.
 backup:
-  enabled: true                         # needs config.backup.target.bucket
+  enabled: false                        # true turns the backup on and then needs config.backup.target.bucket
   schedule: "0 2 * * *"                 # five fields or one of the @-macros, the dialect of trove's cron parser; no seconds, no ?, day of week 0-6, no @every, no TZ=
   timeZone: Etc/UTC
   suspend: false                        # rendered true while restore.enabled

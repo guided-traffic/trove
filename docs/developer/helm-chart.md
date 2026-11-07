@@ -88,16 +88,16 @@ deploy/helm/trove/
 ├── values.schema.json      draft-07, additionalProperties false for everything the chart owns
 ├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
-│   ├── required-only.yaml      only the values R-HA-031 names as required
-│   ├── ha-ingress.yaml         every optional Secret, Ingress with TLS, ephemeral spool
+│   ├── required-only.yaml      only the values R-HA-031 names as required; the backup stays off
+│   ├── ha-ingress.yaml         every optional Secret, Ingress with TLS, ephemeral spool, the backup on
 │   ├── single-node.yaml        no enforcement, one replica per role, standalone Valkey
 │   ├── migrations-disabled.yaml  migrations.mode disabled, minAvailable budget, image digest
-│   ├── monitoring.yaml         the PrometheusRule on, the vulnerabilities section the chart reads (the rule tests render this set)
+│   ├── monitoring.yaml         the PrometheusRule and the backup on, the vulnerabilities section the chart reads (the rule tests render this set)
 │   ├── endpoints.yaml          two further endpoints on the main packages pods, own Ingress classes, certificates by SNI
 │   ├── endpoints-pool.yaml     an endpoint with a pool of its own
 │   ├── roles-pools.yaml        a path pool of api and of packages, two worker pools, an autoscaler, a mixed endpoint with pools
 │   ├── bridge.yaml             web.enabled: the first step of the upgrade across the cut
-│   └── s3-provisioner.yaml     bucket, region, endpoint and credentials from one provisioner Secret
+│   └── s3-provisioner.yaml     bucket, region, endpoint and credentials from one provisioner Secret, the backup on with a read-only login
 └── templates/
     ├── _helpers.tpl        names, labels, image, byte and duration parsing, spool budget, config
     ├── _secrets.tpl        the Secret mounts of a pod, as one list used for volumes and mounts
@@ -447,8 +447,8 @@ tests in `chart_test.go` assert both, row by row.
 | `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; the same three rules for the merged `ingress.backendTLS` of each further endpoint with `ingress.enabled` (`endpoints.<name>.ingress.backendTLS.caSecret`, `.serversTransport`, `.clientCertSecret` with the endpoint's `tls.clientCaSecret`); `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
 | `backup.enabled` (or `restore.enabled`) without `config.backup.target.bucket`; a CronJob name over 52 characters | implemented, naming the value (and `fullnameOverride`) |
 | `backup.schedule` outside the dialect of trove's cron parser (six or seven fields, `?`, `L`, `W`, `#`, day of week `7`, `@every`, `@reboot`, `TZ=`, `CRON_TZ=`, an unknown macro) | implemented, the reason named; a value out of range and an expression that never fires are Kubernetes's at apply time |
-| the target on the blob store's bucket and endpoint (the endpoints compared as the binary does, no scheme meaning https) without `allow_same_bucket`, or with one prefix containing the other | implemented, naming both locations |
-| `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` | implemented, naming both |
+| the target on the blob store's bucket and endpoint (the endpoints compared as the binary does, no scheme meaning https) without `allow_same_bucket`, or with one prefix containing the other; for any configured target, the backup on or off, because every replica's configuration check refuses it too | implemented, naming both locations |
+| `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` while `backup.enabled` or `restore.enabled` renders a Job that mounts it | implemented, naming both |
 | `postRestore.enabled` without an RFC 3339 `postRestore.restoredTo`, together with `restore.enabled`, or with `journalCredentials.source: static` and no `secrets.journalReader.existingSecret`; `skipRevocationJournal` with a credentials source | implemented, naming the values |
 | `restore.enabled` without `restore.backupId` (its form is the command's to check); with a replica count above 0 or an autoscaler on any role, pool, endpoint pool or the bridge | implemented, naming `restore.enabled` and the value; the replica minimums do not apply meanwhile (Q-HA-148) |
 | a chart-managed key of the backup set inside `config` (`backup.manual_run`, `backup.target.ca_file`, the three credential files) | implemented |
@@ -489,7 +489,7 @@ Service and no Valkey policy selects them) and mount no volume but `/tmp`.
 
 | Object | Rendered | Notes |
 |---|---|---|
-| CronJob `<fullname>-backup` ([backup.yaml](../../deploy/helm/trove/templates/backup.yaml)) | with `backup.enabled` (default `true`) | `trove backup create --trigger schedule`, plus `--adopt-target` with `backup.adoptTarget`. `concurrencyPolicy: Forbid` is fixed; `suspend` is `backup.suspend` or `restore.enabled` |
+| CronJob `<fullname>-backup` ([backup.yaml](../../deploy/helm/trove/templates/backup.yaml)) | with `backup.enabled` (default `false`, Q-HA-17; turned on, it needs `config.backup.target.bucket`) | `trove backup create --trigger schedule`, plus `--adopt-target` with `backup.adoptTarget`. `concurrencyPolicy: Forbid` is fixed; `suspend` is `backup.suspend` or `restore.enabled` |
 | Job `<fullname>-restore` ([restore.yaml](../../deploy/helm/trove/templates/restore.yaml)) | with `restore.enabled` | `trove backup restore <restore.backupId>`, `--skip-revocation-journal` with `restore.skipRevocationJournal`, then `restore.extraArgs`. An ordinary Job, not a hook. After a failure for good the operator deletes it and runs the same `helm upgrade` again, which creates it anew (R-HA-060) |
 | ServiceAccounts `<fullname>-backup`, `<fullname>-restore` | with their Job; `backup.serviceAccount.*`, `restore.serviceAccount.*` | no token; the annotations carry a workload identity, which is how the target's and the blob bucket's rights differ per Job (R-BAK-015) |
 | NetworkPolicies `<fullname>-backup`, `<fullname>-restore` | with their Job and `networkPolicy.enabled` | `policyTypes: [Ingress]` and `ingress: []`; the Jobs need no rule, and the target is reached outbound, which the chart never restricts (ADR-154). The counters a backup pod exports on its operations port for clusters that scrape Jobs are therefore not reachable unless the operator adds a policy |
@@ -557,9 +557,11 @@ same change; a feature that arrives takes its prefix out of `unbuiltPrefixes`.
 ## The PrometheusRule
 
 `metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
-[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. The
-rule holds 32 alerts, in this order: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`,
-`TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,
+[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. With
+`backup.enabled` the rule holds 32 alerts; without it the last six, the alerts of the backup runs, are left out (26 alerts, Q-HA-17),
+because with no CronJob no run succeeds and `TroveBackupStale` would fire one interval after every installation that leaves the backup
+off. A name of the six stays a valid entry of `disabledAlerts` either way. The order: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`,
+`TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,
 `TroveMixedVersions`, `TroveSpoolNearlyFull` (rows of R-HA-045's table), `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`,
 `TroveVulnerabilityClaimedNameMalicious` (R-VULN-024), `TroveMirrorFailing`, `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-167),
 `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92), `TroveBlobMissing` (a read found the object of a blob missing within the
@@ -654,7 +656,8 @@ is where the coverage generator reads the IDs from.
 | `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the alerts (the three of the vulnerability scanning, the two of the mirror, `TroveBridgeLeftOn`, `TroveBlobMissing`) and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
 | `R-HA-045` (`TestR_HA_045_PrometheusRule`) | the rule is rendered with `enabled` and carries the `labels`, none by default or with `enabled: false`; the 32 alerts and their severities, `for` durations, summaries and descriptions; the role regex follows `<fullname>`; the expressions of the three rows with a special shape; every `trove_*` name an expression reads is registered by code under `internal/`; `disabledAlerts` |
 | `R-VULN-024` (`TestR_VULN_024_PromtoolRules`) | `promtool check rules` and `promtool test rules` over the rendered rules, and one firing and one silent test per alert; the backup alerts' tests are `TroveBackupStale` at 90 minutes after the last success (and for a backup that never ran), `TroveBackupFailed` for a failure after the last success and for a first failure (silent after an interrupted run), `TroveRevocationJournalBacklog` and the others |
-| `R-HA-060`, `R-BAK-012` (`TestR_HA_060_BackupCronJob`) | the CronJob's fields, `Forbid`, the pod failure policy (an eviction ignored first, then 2, 3, 4, 6), `restartPolicy: Never`, no `activeDeadlineSeconds` by default, the grace period, the autoscaler annotation, `TMPDIR` and the one `emptyDir`, the memory limit, no port or probe, its own ServiceAccount, the values |
+| `R-HA-060`, `R-BAK-012` (`TestR_HA_060_BackupCronJob`) | the CronJob's fields, `Forbid`, the pod failure policy (an eviction ignored first, then 2, 3, 4, 6), `restartPolicy: Never`, no `activeDeadlineSeconds` by default, the grace period, the autoscaler annotation, `TMPDIR` and the one `emptyDir`, the memory limit, no port or probe, its own ServiceAccount, the values (rendered with `backupSets`, which turns the backup on); a value set renders the CronJob exactly when it sets `backup.enabled: true` |
+| `R-HA-060`, `R-HA-045` (`TestR_HA_060_BackupOffByDefault`) | the default: `backup.enabled: false` in values.yaml, no CronJob, ServiceAccount, NetworkPolicy or `backup.manual_run` and no target bucket needed; the target's static keys required only while a Job mounts them; a restore with the backup off; the note in `NOTES.txt`; the six alerts of the backup runs only with the backup |
 | `R-HA-060` (`TestR_HA_060_RestoreJob`) | the Job (not a hook), the arguments, the failure handling, the account, no migration Job, the suspended CronJob, the roles at zero, pools and the bridge |
 | `R-HA-029` (`TestR_HA_029_BackupValidation`) | every backup and restore row of the table fails and names the value; the schedules are checked against `jobs.ParseSchedule` |
 | `R-HA-031` (`TestR_HA_031_BackupValuesSchema`, `TestR_HA_031_ValuesReference`) | the schema refuses typos and a grace period below 30 s; the values of the spec block render; values.yaml and the spec block agree |

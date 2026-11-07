@@ -1,4 +1,4 @@
-{{/* The text of NOTES.txt (R-EP-008, R-HA-016, R-HA-064), a template of its own so that a test can render it. Argument: the root context. */}}
+{{/* The text of NOTES.txt (R-EP-008, R-HA-016, R-HA-060, R-HA-064), a template of its own so that a test can render it. Argument: the root context. */}}
 {{- define "trove.notes" -}}
 {{- $names := include "trove.endpointNames" . | fromYamlArray -}}
 {{- $fullname := include "trove.fullname" . -}}
@@ -69,5 +69,9 @@ Warning: endpoint {{ $name }} has exposure: rules and an empty networkPolicy.fro
 {{- if and $names (not (hasKey (dig "default" (dict) .Values.endpoints) "hosts")) }}
 
 The default endpoint answers 421 for a host it does not list. Clients that reach it by another name, such as the in-cluster Service name, need that name in endpoints.default.hosts.
+{{- end }}
+{{- if not .Values.backup.enabled }}
+
+trove's own backup is off (backup.enabled: false, the default), so no backup CronJob runs. Turn it on with backup.enabled: true and a bucket of its own in config.backup.target.bucket (R-HA-060).
 {{- end }}
 {{- end -}}

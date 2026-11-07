@@ -2678,8 +2678,9 @@ collection, the configuration semantics, the exit codes, the retention and the r
 (R-BAK-009 to R-BAK-013, R-BAK-020, R-BAK-021). This requirement is the chart side; R-BAK-012
 describes the same objects from the backup's side.
 
-**Backup CronJob.** With `backup.enabled: true` (default, Q-HA-17) the chart renders the CronJob
-`<fullname>-backup`:
+**Backup CronJob.** The backup is off by default (Q-HA-17): an installation opts in with `backup.enabled: true`, and only
+then does the chart require `config.backup.target.bucket` and render the CronJob `<fullname>-backup`, its ServiceAccount and
+its NetworkPolicy. While it is off, `NOTES.txt` says so and names the two values that turn it on:
 
 | Field | Value |
 |---|---|
@@ -2721,13 +2722,14 @@ describes the same objects from the backup's side.
   never held by a run that makes no progress, without a wall-clock limit that would also end a
   healthy first backup of many hours.
 - **Configuration.** The chart renders `config.backup` into the shared configuration file; its keys
-  are R-BAK-011's, and R-HA-031 shows all of them. It also renders the chart-managed keys
-  `backup.manual_run.namespace` (the release namespace) and `backup.manual_run.cronjob`
+  are R-BAK-011's, and R-HA-031 shows all of them. While `backup.enabled` is true it also renders the
+  chart-managed keys `backup.manual_run.namespace` (the release namespace) and `backup.manual_run.cronjob`
   (`<fullname>-backup`), so the API's backup summary and the UI can show the exact manual-run
   command ([api-and-ui.md](api-and-ui.md) R-API-050, Q-API-10); no API endpoint starts a backup.
   The backup alerts read `backup.expected_interval` through the gauge
   `trove_backup_expected_interval_seconds`, so the chart needs no threshold value of its own
-  (R-HA-045).
+  (R-HA-045); the six alerts of the backup runs are rendered only while `backup.enabled` is true
+  (Q-HA-17).
 
 **Where the target may live** (R-BAK-002, R-BAK-015):
 
@@ -2753,8 +2755,9 @@ renders the Job `<fullname>-restore` and changes two other things while the valu
   hours meets no Helm or GitOps timeout.
 - The migration hook Job is not rendered, because the restore applies the migrations itself, up to
   the backup's step before the load and the rest after it (R-BAK-021, R-BAK-023).
-- The backup CronJob is rendered suspended, so no backup runs against a half-restored
-  installation.
+- The backup CronJob, where `backup.enabled` renders it, is rendered suspended, so no backup runs
+  against a half-restored installation. The restore itself needs `config.backup.target.bucket`, the
+  target it reads, but not the backup.
 - The chart refuses `restore.enabled` while `web` or `worker` has a replica count above 0 or
   autoscaling enabled (R-HA-029): nothing may write to the installation during the restore. The
   restore itself refuses a non-empty database or blob prefix (R-BAK-020).
@@ -2804,16 +2807,20 @@ both roles.
 
 Acceptance criteria:
 
-- `helm template` renders the CronJob with `concurrencyPolicy: Forbid`, the pod failure policy
-  above, `restartPolicy: Never` and its own ServiceAccount, and no PodDisruptionBudget selects its
-  pods. No `web` or `worker` container has a file or variable with target credentials.
+- `helm template` with only the required values renders no CronJob, ServiceAccount, NetworkPolicy
+  or `backup.manual_run` of the backup and needs no `config.backup.target.bucket`; its `NOTES.txt`
+  says that the backup is off and names `backup.enabled: true` and `config.backup.target.bucket`.
+- `helm template --set backup.enabled=true --set config.backup.target.bucket=trove-backups` renders
+  the CronJob with `concurrencyPolicy: Forbid`, the pod failure policy above, `restartPolicy: Never`
+  and its own ServiceAccount, and no PodDisruptionBudget selects its pods. No `web` or `worker`
+  container has a file or variable with target credentials.
 - `kubectl create job --from=cronjob/trove-backup b1` during R-HA-052's load completes, with zero
   failed client commands.
 - With `backup.backoffLimit: 0` for the test, draining the node of a running backup pod still ends
   with the Job complete on another node.
 - `helm template --set restore.enabled=true --set restore.backupId=x` with both roles at zero
   renders the restore Job with its own ServiceAccount and the pod failure policy above, no
-  migration Job and a suspended CronJob; with `--set web.replicaCount=2` it fails and names
+  migration Job and, with `backup.enabled: true`, a suspended CronJob; with `--set web.replicaCount=2` it fails and names
   `restore.enabled` and `web.replicaCount`.
 - Draining the node of the restore pod during the blob copy ends with the restore Job `Complete`,
   also with `restore.backoffLimit: 0`, and the restored installation matches the backup
@@ -2826,9 +2833,10 @@ Acceptance criteria:
 ### R-HA-023 · Backup of PostgreSQL, object storage and keys
 Priority: **MVP** · Covers: OPS-033
 
-trove's own backup (INV-19, R-HA-060) is the backup every installation has. This requirement is
-the platform layer under it: continuous protection that gives a recovery point of minutes instead
-of one backup interval, and the rules that keep a compromised replica from destroying history.
+trove's own backup (INV-19, R-HA-060) is the backup of the service as a whole; an installation turns
+it on with `backup.enabled: true` (Q-HA-17). This requirement is the platform layer under it:
+continuous protection that gives a recovery point of minutes instead of one backup interval, and
+the rules that keep a compromised replica from destroying history.
 The platform layer is recommended, not required; its checks and rules are MVP (Q-HA-19).
 
 | State | Protection | Requirement |
@@ -3427,10 +3435,11 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `config.valkey.tls.mode: disable` without `config.valkey.allow_insecure: true` | both |
 | `config.database.pooler.mode: transaction` with `config.database.session_host` empty or equal to `config.database.host` | `config.database.session_host` |
 | `config.database.pooler.mode: transaction` with a control endpoint (`control_host`, `control_port`, `control_name`, each defaulting to its main counterpart) equal to the request endpoint (Q-HA-20) | `config.database.control_host` |
-| `backup.enabled` and `config.backup.target.bucket` empty | both |
+| `backup.enabled` and `config.backup.target.bucket` empty (the backup is off by default and needs no bucket then, Q-HA-17) | both |
+| `restore.enabled` and `config.backup.target.bucket` empty | both |
 | `backup.schedule` in a form that trove's cron parser rejects: six fields, `?`, day-of-week `7`, `@every`, `TZ=` or `CRON_TZ=` ([operations-and-observability.md](operations-and-observability.md) Q-OPS-7, [storage.md](storage.md) R-STOR-025) | `backup.schedule` |
-| The backup target on the blob store's endpoint and bucket without `config.backup.target.allow_same_bucket: true`, or with one prefix containing the other (R-HA-060; `trove backup create` exits `2` on the same rule, R-BAK-002) | both locations |
-| `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` | both |
+| The backup target on the blob store's endpoint and bucket without `config.backup.target.allow_same_bucket: true`, or with one prefix containing the other (R-HA-060; `trove backup create` exits `2` on the same rule, R-BAK-002). Checked for any configured target, the backup on or off, because every replica's configuration check refuses it as well | both locations |
+| `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret`, while `backup.enabled` or `restore.enabled` renders a Job that mounts it | both |
 | `restore.enabled` without `restore.backupId` | `restore.backupId` |
 | `restore.enabled` with a replica count above 0 or autoscaling enabled for any role or pool | `restore.enabled` and the value |
 | Two pools of a role with the same name, two pools with the same path prefix or queue, a pool path outside the families of its role or equal to one of the role's own prefixes of R-HA-037, a worker pool queue that does not exist, or a pool whose name starts with `ep-` (R-HA-062) | the pools |
@@ -3984,7 +3993,7 @@ config:
     target:
       endpoint: ""                      # AWS resolution; example: https://s3.eu-central-1.amazonaws.com
       region: ""                        # example: eu-central-1
-      bucket: ""                        # required with backup.enabled; example: trove-backups
+      bucket: ""                        # required with backup.enabled or restore.enabled; example: trove-backups
       prefix: trove
       force_path_style: false
       allow_insecure_endpoint: false
@@ -4114,7 +4123,7 @@ secrets:
     certKey: tls.crt
     keyKey: tls.key
   backupTarget:
-    existingSecret: ""                  # required with config.backup.target.credentials.source static
+    existingSecret: ""                  # required with config.backup.target.credentials.source static while backup.enabled or restore.enabled
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
     sessionTokenKey: ""                 # empty = no session token
@@ -4339,7 +4348,7 @@ postRestore:
 
 # ── Backup CronJob and restore Job (R-HA-060, backup-and-restore.md R-BAK-012) ──
 backup:
-  enabled: true                         # needs config.backup.target.bucket (Q-HA-17)
+  enabled: false                        # true turns the backup on and then needs config.backup.target.bucket (Q-HA-17)
   schedule: "0 2 * * *"
   timeZone: Etc/UTC
   suspend: false                        # rendered true while restore.enabled
@@ -4413,9 +4422,10 @@ Acceptance criteria:
   compares the key sets.
 - `helm template` with only the required values set (`config.server.base_url`,
   `config.database.host`, `config.storage.s3.bucket`, `config.valkey.sentinel.addresses`,
-  `config.valkey.sentinel.primary_name`, `config.backup.target.bucket`,
-  `secrets.database.existingSecret`, `secrets.valkey.existingSecret`,
-  `secrets.encryption.existingSecret`, `secrets.encryption.keys`) renders without error.
+  `config.valkey.sentinel.primary_name`, `secrets.database.existingSecret`,
+  `secrets.valkey.existingSecret`, `secrets.encryption.existingSecret`, `secrets.encryption.keys`)
+  renders without error. `config.backup.target.bucket` is not among them: it is required only with
+  `backup.enabled` or `restore.enabled` (Q-HA-17).
 
 ### R-HA-032 · Replicas, disruption budget, spreading and autoscaling
 Priority: **MVP** · Covers: HA-009, HA-032, HA-043, HA-044
@@ -5128,6 +5138,10 @@ Every alert of the table is rendered and tested (phase 7): `TroveBackupCheckFail
 ([backup-and-restore.md](backup-and-restore.md) R-BAK-014), each with a rule test in which it fires and one in which it stays silent. The
 two gauges that have no series until the event happened (Q-OPS-180) are handled in the expressions: `TroveBackupFailed` reads the last success
 as `or vector(0)`, and `TroveBackupStale` has a clause for a backup that never succeeded ([Q-OPS-182](operations-and-observability.md#q-ops-182--the-clause-of-trovebackupstale-for-a-backup-that-never-succeeded-reads-its-window-from-the-chart)).
+The six alerts of the backup runs are rendered only while `backup.enabled` is true
+([Q-HA-17](#q-ha-17--the-backup-cronjob-is-off-by-default)): with the backup off no run ever succeeds, and that clause would fire one
+interval after every such installation started. `TroveBackupCheckFailed` and the journal's alerts are rendered either way, because the
+platform check and the journal serve the platform restore as well.
 
 `TroveBackupCheckFailed` reads `trove_backup_check_ok{check}`, which every replica exports from the report that the task `backup-check` stored in
 `system_state` ([Q-OPS-185](operations-and-observability.md#q-ops-185--the-gauge-of-the-platform-check-is-read-from-the-stored-report-by-every-replica));
@@ -6258,12 +6272,12 @@ replica, which makes (c) worth its value.
 **Applied in the spec:** R-HA-031: `web.replicaCount: 3` and `web.autoscaling.minReplicas: 3`.
 R-HA-032: the replicas bullet. R-HA-059: rule 1. R-HA-050: profile minimums.
 
-### Q-HA-17 · The backup CronJob is on by default
+### Q-HA-17 · The backup CronJob is off by default
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the owner on 2026-11-07** — option (b), replacing the development agent's choice (a).
 
-This is the same question as [Q-BAK-9](backup-and-restore.md#q-bak-9--backup-cronjob-on-by-default),
-seen from the chart; both pages choose the CronJob on by default with a required target.
+This is the same question as [Q-BAK-9](backup-and-restore.md#q-bak-9--backup-cronjob-off-by-default),
+seen from the chart; both pages have the CronJob off by default and require the target once it is turned on.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -6271,17 +6285,34 @@ seen from the chart; both pages choose the CronJob on by default with a required
 | (b) Off by default, `NOTES.txt` warns | The operator enables it | Smaller minimal install | An installation without backups is the outcome of doing nothing |
 | (c) On by default, target inside the blob bucket | Backups under a prefix of the blob bucket | Nothing to configure | Same failure domain and same credential as the data the backup protects; under the blob prefix the orphan sweep would delete the backups (R-STOR-026); a compromised replica could delete them |
 
-**Choice:** (a) — the backup CronJob is rendered by default, and the chart fails without a backup
-target.
+**Choice:** (b) — the backup CronJob is off by default. `backup.enabled: true` turns it on, and only
+then does the chart require `config.backup.target.bucket` and the other values of the backup: the
+target's Secret with `config.backup.target.credentials.source: static` (also with `restore.enabled`,
+whose Job mounts it too) and `secrets.backupSource` with static blob credentials. While the backup is
+off, `NOTES.txt` says so and names the values that turn it on.
 
-**Rationale:** The backup job is an owner requirement, and a fail-fast error that already names the
-fix costs one value, the same trade as Q-HA-8. (b) makes the unsafe state the default. (c) puts the
-backup where the failures it should survive happen. The development agent revisits this if target
-installations commonly have no second bucket; a validated location in the same bucket but outside
-the blob prefix, with credentials of its own, would then be the fallback.
+**Rationale:** The owner decided that an installation opts in. The backup needs a bucket of its own,
+which the operator has to provide anyway, so a fail-fast default forces every installation, preview
+installations included, to configure or switch off something it did not ask for. The development
+agent applied the decision with two consequences: the note of option (b) keeps the off state visible
+without failing an install, and the PrometheusRule leaves out the six alerts of the backup runs while
+the backup is off, because the clause of `TroveBackupStale` for a backup that never succeeded would
+otherwise fire one interval after every installation that did not turn it on (R-HA-045). Once the
+backup is on, (a)'s rules hold unchanged: the error names the missing target. (c) stays rejected: it
+puts the backup where the failures it should survive happen.
 
-**Applied in the spec:** R-HA-060: the CronJob and the target rules. R-HA-029: the target rows.
-R-HA-031: the `backup` values and the required-value list.
+**Applied in the spec:** R-HA-060: the CronJob, its ServiceAccount, NetworkPolicy and
+`backup.manual_run` only with `backup.enabled`, the note in `NOTES.txt`, the acceptance criterion of
+the default. R-HA-029: the target rows; the target's static keys only while a Job mounts them; the
+same-bucket rule for any configured target, as the replicas check it. R-HA-031:
+`backup.enabled: false` and the bucket out of the required-value list. R-HA-045: the six alerts of
+the backup runs only with the backup. R-HA-023: trove's own backup is turned on, not given. Chart:
+[values.yaml](../../deploy/helm/trove/values.yaml),
+[_validate_backup.tpl](../../deploy/helm/trove/templates/_validate_backup.tpl),
+[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), [_notes.tpl](../../deploy/helm/trove/templates/_notes.tpl);
+the value sets under `ci/` name a target only where they turn the backup on (`ha-ingress.yaml`,
+`monitoring.yaml`, `s3-provisioner.yaml`), and the dev profile turns it on. Tests:
+`TestR_HA_060_BackupOffByDefault` in `test/chart/backup_test.go`.
 
 ### Q-HA-18 · How a restore runs in the chart
 

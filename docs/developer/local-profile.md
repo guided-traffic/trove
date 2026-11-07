@@ -203,7 +203,8 @@ default endpoint with another `Host` answers `421`.
 
 ### The backup target
 
-values-dev.yaml renders the backup CronJob (R-HA-060, [helm-chart.md](helm-chart.md#the-backup-and-restore-jobs)) with the schedule
+values-dev.yaml turns the backup on (`backup.enabled: true`; the chart's default is off) and so renders the backup CronJob (R-HA-060,
+[helm-chart.md](helm-chart.md#the-backup-and-restore-jobs)) with the schedule
 `0 */6 * * *` and `config.backup.expected_interval: 6h`, so `TroveBackupStale` and the overdue mark follow the schedule. The target is
 the bucket `trove-backups` of the profile's SeaweedFS (created beside `trove-blobs` by the Job of [s3.yaml](../../deploy/dev/s3.yaml)),
 a bucket of its own on the same endpoint, so the rule that a target must not be the blob store's bucket (R-BAK-002) holds without

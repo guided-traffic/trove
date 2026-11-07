@@ -1,10 +1,13 @@
 # Production-shaped: every optional Secret, the Ingress with TLS, a generic ephemeral spool,
-# static S3 credentials, a bearer token for /metrics and a certificate-authenticated Valkey.
+# static S3 credentials, a bearer token for /metrics, a certificate-authenticated Valkey and the
+# backup on, with a target bucket of its own and a login that only reads the blob bucket.
 image:
   tag: 0.0.0-ci
 global:
   imagePullSecrets:
     - name: registry-pull
+backup:
+  enabled: true
 config:
   backup:
     target:

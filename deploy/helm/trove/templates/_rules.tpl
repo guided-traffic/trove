@@ -6,6 +6,11 @@ the sixteen rows of R-HA-045's table whose metrics the binary exports, TroveBack
 task backup-check, R-HA-023), TroveRevocationJournalBacklog (R-HA-054) and the six TroveBackup* alerts of the backup runs
 (R-BAK-014): every alert of the table.
 
+The six alerts of the backup runs are rendered only while backup.enabled is true (Q-HA-17): without the CronJob no run
+ever succeeds, and the clause of TroveBackupStale for a backup that never succeeded would fire one interval after every
+installation that leaves the backup off. TroveBackupCheckFailed and the journal's alerts do not depend on it: the platform
+check and the journal serve the platform restore too.
+
 The backup alerts handle the gauges that have no series until the event happened (Q-OPS-180): TroveBackupFailed reads
 the last success as "or vector(0)", and TroveBackupStale has a clause for a success that never was: no series for
 longer than config.backup.expected_interval, which the chart reads for the window, because the alert has no series to
@@ -224,6 +229,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: Replicas name different Valkey primaries.
     description: At least one replica is bound to a demoted primary (Q-OPS-15, R-ARCH-031), so locks, rate limits and cache signals are split between two servers. The registry in GET /api/v1/system/replicas shows each replica's primary; a restart of the replica that names the old one rebinds it.
+{{- if .Values.backup.enabled }}
 - alert: TroveBackupStale
   expr: time() - max(trove_backup_last_success_timestamp_seconds{ {{ $ns }} }) > 1.5 * max(trove_backup_expected_interval_seconds{ {{ $ns }} }) or (max(absent(trove_backup_last_success_timestamp_seconds{ {{ $ns }} })) and on() max(trove_backup_expected_interval_seconds{ {{ $ns }} } offset {{ $interval }}s))
   labels:
@@ -267,6 +273,7 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: The newest verification of a backup found missing, damaged or mismatching objects.
     description: trove backup verify exited 5 (R-BAK-019, R-BAK-014). The findings are in its output and the run record. A backup with findings may not restore; take a new one and look at the target (lifecycle rules, deletions, a credential that can delete).
+{{- end }}
 {{- end -}}
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}

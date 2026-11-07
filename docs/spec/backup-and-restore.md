@@ -907,7 +907,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: OPS-032, OPS-035
 
 [ha-and-helm.md](ha-and-helm.md) R-HA-060 renders the backup CronJob `<fullname>-backup` (with
-`backup.enabled: true`, the default, Q-BAK-9), the restore Job `<fullname>-restore` (with
+`backup.enabled: true`; the backup is off by default, Q-BAK-9), the restore Job `<fullname>-restore` (with
 `restore.enabled: true`; an ordinary Job, not a Helm hook, [ha-and-helm.md](ha-and-helm.md)
 Q-HA-18), their ServiceAccounts, Secrets and scratch volume; R-HA-031 holds the values. This
 requirement states what the commands need from those Jobs. A value of R-HA-060 that contradicts
@@ -962,7 +962,8 @@ it is listed as a cross-page change.
 Acceptance criteria:
 
 - `helm template` with `backup.enabled: true` and no target bucket fails and names
-  `config.backup.target.bucket` and `backup.enabled`.
+  `config.backup.target.bucket` and `backup.enabled`; with the default `backup.enabled: false` it
+  renders no CronJob and needs no target bucket.
 - `kubectl drain --ignore-daemonsets --delete-emptydir-data` of the node running a backup pod
   finishes without waiting for it; the run ends `interrupted`, the eviction does not count against
   `backoffLimit` (a test with `backoffLimit: 0` still ends `Complete`), a new pod starts, its run
@@ -1082,6 +1083,10 @@ R-HA-045 takes them over (cross-page):
 - `TroveBackupFailed` needs no kube-state-metrics and resolves with the next success. R-HA-045's
   current expression, `kube_job_status_failed{…} > 0`, keeps firing for as long as the failed Job
   object is kept by `failedJobsHistoryLimit`, also after later runs succeeded (cross-page).
+- Only with the backup. The chart renders these six alerts only while `backup.enabled` is true
+  ([ha-and-helm.md](ha-and-helm.md) R-HA-045, Q-BAK-9): without the CronJob no run ever succeeds,
+  and the clause of `TroveBackupStale` for a backup that never succeeded would fire on every
+  installation that leaves the backup off.
 
 **Audit events** (catalog of
 [operations-and-observability.md](operations-and-observability.md) R-OPS-016, cross-page), actor
@@ -2021,9 +2026,9 @@ major.
 architecture.md R-ARCH-026 (runner mode on a locked connection, with the caller's statements in
 the final `schema_state` transaction).
 
-### Q-BAK-9 · Backup CronJob on by default
+### Q-BAK-9 · Backup CronJob off by default
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the owner on 2026-11-07** — option (a), replacing the development agent's choice (b).
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -2031,21 +2036,23 @@ Status: **Decided by the development agent** — selected from the options below
 | (b) On by default, target required | Rendering fails without a target bucket unless backups are disabled explicitly | Nobody runs without backups by accident; the failure names the fix | One more value in the minimal install |
 | (c) On by default, target in the blob bucket | Default target is a prefix of the blob bucket | Works without extra configuration | Same failure domain as the data (R-BAK-002); a bucket deletion takes the backups too |
 
-**Choice:** (b) — the CronJob is rendered by default, and rendering fails without
-`config.backup.target.bucket` unless `backup.enabled: false` is set deliberately.
+**Choice:** (a) — the CronJob is off by default. `backup.enabled: true` turns it on, and only then
+does rendering fail without `config.backup.target.bucket`.
 
-**Rationale:** The owner made the backup job part of the service, and the safest default is one
-that cannot be forgotten. (c) would look like a backup without being one. The local development
-profile sets `backup.enabled: true` with a second bucket of its S3 store and
-`allow_same_bucket` unset, so the drill runs everywhere. The development agent would revisit this if
-installations regularly disable backups because their platform backs up differently, which would
-call for a documented profile instead of a default.
+**Rationale:** The owner decided that an installation opts in. The backup needs a bucket of its own,
+which the operator has to provide anyway, so a fail-fast default forces every installation, preview
+installations included, to configure or switch off something it did not ask for. Once an
+installation turns the backup on, (b)'s rule holds: rendering fails without a target and names it.
+(c) stays rejected: it would look like a backup without being one. The local development profile
+sets `backup.enabled: true` with a second bucket of its S3 store and `allow_same_bucket` unset, so the
+drill runs there and in every end-to-end set layered on it.
 
-**Applied in the spec:** R-BAK-012 (render failure). [ha-and-helm.md](ha-and-helm.md) R-HA-060,
-R-HA-029 and R-HA-031 already render the CronJob by default, fail without
-`config.backup.target.bucket` and list the bucket in the minimal install, and R-HA-051 already
-creates the second bucket `trove-backups`. The chart side of this choice is
-[Q-HA-17](ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), decided the same way.
+**Applied in the spec:** R-BAK-012 (the CronJob with `backup.enabled: true`, the render failure only
+then). [ha-and-helm.md](ha-and-helm.md) R-HA-060, R-HA-029 and R-HA-031 render the CronJob only with
+`backup.enabled`, fail without `config.backup.target.bucket` only then and leave the bucket out of
+the minimal install; R-HA-045 renders the alerts of the backup runs only with the backup (R-BAK-014),
+and R-HA-051 still creates the second bucket `trove-backups`. The chart side of this choice is
+[Q-HA-17](ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default), decided the same way.
 
 ### Q-BAK-10 · Resuming an interrupted restore
 

@@ -1,6 +1,8 @@
 # The ServiceMonitor, the PrometheusRule (the alerts of the vulnerability scanning) and the vulnerabilities section
-# the chart reads. The rules are rendered into a rule file and tested with promtool
-# (deploy/helm/trove/tests/rules_test.yaml, test/chart).
+# the chart reads, with the backup on so that the rule holds the alerts of the backup runs as well. The rules are rendered
+# into a rule file and tested with promtool (deploy/helm/trove/tests/rules_test.yaml, test/chart).
+backup:
+  enabled: true
 config:
   backup:
     target:

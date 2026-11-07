@@ -125,6 +125,8 @@ The screen cannot see disruption budgets or free capacity on other nodes, becaus
 
 ### Backups
 
+The chart's backup is off until you set `backup.enabled: true` and a bucket of its own in `config.backup.target.bucket` ([Installation](installation.md)); while it is off, the screen below shows **No backup yet** and the command to start a backup carries placeholders.
+
 **Admin area › System › System status › Backups** (capability `settings:read`) shows the backup job and changes nothing: no control starts, deletes, verifies or restores a backup. It refreshes on the same interval as the status screen, with the same **Pause automatic refresh** and **Refresh now**.
 
 - **Status**: the last success with its age and the **Expected interval**. **Overdue** appears when the last success is older than 1.5 times that interval, the condition of the `TroveBackupStale` alert; **No backup yet** appears while no run has succeeded. **Last failure** appears when a failed or abandoned run, or a run whose process has stopped, is newer than the last success, with the reason in words and its code. A drain or an eviction ends a run as **Interrupted**, which is not a failure: the Job retries it.
@@ -244,7 +246,7 @@ With `metrics.prometheusRule.enabled` the chart renders one PrometheusRule with 
 | `TroveValkeyFailoverFlapping` | the Valkey primary changed more than twice within an hour | at once | warning |
 | `TroveValkeyPrimaryDisagreement` | replicas name different Valkey primaries | 5m | critical |
 
-The alerts for the backup (a run that failed, a backup that is overdue, a hanging run, a garbage collection held by a backup, damaged source blobs, verify findings) and for the revocation journal's backlog are not in the chart yet: the backup and the journal are not built, so no metric feeds them.
+The rule also holds the alerts of the backup runs (`TroveBackupStale` for a backup that is overdue or never succeeded, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage`, `TroveBackupVerifyFindings`), but only while `backup.enabled` is true: with the backup off no run succeeds, and `TroveBackupStale` would fire one `config.backup.expected_interval` (a day by default) after the install. `TroveBackupCheckFailed` (a platform protection you declared in `backup.recovery_window` or `backup.object_versioning` is missing) and the revocation journal's `TroveRevocationJournalBacklog` and `TroveRevocationJournalQuarantined` are in the rule either way.
 
 ```yaml
 metrics:

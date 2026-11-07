@@ -17,17 +17,25 @@ import (
 // backupID is a backup ID of the form trove backup list prints (R-BAK-002).
 const backupID = "20261028T020000Z-7f3a"
 
-// restoreSets are the values of the operator's sequence of R-HA-060: every role at zero and the restore Job on.
+// backupSets turn the backup on (R-HA-060, Q-HA-17): the switch, off by default, and the target bucket it then requires.
+func backupSets(extra ...string) []string {
+	return append([]string{"backup.enabled=true", "config.backup.target.bucket=trove-backups"}, extra...)
+}
+
+// restoreSets are the values of the operator's sequence of R-HA-060: the target the backup is read from, every role at zero
+// and the restore Job on. The backup stays as the base values have it.
 func restoreSets(extra ...string) []string {
 	return append([]string{
+		"config.backup.target.bucket=trove-backups",
 		"restore.enabled=true", "restore.backupId=" + backupID,
 		"api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0",
 	}, extra...)
 }
 
-// staticTarget are the values of a backup target with static keys, a login of its own for the backup and a CA of its own.
+// staticTarget are the values of the backup on with a target of static keys, a login of its own for the backup and a CA of
+// its own.
 func staticTarget() []string {
-	return []string{
+	return backupSets(
 		"config.backup.target.credentials.source=static",
 		"secrets.backupTarget.existingSecret=trove-backup-keys",
 		"secrets.backupTargetCA.existingSecret=trove-backup-ca",
@@ -36,7 +44,7 @@ func staticTarget() []string {
 		"config.storage.s3.credentials.source=static",
 		"secrets.s3.existingSecret=trove-s3",
 		"secrets.backupSource.existingSecret=trove-blob-read",
-	}
+	)
 }
 
 func cronJobPod(docs []doc) any {
@@ -146,10 +154,10 @@ func intList(v any) []int {
 // TestR_HA_060_BackupCronJob (R-HA-060, R-BAK-012): the CronJob <fullname>-backup and every row of the table of what the
 // commands need from it.
 func TestR_HA_060_BackupCronJob(t *testing.T) {
-	_, docs := render(t, required())
+	_, docs := render(t, required(), backupSets()...)
 	cj := find(docs, "CronJob", "trove-backup")
 	if cj == nil {
-		t.Fatal("no CronJob trove-backup with backup.enabled (the default)")
+		t.Fatal("no CronJob trove-backup with backup.enabled: true")
 	}
 	pod := cronJobPod(docs)
 	spec := at(cj, "spec")
@@ -180,7 +188,7 @@ func TestR_HA_060_BackupCronJob(t *testing.T) {
 		if _, ok := jobSpec.(map[string]any)["activeDeadlineSeconds"]; ok {
 			t.Error("activeDeadlineSeconds is rendered by default; a first backup of many hours would be killed")
 		}
-		_, docs := render(t, required(), "backup.activeDeadlineSeconds=7200", "backup.backoffLimit=0")
+		_, docs := render(t, required(), backupSets("backup.activeDeadlineSeconds=7200", "backup.backoffLimit=0")...)
 		js := at(find(docs, "CronJob", "trove-backup"), "spec", "jobTemplate", "spec")
 		if at(js, "activeDeadlineSeconds") != 7200 || at(js, "backoffLimit") != 0 {
 			t.Errorf("activeDeadlineSeconds/backoffLimit = %v/%v, want 7200/0", at(js, "activeDeadlineSeconds"), at(js, "backoffLimit"))
@@ -269,21 +277,21 @@ func TestR_HA_060_BackupCronJob(t *testing.T) {
 		if find(docs, "ServiceAccount", "trove") == nil {
 			t.Error("the replicas' ServiceAccount is gone")
 		}
-		_, docs := render(t, required(), "backup.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::1:role/b", "backup.serviceAccount.name=backup-identity")
+		_, docs := render(t, required(), backupSets("backup.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::1:role/b", "backup.serviceAccount.name=backup-identity")...)
 		if got := str(find(docs, "ServiceAccount", "backup-identity"), "metadata", "annotations", "eks.amazonaws.com/role-arn"); got != "arn:aws:iam::1:role/b" {
 			t.Errorf("role annotation = %q", got)
 		}
 		if got := str(cronJobPod(docs), "serviceAccountName"); got != "backup-identity" {
 			t.Errorf("serviceAccountName = %q", got)
 		}
-		_, docs = render(t, required(), "backup.serviceAccount.create=false")
+		_, docs = render(t, required(), backupSets("backup.serviceAccount.create=false")...)
 		if find(docs, "ServiceAccount", "trove-backup") != nil || str(cronJobPod(docs), "serviceAccountName") != "default" {
 			t.Error("create=false renders the account or does not fall back to default")
 		}
 	})
 
 	t.Run("the values: schedule, time zone, adoption, suspension and the switch", func(t *testing.T) {
-		_, docs := render(t, required(), "backup.schedule=@hourly", "backup.timeZone=Europe/Berlin", "backup.adoptTarget=true", "backup.suspend=true", "backup.startingDeadlineSeconds=60")
+		_, docs := render(t, required(), backupSets("backup.schedule=@hourly", "backup.timeZone=Europe/Berlin", "backup.adoptTarget=true", "backup.suspend=true", "backup.startingDeadlineSeconds=60")...)
 		cj := find(docs, "CronJob", "trove-backup")
 		if str(cj, "spec", "schedule") != "@hourly" || str(cj, "spec", "timeZone") != "Europe/Berlin" || at(cj, "spec", "suspend") != true || at(cj, "spec", "startingDeadlineSeconds") != 60 {
 			t.Errorf("spec = %v", at(cj, "spec"))
@@ -291,7 +299,8 @@ func TestR_HA_060_BackupCronJob(t *testing.T) {
 		if got := strings.Join(containerArgs(cronJobPod(docs)), " "); got != "backup create --trigger schedule --adopt-target" {
 			t.Errorf("args = %q", got)
 		}
-		_, docs = render(t, required(), "backup.enabled=false")
+		// The switch alone decides: a target bucket with backup.enabled: false renders nothing of the backup.
+		_, docs = render(t, required(), backupSets("backup.enabled=false")...)
 		for _, k := range []string{"CronJob", "NetworkPolicy/trove-backup", "ServiceAccount/trove-backup"} {
 			kind, name, _ := strings.Cut(k, "/")
 			if name == "" {
@@ -308,12 +317,138 @@ func TestR_HA_060_BackupCronJob(t *testing.T) {
 		}
 	})
 
-	t.Run("every value set renders the CronJob", func(t *testing.T) {
-		eachSet(t, func(t *testing.T, _ string, _ string, docs []doc) {
-			if find(docs, "CronJob", "trove-backup") == nil {
-				t.Error("no CronJob")
+	t.Run("a value set renders the CronJob exactly when it turns the backup on", func(t *testing.T) {
+		on := 0
+		eachSet(t, func(t *testing.T, file string, _ string, docs []doc) {
+			raw, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var v doc
+			if err := yaml.Unmarshal(raw, &v); err != nil {
+				t.Fatal(err)
+			}
+			want := at(v, "backup", "enabled") == true
+			if want {
+				on++
+			}
+			if got := find(docs, "CronJob", "trove-backup") != nil; got != want {
+				t.Errorf("CronJob rendered = %v, but the set has backup.enabled = %v", got, want)
 			}
 		})
+		if on == 0 {
+			t.Error("no value set turns the backup on; the CronJob would be checked in none of them")
+		}
+	})
+}
+
+// TestR_HA_060_BackupOffByDefault (R-HA-060, Q-HA-17, Q-BAK-9): the backup is off by default. An installation with only the
+// required values renders no object of the backup and needs no target bucket; a restore needs the bucket but not the backup.
+func TestR_HA_060_BackupOffByDefault(t *testing.T) {
+	t.Run("R-HA-060 the default renders no CronJob, ServiceAccount, NetworkPolicy or configuration of the backup and needs no target bucket", func(t *testing.T) {
+		var defaults doc
+		raw, err := os.ReadFile(filepath.Join(chartDir, "values.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal(raw, &defaults); err != nil {
+			t.Fatal(err)
+		}
+		if got := at(defaults, "backup", "enabled"); got != false {
+			t.Fatalf("values.yaml has backup.enabled: %v, want false", got)
+		}
+		// required-only.yaml carries no value of the backup, so the render below runs without a target bucket.
+		raw, err = os.ReadFile(required()[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var set doc
+		if err := yaml.Unmarshal(raw, &set); err != nil {
+			t.Fatal(err)
+		}
+		if at(set, "backup") != nil || at(set, "config", "backup") != nil {
+			t.Fatalf("ci/required-only.yaml sets backup values: %v, %v", at(set, "backup"), at(set, "config", "backup"))
+		}
+
+		_, docs := render(t, required())
+		if n := len(ofKind(docs, "CronJob")); n != 0 {
+			t.Errorf("%d CronJobs rendered by default", n)
+		}
+		for _, d := range docs {
+			if str(d, "metadata", "labels", "app.kubernetes.io/component") == "backup" || str(d, "metadata", "name") == "trove-backup" {
+				t.Errorf("%s %s of the backup is rendered by default", str(d, "kind"), str(d, "metadata", "name"))
+			}
+		}
+		cfg := configOf(t, docs)
+		for _, k := range []string{"manual_run", "source"} {
+			if at(cfg, "backup", k) != nil {
+				t.Errorf("backup.%s is rendered by default: %v", k, at(cfg, "backup", k))
+			}
+		}
+	})
+
+	t.Run("R-HA-060 R-HA-029 the target's static keys are required only while a Job that mounts them is rendered", func(t *testing.T) {
+		render(t, required(), "config.backup.target.credentials.source=static")
+		renderFails(t, required(), backupSets("config.backup.target.credentials.source=static"), "config.backup.target.credentials.source", "secrets.backupTarget.existingSecret")
+		renderFails(t, required(), restoreSets("config.backup.target.credentials.source=static"), "config.backup.target.credentials.source", "secrets.backupTarget.existingSecret")
+	})
+
+	t.Run("R-HA-060 a restore needs the target bucket but not the backup: the restore Job is rendered and no CronJob", func(t *testing.T) {
+		_, docs := render(t, required(), restoreSets()...)
+		if find(docs, "Job", "trove-restore") == nil {
+			t.Error("no Job trove-restore with restore.enabled and the backup off")
+		}
+		if find(docs, "CronJob", "trove-backup") != nil {
+			t.Error("a CronJob is rendered with the backup off")
+		}
+	})
+
+	t.Run("R-HA-060 NOTES.txt says that the backup is off and how to turn it on, and says nothing of it while it is on", func(t *testing.T) {
+		notes := notesOf(t, required())
+		for _, want := range []string{"backup is off", "backup.enabled: true", "config.backup.target.bucket"} {
+			if !strings.Contains(notes, want) {
+				t.Errorf("NOTES lacks %q:\n%s", want, notes)
+			}
+		}
+		if notes := notesOf(t, required(), backupSets()...); strings.Contains(notes, "backup is off") {
+			t.Errorf("NOTES says the backup is off while backup.enabled is true:\n%s", notes)
+		}
+	})
+
+	t.Run("R-HA-045 the PrometheusRule leaves out the six alerts of the backup runs while the backup is off and keeps the platform check and the journal", func(t *testing.T) {
+		runs := map[string]bool{
+			"TroveBackupStale": true, "TroveBackupFailed": true, "TroveBackupRunningLong": true,
+			"TroveBackupGlobalHoldLong": true, "TroveBackupSourceDamage": true, "TroveBackupVerifyFindings": true,
+		}
+		names := func(rules []any) map[string]bool {
+			out := map[string]bool{}
+			for _, r := range rules {
+				out[str(r, "alert")] = true
+			}
+			return out
+		}
+		off := names(renderedRules(t, "backup.enabled=false"))
+		for n := range runs {
+			if off[n] {
+				t.Errorf("%s is rendered with backup.enabled: false; without the CronJob no run succeeds and it would fire on every such installation", n)
+			}
+		}
+		for _, n := range []string{"TroveBackupCheckFailed", "TroveRevocationJournalBacklog", "TroveRevocationJournalQuarantined"} {
+			if !off[n] {
+				t.Errorf("%s is missing with backup.enabled: false; the platform check and the journal do not depend on the backup", n)
+			}
+		}
+		if len(off) != len(alertSeverities())-len(runs) {
+			t.Errorf("%d alerts with the backup off, want %d", len(off), len(alertSeverities())-len(runs))
+		}
+		on := names(renderedRules(t))
+		for n := range runs {
+			if !on[n] {
+				t.Errorf("%s is missing with backup.enabled: true", n)
+			}
+		}
+		// A name of the six stays a valid entry of disabledAlerts while the backup is off.
+		renderedRules(t, "backup.enabled=false", "metrics.prometheusRule.disabledAlerts={TroveBackupStale}")
 	})
 }
 
@@ -345,7 +480,8 @@ func TestR_HA_060_RestoreJob(t *testing.T) {
 		}
 	})
 
-	_, docs := render(t, required(), restoreSets()...)
+	// The operator's values with the backup on, so the CronJob is there to be suspended.
+	_, docs := render(t, required(), backupSets(restoreSets()...)...)
 	job := find(docs, "Job", "trove-restore")
 	if job == nil {
 		t.Fatal("no Job trove-restore")
@@ -417,11 +553,11 @@ func TestR_HA_060_RestoreJob(t *testing.T) {
 		if at(find(docs, "CronJob", "trove-backup"), "spec", "suspend") != true {
 			t.Error("the CronJob is not suspended while restore.enabled")
 		}
-		_, d2 := render(t, required(), restoreSets("backup.suspend=false")...)
+		_, d2 := render(t, required(), backupSets(restoreSets("backup.suspend=false")...)...)
 		if at(find(d2, "CronJob", "trove-backup"), "spec", "suspend") != true {
 			t.Error("backup.suspend: false wins over restore.enabled")
 		}
-		_, d3 := render(t, required())
+		_, d3 := render(t, required(), backupSets()...)
 		if at(find(d3, "CronJob", "trove-backup"), "spec", "suspend") != false {
 			t.Error("the CronJob is suspended without restore.enabled")
 		}
@@ -468,41 +604,21 @@ func TestR_HA_060_RestoreJob(t *testing.T) {
 
 // TestR_HA_029_BackupValidation (R-HA-029): the rows of the table that name the backup and the restore.
 func TestR_HA_029_BackupValidation(t *testing.T) {
-	noBucket := func() []string {
-		raw, err := os.ReadFile(filepath.Join(chartDir, "ci", "required-only.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v doc
-		if err := yaml.Unmarshal(raw, &v); err != nil {
-			t.Fatal(err)
-		}
-		delete(at(v, "config").(map[string]any), "backup")
-		out, err := yaml.Marshal(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		f := filepath.Join(t.TempDir(), "no-bucket.yaml")
-		if err := os.WriteFile(f, out, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return []string{f}
-	}
-
+	// required-only.yaml names no target bucket: the backup is off by default (Q-HA-17).
 	t.Run("backup.enabled without config.backup.target.bucket names both", func(t *testing.T) {
-		renderFails(t, noBucket(), nil, "config.backup.target.bucket", "backup.enabled")
+		renderFails(t, required(), []string{"backup.enabled=true"}, "config.backup.target.bucket", "backup.enabled")
 	})
-	t.Run("backup.enabled: false needs no bucket", func(t *testing.T) {
-		_, docs := render(t, noBucket(), "backup.enabled=false")
+	t.Run("backup.enabled: false, the default, needs no bucket", func(t *testing.T) {
+		_, docs := render(t, required())
 		if find(docs, "CronJob", "trove-backup") != nil {
 			t.Error("CronJob rendered with backup.enabled: false")
 		}
 	})
 	t.Run("restore.enabled needs the bucket the backup is read from", func(t *testing.T) {
-		renderFails(t, noBucket(), restoreSets("backup.enabled=false"), "config.backup.target.bucket", "restore.enabled")
+		renderFails(t, required(), restoreSets("config.backup.target.bucket="), "config.backup.target.bucket", "restore.enabled")
 	})
 	t.Run("restore.enabled without restore.backupId", func(t *testing.T) {
-		renderFails(t, required(), []string{"restore.enabled=true", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0"}, "restore.backupId")
+		renderFails(t, required(), []string{"config.backup.target.bucket=trove-backups", "restore.enabled=true", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0"}, "restore.backupId")
 	})
 	t.Run("restore.enabled with a replica of a role names restore.enabled and the value", func(t *testing.T) {
 		for _, v := range []string{"api", "packages", "worker"} {
@@ -539,8 +655,8 @@ func TestR_HA_029_BackupValidation(t *testing.T) {
 	})
 
 	t.Run("static credentials of the target need secrets.backupTarget.existingSecret", func(t *testing.T) {
-		renderFails(t, required(), []string{"config.backup.target.credentials.source=static"}, "config.backup.target.credentials.source", "secrets.backupTarget.existingSecret")
-		render(t, required(), "config.backup.target.credentials.source=static", "secrets.backupTarget.existingSecret=trove-backup-keys")
+		renderFails(t, required(), backupSets("config.backup.target.credentials.source=static"), "config.backup.target.credentials.source", "secrets.backupTarget.existingSecret")
+		render(t, required(), backupSets("config.backup.target.credentials.source=static", "secrets.backupTarget.existingSecret=trove-backup-keys")...)
 	})
 
 	t.Run("a key the chart manages is refused inside config", func(t *testing.T) {
@@ -597,13 +713,13 @@ func TestR_HA_029_BackupValidation(t *testing.T) {
 					t.Fatal(err)
 				}
 				if c.ok {
-					_, docs := render(t, append(required(), f))
+					_, docs := render(t, append(required(), f), backupSets()...)
 					if got := str(find(docs, "CronJob", "trove-backup"), "spec", "schedule"); got != c.expr {
 						t.Errorf("schedule = %q", got)
 					}
 					return
 				}
-				renderFails(t, append(required(), f), nil, "backup.schedule", "not accepted")
+				renderFails(t, append(required(), f), backupSets(), "backup.schedule", "not accepted")
 			})
 		}
 	})
@@ -707,9 +823,9 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 		if has(secretVolumes(restore), "trove-blob-read") || !has(secretVolumes(restore), "trove-s3") {
 			t.Errorf("the restore Job writes the blob bucket and needs the runtime credential: %v", secretVolumes(restore))
 		}
-		renderFails(t, required(), []string{"config.storage.s3.credentials.source=static", "secrets.s3.existingSecret=trove-s3"}, "secrets.backupSource.existingSecret", "backup.enabled")
-		render(t, required(), "config.storage.s3.credentials.source=static", "secrets.s3.existingSecret=trove-s3", "backup.enabled=false")
-		_, d := render(t, required())
+		renderFails(t, required(), backupSets("config.storage.s3.credentials.source=static", "secrets.s3.existingSecret=trove-s3"), "secrets.backupSource.existingSecret", "backup.enabled")
+		render(t, required(), "config.storage.s3.credentials.source=static", "secrets.s3.existingSecret=trove-s3")
+		_, d := render(t, required(), backupSets()...)
 		if at(configOf(t, d), "backup", "source") != nil {
 			t.Error("backup.source is rendered without static blob credentials: the backup pod's workload identity reads with storage.s3.credentials")
 		}
@@ -717,7 +833,7 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 	})
 
 	t.Run("the backup pod without a login of its own uses the runtime login", func(t *testing.T) {
-		_, d := render(t, required())
+		_, d := render(t, required(), backupSets()...)
 		if v := secretVolumes(cronJobPod(d)); !has(v, "trove-db-app") {
 			t.Errorf("volumes = %v, want trove-db-app", v)
 		}
@@ -815,7 +931,10 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 	})
 
 	t.Run("workload identity renders no credential file and no mount", func(t *testing.T) {
-		_, d := render(t, required())
+		_, d := render(t, required(), backupSets()...)
+		if cronJobPod(d) == nil {
+			t.Fatal("no CronJob with backup.enabled: true")
+		}
 		cfg := configOf(t, d)
 		for _, k := range []string{"access_key_id_file", "secret_access_key_file", "session_token_file"} {
 			if at(cfg, "backup", "target", "credentials", k) != nil {
@@ -841,7 +960,7 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 	})
 
 	t.Run("the environment of the Jobs is their own: the global extraEnv does not reach them (Q-HA-149)", func(t *testing.T) {
-		_, d := render(t, required(), "extraEnv[0].name=FOR_REPLICAS", "extraEnv[0].value=1", "backup.extraEnv[0].name=FOR_BACKUP", "backup.extraEnv[0].value=1")
+		_, d := render(t, required(), backupSets("extraEnv[0].name=FOR_REPLICAS", "extraEnv[0].value=1", "backup.extraEnv[0].name=FOR_BACKUP", "backup.extraEnv[0].value=1")...)
 		if _, ok := envByName(cronJobPod(d))["FOR_REPLICAS"]; ok {
 			t.Error("the global extraEnv reaches the backup pod")
 		}
@@ -889,7 +1008,7 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 // TestR_HA_059_NoDisruptionBudgetForTheJobs (R-HA-059, R-HA-060, R-BAK-012): no PodDisruptionBudget selects a backup or restore
 // pod, so a node drain never waits for them. The drain itself is the end-to-end suite's.
 func TestR_HA_059_NoDisruptionBudgetForTheJobs(t *testing.T) {
-	for _, sets := range [][]string{nil, restoreSets()} {
+	for _, sets := range [][]string{backupSets(), backupSets(restoreSets()...)} {
 		_, docs := render(t, required(), sets...)
 		pdbs := ofKind(docs, "PodDisruptionBudget")
 		if len(pdbs) == 0 {
@@ -934,12 +1053,12 @@ func TestR_HA_042_JobsAdmitNothing(t *testing.T) {
 			t.Error("an egress rule is rendered")
 		}
 	}
-	_, docs := render(t, required())
+	_, docs := render(t, required(), backupSets()...)
 	check(t, docs, "trove-backup", find(docs, "CronJob", "trove-backup"))
 	if find(docs, "NetworkPolicy", "trove-restore") != nil {
 		t.Error("a policy for the restore Job without the Job")
 	}
-	_, rdocs := render(t, required(), restoreSets()...)
+	_, rdocs := render(t, required(), backupSets(restoreSets()...)...)
 	check(t, rdocs, "trove-backup", find(rdocs, "CronJob", "trove-backup"))
 	check(t, rdocs, "trove-restore", find(rdocs, "Job", "trove-restore"))
 
@@ -977,10 +1096,10 @@ func TestR_HA_042_JobsAdmitNothing(t *testing.T) {
 // CronJob copies its arguments, so the run records the trigger of the schedule, and its pod name starts with the Job's.
 func TestR_BAK_012_ChartObjects(t *testing.T) {
 	t.Run("backup.enabled without a target bucket fails and names config.backup.target.bucket and backup.enabled", func(t *testing.T) {
-		renderFails(t, required(), []string{"config.backup.target.bucket="}, "config.backup.target.bucket", "backup.enabled")
+		renderFails(t, required(), []string{"backup.enabled=true"}, "config.backup.target.bucket", "backup.enabled")
 	})
 	t.Run("the manual-run command of the UI names an object that exists", func(t *testing.T) {
-		_, docs := renderRelease(t, "prod", required())
+		_, docs := renderRelease(t, "prod", required(), backupSets()...)
 		var cfg doc
 		if err := yaml.Unmarshal([]byte(str(find(docs, "ConfigMap", "prod-trove-config"), "data", "trove.yaml")), &cfg); err != nil {
 			t.Fatal(err)
@@ -994,12 +1113,12 @@ func TestR_BAK_012_ChartObjects(t *testing.T) {
 		}
 	})
 	t.Run("the CronJob name stays within the 52 characters Kubernetes allows a CronJob, so the Jobs it creates get a valid name", func(t *testing.T) {
-		render(t, required(), "fullnameOverride="+strings.Repeat("a", 45))
-		renderFails(t, required(), []string{"fullnameOverride=" + strings.Repeat("a", 46)}, "fullnameOverride", "52")
-		render(t, required(), "fullnameOverride="+strings.Repeat("a", 46), "backup.enabled=false")
+		render(t, required(), backupSets("fullnameOverride="+strings.Repeat("a", 45))...)
+		renderFails(t, required(), backupSets("fullnameOverride="+strings.Repeat("a", 46)), "fullnameOverride", "52")
+		render(t, required(), "fullnameOverride="+strings.Repeat("a", 46))
 	})
 	t.Run("the memory limits of both Jobs are at least 512 MiB", func(t *testing.T) {
-		_, docs := render(t, required(), restoreSets()...)
+		_, docs := render(t, required(), backupSets(restoreSets()...)...)
 		for _, pod := range []any{cronJobPod(docs), restorePod(docs)} {
 			if limit := str(pod, "containers", "0", "resources", "limits", "memory"); memoryBytes(t, limit) < 512<<20 {
 				t.Errorf("limits.memory = %s", limit)

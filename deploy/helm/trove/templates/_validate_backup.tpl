@@ -68,7 +68,7 @@ the day of week 7 is not supported; Sunday is 0
 {{- $bucket := dig "bucket" "" $target -}}
 
 {{- if and $b.enabled (not $bucket) -}}
-{{- fail "trove: config.backup.target.bucket is required while backup.enabled is true (the default): name a bucket of its own, in another account or project if you can (example: trove-backups), or switch the backup off with backup.enabled: false" -}}
+{{- fail "trove: config.backup.target.bucket is required while backup.enabled is true: name a bucket of its own, in another account or project if you can (example: trove-backups), or switch the backup off with backup.enabled: false" -}}
 {{- end -}}
 {{- if and $r.enabled (not $bucket) -}}
 {{- fail "trove: config.backup.target.bucket is required while restore.enabled is true: it is the target the backup is read from (example: trove-backups)" -}}
@@ -86,7 +86,9 @@ the day of week 7 is not supported; Sunday is 0
 {{- end -}}
 {{- end -}}
 
-{{- /* The target must not be inside what the orphan sweep of the blob store deletes (R-HA-060, R-BAK-002, R-STOR-026). */ -}}
+{{- /* The target must not be inside what the orphan sweep of the blob store deletes (R-HA-060, R-BAK-002, R-STOR-026). The rule
+holds for any configured target, the backup on or off: the configuration check of every replica applies it as well
+(internal/config/backup.go, validateBackupCoupling), so the chart refuses what the replicas would refuse at start. */ -}}
 {{- $blobBucket := dig "storage" "s3" "bucket" "" $cfg -}}
 {{- if and $bucket $blobBucket (eq $bucket $blobBucket) (eq (include "trove.normalizeEndpoint" (dig "endpoint" "" $target)) (include "trove.normalizeEndpoint" (dig "storage" "s3" "endpoint" "" $cfg))) -}}
 {{- $tp := dig "prefix" "trove" $target -}}
@@ -99,8 +101,9 @@ the day of week 7 is not supported; Sunday is 0
 {{- end -}}
 {{- end -}}
 
-{{- if and (eq (dig "credentials" "source" "default" $target) "static") (not $v.secrets.backupTarget.existingSecret) -}}
-{{- fail "trove: config.backup.target.credentials.source: static needs secrets.backupTarget.existingSecret (keys secrets.backupTarget.accessKeyIdKey and secretAccessKeyKey)" -}}
+{{- /* The target's keys are mounted into the backup and restore pods only, so they are needed while one of them is rendered. */ -}}
+{{- if and (or $b.enabled $r.enabled) (eq (dig "credentials" "source" "default" $target) "static") (not $v.secrets.backupTarget.existingSecret) -}}
+{{- fail "trove: config.backup.target.credentials.source: static needs secrets.backupTarget.existingSecret while backup.enabled or restore.enabled is true (keys secrets.backupTarget.accessKeyIdKey and secretAccessKeyKey)" -}}
 {{- end -}}
 
 {{- if and $r.enabled (not $r.backupId) -}}

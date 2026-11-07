@@ -26,7 +26,8 @@ This page lists what this version of trove does not do, and the known weak spots
 - trove backs itself up with `trove backup create` (the chart's backup CronJob) into a target bucket of its own, restores into an
   empty installation with `trove backup restore` (the chart's restore Job), and replays the revocation journal so that a restore
   keeps revoked tokens revoked, disabled accounts disabled and removed permissions removed ([Backups](operations.md#backups)).
-  The chart turns the backup on by default and needs `config.backup.target.bucket` and the target's credentials.
+  The chart's backup is off by default: `backup.enabled: true` turns it on and then needs `config.backup.target.bucket` and the
+  target's credentials.
 - Some narrowings write no journal entry yet and come back with a restore of either kind: a pending identity link removed, a group
   renamed away from the name the identity provider fills, a repository's include and exclude patterns or virtual members narrowed,
   claims and pin rules added, a lowered token lifetime ceiling. Review them after a restore.

@@ -1,7 +1,10 @@
 # The object store comes from the Secret an S3 provisioner writes (AWS_ACCESS_KEY_ID,
 # AWS_SECRET_ACCESS_KEY, S3_BUCKET, S3_REGION, S3_ENDPOINT as a host without scheme): the
 # credentials are mounted as files, bucket, region and endpoint are read into environment
-# variables from the same Secret, and config.storage.s3 needs none of them.
+# variables from the same Secret, and config.storage.s3 needs none of them. The backup is on, so its pods read the
+# blob bucket with a login of their own (secrets.backupSource) instead of the provisioner's.
+backup:
+  enabled: true
 config:
   backup:
     target:

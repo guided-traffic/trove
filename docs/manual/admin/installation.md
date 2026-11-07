@@ -153,6 +153,19 @@ The `config` subtree becomes trove's configuration file; [Configuration](configu
 
 trove reaches your OIDC provider over HTTPS and trusts the system roots. If the provider's certificate comes from a private CA, the chart has no value for it yet: mount the CA file with `extraVolumes` and `extraVolumeMounts` and list its path in `config.proxy.outbound.tls.ca_files`.
 
+trove's own backup is off by default, so the values above need nothing for it. To turn it on, add the switch and a bucket of its own for the backups, in another account or project if you can; with the switch on, the chart refuses to render without the bucket:
+
+```yaml
+backup:
+  enabled: true                    # default: false
+config:
+  backup:
+    target:
+      bucket: trove-backups        # example: a bucket of its own, not the blob bucket
+```
+
+By default the backup pods reach the target with the default credential chain of their pod, such as a workload identity on their ServiceAccount (`backup.serviceAccount.annotations`); for static keys, set `config.backup.target.credentials.source: static` and name the Secret in `secrets.backupTarget.existingSecret`. When the blob store uses static keys, the backup pods also need `secrets.backupSource.existingSecret`, a login that may only read the blob bucket. [Backups](operations.md#backups) shows the runs.
+
 ## Install
 
 ```shell
@@ -163,7 +176,7 @@ kubectl -n trove rollout status deployment/trove-packages
 kubectl -n trove rollout status deployment/trove-worker
 ```
 
-`helm install` first runs the Job `trove-migrate`, which creates the schema, and creates the Deployments only after it has succeeded. If the Job fails, read its log with `kubectl -n trove logs job/trove-migrate`; the Job is kept for a day after it finished. The notes Helm prints after the install list the endpoints and warn about risky endpoint settings.
+`helm install` first runs the Job `trove-migrate`, which creates the schema, and creates the Deployments only after it has succeeded. If the Job fails, read its log with `kubectl -n trove logs job/trove-migrate`; the Job is kept for a day after it finished. The notes Helm prints after the install list the endpoints, warn about risky endpoint settings and say when the backup is off.
 
 ## First sign-in
 

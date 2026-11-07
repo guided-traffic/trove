@@ -1,9 +1,6 @@
 # The Gateway API edge (R-HA-038): an HTTPRoute on a platform-owned Gateway beside the Ingress, the pools' paths,
 # a filter on every rule and the BackendTLSPolicies of the Services the route names.
 config:
-  backup:
-    target:
-      bucket: trove-backups
   server:
     base_url: https://trove.example.com
   database:

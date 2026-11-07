@@ -173,7 +173,7 @@ checked every earlier decision against them:
 | [ADR-109](#adr-109--backup-encryption-server-side-at-mvp-client-side-for-the-database-files-at-p1) | Backup encryption: server-side at MVP, client-side for the database files at P1 | Decided by the development agent — owner review at the walkthrough |
 | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) | Restore: an empty installation, any later release, resumable, as an ordinary Job | Decided by the development agent — owner review at the walkthrough |
 | [ADR-111](#adr-111--a-restore-moves-valkey-to-a-new-keyspace-and-offsets-every-revision) | A restore moves Valkey to a new keyspace and offsets every revision | Decided by the development agent — owner review at the walkthrough |
-| [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target) | The backup CronJob is on by default and needs its own target | Decided by the development agent — owner review at the walkthrough |
+| [ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on) | The backup CronJob is off by default and needs its own target when turned on | Decided by the owner on 2026-11-07 (option (a) of Q-BAK-9, option (b) of Q-HA-17) |
 | [ADR-113](#adr-113--authentication-state-lives-in-postgresql-and-in-process-caches-never-in-valkey) | Authentication state lives in PostgreSQL and in-process caches, never in Valkey | Decided by the development agent — owner review at the walkthrough |
 | [ADR-114](#adr-114--authentication-caches-answer-only-while-the-change-log-is-fresh) | Authentication caches answer only while the change log is fresh | Decided by the development agent — owner review at the walkthrough |
 | [ADR-115](#adr-115--brute-force-counters-count-cluster-wide-the-break-glass-lockout-and-rotation-stay-in-postgresql) | Brute-force counters count cluster-wide; the break-glass lockout and rotation stay in PostgreSQL | Decided by the development agent — owner review at the walkthrough |
@@ -297,7 +297,7 @@ not supported ([Q-HA-6](spec/ha-and-helm.md#q-ha-6--transaction-mode-connection-
 must pass a conformance check ([R-STOR-035](spec/storage.md#r-stor-035--object-store-consistency-assumptions-and-conformance-check)). Decided: the client library is aws-sdk-go-v2 `service/s3`
 with a trove-owned multipart upload ([Q-ARCH-4](spec/architecture.md#q-arch-4--s3-client-library)), and the local development profile and per-change CI
 run SeaweedFS, with the MinIO leg on every change and AWS S3 once an AWS account exists (owner decision of 2026-10-29, [ADR-130](#adr-130--the-organisations-ci-and-release-standard); [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)). Backups go to an S3 target of their own,
-outside the blob prefix ([ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target)), and multi-request uploads keep their
+outside the blob prefix ([ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on)), and multi-request uploads keep their
 data in S3 multipart uploads rather than on a replica ([ADR-096](#adr-096--no-state-between-requests-on-a-replica-inv-18)).
 
 **Alternatives considered.** None; set by the owner.
@@ -525,7 +525,7 @@ and stores it in S3.
   revocation journal and the platform layer moved to MVP with them ([Q-HA-9](spec/ha-and-helm.md#q-ha-9--making-revocations-survive-a-database-restore-h-37), [Q-HA-19](spec/ha-and-helm.md#q-ha-19--priority-of-the-platform-backup-layer-and-the-point-in-time-restore),
   [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination)).
 - **Design.** Format and garbage-collection protection, runs, credentials, encryption, restore and
-  the CronJob default are [ADR-106](#adr-106--backup-format-a-trove-native-snapshot-export-a-shared-blob-pool-and-a-garbage-collection-hold) to [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target). Valkey is not part of a backup (INV-3).
+  the CronJob default are [ADR-106](#adr-106--backup-format-a-trove-native-snapshot-export-a-shared-blob-pool-and-a-garbage-collection-hold) to [ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on). Valkey is not part of a backup (INV-3).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -1454,8 +1454,9 @@ identity (IRSA and similar) or static keys.
 **Consequences.** The chart never creates secrets and refuses to render invalid combinations
 ([ADR-079](#adr-079--the-chart-validates-before-it-renders-and-never-creates-secrets)). The rendered output is checked in CI for `ReadWriteMany`, `ReadOnlyMany`,
 claims and StatefulSets ([R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent)). Decided:
-- **Backup CronJob** ([Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), option (a)). Rendered by default; rendering fails without a backup
-  target ([ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target)).
+- **Backup CronJob** ([Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default), option (b), decided by the owner on 2026-11-07). Off by default;
+  `backup.enabled: true` renders it, and only then does rendering fail without a backup target
+  ([ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on)).
 - **Restore Job** ([Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart), option (b)). While `restore.enabled`, the chart renders an ordinary
   restore Job with both roles at zero, no migration Job and a suspended backup CronJob
   ([ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job)).
@@ -1481,7 +1482,7 @@ nothing needs and which a drain would have to move. A shared spool volume: not a
 **Spec:** [INV-13](spec/README.md#design-invariants), [R-HA-002](spec/ha-and-helm.md#r-ha-002--role-split-into-api-packages-and-worker-deployments), [R-HA-028](spec/ha-and-helm.md#r-ha-028--chart-scope-rendered-resources-and-naming), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring),
 [R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-038](spec/ha-and-helm.md#r-ha-038--gateway-api-exposure), [R-HA-042](spec/ha-and-helm.md#r-ha-042--network-policies), [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-attestations), [R-HA-053](spec/ha-and-helm.md#r-ha-053--chart-created-gateway), [R-HA-060](spec/ha-and-helm.md#r-ha-060--backup-cronjob-and-restore-job),
 [R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent); decided: [Q-HA-7](spec/ha-and-helm.md#q-ha-7--priority-of-gateway-api), [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key), [Q-HA-10](spec/ha-and-helm.md#q-ha-10--default-of-the-egress-networkpolicy), [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), [Q-HA-15](spec/ha-and-helm.md#q-ha-15--valkey-with-sentinel-in-the-local-profile-and-ci),
-[Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart).
+[Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default), [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart).
 
 ### ADR-025 · npm and NuGet v3 are the MVP formats (INV-14)
 
@@ -1681,7 +1682,7 @@ Valkey.
   the record of the backups ([R-BAK-004](spec/backup-and-restore.md#r-bak-004--table-registry-and-export-classes)).
 - **Design.** [ADR-106](#adr-106--backup-format-a-trove-native-snapshot-export-a-shared-blob-pool-and-a-garbage-collection-hold) (format and garbage-collection hold), [ADR-107](#adr-107--backup-runs-one-at-a-time-in-a-leased-row-cancelled-when-they-stall) (runs), [ADR-108](#adr-108--backup-credentials-stay-in-backup-pods-the-api-and-ui-only-read-runs)
   (credentials and the API), [ADR-109](#adr-109--backup-encryption-server-side-at-mvp-client-side-for-the-database-files-at-p1) (encryption), [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) (restore), [ADR-111](#adr-111--a-restore-moves-valkey-to-a-new-keyspace-and-offsets-every-revision) (derived state),
-  [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target) (CronJob default).
+  [ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on) (CronJob default).
 - **What a restore undoes.** Changes after the snapshot are lost. Every restore replays the
   revocation journal ([ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination)), withholds npm versions unpublished since the snapshot
   ([ADR-118](#adr-118--a-restore-withholds-npm-versions-unpublished-after-the-snapshot)), reserves lost NuGet version numbers ([ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones)), and makes single-use CI issuers
@@ -4402,28 +4403,34 @@ and every client revalidates everything after each restore.
 **Spec:** [R-BAK-022](spec/backup-and-restore.md#r-bak-022--state-a-restore-rebuilds-or-invalidates), [R-ARCH-030](spec/architecture.md#r-arch-030--valkey-usage-map), [R-HA-025](spec/ha-and-helm.md#r-ha-025--restore-procedure), [R-HA-057](spec/ha-and-helm.md#r-ha-057--valkey-failover-outage-and-degraded-mode); decided:
 [Q-BAK-5](spec/backup-and-restore.md#q-bak-5--derived-state-that-outlives-the-old-database).
 
-### ADR-112 · The backup CronJob is on by default and needs its own target
+### ADR-112 · The backup CronJob is off by default and needs its own target when turned on
 
-**Status:** Decided by the development agent — owner review at the walkthrough
+**Status:** Decided by the owner on 2026-11-07 — option (a) of [Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-off-by-default) and option (b) of [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default), replacing the development agent's choice of the CronJob on by default
 
-**Context.** The owner made the backup job part of the service ([ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3)). An installation without
-backups should not be the result of doing nothing, and a backup in the same bucket as the data
-shares its failure domain.
+**Context.** The owner made the backup job part of the service ([ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3)). The backup needs a bucket
+of its own, because a backup in the same bucket as the data shares its failure domain. The
+development agent had rendered the CronJob by default and made the target a required value of every
+install; on 2026-11-07 the owner decided that an installation opts in.
 
-**Decision.** The chart renders the backup CronJob by default, and rendering fails without
-`config.backup.target.bucket` unless `backup.enabled: false` is set deliberately
-([Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-on-by-default), option (b); [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), option (a); one question seen from both pages). The local
-profile creates a second bucket, `trove-backups`, so the drill runs everywhere.
+**Decision.** The chart renders the backup CronJob only with `backup.enabled: true`, which is off by
+default, and only then fails without `config.backup.target.bucket`
+([Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-off-by-default), option (a); [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default), option (b); one question seen from both pages). While the
+backup is off, `NOTES.txt` says so, and the PrometheusRule leaves out the six alerts of the backup
+runs. The local profile creates a second bucket, `trove-backups`, and turns the backup on, so the
+drill runs there and in every end-to-end set.
 
-**Consequences.** Every installation has a backup from its first day, and the rendering error names
-the missing value. The minimal install needs one more value.
+**Consequences.** The minimal install needs no value of the backup, preview installations included.
+An installation without trove's own backup is the outcome of doing nothing; the note in `NOTES.txt`
+makes it visible, and the platform layer ([R-HA-023](spec/ha-and-helm.md#r-ha-023--backup-of-postgresql-object-storage-and-keys)) is unaffected. Once the backup is on,
+the rendering error names the missing target.
 
-**Alternatives considered.** Off by default with a warning: the unsafe state as default. A default
-target inside the blob bucket: the same failure domain and credential as the data, and under the
-blob prefix the orphan sweep would delete the backups.
+**Alternatives considered.** On by default with a required target: every installation, preview ones
+included, has to provide or switch off something it did not ask for. A default target inside the
+blob bucket: the same failure domain and credential as the data, and under the blob prefix the
+orphan sweep would delete the backups.
 
-**Spec:** [R-BAK-011](spec/backup-and-restore.md#r-bak-011--configuration), [R-BAK-012](spec/backup-and-restore.md#r-bak-012--kubernetes-cronjob-manual-runs-and-restore-job), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-060](spec/ha-and-helm.md#r-ha-060--backup-cronjob-and-restore-job);
-decided: [Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-on-by-default), [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default).
+**Spec:** [R-BAK-011](spec/backup-and-restore.md#r-bak-011--configuration), [R-BAK-012](spec/backup-and-restore.md#r-bak-012--kubernetes-cronjob-manual-runs-and-restore-job), [R-BAK-014](spec/backup-and-restore.md#r-bak-014--run-visibility-api-metrics-alerts-and-audit), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-031](spec/ha-and-helm.md#r-ha-031--values-reference), [R-HA-045](spec/ha-and-helm.md#r-ha-045--monitoring-integration), [R-HA-060](spec/ha-and-helm.md#r-ha-060--backup-cronjob-and-restore-job);
+decided: [Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-off-by-default), [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default).
 
 ## High availability and Helm
 
@@ -4548,7 +4555,7 @@ per role or without a disruption budget, when the `worker` Deployment has no rep
 maximum upload exceeds the spool budget, or when the termination grace period is shorter than the
 drain delay plus 15 s. Every secret comes from an existing Kubernetes Secret named in the values.
 Since 2026-10-28 it also refuses: a missing backup target while backups are enabled
-([Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default)); fewer than three Sentinel addresses under `highAvailability.enforce` ([Q-HA-14](spec/ha-and-helm.md#q-ha-14--valkey-topologies-trove-supports));
+([Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default)); fewer than three Sentinel addresses under `highAvailability.enforce` ([Q-HA-14](spec/ha-and-helm.md#q-ha-14--valkey-topologies-trove-supports));
 a control endpoint equal to the request endpoint behind a transaction-mode pooler ([Q-HA-20](spec/ha-and-helm.md#q-ha-20--control-connection-behind-a-transaction-mode-pooler));
 replica counts above zero while a restore is enabled ([Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart)); and any access mode other than
 `ReadWriteOnce` or `ReadWriteOncePod` for an ephemeral spool volume ([R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent)).
@@ -4564,7 +4571,7 @@ creates it: silent, irreversible loss of every stored credential when the key is
 for the hook Job a Secret-write permission the release otherwise never needs.
 
 **Spec:** [R-HA-027](spec/ha-and-helm.md#r-ha-027--encryption-keys-for-sealed-secrets-in-a-replicated-deployment), [R-HA-029](spec/ha-and-helm.md#r-ha-029--fail-fast-chart-validation), [R-HA-030](spec/ha-and-helm.md#r-ha-030--configuration-rendering-and-secret-wiring), [R-HA-061](spec/ha-and-helm.md#r-ha-061--volumes-nothing-shared-nothing-persistent); decided: [Q-HA-8](spec/ha-and-helm.md#q-ha-8--who-creates-the-first-encryption-key),
-[Q-HA-14](spec/ha-and-helm.md#q-ha-14--valkey-topologies-trove-supports), [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default), [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart), [Q-HA-20](spec/ha-and-helm.md#q-ha-20--control-connection-behind-a-transaction-mode-pooler).
+[Q-HA-14](spec/ha-and-helm.md#q-ha-14--valkey-topologies-trove-supports), [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default), [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart), [Q-HA-20](spec/ha-and-helm.md#q-ha-20--control-connection-behind-a-transaction-mode-pooler).
 
 ### ADR-100 · Valkey degrades trove but never gates readiness, except for configuration errors
 
@@ -6839,7 +6846,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-BAK-6](spec/backup-and-restore.md#q-bak-6--encryption-of-backup-contents) | Encryption of backup contents? | (b) server-side encryption (`s3`) at MVP; client-side encryption of the database files to age recipients at P1 | [ADR-109](#adr-109--backup-encryption-server-side-at-mvp-client-side-for-the-database-files-at-p1) |
 | [Q-BAK-7](spec/backup-and-restore.md#q-bak-7--restore-target-empty-installation-only-or-reuse-of-an-existing-blob-store) | Restore into an empty installation only, or reuse an existing blob store? | (a) empty database and empty blob prefix at MVP; reuse at P1 | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) |
 | [Q-BAK-8](spec/backup-and-restore.md#q-bak-8--restore-with-a-newer-trove-release) | Restore with a newer trove release? | (b) any release that embeds every step of the backup with the same checksums: migrate to the step, load, migrate forward | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) |
-| [Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-on-by-default) | Backup CronJob on by default? | (b) on by default; rendering fails without a target bucket unless backups are disabled deliberately; same choice as Q-HA-17 | [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target) |
+| [Q-BAK-9](spec/backup-and-restore.md#q-bak-9--backup-cronjob-off-by-default) | Backup CronJob on by default? Decided by the owner on 2026-11-07 | (a) off by default; `backup.enabled: true` turns it on, and only then does rendering fail without a target bucket; same choice as Q-HA-17 | [ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on) |
 | [Q-BAK-10](spec/backup-and-restore.md#q-bak-10--resuming-an-interrupted-restore) | Resuming an interrupted restore? | (c) automatic resumption keyed to the backup ID through a schema anchor, with the migration lock held for the whole restore | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job) |
 | [Q-BAK-11](spec/backup-and-restore.md#q-bak-11--bounding-a-hung-backup-run) | Bounding a hung backup run? | (c) the run cancels itself after `backup.stall_timeout` (30 minutes) without progress; no `activeDeadlineSeconds` by default | [ADR-107](#adr-107--backup-runs-one-at-a-time-in-a-leased-row-cancelled-when-they-stall) |
 | [Q-BAK-12](spec/backup-and-restore.md#q-bak-12--the-backup-command-in-m0) | What does `trove backup` do in M0? | (c) the name is reserved; every subcommand returns "not implemented yet" | — |
@@ -6895,7 +6902,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-BAK-43](spec/backup-and-restore.md#q-bak-43--the-restores-item-store-publishes-nothing-refuses-blob-and-job-calls-and-leaves-the-vulnerability-hook-out) | What do the restore's item store and its stand-ins do? | (b) publish nothing, refuse blob and job calls, no vulnerability hook | |
 | [Q-BAK-51](spec/backup-and-restore.md#q-bak-51--a-server-side-copy-is-bounded-by-a-deadline-derived-from-the-objects-size-ticks-the-run-through-a-callback-on-the-object-reference-and-a-copy-that-outlasts-its-bound-makes-the-caller-stream) | How is a server-side copy bounded, and how does it keep the run alive? | (b) deadline of 2 min plus size at 8 MiB/s, `ObjectRef.Progress`, an expired bound is `ErrServerCopyUnavailable`; part size from `PutOptions.SizeHint` | — |
 | [Q-BAK-53](spec/backup-and-restore.md#q-bak-53--a-long-statement-of-the-restore-is-progress-for-a-bound-the-streaming-sink-is-bounded-in-memory-and-a-finished-restore-of-the-same-backup-is-not-an-error) | What counts as progress of a restore, how much may the sink buffer, and what is a finished restore found again? | (b) a bounded keepalive around long statements, an 8 MiB cap and a 256 MiB budget, exit 0 for the same backup | |
-| [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-on-by-default) | Is the backup CronJob on by default? | (a) on by default; rendering fails without a backup target; same choice as Q-BAK-9 | [ADR-112](#adr-112--the-backup-cronjob-is-on-by-default-and-needs-its-own-target), [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
+| [Q-HA-17](spec/ha-and-helm.md#q-ha-17--the-backup-cronjob-is-off-by-default) | Is the backup CronJob on by default? Decided by the owner on 2026-11-07 | (b) off by default; `backup.enabled: true` turns it on and then needs a backup target; `NOTES.txt` says while it is off; same choice as Q-BAK-9 | [ADR-112](#adr-112--the-backup-cronjob-is-off-by-default-and-needs-its-own-target-when-turned-on), [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
 | [Q-HA-18](spec/ha-and-helm.md#q-ha-18--how-a-restore-runs-in-the-chart) | How does a restore run in the chart? | (b) an ordinary Job with both roles at zero, no migration Job and a suspended backup CronJob, while `restore.enabled` | [ADR-110](#adr-110--restore-an-empty-installation-any-later-release-resumable-as-an-ordinary-job), [ADR-024](#adr-024--the-helm-chart-is-the-supported-deployment-inv-13) |
 | [Q-HA-19](spec/ha-and-helm.md#q-ha-19--priority-of-the-platform-backup-layer-and-the-point-in-time-restore) | Priority of the platform backup layer and the point-in-time restore? | (c) R-HA-023 and R-HA-025 are MVP; the platform layer stays a recommendation for installations | [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-HA-20](spec/ha-and-helm.md#q-ha-20--control-connection-behind-a-transaction-mode-pooler) | Control connection behind a transaction-mode pooler? | (c) a control endpoint with a server pool of its own; the chart refuses one equal to the request endpoint | [ADR-101](#adr-101--connection-model-a-transaction-scoped-main-pool-behind-an-optional-pooler-sessions-only-on-workers), [ADR-023](#adr-023--high-availability-and-horizontal-scale-on-ha-postgresql-ha-valkey-and-s3-inv-12) |
