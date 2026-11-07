@@ -541,12 +541,28 @@ func TestR_HA_029_BackupValidation(t *testing.T) {
 			expr string
 			ok   bool
 		}{
-			{"0 2 * * *", true}, {"*/15 * * * *", true}, {"30 3 * * MON-FRI", true}, {"0 2 * * */7", true}, {"0 2 1 JAN *", true},
-			{"@hourly", true}, {"@daily", true}, {"@WEEKLY", true},
-			{"0 0 2 * * *", false}, {"0 0 2 * * * 2026", false}, {"0 2 * *", false}, {"0 2 * * 7", false}, {"0 2 * * 5-7", false},
-			{"0 2 ? * *", false}, {"0 2 L * *", false}, {"0 2 15W * *", false}, {"0 2 * * 5#2", false},
-			{"@every 1h", false}, {"@reboot", false}, {"@sometimes", false},
-			{"TZ=Europe/Berlin 0 2 * * *", false}, {"CRON_TZ=UTC 0 2 * * *", false},
+			{"0 2 * * *", true},
+			{"*/15 * * * *", true},
+			{"30 3 * * MON-FRI", true},
+			{"0 2 * * */7", true},
+			{"0 2 1 JAN *", true},
+			{"@hourly", true},
+			{"@daily", true},
+			{"@WEEKLY", true},
+			{"0 0 2 * * *", false},
+			{"0 0 2 * * * 2026", false},
+			{"0 2 * *", false},
+			{"0 2 * * 7", false},
+			{"0 2 * * 5-7", false},
+			{"0 2 ? * *", false},
+			{"0 2 L * *", false},
+			{"0 2 15W * *", false},
+			{"0 2 * * 5#2", false},
+			{"@every 1h", false},
+			{"@reboot", false},
+			{"@sometimes", false},
+			{"TZ=Europe/Berlin 0 2 * * *", false},
+			{"CRON_TZ=UTC 0 2 * * *", false},
 		}
 		for _, c := range cases {
 			t.Run(c.expr, func(t *testing.T) {
