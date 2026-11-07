@@ -34,6 +34,7 @@ export function sampleProject(over: Partial<Project> = {}): Project {
     repositories: 0,
     serviceAccounts: 0,
     policies: 0,
+    logicalBytes: 0,
     version: 1,
     createdAt: '2026-11-01T08:00:00Z',
     createdBy: 'user:alice',

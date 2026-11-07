@@ -46,8 +46,9 @@ func toProject(p project.Project, role authz.ProjectRole) gen.Project {
 	out := gen.Project{
 		Key: p.Key, DisplayName: p.DisplayName, Description: p.Description,
 		Members: len(p.Members), Owners: owners, Repositories: p.Repositories, ServiceAccounts: p.ServiceAccounts, Policies: p.Policies,
-		Version:   p.Version,
-		CreatedAt: utc(p.CreatedAt), CreatedBy: p.CreatedBy, UpdatedAt: utc(p.UpdatedAt), UpdatedBy: p.UpdatedBy,
+		LogicalBytes: p.LogicalBytes,
+		Version:      p.Version,
+		CreatedAt:    utc(p.CreatedAt), CreatedBy: p.CreatedBy, UpdatedAt: utc(p.UpdatedAt), UpdatedBy: p.UpdatedBy,
 	}
 	if role.Valid() {
 		r := gen.ProjectRole(role.String())

@@ -174,8 +174,9 @@ func toProject(h head, members []Member) Project {
 		ID: h.ID, Key: h.Key, DisplayName: h.DisplayName, Description: h.Description,
 		Members:      members,
 		Repositories: int(h.Repositories), ServiceAccounts: int(h.ServiceAccounts), Policies: int(h.Policies), CIMappings: int(h.CiMappings),
-		Version:   h.Version,
-		CreatedAt: time.UnixMicro(h.CreatedUs).UTC(), CreatedBy: refOfRow(h.CreatedByKind, h.CreatedByName),
+		LogicalBytes: h.LogicalBytes,
+		Version:      h.Version,
+		CreatedAt:    time.UnixMicro(h.CreatedUs).UTC(), CreatedBy: refOfRow(h.CreatedByKind, h.CreatedByName),
 		UpdatedAt: time.UnixMicro(h.UpdatedUs).UTC(), UpdatedBy: refOfRow(h.UpdatedByKind, h.UpdatedByName),
 	}
 }

@@ -65,6 +65,8 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await page.reload();
     // A project that holds a repository cannot be deleted; the page says why.
     await expect(page.getByRole('button', { name: 'Delete project' })).toBeDisabled();
+    // The project shows the logical size it is charged (R-STOR-049): nothing is stored in it yet.
+    await expect(page.locator('dt', { hasText: 'Storage' }).locator('xpath=following-sibling::dd[1]')).toHaveText('0 B');
     await expectAccessible(page, 'project settings (administrator)');
     await page.goto(`/ui/en/projects/${key}/repositories`);
     await expect(page.getByRole('link', { name: repoKey })).toBeVisible();

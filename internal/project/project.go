@@ -62,6 +62,10 @@ type Project struct {
 	ServiceAccounts int
 	Policies        int
 	CIMappings      int
+	// LogicalBytes is the size the project is charged (Q-STOR-155): the sum of the folded logical sizes of its
+	// repositories' files (R-STOR-003), each file in full whether another project holds the same content. It
+	// lags a write by at most one fold interval.
+	LogicalBytes int64
 	// Version is the ETag source. It moves with the fields of the PUT (display name,
 	// description) and with nothing else: members and repositories leave it (Q-AUTHZ-185).
 	Version   int64

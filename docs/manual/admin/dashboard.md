@@ -29,6 +29,6 @@ Each replica measures these figures itself over the time since its previous hear
 
 ## How to read the figures
 
-- **Stored content** is what trove's metadata records: one object per distinct content, so a file in several repositories counts once. It is not what the object store bills: old object versions, incomplete uploads and the store's own overhead are not in it.
+- **Stored content** is what trove's metadata records: one object per distinct content, so a file in several repositories counts once. It is not what the object store bills: old object versions, incomplete uploads and the store's own overhead are not in it. A project's **Storage** is another figure: the full size of its files, counted per reference ([Projects](projects.md#what-a-project-is)).
 - The counts are taken by the replica that answers and reused for 30 seconds, so two refreshes in a row can show the same numbers; the line under the cards says when they were counted.
 - The figures are the current state, not a history. For trends and alerts, use the metrics of the ops listener ([Monitoring and operations](operations.md#metrics)).

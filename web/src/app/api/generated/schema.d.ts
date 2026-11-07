@@ -1652,8 +1652,8 @@ export interface paths {
          * List projects
          * @description The projects the caller can see, ordered by key, with cursor pagination (R-API-010). A holder of `projects:read` (the
          *     roles `admin`, `security-admin`, `repository-admin` and `auditor`) sees every project; any other caller sees the
-         *     projects it is a member of (Q-AUTHZ-207) and no other. The answer carries the owners, the counts and, for a member,
-         *     the caller's own role in `role`. `q` matches the key and the display name case-insensitively.
+         *     projects it is a member of (Q-AUTHZ-207) and no other. The answer carries the owners, the counts, the logical size
+         *     the project is charged (`logicalBytes`, Q-STOR-155) and, for a member, the caller's own role in `role`. `q` matches the key and the display name case-insensitively.
          */
         get: operations["listProjects"];
         put?: never;
@@ -1687,7 +1687,7 @@ export interface paths {
         };
         /**
          * Read a project
-         * @description The project with its owners, counts and `ETag` (the version, R-API-012). Readable with `projects:read` and by a member
+         * @description The project with its owners, counts, logical size (`logicalBytes`, Q-STOR-155) and `ETag` (the version, R-API-012). Readable with `projects:read` and by a member
          *     of the project; any other caller, also for a project that does not exist, gets `404`. The `ETag` is the version of the
          *     fields `PUT` replaces; the body also holds members and counts, which do not move it (Q-AUTHZ-185), so the read ignores
          *     `If-None-Match` and always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
@@ -4907,6 +4907,15 @@ export interface components {
             repositories: number;
             serviceAccounts: number;
             policies: number;
+            /**
+             * Format: int64
+             * @description The size the project is charged (Q-STOR-155): the sum of the sizes of the files in its repositories, in bytes, each
+             *     file counted in full whether another repository or project holds the same content. It is the sum of the repositories'
+             *     folded usage counters (R-STOR-003), so it lags a write by at most one fold interval, and it follows a repository
+             *     that moves to another project. The object store's physical size is a figure of the whole installation
+             *     (`storage.bytes` of `GET /api/v1/system/overview`), not of a project.
+             */
+            logicalBytes: number;
             /** Format: int64 */
             version: number;
             /** Format: date-time */
@@ -11993,6 +12002,7 @@ export interface operations {
                      *           "repositories": 2,
                      *           "serviceAccounts": 1,
                      *           "policies": 2,
+                     *           "logicalBytes": 81233920123,
                      *           "role": "owner",
                      *           "version": 3,
                      *           "createdAt": "2026-11-02T09:12:44Z",

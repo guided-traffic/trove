@@ -12265,7 +12265,7 @@
     </unit>
     <unit id="projects.heading">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:28,29</note>
+        <note category="location">src/app/features/projects/project-list.ts:29,30</note>
       </notes>
       <segment>
         <source>Projects</source>
@@ -12273,7 +12273,7 @@
     </unit>
     <unit id="projects.add">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:36,38</note>
+        <note category="location">src/app/features/projects/project-list.ts:37,39</note>
       </notes>
       <segment>
         <source> New project </source>
@@ -12281,7 +12281,7 @@
     </unit>
     <unit id="projects.hint">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:41,44</note>
+        <note category="location">src/app/features/projects/project-list.ts:42,45</note>
       </notes>
       <segment>
         <source> A project holds a team&apos;s repositories. Its members have a role in it; its Owners manage the repositories, permission policies and service accounts without a system role. </source>
@@ -12289,7 +12289,7 @@
     </unit>
     <unit id="projects.empty">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:64,65</note>
+        <note category="location">src/app/features/projects/project-list.ts:65,66</note>
       </notes>
       <segment>
         <source>There is no project yet.</source>
@@ -12297,7 +12297,7 @@
     </unit>
     <unit id="projects.edit">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:80,81</note>
+        <note category="location">src/app/features/projects/project-list.ts:82,83</note>
       </notes>
       <segment>
         <source>Edit</source>
@@ -12305,8 +12305,8 @@
     </unit>
     <unit id="projects.q">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:99</note>
-        <note category="location">src/app/features/projects/project-list.ts:100</note>
+        <note category="location">src/app/features/projects/project-list.ts:101</note>
+        <note category="location">src/app/features/projects/project-list.ts:102</note>
         <note category="location">src/app/features/projects/projects-home.ts:33</note>
       </notes>
       <segment>
@@ -12315,7 +12315,7 @@
     </unit>
     <unit id="projects.caption">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:121</note>
+        <note category="location">src/app/features/projects/project-list.ts:124</note>
       </notes>
       <segment>
         <source>Projects</source>
@@ -12323,7 +12323,7 @@
     </unit>
     <unit id="projects.apply">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:122</note>
+        <note category="location">src/app/features/projects/project-list.ts:125</note>
       </notes>
       <segment>
         <source>Apply filter</source>
@@ -12331,7 +12331,7 @@
     </unit>
     <unit id="projects.col.key">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:124</note>
+        <note category="location">src/app/features/projects/project-list.ts:127</note>
         <note category="location">src/app/features/projects/projects-home.ts:80</note>
       </notes>
       <segment>
@@ -12340,7 +12340,7 @@
     </unit>
     <unit id="projects.col.name">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:125</note>
+        <note category="location">src/app/features/projects/project-list.ts:128</note>
         <note category="location">src/app/features/projects/projects-home.ts:81</note>
       </notes>
       <segment>
@@ -12349,7 +12349,7 @@
     </unit>
     <unit id="projects.col.owners">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:126</note>
+        <note category="location">src/app/features/projects/project-list.ts:129</note>
       </notes>
       <segment>
         <source>Owners</source>
@@ -12357,7 +12357,7 @@
     </unit>
     <unit id="projects.col.members">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:127</note>
+        <note category="location">src/app/features/projects/project-list.ts:130</note>
         <note category="location">src/app/features/projects/projects-home.ts:89</note>
       </notes>
       <segment>
@@ -12366,16 +12366,32 @@
     </unit>
     <unit id="projects.col.repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:128</note>
+        <note category="location">src/app/features/projects/project-list.ts:131</note>
         <note category="location">src/app/features/projects/projects-home.ts:88</note>
       </notes>
       <segment>
         <source>Repositories</source>
       </segment>
     </unit>
+    <unit id="projects.col.storage">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:134</note>
+      </notes>
+      <segment>
+        <source>Storage</source>
+      </segment>
+    </unit>
+    <unit id="projects.help.storage">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:135</note>
+      </notes>
+      <segment>
+        <source>The logical size the project is charged: the full size of every file in its repositories, also where another project holds the same content.</source>
+      </segment>
+    </unit>
     <unit id="projects.col.role">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:131</note>
+        <note category="location">src/app/features/projects/project-list.ts:139</note>
         <note category="location">src/app/features/projects/projects-home.ts:85</note>
       </notes>
       <segment>
@@ -12384,7 +12400,7 @@
     </unit>
     <unit id="projects.help.role">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:132</note>
+        <note category="location">src/app/features/projects/project-list.ts:140</note>
         <note category="location">src/app/features/projects/projects-home.ts:86</note>
       </notes>
       <segment>
@@ -12393,7 +12409,7 @@
     </unit>
     <unit id="projects.col.actions">
       <notes>
-        <note category="location">src/app/features/projects/project-list.ts:134</note>
+        <note category="location">src/app/features/projects/project-list.ts:142</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -12737,7 +12753,7 @@
     </unit>
     <unit id="project.settings">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:30,33</note>
+        <note category="location">src/app/features/projects/project-settings.ts:31,34</note>
       </notes>
       <segment>
         <source>Settings</source>
@@ -12745,7 +12761,7 @@
     </unit>
     <unit id="project.general">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:42,43</note>
+        <note category="location">src/app/features/projects/project-settings.ts:43,44</note>
       </notes>
       <segment>
         <source>General</source>
@@ -12753,7 +12769,7 @@
     </unit>
     <unit id="project.key">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:45</note>
+        <note category="location">src/app/features/projects/project-settings.ts:46</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -12761,7 +12777,7 @@
     </unit>
     <unit id="project.display-name">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:46,47</note>
+        <note category="location">src/app/features/projects/project-settings.ts:47,48</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -12769,7 +12785,7 @@
     </unit>
     <unit id="project.description">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:48,49</note>
+        <note category="location">src/app/features/projects/project-settings.ts:49,50</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -12777,7 +12793,7 @@
     </unit>
     <unit id="project.owners">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:50,52</note>
+        <note category="location">src/app/features/projects/project-settings.ts:51,53</note>
       </notes>
       <segment>
         <source>Owners</source>
@@ -12785,7 +12801,7 @@
     </unit>
     <unit id="project.no-owners">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:53,55</note>
+        <note category="location">src/app/features/projects/project-settings.ts:54,56</note>
       </notes>
       <segment>
         <source>None yet.</source>
@@ -12793,7 +12809,7 @@
     </unit>
     <unit id="project.your-role">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:62,63</note>
+        <note category="location">src/app/features/projects/project-settings.ts:63,64</note>
       </notes>
       <segment>
         <source>Your role</source>
@@ -12801,7 +12817,7 @@
     </unit>
     <unit id="project.counts">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:64,66</note>
+        <note category="location">src/app/features/projects/project-settings.ts:65,67</note>
       </notes>
       <segment>
         <source>Contents</source>
@@ -12809,15 +12825,23 @@
     </unit>
     <unit id="project.counts-text">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:66,67</note>
+        <note category="location">src/app/features/projects/project-settings.ts:67,68</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="INTERPOLATION" disp="{{ p.members }}"/> members, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.repositories }}"/> repositories, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.policies }}"/> policies, <ph id="3" equiv="INTERPOLATION_3" disp="{{ p.serviceAccounts }}"/> service accounts</source>
       </segment>
     </unit>
+    <unit id="project.storage">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:69,70</note>
+      </notes>
+      <segment>
+        <source>Storage</source>
+      </segment>
+    </unit>
     <unit id="project.updated">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:68,69</note>
+        <note category="location">src/app/features/projects/project-settings.ts:71,72</note>
       </notes>
       <segment>
         <source>Last changed</source>
@@ -12825,7 +12849,7 @@
     </unit>
     <unit id="project.edit">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:74,75</note>
+        <note category="location">src/app/features/projects/project-settings.ts:77,78</note>
       </notes>
       <segment>
         <source>Edit project</source>
@@ -12833,7 +12857,7 @@
     </unit>
     <unit id="project.delete">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:83,84</note>
+        <note category="location">src/app/features/projects/project-settings.ts:86,87</note>
       </notes>
       <segment>
         <source> Delete project </source>
@@ -12841,7 +12865,7 @@
     </unit>
     <unit id="project.delete-note-empty">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:90,92</note>
+        <note category="location">src/app/features/projects/project-settings.ts:93,95</note>
       </notes>
       <segment>
         <source>The project&apos;s policies are deleted with it.</source>
@@ -12849,15 +12873,23 @@
     </unit>
     <unit id="project.delete-note">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:93,95</note>
+        <note category="location">src/app/features/projects/project-settings.ts:96,98</note>
       </notes>
       <segment>
         <source>A project can be deleted when no repository and no service account belongs to it. Move or delete the repositories and delete the service accounts first.</source>
       </segment>
     </unit>
+    <unit id="project.storage-title">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:147</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="bytes" disp="bytes"/> bytes. The full size of every file in the project&apos;s repositories, also where another project holds the same content.</source>
+      </segment>
+    </unit>
     <unit id="project.saved">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:168</note>
+        <note category="location">src/app/features/projects/project-settings.ts:179</note>
       </notes>
       <segment>
         <source>Project saved.</source>
@@ -12865,7 +12897,7 @@
     </unit>
     <unit id="project.delete-title">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:179</note>
+        <note category="location">src/app/features/projects/project-settings.ts:190</note>
       </notes>
       <segment>
         <source>Delete project <ph id="0" equiv="key" disp="p.key"/>?</source>
@@ -12873,7 +12905,7 @@
     </unit>
     <unit id="project.delete-text">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:181</note>
+        <note category="location">src/app/features/projects/project-settings.ts:192</note>
       </notes>
       <segment>
         <source>The project, its permission policies and its member entries are deleted. The policies stop granting at once on every replica. This cannot be undone.</source>
@@ -12881,7 +12913,7 @@
     </unit>
     <unit id="project.delete-confirm">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:183</note>
+        <note category="location">src/app/features/projects/project-settings.ts:194</note>
       </notes>
       <segment>
         <source>Delete project</source>
@@ -12889,7 +12921,7 @@
     </unit>
     <unit id="project.deleted">
       <notes>
-        <note category="location">src/app/features/projects/project-settings.ts:191</note>
+        <note category="location">src/app/features/projects/project-settings.ts:202</note>
       </notes>
       <segment>
         <source>Project deleted.</source>

@@ -746,11 +746,11 @@ rules, system CI mappings, filters) are `<project>/<key>` patterns or classes; i
 | `/projects` | `ProjectsHome`: the caller's projects (key, display name, description, role, repositories, members); a filter field above five projects; "New project" (`projects:write`) | every signed-in caller; the list is `GET /projects` |
 | `/projects/:project` | redirects to `packages` | |
 | `/projects/:project/members` | `ProjectMembersPage` over `ProjectMembers` | a member, `projects:read` |
-| `/projects/:project/settings` | `ProjectSettings`: the facts of the project; edit (`projects:write` or Owner), delete (`projects:write`) | the same |
+| `/projects/:project/settings` | `ProjectSettings`: the facts of the project, with the logical size it is charged (`Storage`, `formatSize`, the exact bytes as the tooltip; R-STOR-049); edit (`projects:write` or Owner), delete (`projects:write`) | the same |
 | `/projects/:project/policies`, `…/policies/new`, `…/policies/:name` | `ProjectPoliciesPage` over `ProjectPolicies` (in [project-list-pages.ts](../../web/src/app/features/projects/project-list-pages.ts)), and the `PolicyEditor` | the capability or the Owner |
 | `/projects/:project/service-accounts`, `…/service-accounts/:name` | `ProjectServiceAccountsPage` over `ProjectServiceAccounts`, and the `ServiceAccountDetail` | the capability or the Owner |
 | `/projects/:project/packages…`, `…/browse…`, `…/repositories…`, `…/vulnerabilities…`, `…/ci…` | the screens of their own folders, mounted in `PROJECT_CONTEXT_ROUTES` | as their sections |
-| `/admin/projects` | `ProjectList`: key, display name, Owners, members, repositories, the caller's role; filter on key or name; "New project", a row "Edit"; a key links to `/projects/<key>` | `projects:read` |
+| `/admin/projects` | `ProjectList`: key, display name, Owners, members, repositories, the logical size (`logicalBytes`, R-STOR-049), the caller's role; filter on key or name; "New project", a row "Edit"; a key links to `/projects/<key>` | `projects:read` |
 | dialog | `ProjectDialog`: create (key, display name, description, first Owners through `PrincipalPicker`, Q-AUTHZ-229) and edit (display name and description) | `projects:write`, or Owner for the edit |
 
 How the pieces fit:

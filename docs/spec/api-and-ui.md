@@ -4114,11 +4114,15 @@ the model gives the screens:
   it; inside a project the project switcher at the top of the side bar changes it. There is no project filter in the top
   bar, and no list of a project's content is narrowed by a stored choice.
 - Start page: key, display name, description, the caller's role (for a member), the number of repositories and of members.
-  The admin area's list of projects (`/admin/projects`, `projects:read`) keeps the owners and creates and edits projects.
+  The admin area's list of projects (`/admin/projects`, `projects:read`) keeps the owners, has a column with the logical size the project is
+  charged (`logicalBytes`, [R-STOR-049](storage.md#r-stor-049--the-storage-of-a-project)) and creates and edits projects.
 - Create dialog (administrators, `projects:write`): key (`^[a-z][a-z0-9-]{1,31}$`, immutable), display name,
   description, and the first Owner; repositories are created in the project afterwards. Edit dialog: display name and
   description, for administrators and the project's Owners. Delete is offered to administrators only, and only for
   projects without repositories, service accounts and CI mappings.
+- The project's settings show the logical size the project is charged (`logicalBytes`, in binary units, with the exact byte count as its
+  tooltip), for every member and every holder of `projects:read`. The physical size of the object store is a figure of the admin
+  dashboard only.
 - Members screen (`/projects/{project}/members`): the users and groups of the project with their roles, read for every member; an Owner and an
   administrator add a member through the principal lookup (Q-AUTHZ-182), change a role and remove a member. The last
   Owner cannot be removed or demoted except by an administrator: the action is shown disabled with the reason, and a

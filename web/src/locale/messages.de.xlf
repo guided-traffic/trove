@@ -13893,6 +13893,24 @@
         <target>Repositories</target>
       </segment>
     </unit>
+    <unit id="projects.col.storage">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:134</note>
+      </notes>
+      <segment>
+        <source>Storage</source>
+        <target>Speicher</target>
+      </segment>
+    </unit>
+    <unit id="projects.help.storage">
+      <notes>
+        <note category="location">src/app/features/projects/project-list.ts:135</note>
+      </notes>
+      <segment>
+        <source>The logical size the project is charged: the full size of every file in its repositories, also where another project holds the same content.</source>
+        <target>Die logische Größe, die dem Projekt angerechnet wird: die volle Größe jeder Datei in seinen Repositories, auch wenn ein anderes Projekt denselben Inhalt hält.</target>
+      </segment>
+    </unit>
     <unit id="projects.col.role">
       <notes>
         <note category="location">src/app/features/projects/project-list.ts:131</note>
@@ -14390,6 +14408,15 @@
         <target><ph id="0" equiv="INTERPOLATION" disp="{{ p.members }}"/> Mitglieder, <ph id="1" equiv="INTERPOLATION_1" disp="{{ p.repositories }}"/> Repositories, <ph id="2" equiv="INTERPOLATION_2" disp="{{ p.policies }}"/> Berechtigungsrichtlinien, <ph id="3" equiv="INTERPOLATION_3" disp="{{ p.serviceAccounts }}"/> Servicekonten</target>
       </segment>
     </unit>
+    <unit id="project.storage">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:69,70</note>
+      </notes>
+      <segment>
+        <source>Storage</source>
+        <target>Speicher</target>
+      </segment>
+    </unit>
     <unit id="project.updated">
       <notes>
         <note category="location">src/app/features/projects/project-settings.ts:68,69</note>
@@ -14433,6 +14460,15 @@
       <segment>
         <source>A project can be deleted when no repository and no service account belongs to it. Move or delete the repositories and delete the service accounts first.</source>
         <target>Ein Projekt kann gelöscht werden, wenn ihm kein Repository und kein Servicekonto mehr gehört. Verschieben oder löschen Sie zuerst die Repositories und löschen Sie die Servicekonten.</target>
+      </segment>
+    </unit>
+    <unit id="project.storage-title">
+      <notes>
+        <note category="location">src/app/features/projects/project-settings.ts:147</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="bytes" disp="bytes"/> bytes. The full size of every file in the project&apos;s repositories, also where another project holds the same content.</source>
+        <target><ph id="0" equiv="bytes" disp="bytes"/> Bytes. Die volle Größe jeder Datei in den Repositories des Projekts, auch wenn ein anderes Projekt denselben Inhalt hält.</target>
       </segment>
     </unit>
     <unit id="project.saved">

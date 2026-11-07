@@ -1,5 +1,5 @@
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe, formatNumber } from '@angular/common';
+import { Component, LOCALE_ID, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiError } from '../../api/problem';
@@ -14,6 +14,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError } from '../../shared/paged-resource';
 import { TroveDialog } from '../../shared/ui/dialog';
 import { ProjectDialog } from './project-dialog';
+import { formatSize } from '../packages/format-size';
 import { projectRoleLabel } from './project-roles';
 
 /**
@@ -65,6 +66,8 @@ import { projectRoleLabel } from './project-roles';
           <dd>
             <ng-container i18n="@@project.counts-text">{{ p.members }} members, {{ p.repositories }} repositories, {{ p.policies }} policies, {{ p.serviceAccounts }} service accounts</ng-container>
           </dd>
+          <dt i18n="@@project.storage">Storage</dt>
+          <dd [attr.title]="exactBytes(p)">{{ size(p.logicalBytes) }}</dd>
           <dt i18n="@@project.updated">Last changed</dt>
           <dd>{{ p.updatedAt | date: 'medium' }}</dd>
         </dl>
@@ -114,6 +117,7 @@ export class ProjectSettings {
   /** Route parameter `:project`. */
   readonly project = input.required<string>();
 
+  private readonly locale = inject(LOCALE_ID);
   private readonly api = inject(ProjectsApi);
   private readonly dialog = inject(TroveDialog);
   private readonly confirmer = inject(Confirm);
@@ -131,10 +135,17 @@ export class ProjectSettings {
   /** Changing the display name and the description: `projects:write`, or the Owner role of the project (R-AUTHZ-026). */
   protected readonly canEdit = computed(() => this.canWrite() || this.session.isOwnerOf(this.project()));
   protected readonly roleText = projectRoleLabel;
+  protected readonly size = formatSize;
   protected readonly empty = computed(() => {
     const p = this.record();
     return p !== null && p.repositories === 0 && p.serviceAccounts === 0;
   });
+
+  /** The tooltip of the size: the exact bytes the project is charged (Q-STOR-155) and what the figure counts. */
+  protected exactBytes(p: Project): string {
+    const bytes = formatNumber(p.logicalBytes, this.locale, '1.0-0');
+    return $localize`:@@project.storage-title:${bytes}:bytes: bytes. The full size of every file in the project's repositories, also where another project holds the same content.`;
+  }
 
   constructor() {
     effect(() => {

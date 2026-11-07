@@ -2352,6 +2352,8 @@ measured.
   rate.
 - Deletes, moves within a repository, property changes and downloads are never blocked by a
   quota.
+- A project has no quota of its own: it is charged the logical size of its files and shows it ([R-STOR-049](#r-stor-049--the-storage-of-a-project),
+  Q-STOR-155), and a quota on that figure is not specified yet (Q-STOR-158).
 - The background passes of a mirrored remote ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-052) read the
   same counters: a repository quota bounds a mirror like `remote.mirror.maxBytes`, and a pass adds no artifact while the
   system's used capacity is at or above `warnPercent`, so that a mirror never brings the installation to the limit at which
@@ -2368,6 +2370,41 @@ Acceptance criteria:
   `507 (Insufficient Storage)` and stores nothing.
 - A repository quota of 100 MiB rejects the upload that would cross it, once one fold interval
   has passed since the uploads that filled it, and accepts uploads to other repositories.
+
+### R-STOR-049 · The storage of a project
+Priority: **MVP** · Covers: trove-only
+
+A project is charged the logical size of the files it holds (Q-STOR-155). The physical figure of the object store stays a
+figure of the installation.
+
+- **The figure.** `logicalBytes` is the sum, over the repositories of the project, of their `repository_usage.logical_bytes`
+  (R-STOR-003): the sizes of the untrashed files, each in full, whether the same content is also referenced by another
+  repository of the project or by a repository of another project (INV-4). It is read from the folded counters, one row per
+  repository by primary key; no item is scanned, and no counter of its own is kept per project. It lags a write by at most one
+  fold interval plus one iteration, as the repository counters do. A repository that is being deleted counts until its row is
+  gone (R-REPO-013).
+- **Where it is served.** The `Project` representation of [api-and-ui.md](api-and-ui.md) carries it as the integer
+  `logicalBytes` in the list (`GET /api/v1/projects`), the read and the answers of create and replace. It follows the read
+  rules of the project itself (R-AUTHZ-026): a member reads the figure of its project, a holder of `projects:read` the figure
+  of every project, and a project the caller may not read answers `404` with no figure. The project's settings page shows it
+  and the admin area's project list has it as a column.
+- **Moves.** The counters belong to the repository by ID, so a repository that moves to another project (R-REPO-060) takes its
+  share along: the next read of the two projects shows the figure moved, with no recount.
+- **Charged is reported.** Charging means this figure; no upload is refused for a project (Q-STOR-158). The system capacity
+  limit and the repository quota of R-STOR-029 are the only limits.
+- **The physical figure.** The admin dashboard shows what the object store keeps (`storage.bytes` of
+  `GET /api/v1/system/overview`, [operations-and-observability.md](operations-and-observability.md) R-OPS-004), a figure of the
+  installation. The projects' figures add up to more than it when content is shared (Q-STOR-154).
+
+Acceptance criteria:
+
+- A project with two repositories, each holding the same 10 MiB file, shows `logicalBytes` of 20 MiB while the physical size
+  of the store grew by 10 MiB.
+- The same file in a repository of another project is charged to that project in full as well; deleting it there leaves the
+  first project's figure unchanged.
+- After a repository with 10 MiB moves from project `a` to project `b` and one fold interval passed, `a` shows 10 MiB less
+  and `b` 10 MiB more.
+- A member of a project without a system role reads the figure of its project and gets `404` for another.
 
 ## Object-store configuration
 
@@ -4548,7 +4585,7 @@ signal that remains concerns content the caller already has; for a public packag
 
 ### Q-STOR-155 · A project is charged the logical size of what it holds
 
-Status: **Decided by the owner on 2026-11-06.** Not built yet: no per-project figure exists ([H-547](#h-547--there-is-no-storage-figure-per-project)).
+Status: **Decided by the owner on 2026-11-06.** Built: [R-STOR-049](#r-stor-049--the-storage-of-a-project); what is charged, and what it does not do yet, is [Q-STOR-158](#q-stor-158--a-projects-figure-is-the-sum-of-its-repositories-folded-counters-and-reports-only).
 
 Context: blobs are deduplicated across projects ([Q-STOR-154](#q-stor-154--blobs-are-deduplicated-across-projects)), so the bytes
 a project holds and the bytes the object store keeps for it differ. The project's dashboard and later quotas need one figure.
@@ -4563,7 +4600,32 @@ a project holds and the bytes the object store keeps for it differ. The project'
 from the maintained totals), the project shows the logical size of its files, versions in the trash can included until they are
 removed.
 
-**Applied in the spec:** nothing yet; R-STOR-028 (storage summary) and R-STOR-029 (quotas) change when it is built.
+**Applied in the spec:** R-STOR-049 (the figure and its read path), R-STOR-029 (a project has no quota of its own), Q-STOR-158 (how it is computed and what is left).
+
+### Q-STOR-158 · A project's figure is the sum of its repositories' folded counters, and reports only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-STOR-155 decides that a project shows and is charged the logical size of the files it holds, and says the figure is the base of later
+quotas. The folded counters of R-STOR-003 exist per repository only, count untrashed rows, and R-STOR-029 enforces a repository quota on them.
+Three things were open: where the project's figure comes from, whether charging already refuses uploads, and whether versions in the trash can count
+as Q-STOR-155 says. The trash can (R-STOR-022) is not built; a delete removes the rows.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sum of the repositories' folded counters on read; reporting only (chosen) | `ProjectList` and `ProjectGet` add `repository_usage.logical_bytes` over `repositories.project_id`; no refusal | No new state: nothing to fold, recount or restore; a move needs no bookkeeping because the counters follow the repository ID; the project figure and its repositories' figures always agree; one primary-key read per repository of the project, not per item | A list of all projects reads every repository's counter row (bounded by the number of repositories); an admission check on the sum would cost a read per repository of the project, not one |
+| (b) A counter per project, folded like the repository's | `project_usage` beside `repository_usage`, deltas carry the project | One row per admission check | A move has to transfer the share between two rows in the move transaction, a restore recounts a second table, and the figure can disagree with the repositories' |
+| (c) (a) plus a project quota enforced on upload | A setting per project and a `507` naming it | A project is bounded, not only reported | Q-STOR-155 names quotas as later and does not decide their setting, error shape or who may set them; every upload would sum its project's repositories |
+| (d) (a) plus a counter of trashed bytes now | The deltas and `repository_usage` also carry the bytes of trashed rows | Matches the text "trash included" of Q-STOR-155 | Nothing can be trashed yet, so the column would be zero everywhere; the fold and its tests change for a feature that does not exist |
+
+**Choice:** (a). Charged is reported: "is charged" in Q-STOR-155 is the figure a project shows and the base a quota will read, not a refusal.
+The figure counts the untrashed rows, as the repository counters do; today that is every file, because the trash can does not exist.
+
+**Revisit when:** the trash can is built (R-STOR-022): then `repository_usage` gets the bytes of trashed rows, the project's figure adds them as
+Q-STOR-155 says, and R-STOR-029's repository quota keeps reading the untrashed ones. A project quota is wanted: then (b), so that an admission
+reads one row, together with the quota's setting and error shape.
+
+**Applied in the spec:** R-STOR-049; R-STOR-029 states that a project has no quota; Q-STOR-155 is built.
 
 ## What this does not cover
 
@@ -4619,9 +4681,3 @@ in any project, holds the same bytes. Live wherever content is uploaded; what ma
 presence elsewhere is itself confidential, not a public package. Accepted by the owner on 2026-11-06: the caller needs the exact
 bytes already, and padding a hit to the time of a write would only narrow the signal. Revisit when an operator has to keep
 confidential files of projects apart; closing it then means answering a hit no sooner than a write of the same size would take.
-
-### H-547 · There is no storage figure per project
-
-The owner decided that a project is charged the logical size of the files it holds
-([Q-STOR-155](#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds)). Today the storage summary and the overview
-count the installation and its repositories; nothing sums per project, and no quota reads such a figure.

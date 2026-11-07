@@ -13,6 +13,7 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
+import { formatSize } from '../packages/format-size';
 import { ProjectDialog } from './project-dialog';
 
 /**
@@ -73,6 +74,7 @@ import { ProjectDialog } from './project-dialog';
               <td class="wrap" translate="no">{{ ownerSummary(p) }}</td>
               <td>{{ p.members }}</td>
               <td>{{ p.repositories }}</td>
+              <td [attr.title]="p.logicalBytes + ' B'">{{ size(p.logicalBytes) }}</td>
               <td>{{ p.role ? roleLabel(p.role) : '' }}</td>
               <td class="actions">
                 @if (canEdit(p)) {
@@ -111,6 +113,7 @@ export class ProjectList {
   private readonly context = inject(ProjectContext);
   protected readonly session = inject(SessionStore);
 
+  protected readonly size = formatSize;
   protected readonly list = new PagedResource<Project>();
   protected readonly q = signal('');
   protected readonly panelOpen = signal(false);
@@ -126,6 +129,11 @@ export class ProjectList {
     { id: 'owners', label: $localize`:@@projects.col.owners:Owners` },
     { id: 'members', label: $localize`:@@projects.col.members:Members` },
     { id: 'repositories', label: $localize`:@@projects.col.repositories:Repositories` },
+    {
+      id: 'storage',
+      label: $localize`:@@projects.col.storage:Storage`,
+      help: $localize`:@@projects.help.storage:The logical size the project is charged: the full size of every file in its repositories, also where another project holds the same content.`,
+    },
     {
       id: 'role',
       label: $localize`:@@projects.col.role:Your role`,

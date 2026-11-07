@@ -255,6 +255,19 @@ The statement-level triggers of migration 00003 append to `storage_usage_deltas`
   [usagefold_test.go](../../test/integration/blob/usagefold_test.go) is the pattern); quota admission and the storage summary read
   the folded rows and lag by one interval plus one iteration. `storage_usage_recount()` of R-STOR-047 is not built.
 
+### The figure of a project (R-STOR-049, Q-STOR-158)
+
+A project keeps no counter of its own. `ProjectList` and `ProjectGet` ([project.sql](../../internal/meta/postgres/queries/project.sql))
+add a column `logical_bytes`: `sum(repository_usage.logical_bytes)` over the repositories whose `project_id` is the project, a join
+by primary key, so no item is scanned and a repository that moves ([move.go](../../internal/project/move.go)) takes its share with
+it, with no bookkeeping. `project.Project.LogicalBytes` carries it and `toProject` in
+[projects_api.go](../../internal/api/v1/projects_api.go) serves it as `logicalBytes`; it lags a write like the repository counters do.
+It counts untrashed rows; when the trash can is built, the trashed bytes need a counter of their own in the deltas and in
+`repository_usage` (Q-STOR-158 names the condition). The physical figure of the dashboard is `storage_usage_totals`
+(`OverviewStorage`), unrelated to this sum. The integration test is
+[storage_test.go](../../test/integration/projects/storage_test.go): it seeds blobs and items, folds with `blob.UsageFolder` and reads
+the figure over HTTP.
+
 ## Conformance check (R-STOR-035)
 
 `blob.StartupCheck` writes, reads back, compares and deletes `<prefix>/_probe/<replica>` and lists

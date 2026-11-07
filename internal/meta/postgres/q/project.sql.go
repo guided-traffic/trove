@@ -95,6 +95,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
        (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
        (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings,
+       (SELECT COALESCE(sum(u.logical_bytes), 0) FROM repositories r JOIN repository_usage u ON u.repo_id = r.id
+         WHERE r.project_id = p.id)::bigint AS logical_bytes,
        (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::bigint AS members
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
@@ -118,6 +120,7 @@ type ProjectGetRow struct {
 	ServiceAccounts int64
 	Policies        int64
 	CiMappings      int64
+	LogicalBytes    int64
 	Members         int64
 }
 
@@ -146,6 +149,7 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 			&i.ServiceAccounts,
 			&i.Policies,
 			&i.CiMappings,
+			&i.LogicalBytes,
 			&i.Members,
 		); err != nil {
 			return nil, err
@@ -245,6 +249,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
        (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
        (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings,
+       (SELECT COALESCE(sum(u.logical_bytes), 0) FROM repositories r JOIN repository_usage u ON u.repo_id = r.id
+         WHERE r.project_id = p.id)::bigint AS logical_bytes,
        (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::bigint AS members
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
@@ -268,6 +274,7 @@ type ProjectListRow struct {
 	ServiceAccounts int64
 	Policies        int64
 	CiMappings      int64
+	LogicalBytes    int64
 	Members         int64
 }
 
@@ -277,7 +284,9 @@ type ProjectListRow struct {
 // never meets the driver's no-rows error. Every write runs on the caller's
 // meta.Tx, in which it notifies the area authz (R-AUTHZ-028).
 // Every project with the counts the overview shows. A repository being deleted
-// still counts: it keeps its row until its content is gone (R-REPO-013).
+// still counts: it keeps its row until its content is gone (R-REPO-013). logical_bytes is
+// the project's charge (Q-STOR-155): the sum of the folded repository_usage rows of its
+// repositories, read by primary key; no item is scanned.
 func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 	rows, err := q.db.Query(ctx, projectList)
 	if err != nil {
@@ -303,6 +312,7 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 			&i.ServiceAccounts,
 			&i.Policies,
 			&i.CiMappings,
+			&i.LogicalBytes,
 			&i.Members,
 		); err != nil {
 			return nil, err

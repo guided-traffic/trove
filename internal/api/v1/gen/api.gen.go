@@ -6597,6 +6597,13 @@ type Project struct {
 	DisplayName string `json:"displayName"`
 	Key         string `json:"key"`
 
+	// LogicalBytes The size the project is charged (Q-STOR-155): the sum of the sizes of the files in its repositories, in bytes, each
+	// file counted in full whether another repository or project holds the same content. It is the sum of the repositories'
+	// folded usage counters (R-STOR-003), so it lags a write by at most one fold interval, and it follows a repository
+	// that moves to another project. The object store's physical size is a figure of the whole installation
+	// (`storage.bytes` of `GET /api/v1/system/overview`), not of a project.
+	LogicalBytes int64 `json:"logicalBytes"`
+
 	// Members The number of members, users and groups.
 	Members int `json:"members"`
 

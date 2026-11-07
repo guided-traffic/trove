@@ -40,7 +40,7 @@ func (f fakeProjects) LookupPrincipals(_ context.Context, prefix string, _ proje
 func sampleProjects() fakeProjects {
 	mk := func(key, name string) project.Project {
 		return project.Project{
-			ID: "id-" + key, Key: key, DisplayName: name, Version: 3,
+			ID: "id-" + key, Key: key, DisplayName: name, Version: 3, LogicalBytes: int64(len(key)) * 1000,
 			Members: []project.Member{{Project: key, Principal: project.PrincipalRef{Kind: project.KindGroup, Name: key + "-leads"}, Role: authz.ProjectRoleOwner}},
 		}
 	}
@@ -154,4 +154,51 @@ func TestR_AUTHZ_026_TheLookupBoundsItsInput(t *testing.T) {
 	if w := s.get("/api/v1/projects/docs/principals?q=al"); w.Code != 404 {
 		t.Errorf("another project: %d", w.Code)
 	}
+}
+
+// The figure a project is charged is part of its representation and follows the read rules of the project
+// itself: the member reads its own project's figure, a holder of projects:read every project's (Q-STOR-155).
+func TestR_STOR_049_TheProjectCarriesItsLogicalSize(t *testing.T) {
+	type sized struct {
+		Key          string `json:"key"`
+		LogicalBytes *int64 `json:"logicalBytes"`
+	}
+	auditor := projectCaller{caps: map[string]bool{"projects:read": true}}
+	member := projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleReader}}
+
+	t.Run("R-STOR-049 the list carries the figure of every project for projects:read", func(t *testing.T) {
+		w := projectsSetup(t, auditor).get("/api/v1/projects")
+		var page struct {
+			Items []sized `json:"items"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || len(page.Items) != 3 {
+			t.Fatalf("%v %d %s", err, w.Code, w.Body)
+		}
+		want := map[string]int64{"docs": 4000, "web": 3000, "web2": 4000}
+		for _, it := range page.Items {
+			if it.LogicalBytes == nil || *it.LogicalBytes != want[it.Key] {
+				t.Errorf("%s: logicalBytes %v, want %d", it.Key, it.LogicalBytes, want[it.Key])
+			}
+		}
+	})
+	t.Run("R-STOR-049 a member reads the figure of its own project, a zero figure is present, not absent", func(t *testing.T) {
+		w := projectsSetup(t, member).get("/api/v1/projects/web")
+		var got sized
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.LogicalBytes == nil || *got.LogicalBytes != 3000 {
+			t.Fatalf("%v %d %s", err, w.Code, w.Body)
+		}
+		s := newSetup(t, func(o *Options) {
+			o.Access = member
+			o.Authz.Projects = fakeProjects{all: []project.Project{{ID: "id-web", Key: "web", DisplayName: "Web", Version: 1}}}
+			o.API.Config = apiConfigForTest()
+		}, authed)
+		if w := s.get("/api/v1/projects/web"); !strings.Contains(w.Body.String(), `"logicalBytes":0`) {
+			t.Errorf("an empty project: %s", w.Body)
+		}
+	})
+	t.Run("R-STOR-049 a project the caller is no member of stays hidden with its figure", func(t *testing.T) {
+		if w := projectsSetup(t, member).get("/api/v1/projects/docs"); w.Code != 404 {
+			t.Errorf("%d %s", w.Code, w.Body)
+		}
+	})
 }

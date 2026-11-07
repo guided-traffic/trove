@@ -16,6 +16,7 @@ Every repository belongs to a project, and a project lets a team hold and admini
 
 - A repository is named outside its project as `<projectKey>/<repoKey>`, for example `web/npm-internal`: in a global permission policy, a token scope, an exposure rule and the configuration. Inside its project it is named by its key alone.
 - A project holds its repositories, its members, its permission policies, its service accounts and the GitLab CI mappings of the tier `project:<projectKey>`. The names of its policies, service accounts and CI mappings are unique within the project; the same name may exist in another project and once outside every project.
+- A project is **charged the logical size of the files it holds**: the sizes of all files in its repositories added up, each file counted in full even when another repository or another project holds the same content. The figure is `logicalBytes` in the project's representation (`GET /api/v1/projects` and `GET /api/v1/projects/<projectKey>`), shown as **Storage** on the project's **Settings** and as a column of **Admin area › Projects**. It is updated within a few seconds of an upload or a delete, and a repository that moves to another project takes its share along. The projects' figures add up to more than the object store keeps, because the store keeps shared content once; what the store keeps is the **Stored content** on the [dashboard](dashboard.md). The figure is reported only: no upload is refused because of it.
 - Only an administrator of trove (the `admin` role, which holds `projects:write`) creates and deletes projects and names their first Owners.
 
 ## Members and roles
@@ -150,7 +151,7 @@ Only an administrator of trove deletes a project, and only when no repository, i
 
 ## The Projects screen
 
-**Admin area › Projects** lists the projects you can see, with the admin area's other lists. An administrator of trove and the holders of the permission to read projects see every project, the `auditor` read-only; a member without any system role finds the projects it is a member of on the start page and has no admin area. Select a project's key to open it.
+**Admin area › Projects** lists the projects you can see, with the admin area's other lists, each with the number of repositories and the **Storage** it is charged. An administrator of trove and the holders of the permission to read projects see every project, the `auditor` read-only; a member without any system role finds the projects it is a member of on the start page and has no admin area. Select a project's key to open it.
 
 ## Where the project's screens are
 
@@ -184,6 +185,6 @@ A member has no admin area. After you sign in you see the start page or, with on
 
 ## Limits of this version
 
-- The four roles are fixed. Custom project roles, environments, repository sharing and project quotas do not exist.
+- The four roles are fixed. Custom project roles, environments and repository sharing do not exist. A project's storage is shown, not limited: there is no project quota, and files in the trash are not counted separately because the trash can does not exist yet.
 - Delegating CI mappings to a group outside a project does not exist.
 - The lookup of users and groups finds any name by its start, so an Owner can enumerate names by prefix; it returns no e-mail address and no membership.

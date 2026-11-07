@@ -119,6 +119,11 @@ move `ProjectRepositoryLock`, `ProjectRepositoryKeyTaken`, `ProjectRepositoryRef
 are JSON and checked in Go with `qname.ParseSelector` in the source project's context) and `ProjectRepositoryMove`. The index reads
 `AuthzBuildProjects` and `AuthzBuildProjectMembers` (with `principal_auto_join`) in its one snapshot transaction.
 
+The `Project` carries `LogicalBytes`, the size the project is charged (R-STOR-049, Q-STOR-155): `ProjectList` and `ProjectGet` sum the
+folded `repository_usage` rows of the project's repositories in the same statement as the counts; the computation is described in
+[blob-store.md](blob-store.md#the-figure-of-a-project-r-stor-049-q-stor-158). It is part of the representation, so it follows the read
+rules of the project (a member of the project, `projects:read`), and no write moves the project's `version`.
+
 ### How a change reaches every replica
 
 Every write notifies the change area `authz` in its transaction; a move also `repo_config` with the repository's ID, its qualified name

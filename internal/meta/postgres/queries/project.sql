@@ -6,7 +6,9 @@
 
 -- name: ProjectList :many
 -- Every project with the counts the overview shows. A repository being deleted
--- still counts: it keeps its row until its content is gone (R-REPO-013).
+-- still counts: it keeps its row until its content is gone (R-REPO-013). logical_bytes is
+-- the project's charge (Q-STOR-155): the sum of the folded repository_usage rows of its
+-- repositories, read by primary key; no item is scanned.
 SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
@@ -16,6 +18,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
        (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
        (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings,
+       (SELECT COALESCE(sum(u.logical_bytes), 0) FROM repositories r JOIN repository_usage u ON u.repo_id = r.id
+         WHERE r.project_id = p.id)::bigint AS logical_bytes,
        (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::bigint AS members
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
@@ -32,6 +36,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
        (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
        (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings,
+       (SELECT COALESCE(sum(u.logical_bytes), 0) FROM repositories r JOIN repository_usage u ON u.repo_id = r.id
+         WHERE r.project_id = p.id)::bigint AS logical_bytes,
        (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::bigint AS members
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by

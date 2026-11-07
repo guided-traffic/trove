@@ -43,6 +43,25 @@ describe('Projects overview (R-UI-041)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('R-STOR-049 shows the logical size each project is charged in a column of its own', async () => {
+    const { root } = await renderScreen(ProjectList, {
+      setup: (get) => {
+        (get(ProjectsApi) as FakeProjectsApi).projects = [
+          sampleProject({ logicalBytes: 3 * 1024 ** 3 }),
+          sampleProject({ key: 'data', displayName: 'Data', logicalBytes: 0 }),
+        ];
+      },
+    });
+    const headers = [...root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim());
+    const column = headers.findIndex((h) => h?.startsWith('Storage'));
+    expect(column).toBeGreaterThan(-1);
+    const cells = (row: Element): string[] => [...row.querySelectorAll('th, td')].map((c) => text(c));
+    const rows = root.querySelectorAll('tbody tr');
+    expect(cells(rows[0]!)[column]).toBe('0 B');
+    expect(cells(rows[1]!)[column]).toBe('3.0 GiB');
+    expect(rows[1]!.querySelectorAll('td')[column - 1]!.getAttribute('title')).toBe(`${3 * 1024 ** 3} B`);
+  });
+
   it('R-UI-041 an Owner reads the overview and edits its project, but creates none, with the reason', async () => {
     const { root } = await renderScreen(ProjectList, { capabilities: [], setup: asProjectAdministrator() });
     expect((buttonByText(root, 'New project') as HTMLButtonElement).disabled).toBe(true);
@@ -117,6 +136,22 @@ describe('Project settings (R-UI-041, Q-UI-129)', () => {
       expect([...root.querySelectorAll('h2')].some((h) => text(h) === heading)).toBe(false);
     }
     expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('R-STOR-049 shows the logical size of the project with the exact bytes and what they count', async () => {
+    const { root } = await renderScreen(ProjectSettings, {
+      inputs: { project: 'web' },
+      setup: (g) => {
+        (g(ProjectsApi) as FakeProjectsApi).projects = [sampleProject({ logicalBytes: 1_610_612_736 })];
+      },
+    });
+    const terms = [...root.querySelectorAll('dt')];
+    const storage = terms.find((t) => text(t) === 'Storage');
+    expect(storage).toBeTruthy();
+    const value = storage!.nextElementSibling!;
+    expect(text(value)).toBe('1.5 GiB');
+    expect(value.getAttribute('title')).toContain('1,610,612,736 bytes');
+    expect(value.getAttribute('title')).toContain('also where another project holds the same content');
   });
 
   it('R-UI-041 delete is offered only for an empty project, with the reason otherwise', async () => {

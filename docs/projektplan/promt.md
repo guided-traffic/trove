@@ -465,9 +465,6 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 
 ### Build what the owner decided (spec first, then code)
 
-- **T-8 · Storage per project** ([Q-STOR-155](../spec/storage.md#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds),
-  gap H-547): a project shows and is charged the logical size of the files it holds; the admin dashboard keeps the physical
-  figure of the store.
 - **T-12 · The logo's open point** ([design-language.md](../developer/design-language.md#logo)): `web/public/brand/drafts/` and
   the preview on the sign-in page removed once the owner calls the logo final. The reduced form for the favicon and the
   wordmark as paths are built ([Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)).
