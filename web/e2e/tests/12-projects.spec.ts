@@ -177,13 +177,21 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
 
   await test.step('the administrator sees the project with what bob created, and the admin lists name the project', async () => {
     await page.goto(`/ui/en/projects/${key}/policies`);
-    await expect(page.getByRole('link', { name: policyName })).toBeVisible();
+    await expect(page.getByRole('link', { name: policyName, exact: true })).toBeVisible();
     await page.goto(`/ui/en/projects/${key}/service-accounts`);
-    await expect(page.getByRole('link', { name: accountName })).toBeVisible();
-    // Instance-wide lists keep the project in a column and link into the project's screen (Q-UI-129).
+    // exact: the sidebar's "CI identity" link also contains "ci"
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    // Instance-wide lists keep the project in a column and link into the project's screen (Q-UI-129). Another project
+    // may hold an account of the same name, so the row is the one that links both the account and this project.
     await page.goto('/ui/en/admin/service-accounts');
-    await expect(page.getByRole('table', { name: 'Service accounts' }).getByRole('columnheader', { name: /^Project/ })).toBeVisible();
-    await expect(page.getByRole('row', { name: new RegExp(accountName) }).getByRole('link', { name: key, exact: true })).toBeVisible();
+    const accounts = page.getByRole('table', { name: 'Service accounts' });
+    await expect(accounts.getByRole('columnheader', { name: /^Project/ })).toBeVisible();
+    await expect(
+      accounts
+        .getByRole('row')
+        .filter({ has: page.getByRole('link', { name: accountName, exact: true }) })
+        .filter({ has: page.getByRole('link', { name: key, exact: true }) }),
+    ).toHaveCount(1);
     await expectAccessible(page, 'service account list with the project column');
   });
 
