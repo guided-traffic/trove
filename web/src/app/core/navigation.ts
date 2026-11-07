@@ -9,6 +9,8 @@ export interface NavItem {
   readonly icon: string;
   /** Capability from `authz/me` that shows the entry (R-UI-002); none means always shown. */
   readonly capability?: string;
+  /** Instead of `capability`: the entry is shown to a caller who holds any one of these. */
+  readonly anyCapability?: readonly string[];
 }
 
 /** A section of the sidebar with nested entries that can be folded. */
@@ -51,6 +53,9 @@ export const NAV_AREAS: readonly NavArea[] = [
     entries: [
       { kind: 'item', route: '/admin/dashboard', icon: 'dashboard', label: $localize`:@@nav.dashboard:Dashboard`, capability: 'settings:read' },
       { kind: 'item', route: '/admin/projects', icon: 'folder_shared', label: $localize`:@@nav.projects:Projects`, capability: 'projects:read' },
+      // >>> T-9 security dashboard
+      { kind: 'item', route: '/admin/security', icon: 'security', label: $localize`:@@nav.security:Security`, anyCapability: ['vulnerabilities:triage', 'content:metadata-read'] },
+      // <<< T-9 security dashboard
       { kind: 'item', route: '/admin/repositories', icon: 'inventory_2', label: $localize`:@@nav.repositories:Repositories`, capability: 'repositories:read-config' },
       { kind: 'item', route: '/admin/endpoints', icon: 'router', label: $localize`:@@nav.endpoints:Endpoints`, capability: 'endpoints:read' },
       // >>> M5b bastion
@@ -150,7 +155,10 @@ export class Navigation {
   readonly areas = computed<readonly NavArea[]>(() => {
     const capabilities = this.session.capabilities();
     const administrator = this.session.hasAdminArea();
-    const allowed = (i: Pick<NavItem, 'capability'>) => !i.capability || capabilities.includes(i.capability);
+    const allowed = (i: Pick<NavItem, 'capability' | 'anyCapability'>) =>
+      (!i.capability && !i.anyCapability) ||
+      (!!i.capability && capabilities.includes(i.capability)) ||
+      (!!i.anyCapability && i.anyCapability.some((c) => capabilities.includes(c)));
     return NAV_AREAS.filter((a) => a.id === 'home' || administrator)
       .map((a): NavArea => ({
         ...a,

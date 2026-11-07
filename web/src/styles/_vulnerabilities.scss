@@ -275,6 +275,26 @@
 
 // ---- List, finding and advisory ----------------------------------------------------------
 
+// The search row of the admin area's security dashboard (Q-UI-130): three fields and the button on one line, wrapping on a narrow screen.
+.security-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--trove-space-3);
+  margin-block: var(--trove-space-3);
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--trove-space-1);
+    flex: 1 1 12rem;
+  }
+
+  .text-input {
+    inline-size: 100%;
+  }
+}
+
 .vuln-list-title {
   margin-block: var(--trove-space-4) var(--trove-space-2);
   font: var(--trove-type-title-medium);

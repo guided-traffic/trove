@@ -65,6 +65,7 @@ export type FindingSort = (typeof FINDING_SORTS)[number];
 
 /** The filters of the findings list and of its export (R-VULN-020); all optional. */
 export interface FindingFilters {
+  readonly project?: readonly string[];
   readonly repository?: readonly string[];
   readonly format?: readonly string[];
   readonly package?: readonly string[];
@@ -86,8 +87,8 @@ export interface FindingFilters {
 
 /** What the summary and the trend can be narrowed by (R-VULN-021). */
 export interface ScopeFilters {
-  /** A project key: only the findings of that project's repositories (Q-UI-129). */
-  readonly project?: string;
+  /** Project keys: only the findings of those projects' repositories (Q-UI-129). */
+  readonly project?: readonly string[];
   readonly repository?: readonly string[];
   readonly format?: readonly string[];
 }

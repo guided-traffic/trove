@@ -909,6 +909,20 @@ user who sees the project; what a caller may read is narrowed by the API, so a c
 | package page | [package-vulnerabilities](../../web/src/app/features/vulnerabilities/package-vulnerabilities.ts), additions in [package-detail](../../web/src/app/features/packages/package-detail.ts) | `VulnerabilitiesApi` | The tab `?tab=vulnerabilities` with the count of the open findings of the selected version in its label, the badge column of *All versions* (the highest open severity), and the header "Blocked in …". Both reads swallow their failure: where the scanning answers nothing the page has no tab, no badge and no banner, and no error |
 | repository list and form | `repository-list.html`, `repository-detail.html` | none | A **Vulnerabilities** link to `/projects/<project>/vulnerabilities?repository=<project>/<key>` for a local or remote repository of a format other than generic (the per-repository view) |
 
+- *The security dashboard (Q-UI-130, [Q-UI-165](../spec/api-and-ui.md#q-ui-165--the-security-dashboard-is-the-content-report-mounted-in-the-admin-area-with-its-own-links-project-column-and-search)).*
+  `/admin/security` is the same three screens (report, finding, advisory) routed a second time by
+  [security.routes.ts](../../web/src/app/features/vulnerabilities/security.routes.ts), appended to the admin routes in
+  [app.routes.ts](../../web/src/app/app.routes.ts) (block `T-9 security dashboard`). The route provides `VULN_CONTEXT`
+  ([vuln-context.ts](../../web/src/app/features/vulnerabilities/vuln-context.ts)): `instanceWide` (false in a project, where the screens live at
+  `/projects/:project/vulnerabilities`) switches on the heading *Security dashboard*, the **Project** column
+  with its filter link, the search row (Advisory ID, Package starts with, Project key) and the note for a reader without `vulnerabilities:triage`. A
+  screen that links to another one builds the link with `vulnCommands(ctx, project, …)`; a link to a package uses the project of the finding. The advisory sources are the one page
+  `/admin/advisory-sources` in both places. The `project` input of the report is the route parameter in a project and, in the dashboard, the query parameter like the others;
+  it is checked against the project-key pattern before it is sent, becomes a chip (dashboard only), and
+  narrows the list, the counts (`ReportSummary`, whose count links keep it) and the trend (`ReportTrend`) through the `project` filter of
+  R-VULN-020 and R-VULN-021. `canonicalAdvisoryId` writes a typed identifier the way the API compares it. The sidebar entry uses
+  `NavItem.anyCapability` (`vulnerabilities:triage` or `content:metadata-read`); `adminHomeGuard` starts a caller who holds one of the two and none of the
+  configuration capabilities there. A change to the report is a change to both areas.
 - *Absent controls (R-UI-005).* The selection column, "Select all loaded findings", "Change status" and the finding's actions need `vulnerabilities:triage`; the sources link needs
   `settings:read`, "run now" `settings:write`. They are not rendered without the capability; the API refuses the request in any case.
 - *The counts are links.* A count of the header opens the list with its filter (`severity=…` with the three open statuses, `kind=malicious`, `status=needs_triage`, `blocked=true`) and keeps
@@ -929,6 +943,12 @@ user who sees the project; what a caller may read is narrowed by the API, so a c
   bulk, export, navigation), [vulnerability-finding.spec.ts](../../web/src/app/features/vulnerabilities/vulnerability-finding.spec.ts) (the facts, the plain-text advisory, the references,
   block, lift, dismiss, a stale tag, the absent controls), [vulnerability-pages.spec.ts](../../web/src/app/features/vulnerabilities/vulnerability-pages.spec.ts) (advisory, sources, the package
   tab, the badges, the header), [vulnerabilities-api.spec.ts](../../web/src/app/api/vulnerabilities-api.spec.ts) (the requests), and the screens in `app.routes.spec.ts`.
+- *Dashboard specs.* [security-dashboard.spec.ts](../../web/src/app/features/vulnerabilities/security-dashboard.spec.ts) (the project column, the
+  project filter through the list, the counts and the trend, the search's canonical identifier, links inside the admin area, the triage controls with and
+  without the capability, the entry in the navigation, the help topic and the routes), [admin-home.spec.ts](../../web/src/app/core/admin-home.spec.ts) (where the admin area starts),
+  [16-security-dashboard.spec.ts](../../web/e2e/vuln/16-security-dashboard.spec.ts) (two projects, a search by alias in lower case, the project filter, the counts, a finding
+  opened inside the admin area, and an auditor who is a member of no project triaging; axe in both schemes). Like journey 15 it needs `TROVE_E2E_VULN=1` and the scatter profile; it has not run
+  against a backend yet.
 - *Browser journeys.* [15-vulnerabilities.spec.ts](../../web/e2e/vuln/15-vulnerabilities.spec.ts) (own config [playwright.vuln.config.ts](../../web/e2e/playwright.vuln.config.ts), because it needs the
   scanning against the test advisory source) writes the journeys of R-VULN-022 and R-VULN-023; the e2e wave runs them ([e2e.md](e2e.md#browser-journeys)). They have not run against a backend
   yet. The built UI was checked in Chromium against a mocked API with axe (`color-contrast` included) in the light and the dark scheme and in German: no serious or critical violation on the

@@ -6,7 +6,7 @@ The Vulnerabilities screen shows which stored package versions are affected by a
 
 trove keeps a copy of public advisory data for the package formats it serves (npm and NuGet) and compares it with the versions stored in your repositories. It compares names and versions only; it does not open the files. A match is a **finding**: one advisory affects one stored version in one repository. A finding is created when a version is published or fetched into a repository, and again when the advisory data changes.
 
-The report shows the findings of the repositories you may read, and only those. A repository you may not read contributes no row and no count.
+The report shows the findings of the repositories you may read, and only those. A repository you may not read contributes no row and no count. An auditor, who reads the metadata of every project, finds the findings of all projects in the [security dashboard](../admin/security-dashboard.md) of the admin area, with a search by advisory identifier, package and project.
 
 ## The report
 

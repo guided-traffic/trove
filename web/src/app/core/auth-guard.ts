@@ -30,7 +30,11 @@ export const adminHomeGuard: CanActivateFn = async () => {
   await session.load();
   if (session.has('settings:read')) return router.createUrlTree(['/admin', 'dashboard']);
   const projectsOnly = !session.has('repositories:read-config') && session.has('projects:read');
-  return router.createUrlTree(['/admin', projectsOnly ? 'projects' : 'repositories']);
+  if (projectsOnly) return router.createUrlTree(['/admin', 'projects']);
+  // An auditor or a security administrator without the configuration capabilities starts at the security dashboard (Q-UI-130).
+  const securityOnly =
+    !session.has('repositories:read-config') && (session.has('vulnerabilities:triage') || session.has('content:metadata-read'));
+  return router.createUrlTree(['/admin', securityOnly ? 'security' : 'repositories']);
 };
 
 /**

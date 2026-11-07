@@ -223,7 +223,7 @@
     <unit id="nav.context.admin">
       <notes>
         <note category="location">src/app/app.routes.ts:10</note>
-        <note category="location">src/app/core/navigation.ts:50</note>
+        <note category="location">src/app/core/navigation.ts:52</note>
       </notes>
       <segment>
         <source>Admin area</source>
@@ -259,7 +259,7 @@
     <unit id="nav.guides">
       <notes>
         <note category="location">src/app/app.routes.ts:57</note>
-        <note category="location">src/app/core/navigation.ts:45</note>
+        <note category="location">src/app/core/navigation.ts:47</note>
       </notes>
       <segment>
         <source>Guides</source>
@@ -390,9 +390,18 @@
         <source>Endpoints</source>
       </segment>
     </unit>
+    <unit id="route.security.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:153</note>
+        <note category="location">src/app/features/vulnerabilities/security.routes.ts:19</note>
+      </notes>
+      <segment>
+        <source>Security dashboard</source>
+      </segment>
+    </unit>
     <unit id="route.audit.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:152</note>
+        <note category="location">src/app/app.routes.ts:159</note>
         <note category="location">src/app/features/audit/audit.routes.ts:7</note>
       </notes>
       <segment>
@@ -401,7 +410,7 @@
     </unit>
     <unit id="route.vulnerabilities.sources.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:158</note>
+        <note category="location">src/app/app.routes.ts:165</note>
       </notes>
       <segment>
         <source>Advisory sources</source>
@@ -409,7 +418,7 @@
     </unit>
     <unit id="route.system.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:164</note>
+        <note category="location">src/app/app.routes.ts:171</note>
         <note category="location">src/app/features/system/system.routes.ts:8</note>
       </notes>
       <segment>
@@ -418,8 +427,8 @@
     </unit>
     <unit id="nav.settings">
       <notes>
-        <note category="location">src/app/app.routes.ts:169</note>
-        <note category="location">src/app/core/navigation.ts:92</note>
+        <note category="location">src/app/app.routes.ts:176</note>
+        <note category="location">src/app/core/navigation.ts:97</note>
       </notes>
       <segment>
         <source>Settings</source>
@@ -427,7 +436,7 @@
     </unit>
     <unit id="route.notfound.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:179</note>
+        <note category="location">src/app/app.routes.ts:186</note>
       </notes>
       <segment>
         <source>Page not found</source>
@@ -1539,7 +1548,7 @@
     </unit>
     <unit id="nav.context.home">
       <notes>
-        <note category="location">src/app/core/navigation.ts:42</note>
+        <note category="location">src/app/core/navigation.ts:44</note>
       </notes>
       <segment>
         <source>Your work</source>
@@ -1547,8 +1556,8 @@
     </unit>
     <unit id="nav.projects">
       <notes>
-        <note category="location">src/app/core/navigation.ts:44</note>
-        <note category="location">src/app/core/navigation.ts:53</note>
+        <note category="location">src/app/core/navigation.ts:46</note>
+        <note category="location">src/app/core/navigation.ts:55</note>
       </notes>
       <segment>
         <source>Projects</source>
@@ -1556,16 +1565,24 @@
     </unit>
     <unit id="nav.dashboard">
       <notes>
-        <note category="location">src/app/core/navigation.ts:52</note>
+        <note category="location">src/app/core/navigation.ts:54</note>
       </notes>
       <segment>
         <source>Dashboard</source>
       </segment>
     </unit>
+    <unit id="nav.security">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:57</note>
+      </notes>
+      <segment>
+        <source>Security</source>
+      </segment>
+    </unit>
     <unit id="nav.repositories">
       <notes>
-        <note category="location">src/app/core/navigation.ts:54</note>
-        <note category="location">src/app/core/navigation.ts:128</note>
+        <note category="location">src/app/core/navigation.ts:59</note>
+        <note category="location">src/app/core/navigation.ts:133</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -1573,7 +1590,7 @@
     </unit>
     <unit id="nav.endpoints">
       <notes>
-        <note category="location">src/app/core/navigation.ts:55</note>
+        <note category="location">src/app/core/navigation.ts:60</note>
       </notes>
       <segment>
         <source>Endpoints</source>
@@ -1581,7 +1598,7 @@
     </unit>
     <unit id="nav.bastions">
       <notes>
-        <note category="location">src/app/core/navigation.ts:57</note>
+        <note category="location">src/app/core/navigation.ts:62</note>
       </notes>
       <segment>
         <source>Bastions</source>
@@ -1589,7 +1606,7 @@
     </unit>
     <unit id="nav.section.identity">
       <notes>
-        <note category="location">src/app/core/navigation.ts:63</note>
+        <note category="location">src/app/core/navigation.ts:68</note>
       </notes>
       <segment>
         <source>Identity</source>
@@ -1597,7 +1614,7 @@
     </unit>
     <unit id="nav.users">
       <notes>
-        <note category="location">src/app/core/navigation.ts:65</note>
+        <note category="location">src/app/core/navigation.ts:70</note>
       </notes>
       <segment>
         <source>Users</source>
@@ -1605,7 +1622,7 @@
     </unit>
     <unit id="nav.groups">
       <notes>
-        <note category="location">src/app/core/navigation.ts:66</note>
+        <note category="location">src/app/core/navigation.ts:71</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -1613,8 +1630,8 @@
     </unit>
     <unit id="nav.service-accounts">
       <notes>
-        <note category="location">src/app/core/navigation.ts:67</note>
-        <note category="location">src/app/core/navigation.ts:117</note>
+        <note category="location">src/app/core/navigation.ts:72</note>
+        <note category="location">src/app/core/navigation.ts:122</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -1622,7 +1639,7 @@
     </unit>
     <unit id="nav.tokens">
       <notes>
-        <note category="location">src/app/core/navigation.ts:68</note>
+        <note category="location">src/app/core/navigation.ts:73</note>
       </notes>
       <segment>
         <source>Tokens</source>
@@ -1630,8 +1647,8 @@
     </unit>
     <unit id="nav.ci">
       <notes>
-        <note category="location">src/app/core/navigation.ts:70</note>
-        <note category="location">src/app/core/navigation.ts:120</note>
+        <note category="location">src/app/core/navigation.ts:75</note>
+        <note category="location">src/app/core/navigation.ts:125</note>
       </notes>
       <segment>
         <source>CI identity</source>
@@ -1639,7 +1656,7 @@
     </unit>
     <unit id="nav.section.access">
       <notes>
-        <note category="location">src/app/core/navigation.ts:78</note>
+        <note category="location">src/app/core/navigation.ts:83</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -1647,8 +1664,8 @@
     </unit>
     <unit id="nav.permissions">
       <notes>
-        <note category="location">src/app/core/navigation.ts:80</note>
-        <note category="location">src/app/core/navigation.ts:114</note>
+        <note category="location">src/app/core/navigation.ts:85</note>
+        <note category="location">src/app/core/navigation.ts:119</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -1656,7 +1673,7 @@
     </unit>
     <unit id="nav.roles">
       <notes>
-        <note category="location">src/app/core/navigation.ts:81</note>
+        <note category="location">src/app/core/navigation.ts:86</note>
       </notes>
       <segment>
         <source>System roles</source>
@@ -1664,7 +1681,7 @@
     </unit>
     <unit id="nav.section.system">
       <notes>
-        <note category="location">src/app/core/navigation.ts:88</note>
+        <note category="location">src/app/core/navigation.ts:93</note>
       </notes>
       <segment>
         <source>System</source>
@@ -1672,7 +1689,7 @@
     </unit>
     <unit id="nav.system">
       <notes>
-        <note category="location">src/app/core/navigation.ts:90</note>
+        <note category="location">src/app/core/navigation.ts:95</note>
       </notes>
       <segment>
         <source>System status</source>
@@ -1680,7 +1697,7 @@
     </unit>
     <unit id="nav.audit">
       <notes>
-        <note category="location">src/app/core/navigation.ts:91</note>
+        <note category="location">src/app/core/navigation.ts:96</note>
       </notes>
       <segment>
         <source>Audit log</source>
@@ -1688,7 +1705,7 @@
     </unit>
     <unit id="nav.advisory-sources">
       <notes>
-        <note category="location">src/app/core/navigation.ts:94</note>
+        <note category="location">src/app/core/navigation.ts:99</note>
       </notes>
       <segment>
         <source>Advisory sources</source>
@@ -1696,7 +1713,7 @@
     </unit>
     <unit id="nav.project.members">
       <notes>
-        <note category="location">src/app/core/navigation.ts:112</note>
+        <note category="location">src/app/core/navigation.ts:117</note>
       </notes>
       <segment>
         <source>Members</source>
@@ -1704,7 +1721,7 @@
     </unit>
     <unit id="nav.packages">
       <notes>
-        <note category="location">src/app/core/navigation.ts:125</note>
+        <note category="location">src/app/core/navigation.ts:130</note>
         <note category="location">src/app/features/projects/project-context.routes.ts:30</note>
       </notes>
       <segment>
@@ -1713,7 +1730,7 @@
     </unit>
     <unit id="nav.browse">
       <notes>
-        <note category="location">src/app/core/navigation.ts:127</note>
+        <note category="location">src/app/core/navigation.ts:132</note>
         <note category="location">src/app/features/projects/project-context.routes.ts:35</note>
       </notes>
       <segment>
@@ -1722,7 +1739,7 @@
     </unit>
     <unit id="nav.vulnerabilities">
       <notes>
-        <note category="location">src/app/core/navigation.ts:130</note>
+        <note category="location">src/app/core/navigation.ts:135</note>
       </notes>
       <segment>
         <source>Vulnerabilities</source>
@@ -1730,7 +1747,7 @@
     </unit>
     <unit id="nav.section.project-access">
       <notes>
-        <note category="location">src/app/core/navigation.ts:136</note>
+        <note category="location">src/app/core/navigation.ts:141</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -1738,7 +1755,7 @@
     </unit>
     <unit id="nav.project.settings">
       <notes>
-        <note category="location">src/app/core/navigation.ts:139</note>
+        <note category="location">src/app/core/navigation.ts:144</note>
       </notes>
       <segment>
         <source>Settings</source>
@@ -20208,8 +20225,8 @@
     <unit id="vuln.col.severity">
       <notes>
         <note category="location">src/app/features/vulnerabilities/package-vulnerabilities.ts:83,84</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:96</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:238</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:99</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:257</note>
       </notes>
       <segment>
         <source>Severity</source>
@@ -20218,7 +20235,7 @@
     <unit id="vuln.col.identifier">
       <notes>
         <note category="location">src/app/features/vulnerabilities/package-vulnerabilities.ts:84,85</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:240</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:259</note>
       </notes>
       <segment>
         <source>Identifier</source>
@@ -20227,8 +20244,8 @@
     <unit id="vuln.col.status">
       <notes>
         <note category="location">src/app/features/vulnerabilities/package-vulnerabilities.ts:85,86</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:97</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:239</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:100</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:258</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -20252,7 +20269,7 @@
     </unit>
     <unit id="vuln.banner.sources">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:49,52</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:50,53</note>
       </notes>
       <segment>
         <source>Open the advisory sources</source>
@@ -20260,7 +20277,7 @@
     </unit>
     <unit id="vuln.counts.label">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:55</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:56</note>
       </notes>
       <segment>
         <source>Open findings</source>
@@ -20268,7 +20285,7 @@
     </unit>
     <unit id="vuln.counts.malicious">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:127</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:130</note>
       </notes>
       <segment>
         <source>Malicious</source>
@@ -20276,7 +20293,7 @@
     </unit>
     <unit id="vuln.counts.needs-triage">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:135</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:138</note>
       </notes>
       <segment>
         <source>Needs triage</source>
@@ -20284,7 +20301,7 @@
     </unit>
     <unit id="vuln.counts.blocked">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:143</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:146</note>
       </notes>
       <segment>
         <source>Blocked versions</source>
@@ -20292,7 +20309,7 @@
     </unit>
     <unit id="vuln.coverage">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:162</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:165</note>
       </notes>
       <segment>
         <source>Coverage of the repositories you can read: <ph id="0" equiv="scanned" disp="c.evaluated"/> scanned, <ph id="1" equiv="internal" disp="c.internal"/> internal names only, <ph id="2" equiv="pending" disp="c.pendingData"/> waiting for advisory data, <ph id="3" equiv="notCovered" disp="c.notCovered"/> not covered.</source>
@@ -20300,7 +20317,7 @@
     </unit>
     <unit id="vuln.banner.pending">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:178</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:181</note>
       </notes>
       <segment>
         <source>The advisory data of <ph id="0" equiv="ecosystem" disp="d.ecosystem"/> has not been imported completely yet. Versions of <ph id="1" equiv="ecosystemAgain" disp="d.ecosystem"/> are not evaluated until it has.</source>
@@ -20308,7 +20325,7 @@
     </unit>
     <unit id="vuln.banner.stale">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:184</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:187</note>
       </notes>
       <segment>
         <source>The advisory data of <ph id="0" equiv="ecosystem" disp="d.ecosystem"/> is stale, it was last synchronised <ph id="1" equiv="age" disp="age"/>.</source>
@@ -20316,7 +20333,7 @@
     </unit>
     <unit id="vuln.banner.failing">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/report-summary.ts:193</note>
+        <note category="location">src/app/features/vulnerabilities/report-summary.ts:196</note>
       </notes>
       <segment>
         <source>The last <ph id="0" equiv="failures" disp="s.failures"/> synchronisations of <ph id="1" equiv="ecosystem" disp="name"/> failed.</source>
@@ -20424,6 +20441,24 @@
       </notes>
       <segment>
         <source>365 days</source>
+      </segment>
+    </unit>
+    <unit id="route.vulnerabilities.finding.title">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/security.routes.ts:24</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerabilities.routes.ts:25</note>
+      </notes>
+      <segment>
+        <source>Finding</source>
+      </segment>
+    </unit>
+    <unit id="route.vulnerabilities.advisory.title">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/security.routes.ts:29</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerabilities.routes.ts:30</note>
+      </notes>
+      <segment>
+        <source>Advisory</source>
       </segment>
     </unit>
     <unit id="vuln.triage.results-caption">
@@ -20874,25 +20909,9 @@
         <source>Not covered by scanning</source>
       </segment>
     </unit>
-    <unit id="route.vulnerabilities.finding.title">
-      <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerabilities.routes.ts:25</note>
-      </notes>
-      <segment>
-        <source>Finding</source>
-      </segment>
-    </unit>
-    <unit id="route.vulnerabilities.advisory.title">
-      <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerabilities.routes.ts:30</note>
-      </notes>
-      <segment>
-        <source>Advisory</source>
-      </segment>
-    </unit>
     <unit id="vuln.advisory.heading">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:24,25</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:25,26</note>
       </notes>
       <segment>
         <source>Advisory</source>
@@ -20900,7 +20919,7 @@
     </unit>
     <unit id="vuln.advisory.back">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:25,28</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:26,29</note>
       </notes>
       <segment>
         <source>All findings</source>
@@ -20908,7 +20927,7 @@
     </unit>
     <unit id="vuln.loading">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:31,32</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:32,33</note>
         <note category="location">src/app/features/vulnerabilities/vulnerability-finding.html:9,10</note>
       </notes>
       <segment>
@@ -20917,7 +20936,7 @@
     </unit>
     <unit id="vuln.advisory.text">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:37,38</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:38,39</note>
       </notes>
       <segment>
         <source>Advisory</source>
@@ -20925,7 +20944,7 @@
     </unit>
     <unit id="vuln.advisory.findings">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:42,43</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:43,44</note>
       </notes>
       <segment>
         <source>Where it is used</source>
@@ -20933,7 +20952,7 @@
     </unit>
     <unit id="vuln.advisory.open">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:57,59</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:58,60</note>
       </notes>
       <segment>
         <source>Open finding</source>
@@ -20941,7 +20960,7 @@
     </unit>
     <unit id="vuln.advisory.truncated">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:64,65</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:65,66</note>
       </notes>
       <segment>
         <source>You can read more than 1,000 findings of this advisory. The list shows the first 1,000.</source>
@@ -20949,7 +20968,7 @@
     </unit>
     <unit id="vuln.advisory.truncated-link">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:65,68</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:66,69</note>
       </notes>
       <segment>
         <source>Page through all of them in the report</source>
@@ -20957,7 +20976,7 @@
     </unit>
     <unit id="vuln.advisory.caption">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:93</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:96</note>
       </notes>
       <segment>
         <source>Findings of this advisory</source>
@@ -20965,7 +20984,7 @@
     </unit>
     <unit id="vuln.advisory.empty">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:94</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:97</note>
       </notes>
       <segment>
         <source>No stored version you can read is affected by this advisory.</source>
@@ -20973,8 +20992,8 @@
     </unit>
     <unit id="vuln.col.package">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:98</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:241</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:101</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:260</note>
       </notes>
       <segment>
         <source>Package and version</source>
@@ -20982,8 +21001,8 @@
     </unit>
     <unit id="vuln.col.repository">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:99</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:242</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:102</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:262</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -20991,8 +21010,8 @@
     </unit>
     <unit id="vuln.col.detected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:100</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:244</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:103</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:264</note>
       </notes>
       <segment>
         <source>Detected</source>
@@ -21000,7 +21019,7 @@
     </unit>
     <unit id="vuln.col.open">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:101</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-advisory.ts:104</note>
       </notes>
       <segment>
         <source>Open</source>
@@ -21232,7 +21251,7 @@
     </unit>
     <unit id="vuln.action.confirm">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:30</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:31</note>
       </notes>
       <segment>
         <source>Confirm</source>
@@ -21240,7 +21259,7 @@
     </unit>
     <unit id="vuln.action.dismiss">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:31</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:32</note>
       </notes>
       <segment>
         <source>Dismiss</source>
@@ -21248,7 +21267,7 @@
     </unit>
     <unit id="vuln.action.reopen">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:32</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:33</note>
       </notes>
       <segment>
         <source>Mark as needs triage</source>
@@ -21256,7 +21275,7 @@
     </unit>
     <unit id="vuln.action.block">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:37</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:38</note>
       </notes>
       <segment>
         <source>Block downloads</source>
@@ -21264,7 +21283,7 @@
     </unit>
     <unit id="vuln.action.lift">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:39</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:40</note>
       </notes>
       <segment>
         <source>Lift block</source>
@@ -21272,7 +21291,7 @@
     </unit>
     <unit id="vuln.history.detected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:98</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:101</note>
       </notes>
       <segment>
         <source>Detected</source>
@@ -21280,7 +21299,7 @@
     </unit>
     <unit id="vuln.history.status">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:100</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:103</note>
       </notes>
       <segment>
         <source>Status changed</source>
@@ -21288,7 +21307,7 @@
     </unit>
     <unit id="vuln.history.resolved">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:102</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:105</note>
       </notes>
       <segment>
         <source>Resolved by trove</source>
@@ -21296,7 +21315,7 @@
     </unit>
     <unit id="vuln.history.redetected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:104</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:107</note>
       </notes>
       <segment>
         <source>Detected again</source>
@@ -21304,7 +21323,7 @@
     </unit>
     <unit id="vuln.history.reopened">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:106</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:109</note>
       </notes>
       <segment>
         <source>Reopened by trove</source>
@@ -21312,7 +21331,7 @@
     </unit>
     <unit id="vuln.history.advisory">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:108</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:111</note>
       </notes>
       <segment>
         <source>Advisory changed</source>
@@ -21320,15 +21339,23 @@
     </unit>
     <unit id="vuln.triage.saved">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:140</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-finding.ts:143</note>
       </notes>
       <segment>
         <source>The finding was changed.</source>
       </segment>
     </unit>
+    <unit id="security.heading">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:3,5</note>
+      </notes>
+      <segment>
+        <source>Security dashboard</source>
+      </segment>
+    </unit>
     <unit id="vuln.heading">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:2,3</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:5,7</note>
       </notes>
       <segment>
         <source>Vulnerabilities</source>
@@ -21336,7 +21363,7 @@
     </unit>
     <unit id="vuln.sources-link">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:4,6</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:8,10</note>
       </notes>
       <segment>
         <source>Advisory sources</source>
@@ -21344,15 +21371,71 @@
     </unit>
     <unit id="vuln.export">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:6,9</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:10,13</note>
       </notes>
       <segment>
         <source>Export CSV</source>
       </segment>
     </unit>
-    <unit id="vuln.list.title">
+    <unit id="security.intro">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:19,21</note>
+      </notes>
+      <segment>
+        <source> The findings of every project, with the counts and the trend over all of them. Search by advisory identifier (a CVE or GHSA number finds the finding by any of its aliases), by package or by project. </source>
+      </segment>
+    </unit>
+    <unit id="security.search.label">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:21</note>
+      </notes>
+      <segment>
+        <source>Search findings</source>
+      </segment>
+    </unit>
+    <unit id="security.search.advisory">
       <notes>
         <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:23,24</note>
+      </notes>
+      <segment>
+        <source>Advisory ID</source>
+      </segment>
+    </unit>
+    <unit id="security.search.package">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:27,28</note>
+      </notes>
+      <segment>
+        <source>Package starts with</source>
+      </segment>
+    </unit>
+    <unit id="security.search.project">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:31,32</note>
+      </notes>
+      <segment>
+        <source>Project key</source>
+      </segment>
+    </unit>
+    <unit id="security.search.submit">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:34,36</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+      </segment>
+    </unit>
+    <unit id="security.read-only">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:37,41</note>
+      </notes>
+      <segment>
+        <source>You can read the findings of every project. Changing their status needs the permission to triage vulnerabilities.</source>
+      </segment>
+    </unit>
+    <unit id="vuln.list.title">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:51,52</note>
       </notes>
       <segment>
         <source>Findings</source>
@@ -21360,7 +21443,7 @@
     </unit>
     <unit id="vuln.chips.label">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:25</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:53</note>
       </notes>
       <segment>
         <source>Applied filters</source>
@@ -21368,7 +21451,7 @@
     </unit>
     <unit id="vuln.select-all">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:43,44</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:71,72</note>
       </notes>
       <segment>
         <source>Select all loaded findings</source>
@@ -21376,7 +21459,7 @@
     </unit>
     <unit id="vuln.selected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:45,46</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:73,74</note>
       </notes>
       <segment>
         <source>selected</source>
@@ -21384,7 +21467,7 @@
     </unit>
     <unit id="vuln.bulk">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:46,47</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:74,75</note>
       </notes>
       <segment>
         <source>Change status</source>
@@ -21392,7 +21475,7 @@
     </unit>
     <unit id="vuln.clear-selection">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:47,50</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:75,78</note>
       </notes>
       <segment>
         <source>Clear selection</source>
@@ -21400,7 +21483,7 @@
     </unit>
     <unit id="vuln.marker.malicious">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:82,83</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:110,111</note>
       </notes>
       <segment>
         <source>Malicious</source>
@@ -21408,7 +21491,7 @@
     </unit>
     <unit id="vuln.marker.exploited">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:85,86</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:113,114</note>
       </notes>
       <segment>
         <source>Known exploited</source>
@@ -21416,7 +21499,7 @@
     </unit>
     <unit id="vuln.list.clear">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:103,106</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:136,139</note>
       </notes>
       <segment>
         <source>Clear all filters</source>
@@ -21424,8 +21507,8 @@
     </unit>
     <unit id="vuln.filter.severity">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:117</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:315</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:150</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:339</note>
       </notes>
       <segment>
         <source>Severity</source>
@@ -21433,8 +21516,8 @@
     </unit>
     <unit id="vuln.filter.status">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:125</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:317</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:158</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:341</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -21442,9 +21525,9 @@
     </unit>
     <unit id="vuln.filter.kind">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:133</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:134</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:319</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:166</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:167</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:343</note>
       </notes>
       <segment>
         <source>Kind</source>
@@ -21452,11 +21535,11 @@
     </unit>
     <unit id="vuln.filter.any">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:135,136</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:182,183</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:189,190</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:197,198</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:205,206</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:168,169</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:217,218</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:224,225</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:232,233</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:240,241</note>
       </notes>
       <segment>
         <source>Any</source>
@@ -21464,8 +21547,8 @@
     </unit>
     <unit id="vuln.filter.repository">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:141</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:305</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:174</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:329</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -21473,8 +21556,8 @@
     </unit>
     <unit id="vuln.filter.format">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:151</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:307</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:184</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:331</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -21482,8 +21565,8 @@
     </unit>
     <unit id="vuln.filter.package">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:159</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:309</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:192</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:333</note>
       </notes>
       <segment>
         <source>Package</source>
@@ -21491,7 +21574,7 @@
     </unit>
     <unit id="vuln.filter.package-name">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:161,162</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:194,195</note>
       </notes>
       <segment>
         <source>Package name</source>
@@ -21499,8 +21582,8 @@
     </unit>
     <unit id="vuln.filter.version">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:165,166</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:312</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:198,199</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:336</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -21508,9 +21591,9 @@
     </unit>
     <unit id="vuln.filter.advisory">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:169</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:170</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:314</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:203</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:204</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:338</note>
       </notes>
       <segment>
         <source>Advisory</source>
@@ -21518,7 +21601,7 @@
     </unit>
     <unit id="vuln.filter.advisory-hint">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:171,173</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:205,207</note>
       </notes>
       <segment>
         <source>An identifier or an alias, for example GHSA-… or CVE-….</source>
@@ -21526,7 +21609,7 @@
     </unit>
     <unit id="vuln.filter.flags">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:175,176</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:210,211</note>
       </notes>
       <segment>
         <source>Exploit, fix and block</source>
@@ -21534,8 +21617,8 @@
     </unit>
     <unit id="vuln.filter.exploited">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:180,181</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:322</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:215,216</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:346</note>
       </notes>
       <segment>
         <source>Known exploited</source>
@@ -21543,9 +21626,9 @@
     </unit>
     <unit id="vuln.filter.yes-option">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:183,185</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:190,191</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:198,199</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:218,220</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:225,226</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:233,234</note>
       </notes>
       <segment>
         <source>Yes</source>
@@ -21553,8 +21636,8 @@
     </unit>
     <unit id="vuln.filter.fix">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:187,188</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:323</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:222,223</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:347</note>
       </notes>
       <segment>
         <source>Fix available</source>
@@ -21562,8 +21645,8 @@
     </unit>
     <unit id="vuln.filter.no-option">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:191,193</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:199,201</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:226,228</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:234,236</note>
       </notes>
       <segment>
         <source>No</source>
@@ -21571,8 +21654,8 @@
     </unit>
     <unit id="vuln.filter.blocked">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:195,196</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:324</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:230,231</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:348</note>
       </notes>
       <segment>
         <source>Blocks downloads</source>
@@ -21580,8 +21663,8 @@
     </unit>
     <unit id="vuln.filter.block-reason">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:203,204</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:325</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:238,239</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:349</note>
       </notes>
       <segment>
         <source>Block reason</source>
@@ -21589,7 +21672,7 @@
     </unit>
     <unit id="vuln.filter.detected">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:212</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:247</note>
       </notes>
       <segment>
         <source>Detected</source>
@@ -21597,7 +21680,7 @@
     </unit>
     <unit id="vuln.filter.from">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:214,215</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:249,250</note>
       </notes>
       <segment>
         <source>From</source>
@@ -21605,7 +21688,7 @@
     </unit>
     <unit id="vuln.filter.to">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:218,219</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:253,254</note>
       </notes>
       <segment>
         <source>Until</source>
@@ -21613,9 +21696,9 @@
     </unit>
     <unit id="vuln.filter.text">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:222</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:223</note>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:328</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:257</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:258</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:352</note>
       </notes>
       <segment>
         <source>Text</source>
@@ -21623,7 +21706,7 @@
     </unit>
     <unit id="vuln.filter.text-hint">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:224,226</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.html:259,261</note>
       </notes>
       <segment>
         <source>Matches the package name, the identifier and the summary.</source>
@@ -21631,15 +21714,23 @@
     </unit>
     <unit id="vuln.col.select">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:237</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:256</note>
       </notes>
       <segment>
         <source>Select</source>
       </segment>
     </unit>
+    <unit id="vuln.col.project">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:261</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+      </segment>
+    </unit>
     <unit id="vuln.col.fix">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:243</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:263</note>
       </notes>
       <segment>
         <source>Fix available</source>
@@ -21647,7 +21738,7 @@
     </unit>
     <unit id="vuln.list.caption">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:247</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:267</note>
       </notes>
       <segment>
         <source>Vulnerability findings</source>
@@ -21655,7 +21746,7 @@
     </unit>
     <unit id="vuln.list.empty">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:248</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:268</note>
       </notes>
       <segment>
         <source>No open findings. Nothing in the repositories you can read is affected by a known advisory.</source>
@@ -21663,7 +21754,7 @@
     </unit>
     <unit id="vuln.list.empty-filtered">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:249</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:269</note>
       </notes>
       <segment>
         <source>No finding matches the filters.</source>
@@ -21671,7 +21762,7 @@
     </unit>
     <unit id="vuln.filter.apply">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:250</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:270</note>
       </notes>
       <segment>
         <source>Apply filters</source>
@@ -21679,15 +21770,23 @@
     </unit>
     <unit id="vuln.fix.none">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:274</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:295</note>
       </notes>
       <segment>
         <source>None yet</source>
       </segment>
     </unit>
+    <unit id="vuln.filter.project">
+      <notes>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:326</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+      </segment>
+    </unit>
     <unit id="vuln.filter.package-prefix">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:311</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:335</note>
       </notes>
       <segment>
         <source>Package starts with</source>
@@ -21695,7 +21794,7 @@
     </unit>
     <unit id="vuln.filter.yes">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:320</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:344</note>
       </notes>
       <segment>
         <source>yes</source>
@@ -21703,7 +21802,7 @@
     </unit>
     <unit id="vuln.filter.no">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:321</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:345</note>
       </notes>
       <segment>
         <source>no</source>
@@ -21711,7 +21810,7 @@
     </unit>
     <unit id="vuln.filter.detected-from">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:326</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:350</note>
       </notes>
       <segment>
         <source>Detected from</source>
@@ -21719,7 +21818,7 @@
     </unit>
     <unit id="vuln.filter.detected-to">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:327</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:351</note>
       </notes>
       <segment>
         <source>Detected until</source>
@@ -21727,7 +21826,7 @@
     </unit>
     <unit id="vuln.chips.remove">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:333</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:357</note>
       </notes>
       <segment>
         <source>Remove the filter <ph id="0" equiv="filter" disp="label"/></source>
@@ -21735,7 +21834,7 @@
     </unit>
     <unit id="vuln.select-row">
       <notes>
-        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:417</note>
+        <note category="location">src/app/features/vulnerabilities/vulnerability-report.ts:459</note>
       </notes>
       <segment>
         <source>Select <ph id="0" equiv="advisory" disp="f.advisory"/> in <ph id="1" equiv="package" disp="f.package"/>@<ph id="2" equiv="version" disp="f.version"/></source>

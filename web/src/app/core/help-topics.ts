@@ -45,6 +45,7 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
   ['/admin/permissions', { section: 'admin', page: 'permissions' }],
   ['/admin/roles', { section: 'admin', page: 'permissions' }],
   ['/admin/dashboard', { section: 'admin', page: 'dashboard' }],
+  ['/admin/security', { section: 'admin', page: 'security-dashboard' }],
   ['/admin/system', { section: 'admin', page: 'operations' }],
   ['/admin/audit', { section: 'admin', page: 'operations' }],
   // >>> M4b vulnerabilities

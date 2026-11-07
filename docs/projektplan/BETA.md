@@ -1108,7 +1108,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
     ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap
     H-550); the auditor's instance-wide vulnerability
     dashboard in the admin area ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area),
-    gap H-551)
+    built)
 - ⚪ All exit checks green again
 - 🟡 Beta documentation: installation guide, configuration reference, known limitations. The first edition of the
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known

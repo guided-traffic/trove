@@ -3,6 +3,7 @@ import { Component, LOCALE_ID, computed, inject, input, resource } from '@angula
 import { RouterLink } from '@angular/router';
 import { OPEN_STATUSES, VulnerabilitiesApi, VulnerabilitySeverity, VulnerabilitySourceState, VulnerabilitySummary } from '../../api/vulnerabilities-api';
 import { SessionStore } from '../../core/session-store';
+import { VULN_CONTEXT } from './vuln-context';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { relativeTime } from '../packages/format-time';
@@ -15,7 +16,7 @@ export interface SummaryCount {
   readonly icon: string;
   readonly cls: string;
   readonly count: number;
-  /** The query of the link; the scope (repository, format) is kept, every other filter is replaced. */
+  /** The query of the link; the scope (project, repository, format) is kept, every other filter is replaced. */
   readonly query: Readonly<Record<string, string | readonly string[]>>;
 }
 
@@ -76,9 +77,10 @@ export class ReportSummary {
   private readonly api = inject(VulnerabilitiesApi);
   private readonly session = inject(SessionStore);
   private readonly locale = inject(LOCALE_ID);
+  protected readonly ctx = inject(VULN_CONTEXT);
 
-  /** The project whose findings are counted (Q-UI-129). */
-  readonly project = input.required<string>();
+  /** The projects whose findings are counted (Q-UI-129). */
+  readonly project = input<readonly string[]>([]);
   readonly repository = input<readonly string[]>([]);
   readonly format = input<readonly string[]>([]);
   /** Counts up when the screen changed findings, so that the counts are read again. */
@@ -102,6 +104,7 @@ export class ReportSummary {
 
   private readonly scope = computed<Record<string, readonly string[]>>(() => {
     const out: Record<string, readonly string[]> = {};
+    if (this.project().length > 0) out['project'] = this.project();
     if (this.repository().length > 0) out['repository'] = this.repository();
     if (this.format().length > 0) out['format'] = this.format();
     return out;

@@ -42,6 +42,12 @@ type env struct {
 
 func newEnv(t *testing.T, replicaEnv ...string) *env {
 	t.Helper()
+	return newEnvWith(t, nil, replicaEnv...)
+}
+
+// newEnvWith is newEnv with a step that seeds more state before the replica starts, which reads the repositories once.
+func newEnvWith(t *testing.T, seed func(*testenv.Stack), replicaEnv ...string) *env {
+	t.Helper()
 	st := testenv.NewStack(t, testenv.StackOptions{Name: "vulnapi"})
 	e := &env{t: t, st: st}
 	e.rita, e.olga, e.alice, e.carol, e.dave = st.User("rita"), st.User("olga"), st.User("alice"), st.User("carol"), st.User("dave")
@@ -71,6 +77,9 @@ func newEnv(t *testing.T, replicaEnv ...string) *env {
 	st.Bind("security-admin", sam)
 	e.narrowed("team-a-sam", "npm-local", sam, "@team-a/*")
 	e.tokSam = st.Token(sam, scope.Scope{Inherit: true, System: []string{"vulnerabilities:triage"}})
+	if seed != nil {
+		seed(st)
+	}
 	replicaEnv = append([]string{"TROVE_API_RATE_LIMITS_ENABLED=false"}, replicaEnv...)
 	e.r = st.Start(t, testenv.ReplicaOptions{Name: "web1", Env: replicaEnv})
 	return e
@@ -183,6 +192,7 @@ func (e *env) get(r *testenv.Replica, path, token string, hdr ...string) testenv
 type page struct {
 	Items []struct {
 		ID          string  `json:"id"`
+		Project     string  `json:"project"`
 		Repository  string  `json:"repository"`
 		Package     string  `json:"package"`
 		Version     string  `json:"version"`

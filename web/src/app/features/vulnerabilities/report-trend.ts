@@ -159,8 +159,8 @@ export function trendGeometry(trend: VulnerabilityTrend): TrendGeometry {
 export class ReportTrend {
   private readonly api = inject(VulnerabilitiesApi);
 
-  /** The project whose findings are counted (Q-UI-129). */
-  readonly project = input.required<string>();
+  /** The projects whose findings are counted (Q-UI-129). */
+  readonly project = input<readonly string[]>([]);
   readonly repository = input<readonly string[]>([]);
   readonly format = input<readonly string[]>([]);
   readonly range = input<TrendRange>('90');
