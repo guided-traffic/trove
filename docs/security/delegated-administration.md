@@ -115,7 +115,13 @@ with the repository's ID and raises its `config_version`, so the old address ans
 version drops what it built, on every replica within the bound of R-AUTHZ-028; it records `repository.moved` with the journal entry of
 R-AUTHZ-031. What holds the repository by its ID outside the project (a key selector of a global policy, an exposure rule) follows it.
 Who may move is the API's decision: `repositories:write-config`, or an Owner of both projects (403 for a member with a lower role in
-the target, 404 for a caller that is no member there).
+the target, 404 for a caller that is no member there). The Owner's move is restricted (`checkMoveTarget` in
+[repositories_api.go](../../internal/api/v1/repositories_api.go) passes `restricted`): while a key selector of a global policy names
+the repository it is refused as well, with the reference `{"kind": "global_policy", "name": "<policy>"}` (`globalReferences`,
+[Q-REPO-232](../spec/repositories-and-proxy.md#q-repo-232--an-owners-move-is-refused-while-a-global-policy-names-the-repository-by-key)),
+so an administrator's grant never follows the repository into a project whose other Owners cannot see or remove it. The answer names
+the global policy to an Owner who may not read it, and nothing of its entries. An exposure rule follows without a refusal: it is a
+ceiling and grants nothing.
 
 ## Remote repositories of a project
 

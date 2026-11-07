@@ -386,7 +386,7 @@ func TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 	from := qname.Repo{Project: "web", Key: "web-files"}
-	_, _, err := p.projects.MoveRepository(ctx, p.root, from, "shop")
+	_, _, err := p.projects.MoveRepository(ctx, p.root, from, "shop", false)
 	problem(t, err, 409, errs.CodeRepositoryInUse)
 	if e, _ := errs.As(err); fmt.Sprint(e.Extensions["references"]) != fmt.Sprint([]project.Reference{{Kind: project.RefPolicy, Name: "files-read"}}) {
 		t.Fatalf("references %v", e.Extensions["references"])
@@ -396,7 +396,7 @@ func TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles(t *testing.T) {
 	}
 	owner := sub(p.dave, p.leads)
 	waitFor(t, "replica b granting the web Owner", 3*time.Second, func() bool { return p.may(p.b, owner, "web/web-files", authz.Read) })
-	to, epoch, err := p.projects.MoveRepository(ctx, p.root, from, "shop")
+	to, epoch, err := p.projects.MoveRepository(ctx, p.root, from, "shop", false)
 	if err != nil || to != (qname.Repo{Project: "shop", Key: "web-files"}) || epoch == 0 {
 		t.Fatalf("%v %d %v", to, epoch, err)
 	}

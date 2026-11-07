@@ -233,6 +233,17 @@ SELECT 'deployment_target', r.key
  WHERE t.virtual_id = sqlc.arg(id)::bigint
 ORDER BY 1, 2;
 
+-- name: ProjectRepositoryGlobalPolicies :many
+-- The global policies with a key selector on the repository (Q-REPO-232): their grant
+-- is held by the repository's ID and would follow it into the target project, so an
+-- Owner who moves it without repositories:write-config is refused while one exists
+-- (409 repository_in_use, kind global_policy). A pattern or class selector matches by
+-- address and is not stored with the ID.
+SELECT DISTINCT a.name
+  FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+ WHERE s.repository_id = sqlc.arg(id)::bigint AND a.project_id IS NULL
+ ORDER BY a.name;
+
 -- name: ProjectCIMappingGrants :many
 -- The grant documents of the CI mappings of a project's tier, for the move, which
 -- refuses a repository that an inline grant names by key (R-REPO-060). name is the

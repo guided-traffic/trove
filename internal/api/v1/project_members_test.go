@@ -165,25 +165,26 @@ func TestR_AUTHZ_026_SetAndRemoveAMember(t *testing.T) {
 }
 
 // TestR_REPO_060_TheTargetOfAMoveIsDecidedByTheCaller: the declaration admits the holder of
-// repositories:write-config and an Owner of the source; the handler asks the second for the target.
+// repositories:write-config and an Owner of the source; the handler asks the second for the target, and the second
+// is restricted (Q-REPO-232: a global policy's key selector keeps it from moving the repository).
 func TestR_REPO_060_TheTargetOfAMoveIsDecidedByTheCaller(t *testing.T) {
-	check := func(c projectCaller, target string) error {
+	check := func(c projectCaller, target string) (bool, error) {
 		s := New(Options{Access: c})
 		r := httptest.NewRequest("POST", "/api/v1/projects/web/repositories/npm-libs/move", nil)
 		return s.checkMoveTarget(r, target)
 	}
-	if err := check(projectCaller{caps: map[string]bool{"repositories:write-config": true}}, "mobile"); err != nil {
-		t.Errorf("the holder of the capability: %v", err)
+	if restricted, err := check(projectCaller{caps: map[string]bool{"repositories:write-config": true}}, "mobile"); err != nil || restricted {
+		t.Errorf("the holder of the capability: restricted %v, %v", restricted, err)
 	}
-	if err := check(projectCaller{members: map[string]authz.ProjectRole{"mobile": authz.ProjectRoleOwner}, owns: map[string]bool{"mobile": true}}, "mobile"); err != nil {
-		t.Errorf("an Owner of the target: %v", err)
+	if restricted, err := check(projectCaller{members: map[string]authz.ProjectRole{"mobile": authz.ProjectRoleOwner}, owns: map[string]bool{"mobile": true}}, "mobile"); err != nil || !restricted {
+		t.Errorf("an Owner of the target: restricted %v, %v", restricted, err)
 	}
-	kind, _ := codeOf(t, check(projectCaller{members: map[string]authz.ProjectRole{"mobile": authz.ProjectRoleDeveloper}}, "mobile"))
-	if kind != errs.Forbidden {
+	_, err := check(projectCaller{members: map[string]authz.ProjectRole{"mobile": authz.ProjectRoleDeveloper}}, "mobile")
+	if kind, _ := codeOf(t, err); kind != errs.Forbidden {
 		t.Errorf("a developer of the target: %v, want forbidden", kind)
 	}
-	kind, _ = codeOf(t, check(projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleOwner}, owns: map[string]bool{"web": true}}, "mobile"))
-	if kind != errs.NotFound {
+	_, err = check(projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleOwner}, owns: map[string]bool{"web": true}}, "mobile")
+	if kind, _ := codeOf(t, err); kind != errs.NotFound {
 		t.Errorf("no member of the target: %v, want not found", kind)
 	}
 }

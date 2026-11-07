@@ -78,8 +78,10 @@ type Service interface {
 	// project's tier) or while a virtual repository has members or a deployment target, and with
 	// 409 already_exists when the target has the key. A target equal to the source changes nothing.
 	// The caller has decided that the actor may move it: repositories:write-config, or Owner of both
-	// projects. It returns the new name and the epoch.
-	MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (to qname.Repo, epoch int64, err error)
+	// projects, which is restricted: a restricted move is refused as well while a key selector of a
+	// global policy names the repository (kind global_policy, Q-REPO-232), whose grant would follow it.
+	// It returns the new name and the epoch.
+	MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string, restricted bool) (to qname.Repo, epoch int64, err error)
 	// LookupPrincipals returns active users and groups whose name starts with prefix,
 	// for an Owner of a project who names principals in policies (Q-AUTHZ-182). kind
 	// is "", user or group; limit is at most MaxLookup. The answer holds the kind and

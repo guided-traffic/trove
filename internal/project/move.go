@@ -33,6 +33,7 @@ const (
 	RefCIMapping               = "ci_mapping"                // an inline grant of a CI mapping of the project's tier
 	RefMember                  = "member"                    // a member of the virtual repository that moves
 	RefDeploymentTarget        = "deployment_target"         // the deployment target of the virtual repository that moves
+	RefGlobalPolicy            = "global_policy"             // a key selector of a global policy, for a restricted caller (Q-REPO-232)
 )
 
 // Reference is one object that keeps a repository from moving: its kind and its name within the source
@@ -59,10 +60,12 @@ const opMoved = "moved"
 //
 // Refusals: 404 for a source repository that does not exist or is being deleted and for a target project
 // that does not exist; 409 repository_in_use with the member `references` while an object of the source
-// project names the repository, or the repository is virtual and has members or a deployment target; 409
+// project names the repository, or the repository is virtual and has members or a deployment target, and,
+// for a restricted caller, while a key selector of a global policy names it (Q-REPO-232); 409
 // already_exists when the target project holds the key, also by a repository being deleted. The caller
-// decided before that the actor may move it: repositories:write-config, or Owner of both projects.
-func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (qname.Repo, int64, error) {
+// decided before that the actor may move it: repositories:write-config, or Owner of both projects, which
+// is restricted.
+func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string, restricted bool) (qname.Repo, int64, error) {
 	to := qname.Repo{Project: toProject, Key: from.Key}
 	var epoch int64
 	err := s.inTx(ctx, func(tx meta.Tx, qs *q.Queries) error {
@@ -85,6 +88,13 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 		refs, err := references(ctx, qs, repo.ID, fromID, from)
 		if err != nil {
 			return err
+		}
+		if restricted {
+			global, err := globalReferences(ctx, qs, repo.ID)
+			if err != nil {
+				return err
+			}
+			refs = append(refs, global...)
 		}
 		if len(refs) > 0 {
 			return inUse(from, refs)
@@ -180,6 +190,23 @@ func references(ctx context.Context, qs *q.Queries, repoID int64, projectID stri
 	return out, nil
 }
 
+// globalReferences lists the global policies whose key selector names the repository (Q-REPO-232). Their
+// grant is held by the repository's ID and follows it into the target project, whose other Owners cannot
+// remove it; an Owner who moves without repositories:write-config is therefore refused while one exists,
+// and asks an administrator of trove, who sees the policy by this name. A pattern or a class names no
+// repository and is not listed.
+func globalReferences(ctx context.Context, qs *q.Queries, repoID int64) ([]Reference, error) {
+	names, err := qs.ProjectRepositoryGlobalPolicies(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Reference, 0, len(names))
+	for _, n := range names {
+		out = append(out, Reference{Kind: RefGlobalPolicy, Name: n})
+	}
+	return out, nil
+}
+
 // specNames reports whether an inline grant of a CI mapping's grant document names the key as a key
 // selector of the project context. A document that does not parse names nothing it can be held to; the CI
 // service validated it when it was written.
@@ -205,7 +232,7 @@ func inUse(from qname.Repo, refs []Reference) error {
 		names = append(names, r.Kind+" "+r.Name)
 	}
 	return errs.E(errs.Conflict, errs.CodeRepositoryInUse,
-		fmt.Sprintf("The repository %q is named in its project by %s; remove the references, then move it.", from.String(), strings.Join(names, ", ")),
+		fmt.Sprintf("The repository %q is named by %s; remove the references, then move it.", from.String(), strings.Join(names, ", ")),
 		errs.WithExtension("references", refs))
 }
 

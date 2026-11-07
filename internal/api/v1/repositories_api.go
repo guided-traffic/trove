@@ -896,7 +896,8 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, projec
 // MoveRepository implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move (R-REPO-060, Q-REPO-217):
 // the address of the repository changes, its content does not. The declaration admits the holder of
 // repositories:write-config and an Owner of the source project; the second must own the target as well
-// (checkMoveTarget). The answer is the document at the new address.
+// (checkMoveTarget) and is restricted: a key selector of a global policy keeps it from moving the repository
+// (Q-REPO-232). The answer is the document at the new address.
 func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectKey, repoKey string) {
 	svc, err := s.projects()
 	var rs *repository.Service
@@ -911,13 +912,14 @@ func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectK
 		err = errs.E(errs.Invalid, errs.CodeValidation, "The target project is not a project key.",
 			errs.WithFields(errs.FieldError{Pointer: "/project", Code: "invalid_key", Detail: "must be a project key"}))
 	}
+	var restricted bool
 	if err == nil {
-		err = s.checkMoveTarget(r, in.Project)
+		restricted, err = s.checkMoveTarget(r, in.Project)
 	}
 	var to qname.Repo
 	var epoch int64
 	if err == nil {
-		to, epoch, err = svc.MoveRepository(r.Context(), caller(r), qname.Repo{Project: projectKey, Key: repoKey}, in.Project)
+		to, epoch, err = svc.MoveRepository(r.Context(), caller(r), qname.Repo{Project: projectKey, Key: repoKey}, in.Project, restricted)
 	}
 	var st repository.Stored
 	if err == nil {
@@ -934,31 +936,32 @@ func (s *Server) MoveRepository(w http.ResponseWriter, r *http.Request, projectK
 }
 
 // checkMoveTarget is the second half of the move's permission: the holder of repositories:write-config moves to
-// any project; an Owner of the source project must own the target as well. A target project the caller is no
-// member of answers like a missing one (404), a member whose role is below Owner 403 (R-REPO-060).
-func (s *Server) checkMoveTarget(r *http.Request, target string) error {
+// any project; an Owner of the source project must own the target as well, and is restricted (Q-REPO-232). A
+// target project the caller is no member of answers like a missing one (404), a member whose role is below Owner
+// 403 (R-REPO-060).
+func (s *Server) checkMoveTarget(r *http.Request, target string) (restricted bool, err error) {
 	ctx := r.Context()
 	held, err := s.holds(ctx, "repositories:write-config")
 	if err != nil || held {
-		return err
+		return false, err
 	}
 	refused := errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	pa, ok := s.o.Access.(ProjectAccess)
 	if !ok {
-		return refused
+		return true, refused
 	}
 	owns, err := pa.Owns(ctx, target)
 	if err != nil || owns {
-		return err
+		return true, err
 	}
 	members, err := pa.Memberships(ctx)
 	if err != nil {
-		return err
+		return true, err
 	}
 	for _, m := range members {
 		if m.Key == target {
-			return refused
+			return true, refused
 		}
 	}
-	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", target))
+	return true, errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", target))
 }

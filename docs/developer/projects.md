@@ -38,7 +38,8 @@ remote repositories are applied by the repository service to a `Restricted` call
 - **The last Owner.** The member writes take the project's row lock and refuse to take `owner` from the last membership with it
   unless the caller holds `projects:write` (the handler passes `bypassLastOwner`).
 - **A move refuses, it never rewrites.** Anything of the source project that names the repository refuses it with
-  `repository_in_use` and the list of references.
+  `repository_in_use` and the list of references; for a restricted caller (an Owner without `repositories:write-config`, the
+  handler passes `restricted`) a key selector of a global policy as well (`global_policy`, Q-REPO-232).
 
 ## The contracts
 
@@ -51,7 +52,7 @@ remote repositories are applied by the repository service to a `Restricted` call
 | [internal/authz/index.go](../../internal/authz/index.go), [source.go](../../internal/authz/source.go) | `Snapshot.Projects`, `Snapshot.ProjectMembers`; `projectInfo{members, sources}`, `Index.memberships` (by principal), `repoInfo.proj`; the build skips a member row of another kind than user or group and an auto-join group |
 | [internal/authz/selector.go](../../internal/authz/selector.go) | `ValidateSelector` (instance), `ValidateSelectorIn(text, project)`, `SelectorProblemCode`; `selector.text` and `instanceText` (the CI exchange's items in the grammar of an instance context) |
 | [internal/authz/policy.go](../../internal/authz/policy.go), [store.go](../../internal/authz/store.go), [validate.go](../../internal/authz/validate.go) | `StoredPolicyName`; the policy store by stored name; `AsProjectOwner(project)` (an Owner without a policies capability: another project's service account answers `unknown_principal`; a global policy 403, another project's 404 under the lock); `ExpectProject`; `ListFilter.ProjectOwner` |
-| [internal/project](../../internal/project/service.go) | `Service`: `List`, `Get`, `CreateIn` (with `Input.Owners`, the first Owners), `Replace`, `Delete`, `Members`, `AddMember`, `SetRole`, `RemoveMember`, `MoveRepository`, `LookupPrincipals`; `Member`, `Role` (= `authz.ProjectRole`), `Reference{Kind, Name}` and the kinds `RefVirtualMember`, `RefPinRule`, `RefVirtualDeploymentTarget`, `RefPolicy`, `RefCIMapping`, `RefMember`, `RefDeploymentTarget` |
+| [internal/project](../../internal/project/service.go) | `Service`: `List`, `Get`, `CreateIn` (with `Input.Owners`, the first Owners), `Replace`, `Delete`, `Members`, `AddMember`, `SetRole`, `RemoveMember`, `MoveRepository`, `LookupPrincipals`; `Member`, `Role` (= `authz.ProjectRole`), `Reference{Kind, Name}` and the kinds `RefVirtualMember`, `RefPinRule`, `RefVirtualDeploymentTarget`, `RefPolicy`, `RefCIMapping`, `RefMember`, `RefDeploymentTarget`, `RefGlobalPolicy` |
 
 The functions the management API calls, with their signatures:
 
@@ -68,7 +69,7 @@ SetRole(ctx context.Context, actor authz.Subject, key, ref string, role project.
 RemoveMember(ctx context.Context, actor authz.Subject, key, ref string, bypassLastOwner bool) (int64, error)
 
 // The move (POST /projects/{projectKey}/repositories/{repoKey}/move); the caller decided the permission first.
-MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string) (qname.Repo, int64, error)
+MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string, restricted bool) (qname.Repo, int64, error)
 ```
 
 ### Error codes
@@ -79,7 +80,7 @@ All in [codes.go](../../internal/errs/codes.go).
 |---|---|---|
 | `principal_not_allowed` | 422 field at `/principalRef` | a member that is not a user or a group, an auto-join group, a Bastion registration |
 | `last_owner` | 409 | removing or demoting the last membership with the role `owner` without `projects:write` |
-| `repository_in_use` | 409, member `references: [{kind, name}]` | a move while something of the source project names the repository, or a virtual repository with members or a deployment target |
+| `repository_in_use` | 409, member `references: [{kind, name}]` | a move while something of the source project names the repository, or a virtual repository with members or a deployment target; a restricted move while a key selector of a global policy names it (`global_policy`) |
 | `already_exists` | 409 | a project key that exists; a move into a project that holds the key (also by a repository being deleted); a policy name that exists in its project or instance-wide |
 | `project_not_empty` | 409 | delete of a project with repositories (any lifecycle), service accounts or CI mappings of its tier |
 | `unknown_repository` | 422 field | a key selector that names no repository (in a project policy: of the project) |

@@ -725,6 +725,13 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   (a key selector of the source project's policy, by its name within the project), `ci_mapping` (an inline grant of a mapping of
   the source project's tier names its key), and for a virtual repository that moves `member` and `deployment_target` (its own,
   which keep it from moving).
+- **A global grant does not ride along with an Owner's move.** A caller without `repositories:write-config`, an Owner of both
+  projects, is refused with 409 `repository_in_use` as well while a key selector of a global policy names the repository: the
+  reference has the kind `global_policy` and the name of the global policy. That grant is held by the repository's ID and would
+  follow it into the target project, whose other Owners can neither see nor remove it; an administrator of trove moves the
+  repository, or removes the selector, and the Owner moves it then
+  ([Q-REPO-232](#q-repo-232--an-owners-move-is-refused-while-a-global-policy-names-the-repository-by-key)). A pattern or class
+  selector of a global policy matches by address and refuses no move.
 - **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
   repository's `project_id`, raises its `config_version`, writes the audit event `repository.moved` with the source and the
   target project, and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id
@@ -746,6 +753,10 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
 
 Acceptance criteria:
 
+- An administrator creates the global policy `libs-global` with the key selector `web/npm-libs`; the move of `web/npm-libs` to
+  `mobile` by an Owner of both projects answers 409 `repository_in_use` with `references: [{"kind": "global_policy", "name":
+  "libs-global"}]`, the same move by the administrator answers 200, and with the selector replaced by `web/npm-*` the Owner's
+  move answers 200.
 - An Owner of `web` and of `mobile` moves `web/npm-libs` to `mobile` (200). `npm view @acme/util --registry
   https://trove.example.com/api/npm/web/npm-libs/` then fails with `E404` on every replica, the same command against
   `https://trove.example.com/api/npm/mobile/npm-libs/` shows the versions published before the move, and no blob is
@@ -7106,6 +7117,37 @@ and removing references by hand a burden; then (c) with an explicit `"detach": t
 [authorization.md](authorization.md) R-AUTHZ-004 (key selectors follow the ID), R-AUTHZ-026 (the Owner's table, the audit
 event), R-AUTHZ-031 (the journal); [api-and-ui.md](api-and-ui.md) R-API-007, R-API-022; [bastion.md](bastion.md) R-BAS-015;
 [endpoints.md](endpoints.md) R-EP-006, R-EP-012. Q-AUTHZ-179 and Q-AUTHZ-205 are marked superseded.
+
+### Q-REPO-232 · An Owner's move is refused while a global policy names the repository by key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a key selector of a global policy is stored by the repository's ID and keeps naming the repository when it moves
+([Q-AUTHZ-216](authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)),
+and [Q-REPO-217](#q-repo-217--a-repository-moves-to-another-project-through-an-operation-of-its-own-and-only-while-nothing-of-its-project-names-it)
+checks only what the source project names. An Owner of two projects who moves a repository so carries a grant an administrator
+of trove wrote for one project into the other, where its other Owners neither see the global policy nor can remove it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The grant follows, as for an administrator | Nothing changes | No refusal | An Owner moves an administrator's grant into a project whose Owners did not agree to it and cannot undo it |
+| (b) Refuse every move while a global key selector names it | The kind `global_policy` for every caller | One rule | An administrator who wrote the grant moves the repository with it on purpose, and is the one who could remove it anyway |
+| (c) Refuse an Owner's move without `repositories:write-config` while a global key selector names it (chosen) | 409 `repository_in_use`, kind `global_policy`, the policy's name; an administrator moves it | The grant moves only by the hand of someone who may change it; the Owner learns whom to ask | The Owner learns the name of a global policy on a repository of its project, not its entries |
+| (d) Drop the global grant from the moved repository | The move deletes the selector or the policy's hold on the ID | The Owner is not blocked | A move would rewrite an administrator's policy behind its back, which Q-REPO-217 refused for project objects |
+
+**Choice:** (c). The handler tells the service whether the caller holds `repositories:write-config`
+(`MoveRepository(…, restricted)`); a restricted move lists, after the references of the source project, every global policy
+with a key selector on the repository's ID as `{"kind": "global_policy", "name": "<policy>"}`. A pattern or class selector is
+stored without the ID and refuses nothing. An exposure rule, which also holds the repository by ID
+([endpoints.md](endpoints.md) R-EP-012), refuses nothing either: it is a ceiling and grants no one anything.
+
+**Rationale:** whoever moves a grant into a project should be someone who may change that grant; an administrator of trove is,
+an Owner is not. The policy's name is what the Owner gives the administrator, and it tells no more than that a global policy
+names its own repository. The development agent would revisit this if Owners get a read of the global policies that touch their
+projects, or if exposure rules start to grant.
+
+**Applied in the spec:** R-REPO-060 (the refusal, the kind, the criterion); `api/openapi.yaml` (`moveRepository`,
+`RepositoryReference.kind`).
 
 ## What this does not cover
 
