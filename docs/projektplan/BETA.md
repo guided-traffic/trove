@@ -1090,7 +1090,15 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   disable or deletion revokes, written in batches, and a cleared auto-join flag ([Q-AUTH-198](../spec/identity-and-authentication.md)), a
   repository's disable and deletion ([Q-AUTHZ-238, Q-AUTHZ-239](../spec/authorization.md)); every journaled event has a handler in the
   `trove` binary (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`). The blocks of findings replay since Q-VULN-114 (H-489 narrowed). Narrowings that still write no entry are finding F-72 (H-569)
-- 🟡 E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
+- 🟡 E2E: backup taken during publishing restores with every npm and NuGet file digest-correct. Built on 2026-11-07 (set `backup`,
+  nightly leg `e2e-backup` on `large`, Q-HA-154; [e2e.md](../developer/e2e.md)) and passed on kind locally: `TestBackupDrill` (a backup
+  during 19 npm, 19 NuGet and 19 file publishes with deletes, trashes and a collector at `grace_period: 0s`, restored by the restore Job
+  into a second namespace: 1,036 file items and 1,037 blobs digest-correct, `npm view` and the NuGet version lists equal the restored
+  database, `trove backup verify --deep` exits 0, two overlapping Jobs end one Complete and one exit 3), `TestBackupDrain` (a drain and a
+  `kill -9` during a backup and during a restore, every Job Complete), `TestBackupJournal` (E5.12's token, user, npm withhold and
+  reinstate, NuGet reservation, exposure, storage summary and restore origin), the scenarios 1, 2, 5, 7 and 10 of R-BAK-029 against the
+  integration stack. Open: the first run of the nightly leg; on the cluster E5.12's CI bullets (covered at integration level), the
+  restore across releases and PostgreSQL majors (H-568) and E5.13's restore part (R-VULN-026)
 
 **Helm chart and release**
 - 🟢 Chart complete: values reference and schema, autoscaling, network policies, monitoring integration. Built on 2026-11-07: the values reference is held to `values.yaml` and `values.schema.json` (`TestR_HA_031_ValuesReference`), the Gateway API exposure (`TestR_HA_038_GatewayAPIExposure`), the ServiceMonitor and 23 alerts of the PrometheusRule with promtool tests ([Q-HA-135](../spec/ha-and-helm.md)). The backup CronJob, the restore Job and the post-restore hook Job with their values, schema, validation and Secrets by scope (R-HA-060, R-HA-025), and every alert of R-HA-045 (`TestR_HA_045_PrometheusRule`)
