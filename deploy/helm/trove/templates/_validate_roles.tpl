@@ -26,14 +26,14 @@ root context.
 {{- $dep := printf "%s-%s" $fullname $u.name -}}
 {{- $min := include "trove.unitMinReplicas" $r | int -}}
 {{- $minKey := ternary (printf "%s.autoscaling.minReplicas" $u.key) (printf "%s.replicaCount" $u.key) (dig "autoscaling" "enabled" false $r) -}}
-{{- /* While restore.enabled is set every replica count must be 0 (trove.validateBackup), so the minimums below do not apply (R-HA-029, R-HA-060). */ -}}
-{{- if and (eq $u.kind "main") (lt $min 1) (not $v.restore.enabled) -}}
+{{- /* While restore.enabled or postRestore.enabled is set every replica count must be 0 (trove.validateBackup), so the minimums below do not apply (R-HA-029, R-HA-060). */ -}}
+{{- if and (eq $u.kind "main") (lt $min 1) (not (or $v.restore.enabled $v.postRestore.enabled)) -}}
 {{- if eq $u.role "worker" -}}
 {{- fail (printf "trove: %s must be at least 1; without a worker no scheduled work runs (R-HA-002)" $minKey) -}}
 {{- end -}}
 {{- fail (printf "trove: %s must be at least 1; without a replica the edge has no backend for the families of the role %s (R-HA-002)" $minKey $u.role) -}}
 {{- end -}}
-{{- if and (eq $u.kind "pool") (eq $u.role "worker") (lt $min 1) (not $v.restore.enabled) -}}
+{{- if and (eq $u.kind "pool") (eq $u.role "worker") (lt $min 1) (not (or $v.restore.enabled $v.postRestore.enabled)) -}}
 {{- fail (printf "trove: %s must be at least 1; with no replica the queues %s of the pool are claimed by nobody, because the main worker does not claim them (R-HA-062)" $minKey (join ", " $u.queues)) -}}
 {{- end -}}
 {{- if and $r.podDisruptionBudget.minAvailable $r.podDisruptionBudget.maxUnavailable -}}
@@ -53,7 +53,7 @@ root context.
 {{- end -}}
 {{- end -}}
 {{- if $v.highAvailability.enforce -}}
-{{- if and (lt $min 2) (not $v.restore.enabled) -}}
+{{- if and (lt $min 2) (not (or $v.restore.enabled $v.postRestore.enabled)) -}}
 {{- fail (printf "trove: highAvailability.enforce needs %s of at least 2 (Deployment %s)" $minKey $dep) -}}
 {{- end -}}
 {{- if not $r.podDisruptionBudget.enabled -}}

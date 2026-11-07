@@ -174,6 +174,8 @@ secrets:
     usernameKey: ""
   valkeySentinel:
     existingSecret: trove-valkey-auth
+  backupSource:
+    existingSecret: trove-s3              # the profile has one SeaweedFS login; a production profile gives the backup a login that may only read trove-blobs
   backupTarget:
     existingSecret: trove-s3              # the same SeaweedFS login as the blob store; a production target has keys of its own
   s3CA:

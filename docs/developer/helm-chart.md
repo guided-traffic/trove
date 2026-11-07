@@ -225,10 +225,11 @@ never as an environment variable (the one exception is the non-secret S3 setting
 | `secrets.databaseCA` | `ca.crt` | `/var/run/secrets/trove/database-ca/` | `database.ssl_root_cert_file` | all |
 | `secrets.databaseClientCert` | `tls.crt`, `tls.key` | `/var/run/secrets/trove/database-client/` | `database.ssl_cert_file`, `database.ssl_key_file` | all |
 | `secrets.encryption` | the names in `secrets.encryption.keys` | `/var/run/secrets/trove/encryption/` | `secrets.encryption_key_files` (ordered), `secrets.active_key_id` (first entry without `.key`) | every Deployment, the same Secret (R-HA-027) and the restore Job, which checks that it opens every key ID of the backup (R-BAK-020); the migration Job and the backup pods never mount it (R-HA-030, R-BAK-012) |
-| `secrets.s3` (`source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `..._secret_access_key_file` | every Deployment, the backup pods (they read the blob store) and the restore Job (it writes it) |
+| `secrets.s3` (`source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/s3/` | `storage.s3.credentials.access_key_id_file`, `..._secret_access_key_file` | every Deployment, the restore Job (it writes the bucket) and the post-restore Job; not the backup pods |
 | `secrets.s3CA` | `ca.crt` (the Secret's `key`) | `/var/run/secrets/trove/s3-ca/` | `storage.s3.ca_file` (also refused inside `config`) | every Deployment, the backup pods and the restore Job; never the migration Job |
 | `secrets.backupTarget` (`config.backup.target.credentials.source: static`) | `access-key-id`, `secret-access-key`, `session-token` (with `sessionTokenKey`) | `/var/run/secrets/trove/backup-target/` | `backup.target.credentials.access_key_id_file`, `..._secret_access_key_file`, `..._session_token_file` (all three refused inside `config`) | the backup pods and the restore Job; no Deployment, not the migration Job |
-| `secrets.postRestoreJournal` (`postRestore.journalCredentials.source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/post-restore-journal/` | none; the credentials file names the paths | the post-restore Job only |
+| `secrets.journalReader` (`journalCredentials.source: static` of `postRestore` or `restore`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/journal-reader/` | none; the credentials file names the paths | the post-restore Job and the restore Job only |
+| `secrets.backupSource` (`config.storage.s3.credentials.source: static`) | `access-key-id`, `secret-access-key` | `/var/run/secrets/trove/backup-source/` | `backup.source.credentials.*` and `backup.source.separate_credentials` (refused inside `config`, Q-BAK-49) | the backup pods only; they do not mount `secrets.s3` |
 | `secrets.backupTargetCA` | `ca.crt` (the Secret's `key`) | `/var/run/secrets/trove/backup-target-ca/` | `backup.target.ca_file` (refused inside `config`, Q-HA-146) | the backup pods and the restore Job |
 | `secrets.valkey` | `username` (omit with `usernameKey: ""`), `password` | `/var/run/secrets/trove/valkey/` | `valkey.username_file`, `valkey.password_file` | every Deployment |
 | `secrets.valkeySentinel` | `username` (default: none), `password` | `/var/run/secrets/trove/valkey-sentinel/` | `valkey.sentinel.username_file`, `valkey.sentinel.password_file` | every Deployment |
@@ -448,7 +449,7 @@ tests in `chart_test.go` assert both, row by row.
 | `backup.schedule` outside the dialect of trove's cron parser (six or seven fields, `?`, `L`, `W`, `#`, day of week `7`, `@every`, `@reboot`, `TZ=`, `CRON_TZ=`, an unknown macro) | implemented, the reason named; a value out of range and an expression that never fires are Kubernetes's at apply time |
 | the target on the blob store's bucket and endpoint (the endpoints compared as the binary does, no scheme meaning https) without `allow_same_bucket`, or with one prefix containing the other | implemented, naming both locations |
 | `config.backup.target.credentials.source: static` without `secrets.backupTarget.existingSecret` | implemented, naming both |
-| `postRestore.enabled` without an RFC 3339 `postRestore.restoredTo`, together with `restore.enabled`, or with `journalCredentials.source: static` and no `secrets.postRestoreJournal.existingSecret`; `skipRevocationJournal` with a credentials source | implemented, naming the values |
+| `postRestore.enabled` without an RFC 3339 `postRestore.restoredTo`, together with `restore.enabled`, or with `journalCredentials.source: static` and no `secrets.journalReader.existingSecret`; `skipRevocationJournal` with a credentials source | implemented, naming the values |
 | `restore.enabled` without `restore.backupId` (its form is the command's to check); with a replica count above 0 or an autoscaler on any role, pool, endpoint pool or the bridge | implemented, naming `restore.enabled` and the value; the replica minimums do not apply meanwhile (Q-HA-148) |
 | a chart-managed key of the backup set inside `config` (`backup.manual_run`, `backup.target.ca_file`, the three credential files) | implemented |
 | pooler (`session_host`, control endpoint), the Gateway the chart creates, `contentOrigin` | with those features |
@@ -533,13 +534,16 @@ keeps the old keyspace until it restarts.
 |---|---|
 | `postRestore.restoredTo` | required, RFC 3339; the argument `--restored-to` |
 | `postRestore.skipRevocationJournal` | `--skip-revocation-journal`; refused together with a `journalCredentials.source` other than `runtime` |
-| `postRestore.journalCredentials.source` | `runtime`: no file, the replay lists with the blob store's credential. `default`: the chart renders `credentials.yaml` (`source: default`) into the ConfigMap `<fullname>-post-restore` and passes `--credentials-file`, so the identity of the Job's ServiceAccount lists object versions (`postRestore.serviceAccount.annotations`). `static`: the same file names `secrets.postRestoreJournal` (`access-key-id`, `secret-access-key`), mounted in this Job only |
+| `restore.journalCredentials.source` | the same three sources for the restore Job (`--journal-credentials-file /etc/trove/restore/credentials.yaml`, ConfigMap `<fullname>-restore`), Q-HA-159 |
+| `postRestore.journalCredentials.source` | `runtime`: no file, the replay lists with the blob store's credential. `default`: the chart renders `credentials.yaml` (`source: default`) into the ConfigMap `<fullname>-post-restore` and passes `--credentials-file`, so the identity of the Job's ServiceAccount lists object versions (`postRestore.serviceAccount.annotations`). `static`: the same file names `secrets.journalReader` (`access-key-id`, `secret-access-key`), mounted in this Job only |
 | `postRestore.backoffLimit`, `activeDeadlineSeconds`, `terminationGracePeriodSeconds`, `resources`, `podAnnotations`, `extraEnv`, `serviceAccount.*` | as for the restore Job |
+
+The Job is named `<fullname>-post-restore-<8 hex digits of the sha256 of restoredTo>` and carries the annotation `trove/restored-to`, so the Jobs of two restore points stay visible side by side; a repeat of the same point is a Job of the same name, which Helm replaces and the command answers without running its steps again (Q-HA-161), and NOTES prints a reminder to set `postRestore.enabled` back to false. Every role, pool, endpoint pool and the bridge must be at zero (the rule of `restore.enabled`, H1 of the audit): the hook runs after the Deployments are applied, so a replica would serve the restored database before the journal replay.
 
 The scope `post-restore` of `trove.secretMounts` mounts the owner login (`secrets.databaseMigration`, else `secrets.database`), the CA and
 client certificate of the database, the blob store's keys and CA, and the journal credential; no Valkey Secret, no key ring, nothing of the
 backup target. Validation: `postRestore.restoredTo` must be an RFC 3339 time, `postRestore.enabled` with `restore.enabled` is refused (a
-backup restore runs the clean-up itself), `static` needs `secrets.postRestoreJournal.existingSecret`. Test: `TestR_HA_025_PostRestoreJob`.
+backup restore runs the clean-up itself), `static` needs `secrets.journalReader.existingSecret`. Test: `TestR_HA_025_PostRestoreJob`.
 
 ## The values reference
 

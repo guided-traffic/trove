@@ -967,6 +967,68 @@
           "x-trove-env": "TROVE_BACKUP_RUN_HISTORY",
           "x-trove-type": "duration"
         },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "credentials": {
+              "additionalProperties": false,
+              "properties": {
+                "access_key_id_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_ACCESS_KEY_ID_FILE",
+                  "x-trove-secret": "file-only"
+                },
+                "role_arn": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_ROLE_ARN"
+                },
+                "secret_access_key_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_SECRET_ACCESS_KEY_FILE",
+                  "x-trove-secret": "file-only"
+                },
+                "session_token_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_SESSION_TOKEN_FILE",
+                  "x-trove-secret": "file-only"
+                },
+                "source": {
+                  "default": "default",
+                  "enum": [
+                    "default",
+                    "webIdentity",
+                    "static"
+                  ],
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_SOURCE"
+                },
+                "sts_endpoint": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_STS_ENDPOINT"
+                },
+                "web_identity_token_file": {
+                  "default": "",
+                  "type": "string",
+                  "x-trove-env": "TROVE_BACKUP_SOURCE_CREDENTIALS_WEB_IDENTITY_TOKEN_FILE",
+                  "x-trove-secret": "file-only"
+                }
+              },
+              "type": "object"
+            },
+            "separate_credentials": {
+              "default": false,
+              "description": "Read the blob bucket with backup.source.credentials instead of storage.s3.credentials.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_BACKUP_SOURCE_SEPARATE_CREDENTIALS"
+            }
+          },
+          "type": "object"
+        },
         "stall_timeout": {
           "default": "30m",
           "description": "A run without progress for this long cancels itself and exits 75 (R-BAK-013).",

@@ -474,8 +474,12 @@ secrets:
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
     sessionTokenKey: ""                 # empty = no session token
-  postRestoreJournal:
-    existingSecret: ""                  # required with postRestore.journalCredentials.source static; the post-restore Job only. A login that may list the object versions of the blob bucket (s3:ListBucketVersions), which the runtime credential deliberately lacks (R-HA-023)
+  backupSource:
+    existingSecret: ""                  # required with config.storage.s3.credentials.source static and backup.enabled; the backup pods only. A login that may only read the blob bucket (s3:GetObject, s3:ListBucket), so a compromised backup pod cannot write the blobs or the journal (R-BAK-015)
+    accessKeyIdKey: access-key-id
+    secretAccessKeyKey: secret-access-key
+  journalReader:
+    existingSecret: ""                  # required with journalCredentials.source static of postRestore or restore; those Jobs only. A login that may list the object versions of the blob bucket (s3:ListBucketVersions), which the runtime credential deliberately lacks (R-HA-023)
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
   backupTargetCA:
@@ -706,7 +710,7 @@ postRestore:
   restoredTo: ""                        # required with enabled, the time t the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
   skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
   journalCredentials:
-    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.postRestoreJournal)
+    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.journalReader)
   backoffLimit: 2                       # a retry applies the clean-up again; its steps are safe to repeat
   activeDeadlineSeconds: 0              # 0 = not rendered
   terminationGracePeriodSeconds: 60     # at least 30
@@ -761,6 +765,8 @@ restore:
   backupId: ""                          # required with enabled; example: 20261028T020000Z-7f3a
   skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
   extraArgs: []                         # appended to trove backup restore; example: [--check] for a run of the preconditions only
+  journalCredentials:
+    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.journalReader); anything but runtime keeps a deletion with the runtime credential from hiding a journal entry (R-BAK-015)
   backoffLimit: 2                       # a drain or an eviction is not counted; every retry resumes from the anchor
   activeDeadlineSeconds: 0              # 0 = not rendered
   terminationGracePeriodSeconds: 60     # at least 30

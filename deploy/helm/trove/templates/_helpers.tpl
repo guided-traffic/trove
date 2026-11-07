@@ -272,6 +272,9 @@ the whole of what a replica sees of the target's credentials.
 {{- if .Values.backup.enabled -}}
 {{- $_ := set $bk "manual_run" (dict "namespace" .Release.Namespace "cronjob" (printf "%s-backup" (include "trove.fullname" .))) -}}
 {{- end -}}
+{{- if and .Values.backup.enabled (eq (dig "storage" "s3" "credentials" "source" "" .Values.config) "static") -}}
+{{- $_ := set $bk "source" (dict "separate_credentials" true "credentials" (dict "source" "static" "access_key_id_file" "/var/run/secrets/trove/backup-source/access-key-id" "secret_access_key_file" "/var/run/secrets/trove/backup-source/secret-access-key")) -}}
+{{- end -}}
 {{- if $bk -}}
 {{- $_ := set $managed "backup" $bk -}}
 {{- end -}}

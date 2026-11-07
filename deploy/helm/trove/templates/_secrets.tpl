@@ -38,7 +38,10 @@ backup (R-BAK-020).
 {{- $out = append $out (dict "name" "encryption" "secret" $s.encryption.existingSecret "path" "/var/run/secrets/trove/encryption" "items" $encItems) -}}
 {{- end -}}
 {{- if or (eq .scope "runtime") $ioJob -}}
-{{- if eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static" -}}
+{{- if and (eq .scope "backup") (eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static") -}}
+{{- /* The backup reads the blob bucket and never writes or deletes there (R-BAK-015): it gets the read-only login of secrets.backupSource, not the runtime credential (Q-HA-160). */ -}}
+{{- $out = append $out (dict "name" "backup-source" "secret" $s.backupSource.existingSecret "path" "/var/run/secrets/trove/backup-source" "items" (list (dict "key" $s.backupSource.accessKeyIdKey "path" "access-key-id") (dict "key" $s.backupSource.secretAccessKeyKey "path" "secret-access-key"))) -}}
+{{- else if eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "s3" "secret" $s.s3.existingSecret "path" "/var/run/secrets/trove/s3" "items" (list (dict "key" $s.s3.accessKeyIdKey "path" "access-key-id") (dict "key" $s.s3.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}
 {{- if $s.s3CA.existingSecret -}}
@@ -58,9 +61,12 @@ backup (R-BAK-020).
 {{- $out = append $out (dict "name" "backup-target-ca" "secret" $s.backupTargetCA.existingSecret "path" "/var/run/secrets/trove/backup-target-ca" "items" (list (dict "key" $s.backupTargetCA.key "path" "ca.crt"))) -}}
 {{- end -}}
 {{- end -}}
-{{- if and (eq .scope "post-restore") $s.postRestoreJournal.existingSecret -}}
-{{- /* The credential that lists object versions, for the journal replay only (R-HA-025 step 5, R-HA-023); the runtime credential deliberately lacks it. */ -}}
-{{- $out = append $out (dict "name" "post-restore-journal" "secret" $s.postRestoreJournal.existingSecret "path" "/var/run/secrets/trove/post-restore-journal" "items" (list (dict "key" $s.postRestoreJournal.accessKeyIdKey "path" "access-key-id") (dict "key" $s.postRestoreJournal.secretAccessKeyKey "path" "secret-access-key"))) -}}
+{{- $jcSource := "runtime" -}}
+{{- if eq .scope "post-restore" -}}{{- $jcSource = .root.Values.postRestore.journalCredentials.source -}}{{- end -}}
+{{- if eq .scope "restore" -}}{{- $jcSource = .root.Values.restore.journalCredentials.source -}}{{- end -}}
+{{- if eq $jcSource "static" -}}
+{{- /* The credential that lists object versions, for the journal replay of the post-restore and the restore Job only (R-HA-025 step 5, R-BAK-015, R-HA-023); the runtime credential deliberately lacks it. */ -}}
+{{- $out = append $out (dict "name" "journal-reader" "secret" $s.journalReader.existingSecret "path" "/var/run/secrets/trove/journal-reader" "items" (list (dict "key" $s.journalReader.accessKeyIdKey "path" "access-key-id") (dict "key" $s.journalReader.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}
 {{- if eq .scope "runtime" -}}
 {{- $vkItems := list -}}

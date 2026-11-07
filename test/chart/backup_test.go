@@ -35,6 +35,7 @@ func staticTarget() []string {
 		"secrets.databaseMigration.existingSecret=trove-db-owner",
 		"config.storage.s3.credentials.source=static",
 		"secrets.s3.existingSecret=trove-s3",
+		"secrets.backupSource.existingSecret=trove-blob-read",
 	}
 }
 
@@ -434,6 +435,25 @@ func TestR_HA_060_RestoreJob(t *testing.T) {
 		}
 	})
 
+	t.Run("the journal reader (M3): runtime passes no file; default and static pass the file that turns the listing of versions on", func(t *testing.T) {
+		if hasMount(pod, "/etc/trove/restore") || find(docs, "ConfigMap", "trove-restore") != nil || strings.Contains(strings.Join(containerArgs(pod), " "), "--journal-credentials-file") {
+			t.Error("a credentials file with journalCredentials.source runtime")
+		}
+		_, d := render(t, required(), restoreSets("restore.journalCredentials.source=default")...)
+		if !strings.HasSuffix(strings.Join(containerArgs(restorePod(d)), " "), "--journal-credentials-file /etc/trove/restore/credentials.yaml") || !hasMount(restorePod(d), "/etc/trove/restore") {
+			t.Errorf("args = %v", containerArgs(restorePod(d)))
+		}
+		if cm := str(find(d, "ConfigMap", "trove-restore"), "data", "credentials.yaml"); strings.TrimSpace(cm) != "source: default" {
+			t.Errorf("credentials.yaml = %q", cm)
+		}
+		_, d = render(t, required(), restoreSets("restore.journalCredentials.source=static", "secrets.journalReader.existingSecret=trove-journal")...)
+		if !has2(secretVolumes(restorePod(d)), "trove-journal") || !strings.Contains(str(find(d, "ConfigMap", "trove-restore"), "data", "credentials.yaml"), "journal-reader/access-key-id") {
+			t.Error("static: the journal reader is not mounted or named")
+		}
+		renderFails(t, required(), restoreSets("restore.journalCredentials.source=static"), "restore.journalCredentials.source", "secrets.journalReader.existingSecret")
+		renderFails(t, required(), restoreSets("restore.skipRevocationJournal=true", "restore.journalCredentials.source=default"), "restore.skipRevocationJournal", "journalCredentials")
+	})
+
 	t.Run("it renders also with highAvailability.enforce set, as the sequence of R-HA-060 sets it to false", func(t *testing.T) {
 		render(t, required(), restoreSets("highAvailability.enforce=false")...)
 		render(t, required(), restoreSets("highAvailability.enforce=true")...)
@@ -649,12 +669,12 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 
 	t.Run("the backup pod: the backup login, the blob store's read credential and the target", func(t *testing.T) {
 		v := secretVolumes(backupPod)
-		for _, want := range []string{"trove-db-backup", "trove-s3", "trove-backup-keys", "trove-backup-ca"} {
+		for _, want := range []string{"trove-db-backup", "trove-blob-read", "trove-backup-keys", "trove-backup-ca"} {
 			if !has(v, want) {
 				t.Errorf("the backup pod mounts %v, want %s among them", v, want)
 			}
 		}
-		for _, no := range []string{"trove-db-app", "trove-db-owner", "trove-valkey", "trove-encryption-keys", "trove-tls"} {
+		for _, no := range []string{"trove-db-app", "trove-db-owner", "trove-valkey", "trove-encryption-keys", "trove-tls", "trove-s3"} {
 			if has(v, no) {
 				t.Errorf("the backup pod mounts %s", no)
 			}
@@ -667,6 +687,33 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 				t.Errorf("the backup pod mounts %s", p)
 			}
 		}
+	})
+
+	t.Run("the backup pod reads the blob bucket with its own read-only login, never the runtime credential (R-BAK-015)", func(t *testing.T) {
+		if hasMount(backupPod, "/var/run/secrets/trove/s3/") || !hasMount(backupPod, "/var/run/secrets/trove/backup-source") {
+			t.Errorf("mounts = %v", mountPaths(backupPod))
+		}
+		src := at(configOf(t, docs), "backup", "source")
+		if at(src, "separate_credentials") != true || str(src, "credentials", "source") != "static" ||
+			str(src, "credentials", "access_key_id_file") != "/var/run/secrets/trove/backup-source/access-key-id" ||
+			str(src, "credentials", "secret_access_key_file") != "/var/run/secrets/trove/backup-source/secret-access-key" {
+			t.Errorf("backup.source = %v", src)
+		}
+		for name, pod := range podSpecs(docs) {
+			if has(secretVolumes(pod), "trove-blob-read") {
+				t.Errorf("%s mounts the backup's blob login", name)
+			}
+		}
+		if has(secretVolumes(restore), "trove-blob-read") || !has(secretVolumes(restore), "trove-s3") {
+			t.Errorf("the restore Job writes the blob bucket and needs the runtime credential: %v", secretVolumes(restore))
+		}
+		renderFails(t, required(), []string{"config.storage.s3.credentials.source=static", "secrets.s3.existingSecret=trove-s3"}, "secrets.backupSource.existingSecret", "backup.enabled")
+		render(t, required(), "config.storage.s3.credentials.source=static", "secrets.s3.existingSecret=trove-s3", "backup.enabled=false")
+		_, d := render(t, required())
+		if at(configOf(t, d), "backup", "source") != nil {
+			t.Error("backup.source is rendered without static blob credentials: the backup pod's workload identity reads with storage.s3.credentials")
+		}
+		renderFails(t, required(), []string{"config.backup.source.separate_credentials=true"}, "config.backup.source", "managed by the chart")
 	})
 
 	t.Run("the backup pod without a login of its own uses the runtime login", func(t *testing.T) {

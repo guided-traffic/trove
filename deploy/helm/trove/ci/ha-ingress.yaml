@@ -52,6 +52,8 @@ config:
         allowed_audiences: ["https://packages.example.com"]
         ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
 secrets:
+  backupSource:
+    existingSecret: trove-s3-read              # a login that only reads the blob bucket
   database:
     existingSecret: trove-db-app
   databaseMigration:

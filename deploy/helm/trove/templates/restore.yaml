@@ -13,6 +13,9 @@ backup account nor the replicas' account holds the rights of a restore (R-BAK-01
 {{- if $r.skipRevocationJournal }}
 {{- $args = append $args "--skip-revocation-journal" }}
 {{- end }}
+{{- if and (not $r.skipRevocationJournal) (ne $r.journalCredentials.source "runtime") }}
+{{- $args = concat $args (list "--journal-credentials-file" "/etc/trove/restore/credentials.yaml") }}
+{{- end }}
 {{- $args = concat $args $r.extraArgs }}
 {{- if $r.serviceAccount.create }}
 ---
@@ -27,6 +30,10 @@ metadata:
     {{- toYaml (merge (dict) $r.serviceAccount.annotations .Values.commonAnnotations) | nindent 4 }}
   {{- end }}
 automountServiceAccountToken: false
+{{- end }}
+{{- if and (not $r.skipRevocationJournal) (ne $r.journalCredentials.source "runtime") }}
+---
+{{ include "trove.journalCredentialsConfigMap" (dict "root" . "kind" "restore" "values" $r) }}
 {{- end }}
 ---
 apiVersion: batch/v1

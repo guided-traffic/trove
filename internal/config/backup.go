@@ -25,6 +25,7 @@ type Backup struct {
 	VerifySample      int                     `yaml:"verify_sample" default:"1000" validate:"min=0" doc:"Pool objects HEAD-checked before each manifest."`
 	RunHistory        time.Duration           `yaml:"run_history" default:"2160h" validate:"min=1h" doc:"backup_run rows older than this are deleted by the next run."`
 	RevocationJournal BackupRevocationJournal `yaml:"revocation_journal"`
+	Source            BackupSource            `yaml:"source"`
 	RecoveryWindow    time.Duration           `yaml:"recovery_window" default:"0s" validate:"min=0s" doc:"The point-in-time recovery window the platform keeps (R-HA-023); 0s is undeclared. The task backup-check verifies it and a replica refuses to start when it exceeds storage.gc.grace_period without object_versioning (R-HA-024)."`
 	ObjectVersioning  bool                    `yaml:"object_versioning" default:"false" doc:"Asserts that the blob bucket is versioned and keeps noncurrent versions for at least recovery_window (R-HA-023)."`
 }
@@ -43,6 +44,15 @@ type BackupTarget struct {
 	AllowSameBucket       bool                 `yaml:"allow_same_bucket" default:"false" doc:"Allows the target on the blob store's endpoint and bucket, for single-bucket evaluation setups; the prefixes still must not contain each other (R-BAK-002)."`
 	Credentials           StorageS3Credentials `yaml:"credentials"`
 	SSE                   BackupSSE            `yaml:"sse"`
+}
+
+// BackupSource is the credential with which the backup reads the blob bucket (R-BAK-015: the backup never writes or deletes
+// there). Without separate_credentials the backup reads with storage.s3.credentials, which is the right choice for a
+// workload identity of the backup's ServiceAccount; with static keys the chart sets it, so the backup pod does not mount the
+// runtime credential (Q-BAK-49).
+type BackupSource struct {
+	SeparateCredentials bool                 `yaml:"separate_credentials" default:"false" doc:"Read the blob bucket with backup.source.credentials instead of storage.s3.credentials."`
+	Credentials         StorageS3Credentials `yaml:"credentials"`
 }
 
 // BackupSSE is the server-side encryption of the target (R-BAK-026). The default is s3, unlike the blob store's none.
@@ -104,6 +114,9 @@ func (b *Backup) Validate(r *Report) {
 	}
 	if b.Database.MigrationWait >= b.StallTimeout {
 		r.Add("database.migration_wait", "(%s) must stay below backup.stall_timeout (%s)", b.Database.MigrationWait, b.StallTimeout)
+	}
+	if s := b.Source; s.SeparateCredentials && s.Credentials.Source == "static" && (s.Credentials.AccessKeyIDFile == "" || s.Credentials.SecretAccessKeyFile == "") {
+		r.Add("source.credentials", "source static needs access_key_id_file and secret_access_key_file")
 	}
 	checkKeyPrefix(r, "target.prefix", b.Target.Prefix)
 	t := b.Target

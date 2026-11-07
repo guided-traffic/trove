@@ -79,7 +79,11 @@ func (c *commandCreator) Create(ctx context.Context, opts backup.CreateOptions) 
 	}
 	defer db.Close()
 	factory := outbound.New(cfg.Proxy.Outbound)
-	blobs, err := s3.NewFromFactory(ctx, cfg.Storage.S3, factory)
+	sourceCfg := cfg.Storage.S3
+	if cfg.Backup.Source.SeparateCredentials {
+		sourceCfg.Credentials = cfg.Backup.Source.Credentials
+	}
+	blobs, err := s3.NewFromFactory(ctx, sourceCfg, factory)
 	if err != nil {
 		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, fmt.Errorf("storage.s3: %w", err))
 	}

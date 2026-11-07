@@ -8,8 +8,9 @@ as the contracts fix them and marks what a later work package still has to build
 
 | Principal | Holds | Never holds |
 |---|---|---|
-| `backup` pod | the target writer credential, a blob reader, the `backup` database role (`SELECT` everywhere, writes on `backup_run` and `backup_blob_pin`) | Valkey credentials, the key ring, the right to write blobs |
-| restore Job | the target reader, a blob writer, the journal reader, the owner database credential, the key ring | Valkey credentials |
+| `backup` pod | the target writer credential, a read-only blob login of its own (`secrets.backupSource`, or the backup ServiceAccount's workload identity), the `backup` database role (`SELECT` everywhere, writes on `backup_run` and `backup_blob_pin`) | Valkey credentials, the key ring, the runtime credential of the blob bucket, any right to write or delete there |
+| restore Job | the target reader, a blob writer (the runtime credential), the journal reader (`restore.journalCredentials`: a credential that lists object versions), the owner database credential, the key ring | Valkey credentials |
+| post-restore Job | the owner database credential, the blob store's keys, the journal reader (`postRestore.journalCredentials`) | Valkey credentials, the key ring, any target credential |
 | `web` and `worker` replicas | `backup.expected_interval` and `backup.manual_run`, read access to `backup_run` through the API | any target credential |
 
 The configuration keeps the split: `backup.target.credentials` is a section the chart renders into backup and restore pods only
@@ -32,6 +33,9 @@ The chart gives each Job its own pod template and the Secrets of its scope only 
 | Mechanism | Effect | Test |
 |---|---|---|
 | `secrets.backupTarget` and `secrets.backupTargetCA` mount in the scopes `backup` and `restore` | no `api`, `packages` or `worker` pod and not the migration Job has a file or a variable with the target's credentials; the shared `trove.yaml` names the paths and nothing exists under them there | `TestR_HA_030_BackupSecrets` (every value set) |
+| `secrets.backupSource` replaces `secrets.s3` in the backup scope; the config key `backup.source` makes `trove backup create` read the bucket with it | a compromised backup pod cannot write blobs or the journal (R-BAK-015); with a workload identity there is nothing to mount | `TestR_HA_030_BackupSecrets` |
+| `restore.journalCredentials` and `postRestore.journalCredentials` render the credentials file that turns the listing of object versions on | a deletion or delete marker set with the runtime credential cannot hide a journal entry from a restore | `TestR_HA_060_RestoreJob`, `TestR_HA_025_PostRestoreJob` |
+| the replica rule of `restore.enabled` also holds for `postRestore.enabled` | no replica serves the restored database before the clean-up has replayed the journal | `TestR_HA_025_PostRestoreJob` |
 | Valkey Secrets mount in neither Job; the key ring only in the restore Job | a compromised backup pod holds no Valkey credential and no key ring (R-BAK-012) | `TestR_HA_030_BackupSecrets` |
 | `secrets.databaseBackup` for the backup pod, the migration login for the restore Job | the backup pod can use the `backup` role (`database.backup_role`) and the owner credential reaches only the Job that needs it | `TestR_HA_030_BackupSecrets` |
 | a ServiceAccount per Job, no token mounted | a workload identity maps each Job to a cloud role of its own; neither Job can call the Kubernetes API | `TestR_HA_060_BackupCronJob`, `TestR_HA_060_RestoreJob` |

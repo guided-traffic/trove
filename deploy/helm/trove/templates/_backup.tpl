@@ -30,7 +30,7 @@ podFailurePolicy:
 {{/*
 The pod template of a Job. Argument: dict "root" . "kind" "backup" | "restore" | "post-restore" "key" <the values key, kind
 unless "postRestore"> "args" <list of container arguments>. The post-restore Job also mounts the credentials file that the chart
-renders for the journal replay (templates/post-restore.yaml).
+renders for the journal replay (templates/restore.yaml, templates/post-restore.yaml).
 */}}
 {{- define "trove.jobPod" -}}
 {{- $ := .root -}}
@@ -108,9 +108,9 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
-        {{- if and (eq $kind "post-restore") (ne $r.journalCredentials.source "runtime") }}
+        {{- if and (has $kind (list "restore" "post-restore")) (ne $r.journalCredentials.source "runtime") }}
         - name: journal-credentials
-          mountPath: /etc/trove/post-restore
+          mountPath: /etc/trove/{{ $kind }}
           readOnly: true
         {{- end }}
         {{- include "trove.secretVolumeMounts" (dict "root" $ "scope" $kind) | nindent 8 }}
@@ -121,10 +121,36 @@ spec:
     - name: tmp
       emptyDir:
         sizeLimit: {{ $.Values.backup.tmpSizeLimit }}
-    {{- if and (eq $kind "post-restore") (ne $r.journalCredentials.source "runtime") }}
+    {{- if and (has $kind (list "restore" "post-restore")) (ne $r.journalCredentials.source "runtime") }}
     - name: journal-credentials
       configMap:
-        name: {{ include "trove.fullname" $ }}-post-restore
+        name: {{ include "trove.fullname" $ }}-{{ $kind }}
     {{- end }}
     {{- include "trove.secretVolumes" (dict "root" $ "scope" $kind) | nindent 4 }}
+{{- end -}}
+
+{{/*
+The credentials file of --credentials-file and --journal-credentials-file (internal/journal/replay LoadCredentials), a ConfigMap
+<fullname>-<kind>. The file is what turns the listing of object versions on, so a delete marker or a deletion by the holder of the
+runtime credential cannot hide a journal entry (R-HA-054); the source default lets the Job's workload identity do it, static reads
+secrets.journalReader. Argument: dict "root" . "kind" "restore" | "post-restore" "values" <the Job's values>.
+*/}}
+{{- define "trove.journalCredentialsConfigMap" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "trove.fullname" .root }}-{{ .kind }}
+  labels:
+    {{- include "trove.labels" (dict "root" .root "component" .kind) | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" .root) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  credentials.yaml: |
+    source: {{ .values.journalCredentials.source }}
+    {{- if eq .values.journalCredentials.source "static" }}
+    access_key_id_file: /var/run/secrets/trove/journal-reader/access-key-id
+    secret_access_key_file: /var/run/secrets/trove/journal-reader/secret-access-key
+    {{- end }}
 {{- end -}}

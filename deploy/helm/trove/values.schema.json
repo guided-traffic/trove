@@ -2725,7 +2725,22 @@
           },
           "additionalProperties": false
         },
-        "postRestoreJournal": {
+        "journalReader": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "accessKeyIdKey": {
+              "type": "string"
+            },
+            "secretAccessKeyKey": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "backupSource": {
           "type": "object",
           "properties": {
             "existingSecret": {
@@ -3905,6 +3920,20 @@
           "items": {
             "type": "object"
           }
+        },
+        "journalCredentials": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "runtime",
+                "default",
+                "static"
+              ]
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

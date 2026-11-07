@@ -4100,8 +4100,12 @@ secrets:
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
     sessionTokenKey: ""                 # empty = no session token
-  postRestoreJournal:
-    existingSecret: ""                  # required with postRestore.journalCredentials.source static; the post-restore Job only. A login that may list the object versions of the blob bucket (s3:ListBucketVersions), which the runtime credential deliberately lacks (R-HA-023)
+  backupSource:
+    existingSecret: ""                  # required with config.storage.s3.credentials.source static and backup.enabled; the backup pods only. A login that may only read the blob bucket (s3:GetObject, s3:ListBucket), so a compromised backup pod cannot write the blobs or the journal (R-BAK-015, Q-HA-160)
+    accessKeyIdKey: access-key-id
+    secretAccessKeyKey: secret-access-key
+  journalReader:
+    existingSecret: ""                  # required with journalCredentials.source static of postRestore or restore; those Jobs only. A login that may list the object versions of the blob bucket (s3:ListBucketVersions), which the runtime credential deliberately lacks (R-HA-023)
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
   backupTargetCA:
@@ -4298,7 +4302,7 @@ postRestore:
   restoredTo: ""                        # required with enabled, the time t the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
   skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
   journalCredentials:
-    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.postRestoreJournal) (Q-HA-150)
+    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.journalReader) (Q-HA-150)
   backoffLimit: 2                       # a retry applies the clean-up again; its steps are safe to repeat
   activeDeadlineSeconds: 0              # 0 = not rendered
   terminationGracePeriodSeconds: 60     # at least 30
@@ -4353,6 +4357,8 @@ restore:
   backupId: ""                          # required with enabled; example: 20261028T020000Z-7f3a
   skipRevocationJournal: false          # only when the source bucket is gone (R-BAK-024, H-37)
   extraArgs: []                         # example: [--check] for a dry run of the preconditions (R-BAK-020)
+  journalCredentials:
+    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.journalReader); anything but runtime keeps a deletion with the runtime credential from hiding a journal entry (R-BAK-015, Q-HA-159)
   backoffLimit: 2                       # evictions are not counted, every retry resumes (R-BAK-021)
   activeDeadlineSeconds: 0              # 0 = not rendered
   terminationGracePeriodSeconds: 60     # at least 30; time to stop at the next safe point (Q-HA-147)
@@ -8320,6 +8326,49 @@ edge's limit (then the cause is elsewhere) or when a client waits longer than 90
 **Applied:** `deploy/dev/haproxy-values.yaml` (`timeout-keep-alive: 90s`), `test/e2e/clients/fwd/main.go` (closing line, tests in `main_test.go`),
 [developer/e2e.md](../developer/e2e.md) (forwarder), F-70 in [projektplan/promt.md](../projektplan/promt.md). No requirement text changed.
 
+### Q-HA-159 · The restore Job has a journal reader of its own, switched on by a credentials file
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decouple the listing of versions from the credentials file in `journal/replay/open.go` | The restore lists versions whenever the bucket is versioned | No chart value | The listing needs `s3:ListBucketVersions`, which the runtime credential lacks on purpose, so a restore would fail on a bucket that is not versioned or on a runtime credential; the file is the operator's statement that the credential may list |
+| (b) `restore.journalCredentials.source` (`runtime`, `default`, `static`) mirroring `postRestore`, rendering the file for `--journal-credentials-file` (chosen) | A workload identity of the restore ServiceAccount (`default`) or `secrets.journalReader` (`static`) lists versions | `open.go` is unchanged: a file with `source: default` already means "list versions with the identity of the pod"; one mechanism for both Jobs | The default stays `runtime`, so an operator must choose |
+
+**Choice:** (b). `secrets.journalReader` serves both Jobs (renamed from `postRestoreJournal`).
+
+**Rationale:** The runtime credential needs `DeleteObject` for garbage collection, so its holder can remove a journal entry; only a reader that lists versions sees through that (R-BAK-015, R-BAK-024). The development agent would revisit this when the restore command can detect a versioned bucket and refuse `runtime` itself.
+
+**Applied:** R-HA-060, R-BAK-024; `templates/restore.yaml`, `templates/_backup.tpl`, `templates/_secrets.tpl`, `templates/_validate_backup.tpl`.
+
+### Q-HA-160 · The backup pod reads the blob bucket with a login of its own when the blob credentials are static
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The backup pod mounts `secrets.s3` | As before | No new value | The runtime credential can write and delete in the bucket and the journal: a compromised backup pod could rewrite journal entries (R-BAK-015: the backup never writes or deletes there) |
+| (b) `secrets.backupSource`, required with static blob credentials and `backup.enabled`; the chart renders `backup.source` (chosen) | The backup scope mounts the read-only login instead; the restore Job and the replicas keep `secrets.s3` | The backup holds what R-BAK-015 says; a workload identity needs nothing | An installation with static keys needs a second login (the dev profile names the same Secret) |
+
+**Choice:** (b), with the config key of [Q-BAK-49](backup-and-restore.md#q-bak-49--the-backup-reads-the-blob-bucket-with-backupsourcecredentials-when-separate_credentials-is-set).
+
+**Rationale:** No fallback to `secrets.s3`: a missing Secret fails the render naming both values. The development agent would revisit this when the bucket policy of the profile can express a read-only login.
+
+**Applied:** R-HA-030 (Secrets table), R-HA-031, R-BAK-015; `templates/_secrets.tpl`, `templates/_helpers.tpl`, `templates/_validate_backup.tpl`.
+
+### Q-HA-161 · The post-restore Job is refused beside replicas and named after its restore point
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) As before: a hook with a fixed name, replicas allowed | Operators stop the roles by hand | No rule | A hook runs after the Deployments are applied, so `api` and `packages` roll onto the restored database and serve revoked access before the replay |
+| (b) The replica rule of `restore.enabled` for `postRestore.enabled`, and the Job named `<fullname>-post-restore-<hash of restoredTo>` with the annotation `trove/restored-to` (chosen) | Roles at zero, every kind of Deployment; a repeat of the same point is a visible Job of the same name; the command turns it into a no-op | A second upgrade with the flag left on cannot rotate the keyspace under running pods | Helm replaces a hook of the same name, so the no-op is the command's (it stores the restore point it cleaned up for) |
+
+**Choice:** (b). The command is expected to answer a `--restored-to` equal to the one it already cleaned up for with exit 0 and a line saying so, and to run again for another time; the chart cannot make a Job run once.
+
+**Applied:** R-HA-025 step 1 and 4, R-HA-029; `templates/post-restore.yaml`, `templates/_validate_backup.tpl`, `templates/_validate_roles.tpl`, `templates/_notes.tpl`.
+
 ### Q-HA-150 · The post-restore Job is a post-upgrade hook with a credentials file the chart renders
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -8327,7 +8376,7 @@ Status: **Decided by the development agent** — selected from the options below
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) Only the one-off pod of R-HA-025 (`kubectl run … -- trove admin post-restore …`) | The chart renders nothing | No chart code | The pod needs the release's configuration, the owner login, the blob store's CA and the journal credential, which the operator would assemble by hand and get wrong under the pressure of a restore |
-| (b) A hook Job `<fullname>-post-restore` with `postRestore.enabled` and `restoredTo`, `post-install,post-upgrade`, Secrets of its scope, and `postRestore.journalCredentials.source` (`runtime`, `default`, `static`) that renders the YAML file of `--credentials-file` (chosen) | Helm waits for it and fails the upgrade when it fails; the owner login of the migration Job, the blob store and, for the journal, the credential that lists object versions reach this Job only; `static` mounts `secrets.postRestoreJournal`, `default` uses the Job's workload identity | The credentials file is chart-written, not the operator's | Four values more than the spec's two |
+| (b) A hook Job `<fullname>-post-restore` with `postRestore.enabled` and `restoredTo`, `post-install,post-upgrade`, Secrets of its scope, and `postRestore.journalCredentials.source` (`runtime`, `default`, `static`) that renders the YAML file of `--credentials-file` (chosen) | Helm waits for it and fails the upgrade when it fails; the owner login of the migration Job, the blob store and, for the journal, the credential that lists object versions reach this Job only; `static` mounts `secrets.journalReader`, `default` uses the Job's workload identity | The credentials file is chart-written, not the operator's | Four values more than the spec's two |
 | (c) Run it inside the restore Job | One Job | The restore Job already does it for a backup restore (R-BAK-021) | A platform restore has no restore Job, and the clean-up must run while the roles are at zero, before the upgrade that starts them |
 
 **Choice:** (b), with `backoffLimit` 2, because the fix-ups are one transaction and a repeated replay reports its entries as already in effect.

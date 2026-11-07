@@ -10,6 +10,8 @@ object versions (postRestore.journalCredentials). It mounts no Valkey Secret, no
 {{- $fullname := include "trove.fullname" . }}
 {{- $r := .Values.postRestore }}
 {{- $credFile := "/etc/trove/post-restore/credentials.yaml" }}
+{{- /* One Job per restore point, so a Job of an earlier point stays visible beside it; the same point is a repeat, which the command answers without running its steps again (Q-HA-161). */ -}}
+{{- $jobName := printf "%s-post-restore-%s" $fullname (trunc 8 (sha256sum $r.restoredTo)) }}
 {{- $args := list "admin" "post-restore" "--restored-to" $r.restoredTo }}
 {{- if $r.skipRevocationJournal }}
 {{- $args = append $args "--skip-revocation-journal" }}
@@ -32,32 +34,17 @@ automountServiceAccountToken: false
 {{- end }}
 {{- if and (not $r.skipRevocationJournal) (ne $r.journalCredentials.source "runtime") }}
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ $fullname }}-post-restore
-  labels:
-    {{- include "trove.labels" (dict "root" . "component" "post-restore") | nindent 4 }}
-  {{- with (include "trove.commonAnnotations" .) }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
-data:
-  credentials.yaml: |
-    source: {{ $r.journalCredentials.source }}
-    {{- if eq $r.journalCredentials.source "static" }}
-    access_key_id_file: /var/run/secrets/trove/post-restore-journal/access-key-id
-    secret_access_key_file: /var/run/secrets/trove/post-restore-journal/secret-access-key
-    {{- end }}
+{{ include "trove.journalCredentialsConfigMap" (dict "root" . "kind" "post-restore" "values" $r) }}
 {{- end }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $fullname }}-post-restore
+  name: {{ $jobName }}
   labels:
     {{- include "trove.labels" (dict "root" . "component" "post-restore") | nindent 4 }}
   annotations:
+    trove/restored-to: {{ $r.restoredTo | quote }}
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "0"
     helm.sh/hook-delete-policy: before-hook-creation

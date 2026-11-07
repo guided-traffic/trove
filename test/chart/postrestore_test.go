@@ -3,6 +3,7 @@
 package chart_test
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -10,18 +11,31 @@ import (
 const restoredTo = "2026-10-28T09:15:00Z"
 
 func postRestoreSets(extra ...string) []string {
-	return append([]string{"postRestore.enabled=true", "postRestore.restoredTo=" + restoredTo}, extra...)
+	return append([]string{
+		"postRestore.enabled=true", "postRestore.restoredTo=" + restoredTo,
+		"api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0",
+	}, extra...)
+}
+
+// postRestoreJob finds the hook Job, named after the restore point (Q-HA-161).
+func postRestoreJob(docs []doc) doc {
+	for _, d := range ofKind(docs, "Job") {
+		if strings.HasPrefix(str(d, "metadata", "name"), "trove-post-restore-") {
+			return d
+		}
+	}
+	return nil
 }
 
 func postRestorePod(docs []doc) any {
-	return at(find(docs, "Job", "trove-post-restore"), "spec", "template", "spec")
+	return at(postRestoreJob(docs), "spec", "template", "spec")
 }
 
 // TestR_HA_025_PostRestoreJob (R-HA-025 step 4, R-HA-030, R-HA-042): the hook Job that runs trove admin post-restore.
 func TestR_HA_025_PostRestoreJob(t *testing.T) {
 	t.Run("nothing is rendered without postRestore.enabled", func(t *testing.T) {
 		_, docs := render(t, required())
-		for _, c := range [][2]string{{"Job", "trove-post-restore"}, {"ServiceAccount", "trove-post-restore"}, {"NetworkPolicy", "trove-post-restore"}, {"ConfigMap", "trove-post-restore"}} {
+		for _, c := range [][2]string{{"ServiceAccount", "trove-post-restore"}, {"NetworkPolicy", "trove-post-restore"}, {"ConfigMap", "trove-post-restore"}} {
 			if find(docs, c[0], c[1]) != nil {
 				t.Errorf("%s %s rendered with postRestore.enabled: false", c[0], c[1])
 			}
@@ -29,7 +43,7 @@ func TestR_HA_025_PostRestoreJob(t *testing.T) {
 	})
 
 	_, docs := render(t, required(), postRestoreSets()...)
-	job := find(docs, "Job", "trove-post-restore")
+	job := postRestoreJob(docs)
 	if job == nil {
 		t.Fatal("no Job trove-post-restore")
 	}
@@ -87,7 +101,7 @@ func TestR_HA_025_PostRestoreJob(t *testing.T) {
 	})
 
 	t.Run("the Secrets of its scope: the owner login, the blob store; no Valkey, no key ring, nothing of the target", func(t *testing.T) {
-		_, d := render(t, required(), postRestoreSets(append(staticTarget(), "secrets.postRestoreJournal.existingSecret=trove-journal", "postRestore.journalCredentials.source=static")...)...)
+		_, d := render(t, required(), postRestoreSets(append(staticTarget(), "secrets.journalReader.existingSecret=trove-journal", "postRestore.journalCredentials.source=static")...)...)
 		v := secretVolumes(postRestorePod(d))
 		has := func(s string) bool {
 			for _, x := range v {
@@ -109,7 +123,7 @@ func TestR_HA_025_PostRestoreJob(t *testing.T) {
 		}
 		// The journal credential reaches this Job and no other pod.
 		for name, p := range podSpecs(d) {
-			if name != "trove-post-restore" && has2(secretVolumes(p), "trove-journal") {
+			if !strings.HasPrefix(name, "trove-post-restore") && has2(secretVolumes(p), "trove-journal") {
 				t.Errorf("%s mounts the journal credential", name)
 			}
 		}
@@ -131,9 +145,9 @@ func TestR_HA_025_PostRestoreJob(t *testing.T) {
 		if strings.TrimSpace(cm) != "source: default" {
 			t.Errorf("credentials.yaml = %q", cm)
 		}
-		_, d = render(t, required(), postRestoreSets("postRestore.journalCredentials.source=static", "secrets.postRestoreJournal.existingSecret=trove-journal")...)
+		_, d = render(t, required(), postRestoreSets("postRestore.journalCredentials.source=static", "secrets.journalReader.existingSecret=trove-journal")...)
 		cm = str(find(d, "ConfigMap", "trove-post-restore"), "data", "credentials.yaml")
-		for _, want := range []string{"source: static", "access_key_id_file: /var/run/secrets/trove/post-restore-journal/access-key-id", "secret_access_key_file: /var/run/secrets/trove/post-restore-journal/secret-access-key"} {
+		for _, want := range []string{"source: static", "access_key_id_file: /var/run/secrets/trove/journal-reader/access-key-id", "secret_access_key_file: /var/run/secrets/trove/journal-reader/secret-access-key"} {
 			if !strings.Contains(cm, want) {
 				t.Errorf("credentials.yaml lacks %q: %s", want, cm)
 			}
@@ -143,14 +157,44 @@ func TestR_HA_025_PostRestoreJob(t *testing.T) {
 		}
 	})
 
+	t.Run("L3: one Job per restore point, annotated with it, and a repeat is announced", func(t *testing.T) {
+		name := str(job, "metadata", "name")
+		if len(name) != len("trove-post-restore-")+8 || str(job, "metadata", "annotations", "trove/restored-to") != restoredTo {
+			t.Errorf("job %q, annotation %q", name, str(job, "metadata", "annotations", "trove/restored-to"))
+		}
+		_, d := render(t, required(), postRestoreSets()...)
+		if str(postRestoreJob(d), "metadata", "name") != name {
+			t.Error("the same restore point gives another name")
+		}
+		_, d = render(t, required(), "postRestore.enabled=true", "postRestore.restoredTo=2026-10-29T09:15:00Z", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0")
+		if str(postRestoreJob(d), "metadata", "name") == name {
+			t.Error("another restore point gives the same name")
+		}
+		notes := notesOf(t, required(), postRestoreSets()...)
+		if !strings.Contains(notes, "postRestore.enabled is true") || !strings.Contains(notes, restoredTo) {
+			t.Errorf("NOTES does not announce the hook:\n%s", notes)
+		}
+	})
+
+	t.Run("H1: no replica serves the restored database before the clean-up", func(t *testing.T) {
+		for _, v := range []string{"api", "packages", "worker"} {
+			renderFails(t, required(), append(postRestoreSets(), v+".replicaCount=2"), "postRestore.enabled", v+".replicaCount")
+		}
+		renderFails(t, required(), append(postRestoreSets(), "packages.autoscaling.enabled=true"), "postRestore.enabled", "packages.autoscaling.enabled")
+		renderFails(t, []string{filepath.Join(chartDir, "ci", "roles-pools.yaml")}, postRestoreSets("packages.autoscaling.enabled=false"), "postRestore.enabled", ".pools[")
+		render(t, required(), postRestoreSets("highAvailability.enforce=true")...)
+		// Without the hook the roles keep their minimums.
+		renderFails(t, required(), []string{"api.replicaCount=0"}, "api.replicaCount")
+	})
+
 	t.Run("validation names the value", func(t *testing.T) {
-		renderFails(t, required(), []string{"postRestore.enabled=true"}, "postRestore.restoredTo")
-		renderFails(t, required(), []string{"postRestore.enabled=true", "postRestore.restoredTo=yesterday"}, "postRestore.restoredTo", "RFC 3339")
-		renderFails(t, required(), postRestoreSets("postRestore.journalCredentials.source=static"), "postRestore.journalCredentials.source", "secrets.postRestoreJournal.existingSecret")
+		renderFails(t, required(), []string{"postRestore.enabled=true", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0"}, "postRestore.restoredTo")
+		renderFails(t, required(), []string{"postRestore.enabled=true", "postRestore.restoredTo=yesterday", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0"}, "postRestore.restoredTo", "RFC 3339")
+		renderFails(t, required(), postRestoreSets("postRestore.journalCredentials.source=static"), "postRestore.journalCredentials.source", "secrets.journalReader.existingSecret")
 		renderFails(t, required(), postRestoreSets("postRestore.skipRevocationJournal=true", "postRestore.journalCredentials.source=default"), "postRestore.skipRevocationJournal", "journalCredentials")
 		renderFails(t, required(), append(restoreSets(), "postRestore.enabled=true", "postRestore.restoredTo="+restoredTo), "postRestore.enabled", "restore.enabled")
 		renderFails(t, required(), postRestoreSets("postRestore.terminationGracePeriodSeconds=5"), "terminationGracePeriodSeconds")
-		render(t, required(), "postRestore.enabled=true", "postRestore.restoredTo=2026-10-28T11:15:00.5+02:00")
+		render(t, required(), "postRestore.enabled=true", "postRestore.restoredTo=2026-10-28T11:15:00.5+02:00", "api.replicaCount=0", "packages.replicaCount=0", "worker.replicaCount=0")
 	})
 
 	t.Run("a typo in the values is refused", func(t *testing.T) {

@@ -206,6 +206,12 @@ func TestBackupCommands(t *testing.T) {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
 	})
+	t.Run("R-BAK-015 a separate source credential with static keys but no files exits 2 and names the key", func(t *testing.T) {
+		code, _, stderr := runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=b", "TROVE_BACKUP_SOURCE_SEPARATE_CREDENTIALS=true", "TROVE_BACKUP_SOURCE_CREDENTIALS_SOURCE=static"), "backup", "list")
+		if code != 2 || !strings.Contains(stderr, "backup.source.credentials") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
 	t.Run("R-BAK-020 usage errors are exit 2", func(t *testing.T) {
 		for _, args := range [][]string{
 			{"backup"},

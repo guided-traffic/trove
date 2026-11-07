@@ -21,6 +21,11 @@ The cut into roles is not complete (step 1 of 3): web.enabled is true, so {{ $fu
 The cut into roles is not complete (step 2 of 3): the edge routes to {{ $fullname }}-api and {{ $fullname }}-packages, and {{ $fullname }}-web and the Service {{ $fullname }} still run without edge traffic. Move in-cluster callers to the Services {{ $fullname }}-api and {{ $fullname }}-packages, then run step 3: helm upgrade with web.enabled: false (the default), which removes them (R-HA-064).
 {{- end }}
 
+{{- if .Values.postRestore.enabled }}
+
+postRestore.enabled is true: the hook Job {{ $fullname }}-post-restore-* cleans up after the platform restore to {{ .Values.postRestore.restoredTo }} (R-HA-025). Leave every role at zero until it has succeeded, then run helm upgrade with postRestore.enabled: false (the default) and the normal replica counts. A further upgrade with postRestore.enabled left on repeats the same restore point, which the command answers without running its steps again; a different postRestore.restoredTo runs them.
+{{- end }}
+
 Roles
   api        Service {{ $fullname }}-api:{{ .Values.service.port }}        UI, management API, sign-in, CI exchange
   packages   Service {{ $fullname }}-packages:{{ .Values.service.port }}   package protocols and raw files

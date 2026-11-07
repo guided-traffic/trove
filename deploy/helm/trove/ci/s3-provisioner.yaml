@@ -25,6 +25,8 @@ config:
 tls:
   secretName: trove-tls
 secrets:
+  backupSource:
+    existingSecret: trove-s3-read              # a login that only reads the blob bucket
   database:
     existingSecret: trove-db-app
   s3:

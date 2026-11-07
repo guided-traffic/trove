@@ -107,14 +107,15 @@ the day of week 7 is not supported; Sunday is 0
 {{- fail "trove: restore.backupId is required while restore.enabled is true (example: 20261028T020000Z-7f3a, an ID that trove backup list prints)" -}}
 {{- end -}}
 
-{{- /* Nothing may write to the installation during a restore (R-HA-029, R-HA-060). */ -}}
-{{- if $r.enabled -}}
+{{- /* Nothing may write to the installation, and no replica may serve it, while a restore runs or its clean-up has not (R-HA-029, R-HA-060, R-HA-025 step 1). */ -}}
+{{- if or $r.enabled $v.postRestore.enabled -}}
+{{- $by := ternary "restore.enabled" "postRestore.enabled" $r.enabled -}}
 {{- range $u := include "trove.units" . | fromYamlArray -}}
 {{- if dig "autoscaling" "enabled" false $u.r -}}
-{{- fail (printf "trove: restore.enabled needs %s.autoscaling.enabled: false (and %s.replicaCount: 0): no replica may run while the restore Job writes the installation; the final helm upgrade without restore.enabled starts them" $u.key $u.key) -}}
+{{- fail (printf "trove: %s needs %s.autoscaling.enabled: false (and %s.replicaCount: 0): no replica may run while the restore writes the installation or its clean-up is outstanding; the final helm upgrade without %s starts them" $by $u.key $u.key $by) -}}
 {{- end -}}
 {{- if gt (int $u.r.replicaCount) 0 -}}
-{{- fail (printf "trove: restore.enabled needs %s.replicaCount: 0 (it is %v): no replica may run while the restore Job writes the installation; the final helm upgrade without restore.enabled starts them" $u.key $u.r.replicaCount) -}}
+{{- fail (printf "trove: %s needs %s.replicaCount: 0 (it is %v): no replica may run while the restore writes the installation or its clean-up is outstanding, because it would serve the restored database before the journal replay and the new keyspace; the final helm upgrade without %s starts them" $by $u.key $u.r.replicaCount $by) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -128,11 +129,26 @@ the day of week 7 is not supported; Sunday is 0
 {{- if $r.enabled -}}
 {{- fail "trove: postRestore.enabled and restore.enabled are both set: the restore Job runs the clean-up of a platform restore itself (R-BAK-021), and post-restore is for a restore of PostgreSQL by the platform (R-HA-025). Set one" -}}
 {{- end -}}
-{{- if and (eq $p.journalCredentials.source "static") (not $v.secrets.postRestoreJournal.existingSecret) -}}
-{{- fail "trove: postRestore.journalCredentials.source: static needs secrets.postRestoreJournal.existingSecret (keys secrets.postRestoreJournal.accessKeyIdKey and secretAccessKeyKey)" -}}
+{{- if and (eq $p.journalCredentials.source "static") (not $v.secrets.journalReader.existingSecret) -}}
+{{- fail "trove: postRestore.journalCredentials.source: static needs secrets.journalReader.existingSecret (keys secrets.journalReader.accessKeyIdKey and secretAccessKeyKey)" -}}
 {{- end -}}
 {{- if and $p.skipRevocationJournal (ne $p.journalCredentials.source "runtime") -}}
 {{- fail "trove: postRestore.skipRevocationJournal skips the journal replay, so postRestore.journalCredentials.source must stay runtime" -}}
 {{- end -}}
+{{- end -}}
+
+{{- /* The restore Job's journal reader (M3, Q-HA-159). */ -}}
+{{- if $r.enabled -}}
+{{- if and (eq $r.journalCredentials.source "static") (not $v.secrets.journalReader.existingSecret) -}}
+{{- fail "trove: restore.journalCredentials.source: static needs secrets.journalReader.existingSecret (keys secrets.journalReader.accessKeyIdKey and secretAccessKeyKey)" -}}
+{{- end -}}
+{{- if and $r.skipRevocationJournal (ne $r.journalCredentials.source "runtime") -}}
+{{- fail "trove: restore.skipRevocationJournal skips the journal replay, so restore.journalCredentials.source must stay runtime" -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* The backup reads the blob bucket with a login of its own (M5, Q-HA-160). */ -}}
+{{- if and $b.enabled (eq (dig "storage" "s3" "credentials" "source" "" $cfg) "static") (not $v.secrets.backupSource.existingSecret) -}}
+{{- fail "trove: backup.enabled with config.storage.s3.credentials.source: static needs secrets.backupSource.existingSecret: the backup pod must not hold the runtime credential of the blob bucket, which can write and delete there (R-BAK-015); name a Secret with a login that may only read it (keys secrets.backupSource.accessKeyIdKey and secretAccessKeyKey), or switch the backup off with backup.enabled: false" -}}
 {{- end -}}
 {{- end -}}

@@ -2356,6 +2356,21 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-BAK-014 (metrics paragraph); `internal/backup/gauges/jobs.go`, `collector.go`.
 
+### Q-BAK-49 · The backup reads the blob bucket with `backup.source.credentials` when `separate_credentials` is set
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Reuse `storage.s3.credentials` and let the chart mount different files at the same paths | The backup pod gets other bytes under the paths of the runtime credential | No new key | The shared `trove.yaml` would lie about which credential a pod holds; the path names the runtime Secret in every pod |
+| (b) `backup.source.separate_credentials` and `backup.source.credentials` (the keys of `storage.s3.credentials`), used by `trove backup create` for the blob client (chosen) | The chart sets both when the blob credentials are static, with files of `secrets.backupSource` | The config says what the pod reads with; no change for a workload identity, where `separate_credentials` stays `false` | A key pair more; `separate_credentials` with `static` and a missing file exits 2 naming the key |
+
+**Choice:** (b). Only `create` reads the source blobs; the restore writes the bucket and keeps `storage.s3.credentials`.
+
+**Rationale:** R-BAK-015 gives the backup no right to write or delete in the blob bucket. The development agent would revisit this if `verify` or `delete` need to read the source bucket.
+
+**Applied:** R-BAK-011, R-BAK-015; `internal/config/backup.go`, `cmd/trove/backup_create.go`.
+
 ### Q-BAK-41 · The summary finds the run that last listed the target among the newest runs of each operation
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
