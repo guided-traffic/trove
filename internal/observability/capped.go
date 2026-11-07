@@ -3,6 +3,8 @@ package observability
 import (
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/guided-traffic/trove/internal/qname"
 )
 
@@ -72,6 +74,24 @@ func (c *CappedLabels) OnForget(fn func(name string)) {
 	c.mu.Lock()
 	c.forget = append(c.forget, fn)
 	c.mu.Unlock()
+}
+
+// PartialDeleter is a metric vector that can delete the series matching some of its labels: every *prometheus.CounterVec,
+// GaugeVec and HistogramVec.
+type PartialDeleter interface {
+	DeletePartialMatch(labels prometheus.Labels) int
+}
+
+// DeleteOnForget registers the deletion of every series of the given families whose label of this cap carries a name that
+// leaves the snapshot (R-OPS-007). A family that is keyed by a repository name and is not registered here or in an OnForget
+// function of its owner keeps the series of a deleted or moved repository until the process restarts.
+func (c *CappedLabels) DeleteOnForget(vecs ...PartialDeleter) {
+	c.OnForget(func(name string) {
+		l := prometheus.Labels{c.label: name}
+		for _, v := range vecs {
+			v.DeletePartialMatch(l)
+		}
+	})
 }
 
 func (c *CappedLabels) install(repos []RepoLabel) {

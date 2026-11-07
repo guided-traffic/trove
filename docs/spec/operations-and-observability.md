@@ -890,9 +890,10 @@ Rules for every metric family, including families that format pages and other sp
   of an instance context of [authorization.md](authorization.md) R-AUTHZ-004 (`web/npm-*`, `*/nuget-*`, `@any-remote`);
   a bare key stops startup and names the entry. The selection follows the snapshot,
   so a deleted repository frees its place on every replica within the change-area bound. A repository that leaves the snapshot, deleted or renamed by a move, also takes its own series with it: the families with a
-  `repo` label that are gauges (`trove_remote_upstream_up`, `trove_mirror_concurrency`) and the counters of the remote engine and the
-  mirror delete the series of its old name when the snapshot is rebuilt, so that no gauge keeps reporting a repository that no
-  longer exists. The same
+  `repo` label, gauges, counters and histograms alike, delete the series of its old name when the snapshot is rebuilt, so that no gauge
+  keeps reporting a repository that no longer exists and no counter keeps a series of a name that is gone. A family that is
+  keyed by the repository name and does not delete its series is a defect. A mirror pass that still runs for a moved repository
+  records nothing more under its old name (Q-OPS-176). The same
   rule applies to `subscription`, in subscription creation order. Each overflow increments
   `trove_metrics_label_overflow_total{family,label}`. Requests reach replicas at random
   (INV-12), so a selection made per replica, for example by first observation, would give each
@@ -5860,6 +5861,25 @@ with the metrics of R-OPS-008.
 **Applied in the spec:** R-OPS-003 (runtime snapshot, check duration), R-OPS-004 (overview), R-UI-038 (dashboard).
 Code: `replica.runtime` (migration 00044), the heartbeat in `internal/cluster`, the snapshot in `internal/app`, the
 overview handler in `internal/api/v1`; `web/src/app/features/system/dashboard.*`. Manual: [Admin dashboard](../manual/admin/dashboard.md).
+
+### Q-OPS-176 · A mirror pass that outlives its repository's name records through a handle that the deletion of the series invalidates
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+The series of a repository that leaves the snapshot are deleted with its name (R-OPS-007). A mirror pass holds its repository
+by ID (R-REPO-060), so a move renames the repository without ending the pass, and the pass kept recording under the name it
+began with: it brought the deleted series back until it ended.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The pass records through a handle that `Metrics.Forget` invalidates under the lock the pass records under (chosen) | `Metrics.of` registers a handle by name; `Forget` marks the handles of the name and deletes the series in one critical section; each record takes the read lock and drops itself when the handle is marked; the pass releases the handle when it ends | Race-free: a record either precedes the deletion and is deleted with it, or is dropped; a repository that is created or moved back under the name later starts with a fresh handle; no growth beyond the passes in progress | A read lock per record |
+| (b) The pass checks the snapshot for its ID under the name before each record | Reads the repository per record | No state in the metrics | A snapshot read per record, and a check followed by a write still races the deletion |
+| (c) A generation counter per name in `Metrics` | `Forget` bumps it, passes compare | Small | One map entry per name ever forgotten, never freed; the same race unless locked as in (a) |
+
+**Choice:** (a). **Rationale:** the deletion and the guard must be one critical section, and the set of names it holds must be
+bounded by the passes that run. Revisit when another package keeps a long-running writer of a `repo` series.
+**Applied:** R-OPS-007 (repository cap, the families delete their series with the name); `internal/mirror/metrics.go`
+(`Metrics.of`, `Forget`, `repoMetrics.record`), `internal/mirror/pass.go` (the handle is released at the end of `run`).
 
 ## What this does not cover
 

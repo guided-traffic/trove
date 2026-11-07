@@ -103,7 +103,7 @@ type metrics struct {
 }
 
 func newMetrics(m *observability.Metrics) *metrics {
-	return &metrics{
+	met := &metrics{
 		repos: m.Repos(),
 		requests: m.NewCounterVec("trove_npm_requests_total",
 			"npm protocol requests by repository class, operation and status code.", "class", "operation", "status"),
@@ -122,6 +122,9 @@ func newMetrics(m *observability.Metrics) *metrics {
 		withheld: m.NewCounterVec("trove_npm_audit_names_withheld_total",
 			"Names of audit requests not sent to the advisory provider, by the forwarding remote and the reason (R-NPM-038).", "repo", "reason"),
 	}
+	// The series of a repository that leaves the snapshot go with its name (R-OPS-007).
+	met.repos.DeleteOnForget(met.retries, met.conflicts, met.removed, met.stale, met.revalidated, met.withheld)
+	return met
 }
 
 func (m *metrics) observe(class, op string, status int, d time.Duration) {

@@ -56,6 +56,14 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 	return m, nil
 }
 
+// Forget deletes the series of a repository name that left the snapshot (deleted, or renamed by a move; R-OPS-007). The
+// composition root registers it with CappedLabels.OnForget.
+func (r *Resolver) Forget(name string) {
+	l := prometheus.Labels{"repo": name}
+	r.m.resolutions.DeletePartialMatch(l)
+	r.m.shadow.DeletePartialMatch(l)
+}
+
 func (m *metrics) resolved(repo, source string) { m.resolutions.WithLabelValues(repo, source).Inc() }
 
 func (m *metrics) checked(repo, outcome string) { m.shadow.WithLabelValues(repo, outcome).Inc() }

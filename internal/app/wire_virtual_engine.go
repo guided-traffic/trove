@@ -87,6 +87,7 @@ func (a *App) wireVirtualEngine(ctx context.Context, in infra, v virtualArea, az
 	if err != nil {
 		return virtualEngineArea{}, err
 	}
+	a.tele.metrics.Repos().OnForget(eng.Forget)
 	if err := a.startComponent(ctx, &virtualComponent{engine: eng}); err != nil {
 		return virtualEngineArea{}, err
 	}

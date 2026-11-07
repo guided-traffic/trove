@@ -216,13 +216,6 @@ Found on 2026-11-07 while reviewing the project model (T-3 to T-6):
 
 ### Product
 
-- **F-67 · Counter series of a removed or moved repository stay until the process restarts** (read in the code by the review of
-  the project model). The gauges are deleted when a repository leaves the snapshot (`CappedLabels` `OnForget`,
-  `proxy.Engine.Forget`, `mirror.Metrics.Forget`, R-OPS-007), so no stale `trove_remote_upstream_up` keeps an alert firing.
-  The counters of the npm, NuGet, virtual, items and outbound packages keep the series of the old name, and a mirror pass that
-  is still running for a moved repository brings its old-name series back until it ends ([observability.md](../developer/observability.md),
-  [mirror.md](../developer/mirror.md)). Done when every series keyed by a repository name is deleted with the repository's name,
-  with a test per package.
 - **F-68 · The database guard of a move does not see a virtual-member write that skips the share locks** (read). `AI007`
   (migration 00024) refuses a `project_id` change while a policy of the project or a virtual repository holds the repository
   by ID; a virtual-member write that does not take `LockRepositoriesByKeys … FOR SHARE` could race it. Every write path takes

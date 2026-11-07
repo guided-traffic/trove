@@ -41,7 +41,7 @@ type pass struct {
 	e   *Engine
 	log *slog.Logger
 	res ResultSetter
-	m   repoMetrics
+	m   *repoMetrics
 
 	id    int64
 	fence Fence
@@ -183,6 +183,7 @@ func (p *pass) run(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	p.cancel = cancel
+	defer p.m.close()
 	defer p.m.window(0)
 	execErr := p.execute(ctx)
 	if parent.Err() != nil {

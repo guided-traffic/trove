@@ -154,7 +154,7 @@ PostgreSQL through `mirror.Store`.
 | [end.go](../../internal/mirror/end.go) | the ends of an attempt: complete, partial, bound reached, offline, stopped, deferred, fence lost, failed; the summary; `sanitize` |
 | [policy.go](../../internal/mirror/policy.go) | the pure rules: `Clock`, `Jitter`, the back-offs, `DecideKind`, `FinalKind`, `SelectItems`, `Fingerprint` |
 | [store.go](../../internal/mirror/store.go), [store_pg.go](../../internal/mirror/store_pg.go) | the port `Store` and its PostgreSQL implementation `PGStore` over [mirror.sql](../../internal/meta/postgres/queries/mirror.sql); `ClearAfterRestore` |
-| [metrics.go](../../internal/mirror/metrics.go) | the twelve families of R-REPO-057 and the database gauge source (every role) |
+| [metrics.go](../../internal/mirror/metrics.go) | the twelve families of R-REPO-057, the per-pass handle that `Forget` invalidates, and the database gauge source (every role) |
 | [events_mirror.go](../../internal/audit/events_mirror.go) | the four asynchronous event types (`mirror.pass_requested` is the run operation's) |
 | [wire_mirror.go](../../internal/app/wire_mirror.go), [wire_mirror_host.go](../../internal/app/wire_mirror_host.go) | the area `mirror` (roles `worker`, `all`), the kinds and the task, `MirrorOverride`; the area `mirror-engine` (`worker`, `all`) and the host's builder, which builds in stages and keeps what succeeded (Q-ARCH-316, Q-ARCH-319) |
 
@@ -180,7 +180,7 @@ PostgreSQL through `mirror.Store`.
    (`SelectItems`), checks the byte bound and fills each artifact through `Host.Fill` (a `*RefusedError` is counted `refused` and skipped; a transient failure lets the other
    artifacts go on and the package fails once, Q-REPO-185; `ErrShuttingDown` stops the pass without a write, Q-ARCH-320); a finished
    package deletes its row and raises the counters in one statement. The snapshot is read before each package: a deleted, disabled, paused, offline or switched
-   repository halts the attempt. The pass holds its repository by the id of its arguments (`Reader.ByID`), at its start and at every such read: a move to another project (R-REPO-060) renames the repository and neither halts a running pass nor ends a queued one as `repository_gone`; the audit events carry the name the snapshot holds at that moment, the metric series the name the pass began with (the series of the old name are deleted when the repository leaves the snapshot under it, `Metrics.Forget`, so a running pass brings them back until it ends).
+   repository halts the attempt. The pass holds its repository by the id of its arguments (`Reader.ByID`), at its start and at every such read: a move to another project (R-REPO-060) renames the repository and neither halts a running pass nor ends a queued one as `repository_gone`; the audit events carry the name the snapshot holds at that moment, the metric series the name the pass began with. The pass records through a handle (`Metrics.of`, released by `run`): when the repository leaves the snapshot under that name `Metrics.Forget` deletes the series and invalidates the handles of the name under the lock every record takes, so the running pass records nothing more under the old name and a pass that begins under the name later starts with a fresh handle (Q-OPS-176).
 6. **The end** (`finish`): one of the ends in the table below; the summary, the cursor of the last complete pass, the next pass and
    the event are written in one statement.
 

@@ -14,11 +14,13 @@ type writeMetrics struct {
 }
 
 func newWriteMetrics(m *observability.Metrics) *writeMetrics {
-	return &writeMetrics{
+	w := &writeMetrics{
 		repos: m.Repos(),
 		replays: m.NewCounterVec("trove_nuget_push_replayed_total",
 			"Pushes of the identical package of a stored version, answered 201 without a change (R-NUGET-006).", "repo"),
 	}
+	w.repos.DeleteOnForget(w.replays) // the series leave with the repository (R-OPS-007)
+	return w
 }
 
 // replayed counts a push that was the repeat of a push that had committed.

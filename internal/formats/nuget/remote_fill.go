@@ -239,11 +239,13 @@ type remoteMetrics struct {
 }
 
 func newRemoteMetrics(m *observability.Metrics) *remoteMetrics {
-	return &remoteMetrics{
+	r := &remoteMetrics{
 		repos: m.Repos(),
 		unreadable: m.NewCounterVec("trove_nuget_remote_unparseable_packages_total",
 			"Packages cached by a remote repository that could not be read as a NuGet package and were served without NuGet rows (R-NUGET-015).", "repo"),
 	}
+	r.repos.DeleteOnForget(r.unreadable) // the series leave with the repository (R-OPS-007)
+	return r
 }
 
 func (m *remoteMetrics) unparseable(repoKey string) {

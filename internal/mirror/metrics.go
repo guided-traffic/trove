@@ -3,6 +3,7 @@ package mirror
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -60,6 +61,9 @@ type Metrics struct {
 	RateLimitWait *prometheus.CounterVec
 	Concurrency   *prometheus.GaugeVec
 	Preempted     *prometheus.CounterVec
+
+	mu      sync.RWMutex
+	handles map[string]map[*repoMetrics]struct{} // the passes in progress by the repository name they began with
 }
 
 // NewMetrics creates the collectors and registers them.
@@ -103,12 +107,19 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 }
 
 // Forget deletes every series of the repository name from the counters and the window gauge: the repository left the snapshot
-// (deleted, or renamed by a move; R-OPS-007). A pass that still runs for a renamed repository counts under the name it began
-// with and so brings its series back until it ends.
+// (deleted, or renamed by a move; R-OPS-007). A pass that still runs for the repository holds a handle under the name it began
+// with; Forget invalidates the handle under the same lock that the pass records under, so the pass records nothing more under
+// the old name and the series do not come back.
 func (m *Metrics) Forget(name string) {
 	if m == nil {
 		return
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for h := range m.handles[name] {
+		h.forgotten = true
+	}
+	delete(m.handles, name)
 	l := prometheus.Labels{"repo": name}
 	for _, c := range []interface{ DeletePartialMatch(prometheus.Labels) int }{
 		m.Passes, m.Items, m.Bytes, m.RateLimited, m.RateLimitWait, m.Concurrency, m.Preempted,
@@ -117,77 +128,108 @@ func (m *Metrics) Forget(name string) {
 	}
 }
 
-// repoMetrics are the collectors of one repository, resolved once per pass.
+// repoMetrics is the handle of one pass for its repository's series, resolved once per pass. Forget invalidates it: from then on
+// every record is dropped, until the pass releases it with close. A nil handle records nothing.
 type repoMetrics struct {
-	m    *Metrics
-	repo string
+	m         *Metrics
+	repo      string
+	forgotten bool // guarded by m.mu
 }
 
-func (m *Metrics) of(repo string) repoMetrics { return repoMetrics{m: m, repo: repo} }
+func (m *Metrics) of(repo string) *repoMetrics {
+	r := &repoMetrics{m: m, repo: repo}
+	if m == nil {
+		return r
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.handles == nil {
+		m.handles = map[string]map[*repoMetrics]struct{}{}
+	}
+	if m.handles[repo] == nil {
+		m.handles[repo] = map[*repoMetrics]struct{}{}
+	}
+	m.handles[repo][r] = struct{}{}
+	return r
+}
+
+// close releases the handle at the end of the pass.
+func (r *repoMetrics) close() {
+	if r == nil || r.m == nil {
+		return
+	}
+	r.m.mu.Lock()
+	defer r.m.mu.Unlock()
+	delete(r.m.handles[r.repo], r)
+	if len(r.m.handles[r.repo]) == 0 {
+		delete(r.m.handles, r.repo)
+	}
+}
+
+// record runs fn, which writes series of the repository, unless the repository left the snapshot under this name. Forget takes
+// the write lock, so a record either happens before the deletion (and is deleted with it) or is dropped.
+func (r *repoMetrics) record(fn func(m *Metrics, repo string)) {
+	if r == nil || r.m == nil {
+		return
+	}
+	r.m.mu.RLock()
+	defer r.m.mu.RUnlock()
+	if r.forgotten {
+		return
+	}
+	fn(r.m, r.repo)
+}
 
 // touch creates the series of the repository at 0, so that the first event of a kind is an increase for a rate or an
 // increase() over a counter that has existed since the pass began, and not the series' first sample (the alerts of R-OPS-046
 // read increase() of trove_mirror_passes_total).
-func (r repoMetrics) touch() {
-	if r.m == nil {
-		return
-	}
-	for _, kind := range []string{string(discover.PassFull), string(discover.PassIncremental)} {
-		for _, outcome := range []string{OutcomeComplete, OutcomePartial, OutcomeBoundReached, OutcomeOffline, OutcomeStopped, OutcomeFailed, OutcomeDeferred} {
-			r.m.Passes.WithLabelValues(r.repo, kind, outcome).Add(0)
+func (r *repoMetrics) touch() {
+	r.record(func(m *Metrics, repo string) {
+		for _, kind := range []string{string(discover.PassFull), string(discover.PassIncremental)} {
+			for _, outcome := range []string{OutcomeComplete, OutcomePartial, OutcomeBoundReached, OutcomeOffline, OutcomeStopped, OutcomeFailed, OutcomeDeferred} {
+				m.Passes.WithLabelValues(repo, kind, outcome).Add(0)
+			}
 		}
-	}
-	for _, result := range []string{ResultStored, ResultPresent, ResultBounded, ResultFailed, ResultPreempted, ResultRefused} {
-		r.m.Items.WithLabelValues(r.repo, result).Add(0)
-	}
-	for _, reason := range []string{"too_many_requests", "slow_down", "retry_after", "quota_header"} {
-		r.m.RateLimited.WithLabelValues(r.repo, reason).Add(0)
-	}
-	r.m.Bytes.WithLabelValues(r.repo).Add(0)
-	r.m.RateLimitWait.WithLabelValues(r.repo).Add(0)
-	r.m.Preempted.WithLabelValues(r.repo).Add(0)
+		for _, result := range []string{ResultStored, ResultPresent, ResultBounded, ResultFailed, ResultPreempted, ResultRefused} {
+			m.Items.WithLabelValues(repo, result).Add(0)
+		}
+		for _, reason := range []string{"too_many_requests", "slow_down", "retry_after", "quota_header"} {
+			m.RateLimited.WithLabelValues(repo, reason).Add(0)
+		}
+		m.Bytes.WithLabelValues(repo).Add(0)
+		m.RateLimitWait.WithLabelValues(repo).Add(0)
+		m.Preempted.WithLabelValues(repo).Add(0)
+	})
 }
 
-func (r repoMetrics) pass(kind, outcome string) {
-	if r.m != nil {
-		r.m.Passes.WithLabelValues(r.repo, kind, outcome).Inc()
-	}
+func (r *repoMetrics) pass(kind, outcome string) {
+	r.record(func(m *Metrics, repo string) { m.Passes.WithLabelValues(repo, kind, outcome).Inc() })
 }
 
-func (r repoMetrics) item(result string) {
-	if r.m != nil {
-		r.m.Items.WithLabelValues(r.repo, result).Inc()
-	}
+func (r *repoMetrics) item(result string) {
+	r.record(func(m *Metrics, repo string) { m.Items.WithLabelValues(repo, result).Inc() })
 }
 
-func (r repoMetrics) bytes(n int64) {
-	if r.m != nil && n > 0 {
-		r.m.Bytes.WithLabelValues(r.repo).Add(float64(n))
+func (r *repoMetrics) bytes(n int64) {
+	if n > 0 {
+		r.record(func(m *Metrics, repo string) { m.Bytes.WithLabelValues(repo).Add(float64(n)) })
 	}
 }
 
-func (r repoMetrics) rateLimited(reason string) {
-	if r.m != nil {
-		r.m.RateLimited.WithLabelValues(r.repo, reason).Inc()
-	}
+func (r *repoMetrics) rateLimited(reason string) {
+	r.record(func(m *Metrics, repo string) { m.RateLimited.WithLabelValues(repo, reason).Inc() })
 }
 
-func (r repoMetrics) waited(seconds float64) {
-	if r.m != nil {
-		r.m.RateLimitWait.WithLabelValues(r.repo).Add(seconds)
-	}
+func (r *repoMetrics) waited(seconds float64) {
+	r.record(func(m *Metrics, repo string) { m.RateLimitWait.WithLabelValues(repo).Add(seconds) })
 }
 
-func (r repoMetrics) window(w int) {
-	if r.m != nil {
-		r.m.Concurrency.WithLabelValues(r.repo).Set(float64(w))
-	}
+func (r *repoMetrics) window(w int) {
+	r.record(func(m *Metrics, repo string) { m.Concurrency.WithLabelValues(repo).Set(float64(w)) })
 }
 
-func (r repoMetrics) preempted() {
-	if r.m != nil {
-		r.m.Preempted.WithLabelValues(r.repo).Inc()
-	}
+func (r *repoMetrics) preempted() {
+	r.record(func(m *Metrics, repo string) { m.Preempted.WithLabelValues(repo).Inc() })
 }
 
 // GaugeSource is the database gauge source of the gauges that every process exports, whatever its role (R-REPO-057,

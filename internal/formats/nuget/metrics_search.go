@@ -16,13 +16,15 @@ type searchMetrics struct {
 }
 
 func newSearchMetrics(m *observability.Metrics) *searchMetrics {
-	return &searchMetrics{
+	s := &searchMetrics{
 		repos: m.Repos(),
 		withheld: m.NewCounterVec("trove_nuget_search_withheld_total",
 			"Searches a remote repository answered from its cache because a term of the query names a package that an exclude pattern, a claim or a pin rule keeps away from it (R-NUGET-016).", "repo"),
 		failures: m.NewCounterVec("trove_nuget_search_forward_failures_total",
 			"Forwarded searches of a remote repository that the upstream did not answer usefully (a failure, an open circuit, no search resource, a document that is no search result), answered from the cache (R-NUGET-016).", "repo"),
 	}
+	s.repos.DeleteOnForget(s.withheld, s.failures) // the series leave with the repository (R-OPS-007)
+	return s
 }
 
 // withheldQuery counts a query that was not forwarded to a remote's upstream.
