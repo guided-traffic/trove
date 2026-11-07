@@ -25,7 +25,7 @@ func scopeDoc(t *testing.T, include, exclude, remote string) (Document, *validat
 	return d, v
 }
 
-// restrictedScopeFields returns the violations of a Owner's update from the stored to the next document.
+// restrictedScopeFields returns every violation of a Owner's update from the stored to the next document.
 func restrictedScopeFields(t *testing.T, stored, next [3]string) map[string]string {
 	t.Helper()
 	cur, v := scopeDoc(t, stored[0], stored[1], stored[2])
@@ -37,13 +37,7 @@ func restrictedScopeFields(t *testing.T, stored, next [3]string) map[string]stri
 		t.Fatalf("next: %v", err)
 	}
 	restrictedRemote(v, Caller{Restricted: true}, &cur, &nd)
-	out := map[string]string{}
-	for k, c := range fieldCodes(v) {
-		if k == "/includePatterns" || k == "/excludePatterns" || k == "/remote/url" || k == "/remote/extraHosts" {
-			out[k] = c
-		}
-	}
-	return out
+	return fieldCodes(v)
 }
 
 // R-REPO-050, R-REPO-052, Q-REPO-142 (Q-REPO-193): a Owner keeps what an administrator chose for a mirror
