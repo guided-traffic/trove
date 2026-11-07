@@ -1,0 +1,70 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- /*
+Scrapes the ops port of <fullname>-ops, every pod (api, packages, worker and the bridge's web), path
+/metrics (R-OPS-006, R-HA-045). The endpoint always renders two relabelings that set the target labels
+role (from the pod's component label) and pool (from the pod's trove/pool label, which is empty on the
+main Deployments and which Prometheus drops when empty); metrics.serviceMonitor.relabelings come after them.
+With config.metrics.auth static the bearer token is read from secrets.metricsToken. With tls.enabled the
+endpoint verifies the pods against ca.crt of the Secret of the ops listener (tls.ops.secretName, else
+tls.secretName), which the Prometheus operator reads from the namespace of the ServiceMonitor, and the name
+<fullname>-ops.<namespace>.svc, which the operator's certificate must carry as a SAN.
+*/ -}}
+{{- $sm := .Values.metrics.serviceMonitor }}
+{{- $fullname := include "trove.fullname" . }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}
+  {{- with $sm.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "metrics") | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with (include "trove.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "trove.selectorLabels" (dict "root" . "component" "ops") | nindent 6 }}
+  endpoints:
+    - port: ops
+      path: /metrics
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      {{- if .Values.tls.enabled }}
+      scheme: https
+      tlsConfig:
+        serverName: {{ $fullname }}-ops.{{ .Release.Namespace }}.svc
+        ca:
+          secret:
+            name: {{ default .Values.tls.secretName .Values.tls.ops.secretName }}
+            key: ca.crt
+      {{- end }}
+      {{- if eq (dig "metrics" "auth" "none" .Values.config) "static" }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .Values.secrets.metricsToken.existingSecret }}
+          key: {{ .Values.secrets.metricsToken.key }}
+      {{- end }}
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          targetLabel: role
+        - sourceLabels: [__meta_kubernetes_pod_label_trove_pool]
+          targetLabel: pool
+        {{- with $sm.relabelings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $sm.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

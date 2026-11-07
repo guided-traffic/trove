@@ -142,6 +142,12 @@ m.DBGauges().Add(observability.GaugeSource{
 go m.DBGauges().Run(ctx) // the composition root starts it once
 ```
 
+The job queue registers two: `jobs` (`trove_jobs_queued` and `trove_jobs_oldest_queued_age_seconds`, the sqlc query `JobQueueGauges`) and
+`valkey-primary-views` (`trove_valkey_primary_views`, `ValkeyPrimaryViews`), both in [wire_gauges.go](../../internal/app/wire_gauges.go). Their
+SQL is tested against PostgreSQL in [gauges_test.go](../../test/integration/coordination/gauges_test.go), the rendering of a row into a series
+in `wire_gauges_test.go`, which is how a gauge from the database is kept testable without a database in the unit tier: the query returns
+rows, a pure function turns the rows into metrics.
+
 The vulnerability scanning registers one such source, `vuln` ([store/gauges.go](../../internal/vuln/store/gauges.go),
 registered in the `WP-G` block of [wire_vuln.go](../../internal/app/wire_vuln.go)): the five gauges of
 [R-VULN-024](../spec/vulnerability-scanning.md) (`trove_vuln_source_*`, `trove_vuln_findings`, `trove_vuln_claimed_name_matches`) over three

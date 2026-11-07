@@ -544,7 +544,7 @@ storage:
 ```
 
 Metrics (names per [operations-and-observability.md](operations-and-observability.md)
-conventions): `trove_storage_spool_reserved_bytes`, `trove_storage_spool_free_bytes`,
+conventions): `trove_spool_used_bytes` (the budget that running uploads hold), `trove_spool_free_bytes` (free space of the spool volume),
 `trove_storage_upload_rejections_total{reason}`.
 
 Acceptance criteria:

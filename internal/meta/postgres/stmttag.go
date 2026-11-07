@@ -45,7 +45,11 @@ func tagStatementTimeout(err error, sql string) bool {
 
 // stmtTracer is the tracer of every pool: it names the statement of a timeout in the error (tagStatementTimeout) and passes
 // every event on to the tracer of WithQueryTracer, which may be nil.
-type stmtTracer struct{ next pgx.QueryTracer }
+type stmtTracer struct {
+	next    pgx.QueryTracer
+	pool    string   // the db_pool label of the acquire histogram
+	metrics *Metrics // nil records nothing
+}
 
 type stmtSQLKey struct{}
 

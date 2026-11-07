@@ -218,3 +218,13 @@ DELETE FROM job USING old WHERE job.id = old.id;
 
 -- name: DatabaseNow :one
 SELECT now()::timestamptz AS now;
+
+-- name: JobQueueGauges :many
+-- trove_jobs_queued and trove_jobs_oldest_queued_age_seconds (R-OPS-007, R-HA-045): per kind the queued jobs and the age of
+-- the oldest that is due. A job whose run_at lies ahead (a retry back-off, a delayed start) is queued but not waiting, so
+-- its time counts for nothing.
+SELECT kind::text AS kind, count(*)::bigint AS queued,
+       COALESCE(max(EXTRACT(EPOCH FROM now() - run_at)) FILTER (WHERE run_at <= now()), 0)::float8 AS oldest_age_seconds
+  FROM job
+ WHERE state = 'queued'
+ GROUP BY kind;

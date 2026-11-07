@@ -66,15 +66,16 @@ The ops Service selects every `api`, `packages`, `worker` and `web` pod, so each
 | Sign-in and permissions | `trove_auth_attempts_total`, `trove_auth_ratelimited_total`, `trove_auth_csrf_failures_total`, `trove_auth_lastused_flush_failures_total`, `trove_authz_decisions_total`, `trove_authz_index_staleness_seconds`, `trove_authz_stale_waits_total` |
 | Rate limits | `trove_api_rate_limited_total`, `trove_ratelimit_decisions_total`, `trove_ratelimit_fallback` |
 | Coordination | `trove_cluster_changes_applied_total`, `trove_cluster_poll_errors_total`, `trove_cluster_poll_last_success_timestamp_seconds`, `trove_lease_held`, `trove_lease_lost_total` |
-| Valkey | `trove_valkey_available`, `trove_valkey_circuit_open`, `trove_valkey_sentinels_reachable`, `trove_valkey_pubsub_subscribed`, `trove_valkey_primary_changes_total`, `trove_valkey_errors_total` |
-| Jobs | `trove_jobs_queued`, `trove_jobs_running`, `trove_jobs_claimed_total`, `trove_jobs_completed_total`, `trove_jobs_duration_seconds`, `trove_jobs_claim_errors_total` |
-| PostgreSQL | `trove_db_pool_connections`, `trove_db_pool_max_connections`, `trove_db_pool_empty_acquires_total` |
+| Valkey | `trove_valkey_available`, `trove_valkey_circuit_open`, `trove_valkey_sentinels_reachable`, `trove_valkey_pubsub_subscribed`, `trove_valkey_primary_changes_total`, `trove_valkey_primary_views`, `trove_valkey_errors_total` |
+| Jobs | `trove_jobs_queued`, `trove_jobs_oldest_queued_age_seconds`, `trove_jobs_running`, `trove_jobs_claimed_total`, `trove_jobs_completed_total`, `trove_jobs_duration_seconds`, `trove_jobs_claim_errors_total` |
+| PostgreSQL | `trove_db_pool_connections`, `trove_db_pool_max_connections`, `trove_db_pool_empty_acquires_total`, `trove_db_pool_canceled_acquires_total`, `trove_db_pool_connections_opened_total`, `trove_db_pool_acquire_duration_seconds` (label `db_pool`: `request`, `control`, `lease`), `trove_db_retries_total` (`kind`), `trove_db_commit_unknown_total` |
+| Upload spool and garbage collection | `trove_spool_used_bytes`, `trove_spool_free_bytes`, `trove_gc_last_success_timestamp_seconds` (no series on a replica until a run there has ended), `trove_gc_deleted_blobs_total`, `trove_gc_reclaimed_bytes_total` |
 | Object store and upstreams | `trove_storage_s3_requests_total`, `trove_storage_s3_request_duration_seconds`, `trove_outbound_requests_total`, `trove_outbound_request_duration_seconds`, `trove_outbound_egress_denied_total` |
 | Caches | `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes`, `trove_cache_flushes_total` |
 | Vulnerability scanning | `trove_vuln_source_last_success_timestamp_seconds`, `trove_vuln_source_records`, `trove_vuln_source_consecutive_failures` (labels `source`, `ecosystem`), `trove_vuln_sync_runs_total`, `trove_vuln_sync_records_total`, `trove_vuln_unevaluable_ranges_total`, `trove_vuln_evaluations_total`, `trove_vuln_evaluation_duration_seconds`, `trove_vuln_findings` (`severity`, `status`, `kind`), `trove_vuln_downloads_blocked_total`, `trove_vuln_audit_requests_total`, `trove_vuln_claimed_name_matches` (`ecosystem`, `kind`) |
 | Audit and telemetry | `trove_audit_events_total`, `trove_audit_events_dropped_total`, `trove_metrics_label_overflow_total`, `trove_tracing_spans_dropped_total` |
 
-Gauges read from PostgreSQL, such as `trove_jobs_queued`, are reported by every replica; aggregate them with `max`, not `sum`.
+Gauges read from PostgreSQL, such as `trove_jobs_queued`, `trove_jobs_oldest_queued_age_seconds` and `trove_valkey_primary_views`, are reported by every replica; aggregate them with `max`, not `sum`.
 
 </details>
 
@@ -209,20 +210,45 @@ cache:
 
 The caches of remote repositories (fetched packages and their metadata) are a different matter; see [Managing repositories](repositories.md).
 
-## Vulnerability scanning
+## Alerts
 
-The scanning needs the `worker` role: the sync of the advisory data and the evaluation of the stored versions run there. Nothing on this page makes a replica unready, because no replica can repair advisory data; the system information, the report banner and the alerts show it.
+With `metrics.prometheusRule.enabled` the chart renders one PrometheusRule with the alerts below and those of [Vulnerability scanning](#vulnerability-scanning), the mirror mode and the upgrade bridge. It needs the Prometheus operator's custom resource definitions and a scrape of the ops port (the chart's ServiceMonitor, see Metrics above). Every selector is scoped to the release's namespace. Every alert can be left out by name in `metrics.prometheusRule.disabledAlerts`; a name that is no alert of the chart fails the install.
 
-**Alerts.** The chart renders a PrometheusRule when you ask for it. It needs the Prometheus operator's custom resource definitions and a scrape of the ops port (see Metrics above); every selector is scoped to the release's namespace.
+| Alert | Fires when | For | Severity |
+|---|---|---|---|
+| `TroveReplicasNotReady` | a Deployment of the chart (a role, a pool or the bridge) has fewer than two available replicas. Needs kube-state-metrics. A Deployment you scaled to one replica fires too | 5m | critical |
+| `TroveDatabaseUnreachable` | replicas retry their connection to PostgreSQL and answer `503` | 2m | critical |
+| `TroveObjectStoreUnreachable` | every replica has the circuit of the object store open | 2m | critical |
+| `TroveObjectStoreUnreachableSingleReplica` | some replicas have the circuit open and others do not: the cause is on the path of those pods | 5m | warning |
+| `TroveDatabasePoolSaturated` | the 95th percentile of the wait for a connection of a replica's request pool is above 100 ms | 10m | warning |
+| `TroveControlConnectionWaits` | the 95th percentile of the wait for the control connection is above one second; readiness checks are close to failing | 5m | warning |
+| `TroveJobsStuck` | a queued job has been waiting for more than 15 minutes | 5m | warning |
+| `TroveLeaseLost` | a singleton task lost its lease more than three times in 15 minutes | at once | warning |
+| `TroveMixedVersions` | replicas of more than one version run for two hours: an upgrade is stuck | 2h | warning |
+| `TroveSpoolNearlyFull` | running uploads hold more than nine times the free space of a replica's spool volume | 10m | warning |
+| `TroveGCStale` | the last garbage-collection run that ended without error is more than two days old. A worker that has not completed a run since it started reports nothing, so a freshly started installation does not fire | 1h | warning |
+| `TroveValkeyUnavailable` | every replica runs without Valkey | 2m | critical |
+| `TroveValkeyUnavailableSingleReplica` | some replicas lost Valkey, others did not | 5m | warning |
+| `TroveValkeySentinelsDegraded` | a replica reaches fewer than two Sentinels, so no failover can be elected | 5m | warning |
+| `TroveValkeyFailoverFlapping` | the Valkey primary changed more than twice within an hour | at once | warning |
+| `TroveValkeyPrimaryDisagreement` | replicas name different Valkey primaries | 5m | critical |
+
+The alerts for the backup (a run that failed, a backup that is overdue, a hanging run, a garbage collection held by a backup, damaged source blobs, verify findings) and for the revocation journal's backlog are not in the chart yet: the backup and the journal are not built, so no metric feeds them.
 
 ```yaml
 metrics:
   prometheusRule:
     enabled: true                  # default: false
     labels: {release: kube-prometheus-stack}   # example: the label your Prometheus selects rules by
-    disabledAlerts: []             # default; example: [TroveVulnerabilitySyncFailing]
+    disabledAlerts: []             # default; example: [TroveJobsStuck]
     extraRules: []                 # default: your own rules, appended after the chart's
 ```
+
+## Vulnerability scanning
+
+The scanning needs the `worker` role: the sync of the advisory data and the evaluation of the stored versions run there. Nothing on this page makes a replica unready, because no replica can repair advisory data; the system information, the report banner and the alerts show it.
+
+**Alerts.** The chart renders a PrometheusRule when you ask for it (see [Alerts](#alerts) for the settings and the other alerts). The alerts of the scanning:
 
 | Alert | Fires when | Severity |
 |---|---|---|
@@ -253,7 +279,7 @@ A name in `disabledAlerts` that is no alert of the chart fails the install. If y
 | `time() - trove_cluster_poll_last_success_timestamp_seconds` above a few seconds | the replica cannot read the change log |
 | `increase(trove_http_requests_shed_total[5m]) > 0` | a replica is at its concurrency or memory bound |
 | `trove_http_requests_total` with `code` 5xx | server-side failures; the request log names them |
-| `trove_jobs_queued` rising, or no live worker on System status | background work is not getting done |
+| `trove_jobs_queued` rising, or no live worker on System status | background work is not getting done; `TroveJobsStuck` fires on the age of the oldest queued job |
 | `increase(trove_audit_events_dropped_total[15m]) > 0` | audit events reached only the log stream |
 | `increase(trove_db_pool_empty_acquires_total[5m])` high | the database pool is too small for the load |
 | `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing` | advisory data of a source is older than `vulnerabilities.stale_after`, or three sync runs in a row failed; see [Vulnerability scanning](#vulnerability-scanning) |

@@ -126,6 +126,8 @@ type retrier struct {
 	cfg   config.DatabaseRetry
 	sleep func(ctx context.Context, d time.Duration) error
 	now   func() time.Time
+	// metrics counts the repeats and the unknown commits; nil records nothing.
+	metrics *Metrics
 }
 
 func newRetrier(cfg config.DatabaseRetry) retrier {
@@ -170,6 +172,7 @@ func (r retrier) do(ctx context.Context, op func() error) error {
 			if serial > maxSerializationRetries {
 				return err
 			}
+			r.metrics.retried(err)
 			if r.sleep(ctx, jitter(time.Duration(serial)*10*time.Millisecond)) != nil {
 				return err
 			}
@@ -178,6 +181,7 @@ func (r retrier) do(ctx context.Context, op func() error) error {
 			if r.now().Sub(start)+wait > r.cfg.MaxElapsed {
 				return Unavailable(err)
 			}
+			r.metrics.retried(err)
 			if r.sleep(ctx, wait) != nil {
 				return Unavailable(err)
 			}
@@ -185,6 +189,7 @@ func (r retrier) do(ctx context.Context, op func() error) error {
 		default:
 			var unknown *outcomeUnknownError
 			if errors.As(err, &unknown) {
+				r.metrics.unknownCommit()
 				return Unavailable(err)
 			}
 			return err

@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
@@ -26,6 +27,9 @@ type telemetry struct {
 	// tls holds the TLS material families (R-ARCH-035), shared by the listeners
 	// and every client.
 	tls *tlsfiles.Metrics
+	// db holds the families of the database layer that the pools' counters cannot give (retries, unknown commits, the wait
+	// for a connection).
+	db *postgres.Metrics
 	// window counts the requests of the client listener, and runtime samples the
 	// process with it, for the runtime snapshot each heartbeat writes into the
 	// replica registry (Q-OPS-175).
@@ -43,6 +47,7 @@ func newTelemetry(cfg *config.Config, id Identity, w io.Writer) (*telemetry, err
 	t.passing = t.metrics.NewGaugeVec("trove_health_check_passing", "1 while the readiness check passes, 0 while it fails.", "name")
 	t.window = observability.NewRequestWindow()
 	t.runtime = observability.NewRuntimeSampler(t.window, int64(cfg.Runtime.MemoryLimitBytes))
+	t.db = postgres.NewMetrics(t.metrics)
 	var err error
 	if t.tls, err = tlsfiles.NewMetrics(t.metrics.Registry()); err != nil {
 		return nil, err

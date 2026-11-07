@@ -980,7 +980,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_blobstore_operation_duration_seconds` | histogram | `operation` | Object-storage latency |
 | `trove_blobstore_transferred_bytes_total` | counter | `direction` | Bytes to and from object storage |
 | `trove_blobstore_dedup_hits_total` | counter | — | Uploads whose content address already existed (INV-4) |
-| `trove_spool_used_bytes`, `trove_spool_free_bytes` | gauge | — | Local temporary upload spool |
+| `trove_spool_used_bytes`, `trove_spool_free_bytes` | gauge | — | Local temporary upload spool: the budget that running uploads hold (R-STOR-004), and the free space of the spool volume, read at every reservation and release ([ha-and-helm.md](ha-and-helm.md) R-HA-045 `TroveSpoolNearlyFull`) |
 | `trove_storage_blobs`, `trove_storage_blob_bytes`, `trove_storage_logical_bytes` | gauge | — | From the storage summary (R-OPS-023); same value on every replica |
 | `trove_repository_files`, `trove_repository_bytes` | gauge | `repo`, `format`, `class` | From the storage summary |
 | `trove_repositories` | gauge | `format`, `class` | Number of repositories |
@@ -991,22 +991,22 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_gc_deleted_blobs_total`, `trove_gc_reclaimed_bytes_total` | counter | — | Garbage-collection effect |
 | `trove_gc_candidates_kept_total` | counter | — | Candidates kept because the reference check found a reference ([storage.md](storage.md) R-STOR-024) |
 | `trove_gc_deleting_rows` | gauge | — | Blob rows in state `deleting` (from PostgreSQL); a value that does not fall back to zero means interrupted deletions are not finishing (R-STOR-024) |
-| `trove_gc_last_success_timestamp_seconds` | gauge | — | End of the last successful run |
+| `trove_gc_last_success_timestamp_seconds` | gauge | — | End of the last run of this replica that ended without error and was neither paused nor a dry run; no series until there was one ([ha-and-helm.md](ha-and-helm.md) R-HA-045 `TroveGCStale`, with `max`) |
 | `trove_gc_candidates_held_total` | counter | — | Collection candidates kept by a backup's hold ([backup-and-restore.md](backup-and-restore.md) R-BAK-007) |
 | `trove_secrets_sealed_values` | gauge | `key_id` | Sealed values per key ID over every sealed column (from PostgreSQL; [api-and-ui.md](api-and-ui.md) R-API-049); a non-zero value under a retired key ID means re-encryption has not finished |
 | `trove_secrets_key_rings_compatible` | gauge | — | 1 while every live replica's ring holds every key ID that is active on any live replica or referenced by a sealed value, else 0 (from the replica registry, R-OPS-003; R-API-049) |
 | `trove_db_pool_connections` | gauge | `db_pool`, `state` (acquired, idle, constructing) | Connection state per pool of this replica; `db_pool` is `request` and `control` on every replica and `lease` on `worker` ([architecture.md](architecture.md) R-ARCH-019). Summed by the target label `role`, it shows the connections each role holds (Q-OPS-13) |
 | `trove_db_pool_max_connections` | gauge | `db_pool` | Pool size |
-| `trove_db_pool_acquire_duration_seconds` | histogram | `db_pool` | Wait for a connection; for `control` it is the headroom of the readiness-critical loops (Q-HA-20) |
+| `trove_db_pool_acquire_duration_seconds` | histogram | `db_pool` | Wait for a connection (pgxpool `AcquireTracer`, failed acquisitions included); for `control` it is the headroom of the readiness-critical loops (Q-HA-20). The bounds 0.1 s and 1 s of the alerts are bucket bounds |
 | `trove_db_pool_empty_acquires_total` | counter | `db_pool` | Acquisitions that had to wait (pgxpool `EmptyAcquireCount`) |
 | `trove_db_pool_canceled_acquires_total` | counter | `db_pool` | Acquisitions given up because the caller's deadline ended (pgxpool `CanceledAcquireCount`); the precursor of `503` `database_timeout` |
 | `trove_db_pool_connections_opened_total` | counter | `db_pool` | New connections (pgxpool `NewConnsCount`); a jump after a failover or a credential rotation is a reconnect storm |
-| `trove_db_retries_total` | counter | `kind` | Retried transactions ([ha-and-helm.md](ha-and-helm.md) R-HA-009) |
+| `trove_db_retries_total` | counter | `kind` (`connection`, `shutdown`, `read_only`, `serialization`, `too_many_connections`) | Repeats of a transaction or read after a retryable error, one per repeat ([ha-and-helm.md](ha-and-helm.md) R-HA-009) |
 | `trove_db_pool_resets_total`, `trove_db_commit_unknown_total` | counter | — | Pool resets and commits with unknown outcome (R-HA-009) |
 | `trove_db_slow_queries_total` | counter | `query` (name of the query in code) | Queries slower than `metrics.slow_query_threshold` |
 | `trove_db_query_duration_seconds` | histogram | `query` | Only with `metrics.db_query_histograms: true` |
 | `trove_jobs_queued` | gauge | `kind` | Queued jobs (from PostgreSQL) |
-| `trove_jobs_oldest_queued_age_seconds` | gauge | `kind` | Age of the oldest queued job; the primary alerting signal for a stuck queue. Read from PostgreSQL by `web` replicas too, so it keeps reporting while no `worker` runs |
+| `trove_jobs_oldest_queued_age_seconds` | gauge | `kind` | Age of the oldest queued job that is due (`run_at` has passed; a back-off or delayed start is not waiting); the primary alerting signal for a stuck queue. Read from PostgreSQL by `web` replicas too, so it keeps reporting while no `worker` runs |
 | `trove_jobs_running` | gauge | `kind` | Jobs this replica executes (`worker`) |
 | `trove_jobs_completed_total` | counter | `kind`, `outcome` (succeeded, failed, retried, cancelled, released) | Job executions; `released` counts jobs handed back at shutdown without counting the attempt (R-ARCH-016) |
 | `trove_jobs_duration_seconds` | histogram | `kind` | Job execution time |
@@ -1025,7 +1025,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_valkey_sentinels_reachable` | gauge | — | Sentinels that answered this replica's last query (R-HA-057) |
 | `trove_valkey_primary_changes_total` | counter | — | Primary changes this replica's client followed: failovers seen (R-HA-057) |
 | `trove_valkey_pubsub_subscribed` | gauge | — | 1 while the Pub/Sub connection is subscribed on the current primary (R-OPS-045) |
-| `trove_valkey_primary_views` | gauge | — | Distinct non-null `valkey.primary` values over the live replicas of the registry (from PostgreSQL, R-OPS-003); above 1 for longer than a reconciliation means replicas write to different primaries (R-OPS-045) |
+| `trove_valkey_primary_views` | gauge | — | Distinct non-null `valkey.primary` values over the live replicas of the registry (from PostgreSQL, R-OPS-003; live is `system.heartbeat_stale_after`); above 1 for longer than a reconciliation means replicas write to different primaries (R-OPS-045) |
 | `trove_valkey_command_duration_seconds` | histogram | `command` | Round trip of a Valkey command or pipeline ([architecture.md](architecture.md) R-ARCH-031) |
 | `trove_valkey_errors_total` | counter | `kind` (`timeout`, `connection`, `readonly`, `auth`, `tls`, `oom`, `no_primary`) | Failed Valkey calls (R-HA-057); `no_primary` counts Sentinel queries that named no primary for `valkey.sentinel.primary_name` (cross-page to R-HA-057) |
 | `trove_valkey_degraded_total` | counter | `mechanism` | Calls that ran their fallback instead of Valkey (R-ARCH-031) |

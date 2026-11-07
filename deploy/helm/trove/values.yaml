@@ -1,5 +1,5 @@
 # Values of the trove chart. A value is commented where its meaning, unit, range or consequence is not evident
-# from its name. Values of features the chart does not render yet (Gateway, backup, restore, the ServiceMonitor)
+# from its name. Values of features the chart does not render yet (Gateway API chart-created Gateway, backup, restore)
 # are not defined: values.schema.json refuses unknown keys, so a typo or a value of a later feature fails before
 # anything renders. docs/developer/helm-chart.md lists what is in and what is not; docs/spec/ha-and-helm.md is the
 # reference of every key.
@@ -481,8 +481,16 @@ secrets:
     existingSecret: ""                  # needed with config.metrics.auth static
     key: token
 
-# ── Monitoring (only the alerts of the vulnerability scanning so far) ─
+# ── Monitoring (the alerts of the vulnerability scanning, the mirror and the bridge so far) ─
 metrics:
+  serviceMonitor:
+    enabled: false                      # needs the Prometheus operator's CRDs
+    namespace: ""                       # release namespace; with tls.enabled it must be the release namespace, because the CA Secret is read from the ServiceMonitor's namespace
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}                          # example: {release: kube-prometheus-stack}
+    relabelings: []                     # appended after the fixed role and pool relabelings
+    metricRelabelings: []
   prometheusRule:
     enabled: false                      # needs the Prometheus operator's CRDs
     labels: {}                          # example: {release: kube-prometheus-stack}
@@ -501,7 +509,7 @@ networkPolicy:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-  probeCIDRs: []                        # most CNIs exempt kubelet probes; where one does not, list the node CIDRs; example: ["10.0.0.0/16"]
+    probeCIDRs: []                      # most CNIs exempt kubelet probes; where one does not, list the node CIDRs; example: ["10.0.0.0/16"]
 
 # ── Pod identity and security ──────────────────────────────────────────────
 serviceAccount:
@@ -594,6 +602,18 @@ ingress:
     caSecret: ""                        # required with verify on haproxy and ingress-nginx; Secret in the release namespace with ca.crt; example: trove-tls (a cert-manager Secret carries ca.crt)
     clientCertSecret: ""                # haproxy: Secret with tls.crt and tls.key that HAProxy Ingress presents to trove (required with tls.clientCA); example: trove-edge-client
     serversTransport: ""                # traefik: ServersTransport reference <namespace>-<name>@kubernetescrd that verifies trove; example: trove-trove-tls@kubernetescrd
+
+gateway:
+  enabled: false                        # an HTTPRoute (gateway.networking.k8s.io/v1, Gateway API v1.2 or later) with the path rules of the Ingress; may run beside ingress.enabled
+  parentRefs: []                        # required with enabled; the platform-owned Gateway; example: [{name: shared, namespace: gateway-system, sectionName: https}]
+  hostnames: []                         # empty = host of config.server.base_url
+  annotations: {}
+  labels: {}
+  timeouts:
+    request: 3600s                      # on every rule; backendRequest must not exceed it
+    backendRequest: 3600s
+  filters: []                           # HTTPRoute filters on every path rule; example: [{type: RequestHeaderModifier, requestHeaderModifier: {set: [{name: X-Edge, value: gw}]}}]
+  extraRules: []                        # HTTPRoute rules appended after the path rules
 
 # ── Endpoints (docs/spec/endpoints.md) ──────────────────────────
 # Further client entry points, each with its own listener port, Service, Ingress, NetworkPolicy,

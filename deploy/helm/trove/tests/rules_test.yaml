@@ -232,3 +232,367 @@ tests:
       - {series: 'trove_storage_blobs_damaged_total{namespace="other",status="missing",pod="p1"}', values: '0x10 1x200'}
     alert_rule_test:
       - {eval_time: 12m, alertname: TroveBlobMissing, exp_alerts: []}
+
+  # === R-HA-045: the alerts of the table ======================================================================
+  # The Deployments of release trove are trove-api, trove-packages, trove-worker, the pools trove-<role>-<pool> and the bridge
+  # trove-web. The series carry the labels of a scrape through the Prometheus operator (namespace, pod).
+
+  # Healthy input. The retries are of another kind than connection, the Deployments have two or more replicas, the histograms stay in
+  # the first bucket.
+  - name: "a healthy installation: none of the sixteen alerts of the table fires"
+    interval: 1m
+    input_series:
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-api\"}", values: "2x400"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-packages\"}", values: "3x400"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-worker\"}", values: "2x400"}
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p1\"}", values: "0x400"}
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p2\"}", values: "0x400"}
+      - {series: "trove_valkey_available{namespace=\"default\",pod=\"p1\"}", values: "1x400"}
+      - {series: "trove_valkey_available{namespace=\"default\",pod=\"p2\"}", values: "1x400"}
+      - {series: "trove_valkey_sentinels_reachable{namespace=\"default\",pod=\"p1\"}", values: "3x400"}
+      - {series: "trove_valkey_sentinels_reachable{namespace=\"default\",pod=\"p2\"}", values: "3x400"}
+      - {series: "trove_valkey_primary_views{namespace=\"default\",pod=\"p1\"}", values: "1x400"}
+      - {series: "trove_valkey_primary_changes_total{namespace=\"default\",pod=\"p1\"}", values: "1x400"}
+      - {series: "trove_build_info{namespace=\"default\",version=\"1.4.0\",pod=\"p1\"}", values: "1x400"}
+      - {series: "trove_build_info{namespace=\"default\",version=\"1.4.0\",pod=\"p2\"}", values: "1x400"}
+      - {series: "trove_jobs_oldest_queued_age_seconds{namespace=\"default\",kind=\"gc\",pod=\"p1\"}", values: "12x400"}
+      - {series: "trove_lease_lost_total{namespace=\"default\",task=\"gc\",pod=\"p1\"}", values: "0x400"}
+      - {series: "trove_spool_used_bytes{namespace=\"default\",pod=\"p1\"}", values: "1000x400"}
+      - {series: "trove_spool_free_bytes{namespace=\"default\",pod=\"p1\"}", values: "9000x400"}
+      - {series: "trove_gc_last_success_timestamp_seconds{namespace=\"default\",pod=\"p1\"}", values: "20000x400"}
+      - {series: "trove_db_retries_total{namespace=\"default\",kind=\"serialization\",pod=\"p1\"}", values: "0+1x400"}
+      - {series: "trove_http_requests_total{namespace=\"default\",code=\"503\",pod=\"p1\"}", values: "0+1x400"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"0.005\",pod=\"p1\"}", values: "0+10x400"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"+Inf\",pod=\"p1\"}", values: "0+10x400"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"0.005\",pod=\"p1\"}", values: "0+10x400"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"+Inf\",pod=\"p1\"}", values: "0+10x400"}
+    alert_rule_test:
+      - {eval_time: 300m, alertname: TroveReplicasNotReady, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveObjectStoreUnreachable, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveObjectStoreUnreachableSingleReplica, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveDatabasePoolSaturated, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveControlConnectionWaits, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveJobsStuck, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveLeaseLost, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveMixedVersions, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveSpoolNearlyFull, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveGCStale, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveValkeyUnavailable, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveValkeyUnavailableSingleReplica, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveValkeySentinelsDegraded, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveValkeyFailoverFlapping, exp_alerts: []}
+      - {eval_time: 300m, alertname: TroveValkeyPrimaryDisagreement, exp_alerts: []}
+
+  # A role or pool without redundancy fires on its own Deployment. The regex covers api, packages, worker, their pools and the bridge web;
+  # trove-bastion-api (another release) and trove-apiary do not match, and the series of another namespace is not read.
+  - name: "TroveReplicasNotReady fires per Deployment of a role or pool below two replicas, and not for other Deployments"
+    interval: 1m
+    input_series:
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-api\"}", values: "1x60"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-packages\"}", values: "2x60"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-worker-vuln\"}", values: "0x60"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-web\"}", values: "2x60"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-bastion-api\"}", values: "0x60"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-apiary\"}", values: "0x60"}
+      - {series: "kube_deployment_status_replicas_available{namespace=\"default\",deployment=\"trove-api-ep-customers\"}", values: "2x60"}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: TroveReplicasNotReady, exp_alerts: []}
+      - eval_time: 10m
+        alertname: TroveReplicasNotReady
+        exp_alerts:
+          - exp_labels: {severity: "critical", deployment: "trove-api"}
+            exp_annotations:
+              summary: "The Deployment trove-api has fewer than two available replicas."
+              description: "A role or pool with fewer than two available replicas has no redundancy, and a node drain or a rollout takes it away (R-HA-001, R-HA-059). Look at the pods of the Deployment, their readiness (GET /readyz?verbose=1) and the events. Needs kube-state-metrics. A Deployment scaled to one replica by choice fires too."
+          - exp_labels: {severity: "critical", deployment: "trove-worker-vuln"}
+            exp_annotations:
+              summary: "The Deployment trove-worker-vuln has fewer than two available replicas."
+              description: "A role or pool with fewer than two available replicas has no redundancy, and a node drain or a rollout takes it away (R-HA-001, R-HA-059). Look at the pods of the Deployment, their readiness (GET /readyz?verbose=1) and the events. Needs kube-state-metrics. A Deployment scaled to one replica by choice fires too."
+
+  - name: "TroveDatabaseUnreachable fires when connection retries and 503 answers go together for two minutes"
+    interval: 1m
+    input_series:
+      - {series: "trove_db_retries_total{namespace=\"default\",kind=\"connection\",pod=\"p1\"}", values: "0+1x60"}
+      - {series: "trove_http_requests_total{namespace=\"default\",code=\"503\",pod=\"p1\"}", values: "0+3x60"}
+    alert_rule_test:
+      - {eval_time: 1m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
+      - eval_time: 10m
+        alertname: TroveDatabaseUnreachable
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "The replicas keep retrying their connection to PostgreSQL and answer 503."
+              description: "The primary is unreachable beyond the retry budget (database.retry, R-HA-009, R-HA-015), or the pooler in front of it is. Check the PostgreSQL primary, the Service that points to it and the pooler, and the database check of GET /readyz?verbose=1."
+
+  - name: "TroveDatabaseUnreachable stays silent on connection retries without a 503, and on a 503 without retries"
+    interval: 1m
+    input_series:
+      - {series: "trove_db_retries_total{namespace=\"default\",kind=\"connection\",pod=\"p1\"}", values: "0+1x60"}
+      - {series: "trove_http_requests_total{namespace=\"default\",code=\"500\",pod=\"p1\"}", values: "0+3x60"}
+      - {series: "trove_http_requests_total{namespace=\"default\",code=\"503\",pod=\"p2\"}", values: "5x60"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveDatabaseUnreachable, exp_alerts: []}
+
+  # p3 keeps its circuit closed: the single-replica alert fires after five minutes, the all-replica alert never does.
+  - name: "TroveObjectStoreUnreachable fires when every replica has the circuit open, the single-replica alert when only some do"
+    interval: 1m
+    input_series:
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p1\"}", values: "0x10 1x50"}
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p2\"}", values: "0x10 1x50"}
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p3\"}", values: "0x60"}
+    alert_rule_test:
+      - {eval_time: 40m, alertname: TroveObjectStoreUnreachable, exp_alerts: []}
+      - {eval_time: 12m, alertname: TroveObjectStoreUnreachableSingleReplica, exp_alerts: []}
+      - eval_time: 30m
+        alertname: TroveObjectStoreUnreachableSingleReplica
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "The circuit of the object store is open on some replicas and closed on others."
+              description: "The store is reachable from part of the replicas, so the cause is on the path of the affected pods (a node, a network policy, DNS, an egress rule), not the store (R-STOR-033, R-HA-010). Compare the pods by the label pod on trove_storage_s3_circuit_open."
+
+  - name: "TroveObjectStoreUnreachable fires after two minutes when all replicas have the circuit open, and the single-replica alert stays silent"
+    interval: 1m
+    input_series:
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p1\"}", values: "0x10 1x50"}
+      - {series: "trove_storage_s3_circuit_open{namespace=\"default\",pod=\"p2\"}", values: "0x10 1x50"}
+    alert_rule_test:
+      - {eval_time: 11m, alertname: TroveObjectStoreUnreachable, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveObjectStoreUnreachable
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "Every replica has the circuit of the object store open."
+              description: "Blob reads and writes fail on all replicas (R-STOR-033, R-HA-010). Metadata and cached content that does not need the store still answer. Check the S3 endpoint, its certificate and the credentials in the Secret."
+      - {eval_time: 30m, alertname: TroveObjectStoreUnreachableSingleReplica, exp_alerts: []}
+
+  - name: "TroveDatabasePoolSaturated fires when the 95th percentile of the request pool wait is above 100 ms for ten minutes, not the control alert"
+    interval: 1m
+    input_series:
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"0.005\",pod=\"p1\"}", values: "0x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"0.1\",pod=\"p1\"}", values: "0x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"0.5\",pod=\"p1\"}", values: "0+10x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"+Inf\",pod=\"p1\"}", values: "0+10x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"0.005\",pod=\"p1\"}", values: "0+10x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"+Inf\",pod=\"p1\"}", values: "0+10x60"}
+    alert_rule_test:
+      - {eval_time: 8m, alertname: TroveDatabasePoolSaturated, exp_alerts: []}
+      - eval_time: 20m
+        alertname: TroveDatabasePoolSaturated
+        exp_alerts:
+          - exp_labels: {severity: "warning", namespace: "default", db_pool: "request", pod: "p1"}
+            exp_annotations:
+              summary: "A replica waits more than 100 ms for a connection of its request pool (95th percentile)."
+              description: "The request pool, or every server connection of the request pooler, is busy (R-HA-016). If the database CPU is idle while the wait grows, raise database.pool.max_conns within the connection budget; otherwise the database is the limit. trove_db_pool_canceled_acquires_total counts the waits that ended in 503 database_timeout."
+      - {eval_time: 30m, alertname: TroveControlConnectionWaits, exp_alerts: []}
+
+  - name: "TroveControlConnectionWaits fires when the 95th percentile of the control connection wait is above one second for five minutes, not the request alert"
+    interval: 1m
+    input_series:
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"0.005\",pod=\"p1\"}", values: "0x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"1\",pod=\"p1\"}", values: "0x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"2.5\",pod=\"p1\"}", values: "0+10x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"control\",le=\"+Inf\",pod=\"p1\"}", values: "0+10x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"0.005\",pod=\"p1\"}", values: "0+10x60"}
+      - {series: "trove_db_pool_acquire_duration_seconds_bucket{namespace=\"default\",db_pool=\"request\",le=\"+Inf\",pod=\"p1\"}", values: "0+10x60"}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: TroveControlConnectionWaits, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveControlConnectionWaits
+        exp_alerts:
+          - exp_labels: {severity: "warning", namespace: "default", db_pool: "control", pod: "p1"}
+            exp_annotations:
+              summary: "A replica waits more than a second for its control connection (95th percentile)."
+              description: "The loops that readiness and job ownership depend on (change-log poll, database check, registry heartbeat, job heartbeats) wait for the one control connection (Q-HA-20). If this goes on, the invalidation and database checks fail on every replica (R-OPS-046). Check the pooler endpoint of the control connection and the database latency."
+      - {eval_time: 30m, alertname: TroveDatabasePoolSaturated, exp_alerts: []}
+
+  - name: "TroveJobsStuck fires when the oldest queued job is older than 900 s for five minutes, and not for 899 s or another namespace"
+    interval: 1m
+    input_series:
+      - {series: "trove_jobs_oldest_queued_age_seconds{namespace=\"default\",kind=\"mirror\",pod=\"p1\"}", values: "0x5 1000x60"}
+      - {series: "trove_jobs_oldest_queued_age_seconds{namespace=\"default\",kind=\"mirror\",pod=\"p2\"}", values: "0x5 1000x60"}
+    alert_rule_test:
+      - {eval_time: 8m, alertname: TroveJobsStuck, exp_alerts: []}
+      - eval_time: 20m
+        alertname: TroveJobsStuck
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "A queued job has been waiting for more than 15 minutes."
+              description: "The queue is not being claimed or the workers are behind (R-ARCH-016). Check that worker pods are ready and claim the queue named by the label kind of the series, and the jobs list on System status. The series is read from PostgreSQL by every replica, so it keeps reporting while no worker runs."
+
+  - name: "TroveJobsStuck stays silent at 899 s and for the series of another namespace"
+    interval: 1m
+    input_series:
+      - {series: "trove_jobs_oldest_queued_age_seconds{namespace=\"default\",kind=\"gc\",pod=\"p1\"}", values: "899x60"}
+      - {series: "trove_jobs_oldest_queued_age_seconds{namespace=\"other\",kind=\"gc\",pod=\"p1\"}", values: "5000x60"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveJobsStuck, exp_alerts: []}
+
+  - name: "TroveLeaseLost fires when a task lost its lease more than three times in 15 minutes, and not for one loss"
+    interval: 1m
+    input_series:
+      - {series: "trove_lease_lost_total{namespace=\"default\",task=\"gc\",pod=\"p1\"}", values: "0x2 1 2 3 4 5 6 7 8 9 10x40"}
+      - {series: "trove_lease_lost_total{namespace=\"default\",task=\"vuln-sync-osv\",pod=\"p1\"}", values: "0x5 1x40"}
+    alert_rule_test:
+      - {eval_time: 1m, alertname: TroveLeaseLost, exp_alerts: []}
+      - eval_time: 8m
+        alertname: TroveLeaseLost
+        exp_alerts:
+          - exp_labels: {severity: "warning", namespace: "default", task: "gc", pod: "p1"}
+            exp_annotations:
+              summary: "The singleton task gc lost its lease more than three times in 15 minutes."
+              description: "The worker that holds the lease loses its session connection to PostgreSQL repeatedly (R-HA-006, R-ARCH-017), so the task moves between replicas or stops. Look for a pooler in transaction mode on the session endpoint, idle-session timeouts and connection resets between the worker and the database."
+      - {eval_time: 40m, alertname: TroveLeaseLost, exp_alerts: []}
+
+  - name: "TroveMixedVersions fires when two versions run for two hours, and not for one"
+    interval: 1m
+    input_series:
+      - {series: "trove_build_info{namespace=\"default\",version=\"1.4.0\",pod=\"p1\"}", values: "1x200"}
+      - {series: "trove_build_info{namespace=\"default\",version=\"1.5.0\",pod=\"p2\"}", values: "1x200"}
+    alert_rule_test:
+      - {eval_time: 100m, alertname: TroveMixedVersions, exp_alerts: []}
+      - eval_time: 130m
+        alertname: TroveMixedVersions
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "Replicas of more than one trove version have been running for two hours."
+              description: "A rolling upgrade is stuck, or a Deployment was left on an old image. Compare the label version of trove_build_info by pod and the image of each Deployment."
+
+  # p1 holds 9500 of 10000 bytes (95 percent) from minute 31 on, the alert holds ten minutes first; p2 stays at one percent.
+  - name: "TroveSpoolNearlyFull fires when the used share of the spool is above 90 percent for ten minutes"
+    interval: 1m
+    input_series:
+      - {series: "trove_spool_used_bytes{namespace=\"default\",pod=\"p1\"}", values: "1000x30 9500x60"}
+      - {series: "trove_spool_free_bytes{namespace=\"default\",pod=\"p1\"}", values: "9000x30 500x60"}
+      - {series: "trove_spool_used_bytes{namespace=\"default\",pod=\"p2\"}", values: "100x90"}
+      - {series: "trove_spool_free_bytes{namespace=\"default\",pod=\"p2\"}", values: "9900x90"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveSpoolNearlyFull, exp_alerts: []}
+      - {eval_time: 38m, alertname: TroveSpoolNearlyFull, exp_alerts: []}
+      - eval_time: 50m
+        alertname: TroveSpoolNearlyFull
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "The upload spool of a replica is more than 90 percent used."
+              description: "Running uploads hold more than nine times what the spool volume has left (R-STOR-004). New uploads are refused with 503 once the budget or the minimum free space is exceeded. Raise spool.sizeLimit of the role, or lower config.storage.spool.max_bytes; look for uploads that do not end."
+
+  # The last run ended at 1000 s: older than 172800 s from 2897 minutes on, and the alert holds an hour first.
+  - name: "TroveGCStale fires when the last successful run is older than two days for an hour, and stays silent without a series"
+    interval: 1m
+    input_series:
+      - {series: "trove_gc_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "1000x3100"}
+    alert_rule_test:
+      - {eval_time: 2800m, alertname: TroveGCStale, exp_alerts: []}
+      - {eval_time: 2930m, alertname: TroveGCStale, exp_alerts: []}
+      - eval_time: 3000m
+        alertname: TroveGCStale
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "No garbage-collection run has ended successfully for more than two days."
+              description: "The tasks gc and gc-full do not finish (R-STOR-025). Blobs that nothing references stay in the object store until a run succeeds. The series exists after the first successful run of a worker process, so a worker that never completed a run reports nothing. Check the jobs of the task and the object store."
+
+  - name: "TroveGCStale stays silent on a fresh last run and on a replica that never completed a run (no series)"
+    interval: 1m
+    input_series:
+      - {series: "trove_gc_last_success_timestamp_seconds{namespace=\"default\",pod=\"w1\"}", values: "170000x3100"}
+      - {series: "trove_build_info{namespace=\"default\",version=\"1.4.0\",pod=\"w2\"}", values: "1x3100"}
+    alert_rule_test:
+      - {eval_time: 3050m, alertname: TroveGCStale, exp_alerts: []}
+
+  - name: "TroveValkeyUnavailable fires when every replica is degraded for two minutes, the single-replica alert stays silent"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_available{namespace=\"default\",pod=\"p1\"}", values: "1x5 0x60"}
+      - {series: "trove_valkey_available{namespace=\"default\",pod=\"p2\"}", values: "1x5 0x60"}
+    alert_rule_test:
+      - {eval_time: 6m, alertname: TroveValkeyUnavailable, exp_alerts: []}
+      - eval_time: 10m
+        alertname: TroveValkeyUnavailable
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "Every replica runs without Valkey."
+              description: "Every replica reports its valkey check degraded (R-HA-057, INV-12). Rate limits fall back to per-replica shares, flights run without the cross-replica lock and cache invalidation relies on the change-log poll. A failover of the primary lasts well below two minutes; check the Sentinels, the primary and the credentials."
+      - {eval_time: 30m, alertname: TroveValkeyUnavailableSingleReplica, exp_alerts: []}
+
+  - name: "TroveValkeyUnavailableSingleReplica fires when some replicas are degraded for five minutes, the all-replica alert stays silent"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_available{namespace=\"default\",pod=\"p1\"}", values: "1x5 0x60"}
+      - {series: "trove_valkey_available{namespace=\"default\",pod=\"p2\"}", values: "1x65"}
+    alert_rule_test:
+      - {eval_time: 8m, alertname: TroveValkeyUnavailableSingleReplica, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveValkeyUnavailableSingleReplica
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "Some replicas have lost Valkey while others have it."
+              description: "The cause is on the path of the affected pods, not Valkey (a node, a network policy, DNS) (R-HA-057). Compare the pods by the label pod on trove_valkey_available and read the reason of the valkey check in GET /api/v1/system/replicas."
+      - {eval_time: 30m, alertname: TroveValkeyUnavailable, exp_alerts: []}
+
+  - name: "TroveValkeySentinelsDegraded fires when a replica reaches fewer than two Sentinels for five minutes, and not at two"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_sentinels_reachable{namespace=\"default\",pod=\"p1\"}", values: "3x5 1x60"}
+      - {series: "trove_valkey_sentinels_reachable{namespace=\"default\",pod=\"p2\"}", values: "3x65"}
+    alert_rule_test:
+      - {eval_time: 8m, alertname: TroveValkeySentinelsDegraded, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveValkeySentinelsDegraded
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "A replica reaches fewer than two Sentinels."
+              description: "Without a majority of three Sentinels no failover can be elected (R-HA-056). The gauge counts the answers to a probe of every configured Sentinel (R-HA-057). Check the Sentinel pods and the path from the replica to each of them."
+
+  - name: "TroveValkeySentinelsDegraded stays silent while every replica reaches two or three Sentinels"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_sentinels_reachable{namespace=\"default\",pod=\"p1\"}", values: "3x5 2x60"}
+      - {series: "trove_valkey_sentinels_reachable{namespace=\"default\",pod=\"p2\"}", values: "3x65"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveValkeySentinelsDegraded, exp_alerts: []}
+
+  - name: "TroveValkeyFailoverFlapping fires at the third primary change within an hour, and not for one"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_primary_changes_total{namespace=\"default\",pod=\"p1\"}", values: "0x5 1 2 3 4 5x60"}
+      - {series: "trove_valkey_primary_changes_total{namespace=\"default\",pod=\"p2\"}", values: "0x5 1x60"}
+    alert_rule_test:
+      - {eval_time: 3m, alertname: TroveValkeyFailoverFlapping, exp_alerts: []}
+      - eval_time: 20m
+        alertname: TroveValkeyFailoverFlapping
+        exp_alerts:
+          - exp_labels: {severity: "warning"}
+            exp_annotations:
+              summary: "The Valkey primary changed more than twice within an hour."
+              description: "Failovers repeat (Q-OPS-15). Look at the Valkey pods (restarts, memory, the node), the Sentinels' down-after-milliseconds against the network latency, and the log records \"valkey primary changed\"."
+
+  - name: "TroveValkeyFailoverFlapping stays silent for a single failover"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_primary_changes_total{namespace=\"default\",pod=\"p1\"}", values: "0x5 1x60"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveValkeyFailoverFlapping, exp_alerts: []}
+
+  - name: "TroveValkeyPrimaryDisagreement fires when replicas name two primaries for five minutes, and not for one"
+    interval: 1m
+    input_series:
+      - {series: "trove_valkey_primary_views{namespace=\"default\",pod=\"p1\"}", values: "1x5 2x60"}
+      - {series: "trove_valkey_primary_views{namespace=\"default\",pod=\"p2\"}", values: "1x65"}
+    alert_rule_test:
+      - {eval_time: 8m, alertname: TroveValkeyPrimaryDisagreement, exp_alerts: []}
+      - eval_time: 15m
+        alertname: TroveValkeyPrimaryDisagreement
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "Replicas name different Valkey primaries."
+              description: "At least one replica is bound to a demoted primary (Q-OPS-15, R-ARCH-031), so locks, rate limits and cache signals are split between two servers. The registry in GET /api/v1/system/replicas shows each replica's primary; a restart of the replica that names the old one rebinds it."

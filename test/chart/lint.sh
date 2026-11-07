@@ -23,9 +23,13 @@ fi
 
 sets=("$CHART"/ci/*.yaml)
 failed=0
+# helm lint takes no API versions, so a value set that enables the Gateway API (R-HA-038) is linted with the
+# HTTPRoute off and rendered with the Gateway API declared.
+LINT_EXTRA=()
+TEMPLATE_EXTRA=()
 run_chart() {
   local chart="$1" release="$2" label="$3"; shift 3
-  if out="$(helm lint --strict "$chart" "$@" 2>&1 && helm template "$release" "$chart" "$@" 2>&1 >/dev/null)"; then
+  if out="$(helm lint --strict "$chart" "$@" ${LINT_EXTRA[@]+"${LINT_EXTRA[@]}"} 2>&1 && helm template "$release" "$chart" "$@" ${TEMPLATE_EXTRA[@]+"${TEMPLATE_EXTRA[@]}"} 2>&1 >/dev/null)"; then
     echo "ok    $label"
   else
     echo "FAIL  $label" >&2
@@ -39,7 +43,13 @@ run() {
 }
 
 for f in "${sets[@]}"; do
+  if grep -q '^gateway:' "$f"; then
+    LINT_EXTRA=(--set gateway.enabled=false)
+    TEMPLATE_EXTRA=(--api-versions gateway.networking.k8s.io/v1/HTTPRoute)
+  fi
   run "ci/$(basename "$f")" -f "$f"
+  LINT_EXTRA=()
+  TEMPLATE_EXTRA=()
 done
 run "deploy/dev/values-dev.yaml" -f "$ROOT/deploy/dev/values-dev.yaml"
 run "deploy/dev/values-dev.yaml + values-pooler.yaml" -f "$ROOT/deploy/dev/values-dev.yaml" -f "$ROOT/deploy/dev/values-pooler.yaml"

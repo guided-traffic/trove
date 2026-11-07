@@ -108,12 +108,12 @@ release_values() {
   grep -q "\"$cp_cidr\"" "$dir/values-dev.yaml" \
     || die "the control-plane node's pod range is $cp_cidr; set config.server.trusted_proxies in $dir/values-dev.yaml to it"
   # Kubelet probes come from the node addresses, which are on the kind Docker network. A CNI that
-  # enforces the chart's NetworkPolicy for them needs the range in networkPolicy.probeCIDRs.
+  # enforces the chart's NetworkPolicy for them needs the range in networkPolicy.ingress.probeCIDRs.
   node_cidrs="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)"
   probe_cidrs="["; sep=""
   for c in $node_cidrs; do probe_cidrs="$probe_cidrs$sep\"$c\""; sep=","; done
   probe_cidrs="$probe_cidrs]"
-  RELEASE_VALUES=(-f "$dir/values-dev.yaml" --set-json "networkPolicy.probeCIDRs=$probe_cidrs")
+  RELEASE_VALUES=(-f "$dir/values-dev.yaml" --set-json "networkPolicy.ingress.probeCIDRs=$probe_cidrs")
   [ "$EDGE_PORT" = "8080" ] || RELEASE_VALUES+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
     --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
   if [ "$annotate" = 1 ]; then

@@ -657,6 +657,43 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) ([]Job, er
 	return items, nil
 }
 
+const jobQueueGauges = `-- name: JobQueueGauges :many
+SELECT kind::text AS kind, count(*)::bigint AS queued,
+       COALESCE(max(EXTRACT(EPOCH FROM now() - run_at)) FILTER (WHERE run_at <= now()), 0)::float8 AS oldest_age_seconds
+  FROM job
+ WHERE state = 'queued'
+ GROUP BY kind
+`
+
+type JobQueueGaugesRow struct {
+	Kind             string
+	Queued           int64
+	OldestAgeSeconds float64
+}
+
+// trove_jobs_queued and trove_jobs_oldest_queued_age_seconds (R-OPS-007, R-HA-045): per kind the queued jobs and the age of
+// the oldest that is due. A job whose run_at lies ahead (a retry back-off, a delayed start) is queued but not waiting, so
+// its time counts for nothing.
+func (q *Queries) JobQueueGauges(ctx context.Context) ([]JobQueueGaugesRow, error) {
+	rows, err := q.db.Query(ctx, jobQueueGauges)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []JobQueueGaugesRow{}
+	for rows.Next() {
+		var i JobQueueGaugesRow
+		if err := rows.Scan(&i.Kind, &i.Queued, &i.OldestAgeSeconds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reapJobs = `-- name: ReapJobs :many
 WITH expired AS (
     SELECT j.id,

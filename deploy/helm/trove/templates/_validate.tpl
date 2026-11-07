@@ -3,6 +3,24 @@ Fail-fast validation (R-HA-029). Every failure names the offending value. Rows o
 belong to features this chart does not render yet (pooler, backup, restore, gateway, monitoring,
 pools) are added with those features.
 */}}
+{{/*
+A Gateway API duration (GEP-2257: a sequence of h, m, s and ms terms, "1h30m", "3600s") in milliseconds. The schema
+fixes the form, so every term is a number and a unit.
+*/}}
+{{- define "trove.gatewayDurationMs" -}}
+{{- $ms := 0 -}}
+{{- range $t := regexFindAll "[0-9]+(ms|h|m|s)" . -1 -}}
+{{- $n := int (regexFind "^[0-9]+" $t) -}}
+{{- $u := regexFind "(ms|h|m|s)$" $t -}}
+{{- if eq $u "h" -}}{{- $ms = add $ms (mul $n 3600000) -}}
+{{- else if eq $u "m" -}}{{- $ms = add $ms (mul $n 60000) -}}
+{{- else if eq $u "s" -}}{{- $ms = add $ms (mul $n 1000) -}}
+{{- else -}}{{- $ms = add $ms $n -}}
+{{- end -}}
+{{- end -}}
+{{- $ms -}}
+{{- end -}}
+
 {{- define "trove.validate" -}}
 {{- $v := .Values -}}
 {{- $cfg := $v.config -}}
@@ -116,6 +134,26 @@ pools) are added with those features.
 {{- if or $t.clientCA.secretName $t.ops.secretName $t.backendTLSPolicy.enabled -}}
 {{- fail "trove: tls.clientCA, tls.ops and tls.backendTLSPolicy need tls.enabled: true" -}}
 {{- end -}}
+{{- end -}}
+
+{{- /* Gateway API exposure (R-HA-038, R-HA-029). */ -}}
+{{- if $v.gateway.enabled -}}
+{{- if not (.Capabilities.APIVersions.Has "gateway.networking.k8s.io/v1/HTTPRoute") -}}
+{{- fail "trove: gateway.enabled needs the Gateway API in the cluster (gateway.networking.k8s.io/v1 HTTPRoute, CRDs v1.2 or later, Standard channel); install the CRDs, or set gateway.enabled: false. With helm template, pass --api-versions gateway.networking.k8s.io/v1/HTTPRoute" -}}
+{{- end -}}
+{{- if not $v.gateway.parentRefs -}}
+{{- fail "trove: gateway.parentRefs is required with gateway.enabled: the Gateway the HTTPRoute attaches to (example: [{name: shared, namespace: gateway-system, sectionName: https}])" -}}
+{{- end -}}
+{{- $reqMs := int (include "trove.gatewayDurationMs" $v.gateway.timeouts.request) -}}
+{{- $backMs := int (include "trove.gatewayDurationMs" $v.gateway.timeouts.backendRequest) -}}
+{{- if and (gt $reqMs 0) (gt $backMs $reqMs) -}}
+{{- fail (printf "trove: gateway.timeouts.backendRequest (%s) must not exceed gateway.timeouts.request (%s)" $v.gateway.timeouts.backendRequest $v.gateway.timeouts.request) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* The ServiceMonitor reads the CA Secret of the scrape from its own namespace (R-HA-045). */ -}}
+{{- if and $v.metrics.serviceMonitor.enabled $v.tls.enabled $v.metrics.serviceMonitor.namespace (ne $v.metrics.serviceMonitor.namespace $ns) -}}
+{{- fail (printf "trove: metrics.serviceMonitor.namespace (%s) must be the release namespace (%s) while tls.enabled is true: the Prometheus operator reads the CA Secret of the scrape (ca.crt of tls.secretName or tls.ops.secretName) from the namespace of the ServiceMonitor" $v.metrics.serviceMonitor.namespace $ns) -}}
 {{- end -}}
 
 {{- /* Keys the chart manages (R-HA-030): setting one inside config is refused. */ -}}

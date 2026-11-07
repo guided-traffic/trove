@@ -1,4 +1,4 @@
-# The PrometheusRule (the alerts of the vulnerability scanning) and the vulnerabilities section
+# The ServiceMonitor, the PrometheusRule (the alerts of the vulnerability scanning) and the vulnerabilities section
 # the chart reads. The rules are rendered into a rule file and tested with promtool
 # (deploy/helm/trove/tests/rules_test.yaml, test/chart).
 config:
@@ -34,6 +34,10 @@ secrets:
     existingSecret: trove-encryption-keys
     keys: [2026-10.key]
 metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
   prometheusRule:
     enabled: true
     labels:

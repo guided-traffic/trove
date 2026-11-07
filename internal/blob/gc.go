@@ -176,6 +176,9 @@ func (c *Collector) Run(ctx context.Context, o RunOptions) (res GCResult, err er
 			r.finalize(ctx)
 		}
 		c.metrics.gc(r.res.Deleted, r.res.Kept, r.res.Held, r.res.BytesReclaimed)
+		if err == nil && !r.res.Paused && !o.DryRun {
+			c.metrics.gcSucceeded(time.Now())
+		}
 		res = r.res
 	}()
 

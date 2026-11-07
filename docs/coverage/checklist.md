@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 451 of 691 spec requirements are implemented: a passing test names them and no
+**Status.** 453 of 691 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 704 specified (342 of them implemented), 1,535 open.
+**Totals.** 2,239 catalog features on 60 pages: 704 specified (343 of them implemented), 1,535 open.
 691 spec requirements: 546 cover catalog features, 145 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -38,7 +38,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 12 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 31 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 32 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 22 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 2 |
@@ -877,7 +877,7 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 31 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 32 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -909,7 +909,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-026 | Reverse-proxy configuration generator | P2 | open | – |
 | HA-027 | Container-registry routing at the edge | P1 | specified | [R-EP-007](../spec/endpoints.md), [R-HA-041](../spec/ha-and-helm.md) (implemented) |
 | HA-028 | Client-certificate forwarding from the reverse proxy | P2 | open | – |
-| HA-029 | Helm chart as the Kubernetes deployment | MVP | specified | [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-031](../spec/ha-and-helm.md) |
+| HA-029 | Helm chart as the Kubernetes deployment | MVP | implemented | [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-031](../spec/ha-and-helm.md) (implemented) |
 | HA-030 | Fail-fast chart validation | MVP | implemented | [R-HA-029](../spec/ha-and-helm.md) (implemented) |
 | HA-031 | Cluster key provisioning in the chart | MVP | implemented | [R-HA-027](../spec/ha-and-helm.md) (implemented) |
 | HA-032 | Replica count and clustered mode in the chart | MVP | implemented | [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-032](../spec/ha-and-helm.md) (implemented) |
@@ -920,7 +920,7 @@ Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specif
 | HA-037 | First-start bootstrap | MVP | specified | [R-HA-030](../spec/ha-and-helm.md) (implemented), [R-OPS-031](../spec/operations-and-observability.md) |
 | HA-038 | Kubernetes Service exposure | MVP | implemented | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-028](../spec/ha-and-helm.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-039 | Ingress exposure | MVP | implemented | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-037](../spec/ha-and-helm.md) (implemented) |
-| HA-040 | Gateway API exposure | P1 | specified | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-038](../spec/ha-and-helm.md), [R-HA-053](../spec/ha-and-helm.md) |
+| HA-040 | Gateway API exposure | P1 | specified | [R-EP-008](../spec/endpoints.md) (implemented), [R-HA-038](../spec/ha-and-helm.md) (implemented), [R-HA-053](../spec/ha-and-helm.md) |
 | HA-041 | Bundled edge reverse proxy | P2 | open | – |
 | HA-042 | TLS termination topology in Kubernetes | MVP | implemented | [R-HA-037](../spec/ha-and-helm.md) (implemented) |
 | HA-043 | Horizontal pod autoscaling | MVP | implemented | [R-HA-032](../spec/ha-and-helm.md) (implemented) |

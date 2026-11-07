@@ -1,0 +1,56 @@
+{{- if .Values.gateway.enabled }}
+{{- /*
+The Gateway API edge of the default endpoint (R-HA-038): one HTTPRoute attached to gateway.parentRefs
+(the platform's Gateway; the chart creates none) with one rule per row of the path table of the Ingress
+(templates/_edge.tpl: PathPrefix matches by whole path elements, the longest wins), each to the Service of
+its role on the port http, with the timeouts and filters of the values on every rule. The rules are fixed,
+not values; gateway.extraRules are appended after them. Ingress and HTTPRoute may run side by side. The
+Gateway API is checked in templates/_validate.tpl, before anything is created.
+*/ -}}
+{{- $gw := .Values.gateway }}
+{{- $hosts := $gw.hostnames }}
+{{- if not $hosts }}
+{{- $hosts = list (urlParse .Values.config.server.base_url).hostname }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "trove.fullname" . }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "gateway") | nindent 4 }}
+    {{- with $gw.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- $ann := merge (dict) $gw.annotations .Values.commonAnnotations }}
+  {{- if $ann }}
+  annotations:
+    {{- toYaml $ann | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- toYaml $gw.parentRefs | nindent 4 }}
+  hostnames:
+    {{- range $hosts }}
+    - {{ . | quote }}
+    {{- end }}
+  rules:
+    {{- range $rule := include "trove.edgeRules" (dict "root" $ "endpoint" "") | fromYamlArray }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ $rule.path }}
+      {{- with $gw.filters }}
+      filters:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      backendRefs:
+        - name: {{ $rule.service }}
+          port: {{ $.Values.service.port }}
+      timeouts:
+        request: {{ $gw.timeouts.request }}
+        backendRequest: {{ $gw.timeouts.backendRequest }}
+    {{- end }}
+    {{- with $gw.extraRules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

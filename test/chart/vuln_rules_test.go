@@ -13,9 +13,10 @@ import (
 
 func monitoringSet() string { return filepath.Join(chartDir, "ci", "monitoring.yaml") }
 
-// TestR_VULN_024_PromtoolRules (R-VULN-024, R-HA-045): the rendered PrometheusRule passes `promtool check rules` and
+// TestR_VULN_024_PromtoolRules (R-VULN-024): the rendered PrometheusRule passes `promtool check rules` and
 // `promtool test rules`, with one test per alert that fires on its failure input and one in which it stays silent
-// (deploy/helm/trove/tests/rules_test.yaml).
+// (deploy/helm/trove/tests/rules_test.yaml). It runs over every alert of the chart, those of R-HA-045 included; the
+// requirement's own checks are in TestPrometheusRule, which does not carry its ID because the requirement is not complete.
 func TestR_VULN_024_PromtoolRules(t *testing.T) {
 	promtool := promtoolPath(t)
 	_, docs := render(t, []string{monitoringSet()})
@@ -64,11 +65,7 @@ func TestR_VULN_024_PromtoolRules(t *testing.T) {
 				}
 			}
 		}
-		rendered := list(pr, "spec", "groups", "0", "rules")
-		if len(rendered) != 7 {
-			t.Errorf("rendered %d alerts, want the three of R-VULN-024, the two of the mirror (R-OPS-046), TroveBridgeLeftOn and TroveBlobMissing", len(rendered))
-		}
-		for _, r := range rendered {
+		for _, r := range list(pr, "spec", "groups", "0", "rules") {
 			name := str(r, "alert")
 			if !fires[name] {
 				t.Errorf("no test in which %s fires", name)
@@ -111,8 +108,7 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 			name := str(r, "alert")
 			sev, ok := want[name]
 			if !ok {
-				t.Errorf("unexpected alert %s: only the alerts of R-VULN-024, R-OPS-046 (the mirror), TroveBridgeLeftOn (R-HA-064) and TroveBlobMissing (R-HA-024) are rendered by this chart so far", name)
-				continue
+				continue // the other alerts of the rule are checked by TestPrometheusRule
 			}
 			if got := str(r, "labels", "severity"); got != sev {
 				t.Errorf("%s severity = %q, want %q", name, got, sev)
@@ -150,8 +146,15 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 		for _, r := range list(find(docs, "PrometheusRule", "trove"), "spec", "groups", "0", "rules") {
 			names = append(names, str(r, "alert"))
 		}
-		if got := strings.Join(names, ","); got != "TroveVulnerabilityDataStale,TroveVulnerabilityClaimedNameMalicious,TroveMirrorFailing,TroveMirrorStale,TroveBridgeLeftOn,TroveBlobMissing,Mine" {
-			t.Errorf("alerts = %s", got)
+		want := []string{}
+		for _, a := range alertSeverities() {
+			if a.name != "TroveVulnerabilitySyncFailing" {
+				want = append(want, a.name)
+			}
+		}
+		want = append(want, "Mine")
+		if got := strings.Join(names, ","); got != strings.Join(want, ",") {
+			t.Errorf("alerts = %s, want %s", got, strings.Join(want, ","))
 		}
 	})
 
@@ -161,8 +164,11 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 	})
 
 	t.Run("every alert disabled renders no PrometheusRule", func(t *testing.T) {
-		out, _ := render(t, []string{monitoringSet()},
-			"metrics.prometheusRule.disabledAlerts={TroveVulnerabilityDataStale,TroveVulnerabilitySyncFailing,TroveVulnerabilityClaimedNameMalicious,TroveMirrorFailing,TroveMirrorStale,TroveBridgeLeftOn,TroveBlobMissing}")
+		var all []string
+		for _, a := range alertSeverities() {
+			all = append(all, a.name)
+		}
+		out, _ := render(t, []string{monitoringSet()}, "metrics.prometheusRule.disabledAlerts={"+strings.Join(all, ",")+"}")
 		if strings.Contains(out, "kind: PrometheusRule") {
 			t.Error("an empty PrometheusRule is rendered")
 		}

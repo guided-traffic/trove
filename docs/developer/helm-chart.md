@@ -15,15 +15,15 @@ of being silently ignored.
 
 | In the chart | Not in the chart yet |
 |---|---|
-| `api`, `packages` and `worker` Deployments, always (R-HA-002); path pools, worker pools and endpoint pools per role (R-HA-062, R-EP-008); the bridge `web` with `web.enabled` (R-HA-064); see [The cut into roles](#the-cut-into-roles) | Gateway API HTTPRoute (R-HA-038, Q-HA-81), `contentOrigin` |
-| role Services `<fullname>-api` and `<fullname>-packages`, pool Services, ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | ServiceMonitor, and every alert of the PrometheusRule but those of the row "PrometheusRule" (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
+| `api`, `packages` and `worker` Deployments, always (R-HA-002); path pools, worker pools and endpoint pools per role (R-HA-062, R-EP-008); the bridge `web` with `web.enabled` (R-HA-064); see [The cut into roles](#the-cut-into-roles) | the Gateway the chart creates (`gateway.create`, R-HA-053), `contentOrigin` |
+| role Services `<fullname>-api` and `<fullname>-packages`, pool Services, ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | the seven `TroveBackup*` alerts and `TroveRevocationJournalBacklog` of R-HA-045 (the backup and the revocation journal are not built), see [The PrometheusRule](#the-prometheusrule) |
 | PodDisruptionBudget and HorizontalPodAutoscaler per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | |
 | one NetworkPolicy per Deployment and the migration Job, ingress only (R-HA-042, ADR-154) | |
-| PrometheusRule with the three alerts of the vulnerability scanning, `TroveMirrorFailing` and `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-171), `TroveBridgeLeftOn` (R-HA-045, R-VULN-024, Q-HA-92) and `TroveBlobMissing` (R-HA-024, Q-STOR-152), `metrics.prometheusRule.*` | |
+| PrometheusRule with 23 alerts: the sixteen rows of R-HA-045 whose metrics the binary exports, the three of the vulnerability scanning, `TroveMirrorFailing` and `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-171), `TroveBridgeLeftOn` (R-VULN-024, Q-HA-92) and `TroveBlobMissing` (R-HA-024, Q-STOR-152), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring including the login secrets `secrets.oidc` and `secrets.breakGlass`, downward-API variables (R-HA-030) | `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
-| Ingress with the path rules of the roles (R-HA-037); TLS on trove's listeners (R-HA-063) | HTTPRoute for the default endpoint and for endpoints (`gateway.*`, R-HA-038, R-EP-008); profiles `small`, `medium`, `large` (R-HA-050), the complete values reference (R-HA-031) |
+| Ingress with the path rules of the roles (R-HA-037); HTTPRoute of the default endpoint (`gateway.*`, R-HA-038, see [The HTTPRoute](#the-httproute)); ServiceMonitor (`metrics.serviceMonitor.*`, R-HA-045, see [The ServiceMonitor](#the-servicemonitor)); TLS on trove's listeners (R-HA-063); the values reference of the spec (R-HA-031, see [The values reference](#the-values-reference)) | the HTTPRoute of further endpoints (R-EP-008); profiles `small`, `medium`, `large` (R-HA-050) |
 | further endpoints: Services, Ingress, optional pool per role, certificates (R-EP-008), see [Endpoints](#endpoints) | the validation rows of the features in the right column |
 
 Gaps in what is there:
@@ -75,7 +75,7 @@ depend on it; the refusal is verified against a cluster (the upgrade e2e test, `
 the bridge runs, its `web` pods hold the secrets of both roles
 ([H-518](../security/roles-and-trust-boundaries.md#h-518--the-bridge-and-the-development-role-hold-both-halves-of-the-cut)).
 
-The HTTPRoute of R-HA-038 is not rendered (Q-HA-81): it will loop over `trove.edgeRules`.
+The HTTPRoute of R-HA-038 loops over the same table, see [The HTTPRoute](#the-httproute).
 
 ## Layout
 
@@ -438,28 +438,85 @@ tests in `chart_test.go` assert both, row by row.
 | the spool budget of a worker Deployment that claims the queue `vuln` (the main worker unless a pool lists it, or that pool) below `config.vulnerabilities.sources.osv.max_archive_size` while `config.vulnerabilities.enabled` (default true) and the OSV mode (default `online`) is not `off` (R-VULN-025) | implemented, naming the archive limit and `worker.spool.sizeLimit` |
 | a name in `metrics.prometheusRule.disabledAlerts` that is no alert of the chart | implemented, listing the names |
 | `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; the same three rules for the merged `ingress.backendTLS` of each further endpoint with `ingress.enabled` (`endpoints.<name>.ingress.backendTLS.caSecret`, `.serversTransport`, `.clientCertSecret` with the endpoint's `tls.clientCaSecret`); `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
-| pooler (`session_host`, control endpoint), backup, restore, gateway, ServiceMonitor, `contentOrigin` | with those features |
+| pooler (`session_host`, control endpoint), backup, restore, the Gateway the chart creates, `contentOrigin` | with those features |
+| `gateway.enabled` without the Gateway API (`.Capabilities` lacks `gateway.networking.k8s.io/v1/HTTPRoute`; with `helm template` pass `--api-versions gateway.networking.k8s.io/v1/HTTPRoute`), without `gateway.parentRefs`, or with `gateway.timeouts.backendRequest` above `gateway.timeouts.request` (a request timeout of `0s` is no timeout and exceeds nothing); `metrics.serviceMonitor.namespace` other than the release namespace while `tls.enabled` (the CA Secret is read from the ServiceMonitor's namespace) | implemented; a timeout that is no Gateway API duration is the schema's |
 | a `ReadWriteMany` spool, `--set ingress.path=…`, any unknown key | schema |
 
 </details>
 
+## The HTTPRoute
+
+`gateway.enabled` renders one HTTPRoute `<fullname>` ([httproute.yaml](../../deploy/helm/trove/templates/httproute.yaml), R-HA-038) for the
+default endpoint: `gateway.parentRefs` (required), `hostnames` (default the host of `config.server.base_url`), and one rule per row of
+`trove.edgeRules`, the table the Ingress reads, each a `PathPrefix` match to the Service of its role on `service.port`, with
+`gateway.timeouts` and `gateway.filters` on every rule and `gateway.extraRules` appended. In the bridge the one rule is `/` to `<fullname>`.
+The Ingress and the HTTPRoute may run together. The BackendTLSPolicies are `tls.backendTLSPolicy`'s and do not depend on `gateway.enabled`.
+The check for the Gateway API is a capability, so every offline render of a set with `gateway.enabled` passes
+`--api-versions gateway.networking.k8s.io/v1/HTTPRoute`: `templateArgs` in the chart tests and [lint.sh](../../test/chart/lint.sh) do, and
+`helm lint`, which takes no API versions, runs with `--set gateway.enabled=false` on a set that enables it ([ci/gateway.yaml](../../deploy/helm/trove/ci/gateway.yaml)).
+Not built: the HTTPRoute of further endpoints (R-EP-008) and the Gateway the chart creates (R-HA-053); the criteria with Envoy Gateway in
+kind (200 MB `npm publish` through the route) are not part of the render tests.
+Test: `TestR_HA_038_GatewayAPIExposure`.
+
+## The ServiceMonitor
+
+`metrics.serviceMonitor.enabled` renders one ServiceMonitor `<fullname>` ([servicemonitor.yaml](../../deploy/helm/trove/templates/servicemonitor.yaml)):
+the port `ops` of `<fullname>-ops`, path `/metrics`, `role` and `pool` relabelings first (from the pod labels `app.kubernetes.io/component`
+and `trove/pool`), then `metrics.serviceMonitor.relabelings`; with `tls.enabled` `scheme: https` and a `tlsConfig` that verifies
+`<fullname>-ops.<namespace>.svc` (the certificate of the operator must carry it) against `ca.crt` of `tls.ops.secretName` or `tls.secretName`,
+read from the ServiceMonitor's namespace; with `config.metrics.auth: static` the bearer token of `secrets.metricsToken`. Test:
+`TestServiceMonitor`, which deliberately does not carry the ID R-HA-045: the requirement is not complete (the backup alerts and the
+revocation-journal alert wait for their metrics, see [The PrometheusRule](#the-prometheusrule)), and a test named for it would count it as implemented.
+
+## The values reference
+
+The values block of [R-HA-031](../spec/ha-and-helm.md) is the reference; `TestR_HA_031_ValuesReference` ([values_reference_test.go](../../test/chart/values_reference_test.go))
+holds it to [values.yaml](../../deploy/helm/trove/values.yaml): every key of values.yaml is in the block with the same default, every key of the
+block is in values.yaml unless the feature that owns it is not rendered yet (`unbuiltPrefixes` in the test: backup, restore, the chart-created
+Gateway, `contentOrigin`, `bootstrap`, `trustedCA`, Service tuning, the extension points, and the keys under `config`), and
+[values.schema.json](../../deploy/helm/trove/values.schema.json) declares every key. A value added to the chart is added to the block in the
+same change; a feature that arrives takes its prefix out of `unbuiltPrefixes`.
+
 ## The PrometheusRule
 
 `metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
-[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. Only
-the three alerts of the vulnerability scanning (R-VULN-024), the two of the mirror mode (R-OPS-046, Q-OPS-160, Q-OPS-167), `TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92) and `TroveBlobMissing` (a read found the object of a blob missing within the hour, severity `critical`, R-HA-024, Q-STOR-152) are written: `TroveVulnerabilityDataStale`,
-`TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn` and `TroveBlobMissing`. The other rows of R-HA-045's table are not implemented
-(the list is in the spec's status paragraph of R-HA-045), and neither is the ServiceMonitor with its `role` and `pool` relabelings: the
-scrape is the operator's.
+[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. The
+rule holds 23 alerts, in this order: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`,
+`TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,
+`TroveMixedVersions`, `TroveSpoolNearlyFull` (rows of R-HA-045's table), `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`,
+`TroveVulnerabilityClaimedNameMalicious` (R-VULN-024), `TroveMirrorFailing`, `TroveMirrorStale` (R-OPS-046, Q-OPS-160, Q-OPS-167),
+`TroveBridgeLeftOn` (a `web` replica registered for 24 hours, Q-HA-92), `TroveBlobMissing` (a read found the object of a blob missing within the
+hour, R-HA-024, Q-STOR-152), `TroveGCStale`, `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`,
+`TroveValkeyFailoverFlapping` and `TroveValkeyPrimaryDisagreement` (rows of the table). Severities are in the spec's table (`critical`:
+`TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveValkeyUnavailable`, `TroveValkeyPrimaryDisagreement`,
+`TroveVulnerabilityClaimedNameMalicious`, `TroveBlobMissing`; the others `warning`).
 
+**Not rendered.** `TroveBackupCheckFailed`, `TroveBackupStale`, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`,
+`TroveBackupSourceDamage`, `TroveBackupVerifyFindings` read `trove_backup_*`, which the backup and restore jobs would write (phase 7); and
+`TroveRevocationJournalBacklog` reads `trove_revocation_journal_pending` of the revocation journal (R-HA-054, phase 7). The binary exports
+neither, and a metric nobody writes would make an alert that never fires look like one that works. When the jobs exist, their gauges, the
+alerts, a test pair per alert and the rows of `alertSeverities` in
+[prometheusrule_test.go](../../test/chart/prometheusrule_test.go) arrive together; `TestPrometheusRule` fails if one of them is rendered
+earlier.
+
+**Names.** The expressions are the specification's, and the binary exports every metric they read under that name (Q-HA-135): the
+spool gauges are `trove_spool_used_bytes` and `trove_spool_free_bytes`, the pool metrics are in
+[internal/meta/postgres/metrics.go](../../internal/meta/postgres/metrics.go) and
+[internal/app/wire_gauges.go](../../internal/app/wire_gauges.go), the queue ages in the `JobQueueGauges` query. `TestPrometheusRule` fails
+for an expression that reads a `trove_*` name no code under `internal/` registers.
+
+- `TroveReplicasNotReady` reads kube-state-metrics: `min by (deployment)` of `kube_deployment_status_replicas_available` for the Deployments
+  `<fullname>-(api|packages|worker|web)(-.*)?`, the main Deployments, their pools (`<fullname>-<role>-<pool>`) and the bridge; a Deployment
+  that is scaled to one replica by choice fires too.
 - Every selector carries `namespace="<release namespace>"`, so two installations in one Prometheus do not blend (Q-VULN-55). A scrape
   through the Prometheus operator always sets that label.
 - The stale threshold is `config.vulnerabilities.stale_after` (default `24h`, parsed by `trove.seconds`), the key the binary reads; a
   `stale_after` that arrives only through `extraEnv` is not seen.
 - A rule file renders no object when every alert is disabled and `extraRules` is empty.
 - To add an alert: append it to `trove.rules.all` and its name to `trove.rules.names`, add a test that fires and one that stays silent to
-  [tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) (`TestR_VULN_024_PromtoolRules` fails otherwise), and a row to
-  R-HA-045.
+  [tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) (`TestR_VULN_024_PromtoolRules` fails otherwise; the expected
+  annotations are the rule's text, so a changed text fails the test until the test file follows), a row to `alertSeverities` in
+  [prometheusrule_test.go](../../test/chart/prometheusrule_test.go) and a row to R-HA-045.
 
 [tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) is rendered from `ci/monitoring.yaml` as release `trove` in the
 namespace `default` and run with the pinned promtool (`make chart-test` fetches it, see [The Bastion chart](#the-bastion-chart)).
@@ -508,6 +565,7 @@ is where the coverage generator reads the IDs from.
 | `R-VULN-025` (`TestR_VULN_025_SpoolHoldsOneArchive`) | the worker spool must hold one archive: the defaults pass, a larger `max_archive_size` fails naming both values (also in mode `repository`), the headroom counts, mode `off` and a disabled scanning are not checked, the worker's `TROVE_STORAGE_SPOOL_MAX_BYTES` follows its own `sizeLimit` |
 | `R-VULN-025` (`TestR_VULN_025_ConfigurationPassesThrough`) | the `vulnerabilities` section reaches `trove.yaml` as set; `ci/monitoring.yaml` passes `trove admin config validate` with the other sets |
 | `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the alerts (the three of the vulnerability scanning, the two of the mirror, `TroveBridgeLeftOn`, `TroveBlobMissing`) and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
+| (no ID: `TestPrometheusRule`) | R-HA-045 is not complete (the backup and revocation-journal alerts wait for phase 7): the rule is rendered with `enabled` and carries the `labels`, none by default or with `enabled: false`; the 23 alerts and their severities, `for` durations, summaries and descriptions; the role regex follows `<fullname>`; no `TroveBackup*` alert and no read of `trove_backup_*`; every `trove_*` name an expression reads is registered by code under `internal/`; `disabledAlerts` |
 | `R-VULN-024` (`TestR_VULN_024_PromtoolRules`) | `promtool check rules` and `promtool test rules` over the rendered rules, and one firing and one silent test per alert |
 | `R-HA-029` (memory) | a serving pod (`api`, `packages`, a pool) without a memory limit, or one whose memory slots (`trove.requestBytes` and the three cache budgets, the formula of `internal/app/memory.go`) are fewer than 64, fails; `2G`, `64Mi` and a plain integer render |
 | `R-HA-032` | PDB, spread, tolerations, default replica counts and rolling update |

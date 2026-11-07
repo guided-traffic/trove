@@ -1,6 +1,8 @@
 package blob
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/guided-traffic/trove/internal/observability"
@@ -14,9 +16,9 @@ import (
 // The S3 request counter names its operation label "operation" because that is
 // the label R-OPS-007 allows; R-STOR-033 writes "op".
 type Metrics struct {
-	rejections    *prometheus.CounterVec
-	spoolReserved prometheus.Gauge
-	spoolFree     prometheus.Gauge
+	rejections *prometheus.CounterVec
+	spoolUsed  prometheus.Gauge
+	spoolFree  prometheus.Gauge
 
 	s3Requests    *prometheus.CounterVec
 	s3Duration    *prometheus.HistogramVec
@@ -28,6 +30,7 @@ type Metrics struct {
 	gcKept      prometheus.Counter
 	gcHeld      prometheus.Counter
 	gcDeleting  prometheus.Gauge
+	gcLastOK    *prometheus.GaugeVec // no series until a run succeeded
 
 	damaged *prometheus.CounterVec
 }
@@ -36,9 +39,9 @@ type Metrics struct {
 // in internal/observability, when called twice for one registry.
 func NewMetrics(m *observability.Metrics) *Metrics {
 	return &Metrics{
-		rejections:    m.NewCounterVec("trove_storage_upload_rejections_total", "Uploads refused before or while reading the body, by reason.", "reason"),
-		spoolReserved: m.NewGaugeVec("trove_storage_spool_reserved_bytes", "Spool budget reserved by running uploads.").WithLabelValues(),
-		spoolFree:     m.NewGaugeVec("trove_storage_spool_free_bytes", "Free bytes of the spool volume at the last reservation.").WithLabelValues(),
+		rejections: m.NewCounterVec("trove_storage_upload_rejections_total", "Uploads refused before or while reading the body, by reason.", "reason"),
+		spoolUsed:  m.NewGaugeVec("trove_spool_used_bytes", "Spool budget held by running uploads: the bytes they have reserved on the spool volume.").WithLabelValues(),
+		spoolFree:  m.NewGaugeVec("trove_spool_free_bytes", "Free bytes of the spool volume, read at the last reservation or release.").WithLabelValues(),
 
 		s3Requests:    m.NewCounterVec("trove_storage_s3_requests_total", "Object-store requests by operation and outcome.", "operation", "outcome"),
 		s3Duration:    m.NewHistogramVec("trove_storage_s3_request_duration_seconds", "Duration of object-store requests by operation.", observability.HTTPBuckets(), "operation"),
@@ -50,6 +53,7 @@ func NewMetrics(m *observability.Metrics) *Metrics {
 		gcKept:      m.NewCounterVec("trove_gc_candidates_kept_total", "Candidates the per-blob check found referenced or gone.").WithLabelValues(),
 		gcHeld:      m.NewCounterVec("trove_gc_candidates_held_total", "Candidates kept by a backup hold.").WithLabelValues(),
 		gcDeleting:  m.NewGaugeVec("trove_gc_deleting_rows", "Blob rows in state deleting at the end of the last run.").WithLabelValues(),
+		gcLastOK:    m.NewGaugeVec("trove_gc_last_success_timestamp_seconds", "End of the last garbage-collection run of this replica that was neither a dry run, nor paused, nor failed; absent until one has ended."),
 
 		damaged: m.NewCounterVec("trove_storage_blobs_damaged_total", "Blobs marked damaged by a detection, by new status.", "status"),
 	}
@@ -61,16 +65,10 @@ func (m *Metrics) reject(reason string) {
 	}
 }
 
-func (m *Metrics) setSpool(reserved int64, free uint64) {
+func (m *Metrics) setSpool(used int64, free uint64) {
 	if m != nil {
-		m.spoolReserved.Set(float64(reserved))
+		m.spoolUsed.Set(float64(used))
 		m.spoolFree.Set(float64(free))
-	}
-}
-
-func (m *Metrics) setSpoolReserved(reserved int64) {
-	if m != nil {
-		m.spoolReserved.Set(float64(reserved))
 	}
 }
 
@@ -106,6 +104,19 @@ func (m *Metrics) gc(deleted, kept, held int, reclaimed int64) {
 	m.gcKept.Add(float64(kept))
 	m.gcHeld.Add(float64(held))
 	m.gcReclaimed.Add(float64(reclaimed))
+}
+
+func (m *Metrics) setSpoolUsed(used int64) {
+	if m != nil {
+		m.spoolUsed.Set(float64(used))
+	}
+}
+
+// gcSucceeded records the end of a run that did its work (R-OPS-007).
+func (m *Metrics) gcSucceeded(at time.Time) {
+	if m != nil {
+		m.gcLastOK.WithLabelValues().Set(float64(at.UnixNano()) / 1e9)
+	}
 }
 
 func (m *Metrics) setDeleting(n int) {

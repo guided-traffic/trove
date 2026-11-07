@@ -8,7 +8,7 @@ Per Deployment the policy admits the ports its pods open:
                         controller works); only api, packages, their path pools and the bridge web
   a further endpoint's  from that endpoint's networkPolicy.from (empty = from anywhere), for every
   port                  endpoint the pods open (templates/_units.tpl trove.unitEndpoints)
-  8081                  only from networkPolicy.ingress.ops.from and networkPolicy.probeCIDRs; with no
+  8081                  only from networkPolicy.ingress.ops.from and networkPolicy.ingress.probeCIDRs; with no
                         peer at all the rule is left out, because an empty "from" would mean
                         from anywhere
 A worker listens on no client port, so its policy holds the 8081 rule only. The migration Job
@@ -18,7 +18,7 @@ accepts nothing. Replicas never talk to each other, so no rule admits one trove 
 {{- $np := .Values.networkPolicy }}
 {{- $ops := list }}
 {{- range $np.ingress.ops.from }}{{ $ops = append $ops . }}{{- end }}
-{{- range $np.probeCIDRs }}{{ $ops = append $ops (dict "ipBlock" (dict "cidr" .)) }}{{- end }}
+{{- range $np.ingress.probeCIDRs }}{{ $ops = append $ops (dict "ipBlock" (dict "cidr" .)) }}{{- end }}
 {{- range $unit := include "trove.units" . | fromYamlArray }}
 {{- $ctx := dict "root" $ "role" $unit.role "pool" $unit.pool }}
 ---

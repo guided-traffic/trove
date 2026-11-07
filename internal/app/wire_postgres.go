@@ -47,7 +47,7 @@ func (c *postgresComponent) Start(ctx context.Context) (err error) {
 	}()
 	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
 		db, err := postgres.Open(ctx, a.cfg.Database, a.id.Instance, a.id.Role, a.log.With("component", "postgres"),
-			append([]postgres.Option{postgres.WithTLSMetrics(a.tele.tls)}, a.o.Database...)...)
+			append([]postgres.Option{postgres.WithTLSMetrics(a.tele.tls), postgres.WithMetrics(a.tele.db)}, a.o.Database...)...)
 		if err == nil {
 			c.db = db
 			break

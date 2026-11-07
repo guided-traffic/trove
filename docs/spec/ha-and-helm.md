@@ -330,9 +330,9 @@ The chart wires TLS through trove's listeners and the platform's connections. `t
 - Probes use `scheme: HTTPS` on the ops port (R-HA-034). The kubelet does not verify the served certificate for
   probes, so they need no CA.
 - The client and ops Service ports declare `appProtocol: https`.
-- A ServiceMonitor with `tlsConfig` (`ca` from `ca.crt`, `serverName` equal to the Service name) is **not rendered
-  yet**: the chart has no ServiceMonitor template, so Prometheus scrapes the ops port without a configuration of
-  its own. This is pending, not implemented.
+- With `metrics.serviceMonitor.enabled` the ServiceMonitor carries a `tlsConfig` (`ca` from `ca.crt` of the Secret of the ops
+  listener, read from the ServiceMonitor's namespace, which is therefore the release namespace while `tls.enabled`; `serverName`
+  `<fullname>-ops.<namespace>.svc`, a SAN the operator's certificate must carry).
 - The Ingress connects to the backend over TLS. `ingress.backendTLS.controller` selects the controller-specific
   settings: `haproxy` (the default, the primary target: `haproxy-ingress.github.io/secure-backends`,
   `secure-verify-ca-secret` with the CA of `ingress.backendTLS.caSecret`, `secure-sni` set to `<fullname>.<namespace>.svc`,
@@ -3827,7 +3827,8 @@ worker:
 config:
   server:                               # operations-and-observability.md
     base_url: ""                        # required; example: https://trove.example.com
-    trusted_proxies: []                 # example: ["10.244.0.0/16"] (ingress controller pod CIDR)
+    trusted_proxies: []                 # example: ["10.244.3.17", "10.244.5.9"] (the addresses of the ingress controller pods, never the whole pod CIDR; a prefix of length 0 is refused)
+    forwarded_header: x-forwarded-for   # the one header the edge rewrites, x-forwarded-for | forwarded; the other is never read
     additional_base_urls: []
   health:                               # operations-and-observability.md
     require_object_store: false         # object storage gates only the first readiness (R-HA-008, Q-HA-1)
@@ -3988,9 +3989,37 @@ config:
     memory_limit_ratio: 0.85            # R-HA-036
   audit:                                # operations-and-observability.md R-OPS-015, R-OPS-017
     retention_days: 365                 # written to audit_policy by the migration Job (R-HA-014)
-  auth: {}                              # empty; identity-and-authentication.md (OIDC providers, breakGlass.username, …)
+  auth:                                 # identity-and-authentication.md (OIDC providers, breakGlass.username, …)
+    login_page:
+      auto_redirect: true               # true: with exactly one OIDC provider the sign-in page goes straight to it; /ui/login?auto_sign_in=false still shows the page with the break-glass form. false: the page lists the providers
   authz: {}                             # empty; authorization.md
   ci: {}                                # empty; gitlab-ci-oidc.md
+
+# ── TLS on trove's own listeners ────────────────────
+# The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,
+# tls.key and, for the edge and for Prometheus, ca.crt). Mounted as a directory volume without
+# subPath, so a rotated Secret reaches the pod through the kubelet's atomic swap and the process
+# reloads the files (tls.reloadInterval). tls.* configures the default client listener :8080 and
+# the operations listener :8081; each entry of endpoints carries its own tls block.
+tls:
+  enabled: true                         # false = plain HTTP inside the cluster
+  secretName: ""                        # required with tls.enabled; example: trove-tls (cert-manager Certificate secretName)
+  certKey: tls.crt                      # key of the certificate chain in the Secret
+  keyKey: tls.key                       # key of the private key in the Secret
+  minVersion: "1.2"                     # "1.2" | "1.3" (server.tls.min_version)
+  reloadInterval: 10s                   # content poll of the mounted files (server.tls.reload_interval)
+  clientCA:                             # optional mutual TLS: the edge must present a client certificate
+    secretName: ""                      # empty = no client certificates requested; example: trove-edge-ca
+    key: ca.crt                         # key of the CA bundle in that Secret
+    auth: require                       # require | verify_if_given (server.tls.client_auth)
+  ops:                                  # optional separate certificate for:8081 (probes, metrics); empty = same material as:8080. Recommended with endpoint pools and workers: only then the listener private key of:8080 stays out of the pods that do not serve it
+    secretName: ""                      # example: trove-ops-tls
+    certKey: tls.crt
+    keyKey: tls.key
+  backendTLSPolicy:                     # Gateway API: how the Gateway verifies trove (needs the BackendTLSPolicy CRD)
+    enabled: false
+    caConfigMapName: ""                 # required when enabled; example: trove-tls-ca (a ConfigMap with ca.crt: Gateway API takes no Secret here)
+    hostname: ""                        # empty = <fullname>.<namespace>.svc; must be a SAN of the certificate
 
 # ── Existing Secrets (the chart never creates one) ──────────────────────────
 secrets:
@@ -4014,9 +4043,12 @@ secrets:
     certKey: tls.crt
     keyKey: tls.key
   s3:
-    existingSecret: ""                  # required with credentials.source static
-    accessKeyIdKey: access-key-id
-    secretAccessKeyKey: secret-access-key
+    existingSecret: ""                  # required with credentials.source static; also the Secret of an S3 provisioner when a *Key below is set
+    accessKeyIdKey: access-key-id       # example (provisioner Secret): AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: secret-access-key  # example (provisioner Secret): AWS_SECRET_ACCESS_KEY
+    bucketKey: ""                       # the bucket comes from config.storage.s3.bucket; example (provisioner Secret): S3_BUCKET; set = TROVE_STORAGE_S3_BUCKET reads this key of the Secret
+    regionKey: ""                       # config.storage.s3.region; example (provisioner Secret): S3_REGION; set = TROVE_STORAGE_S3_REGION reads this key
+    endpointKey: ""                     # config.storage.s3.endpoint; example (provisioner Secret): S3_ENDPOINT (a host without scheme, which trove reaches over https); set = TROVE_STORAGE_S3_ENDPOINT reads this key
     sessionTokenKey: ""
   valkey:
     existingSecret: ""                  # required; example: trove-valkey
@@ -4024,8 +4056,11 @@ secrets:
     passwordKey: password
   valkeySentinel:
     existingSecret: ""                  # Sentinels without authentication; example: trove-valkey-sentinel
-    usernameKey: username
+    usernameKey: ""                     # empty = no Sentinel user, the file is not mounted
     passwordKey: password
+  s3CA:
+    existingSecret: ""                  # empty = the outbound trust store (system roots plus config.proxy.outbound.tls.ca_files); example: trove-s3-tls. Renders storage.s3.ca_file
+    key: ca.crt
   valkeyCA:
     existingSecret: ""                  # empty = system roots plus trustedCA; example: trove-valkey-ca
     key: ca.crt
@@ -4149,6 +4184,12 @@ ingress:
   # No path value: every host gets the fixed path rules of R-HA-037 (Prefix rules per route family onto <fullname>-api and
   # <fullname>-packages; / onto <fullname> with web.enabled).
   tls: []                               # example: [{secretName: trove-tls, hosts: [trove.example.com]}]
+  backendTLS:                           # how the controller reaches trove when tls.enabled; trove speaks HTTPS, so the controller must too
+    controller: haproxy                 # haproxy (HAProxy Ingress, the primary target) | traefik | ingress-nginx | manual (you set the backend protocol in ingress.annotations / service.annotations)
+    verify: true                        # the controller verifies the trove certificate; needs caSecret (haproxy, ingress-nginx) or serversTransport (traefik); false = encrypted but unverified
+    caSecret: ""                        # required with verify on haproxy and ingress-nginx; Secret in the release namespace with ca.crt; example: trove-tls (a cert-manager Secret carries ca.crt)
+    clientCertSecret: ""                # haproxy: Secret with tls.crt and tls.key that HAProxy Ingress presents to trove (required with tls.clientCA); example: trove-edge-client
+    serversTransport: ""                # traefik: ServersTransport reference <namespace>-<name>@kubernetescrd that verifies trove; example: trove-trove-tls@kubernetescrd
 
 gateway:
   enabled: false
@@ -4618,9 +4659,11 @@ Acceptance criteria:
 ### R-HA-038 · Gateway API exposure
 Priority: **MVP** · Covers: HA-040
 
-**Status.** Not rendered yet: the chart has no `gateway` values and no HTTPRoute. The path rules it will carry are the table the
-Ingress already reads ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl)), and the BackendTLSPolicies of
-`tls.backendTLSPolicy` already name one Service each (Q-HA-81, Q-HA-85).
+**Status.** Rendered for the default endpoint ([httproute.yaml](../../deploy/helm/trove/templates/httproute.yaml), render test
+`TestR_HA_038_GatewayAPIExposure`), reading the table the Ingress reads ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl)); the BackendTLSPolicies of
+`tls.backendTLSPolicy` name one Service each (Q-HA-81, Q-HA-85). Not rendered: the HTTPRoute of further endpoints (R-EP-008) and the
+Gateway of `gateway.create` (R-HA-053). `gateway.parentRefs` is required with `gateway.enabled`. The criteria with Envoy Gateway in kind are
+not covered by the render test.
 
 - With `gateway.enabled: true` the chart renders an `HTTPRoute` (`gateway.networking.k8s.io/v1`).
   It attaches to `gateway.parentRefs`, with `hostnames` defaulting to the base URL's host (plus the
@@ -4631,6 +4674,9 @@ Ingress already reads ([_edge.tpl](../../deploy/helm/trove/templates/_edge.tpl))
   `tls.backendTLSPolicy.enabled`, one BackendTLSPolicy per Service the HTTPRoute names. HTTPRoute timeouts are part of the Standard channel since Gateway API v1.2
   ([GEP-1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/)), so v1.2 CRDs are the minimum.
   `backendRequest` MUST NOT exceed `request`.
+- `gateway.enabled: true` with an empty `gateway.parentRefs` is refused at render time (R-HA-029): an HTTPRoute without a parent attaches
+  to no Gateway and would route nothing, so the chart names the missing value instead of rendering an object that does nothing
+  (`trove: gateway.parentRefs is required with gateway.enabled: the Gateway the HTTPRoute attaches to`).
 - The HTTPRoute is MVP (Q-HA-7). It attaches to an existing, platform-owned Gateway. A Gateway
   rendered by the chart is P1 (R-HA-053).
 - Ingress and HTTPRoute may be enabled at the same time, for migrating between them with a DNS
@@ -4987,19 +5033,26 @@ the IPv6 client address of the `curl -6` request.
 Priority: **MVP** · Covers: HA-055
 
 **Status.** The PrometheusRule is rendered by the main chart with `metrics.prometheusRule.{enabled,labels,disabledAlerts,extraRules}`
-(`disabledAlerts` refuses a name that is no alert), tested by `promtool test rules`
-([deploy/helm/trove/tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), `make chart-test`). It carries the three alerts
-of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024, Q-VULN-55): `TroveVulnerabilityDataStale`,
-`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`, and `TroveBlobMissing` (severity `critical`, summed over the
-replicas, [storage.md](storage.md) Q-STOR-152). The other rows of the table below are **not** rendered yet:
-`TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`,
-`TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`,
-`TroveSpoolNearlyFull`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`,
-`TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`,
-`TroveValkeyPrimaryDisagreement`, `TroveBackupStale`, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`,
-`TroveBackupSourceDamage` and `TroveBackupVerifyFindings`. The ServiceMonitor and its `role` and `pool` relabelings are not rendered
-either: the scrape is the operator's own, and the rule scopes its selectors by `namespace`, which every scrape through the
-Prometheus operator carries.
+(`disabledAlerts` refuses a name that is no alert), checked by `promtool check rules` and tested by `promtool test rules`
+([deploy/helm/trove/tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), `make chart-test`), one test in which the alert fires and one in
+which it stays silent per alert. It carries the three alerts of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md)
+R-VULN-024, Q-VULN-55): `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`; the two of the
+mirror mode (R-OPS-046); `TroveBridgeLeftOn` (R-HA-064); `TroveBlobMissing` (severity `critical`, summed over the replicas, [storage.md](storage.md)
+Q-STOR-152); and these sixteen rows of the table below: `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`,
+`TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`,
+`TroveMixedVersions`, `TroveSpoolNearlyFull`, `TroveGCStale`, `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`,
+`TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping` and `TroveValkeyPrimaryDisagreement`. The ServiceMonitor is rendered
+([servicemonitor.yaml](../../deploy/helm/trove/templates/servicemonitor.yaml), render test `TestServiceMonitor`). The rule scopes its selectors by
+`namespace`, which every scrape through the Prometheus operator carries. The binary exports every metric these rows read under the name of their
+expression (Q-HA-135).
+
+**Not rendered, because what they read does not exist yet.** `TroveBackupCheckFailed`, `TroveBackupStale`, `TroveBackupFailed`,
+`TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage` and `TroveBackupVerifyFindings` read the `trove_backup_*`
+gauges that the backup and restore jobs write ([backup-and-restore.md](backup-and-restore.md) R-BAK-014); those jobs are phase 7 and not built,
+so the gauges are not exported and the alerts stay out until the backup exists. `TroveRevocationJournalBacklog` reads
+`trove_revocation_journal_pending` of the revocation journal (R-HA-054), which is the same phase and not built either. The acceptance criteria
+below that need a Prometheus scraping a running profile (object store stopped, Valkey stopped, the suspended backup, the interrupted backup run)
+are not covered by a test: the rule tests prove the expressions against given series, not that a stopped component produces those series.
 
 MVP since 2026-10-28. INV-12 requires that a Valkey outage is alerted on, the backup alerts of
 [backup-and-restore.md](backup-and-restore.md) R-BAK-014 are MVP, and MVP acceptance criteria
@@ -5030,37 +5083,40 @@ templates over metrics the MVP already exports, so the change adds no backend wo
 - **PrometheusRule.** Default alerts; names are stable and individually disabled with
   `disabledAlerts`:
 
-| Alert | Expression (sketch) | For |
-|---|---|---|
-| `TroveReplicasNotReady` | `min by (deployment) (kube_deployment_status_replicas_available{deployment=~"<fullname>-(web\|worker).*"}) < 2`, per Deployment, so one role without replicas fires while the other is healthy (needs kube-state-metrics) | 5m |
-| `TroveDatabaseUnreachable` | `sum(rate(trove_db_retries_total{kind="connection"}[5m])) > 0 and sum(rate(trove_http_requests_total{code="503"}[5m])) > 0` | 2m |
-| `TroveObjectStoreUnreachable` | `min(trove_storage_s3_circuit_open) == 1` (all replicas) | 2m |
-| `TroveObjectStoreUnreachableSingleReplica` | `max(trove_storage_s3_circuit_open) == 1 and min(trove_storage_s3_circuit_open) == 0` | 5m |
-| `TroveDatabasePoolSaturated` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="request"}[5m])) > 0.1`; the control connection's waits are the next row's ([operations-and-observability.md](operations-and-observability.md) R-OPS-046) | 10m |
-| `TroveControlConnectionWaits` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="control"}[5m])) > 1`: readiness-critical loops wait for the control connection (Q-HA-20), before `invalidation` and `database` start failing on every replica (R-OPS-046) | 5m |
-| `TroveJobsStuck` | `max(trove_jobs_oldest_queued_age_seconds) > 900` | 5m |
-| `TroveLeaseLost` | `increase(trove_lease_lost_total[15m]) > 3` | 0m |
-| `TroveMixedVersions` | `count(count by (version) (trove_build_info)) > 1` | 2h |
-| `TroveSpoolNearlyFull` | `max(trove_spool_used_bytes / (trove_spool_used_bytes + trove_spool_free_bytes)) > 0.9` | 10m |
-| `TroveBlobMissing` | `increase(trove_storage_blobs_damaged_total{status="missing"}[1h]) > 0` | 0m |
-| `TroveGCStale` | `time() - max(trove_gc_last_success_timestamp_seconds) > 172800` | 1h |
-| `TroveBackupCheckFailed` | `min(trove_backup_check_ok) == 0` | 1h |
-| `TroveRevocationJournalBacklog` | `max(trove_revocation_journal_pending) > 0` (R-HA-054) | 15m |
-| `TroveValkeyUnavailable` | `max(trove_valkey_available) == 0` (every replica degraded, R-HA-057) | 2m |
-| `TroveValkeyUnavailableSingleReplica` | `min(trove_valkey_available) == 0 and max(trove_valkey_available) == 1` | 5m |
-| `TroveValkeySentinelsDegraded` | `min(trove_valkey_sentinels_reachable) < 2` (no majority of three, R-HA-056; the gauge counts the answers to a probe of every configured Sentinel, R-HA-057) | 5m |
-| `TroveValkeyFailoverFlapping` | `max(increase(trove_valkey_primary_changes_total[1h])) > 2` (failovers repeating, [operations-and-observability.md](operations-and-observability.md) Q-OPS-15) | 0m |
-| `TroveValkeyPrimaryDisagreement` | `max(trove_valkey_primary_views) > 1`: replicas name different primaries, for example one still bound to a demoted primary (Q-OPS-15, R-ARCH-031) | 5m |
-| `TroveBackupStale` | `time() - max(trove_backup_last_success_timestamp_seconds) > 1.5 * max(trove_backup_expected_interval_seconds)`, or `trove_backup_last_success_timestamp_seconds` absent for longer than `backup.expected_interval` ([backup-and-restore.md](backup-and-restore.md) R-BAK-014). Renamed from `TroveBackupTooOld` | 0m |
-| `TroveBackupFailed` | `max(trove_backup_last_failure_timestamp_seconds) > max(trove_backup_last_success_timestamp_seconds)` (R-BAK-014). Not `kube_job_status_failed > 0`, which keeps firing for as long as `failedJobsHistoryLimit` keeps a failed Job, also after later runs succeeded; an `interrupted` run does not count | 0m |
-| `TroveBackupRunningLong` | `max(trove_backup_running_seconds) > 0.5 * max(trove_backup_expected_interval_seconds)` (R-BAK-014) | 0m |
-| `TroveBackupGlobalHoldLong` | `max(trove_backup_gc_hold{mode="all"}) == 1` (R-BAK-014) | 30m |
-| `TroveBackupSourceDamage` | `max(trove_backup_source_blobs_damaged) > 0` (R-BAK-014) | 0m |
-| `TroveBackupVerifyFindings` | `max(trove_backup_last_verify_findings) > 0` (R-BAK-014) | 0m |
+| Alert | Expression (sketch) | For | Severity |
+|---|---|---|---|
+| `TroveReplicasNotReady` | `min by (deployment) (kube_deployment_status_replicas_available{deployment=~"<fullname>-(api\|packages\|worker\|web)(-.*)?"}) < 2`, per Deployment, so one role or pool without replicas fires while the others are healthy (the Deployments are `<fullname>-<role>` and `<fullname>-<role>-<pool>` for the roles `api`, `packages`, `worker` and the bridge `web`, R-HA-062, R-HA-064; needs kube-state-metrics) | 5m | critical |
+| `TroveDatabaseUnreachable` | `sum(rate(trove_db_retries_total{kind="connection"}[5m])) > 0 and sum(rate(trove_http_requests_total{code="503"}[5m])) > 0` | 2m | critical |
+| `TroveObjectStoreUnreachable` | `min(trove_storage_s3_circuit_open) == 1` (all replicas) | 2m | critical |
+| `TroveObjectStoreUnreachableSingleReplica` | `max(trove_storage_s3_circuit_open) == 1 and min(trove_storage_s3_circuit_open) == 0` | 5m | warning |
+| `TroveDatabasePoolSaturated` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="request"}[5m])) > 0.1`; the control connection's waits are the next row's ([operations-and-observability.md](operations-and-observability.md) R-OPS-046) | 10m | warning |
+| `TroveControlConnectionWaits` | `histogram_quantile(0.95, rate(trove_db_pool_acquire_duration_seconds_bucket{db_pool="control"}[5m])) > 1`: readiness-critical loops wait for the control connection (Q-HA-20), before `invalidation` and `database` start failing on every replica (R-OPS-046) | 5m | warning |
+| `TroveJobsStuck` | `max(trove_jobs_oldest_queued_age_seconds) > 900` | 5m | warning |
+| `TroveLeaseLost` | `increase(trove_lease_lost_total[15m]) > 3` | 0m | warning |
+| `TroveMixedVersions` | `count(count by (version) (trove_build_info)) > 1` | 2h | warning |
+| `TroveSpoolNearlyFull` | `max(trove_spool_used_bytes / (trove_spool_used_bytes + trove_spool_free_bytes)) > 0.9` | 10m | warning |
+| `TroveBlobMissing` | `increase(trove_storage_blobs_damaged_total{status="missing"}[1h]) > 0` | 0m | critical |
+| `TroveGCStale` | `time() - max(trove_gc_last_success_timestamp_seconds) > 172800` | 1h | warning |
+| `TroveBackupCheckFailed` | `min(trove_backup_check_ok) == 0` | 1h | critical |
+| `TroveRevocationJournalBacklog` | `max(trove_revocation_journal_pending) > 0` (R-HA-054) | 15m | warning |
+| `TroveValkeyUnavailable` | `max(trove_valkey_available) == 0` (every replica degraded, R-HA-057) | 2m | critical |
+| `TroveValkeyUnavailableSingleReplica` | `min(trove_valkey_available) == 0 and max(trove_valkey_available) == 1` | 5m | warning |
+| `TroveValkeySentinelsDegraded` | `min(trove_valkey_sentinels_reachable) < 2` (no majority of three, R-HA-056; the gauge counts the answers to a probe of every configured Sentinel, R-HA-057) | 5m | warning |
+| `TroveValkeyFailoverFlapping` | `max(increase(trove_valkey_primary_changes_total[1h])) > 2` (failovers repeating, [operations-and-observability.md](operations-and-observability.md) Q-OPS-15) | 0m | warning |
+| `TroveValkeyPrimaryDisagreement` | `max(trove_valkey_primary_views) > 1`: replicas name different primaries, for example one still bound to a demoted primary (Q-OPS-15, R-ARCH-031) | 5m | critical |
+| `TroveBackupStale` | `time() - max(trove_backup_last_success_timestamp_seconds) > 1.5 * max(trove_backup_expected_interval_seconds)`, or `trove_backup_last_success_timestamp_seconds` absent for longer than `backup.expected_interval` ([backup-and-restore.md](backup-and-restore.md) R-BAK-014). Renamed from `TroveBackupTooOld` | 0m | critical |
+| `TroveBackupFailed` | `max(trove_backup_last_failure_timestamp_seconds) > max(trove_backup_last_success_timestamp_seconds)` (R-BAK-014). Not `kube_job_status_failed > 0`, which keeps firing for as long as `failedJobsHistoryLimit` keeps a failed Job, also after later runs succeeded; an `interrupted` run does not count | 0m | critical |
+| `TroveBackupRunningLong` | `max(trove_backup_running_seconds) > 0.5 * max(trove_backup_expected_interval_seconds)` (R-BAK-014) | 0m | warning |
+| `TroveBackupGlobalHoldLong` | `max(trove_backup_gc_hold{mode="all"}) == 1` (R-BAK-014) | 30m | warning |
+| `TroveBackupSourceDamage` | `max(trove_backup_source_blobs_damaged) > 0` (R-BAK-014) | 0m | critical |
+| `TroveBackupVerifyFindings` | `max(trove_backup_last_verify_findings) > 0` (R-BAK-014) | 0m | critical |
 
 Metric names come from [operations-and-observability.md](operations-and-observability.md) R-OPS-008
 and [storage.md](storage.md); `trove_storage_blobs_damaged_total{status}` is storage.md's
-(R-STOR-027), counted by every detection of a missing or corrupt blob. This page adds
+(R-STOR-027), counted by every detection of a missing or corrupt blob. The spool gauges are `trove_spool_used_bytes` (the budget that
+running uploads hold, R-STOR-004) and `trove_spool_free_bytes` (the free space of the spool volume, read at every reservation and release);
+`trove_gc_last_success_timestamp_seconds` has no series on a replica until a collection run there ended without error, neither paused nor
+a dry run, so a new installation does not report a time of 0 and `TroveGCStale` stays silent until the first run. This page adds
 `trove_db_retries_total`, `trove_db_pool_resets_total`, `trove_db_commit_unknown_total`,
 `trove_lease_lost_total`, `trove_backup_check_ok`, `trove_revocation_journal_pending` and the
 Valkey metrics of R-HA-057. The `trove_backup_*` gauges are
@@ -6978,7 +7034,9 @@ common: then a login area that is built only where the surface holds `ui`.
 
 ### Q-HA-81 · Whether the chart renders the HTTPRoute with the path rules of the cut
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Built:** the
+HTTPRoute is rendered ([httproute.yaml](../../deploy/helm/trove/templates/httproute.yaml), render test `TestR_HA_038_GatewayAPIExposure`) from the
+same `trove.edgeRules` table as the Ingress, so the deferral of option (a) has ended; R-HA-038 states the values and the refusals.
 
 Context: R-HA-038 makes the HTTPRoute MVP, but the chart renders none today: there is no `gateway` value, no check of the
 Gateway API in `.Capabilities`, and no timeouts or filters. Work package WP6a.3 builds the edge's path rules, which the
@@ -8134,6 +8192,39 @@ the fallback without a readable edge if an installation with its own edge report
 **Applied in the spec:** R-HA-064 (the guard, the way back), R-HA-029 (the rows of the guard),
 [_validate_roles.tpl](../../deploy/helm/trove/templates/_validate_roles.tpl), `TestRolesBridge`, the upgrade guide
 ([docs/manual/admin/upgrades.md](../manual/admin/upgrades.md)).
+
+### Q-HA-135 · The names of the specification win, and the binary is renamed where it drifted
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: building the PrometheusRule of R-HA-045 showed that its expressions read metrics the binary did not export, and names that differed
+from the specification. Not exported: `trove_db_retries_total`, `trove_db_pool_acquire_duration_seconds`, `trove_jobs_oldest_queued_age_seconds`,
+`trove_spool_used_bytes`, `trove_gc_last_success_timestamp_seconds`, `trove_revocation_journal_pending`, `trove_valkey_primary_views` and every
+`trove_backup_*`. Drifted: the binary had `trove_storage_spool_free_bytes` and `trove_storage_spool_reserved_bytes`, where
+[operations-and-observability.md](operations-and-observability.md) R-OPS-008 and the expression of `TroveSpoolNearlyFull` name
+`trove_spool_used_bytes` and `trove_spool_free_bytes`; `trove_db_pool_empty_acquires_total` carried the number of all acquisitions
+(pgxpool `AcquireCount`) under a name whose catalogue row says "acquisitions that had to wait" (`EmptyAcquireCount`). The role regex of
+`TroveReplicasNotReady` named `web` and `worker`, the Deployments of an earlier shape.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The names of the specification win; the binary is renamed where it drifted, and exports the missing metrics where their mechanism exists (chosen) | The two spool gauges, the pool counter and the role regex are fixed in code and chart; the metrics with a mechanism are added; the rows whose mechanism is not built stay out | One catalogue, one name per metric; the expressions are the ones the specification was reviewed with; pre-alpha has no dashboard or scrape that depends on an old name | Every place that names an old name changes in the same commit |
+| (b) The names of the binary win; the specification and the expressions are edited | `trove_storage_spool_*` stays | No code change | R-OPS-008 and storage.md disagree with each other (storage.md names `trove_storage_spool_*`, R-OPS-008 `trove_spool_*`), so one page would still be wrong; `trove_db_pool_empty_acquires_total` would keep a name that does not say what it counts |
+| (c) Export both names for a while | An alias per renamed metric | Nothing breaks for a scrape of the old name | The repository has no installation and no dashboard; two series for one fact double the cardinality and the rule "no aliases before the first stable release" forbids it |
+
+**Choice:** (a).
+
+**Rationale:** the specification is the source of truth, and its two pages already agreed on the `trove_spool_*` names; the binary was the
+outlier. `trove_spool_used_bytes` is the budget that running uploads hold, which is what the spool admits against (R-STOR-004); the
+free bytes are read at every reservation and release, so they are current when the spool is idle, not only at the last reservation. The
+backup gauges and the revocation journal gauge are not invented: their jobs are phase 7 (BETA.md), and a metric nobody writes would only
+make an alert that never fires look like one that works. The development agent would revisit this when the backup is built (the seven backup
+alerts and `TroveRevocationJournalBacklog` join the rule then) or when an installation scrapes the old spool names.
+
+**Applied in the spec:** R-HA-045 (status, severity column, the role regex, the spool and GC gauges), R-HA-038 (the refusal of an empty
+`gateway.parentRefs`), Q-HA-81 (status), [storage.md](storage.md) (spool metric names),
+[operations-and-observability.md](operations-and-observability.md) R-OPS-008 (rows for the spool, GC, pool and Valkey gauges). Code:
+`internal/blob/metrics.go`, `internal/meta/postgres/metrics.go`, `internal/app/wire_gauges.go`; chart: `templates/_rules.tpl`.
 
 ## What this does not cover
 

@@ -883,8 +883,11 @@ areas.
   release, which the pods of v0.16.0 cannot serve; for that release alone they are counted as a finding
   ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade); between releases with the shared asset store
   the skew is fixed, Q-HA-120). The dev PostgreSQL allows 450
-  connections for the bridge (Q-HA-98). Open: E6a.8, a passing test that names R-HA-031, R-HA-038 and R-HA-045 (completed with
-  phase 7's chart). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run 42177273488.
+  connections for the bridge (Q-HA-98). E6a.8: `TestR_HA_031_ValuesReference` and `TestR_HA_038_GatewayAPIExposure` name R-HA-031 and R-HA-038; open: R-HA-045, whose
+  ServiceMonitor is built (`TestServiceMonitor`) and whose PrometheusRule carries 23 alerts, among them the sixteen rows of the table whose
+  metrics the binary now exports under the specification's names (Q-HA-135; `TestPrometheusRule`, promtool rule tests per alert); the
+  seven `TroveBackup*` alerts and `TroveRevocationJournalBacklog` wait for the backup and the revocation journal (phase 7), so the
+  requirement carries no test named for its ID. The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run 42177273488.
   R-HA-021 (2026-11-06, finding F-59): `GET /api/v1/system/migrations` is built, the report of `trove migrate status` from the same
   code with the background migrations and their states (Q-HA-114), and a contract step declares the background migration it
   depends on, which the guard enforces (Q-HA-115). `TestR_HA_021_UpgradePreparation` names R-HA-021 and passes against the local

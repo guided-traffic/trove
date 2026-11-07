@@ -1,0 +1,55 @@
+# The Gateway API edge (R-HA-038): an HTTPRoute on a platform-owned Gateway beside the Ingress, the pools' paths,
+# a filter on every rule and the BackendTLSPolicies of the Services the route names.
+config:
+  server:
+    base_url: https://trove.example.com
+  database:
+    host: trove-db-rw.trove.svc
+  storage:
+    s3:
+      bucket: trove-blobs
+    upload:
+      max_size: 10GiB
+  valkey:
+    sentinel:
+      addresses:
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove
+tls:
+  secretName: trove-tls                            # example: the one value TLS needs (tls.enabled defaults to true)
+  backendTLSPolicy:
+    enabled: true
+    caConfigMapName: trove-tls-ca
+secrets:
+  database:
+    existingSecret: trove-db-app
+  valkey:
+    existingSecret: trove-valkey
+  encryption:
+    existingSecret: trove-encryption-keys
+    keys: [2026-10.key]
+ingress:
+  enabled: true
+  backendTLS:
+    verify: false
+gateway:
+  enabled: true
+  parentRefs:
+    - name: shared
+      namespace: gateway-system
+      sectionName: https
+  timeouts:
+    request: 2h
+    backendRequest: 90m
+  filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+          - name: X-Edge
+            value: gateway
+api:
+  pools:
+    - name: exports
+      paths: [/api/v1/exports]

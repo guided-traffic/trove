@@ -73,6 +73,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		return nil, err
 	}
 	db := &DB{cfg: cfg, log: log, instance: instance, role: role, retry: newRetrier(cfg.Retry)}
+	db.retry.metrics = o.metrics
 	var err error
 	if db.tls, err = newDBTLS(cfg, tlsfiles.WithLogger(log), tlsfiles.WithMetrics(o.tlsMetrics)); err != nil {
 		return nil, err
@@ -81,7 +82,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 	pooled := cfg.Pooler.Mode == "transaction"
 	mainMax := int32(cfg.Pool.MaxConns - 1)           //nolint:gosec // validated range
 	mainMin := min(int32(cfg.Pool.MinConns), mainMax) //nolint:gosec // validated range
-	pool := func(s poolSpec) (*pgxpool.Pool, error) {
+	pool := func(s poolSpec, label string) (*pgxpool.Pool, error) {
 		pc, err := newPoolConfig(cfg, s, db.tls)
 		if err != nil {
 			return nil, err
@@ -90,7 +91,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		if s.kind.class == classMain {
 			next = o.queryTracer
 		}
-		pc.ConnConfig.Tracer = stmtTracer{next: next}
+		pc.ConnConfig.Tracer = stmtTracer{next: next, pool: label, metrics: o.metrics}
 		return pgxpool.NewWithConfig(ctx, pc)
 	}
 	common := poolSpec{
@@ -101,12 +102,12 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 
 	ms := common
 	ms.kind, ms.ep, ms.maxConns, ms.minConns = connKind{class: classMain, pooled: pooled}, mainEndpoint(cfg), mainMax, mainMin
-	if db.main, err = pool(ms); err != nil {
+	if db.main, err = pool(ms, poolRequest); err != nil {
 		return nil, err
 	}
 	cs := common
 	cs.kind, cs.ep, cs.maxConns, cs.minConns = connKind{class: classMain, pooled: pooled}, controlEndpoint(cfg), 1, 1
-	if db.control, err = pool(cs); err != nil {
+	if db.control, err = pool(cs, poolControl); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -116,7 +117,7 @@ func Open(ctx context.Context, cfg config.Database, instance, role string, log *
 		// idle connection holds no lock, so the idle timeout is harmless.
 		ls.kind, ls.ep, ls.maxConns, ls.minConns = connKind{class: classLease}, sessionEndpoint(cfg), int32(cfg.LeasePoolSize), 0 //nolint:gosec // validated range
 		ls.lifetime, ls.jitter = 0, 0
-		if db.lease, err = pool(ls); err != nil {
+		if db.lease, err = pool(ls, poolLease); err != nil {
 			db.Close()
 			return nil, err
 		}
@@ -141,11 +142,16 @@ type Option func(*openOptions)
 type openOptions struct {
 	tlsMetrics  *tlsfiles.Metrics
 	queryTracer pgx.QueryTracer
+	metrics     *Metrics
 }
 
 // WithQueryTracer traces every statement of the request pool (and of the control connection). It is for the tests that count the
 // statements of a code path against its budget (R-ARCH-027, R-VULN-011).
 func WithQueryTracer(t pgx.QueryTracer) Option { return func(o *openOptions) { o.queryTracer = t } }
+
+// WithMetrics records the retries, the unknown commits and the wait for a
+// connection (NewMetrics).
+func WithMetrics(m *Metrics) Option { return func(o *openOptions) { o.metrics = m } }
 
 // WithTLSMetrics records the expiry, reload and reload-error families of the
 // root CA and the client certificate (kind database).
@@ -223,6 +229,9 @@ type PoolStats struct {
 	Max, Total, Idle, Acquired int32
 	AcquireCount               int64
 	AcquireWait                int64 // nanoseconds spent waiting for a connection, in total
+	EmptyAcquireCount          int64 // acquisitions that had to wait because no connection was idle
+	CanceledAcquireCount       int64 // acquisitions the caller's context ended before they got a connection
+	NewConns                   int64 // connections opened
 }
 
 // Stats are the pool counts of the three classes; Lease is zero on a web replica.
@@ -238,6 +247,7 @@ func (db *DB) Stats() Stats {
 		return PoolStats{
 			Max: s.MaxConns(), Total: s.TotalConns(), Idle: s.IdleConns(), Acquired: s.AcquiredConns(),
 			AcquireCount: s.AcquireCount(), AcquireWait: int64(s.AcquireDuration()),
+			EmptyAcquireCount: s.EmptyAcquireCount(), CanceledAcquireCount: s.CanceledAcquireCount(), NewConns: s.NewConnsCount(),
 		}
 	}
 	return Stats{Main: conv(db.main), Control: conv(db.control), Lease: conv(db.lease)}

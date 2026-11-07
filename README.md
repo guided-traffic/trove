@@ -397,7 +397,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Services | `<fullname>-api`, `<fullname>-packages` (client port), `<fullname>-ops` (ops port) | yes |
 | Network policies | one per Deployment, named as it (ingress only, a rule per port), and `<fullname>-migrate` | yes |
 | Edge | per host: `/` and `/api/v1` to `<fullname>-api`; `/api`, `/files`, `/v2`, `/.well-known` to `<fullname>-packages`; the paths of path pools to their Services | yes |
-| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); alerts `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn`, every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
+| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); 23 alerts (`TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`, `TroveSpoolNearlyFull`, `TroveGCStale`, `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`, `TroveValkeyPrimaryDisagreement`, `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn`, `TroveBlobMissing`; the backup alerts and the revocation journal's wait for those features), every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 | Bastion chart | `deploy/helm/trove-bastion`, released with the chart `trove` at the same version; its own `<fullname>` (release name, or `<release>-trove-bastion`) | yes (phase 5b) |
 | Bastion workload | `<fullname>` (Deployment, or StatefulSet with `cacheVolume.type: persistent`), `--role bastion`, ports `https` 8443 and `ops` 8081 | yes |
@@ -458,7 +458,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Outbound purpose | `vuln_source` | the `kind` label of `trove_outbound_*` and the purpose of the upstream log |
 | Caches | `vuln_source_state` (safety TTL 60 s), `vuln_nuget_page` (the rendered NuGet page, at most four entries, safety TTL 15 min) | per replica; the change area `vuln_data` empties both, `claims` and `repo_config` the page too ([coordination.go](internal/vuln/coordination.go), [audits_pages.go](internal/vuln/store/audits_pages.go)) |
 | NuGet page | `@name` `trove`, at `<feed>/vulnerabilities/trove.json` | the one entry of `<feed>/vulnerabilities/index.json` |
-| Alerts | `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn` | the names `metrics.prometheusRule.disabledAlerts` accepts |
+| Alerts | `TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`, `TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`, `TroveSpoolNearlyFull`, `TroveGCStale`, `TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`, `TroveValkeyPrimaryDisagreement`, `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, `TroveMirrorFailing`, `TroveMirrorStale`, `TroveBridgeLeftOn`, `TroveBlobMissing` | the names `metrics.prometheusRule.disabledAlerts` accepts |
 | Tables | `vuln_source_state`, `vuln_advisory`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`, `vuln_sync_touched` | migrations 00035 to 00039; `vuln_finding` and `vuln_finding_event` are data in an export, the others transient ([tables_vuln.go](internal/meta/postgres/tables_vuln.go)) |
 
 ### Audit event types
@@ -2027,6 +2027,29 @@ With `controller: haproxy` the chart renders `haproxy-ingress.github.io/secure-b
 </details>
 
 <details>
+<summary>Gateway API: gateway.* (an HTTPRoute on an existing Gateway)</summary>
+
+```yaml
+gateway:
+  enabled: false                        # default; true renders the HTTPRoute <fullname>; needs the Gateway API CRDs v1.2 or later (Standard channel), else the render fails; may run beside ingress.enabled
+  parentRefs: []                        # required with enabled; example: [{name: shared, namespace: gateway-system, sectionName: https}]
+  hostnames: []                         # default: empty = the host of server.base_url
+  annotations: {}                       # default
+  labels: {}                            # default
+  timeouts:
+    request: 3600s                      # default; on every rule
+    backendRequest: 3600s               # default; must not exceed request (a request of 0s is no timeout)
+  filters: []                           # default; HTTPRoute filters on every path rule
+  extraRules: []                        # default; rules appended after the path rules
+```
+
+One rule per row of the Ingress's path table, each a `PathPrefix` match to the Service of its role. Body size and buffering are
+implementation-specific policies the chart does not render. With `helm template`, pass
+`--api-versions gateway.networking.k8s.io/v1/HTTPRoute`.
+
+</details>
+
+<details>
 <summary>Secrets the chart reads (existing Secrets, never created by the chart)</summary>
 
 ```yaml
@@ -2173,7 +2196,7 @@ networkPolicy:
     ops:
       from:                             # default: port 8081 only from the monitoring namespace
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
-  probeCIDRs: []                        # default; example: ["10.0.0.0/16"]; where the CNI does not exempt kubelet probes
+    probeCIDRs: []                      # default; example: ["10.0.0.0/16"]; where the CNI does not exempt kubelet probes
 config:                                 # rendered to /etc/trove/trove.yaml; chart-managed keys (secret paths, spool dir) must not be set here
   server:
     base_url: ""                        # required; example: https://trove.example.com
@@ -2241,7 +2264,15 @@ commonAnnotations: {}                   # default
 
 ```yaml
 metrics:
-  prometheusRule:                       # R-HA-045; the alerts of the vulnerability scanning, of the mirror mode and TroveBridgeLeftOn so far
+  serviceMonitor:                       # R-HA-045; scrapes the ops port of <fullname>-ops with the target labels role and pool
+    enabled: false                      # default; needs the Prometheus operator's CRDs
+    namespace: ""                       # default: the release namespace; with tls.enabled it must be the release namespace (the CA Secret is read from it)
+    interval: 30s                       # default
+    scrapeTimeout: 10s                  # default
+    labels: {}                          # default; example: {release: kube-prometheus-stack}
+    relabelings: []                     # default; appended after the fixed role and pool relabelings
+    metricRelabelings: []               # default
+  prometheusRule:                       # R-HA-045; 23 alerts; the backup alerts and the revocation journal's follow with those features
     enabled: false                      # default; true renders the PrometheusRule <fullname>; needs the Prometheus operator's CRDs
     labels: {}                          # default; example: {release: kube-prometheus-stack}
     disabledAlerts: []                  # default; example: [TroveVulnerabilitySyncFailing]; a name that is no alert of the chart fails the render

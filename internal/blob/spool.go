@@ -174,11 +174,16 @@ func (s *Spool) release(n int64) {
 	if n == 0 {
 		return
 	}
+	free, ferr := s.free(s.dir)
 	s.mu.Lock()
 	s.reserved -= n
 	r := s.reserved
 	s.mu.Unlock()
-	s.metrics.setSpoolReserved(r)
+	if ferr != nil {
+		s.metrics.setSpoolUsed(r)
+		return
+	}
+	s.metrics.setSpool(r, free)
 }
 
 // create opens a new spool file: mode 0600, named by a random UUID.

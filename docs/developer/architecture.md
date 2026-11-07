@@ -280,9 +280,17 @@ draining replica had been ready (Q-OPS-30), so the drain delay answers every req
 `Stop()` when it ends on purpose.
 
 Metrics beyond the observability package: [wire_gauges.go](../../internal/app/wire_gauges.go) exports
-`trove_db_pool_connections`, `trove_db_pool_max_connections`, `trove_db_pool_empty_acquires_total` (read from the pools at
-scrape time) and the background gauge `trove_jobs_queued{kind}`. The remaining families of R-OPS-007 (acquire duration
-histogram, canceled acquires, inventory and backup gauges) are not exported yet.
+`trove_db_pool_connections`, `trove_db_pool_max_connections`, `trove_db_pool_empty_acquires_total`,
+`trove_db_pool_canceled_acquires_total` and `trove_db_pool_connections_opened_total` (read from the pools at scrape time) and the
+background gauges `trove_jobs_queued{kind}`, `trove_jobs_oldest_queued_age_seconds{kind}` (both from the `JobQueueGauges` query) and
+`trove_valkey_primary_views` (the `ValkeyPrimaryViews` query over the replica registry). The database layer records what the pools'
+counters cannot give in [metrics.go](../../internal/meta/postgres/metrics.go): `trove_db_retries_total{kind}`,
+`trove_db_commit_unknown_total` and the histogram `trove_db_pool_acquire_duration_seconds{db_pool}`, which the pool tracer
+(`stmtTracer`, a `pgxpool.AcquireTracer`) fills for the pools `request`, `control` and `lease`; `postgres.WithMetrics` hands them to `Open`.
+The blob store exports `trove_spool_used_bytes`, `trove_spool_free_bytes` and `trove_gc_last_success_timestamp_seconds`
+([internal/blob/metrics.go](../../internal/blob/metrics.go)). Not exported: `trove_db_pool_resets_total` (no mechanism resets a pool
+yet), the inventory gauges and every `trove_backup_*` and `trove_revocation_journal_pending` (the backup and the revocation journal are
+phase 7). The PrometheusRule of the chart reads these names ([helm-chart.md](helm-chart.md#the-prometheusrule), Q-HA-135).
 
 ## Shutdown
 

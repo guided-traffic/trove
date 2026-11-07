@@ -66,6 +66,9 @@ func TestMain(m *testing.M) {
 }
 
 // checkHelmPin fails when the helm on PATH is not the version tools/versions.env pins.
+// gatewayAPIVersion is the capability gateway.enabled needs (R-HA-038).
+const gatewayAPIVersion = "gateway.networking.k8s.io/v1/HTTPRoute"
+
 func checkHelmPin() error {
 	raw, err := os.ReadFile(filepath.Join(repoRoot, "tools", "versions.env"))
 	if err != nil {
@@ -106,7 +109,8 @@ func helm(t *testing.T, args ...string) (stdout, stderr string, err error) {
 func templateArgs(release string, files []string, sets []string) []string {
 	// An explicit namespace: without one, helm takes the namespace of the current kube context,
 	// which on a runner pod is the pod's own (in-cluster) and changes every rendered service name.
-	args := []string{"template", release, chartDir, "--namespace", "default"}
+	// The Gateway API is declared: the check of R-HA-038 is a capability, which helm template does not know offline.
+	args := []string{"template", release, chartDir, "--namespace", "default", "--api-versions", gatewayAPIVersion}
 	for _, f := range files {
 		args = append(args, "-f", f)
 	}
@@ -265,7 +269,9 @@ func TestChart(t *testing.T) {
 	t.Run("R-HA-028 helm lint passes for every value set", func(t *testing.T) {
 		for _, f := range valueSets {
 			t.Run(base(f), func(t *testing.T) {
-				if out, stderr, err := helm(t, "lint", "--strict", chartDir, "-f", f); err != nil {
+				// helm lint takes no API versions: a set that enables the Gateway API is linted with the HTTPRoute off.
+				args := []string{"lint", "--strict", chartDir, "-f", f, "--set", "gateway.enabled=false"}
+				if out, stderr, err := helm(t, args...); err != nil {
 					t.Fatalf("helm lint: %v\n%s%s", err, out, stderr)
 				}
 			})
@@ -1596,7 +1602,7 @@ func TestNetworkPolicy(t *testing.T) {
     ops:
       from:
         - podSelector: {matchLabels: {app: prometheus}}
-  probeCIDRs: ["10.0.0.0/16"]
+    probeCIDRs: ["10.0.0.0/16"]
 `), 0o600); err != nil {
 			t.Fatal(err)
 		}
