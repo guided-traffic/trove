@@ -421,5 +421,12 @@ func DecodeFrozen(raw []byte) (*Frozen, error) {
 // issuer ID.
 func (f Frozen) OwnerRef() string { return "ci:" + f.Issuer + ":project:" + f.ProjectID }
 
-// MappingRef is the reference of a mapping principal, "ci:<issuer>/<mapping>" (R-CI-009).
-func MappingRef(issuer, mapping string) string { return "ci:" + issuer + "/" + mapping }
+// MappingRef is the reference of a mapping principal, "ci:<issuer>/<mapping>" for a mapping of the
+// system tier and "ci:<issuer>/<project>/<mapping>" for one of a project's tier (R-CI-009,
+// Q-AUTHZ-214); project is "" for the system tier.
+func MappingRef(issuer, project, mapping string) string {
+	if project == "" {
+		return "ci:" + issuer + "/" + mapping
+	}
+	return "ci:" + issuer + "/" + project + "/" + mapping
+}

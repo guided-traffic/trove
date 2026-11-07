@@ -1,5 +1,5 @@
 // The raw-transfer load of E1.13 (R-HA-011, R-ARCH-024): a constant arrival rate of iterations, each uploading a
-// file to generic-local with PUT /files/..., downloading it again and comparing the SHA-256 of what came back, through
+// file to generic-local with PUT /files/e2e/generic-local/..., downloading it again and comparing the SHA-256 of what came back, through
 // the Ingress. Run next to load.js in the drain test of E0.14.
 //
 // Every request becomes one line on the console, which test/e2e parses:
@@ -52,7 +52,7 @@ function line(op, t0, res, path, note) {
 
 export default function () {
   const n = exec.scenario.iterationInTest;
-  const path = `/files/generic-local/e2e-drain/f${n % 40}.bin`;
+  const path = `/files/e2e/generic-local/e2e-drain/f${n % 40}.bin`;
   const body = crypto.randomBytes(SIZE);
   const want = crypto.sha256(body, 'hex');
   const headers = { Host: HOST, Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/octet-stream' };

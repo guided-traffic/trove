@@ -541,7 +541,7 @@ func TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange(t *testing.T
 		t.Helper()
 		err := r.db.InTx(context.Background(), func(tx meta.Tx) error {
 			return r.changes.Notify(tx, cluster.AreaRepoConfig, 1, map[string]any{
-				"id": fmt.Sprint(rem.ID()), "key": rem.Repo.Key, "op": op, "version": rem.Repo.Version,
+				"id": fmt.Sprint(rem.ID()), "key": rem.Repo.Name, "op": op, "version": rem.Repo.Version,
 			})
 		})
 		if err != nil {
@@ -607,7 +607,7 @@ func TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange(t *testing.T
 			done <- err
 		}()
 		waitFor(t, "the fill to reach the upstream", 5*time.Second, func() bool { return slow.Load() == 1 })
-		update(other.Repo.Key)
+		update(other.Repo.Name.Key)
 		poll()
 		release()
 		if err := <-done; err != nil {
@@ -623,7 +623,7 @@ func TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange(t *testing.T
 		}
 		err := r.db.InTx(context.Background(), func(tx meta.Tx) error {
 			return r.changes.Notify(tx, cluster.AreaRepoConfig, 1, map[string]any{
-				"id": fmt.Sprint(next.ID()), "key": next.Repo.Key, "op": "deleted", "version": next.Repo.Version,
+				"id": fmt.Sprint(next.ID()), "key": next.Repo.Name, "op": "deleted", "version": next.Repo.Version,
 			})
 		})
 		if err != nil {

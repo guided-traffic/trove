@@ -66,9 +66,10 @@ makes that repository's client fail with `502 upstream_secret_unavailable` and l
 and when the client reads it (`SecretRef.Valid`): a file name has no path separator, no `..` and no leading dot, a variable carries the
 prefix `TROVE_CAC_`, so `TROVE_DATABASE_PASSWORD` and the files of the key ring cannot be routed to an upstream whatever a row says.
 
-A project administrator (R-AUTHZ-026) gives a secret as a value only: its writes and its unsaved upstream test refuse a reference other
-than the one the repository holds (422 `secret_value_required`), and a write of it that changes `url`, adds a `sendCredentials` host or turns
-`forwardAuthOnRedirect` on keeps no stored credential, sealed or referenced: it sends a new value or none
+An Owner of a project without `repositories:write-config` (R-AUTHZ-026) gives a secret as a value only: its writes and its unsaved
+upstream test refuse a reference other than the one the repository holds (422 `secret_value_required`), and a write of it that changes
+`url`, adds a `sendCredentials` host or turns `forwardAuthOnRedirect` on keeps no stored credential, sealed or referenced: it sends a new
+value or none
 ([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts),
 [delegated-administration.md](delegated-administration.md#remote-repositories-of-a-project)).
 
@@ -136,7 +137,7 @@ The scrubber runs before a field is cut to its length, so a secret is never spli
 (`clipField`, [requestlog.go](../../internal/observability/requestlog.go)). The span exporter scrubs its attributes through a
 wrapper ([tracing.go](../../internal/observability/tracing.go), `scrubExporter`).
 
-The status of a mirror (`GET /api/v1/repositories/{key}/mirror`, R-REPO-056) shows `errors.lastMessage`, the failure text the engine
+The status of a mirror (`GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror`, R-REPO-056) shows `errors.lastMessage`, the failure text the engine
 stored in `mirror_state.last_error`; the status adds no scrubbing of its own, so the rule that the text names hosts and never a URL or
 a credential is the engine's ([H-530](#h-530--the-mirror-status-shows-the-engines-failure-text-as-stored)).
 
@@ -252,12 +253,10 @@ upstream tokens that the operator mounts under `config_as_code.secrets_dir`, one
 What makes it real: one `secrets_dir` that holds the tokens of several upstreams and a repository administrator who is not meant to
 know all of them. The mitigation is operational: mount only the references that the holders of the capability may use.
 
-Not reached by a project administrator: its writes and its unsaved upstream test take no reference but the one the repository holds,
-and a stored credential does not follow a change of `url`, of a credential host or of `forwardAuthOnRedirect`
-([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts),
-pinned by `TestR_AUTHZ_026_ADelegatedUpstreamSendsOnlyItsOwnSecret`). Until that fix of phase 5a, the holder of the capability and a
-project administrator with `manageRepositories` alike could send any file of the directory, and the sealed credential of a repository
-assigned to the project, to a host of their choice. What a project administrator still reaches is
+Not reached by an Owner of a project without the capability: its writes and its unsaved upstream test take no reference but the one
+the repository holds, and a stored credential does not follow a change of `url`, of a credential host or of `forwardAuthOnRedirect`
+([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts)).
+What an Owner still reaches of an upstream an administrator configured is
 [H-403](delegated-administration.md#h-403--what-a-project-administrator-still-reaches-of-an-upstream-an-administrator-configured).
 
 ### H-300 · The advisory provider's answer is trusted as it is
@@ -306,13 +305,13 @@ Mitigation: install through trove before auditing (an install fetches every publ
 Stage: the status of a remote repository's mirror ([mirror_api.go](../../internal/api/v1/mirror_api.go), `buildMirrorStatus`) and the
 failure text the engine stores for it (`mirror_state.last_error`, at most 1024 characters). Subject: the upstream URLs and credentials
 that a failure's text could carry, and who can read the status: a holder of `repositories:read-config`, a holder of `manage` on the
-repository and an administrator of its project
+repository (a Maintainer or an Owner of its project among them) and an Owner of its project
 ([Q-REPO-166](../spec/repositories-and-proxy.md#q-repo-166--errorslastmessage-is-shown-as-the-engine-stored-it)).
 
 - **Dormant until the engine's text includes more than hosts.** R-REPO-056 and R-REPO-024's rule for the upstream test say the message
   names hosts and never a URL or a credential; the engine builds it from the outcome of a request, not from the upstream's answer.
-  The status shows it unchanged, so a message that broke the rule would reach every reader of the status, and a `manage` holder or a
-  project administrator is not meant to see an upstream's credential or a path that carries one.
+  The status shows it unchanged, so a message that broke the rule would reach every reader of the status, and a `manage` holder or an
+  Owner is not meant to see an upstream's credential or a path that carries one.
 - What makes it real: an engine message built from a part of an upstream's answer, from a request URL, or from an error of the HTTP
   client that quotes the URL. The engine's tests of its messages are the guard.
 - Not covered by the status: the log and the failure event of the engine carry the same text.

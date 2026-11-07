@@ -14,7 +14,7 @@ export type MirrorState = MirrorStatus['state'];
 export type UpstreamTestResult = Schema<'UpstreamTestResult'>;
 
 /**
- * The body of `POST /api/v1/upstream-tests`: the format and an unsaved `remote` section. Secret values in
+ * The body of `POST /api/v1/projects/{projectKey}/upstream-tests`: the format and an unsaved `remote` section. Secret values in
  * it are used once and stored nowhere (R-REPO-024, R-REPO-033). The section is typed loosely because the
  * form writes only the members that differ from their defaults.
  */
@@ -52,8 +52,29 @@ export function isConsumerView(
   return 'addresses' in value;
 }
 
-export function repositoryUrl(key: string): string {
-  return `/api/v1/repositories/${encodeURIComponent(key)}`;
+/**
+ * A repository is named `<project>/<key>` outside its project (R-REPO-002, Q-REPO-212); every API client of the UI takes
+ * that qualified name as the identity of a repository. A project key and a repository key hold no slash.
+ */
+export function repoRef(project: string, key: string): string {
+  return `${project}/${key}`;
+}
+
+/** The qualified name of a repository or summary as the API returns it. */
+export function refOf(repository: { readonly project?: string; readonly key: string }): string {
+  return repoRef(repository.project ?? '', repository.key);
+}
+
+/** The two parts of a qualified repository name; a name without a project has an empty `project`. */
+export function splitRef(ref: string): { readonly project: string; readonly key: string } {
+  const at = ref.indexOf('/');
+  return at < 0 ? { project: '', key: ref } : { project: ref.slice(0, at), key: ref.slice(at + 1) };
+}
+
+/** `/api/v1/projects/{projectKey}/repositories/{repoKey}` of a qualified repository name. */
+export function repositoryUrl(ref: string): string {
+  const { project, key } = splitRef(ref);
+  return `/api/v1/projects/${encodeURIComponent(project)}/repositories/${encodeURIComponent(key)}`;
 }
 
 /** Repositories and the format catalog: R-UI-020, R-UI-021, R-UI-010. */
@@ -70,22 +91,29 @@ export abstract class RepositoriesApi {
   abstract list(filters: RepositoryFilters): PageFetcher<RepositorySummary>;
   /** Every readable repository, for pickers and the tree root. */
   abstract listAll(): Promise<readonly RepositorySummary[]>;
-  abstract get(key: string): Promise<Versioned<Repository | RepositoryConsumerView>>;
-  abstract create(doc: Repository, idempotencyKey: string): Promise<Versioned<Repository>>;
+  /** `ref` is the qualified name `<project>/<key>`; so it is in every method below. */
+  abstract get(ref: string): Promise<Versioned<Repository | RepositoryConsumerView>>;
+  /** `POST /api/v1/projects/{project}/repositories`: the repository is created in the project (R-REPO-001). */
+  abstract create(project: string, doc: Repository, idempotencyKey: string): Promise<Versioned<Repository>>;
   /** JSON merge patch with the loaded ETag. */
   abstract patch(
-    key: string,
+    ref: string,
     patch: Readonly<Record<string, unknown>>,
     etag: string,
   ): Promise<Versioned<Repository>>;
   /** `detach` also removes the repository from the virtual repositories that include it. */
-  abstract delete(key: string, idempotencyKey: string, detach?: boolean): Promise<DeleteOutcome>;
-  /** `GET /api/v1/repositories/{key}/mirror`: the status of a remote repository's mirror (R-REPO-056). */
-  abstract mirrorStatus(key: string): Promise<MirrorStatus>;
-  /** `POST /api/v1/repositories/{key}/mirror/run`: requests a pass now; the job that was queued (R-REPO-056). */
-  abstract runMirror(key: string, full: boolean, idempotencyKey: string): Promise<JobReference>;
-  /** `POST /api/v1/upstream-tests`: probes an unsaved `remote` section (R-REPO-024). */
-  abstract testUpstream(body: UpstreamTestBody): Promise<UpstreamTestResult>;
+  abstract delete(ref: string, idempotencyKey: string, detach?: boolean): Promise<DeleteOutcome>;
+  /**
+   * `POST /api/v1/projects/{project}/repositories/{key}/move`: the repository in the target project (R-REPO-060); it
+   * keeps its key, so the answer has the new qualified name.
+   */
+  abstract move(ref: string, targetProject: string, idempotencyKey: string): Promise<Versioned<Repository>>;
+  /** `GET …/repositories/{key}/mirror`: the status of a remote repository's mirror (R-REPO-056). */
+  abstract mirrorStatus(ref: string): Promise<MirrorStatus>;
+  /** `POST …/repositories/{key}/mirror/run`: requests a pass now; the job that was queued (R-REPO-056). */
+  abstract runMirror(ref: string, full: boolean, idempotencyKey: string): Promise<JobReference>;
+  /** `POST /api/v1/projects/{project}/upstream-tests`: probes an unsaved `remote` section (R-REPO-024). */
+  abstract testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult>;
 }
 
 @Injectable()
@@ -115,47 +143,65 @@ export class HttpRepositoriesApi extends RepositoriesApi {
     return collectAll(this.list({}));
   }
 
-  async get(key: string): Promise<Versioned<Repository | RepositoryConsumerView>> {
-    const r = await this.client.getJson<Repository | RepositoryConsumerView>(repositoryUrl(key));
+  async get(ref: string): Promise<Versioned<Repository | RepositoryConsumerView>> {
+    const r = await this.client.getJson<Repository | RepositoryConsumerView>(repositoryUrl(ref));
     return { value: r.body, etag: r.etag ?? '' };
   }
 
-  async create(doc: Repository, idempotencyKey: string): Promise<Versioned<Repository>> {
-    const r = await this.client.post<Repository>('/api/v1/repositories', doc, { idempotencyKey });
+  async create(project: string, doc: Repository, idempotencyKey: string): Promise<Versioned<Repository>> {
+    const r = await this.client.post<Repository>(
+      `/api/v1/projects/${encodeURIComponent(project)}/repositories`,
+      doc,
+      { idempotencyKey },
+    );
+    return { value: r.body, etag: r.etag ?? '' };
+  }
+
+  async move(ref: string, targetProject: string, idempotencyKey: string): Promise<Versioned<Repository>> {
+    const r = await this.client.post<Repository>(
+      `${repositoryUrl(ref)}/move`,
+      { project: targetProject },
+      { idempotencyKey },
+    );
     return { value: r.body, etag: r.etag ?? '' };
   }
 
   async patch(
-    key: string,
+    ref: string,
     patch: Readonly<Record<string, unknown>>,
     etag: string,
   ): Promise<Versioned<Repository>> {
-    const r = await this.client.patch<Repository>(repositoryUrl(key), patch, etag);
+    const r = await this.client.patch<Repository>(repositoryUrl(ref), patch, etag);
     return { value: r.body, etag: r.etag ?? '' };
   }
 
-  async delete(key: string, idempotencyKey: string, detach = false): Promise<DeleteOutcome> {
-    const r = await this.client.delete<{ job: JobReference } | null>(repositoryUrl(key), {
+  async delete(ref: string, idempotencyKey: string, detach = false): Promise<DeleteOutcome> {
+    const r = await this.client.delete<{ job: JobReference } | null>(repositoryUrl(ref), {
       idempotencyKey,
       params: detach ? { detach: true } : undefined,
     });
     return r.status === 202 && r.body ? { done: false, job: r.body.job } : { done: true };
   }
 
-  async mirrorStatus(key: string): Promise<MirrorStatus> {
-    return (await this.client.getJson<MirrorStatus>(`${repositoryUrl(key)}/mirror`)).body;
+  async mirrorStatus(ref: string): Promise<MirrorStatus> {
+    return (await this.client.getJson<MirrorStatus>(`${repositoryUrl(ref)}/mirror`)).body;
   }
 
-  async runMirror(key: string, full: boolean, idempotencyKey: string): Promise<JobReference> {
+  async runMirror(ref: string, full: boolean, idempotencyKey: string): Promise<JobReference> {
     const r = await this.client.post<{ job: JobReference }>(
-      `${repositoryUrl(key)}/mirror/run`,
+      `${repositoryUrl(ref)}/mirror/run`,
       { full },
       { idempotencyKey },
     );
     return r.body.job;
   }
 
-  async testUpstream(body: UpstreamTestBody): Promise<UpstreamTestResult> {
-    return (await this.client.post<UpstreamTestResult>('/api/v1/upstream-tests', body)).body;
+  async testUpstream(project: string, body: UpstreamTestBody): Promise<UpstreamTestResult> {
+    return (
+      await this.client.post<UpstreamTestResult>(
+        `/api/v1/projects/${encodeURIComponent(project)}/upstream-tests`,
+        body,
+      )
+    ).body;
   }
 }

@@ -90,6 +90,11 @@ export class AuditLog {
     { id: 'action', label: $localize`:@@audit.col.action:Action` },
     { id: 'target', label: $localize`:@@audit.col.target:Target` },
     {
+      id: 'project',
+      label: $localize`:@@audit.col.project:Project`,
+      help: $localize`:@@audit.help.project:The project of the repository the event is about; a dash when it is about none.`,
+    },
+    {
       id: 'outcome',
       label: $localize`:@@audit.col.outcome:Outcome`,
       help: $localize`:@@audit.help.outcome:Success: the action was carried out. Failure: it was allowed but did not work. Denied: the caller was not permitted.`,
@@ -257,8 +262,30 @@ export class AuditLog {
     const name = e.actor.name;
     if (!name) return null;
     if (e.actor.type === 'user') return ['/admin/users', name];
-    if (e.actor.type === 'service_account') return ['/admin/service-accounts', name];
+    if (e.actor.type === 'service_account') {
+      // A project's account is named `<project>/<name>` (R-AUTHZ-026) and lives in the project (Q-UI-129).
+      const at = name.indexOf('/');
+      return at < 0 ? ['/admin/service-accounts', name] : ['/projects', name.slice(0, at), 'service-accounts', name.slice(at + 1)];
+    }
     return null;
+  }
+
+  /** The project of the repository an event is about (`<project>/<key>`), or null for an event about none. */
+  protected projectOf(e: AuditEvent): string | null {
+    const at = e.repository?.indexOf('/') ?? -1;
+    return e.repository && at > 0 ? e.repository.slice(0, at) : null;
+  }
+
+  /** The repository's own screen in its project. */
+  protected repositoryLink(repository: string): string[] {
+    const [project = '', key = ''] = repository.split('/');
+    return ['/projects', project, 'repositories', key];
+  }
+
+  /** The file tree at the item, inside the project of its repository. */
+  protected browseLink(repository: string, path: string): string[] {
+    const [project = '', key = ''] = repository.split('/');
+    return ['/projects', project, 'browse', key, ...path.split('/')];
   }
 
   protected targetText(e: AuditEvent): string {

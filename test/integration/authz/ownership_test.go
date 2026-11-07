@@ -71,27 +71,27 @@ func newOwnWorld(t *testing.T) *ownWorld {
 	}
 	pkgs := authz.PatternLists{Include: []string{"@web/*", "@acme/*"}}
 	create(authz.PolicyInput{
-		Name: "team-web-publish", Resources: authz.Resources{Repositories: []string{"npm-internal", "npm-loose"}, Packages: pkgs},
+		Name: "team-web-publish", Resources: authz.Resources{Repositories: []string{"it/npm-internal", "it/npm-loose"}, Packages: pkgs},
 		Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"read", "deploy"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "team-mobile-publish", Resources: authz.Resources{Repositories: []string{"npm-internal", "npm-loose"}, Packages: pkgs},
+		Name: "team-mobile-publish", Resources: authz.Resources{Repositories: []string{"it/npm-internal", "it/npm-loose"}, Packages: pkgs},
 		Entries: []authz.Entry{{Principal: "group:team-mobile", Actions: []string{"read", "deploy"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "lead", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+		Name: "lead", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 		Entries: []authz.Entry{{Principal: "user:lead", Actions: []string{"read", "deploy", "manage"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "gate", Resources: authz.Resources{Repositories: []string{"npm-all"}},
+		Name: "gate", Resources: authz.Resources{Repositories: []string{"it/npm-all"}},
 		Entries: []authz.Entry{{Principal: "group:team-web", Actions: []string{"read"}}, {Principal: "group:team-mobile", Actions: []string{"read"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "bot", Resources: authz.Resources{Repositories: []string{"npm-internal"}, Packages: authz.PatternLists{Include: []string{"@acme/*"}}},
+		Name: "bot", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}, Packages: authz.PatternLists{Include: []string{"@acme/*"}}},
 		Entries: []authz.Entry{{Principal: "sa:ci-bot", Actions: []string{"read", "deploy"}}},
 	})
 	create(authz.PolicyInput{
-		Name: "carol-frozen", Resources: authz.Resources{Repositories: []string{"npm-frozen"}},
+		Name: "carol-frozen", Resources: authz.Resources{Repositories: []string{"it/npm-frozen"}},
 		Entries: []authz.Entry{{Principal: "user:carol", Actions: []string{"read", "deploy"}}},
 	})
 	_, ep, err := w.a.svc.BindRole(ctx, w.root, authz.RoleAdmin, "user:root")
@@ -121,7 +121,7 @@ func (w *ownWorld) ownership(r *replica) *authz.Ownership {
 // beginIndex takes the index a request decides on, at the epoch of the last write.
 func (w *ownWorld) beginIndex(t *testing.T, r *replica, s authz.Subject, keys ...string) (*authz.Index, error) {
 	s.MinEpoch = w.epoch
-	return r.engine.Begin(t.Context(), s, keys...)
+	return r.engine.Begin(t.Context(), s, qrs(keys)...)
 }
 
 func (w *ownWorld) begin(t *testing.T, r *replica, s authz.Subject, keys ...string) *authz.Index {
@@ -186,7 +186,7 @@ func statusOf(err error) int {
 // owners reads the owners of a name the way GET …/owners does.
 func (w *ownWorld) owners(t *testing.T, repo, name string) authz.PackageOwners {
 	t.Helper()
-	got, err := w.oa.Owners(t.Context(), w.begin(t, w.a, w.root, repo), w.root, repo, name)
+	got, err := w.oa.Owners(t.Context(), w.begin(t, w.a, w.root, repo), w.root, qr(repo), name)
 	if err != nil {
 		t.Fatalf("owners of %s: %v", name, err)
 	}
@@ -343,14 +343,14 @@ func TestR_AUTHZ_018_GroupOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := w.owners(t, "npm-internal", "@web/new-lib")
-	if got.State != authz.StateClaimed || got.Domain != "npm-internal" || got.Format != "npm" || len(got.Owners) != 1 {
+	if got.State != authz.StateClaimed || got.Domain != "it/npm-internal" || got.Format != "npm" || len(got.Owners) != 1 {
 		t.Fatalf("owners %+v", got)
 	}
 	if o := got.Owners[0]; o.Owner != "group:team-web" || o.Display != "team-web" || o.Reason != authz.OwnerFirstPublish || o.AddedBy != "" || o.AddedAt.IsZero() {
 		t.Fatalf("owner %+v", o)
 	}
 	claimed := w.a.rec.ofType(authz.EventOwnershipClaimed)
-	if len(claimed) != 1 || claimed[0].Repository != "npm-internal" || claimed[0].Path != "@web/new-lib" {
+	if len(claimed) != 1 || claimed[0].Repository != "it/npm-internal" || claimed[0].Path != "@web/new-lib" {
 		t.Fatalf("claim events %+v", claimed)
 	}
 	claim := w.e.text("SELECT claim_event::text FROM package_ownership WHERE package_name = '@web/new-lib'")
@@ -488,10 +488,10 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 	w := newOwnWorld(t)
 	ctx := t.Context()
 	add := func(r *replica, s authz.Subject, repo, name, ref string) (authz.Owner, error) {
-		return w.ownership(r).AddOwner(ctx, w.begin(t, r, s, repo), s, repo, name, ref)
+		return w.ownership(r).AddOwner(ctx, w.begin(t, r, s, repo), s, qr(repo), name, ref)
 	}
 	remove := func(r *replica, s authz.Subject, repo, name, ref string, release bool) error {
-		return w.ownership(r).RemoveOwner(ctx, w.begin(t, r, s, repo), s, repo, name, ref, release)
+		return w.ownership(r).RemoveOwner(ctx, w.begin(t, r, s, repo), s, qr(repo), name, ref, release)
 	}
 
 	t.Run("R-AUTHZ-019 a holder of manage pre-assigns a name nobody has published", func(t *testing.T) {
@@ -654,20 +654,20 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-016 reading the owners needs read; a refusal is the 404 of a missing name", func(t *testing.T) {
-		_, refused := w.oa.Owners(ctx, w.begin(t, w.a, w.carol, "npm-internal"), w.carol, "npm-internal", "@web/shared")
+		_, refused := w.oa.Owners(ctx, w.begin(t, w.a, w.carol, "npm-internal"), w.carol, qr("npm-internal"), "@web/shared")
 		if statusOf(refused) != 404 || codeOf(refused) != errs.CodeNotFound {
 			t.Fatalf("refused %v", refused)
 		}
 		if got := w.owners(t, "npm-internal", "@never/published"); got.State != authz.StateUnclaimed || len(got.Owners) != 0 {
 			t.Fatalf("an unclaimed name reads back %+v", got)
 		}
-		if _, err := w.oa.Owners(ctx, w.begin(t, w.a, w.alice, "npm-loose"), w.alice, "npm-loose", "@web/x"); err != nil {
+		if _, err := w.oa.Owners(ctx, w.begin(t, w.a, w.alice, "npm-loose"), w.alice, qr("npm-loose"), "@web/x"); err != nil {
 			t.Fatalf("a repository that does not enforce still has an ownership view: %v", err)
 		}
 	})
 	t.Run("R-AUTHZ-019 the names an identity owns, for its members and for policies:read", func(t *testing.T) {
 		list := func(s authz.Subject, ref string, after authz.OwnedCursor, limit int) ([]authz.OwnedPackage, *authz.OwnedCursor, error) {
-			return w.oa.OwnedBy(ctx, w.begin(t, w.a, s), s, ref, "", after, limit)
+			return w.oa.OwnedBy(ctx, w.begin(t, w.a, s), s, ref, qr(""), after, limit)
 		}
 		if _, err := add(w.a, w.root, "npm-secret", "@web/hidden", "group:team-web"); err != nil {
 			t.Fatal(err)
@@ -680,7 +680,7 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, p := range page {
-				if p.Repository != "npm-internal" || p.Format != "npm" {
+				if p.Repository != qr("npm-internal") || p.Format != "npm" {
 					t.Fatalf("item %+v", p)
 				}
 				names = append(names, p.Package)
@@ -702,7 +702,7 @@ func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {
 			t.Fatalf("a caller outside the group without policies:read: %v", err)
 		}
 		page, _, err := list(w.root, "group:team-web", authz.OwnedCursor{}, 10)
-		if err != nil || !slices.ContainsFunc(page, func(p authz.OwnedPackage) bool { return p.Package == "@web/hidden" && p.Repository == "npm-secret" }) {
+		if err != nil || !slices.ContainsFunc(page, func(p authz.OwnedPackage) bool { return p.Package == "@web/hidden" && p.Repository == qr("npm-secret") }) {
 			t.Fatalf("policies:read: %+v, %v", page, err)
 		}
 	})
@@ -774,7 +774,7 @@ func TestR_AUTHZ_018_DeletedRepositoryTakesItsOwnershipRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	repos := w.deletionWorker(t)
-	if _, err := repos.Delete(t.Context(), repository.Caller{}, "npm-doomed", false); err != nil {
+	if _, err := repos.Delete(t.Context(), repository.Caller{}, qr("npm-doomed"), false); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the deletion job removing the repository row", 15*time.Second, func() bool {
@@ -819,7 +819,7 @@ func TestR_AUTHZ_008_PopulateCheckOnPostgreSQL(t *testing.T) {
 			warn bool
 		}{{"npmjs", true}, {"npm-frozen", false}} {
 			p, _, err := w.a.svc.Create(ctx, w.root, authz.PolicyInput{
-				Name: fmt.Sprintf("anon-%s-%d", tc.repo, i), Resources: authz.Resources{Repositories: []string{tc.repo}},
+				Name: fmt.Sprintf("anon-%s-%d", tc.repo, i), Resources: authz.Resources{Repositories: []string{"it/" + tc.repo}},
 				Entries: []authz.Entry{{Principal: "anonymous", Actions: []string{"read"}}},
 			})
 			if err != nil {

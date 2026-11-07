@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/audit"
@@ -30,8 +32,7 @@ import (
 // them, and a pass started by the run reads the request when it claims the repository.
 //
 // Neither operation can be declared as one permission or one repository action, because each allows a disjunction the
-// declaration forms cannot express (repositories:read-config, manage on the repository, or administration of its project;
-// for the run the project's switch manageRepositories), so both declare only that the caller is authenticated and decide
+// declaration forms cannot express (repositories:read-config, manage on the repository, or the role Owner in its project), so both declare only that the caller is authenticated and decide
 // here, as the cache entry list does (Q-OPS-155, Q-API-199).
 
 // MirrorServices are the services of the mirror operations; the zero value reads and writes through Services.Store.
@@ -46,20 +47,20 @@ type MirrorServices struct {
 // effective remote section (R-REPO-050).
 type MirrorTarget struct {
 	ID       int64
-	Key      string
+	Key      qname.Repo
 	Class    repository.Class
 	Settings repository.RemoteSettings
 }
 
 // MirrorRepositories looks a repository up by key; 404 repository_not_found when there is none.
 type MirrorRepositories interface {
-	Target(ctx context.Context, key string) (MirrorTarget, error)
+	Target(ctx context.Context, key qname.Repo) (MirrorTarget, error)
 }
 
 // serviceTargets implements MirrorRepositories over the repository service.
 type serviceTargets struct{ svc *repository.Service }
 
-func (t serviceTargets) Target(ctx context.Context, key string) (MirrorTarget, error) {
+func (t serviceTargets) Target(ctx context.Context, key qname.Repo) (MirrorTarget, error) {
 	st, err := t.svc.Get(ctx, key)
 	if err != nil {
 		return MirrorTarget{}, err
@@ -68,7 +69,7 @@ func (t serviceTargets) Target(ctx context.Context, key string) (MirrorTarget, e
 	if err != nil {
 		return MirrorTarget{}, err
 	}
-	out := MirrorTarget{ID: id, Key: st.Repository.Key, Class: st.Repository.Class}
+	out := MirrorTarget{ID: id, Key: st.Repository.Name, Class: st.Repository.Class}
 	if out.Class != repository.Remote {
 		return out, nil
 	}
@@ -223,7 +224,7 @@ func (s *Server) mirrorState() (MirrorState, error) {
 // repository's project, or a caller with manage on the repository (R-REPO-056, as the full configuration read of
 // R-REPO-010). The exposure ceiling of the request's endpoint binds a configuration reader like everyone (R-EP-013), and
 // a repository hidden from a caller with neither answers 404 (R-AUTHZ-016) through the decision on manage.
-func (s *Server) requireMirrorReader(ctx context.Context, key string) error {
+func (s *Server) requireMirrorReader(ctx context.Context, key qname.Repo) error {
 	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, key)
 	if err != nil {
 		return err
@@ -231,7 +232,7 @@ func (s *Server) requireMirrorReader(ctx context.Context, key string) error {
 	if acc == nil {
 		return errNoDecisionPoint()
 	}
-	cfg, err := s.readsConfig(ctx, key)
+	cfg, err := s.readsConfig(ctx, key.Project)
 	if err != nil {
 		return err
 	}
@@ -241,7 +242,7 @@ func (s *Server) requireMirrorReader(ctx context.Context, key string) error {
 	return hiddenOr(ctx, acc, key, acc.Decide(ctx, manageCoordinate(key)).Err())
 }
 
-func manageCoordinate(key string) authz.Coordinate {
+func manageCoordinate(key qname.Repo) authz.Coordinate {
 	return authz.Coordinate{Repository: key, Kind: authz.KindWrite, Actions: []authz.Action{authz.Manage}}
 }
 
@@ -249,7 +250,7 @@ func manageCoordinate(key string) authz.Coordinate {
 // repository and the repository hides its existence, otherwise the refusal itself. The decision on manage alone cannot say
 // it, because the table of R-AUTHZ-016 answers a refused manage with 403 whatever else the caller holds; the read decides
 // whether the repository is visible. It returns nil for a nil refusal.
-func hiddenOr(ctx context.Context, acc *edge.Access, key string, refusal error) error {
+func hiddenOr(ctx context.Context, acc *edge.Access, key qname.Repo, refusal error) error {
 	if refusal == nil {
 		return nil
 	}
@@ -259,13 +260,12 @@ func hiddenOr(ctx context.Context, acc *edge.Access, key string, refusal error) 
 	return refusal
 }
 
-// requireMirrorWriter decides who requests a pass: a holder of repositories:write-config, an administrator of the
-// repository's project with manageRepositories, or a caller with manage on the repository (R-REPO-056, as an update of
-// R-REPO-011). An administrator of a project holds manage on every repository of the project whatever its switches say
-// (Q-AUTHZ-183), so the third way admits it too: the switch gates the changes of a configuration, and a run changes none
-// (Q-API-199). A caller that none of these fits is answered 403, or 404 where the repository is hidden from it
+// requireMirrorWriter decides who requests a pass: a holder of repositories:write-config, an Owner of the repository's
+// project, or a caller with manage on the repository (R-REPO-056, as an update of R-REPO-011). The role Owner is the
+// project's administration (R-AUTHZ-026); the Owner of a project is admitted by the first of the two ways that fits, a run
+// changes no configuration (Q-API-199). A caller that none of these fits is answered 403, or 404 where the repository is hidden from it
 // (R-AUTHZ-016); a holder of repositories:read-config sees every repository and is answered 403.
-func (s *Server) requireMirrorWriter(ctx context.Context, key string) error {
+func (s *Server) requireMirrorWriter(ctx context.Context, key qname.Repo) error {
 	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, key)
 	if err != nil {
 		return err
@@ -281,9 +281,9 @@ func (s *Server) requireMirrorWriter(ctx context.Context, key string) error {
 		return exposed(acc, key)
 	}
 	if pa, ok := s.o.Access.(ProjectAccess); ok {
-		if _, admin, err := pa.AdministersRepository(ctx, key, authz.ProjectManageRepositories); err != nil {
+		if owns, err := pa.Owns(ctx, key.Project); err != nil {
 			return err
-		} else if admin {
+		} else if owns {
 			return exposed(acc, key)
 		}
 	}
@@ -291,7 +291,7 @@ func (s *Server) requireMirrorWriter(ctx context.Context, key string) error {
 	if refusal == nil {
 		return nil
 	}
-	cfg, err := s.readsConfig(ctx, key)
+	cfg, err := s.readsConfig(ctx, key.Project)
 	if err != nil {
 		return err
 	}
@@ -302,15 +302,15 @@ func (s *Server) requireMirrorWriter(ctx context.Context, key string) error {
 }
 
 // exposed answers 404 for a repository the endpoint of the request does not expose (R-EP-013, R-EP-014).
-func exposed(acc *edge.Access, key string) error {
-	if len(acc.Exposed([]string{key})) == 0 {
+func exposed(acc *edge.Access, key qname.Repo) error {
+	if len(acc.Exposed([]qname.Repo{key})) == 0 {
 		return authz.NotFound()
 	}
 	return nil
 }
 
 // mirrorRemote loads the repository and answers 400 not_applicable for a class other than remote.
-func (s *Server) mirrorRemote(ctx context.Context, key string) (MirrorTarget, error) {
+func (s *Server) mirrorRemote(ctx context.Context, key qname.Repo) (MirrorTarget, error) {
 	repos := s.o.Mirror.Repositories
 	if repos == nil {
 		svc, err := s.repositoryService()
@@ -325,13 +325,14 @@ func (s *Server) mirrorRemote(ctx context.Context, key string) (MirrorTarget, er
 	}
 	if t.Class != repository.Remote {
 		return MirrorTarget{}, errs.E(errs.Invalid, errs.CodeNotApplicable,
-			"Only a remote repository has a mirror; "+strconv.Quote(key)+" is a "+string(t.Class)+" repository.")
+			"Only a remote repository has a mirror; "+strconv.Quote(key.String())+" is a "+string(t.Class)+" repository.")
 	}
 	return t, nil
 }
 
 // GetRepositoryMirror implements GET /api/v1/repositories/{key}/mirror (R-REPO-056).
-func (s *Server) GetRepositoryMirror(w http.ResponseWriter, r *http.Request, key string) {
+func (s *Server) GetRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	state, err := s.mirrorState()
 	if err == nil {
@@ -452,7 +453,8 @@ func decodeLastPass(raw []byte) *gen.MirrorPassSummary {
 }
 
 // RunRepositoryMirror implements POST /api/v1/repositories/{key}/mirror/run (R-REPO-056).
-func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key string, _ gen.RunRepositoryMirrorParams) {
+func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.RunRepositoryMirrorParams) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	state, err := s.mirrorState()
 	if err == nil && (s.idem == nil || s.o.API.Queue == nil) {
@@ -478,9 +480,9 @@ func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key
 	switch {
 	case err != nil:
 	case !t.Settings.Mirrored():
-		err = errs.E(errs.Conflict, errs.CodeMirrorOff, "The repository "+strconv.Quote(key)+" runs in mode pullThrough and has no mirror; set remote.mode to mirror first.")
+		err = errs.E(errs.Conflict, errs.CodeMirrorOff, "The repository "+strconv.Quote(key.String())+" runs in mode pullThrough and has no mirror; set remote.mode to mirror first.")
 	case t.Settings.Mirror.Paused:
-		err = errs.E(errs.Conflict, errs.CodeMirrorPaused, "The mirror of "+strconv.Quote(key)+" is paused; set remote.mirror.paused to false first.")
+		err = errs.E(errs.Conflict, errs.CodeMirrorPaused, "The mirror of "+strconv.Quote(key.String())+" is paused; set remote.mirror.paused to false first.")
 	default:
 		err = mirrorRateLimitRefusal(ctx, state, t, time.Now())
 	}
@@ -503,7 +505,7 @@ func (s *Server) RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key
 func (s *Server) enqueueMirrorPass(ctx context.Context, r *http.Request, tx meta.Tx, state MirrorState, t MirrorTarget, full bool) (Outcome, error) {
 	res, err := s.o.API.Queue.Enqueue(ctx, tx, jobs.EnqueueSpec{
 		Kind: mirror.KindPass, Args: mirror.PassArgs{Repository: t.Key, RepositoryID: t.ID, Full: full}, DedupKey: mirror.PassKey(t.ID),
-		TargetKind: "repository", TargetKey: t.Key, CreatedBy: callerID(ctx),
+		TargetKind: "repository", TargetKey: t.Key.String(), CreatedBy: callerID(ctx),
 	})
 	if err != nil {
 		return Outcome{}, err
@@ -511,7 +513,7 @@ func (s *Server) enqueueMirrorPass(ctx context.Context, r *http.Request, tx meta
 	ref := jobReference(res.Job.ID, res.Job.Kind, res.Job.State)
 	if !res.Created {
 		return Outcome{}, errs.E(errs.Conflict, errs.CodeMirrorPassRunning,
-			"A pass of the mirror of "+strconv.Quote(t.Key)+" is queued or running: job "+res.Job.ID+".", errs.WithExtension("job", ref))
+			"A pass of the mirror of "+strconv.Quote(t.Key.String())+" is queued or running: job "+res.Job.ID+".", errs.WithExtension("job", ref))
 	}
 	if err := state.RequestPass(ctx, tx, t.ID, callerID(ctx), full); err != nil {
 		return Outcome{}, err
@@ -519,7 +521,7 @@ func (s *Server) enqueueMirrorPass(ctx context.Context, r *http.Request, tx meta
 	details, _ := json.Marshal(map[string]any{"full": full, "job": res.Job.ID})
 	if err := s.recorder().RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventMirrorPassRequested, Actor: ActorFrom(httpserver.PrincipalFrom(ctx)), Outcome: audit.Success, Source: auditSource(r),
-		Subject: audit.Subject{Kind: "repository", ID: strconv.FormatInt(t.ID, 10), Name: t.Key}, Repository: t.Key, Details: details,
+		Subject: audit.Subject{Kind: "repository", ID: strconv.FormatInt(t.ID, 10), Name: t.Key.String()}, Repository: t.Key.String(), Details: details,
 	}); err != nil {
 		return Outcome{}, err
 	}
@@ -542,6 +544,6 @@ func mirrorRateLimitRefusal(ctx context.Context, state MirrorState, t MirrorTarg
 		return nil
 	}
 	return errs.E(errs.Conflict, errs.CodeMirrorRateLimited,
-		"The upstream of "+strconv.Quote(t.Key)+" asked the mirror to wait until "+until.UTC().Format(time.RFC3339)+"; request the pass again after it.",
+		"The upstream of "+strconv.Quote(t.Key.String())+" asked the mirror to wait until "+until.UTC().Format(time.RFC3339)+"; request the pass again after it.",
 		errs.WithExtension("until", until.UTC().Format(time.RFC3339)))
 }

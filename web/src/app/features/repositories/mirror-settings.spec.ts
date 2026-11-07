@@ -50,6 +50,7 @@ async function remoteStep(
   options: { capabilities?: readonly string[]; setup?: (fake: FakeRepositoriesApi) => void } = {},
 ): Promise<Wizard> {
   const r = await renderScreen(RepositoryWizard, {
+    inputs: { project: 'web' },
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
     setup: (get) => {
       const fake = get(RepositoriesApi) as FakeRepositoriesApi;
@@ -155,6 +156,7 @@ describe('Mirror settings of a remote repository', () => {
 
       for (const cls of ['local', 'virtual']) {
         const r = await renderScreen(RepositoryWizard, {
+          inputs: { project: 'web' },
           setup: (get) => ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [NPM]),
         });
         tile(r, 'npm').click();
@@ -257,7 +259,7 @@ describe('Mirror settings of a remote repository', () => {
       expect(control(r.root, 'f-remote-mirror-intervalSeconds').value).toBe('');
     });
 
-    it('R-UI-021 Q-REPO-142 a caller without repositories:write-config (a project administrator) sees the section read-only and cannot create a mirror', async () => {
+    it('R-UI-021 Q-REPO-142 a caller without repositories:write-config (a project Owner) sees the section read-only and cannot create a mirror', async () => {
       const r = await remoteStep([NPM], 'npm', { capabilities: [] });
       expect(text(r.root.querySelector('trove-mirror-settings')!)).toContain(
         'Only an administrator of the installation can switch a remote repository to mirror',
@@ -324,7 +326,7 @@ describe('Mirror settings of a remote repository', () => {
       options: { projectAdmin?: boolean; formats?: readonly FormatDescriptor[] } = {},
     ) {
       const r = await renderScreen(RepositoryDetail, {
-        inputs: { key: repo.key },
+        inputs: { project: repo.project ?? 'web', key: repo.key },
         setup: (get) => {
           const fake = get(RepositoriesApi) as FakeRepositoriesApi;
           fake.formatsResult = options.formats ?? [GENERIC_FORMAT, NPM];
@@ -334,7 +336,7 @@ describe('Mirror settings of a remote repository', () => {
               roles: [],
               capabilities: [],
               principals: ['user:alice'],
-              projects: [{ key: 'web', managePolicies: false, manageRepositories: true }],
+              projects: [{ key: 'web', role: 'owner' }],
             };
           }
         },
@@ -391,7 +393,7 @@ describe('Mirror settings of a remote repository', () => {
       expect(fake.patches[0]?.patch).toEqual({ remote: { mirror: { intervalSeconds: null } } });
     });
 
-    it('R-UI-021 Q-REPO-142 a project administrator sees the section read-only except Pause, and Turn off sends the mode back to pullThrough', async () => {
+    it('R-UI-021 Q-REPO-142 a project Owner sees the section read-only except Pause, and Turn off sends the mode back to pullThrough', async () => {
       const { r, fake } = await open(stored('mirror', { intervalSeconds: 7200 }), { projectAdmin: true });
       const section = r.root.querySelector('trove-mirror-settings')!;
       expect(text(section)).toContain('Only an administrator of the installation');

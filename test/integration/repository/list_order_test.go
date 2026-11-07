@@ -22,7 +22,7 @@ func TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder(t *testing.T) {
 	ctx := context.Background()
 	keys := []string{"web-a", "weba", "web-b", "webc", "web-c", "web.d"}
 	for _, k := range keys {
-		if _, err := rep.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, k))); err != nil {
+		if _, err := rep.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, k))); err != nil {
 			t.Fatalf("create %s: %v", k, err)
 		}
 	}
@@ -46,7 +46,7 @@ func TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder(t *testing.T) {
 		var got []string
 		after := ""
 		for range len(keys) {
-			res, err := rep.svc.List(ctx, repository.ListFilter{After: after, Limit: 2})
+			res, err := rep.svc.List(ctx, repository.ListFilter{After: qr(after), Limit: 2})
 			if err != nil {
 				t.Fatal(err)
 			}

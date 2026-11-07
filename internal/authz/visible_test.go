@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/auth/scope"
 )
 
@@ -38,17 +40,17 @@ func TestR_API_029_ReadScopeShapes(t *testing.T) {
 	keys := []string{"npm-a", "npm-b", "npm-v", "ghost"}
 	shapes := func(t *testing.T, sub Subject) map[string]ReadShape {
 		t.Helper()
-		idx, err := e.Begin(context.Background(), sub, keys...)
+		idx, err := e.Begin(context.Background(), sub, qrs(keys)...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		rs, err := e.ReadScopeOn(context.Background(), idx, sub, "", keys)
+		rs, err := e.ReadScopeOn(context.Background(), idx, sub, qr(""), qrs(keys))
 		if err != nil {
 			t.Fatal(err)
 		}
 		out := map[string]ReadShape{}
 		for _, k := range keys {
-			out[k] = rs.Shape(k)
+			out[k] = rs.Shape(qr(k))
 		}
 		return out
 	}
@@ -67,7 +69,7 @@ func TestR_API_029_ReadScopeShapes(t *testing.T) {
 		{"no grant reads nothing", onEP(carolSub, "default"), map[string]ReadShape{"npm-a": ReadNone, "npm-b": ReadNone, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"content:bypass reads every package", onEP(adminOnly, "default"), map[string]ReadShape{"npm-a": ReadAll, "npm-b": ReadAll, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"content:bypass is bound by the ceiling of an endpoint with rules", onEP(adminOnly, "customers"), map[string]ReadShape{"npm-a": ReadRows, "npm-b": ReadRows, "npm-v": ReadNone, "ghost": ReadNone}},
-		{"a token scope that lists elements decides row by row", onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}), "default"), map[string]ReadShape{"npm-a": ReadRows, "npm-b": ReadRows, "npm-v": ReadNone, "ghost": ReadNone}},
+		{"a token scope that lists elements decides row by row", onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}), "default"), map[string]ReadShape{"npm-a": ReadRows, "npm-b": ReadRows, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"a token scope that inherits does not narrow", onEP(tokenScop(botSub, scope.Scope{Inherit: true}), "default"), map[string]ReadShape{"npm-a": ReadAll, "npm-b": ReadAll, "npm-v": ReadNone, "ghost": ReadNone}},
 		{"an anonymous subject reads nothing while the switch is off", onEP(anonSub, "default"), map[string]ReadShape{"npm-a": ReadNone, "npm-b": ReadNone, "npm-v": ReadNone, "ghost": ReadNone}},
 	}
@@ -92,7 +94,7 @@ func TestR_API_029_ReadScopeAgreesWithTheDecisionPoint(t *testing.T) {
 	keys := []string{"npm-a", "npm-b", "npm-v"}
 	subjects := map[string]Subject{
 		"bot": botSub, "alice": aliceSub, "bob": bobSub, "carol": carolSub, "admin": adminSub,
-		"scoped bot": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}),
+		"scoped bot": tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}),
 	}
 	pkgs := []string{"@a/x", "@acme/sdk", "@b/y", "plain"}
 	versions := []string{"", "1.0.0", "2.1.0", "3.0.0-beta"}
@@ -101,25 +103,25 @@ func TestR_API_029_ReadScopeAgreesWithTheDecisionPoint(t *testing.T) {
 		for _, ep := range []string{"", "default", "customers", "nowhere"} {
 			sub := onEP(base, ep)
 			ctx := context.Background()
-			idx, err := e.Begin(ctx, sub, keys...)
+			idx, err := e.Begin(ctx, sub, qrs(keys)...)
 			if err != nil {
 				t.Fatal(err)
 			}
-			rs, err := e.ReadScopeOn(ctx, idx, sub, "", keys)
+			rs, err := e.ReadScopeOn(ctx, idx, sub, qr(""), qrs(keys))
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, k := range keys {
 				for _, p := range pkgs {
 					for _, v := range versions {
-						c := Coordinate{Repository: k, Package: p, Version: v, Kind: KindMetadata, Actions: []Action{Read}}
+						c := Coordinate{Repository: qr(k), Package: p, Version: v, Kind: KindMetadata, Actions: []Action{Read}}
 						decided := e.DecideOn(ctx, idx, sub, c).Outcome == Allow
-						if got := rs.MayRead(k, p, v); got != decided {
+						if got := rs.MayRead(qr(k), p, v); got != decided {
 							t.Errorf("%s on %q reads %s %s@%s: MayRead %v, DecideOn %v", name, ep, k, p, v, got, decided)
 						}
 						// A virtual repository holds no rows: ReadNone says so, and its gate
 						// allows a read whatever the shape.
-						shape := rs.Shape(k)
+						shape := rs.Shape(qr(k))
 						if k == "npm-v" {
 							shape = ReadRows
 						}
@@ -150,11 +152,11 @@ func TestR_API_029_ReadScopeAgreesWithTheDecisionPoint(t *testing.T) {
 func TestR_API_029_ReadScopeExposureDecidesVersions(t *testing.T) {
 	e := newTestEngine(t, readScopeFixture(), func(o *Options) { o.Ceiling = exposureCeiling() })
 	sub := onEP(botSub, "customers")
-	idx, err := e.Begin(context.Background(), sub, "npm-a", "npm-b")
+	idx, err := e.Begin(context.Background(), sub, qr("npm-a"), qr("npm-b"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs, err := e.ReadScopeOn(context.Background(), idx, sub, "", []string{"npm-a", "npm-b"})
+	rs, err := e.ReadScopeOn(context.Background(), idx, sub, qr(""), []qname.Repo{qr("npm-a"), qr("npm-b")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +170,7 @@ func TestR_API_029_ReadScopeExposureDecidesVersions(t *testing.T) {
 		{"npm-a", "other", "2.1.0", false},
 		{"npm-b", "@acme/sdk", "2.1.0", false},
 	} {
-		if got := rs.MayRead(tc.repo, tc.pkg, tc.version); got != tc.want {
+		if got := rs.MayRead(qr(tc.repo), tc.pkg, tc.version); got != tc.want {
 			t.Errorf("%s %s@%s: %v, want %v", tc.repo, tc.pkg, tc.version, got, tc.want)
 		}
 	}

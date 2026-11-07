@@ -150,7 +150,7 @@ func (a virtualAdapter) Merge(ctx context.Context, rq *formats.Request, p format
 	parts := make([]merge.Part, len(docs))
 	for i, d := range docs {
 		parts[i] = merge.Part{
-			Member: d.Member.Key, Tier: mergeTier(d.Tier), Position: d.Position, Doc: d.Doc,
+			Member: d.Member.Name.String(), Tier: mergeTier(d.Tier), Position: d.Position, Doc: d.Doc,
 			Cached: d.CachedVersions, Restricted: d.Restricted,
 		}
 		if d.Tier == formats.TierLocal {

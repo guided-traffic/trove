@@ -103,7 +103,7 @@ func (f *fetcher) rateLimited(resp *http.Response) (flightResult, bool) {
 	if !ok {
 		return flightResult{}, false
 	}
-	return flightResult{own: &upstream.RateLimitError{RateLimit: rl, Repo: f.rq.Remote.Repo.Key}, status: resp.StatusCode}, true
+	return flightResult{own: &upstream.RateLimitError{RateLimit: rl, Repo: f.rq.Remote.Repo.Name.String()}, status: resp.StatusCode}, true
 }
 
 // roleMirror is the flight_role of the upstream log record of a background request (R-REPO-057).

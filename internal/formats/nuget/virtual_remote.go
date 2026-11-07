@@ -3,6 +3,8 @@ package nuget
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/merge"
@@ -42,7 +44,7 @@ func (f *Format) remoteMemberEntries(ctx context.Context, rq *formats.Request, d
 	}
 	var pages []*formats.RemoteDocument
 	if len(bounds) > 0 {
-		member, err := memberRequest(rq, d.Member.Key)
+		member, err := memberRequest(rq, d.Member.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -60,9 +62,9 @@ func (f *Format) remoteMemberEntries(ctx context.Context, rq *formats.Request, d
 // memberRequest is the request derived for the member key of the request's virtual repository,
 // found by key among its members. The merge of the registration and the search of a remote
 // member both use it; a key that is no member is an internal error, never an omission.
-func memberRequest(rq *formats.Request, key string) (*formats.Request, error) {
+func memberRequest(rq *formats.Request, key qname.Repo) (*formats.Request, error) {
 	for _, m := range rq.Repo.Members() {
-		if m.Key == key {
+		if m.Name == key {
 			return rq.Member(&m)
 		}
 	}

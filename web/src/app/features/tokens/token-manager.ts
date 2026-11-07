@@ -23,7 +23,7 @@ export type TokenOwnerScope =
   | {
       readonly kind: 'service-account';
       readonly name: string;
-      /** The key of the account's project (R-AUTHZ-026): its administrators issue and revoke the tokens. */
+      /** The key of the account's project (R-AUTHZ-026): its Owners issue and revoke the tokens. */
       readonly project?: string | null;
     };
 
@@ -168,7 +168,7 @@ export class TokenManager {
 
   protected readonly owner = computed(() => {
     const s = this.scope();
-    return s.kind === 'own' ? 'me' : s.kind === 'user' ? s.name : `sa:${s.name}`;
+    return s.kind === 'own' ? 'me' : s.kind === 'user' ? s.name : s.project ? `sa:${s.project}/${s.name}` : `sa:${s.name}`;
   });
   /**
    * The server lets the administrator role create and rotate the tokens of a service account (or a
@@ -180,14 +180,14 @@ export class TokenManager {
     return s.kind === 'own' || (s.kind === 'service-account' && (this.session.hasRole('admin') || this.projectIssues()));
   });
   /**
-   * An administrator of the account's project issues its tokens while `managePolicies` is on (R-AUTHZ-026,
-   * Q-AUTHZ-177); the server caps the lifetime, forbids "never expires" and any `system` scope for them.
+   * An Owner of the account's project issues its tokens (R-AUTHZ-026, Q-AUTHZ-177); the server caps the lifetime,
+   * forbids "never expires" and any `system` scope for them.
    */
   protected readonly projectIssues = computed(() => {
     const s = this.scope();
-    return s.kind === 'service-account' && (this.session.projectRights(s.project)?.managePolicies ?? false);
+    return s.kind === 'service-account' && this.session.isOwnerOf(s.project);
   });
-  /** A non-expiring token is for the administrator role only; a project administrator's tokens always expire. */
+  /** A non-expiring token is for the administrator role only; an Owner's tokens always expire. */
   protected readonly allowNonExpiring = computed(
     () => this.scope().kind === 'service-account' && this.session.hasRole('admin'),
   );
@@ -195,13 +195,13 @@ export class TokenManager {
     const s = this.scope();
     return s.kind === 'own' || (s.kind === 'service-account' && this.session.hasRole('admin'));
   });
-  /** `tokens:revoke`, or administration of the account's project, whatever its switches say (Q-AUTHZ-177). */
+  /** `tokens:revoke`, or the Owner role in the account's project (Q-AUTHZ-177). */
   protected readonly canRevoke = computed(() => {
     const s = this.scope();
     return (
       s.kind === 'own' ||
       this.session.has('tokens:revoke') ||
-      (s.kind === 'service-account' && this.session.projectRights(s.project) !== null)
+      (s.kind === 'service-account' && this.session.isOwnerOf(s.project))
     );
   });
   protected readonly canRevokeAll = computed(() => this.canRevoke());
@@ -268,7 +268,7 @@ export class TokenManager {
     const s = this.scope();
     const send = (key: string): Promise<TokenCreated> =>
       s.kind === 'service-account'
-        ? this.api.createForServiceAccount(s.name, request, key)
+        ? this.api.createForServiceAccount(s.name, s.project ?? null, request, key)
         : this.api.create(request, key);
     try {
       return await send(this.idempotencyKey);
@@ -307,7 +307,7 @@ export class TokenManager {
     await this.act(async () => {
       if (s.kind === 'own') await this.api.revokeAllOwn();
       else if (s.kind === 'user') await this.api.revokeAllOfUser(s.name);
-      else await this.api.revokeAllOfServiceAccount(s.name);
+      else await this.api.revokeAllOfServiceAccount(s.name, s.project ?? null);
       this.notifier.status($localize`:@@tokens.revoked-all:All tokens revoked.`);
     });
   }

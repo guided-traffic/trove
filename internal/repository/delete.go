@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -55,17 +57,11 @@ type DeleteResult struct {
 // resolvable or addressable, its key stays taken, and the job removes the items
 // in batches and the row last. A repeated delete while the job runs answers with
 // the same job. A virtual repository has no content and is removed at once.
-func (s *Service) Delete(ctx context.Context, c Caller, key string, detach bool) (DeleteResult, error) {
-	return s.DeleteIn(ctx, c, key, detach, "")
-}
-
-// DeleteIn is [Service.Delete] for a project administrator's delete (see
-// [Service.DeleteTxIn]).
-func (s *Service) DeleteIn(ctx context.Context, c Caller, key string, detach bool, delegate string) (DeleteResult, error) {
+func (s *Service) Delete(ctx context.Context, c Caller, name qname.Repo, detach bool) (DeleteResult, error) {
 	var res DeleteResult
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		var err error
-		res, err = s.DeleteTxIn(ctx, tx, c, key, detach, nil, delegate)
+		res, err = s.DeleteTx(ctx, tx, c, name, detach, nil)
 		return err
 	})
 	if err != nil {
@@ -77,34 +73,20 @@ func (s *Service) DeleteIn(ctx context.Context, c Caller, key string, detach boo
 // DeleteTx is Delete in a transaction the caller owns, with the optional If-Match
 // of R-API-012 (a delete honours it when it is sent): a version that differs from
 // the stored one answers 412 and nothing changes.
-func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition) (DeleteResult, error) {
-	return s.DeleteTxIn(ctx, tx, c, key, detach, pre, "")
-}
-
-// DeleteTxIn is [Service.DeleteTx] for a delete that is a project administrator's:
-// delegate is the key of the project it administers, "" for a holder of
-// repositories:write-config. The project of the locked row is checked again here,
-// so a repository that moved or was assigned between the handler's decision and the
-// write answers 404 as an unknown one does (R-AUTHZ-026, Q-AUTHZ-184), before the
-// precondition can tell anything about it. A virtual repository outside the project
-// that lists the repository refuses the delete, detach or not (Q-REPO-129).
-func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition, delegate string) (DeleteResult, error) {
+func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, name qname.Repo, detach bool, pre *Precondition) (DeleteResult, error) {
 	qs, err := queries(tx)
 	if err != nil {
 		return DeleteResult{}, err
 	}
-	rows, err := qs.LockRepositoryByKey(ctx, key)
+	rows, err := qs.LockRepositoryByName(ctx, q.LockRepositoryByNameParams{Project: name.Project, Key: name.Key})
 	if err != nil {
 		return DeleteResult{}, err
 	}
 	if len(rows) == 0 {
-		return DeleteResult{}, notFound(key)
+		return DeleteResult{}, notFound(name)
 	}
 	row := rows[0]
-	project, err := checkProjectOfUpdate(ctx, qs, row, Write{Delegate: delegate})
-	if err != nil {
-		return DeleteResult{}, err
-	}
+	project := name.Project
 	if pre != nil && !pre.Any && pre.Version != row.ConfigVersion {
 		return DeleteResult{}, stale(row.ConfigVersion)
 	}
@@ -114,7 +96,7 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 	}
 	if Lifecycle(row.Lifecycle) == Active {
 		// >>> M2 virtual
-		if err := s.detachReferences(ctx, tx, qs, c, row, detach, delegate); err != nil {
+		if err := s.detachReferences(ctx, tx, qs, c, row, project, detach); err != nil {
 			return DeleteResult{}, err
 		}
 		// <<< M2 virtual
@@ -126,7 +108,7 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 			return DeleteResult{}, errors.New("repository: marking for deletion matched no row although the row was locked")
 		}
 		row = marked[0]
-		r, _ := toRepository(row, s.cat)
+		r, _ := toRepository(row, project, s.cat)
 		if err := s.recordAndNotify(ctx, tx, c, EventDeleted, r,
 			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started", Project: project}, ChangeOpDeleting); err != nil {
 			return DeleteResult{}, err
@@ -137,8 +119,8 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 	}
 	job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
 		Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(row.ID, 10),
-		Args:       DeleteArgs{RepoID: row.ID, Key: row.Key, Actor: c.Actor},
-		TargetKind: "repository", TargetKey: row.Key, CreatedBy: c.principalID(),
+		Args:       DeleteArgs{RepoID: row.ID, Key: name.String(), Actor: c.Actor},
+		TargetKind: "repository", TargetKey: name.String(), CreatedBy: c.principalID(),
 	})
 	if err != nil {
 		return DeleteResult{}, err
@@ -148,14 +130,14 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 }
 
 // deleteNow removes a repository that has no content: the row goes in the
-// transaction that decided it. project is the key of its project, "" for none.
+// transaction that decided it. project is the key of its project.
 func (s *Service) deleteNow(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, project string, res *DeleteResult) error {
 	if Lifecycle(row.Lifecycle) == Active {
 		if _, err := qs.MarkRepositoryDeleting(ctx, q.MarkRepositoryDeletingParams{ID: row.ID, Actor: c.principalID()}); err != nil {
 			return err
 		}
 	}
-	r, _ := toRepository(row, s.cat)
+	r, _ := toRepository(row, project, s.cat)
 	if err := s.onDelete(ctx, tx, c, r); err != nil {
 		return err
 	}
@@ -250,11 +232,11 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		if len(rows) == 0 {
 			return nil // an earlier attempt finished
 		}
-		r, _ := toRepository(rows[0], s.cat)
 		project, err := projectKeyOf(ctx, qs, rows[0])
 		if err != nil {
 			return err
 		}
+		r, _ := toRepository(rows[0], project, s.cat)
 		if err := s.onDelete(ctx, tx, Caller{Actor: a.Actor}, r); err != nil {
 			return err
 		}
@@ -276,7 +258,7 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		}
 		// >>> M2 virtual
 		if claims > 0 {
-			if err := s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Key, Op: "deleted"}); err != nil {
+			if err := s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Name.String(), Op: "deleted"}); err != nil {
 				return err
 			}
 		}

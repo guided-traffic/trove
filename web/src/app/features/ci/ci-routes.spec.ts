@@ -25,7 +25,7 @@ async function harness(routes: typeof CI_ROUTES, capabilities: string[] = ['ci:r
     roles: [],
     capabilities,
     principals: ['user:alice'],
-    projects: [{ key: 'web', managePolicies: true, manageRepositories: false }],
+    projects: [{ key: 'web', role: 'owner' }],
   };
   await TestBed.inject(SessionStore).load();
   return RouterTestingHarness.create();
@@ -79,7 +79,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
 
   describe('under a project', () => {
     beforeEach(async () => {
-      h = await harness(PROJECT_CI_ROUTES, []);
+      h = await harness([{ path: ':project/ci', children: PROJECT_CI_ROUTES }], []);
     });
 
     it('Q-CI-26 the overview, the dry run and the editor take the project from the path and the issuer from the query', async () => {
@@ -87,7 +87,7 @@ describe('The routes of the CI area (R-UI-035, R-UI-036, Q-CI-26)', () => {
       const tester = await open(h, '/web/ci/test?issuer=gitlab-com');
       expect(tester.querySelector('.subject')!.textContent).toContain('web');
       const created = await open(h, '/web/ci/mappings/new?issuer=gitlab-com');
-      expect(created.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('web-');
+      expect(created.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('');
       expect(created.querySelector('.subject')!.textContent).toContain('web');
       expect(text(created)).not.toContain('Add a group');
     });

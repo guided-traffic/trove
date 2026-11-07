@@ -18,15 +18,15 @@ import (
 // revision column user_preferences.revision is the ETag (R-API-012).
 
 type prefs struct {
-	locale, theme, projectFilter string
-	keyboardShortcuts            bool
-	revision                     int64
+	locale, theme     string
+	keyboardShortcuts bool
+	revision          int64
 }
 
 func (p prefs) representation() gen.Preferences {
 	return gen.Preferences{
 		Locale: optString(p.locale), Theme: optString(p.theme), KeyboardShortcuts: p.keyboardShortcuts,
-		ProjectFilter: optString(p.projectFilter), Revision: int(p.revision),
+		Revision: int(p.revision),
 	}
 }
 
@@ -40,7 +40,7 @@ func loadPreferences(ctx context.Context, db q.DBTX, userID string) (prefs, erro
 		return prefs{revision: 1}, nil
 	}
 	r := rows[0]
-	return prefs{locale: r.Locale, theme: r.Theme, projectFilter: r.ProjectFilter, keyboardShortcuts: r.KeyboardShortcuts, revision: r.Revision}, nil
+	return prefs{locale: r.Locale, theme: r.Theme, keyboardShortcuts: r.KeyboardShortcuts, revision: r.Revision}, nil
 }
 
 // PreferredLocale is the locale stored in the preferences of a user, "" for none.
@@ -90,7 +90,6 @@ type prefsPatchBody struct {
 	Locale            json.RawMessage `json:"locale"`
 	Theme             json.RawMessage `json:"theme"`
 	KeyboardShortcuts json.RawMessage `json:"keyboardShortcuts"`
-	ProjectFilter     json.RawMessage `json:"projectFilter"`
 	Revision          json.RawMessage `json:"revision"`
 }
 
@@ -124,7 +123,6 @@ func (in prefsPatchBody) apply(cur prefs) (prefs, error) {
 	err := errorsFirst(
 		func() error { return set(in.Locale, "/locale", &next.locale, "en", "de") },
 		func() error { return set(in.Theme, "/theme", &next.theme, "light", "dark") },
-		func() error { return set(in.ProjectFilter, "/projectFilter", &next.projectFilter) },
 		func() error {
 			b, err := patchBool(in.KeyboardShortcuts, "/keyboardShortcuts")
 			if b != nil {
@@ -193,7 +191,7 @@ func (s *Server) UpdatePreferences(w http.ResponseWriter, r *http.Request, _ gen
 			return nil
 		}
 		rows, err := q.New(ptx).PreferencesUpsert(r.Context(), q.PreferencesUpsertParams{
-			UserID: uid, Locale: next.locale, Theme: next.theme, KeyboardShortcuts: next.keyboardShortcuts, ProjectFilter: next.projectFilter,
+			UserID: uid, Locale: next.locale, Theme: next.theme, KeyboardShortcuts: next.keyboardShortcuts,
 			IfRevision: rev,
 		})
 		if err != nil {
@@ -207,7 +205,7 @@ func (s *Server) UpdatePreferences(w http.ResponseWriter, r *http.Request, _ gen
 			return Failed(latest.revision)
 		}
 		r0 := rows[0]
-		out = prefs{locale: r0.Locale, theme: r0.Theme, projectFilter: r0.ProjectFilter, keyboardShortcuts: r0.KeyboardShortcuts, revision: r0.Revision}
+		out = prefs{locale: r0.Locale, theme: r0.Theme, keyboardShortcuts: r0.KeyboardShortcuts, revision: r0.Revision}
 		return nil
 	})
 	if err != nil {

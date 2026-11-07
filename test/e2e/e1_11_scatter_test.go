@@ -128,7 +128,7 @@ func TestE1_11Scatter(t *testing.T) {
 		for i := 1; i <= 3; i++ {
 			n := fmt.Sprintf("e2e-list-%d", i)
 			adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", map[string]any{
-				"name": n, "repository": "generic-local", "paths": map[string]any{"include": []string{n + "/**"}},
+				"name": n, "repository": qn("generic-local"), "paths": map[string]any{"include": []string{n + "/**"}},
 			}).want(t, "exposure rule "+n, 201, 409)
 		}
 		t.Cleanup(func() {
@@ -262,14 +262,14 @@ func TestE1_11Scatter(t *testing.T) {
 			// a repository created through one replica is usable at once through the others
 			if i%8 == 0 {
 				key := fmt.Sprintf("e2e-vis-%d-%d", time.Now().Unix(), i)
-				adm.do(http.MethodPost, "/api/v1/repositories", map[string]string{"key": key, "class": "local", "format": "generic"}).want(t, "create repository", 201)
+				adm.do(http.MethodPost, reposRoute, map[string]string{"key": key, "class": "local", "format": "generic"}).want(t, "create repository", 201)
 				for k := 0; k < 3; k++ { // one request per replica in turn
-					r := adm.do(http.MethodPut, "/files/"+key+"/a.txt", "x")
+					r := adm.do(http.MethodPut, filesAddr(key)+"/a.txt", "x")
 					if r.Status != 201 && r.Status != 200 {
 						t.Fatalf("upload to the new repository %s through %s = %s", key, r.Replica(), r)
 					}
 				}
-				adm.do(http.MethodDelete, "/api/v1/repositories/"+key, nil)
+				adm.do(http.MethodDelete, reposBase+key, nil)
 			}
 		}
 		if len(replicas) != 3 {

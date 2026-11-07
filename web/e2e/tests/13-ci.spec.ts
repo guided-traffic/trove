@@ -1,19 +1,9 @@
-import {
-  bobPassword,
-  expect,
-  expectAccessible,
-  openFilter,
-  signInLocal,
-  signInWithKeycloak,
-  test,
-  unique,
-  watchCsp,
-} from '../support';
+import { bobPassword, expect, expectAccessible, openFilter, qualified, repositories, repositoryApi, signInLocal, signInWithKeycloak, test, unique, watchCsp } from '../support';
 
 // R-UI-047 journey "ci" (R-UI-035, R-UI-036, R-CI-019, R-CI-020, Q-CI-26): against the real backend and the issuer double of
 // test/oidcstub, an administrator registers the double as a CI issuer (with the CA of its certificate), creates the reference
 // mapping of R-CI-028 in the editor, tests a claim set in the claim tester (a pasted ID token is decoded in the browser),
-// reads the issuance of an exchange and revokes it; a project administrator manages a mapping of its project. Every screen is
+// reads the issuance of an exchange and revokes it; an Owner of a project manages a mapping of its project. Every screen is
 // checked with axe in both colour schemes.
 //
 // TestE1_11Journeys mints the two ID tokens (a protected tag of acme/billing/invoice-api, as docs/spec/gitlab-ci-oidc.md writes
@@ -40,7 +30,7 @@ const policy = `${run}-read`;
 const projectKey = `${run}-prj`;
 const projectRepo = `${run}-prj-repo`;
 const projectGroup = `${run}-leads`;
-const projectMapping = `${projectKey}-publish`; // a project mapping's name starts with the key of the project
+const projectMapping = `${run}-publish`; // a project mapping's name is unique within the project (R-CI-009)
 
 // The condition of the reference mapping (docs/spec/gitlab-ci-oidc.md, Examples).
 const match = {
@@ -69,16 +59,15 @@ test.beforeAll(async ({ admin }) => {
   for (const [key, format] of [
     [npmRepo, 'npm'],
     [nugetRepo, 'nuget'],
-    [projectRepo, 'generic'],
   ] as const) {
-    const r = await admin.post('/api/v1/repositories', { data: { key, class: 'local', format } });
+    const r = await admin.post(repositories(), { data: { key, class: 'local', format } });
     expect(r.status(), await r.text()).toBe(201);
   }
   const p = await admin.post('/api/v1/permission-policies', {
     data: {
       name: policy,
       description: 'journey',
-      resources: { repositories: [npmRepo, nugetRepo] },
+      resources: { repositories: [qualified(npmRepo), qualified(nugetRepo)] },
       entries: [],
     },
   });
@@ -87,12 +76,12 @@ test.beforeAll(async ({ admin }) => {
 
 test.afterAll(async ({ admin }) => {
   await admin.delete(`/api/v1/ci/issuers/${issuerName}?cascade=true`);
-  await admin.delete(`/api/v1/projects/${projectKey}/repositories/${projectRepo}`);
+  await admin.delete(repositoryApi(projectRepo, projectKey));
   await admin.delete(`/api/v1/projects/${projectKey}`);
   await admin.delete(`/api/v1/groups/${projectGroup}`);
   await admin.delete(`/api/v1/permission-policies/${policy}`);
-  for (const key of [projectRepo, npmRepo, nugetRepo])
-    await admin.delete(`/api/v1/repositories/${key}`);
+  for (const key of [npmRepo, nugetRepo])
+    await admin.delete(repositoryApi(key));
 });
 
 /** axe on the screen in both colour schemes; the page ends in the light scheme. */
@@ -109,7 +98,7 @@ async function accessible(page: import('@playwright/test').Page, screen: string)
   await page.emulateMedia({ colorScheme: 'light' });
 }
 
-test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates the reference mapping, tests a claim set, reads and revokes an issuance; a project administrator manages a mapping of its project', async ({
+test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates the reference mapping, tests a claim set, reads and revokes an issuance; an Owner of a project manages a mapping of its project', async ({
   page,
   browser,
   admin,
@@ -167,7 +156,7 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await page.getByLabel('Add a policy').selectOption(policy);
     await page.getByRole('button', { name: 'Add inline grant' }).click();
     const grant = page.getByRole('group', { name: /Inline grant 1|grant 1/i }).first();
-    await grant.getByLabel('Repositories').fill(npmRepo);
+    await grant.getByLabel('Repositories').fill(qualified(npmRepo));
     await grant.getByLabel('Include').fill('@{{ namespace_path | slug }}/*');
     await grant.getByRole('checkbox', { name: 'read' }).check();
     await grant.getByRole('checkbox', { name: 'deploy' }).check();
@@ -292,20 +281,19 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await accessible(page, 'issuances after the revocation');
   });
 
-  await test.step('a project administrator manages a mapping of the project', async () => {
+  await test.step('an Owner manages a mapping of the project', async () => {
     const created = await admin.post('/api/v1/projects', {
       data: {
         key: projectKey,
         displayName: 'CI journey project',
-        managePolicies: true,
-        manageRepositories: false,
       },
     });
     expect(created.status(), await created.text()).toBe(201);
-    const assigned = await admin.put(`/api/v1/projects/${projectKey}/repositories/${projectRepo}`);
-    expect(assigned.ok(), await assigned.text()).toBeTruthy();
-    const adm = await admin.put(`/api/v1/projects/${projectKey}/admins/group%3A${projectGroup}`);
-    expect(adm.ok(), await adm.text()).toBeTruthy();
+    // The repository is created in the project (R-REPO-001); the group becomes its Owner (Q-AUTHZ-207).
+    const repo = await admin.post(repositories(projectKey), { data: { key: projectRepo, class: 'local', format: 'generic' } });
+    expect(repo.status(), await repo.text()).toBe(201);
+    const owner = await admin.put(`/api/v1/projects/${projectKey}/members/group%3A${projectGroup}`, { data: { role: 'owner' } });
+    expect(owner.ok(), await owner.text()).toBeTruthy();
     // the grant reaches every replica within the bound of R-AUTHZ-028
     await expect
       .poll(
@@ -319,7 +307,7 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
       )
       .toBe(true);
 
-    await bob.goto(`/ui/en/admin/projects/${projectKey}/ci`);
+    await bob.goto(`/ui/en/projects/${projectKey}/ci`);
     await expect(bob.getByRole('heading', { name: 'CI identity', level: 1 })).toBeVisible();
     await expect(bob.getByText('Not available yet')).toHaveCount(0);
     await expect(bob.getByText('Issuers you can use')).toBeVisible();
@@ -347,8 +335,8 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await grant.getByRole('checkbox', { name: 'read' }).check();
     await accessible(bob, 'new project mapping');
     await bob.getByRole('button', { name: 'Create mapping' }).click();
-    await expect(bob).toHaveURL(new RegExp(`/ci/mappings/${projectMapping}(\\?|$)`));
-    await bob.goto(`/ui/en/admin/projects/${projectKey}/ci`);
+    await expect(bob).toHaveURL(new RegExp(`/projects/${projectKey}/ci/mappings/${projectMapping}(\\?|$)`));
+    await bob.goto(`/ui/en/projects/${projectKey}/ci`);
     const mappingRow = bob.getByRole('row', { name: new RegExp(projectMapping) });
     await expect(mappingRow).toBeVisible();
     await accessible(bob, 'project CI overview with a mapping');
@@ -364,7 +352,7 @@ test('R-UI-035 R-UI-036 R-CI-019 an administrator registers the issuer, creates 
     await accessible(bob, 'project claim tester');
 
     // delete it again
-    await bob.goto(`/ui/en/admin/projects/${projectKey}/ci`);
+    await bob.goto(`/ui/en/projects/${projectKey}/ci`);
     await bob
       .getByRole('row', { name: new RegExp(projectMapping) })
       .getByRole('button', { name: 'Delete' })

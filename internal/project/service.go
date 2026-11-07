@@ -7,6 +7,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -14,64 +15,82 @@ import (
 // handlers over it (internal/api/v1/projects_api.go): they add ETags, idempotency,
 // paging and the declared permission, and call these functions.
 //
-// Every other method that writes runs in one transaction; Delete (Q-AUTHZ-192: the
+// Every method that writes runs in one transaction except Delete (Q-AUTHZ-192: the
 // policies go one by one through the policy store, then one transaction closes the
-// project). A write transaction notifies the change area authz
-// (an assignment also repo_config, and project administrators' effect reaches the
-// index of every replica through it), records its audit event of events_projects.go
-// in that transaction, and returns the epoch the transaction produced for the header
-// Trove-Authz-Epoch (R-AUTHZ-032). expected is the version the client saw (If-Match);
+// project). A write transaction notifies the change area authz (a move also
+// repo_config; a member's role reaches the grant index of every replica through it),
+// records its audit event of internal/audit/events_projects.go in that transaction,
+// and returns the epoch the transaction produced for the header Trove-Authz-Epoch
+// (R-AUTHZ-032). expected is the version the client saw (If-Match);
 // errs.AnyRevision is the deliberate blind write.
 //
+// The service does not decide whether the caller may call it: the management API's
+// shared step does (the declarations of api/openapi.yaml, R-API-008) with the
+// engine's questions (authz.Decider RoleOn, OwnsOn, MembershipsOn, HoldsOn). It
+// checks the rules of the data, and takes from the caller the one fact that changes
+// a rule: whether it holds projects:write (bypassLastOwner).
+//
 // Errors: 404 not_found for an unknown project, user, group or repository; 409
-// already_exists for a key that exists; 409 project_key_overlap; 409
-// project_not_empty; 409 repository_assigned; 412 precondition_failed; 422
+// already_exists for a key that exists; 409 project_not_empty; 409 last_owner; 409
+// repository_in_use; 412 precondition_failed; 422 principal_not_allowed; 422
 // validation_failed with the field codes of R-AUTHZ-026.
 type Service interface {
-	// List returns every project with its administrators and counts, ordered by key.
-	// The caller filters to the projects it may see (an administrator of a project
-	// sees that project only, Q-AUTHZ-180).
+	// List returns every project with its members and counts, ordered by key. The
+	// caller filters to the projects it may see (a member sees its projects only,
+	// Q-AUTHZ-207).
 	List(ctx context.Context) ([]Project, error)
 	// Get returns one project.
 	Get(ctx context.Context, key string) (Project, error)
 	// CreateIn creates a project on the caller's transaction, for an idempotent
-	// create (R-API-014). *epoch is set by a hook that runs after the change log
-	// raised it. The key must not overlap another project's key or a global service
-	// account's name (409 project_key_overlap, Q-AUTHZ-176).
+	// create (R-API-014), with the users and groups of in.Owners as its first Owners.
+	// *epoch is set by a hook that runs after the change log raised it.
 	CreateIn(ctx context.Context, tx meta.Tx, actor authz.Subject, in Input, epoch *int64) (Project, error)
-	// Replace changes display name, description and switches; the key is the
-	// project's own. It returns the project and the epoch.
+	// Replace changes display name and description; the key is the project's own.
+	// It returns the project and the epoch.
 	Replace(ctx context.Context, actor authz.Subject, key string, expected int64, in Input) (Project, int64, error)
 	// Delete deletes an empty project: first its policies, one by one through the
 	// policy store so that each deletion is audited and journaled, then the project
-	// and its administrators (Q-AUTHZ-185). 409 project_not_empty while a repository
-	// or a service account belongs to it. It returns the epoch.
+	// and its member entries (Q-AUTHZ-185). 409 project_not_empty while a repository,
+	// a service account or a CI mapping of its tier belongs to it. It returns the epoch.
 	Delete(ctx context.Context, actor authz.Subject, key string, expected int64) (int64, error)
-	// AddAdmin makes a user or a group (a principal reference such as "group:web-leads")
-	// an administrator. created is false when it already was one.
-	AddAdmin(ctx context.Context, actor authz.Subject, key, ref string) (admin PrincipalRef, created bool, epoch int64, err error)
-	// RemoveAdmin removes an administrator; 404 when it was none.
-	RemoveAdmin(ctx context.Context, actor authz.Subject, key, ref string) (epoch int64, err error)
-	// Assign assigns a repository to the project. A repository of another project is
-	// refused with 409 repository_assigned unless move is true; a move records an
-	// unassignment and an assignment in one transaction. Assigning a repository to
-	// the project it already belongs to is a no-op that answers success. from, when
-	// set, is the project the caller expects to hold the repository (empty: none);
-	// another current owner answers 409 project_owner_changed before anything else
-	// and writes nothing (Q-AUTHZ-205).
-	Assign(ctx context.Context, actor authz.Subject, key, repository string, move bool, from *string) (epoch int64, err error)
-	// Unassign removes the repository from the project; 404 when it does not belong
-	// to this project.
-	Unassign(ctx context.Context, actor authz.Subject, key, repository string) (epoch int64, err error)
+	// Members returns the members of a project with their role, ordered by kind and name
+	// (Q-AUTHZ-207); 404 for an unknown project.
+	Members(ctx context.Context, key string) ([]Member, error)
+	// AddMember makes a user or a group (a principal reference such as "group:web-leads") a member
+	// with the role, or, when it already is one, sets the role (created is false): the idempotent
+	// PUT of /projects/{projectKey}/members/{principalRef}. A reference to a service account, a CI
+	// mapping, a Bastion registration, anonymous, authenticated or an auto-join group is 422
+	// principal_not_allowed; an unknown user or group 404. Demoting the last Owner is 409
+	// last_owner unless bypassLastOwner (the caller holds projects:write, Q-AUTHZ-217). The same
+	// role again records nothing and answers the current epoch (Q-AUTHZ-193).
+	AddMember(ctx context.Context, actor authz.Subject, key, ref string, role Role, bypassLastOwner bool) (member Member, created bool, epoch int64, err error)
+	// SetRole changes the role of a member; 404 when the principal is no member. The last-Owner
+	// rule of AddMember applies.
+	SetRole(ctx context.Context, actor authz.Subject, key, ref string, role Role, bypassLastOwner bool) (member Member, epoch int64, err error)
+	// RemoveMember removes a member; 404 when it was none. Removing the last Owner is 409
+	// last_owner unless bypassLastOwner.
+	RemoveMember(ctx context.Context, actor authz.Subject, key, ref string, bypassLastOwner bool) (epoch int64, err error)
+	// MoveRepository moves a repository to another project (R-REPO-060, Q-REPO-217): the address
+	// changes, the id and the content do not. It locks both projects and the repository, refuses
+	// with 409 repository_in_use (problem member `references`, [Reference]) while an object of the
+	// source project names the repository (a virtual repository's member list, pin rules or
+	// deployment target, a key selector of a project policy, an inline grant of a CI mapping of the
+	// project's tier) or while a virtual repository has members or a deployment target, and with
+	// 409 already_exists when the target has the key. A target equal to the source changes nothing.
+	// The caller has decided that the actor may move it: repositories:write-config, or Owner of both
+	// projects, which is restricted: a restricted move is refused as well while a key selector of a
+	// global policy names the repository (kind global_policy, Q-REPO-232), whose grant would follow it.
+	// It returns the new name and the epoch.
+	MoveRepository(ctx context.Context, actor authz.Subject, from qname.Repo, toProject string, restricted bool) (to qname.Repo, epoch int64, err error)
 	// LookupPrincipals returns active users and groups whose name starts with prefix,
-	// for a project administrator who names principals in policies (Q-AUTHZ-182). kind
+	// for an Owner of a project who names principals in policies (Q-AUTHZ-182). kind
 	// is "", user or group; limit is at most MaxLookup. The answer holds the kind and
 	// the name, nothing else.
 	LookupPrincipals(ctx context.Context, prefix string, kind PrincipalKind, limit int) ([]PrincipalRef, error)
 }
 
 // MaxLookup is the most results a lookup returns, and MinLookupPrefix the shortest
-// prefix it accepts: a project administrator cannot list every user of the
+// prefix it accepts: a project Owner cannot list every user of the
 // installation in one call (Q-AUTHZ-182).
 const (
 	MaxLookup       = 20
@@ -92,10 +111,10 @@ type Options struct {
 	// write.
 	Changes authz.Changes
 	// Principals and Repositories are the read sides of the principal and repository
-	// areas. The service reads the principal of an administrator reference and the
-	// repository of an assignment in the transaction of the write instead, so that
-	// the answer is the one the write commits against and not a cached one; they
-	// stay options so that the composition names the dependency.
+	// areas. The service reads the principal of a member reference and the repository
+	// of a move in the transaction of the write instead, so that the answer is the one
+	// the write commits against and not a cached one; they stay options so that the
+	// composition names the dependency.
 	Principals   principal.Store
 	Repositories repository.Reader
 	// Policies deletes the policies of a deleted project through the policy store;

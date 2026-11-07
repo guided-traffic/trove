@@ -18,7 +18,7 @@ func TestR_BAS_006_R_BAS_021_ATokenRefusalAnswerToAForwardIsNoRefusalOfTheBastio
 	ctx := context.Background()
 	r := newRig(t, nil)
 	r.main.Revoke(r.token)
-	resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/npm-all/x"))
+	resp, err := r.c.Do(ctx, forward(http.MethodGet, "/api/npm/web/npm-all/x"))
 	if resp != nil {
 		closeBody(t, resp)
 	}

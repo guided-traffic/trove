@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,11 +18,8 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/qname"
 )
-
-// keyPattern is the repository key rule of INV-5 (internal/repository.KeyPattern, which the Bastion may not
-// import); TestR_BAS_018_TheKeyRuleIsTheOneOfINV5 holds the two equal.
-var keyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
 
 // rq is one request on its way through the flow.
 type rq struct {
@@ -263,7 +259,8 @@ func (e *engine) stepBlocked(q *rq) bool {
 	return e.admit(q, e.d.Guard.Blocked(q.ctx(), q.addr))
 }
 
-// stepPath is step 3: only /api/<format>/<key>/… and /files/<key>/… are served (R-BAS-003).
+// stepPath is step 3: only /api/<format>/<projectKey>/<repoKey>/… and /files/<projectKey>/<repoKey>/… are served
+// (R-BAS-003).
 func (e *engine) stepPath(q *rq) bool {
 	format, repo, ok := classifyPath(q.r.URL.EscapedPath())
 	if !ok {
@@ -274,39 +271,24 @@ func (e *engine) stepPath(q *rq) bool {
 	return true
 }
 
-// classifyPath reads the family, the format and the repository key from the path as received. The key rule is
-// INV-5's; the Bastion reads no other part of a path (R-BAS-018). The main installation's router decodes every
-// segment before it compares it (net/http.ServeMux), so a segment that names the family, the format or the key
-// in an encoded spelling (/api/%761/users is /api/v1/users there) is not one the Bastion can classify by what it
-// received: such a path is not served, and so is a path with a dot segment, which the router answers with a
-// redirect to the cleaned path (R-BAS-003, Q-BAS-121).
+// classifyPath reads the family, the format and the qualified repository name "<projectKey>/<repoKey>" from the
+// path as received, through qname.ParseAddress, whose key rules are INV-5's; the Bastion reads no other part of a
+// path (R-BAS-018). The main installation's router decodes every segment before it compares it (net/http.ServeMux),
+// so a segment that names the family, the format, the project or the key in an encoded spelling
+// (/api/%761/users is /api/v1/users there) is not one the Bastion can classify by what it received: such a path is
+// not served, and so is a path with a dot segment, which the router answers with a redirect to the cleaned path
+// (R-BAS-003, Q-BAS-121). A path with one segment after the format (/api/npm/web) is no address, and a key with the
+// cache suffix is no repository key: the cache view is not served.
 func classifyPath(p string) (format, repo string, ok bool) {
-	if !strings.HasPrefix(p, "/") {
+	a, ok := qname.ParseAddress(p)
+	if !ok || a.CacheView || a.DotSegments() {
 		return "", "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(p, "/"), "/")
-	// The segments the classification reads: the family and the key of /files/<key>, and the family, the format
-	// and the key of /api/<format>/<key>.
-	named := 3
-	if parts[0] == "files" {
-		named = 2
+	format = string(a.Family)
+	if a.Family == qname.FamilyAPI {
+		format = a.Format
 	}
-	for i, seg := range parts {
-		if seg == "." || seg == ".." || (i < named && strings.Contains(seg, "%")) {
-			return "", "", false
-		}
-	}
-	switch parts[0] {
-	case "files":
-		if len(parts) >= 2 && keyPattern.MatchString(parts[1]) {
-			return "files", parts[1], true
-		}
-	case "api":
-		if len(parts) >= 3 && parts[1] != "" && parts[1] != "v1" && keyPattern.MatchString(parts[2]) {
-			return parts[1], parts[2], true
-		}
-	}
-	return "", "", false
+	return format, a.Repo.String(), true
 }
 
 // stepLimits is step 4, first half: the per-address request limit of the class (R-BAS-035).

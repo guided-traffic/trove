@@ -30,9 +30,9 @@ const (
 // never cached.
 func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (_ *Merged, err error) {
 	defer func() { err = c.asAddressed(p, err) }()
-	repo, d := p.Virtual.Key, p.Descriptor
+	repo, d := p.Virtual.Name, p.Descriptor
 	if !p.Admitted {
-		r.m.resolved(repo, sourceNone)
+		r.m.resolved(repo.String(), sourceNone)
 		return nil, notFound()
 	}
 	if m.Strategy(d) == FirstMatch {
@@ -50,7 +50,7 @@ func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (_
 				return nil, err
 			}
 			if valid {
-				r.m.resolved(repo, sourceCache)
+				r.m.resolved(repo.String(), sourceCache)
 				return e.result(r.o.Now(), true), nil
 			}
 			r.merged.Remove(key)
@@ -64,10 +64,10 @@ func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (_
 		e, err = build(ctx)
 	}
 	if err != nil {
-		r.m.resolved(repo, sourceNone)
+		r.m.resolved(repo.String(), sourceNone)
 		return nil, err
 	}
-	r.m.resolved(repo, e.source)
+	r.m.resolved(repo.String(), e.source)
 	return e.result(r.o.Now(), false), nil
 }
 
@@ -298,7 +298,7 @@ func mergeFingerprint(plan [32]byte, parts []Part, merged []byte) [32]byte {
 // then the remote members in order. Nothing is merged and nothing is cached here: a local document
 // is cached by the rendition cache, a remote one by the remote engine.
 func (r *Resolver) firstMatch(ctx context.Context, c Caller, p *Plan, m Merger) (*Merged, error) {
-	repo, d := p.Virtual.Key, p.Descriptor
+	repo, d := p.Virtual.Name, p.Descriptor
 	var failure error
 	for _, mem := range p.Local() {
 		doc, rev, found, err := m.LocalDocument(ctx, mem, d)
@@ -306,7 +306,7 @@ func (r *Resolver) firstMatch(ctx context.Context, c Caller, p *Plan, m Merger) 
 			return nil, err
 		}
 		if found {
-			r.m.resolved(repo, sourceLocal)
+			r.m.resolved(repo.String(), sourceLocal)
 			return &Merged{Bytes: doc, MergeFingerprint: mergeFingerprint(p.Fingerprint, []Part{{Member: mem, Tier: TierLocal, Revision: Revision{RevSeq: rev}}}, doc)}, nil
 		}
 	}
@@ -338,11 +338,11 @@ func (r *Resolver) firstMatch(ctx context.Context, c Caller, p *Plan, m Merger) 
 		if doc.Fetched {
 			source = sourceUpstream
 		}
-		r.m.resolved(repo, source)
+		r.m.resolved(repo.String(), source)
 		part := Part{Member: mem, Tier: TierRemote, Revision: Revision{Digest: doc.Digest}, Restricted: !mem.MayFill, Stale: doc.Stale}
 		return &Merged{Bytes: bytes, MergeFingerprint: mergeFingerprint(p.Fingerprint, []Part{part}, bytes)}, nil
 	}
-	r.m.resolved(repo, sourceNone)
+	r.m.resolved(repo.String(), sourceNone)
 	if failure != nil {
 		return nil, failure
 	}

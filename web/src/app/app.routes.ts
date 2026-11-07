@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminHomeGuard, authGuard } from './core/auth-guard';
+import { adminHomeGuard, authGuard, homeGuard } from './core/auth-guard';
 import { CrumbSpec } from './core/breadcrumbs';
 
 /** The breadcrumb step of a screen area whose routes are loaded lazily and have no title of their own. */
@@ -7,7 +7,6 @@ const wrapper = (label: string): { crumbs: CrumbSpec[] } => ({ crumbs: [{ label,
 
 /** The named areas of the breadcrumb trail (R-UI-002); they are names, not pages. */
 const area = {
-  content: { label: $localize`:@@nav.group.content:Artifacts`, link: false },
   admin: { label: $localize`:@@nav.context.admin:Admin area`, link: false },
 } satisfies Record<string, CrumbSpec>;
 
@@ -40,22 +39,13 @@ export const routes: Routes = [
     path: '',
     canActivate: [authGuard],
     children: [
-      // The packages list (R-UI-006) is the start page once the packages area exists; until
-      // then the file tree is the first content screen (Q-UI-10).
-      { path: '', pathMatch: 'full', redirectTo: 'browse' },
+      // The start page: a caller with exactly one project starts in it, everyone else on the list (Q-UI-129).
+      { path: '', pathMatch: 'full', canActivate: [homeGuard], children: [] },
       {
-        path: 'browse',
-        data: { crumbs: [area.content, { label: $localize`:@@nav.browse:Browse`, link: true }] satisfies CrumbSpec[] },
-        loadChildren: () => import('./features/browse/browse.routes').then((m) => m.BROWSE_ROUTES),
-      },
-      // >>> M2 ui-packages
-      {
-        path: 'packages',
-        data: {
-          crumbs: [area.content, { label: $localize`:@@nav.packages:Packages`, link: true }] satisfies CrumbSpec[],
-        },
+        path: 'projects',
+        data: wrapper($localize`:@@route.projects.title:Projects`),
         loadChildren: () =>
-          import('./features/packages/packages.routes').then((m) => m.PACKAGES_ROUTES),
+          import('./features/projects/project-context.routes').then((m) => m.PROJECT_CONTEXT_ROUTES),
       },
       {
         path: 'setup',
@@ -64,11 +54,10 @@ export const routes: Routes = [
       {
         path: 'guides',
         data: {
-          crumbs: [area.content, { label: $localize`:@@nav.guides:Guides`, link: true }] satisfies CrumbSpec[],
+          crumbs: [{ label: $localize`:@@nav.guides:Guides`, link: true }] satisfies CrumbSpec[],
         },
         loadChildren: () => import('./features/guides/guides.routes').then((m) => m.GUIDES_ROUTES),
       },
-      // <<< M2 ui-packages
       // >>> M2 manual
       {
         path: 'help',
@@ -76,14 +65,6 @@ export const routes: Routes = [
         loadChildren: () => import('./features/help/help.routes').then((m) => m.HELP_ROUTES),
       },
       // <<< M2 manual
-      // >>> M4b vulnerabilities
-      {
-        path: 'vulnerabilities',
-        data: wrapper($localize`:@@route.vulnerabilities.title:Vulnerabilities`),
-        loadChildren: () =>
-          import('./features/vulnerabilities/vulnerabilities.routes').then((m) => m.VULNERABILITIES_ROUTES),
-      },
-      // <<< M4b vulnerabilities
       {
         path: 'profile',
         data: { crumbs: [{ label: $localize`:@@route.profile.title:Profile`, link: true }] satisfies CrumbSpec[] },
@@ -93,7 +74,7 @@ export const routes: Routes = [
         path: 'admin',
         data: { crumbs: [area.admin] satisfies CrumbSpec[] },
         children: [
-          // The admin area starts at the dashboard (Q-OPS-175); a project administrator without the repository
+          // The admin area starts at the dashboard (Q-OPS-175); a project Owner without the repository
           // capability starts at the projects (R-UI-041).
           { path: '', pathMatch: 'full', canActivate: [adminHomeGuard], children: [] },
           {
@@ -166,11 +147,25 @@ export const routes: Routes = [
             loadChildren: () =>
               import('./features/endpoints/endpoints.routes').then((m) => m.ENDPOINTS_ROUTES),
           },
+          // >>> T-9 security dashboard
+          {
+            path: 'security',
+            data: wrapper($localize`:@@route.security.title:Security dashboard`),
+            loadChildren: () => import('./features/vulnerabilities/security.routes').then((m) => m.SECURITY_ROUTES),
+          },
+          // <<< T-9 security dashboard
           {
             path: 'audit',
             data: wrapper($localize`:@@route.audit.title:Audit log`),
             loadChildren: () => import('./features/audit/audit.routes').then((m) => m.AUDIT_ROUTES),
           },
+          // >>> M4b vulnerabilities
+          {
+            path: 'advisory-sources',
+            title: $localize`:@@route.vulnerabilities.sources.title:Advisory sources`,
+            loadComponent: () => import('./features/vulnerabilities/vulnerability-sources').then((m) => m.SourcesPage),
+          },
+          // <<< M4b vulnerabilities
           {
             path: 'system',
             data: wrapper($localize`:@@route.system.title:System status`),

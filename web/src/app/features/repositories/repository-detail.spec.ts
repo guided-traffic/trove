@@ -24,6 +24,7 @@ function withNpmLocal(npm?: Record<string, unknown>) {
     fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
     fake.repositories.push({
       key: 'npm-local',
+      project: 'web',
       class: 'local',
       format: 'npm',
       description: 'Internal packages',
@@ -34,7 +35,7 @@ function withNpmLocal(npm?: Record<string, unknown>) {
 
 async function open(setup?: (fake: FakeRepositoriesApi) => void, key = 'generic-local') {
   return renderScreen(RepositoryDetail, {
-    inputs: { key },
+    inputs: { project: 'web', key },
     setup: (get) => setup?.(get(RepositoriesApi) as FakeRepositoriesApi),
   });
 }
@@ -64,7 +65,7 @@ describe('Repository edit form', () => {
 
     expect(fake.patches).toHaveLength(1);
     expect(fake.patches[0]).toMatchObject({
-      key: 'generic-local',
+      key: 'web/generic-local',
       patch: { description: 'Changed' },
       etag: '"1"',
     });
@@ -77,7 +78,7 @@ describe('Repository edit form', () => {
       fake.beforePatch = () => {
         // The other administrator saved first.
         fake.repositories[0] = { ...fake.repositories[0]!, description: 'Theirs' };
-        fake.versions.set('generic-local', 2);
+        fake.versions.set('web/generic-local', 2);
         fake.beforePatch = null;
       };
     });
@@ -190,14 +191,14 @@ describe('Repository edit form', () => {
     const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
     await openTab(r, 'How to use');
     const guides = r.get(GuidesApi) as FakeGuidesApi;
-    expect(guides.calls.at(-1)).toEqual({ repository: 'generic-local', client: 'curl' });
+    expect(guides.calls.at(-1)).toEqual({ repository: 'web/generic-local', client: 'curl' });
     expect(r.root.querySelector('[data-section="generic.local.what"]')).not.toBeNull();
     const configure = r.root.querySelector('[data-section="generic.configure"] .snippet pre')?.textContent ?? '';
     expect(configure).toContain('trove_curl() {');
     const hrefs = [...r.root.querySelectorAll<HTMLAnchorElement>('.links a')].map((a) => a.getAttribute('href'));
     expect(hrefs).toEqual([
-      '/setup?format=generic&client=curl&repository=generic-local',
-      '/guides?format=generic&client=curl&repository=generic-local',
+      '/setup?format=generic&client=curl&repository=web%2Fgeneric-local',
+      '/guides?format=generic&client=curl&repository=web%2Fgeneric-local',
     ]);
     await expectAccessible(r.root);
   });
@@ -218,17 +219,17 @@ describe('Repository edit form', () => {
     const guides = r.get(GuidesApi) as FakeGuidesApi;
     expect(guides.calls).toEqual([]);
     await openTab(r, 'How to use');
-    expect(guides.calls.at(-1)).toEqual({ repository: 'npm-local', client: 'npm' });
+    expect(guides.calls.at(-1)).toEqual({ repository: 'web/npm-local', client: 'npm' });
     expect(r.root.querySelector('[data-section="npm.local.what"]')).not.toBeNull();
     const yarn = r.root.querySelector<HTMLInputElement>('input[name="repo-guide-client"][value="yarn"]')!;
     yarn.checked = true;
     yarn.dispatchEvent(new Event('change', { bubbles: true }));
     await settle(r.fixture);
-    expect(guides.calls.at(-1)).toEqual({ repository: 'npm-local', client: 'yarn' });
+    expect(guides.calls.at(-1)).toEqual({ repository: 'web/npm-local', client: 'yarn' });
     const hrefs = [...r.root.querySelectorAll<HTMLAnchorElement>('.links a')].map((a) => a.getAttribute('href'));
     expect(hrefs).toEqual([
-      '/setup?format=npm&client=yarn&repository=npm-local',
-      '/guides?format=npm&client=yarn&repository=npm-local',
+      '/setup?format=npm&client=yarn&repository=web%2Fnpm-local',
+      '/guides?format=npm&client=yarn&repository=web%2Fnpm-local',
     ]);
     await expectAccessible(r.root);
   });
@@ -252,7 +253,7 @@ describe('Repository edit form', () => {
   it('R-REPO-002 R-UI-021 the client address and the curl command carry the configured base URL even though the page is served from another origin', async () => {
     const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
     expect(location.origin).not.toBe('https://trove.example.net');
-    expect(text(r.root)).toContain('https://trove.example.net/files/generic-local/');
+    expect(text(r.root)).toContain('https://trove.example.net/files/web/generic-local/');
     type(r.root.querySelector<HTMLTextAreaElement>('#f-description')!, 'Api');
     await settle(r.fixture);
     const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
@@ -261,14 +262,14 @@ describe('Repository edit form', () => {
     tab.click();
     await settle(r.fixture);
     expect(text(r.root)).toContain(
-      "curl -X PATCH 'https://trove.example.net/api/v1/repositories/generic-local'",
+      "curl -X PATCH 'https://trove.example.net/api/v1/projects/web/repositories/generic-local'",
     );
     expect(text(r.root)).not.toContain(location.origin);
   });
 
   it('R-REPO-002 R-UI-021 a server without a configured base URL leaves the client address out instead of showing the page origin', async () => {
     const r = await renderScreen(RepositoryDetail, {
-      inputs: { key: 'generic-local' },
+      inputs: { project: 'web', key: 'generic-local' },
       capabilities: ['repositories:read-config', 'repositories:write-config'],
       setup: (get) => {
         const fake = get(RepositoriesApi) as FakeRepositoriesApi;

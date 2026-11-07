@@ -46,7 +46,8 @@ export const FINDING_RESOLVED = '0193a000-0000-7000-8000-000000000006';
 export function sampleFinding(over: Partial<VulnerabilityFinding> = {}): VulnerabilityFinding {
   return {
     id: FINDING_VULN,
-    repository: 'npm-remote',
+    project: 'web',
+    repository: 'web/npm-remote',
     format: 'npm',
     package: 'trove-test-vuln',
     version: '1.0.0',
@@ -137,7 +138,8 @@ const SEED: readonly VulnerabilityFinding[] = [
   }),
   sampleFinding({
     id: FINDING_NUGET,
-    repository: 'nuget-local',
+    project: 'web',
+    repository: 'web/nuget-local',
     format: 'nuget',
     package: 'newtonsoft.json',
     version: '13.0.1',
@@ -250,6 +252,7 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
     const out = this.rows.filter(
       (x) =>
         (hasStatus ? f.status!.includes(x.status) : x.status !== 'resolved') &&
+        (!f.project?.length || f.project.includes(x.project)) &&
         (!f.repository?.length || f.repository.includes(x.repository)) &&
         (!f.format?.length || f.format.includes(x.format)) &&
         (!f.package?.length || f.package.includes(x.package)) &&
@@ -308,7 +311,7 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
     return {
       finding: f,
       advisory,
-      virtualRepositories: f.repository === 'npm-remote' ? ['npm-all'] : [],
+      virtualRepositories: f.repository === 'web/npm-remote' ? ['web/npm-all'] : [],
       blockedBy:
         f.blockReason === 'triage' && by
           ? { principal: { id: 'u-alice', name: 'alice' }, at: by.at, comment: by.comment }
@@ -412,7 +415,7 @@ export class FakeVulnerabilitiesApi extends VulnerabilitiesApi {
 
   private scoped(scope: ScopeFilters): VulnerabilityFinding[] {
     return this.rows.filter(
-      (f) => OPEN.has(f.status) && (!scope.repository?.length || scope.repository.includes(f.repository)) && (!scope.format?.length || scope.format.includes(f.format)),
+      (f) => OPEN.has(f.status) && (!scope.project?.length || scope.project.includes(f.project)) && (!scope.repository?.length || scope.repository.includes(f.repository)) && (!scope.format?.length || scope.format.includes(f.format)),
     );
   }
 

@@ -9,12 +9,11 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
-import { JobReference, RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
+import { JobReference, RepositoriesApi, RepositorySummary, refOf } from '../../api/repositories-api';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
-import { ProjectFilter } from '../../core/project-filter';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { CopyButton } from '../../shared/copy-button';
@@ -27,9 +26,10 @@ import { RecentRepositories } from './recent-repositories';
 import { classLabel } from './repository-wizard';
 
 /**
- * The repository list (R-UI-020): key, format, class, description, client address with a copy
+ * The repository list (R-UI-020): key, project, format, class, description, client address with a copy
  * button, last activity. Filters live in the query parameters (R-UI-003) and restart the cursor
- * walk; "Load more" continues it. Delete asks for the key, may offer to detach the repository from
+ * walk; "Load more" continues it. A repository is addressed inside its project (R-REPO-002): its row links to
+ * `/projects/<project>/repositories/<key>`. Delete asks for the key, may offer to detach the repository from
  * the virtual repositories that include it, and follows the deletion job until the row is gone.
  */
 @Component({
@@ -54,7 +54,7 @@ export class RepositoryList {
   private readonly session = inject(SessionStore);
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
-  private readonly projectFilter = inject(ProjectFilter);
+  private readonly route = inject(ActivatedRoute);
   protected readonly recent = inject(RecentRepositories);
 
   /** Query parameters, bound by the router's component input binding. */
@@ -62,38 +62,58 @@ export class RepositoryList {
   readonly class = input<string | undefined>();
   readonly format = input<string | undefined>();
   readonly state = input<string | undefined>();
-  /** A project key (the project screen links here); without it the project filter of the top bar applies (R-UI-041). */
+  /**
+   * Route parameter `:project` below `/projects/:project/repositories`: the list is that project's (Q-UI-129). In the admin
+   * area it is the query parameter `project`, a filter of the instance-wide list.
+   */
   readonly project = input<string | undefined>();
 
   protected readonly formats = resource({ loader: () => this.api.formats() });
   protected readonly list = new PagedResource<RepositorySummary>();
-  /** Repositories whose deletion job is being followed, by key. */
+  /** Repositories whose deletion job is being followed, by qualified name. */
   protected readonly deleting = signal<ReadonlyMap<string, JobReference>>(new Map());
   protected readonly deleteFailure = signal<ApiError | null>(null);
   protected readonly search = signal('');
   protected readonly stagedClass = signal('');
   protected readonly stagedFormat = signal('');
   protected readonly stagedInactive = signal(false);
+  protected readonly stagedProject = signal('');
   protected readonly panelOpen = signal(false);
 
   protected readonly canCreate = computed(() => this.session.has('repositories:write-config'));
-  /** The project the list is limited to: the query parameter, else the filter of the top bar. */
-  protected readonly projectKey = computed(() => this.project() || this.projectFilter.active());
+  /** The list belongs to a project: its screens drop the project column and the project filter. */
+  protected readonly inProject = (): boolean => this.route.snapshot.paramMap.has('project');
+  /** The project the list is limited to: the project of the screen, or the filter of the admin list. */
+  protected readonly projectKey = computed(() => this.project() || null);
   /** Create goes to the wizard of the project when the list is limited to one the caller manages. */
   protected readonly canCreateHere = computed(() => this.canCreate() || this.session.canWriteRepositories(this.projectKey()));
-  /** A repository may be deleted by the capability and, in a project with the switch on, by its administrators. */
+  /** A repository may be deleted by the capability and by the Owners of its project. */
   protected canDeleteRow(row: RepositorySummary): boolean {
     return this.session.canWriteRepositories(row.project);
   }
+  protected readonly refOf = refOf;
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).map((f) => f.name),
   );
+  /** The project filter of the panel: the admin list only, the project's list is that project whatever the filter says. */
+  protected readonly filterProject = computed(() => (this.inProject() ? undefined : this.project()));
   protected readonly filtered = computed(
-    () => !!(this.q() || this.class() || this.format() || this.state()),
+    () => !!(this.q() || this.class() || this.format() || this.state() || this.filterProject()),
   );
   protected readonly activeCount = computed(
-    () => [this.q(), this.class(), this.format(), this.state()].filter((v) => !!v).length,
+    () => [this.q(), this.class(), this.format(), this.state(), this.filterProject()].filter((v) => !!v).length,
   );
+  /** The recently viewed repositories; a project's list shows the ones of that project. */
+  protected readonly recentKeys = computed(() => {
+    const project = this.inProject() ? this.projectKey() : null;
+    return this.recent.keys().filter((k) => project === null || k.startsWith(`${project}/`));
+  });
+
+  /** The screen of a repository, given its qualified name, inside its project. */
+  protected repositoryLink(ref: string): string[] {
+    const [project = '', key = ''] = ref.split('/');
+    return ['/projects', project, 'repositories', key];
+  }
 
   constructor() {
     effect(() => {
@@ -109,6 +129,7 @@ export class RepositoryList {
         this.stagedClass.set(filters.class ?? '');
         this.stagedFormat.set(filters.format ?? '');
         this.stagedInactive.set(filters.state === 'inactive');
+        this.stagedProject.set(this.filterProject() ?? '');
         // An applied filter is never hidden: the panel opens with it.
         if (this.activeCount() > 0) this.panelOpen.set(true);
         void this.list.start(this.api.list(filters));
@@ -122,8 +143,12 @@ export class RepositoryList {
   protected readonly emptyFilteredText = $localize`:@@repo.list.empty-filtered:No repository matches the filters.`;
   protected readonly applyLabel = $localize`:@@repo.filter.apply:Search`;
   /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
-  protected readonly columns: readonly TableColumn[] = [
+  protected readonly columns = computed<readonly TableColumn[]>(() =>
+    this.inProject() ? this.allColumns.filter((c) => c.id !== 'project') : this.allColumns,
+  );
+  private readonly allColumns: readonly TableColumn[] = [
     { id: 'key', label: $localize`:@@repo.col.key:Key` },
+    { id: 'project', label: $localize`:@@repo.col.project:Project` },
     { id: 'format', label: $localize`:@@repo.col.format:Format` },
     {
       id: 'class',
@@ -166,11 +191,12 @@ export class RepositoryList {
       class: this.stagedClass() || null,
       format: this.stagedFormat() || null,
       state: this.stagedInactive() ? 'inactive' : null,
+      ...(this.inProject() ? {} : { project: this.stagedProject().trim() || null }),
     });
   }
 
   protected clearFilters(): void {
-    this.applyFilter({ q: null, class: null, format: null, state: null });
+    this.applyFilter({ q: null, class: null, format: null, state: null, project: null });
   }
 
   protected async remove(row: RepositorySummary): Promise<void> {
@@ -191,9 +217,10 @@ export class RepositoryList {
       });
       if (answer === null) return;
       try {
-        const outcome = await this.api.delete(row.key, idempotencyKey, answer.checked);
-        if (outcome.done) this.gone(row.key);
-        else this.deleting.update((m) => new Map(m).set(row.key, outcome.job));
+        const ref = refOf(row);
+        const outcome = await this.api.delete(ref, idempotencyKey, answer.checked);
+        if (outcome.done) this.gone(ref);
+        else this.deleting.update((m) => new Map(m).set(ref, outcome.job));
         return;
       } catch (e) {
         const error = asApiError(e);
@@ -208,24 +235,24 @@ export class RepositoryList {
     }
   }
 
-  protected gone(key: string): void {
+  protected gone(ref: string): void {
     this.deleting.update((m) => {
       const next = new Map(m);
-      next.delete(key);
+      next.delete(ref);
       return next;
     });
-    this.list.remove((r) => r.key === key);
-    this.notifier.status($localize`:@@repo.delete.done:Repository ${key}:key: deleted.`);
+    this.list.remove((r) => refOf(r) === ref);
+    this.notifier.status($localize`:@@repo.delete.done:Repository ${ref}:key: deleted.`);
   }
 
-  protected deletionFailed(key: string): void {
+  protected deletionFailed(ref: string): void {
     this.deleting.update((m) => {
       const next = new Map(m);
-      next.delete(key);
+      next.delete(ref);
       return next;
     });
     this.notifier.alert(
-      $localize`:@@repo.delete.failed:Deleting repository ${key}:key: failed. Its row is kept; try again.`,
+      $localize`:@@repo.delete.failed:Deleting repository ${ref}:key: failed. Its row is kept; try again.`,
     );
     void this.list.start(
       this.api.list({
@@ -238,12 +265,12 @@ export class RepositoryList {
     );
   }
 
-  protected jobEnded(key: string, state: string): void {
-    if (state === 'succeeded') this.gone(key);
-    else this.deletionFailed(key);
+  protected jobEnded(ref: string, state: string): void {
+    if (state === 'succeeded') this.gone(ref);
+    else this.deletionFailed(ref);
   }
 
-  protected visit(key: string): void {
-    this.recent.add(key);
+  protected visit(ref: string): void {
+    this.recent.add(ref);
   }
 }

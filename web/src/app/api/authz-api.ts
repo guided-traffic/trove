@@ -25,7 +25,7 @@ export interface PolicyFilters {
   /** A principal reference such as `group:team-web`. */
   readonly principal?: string;
   readonly expandGroups?: boolean;
-  /** A repository key. */
+  /** A repository name `<project>/<key>`. */
   readonly repository?: string;
   /** A project key: the policies of that project (R-AUTHZ-026). */
   readonly project?: string;
@@ -44,11 +44,16 @@ export interface RoleBindingFilters {
 
 export abstract class PolicyApi {
   abstract list(filters: PolicyFilters): PageFetcher<PermissionPolicy>;
-  abstract load(name: string): Promise<LoadedPolicy>;
-  abstract create(input: PermissionPolicyInput, idempotencyKey: string): Promise<LoadedPolicy>;
+  /**
+   * A policy is addressed by its name and its project, `null` for an instance-wide policy (R-AUTHZ-026); the name of a
+   * project policy is unique within the project.
+   */
+  abstract load(name: string, project: string | null): Promise<LoadedPolicy>;
+  /** The route decides the project: `POST /projects/{project}/policies` or `POST /permission-policies`. */
+  abstract create(project: string | null, input: PermissionPolicyInput, idempotencyKey: string): Promise<LoadedPolicy>;
   /** `PUT` with the loaded `ETag` (R-UI-027). */
-  abstract replace(name: string, input: PermissionPolicyInput, etag: string): Promise<LoadedPolicy>;
-  abstract delete(name: string, etag?: string): Promise<void>;
+  abstract replace(name: string, project: string | null, input: PermissionPolicyInput, etag: string): Promise<LoadedPolicy>;
+  abstract delete(name: string, project: string | null, etag?: string): Promise<void>;
   /** `POST /authz/validate-policy`: problems, warnings and the covered repositories, nothing stored. */
   abstract validate(input: PermissionPolicyInput): Promise<PolicyValidation>;
 }
@@ -60,37 +65,56 @@ export abstract class RolesApi {
   abstract unbind(role: RoleName, principal: string): Promise<void>;
 }
 
+/** `/api/v1/permission-policies/{name}` or, for a project's policy, `/api/v1/projects/{project}/policies/{name}`. */
+export function policyUrl(name: string, project: string | null): string {
+  return project
+    ? `/api/v1/projects/${seg(project)}/policies/${seg(name)}`
+    : `/api/v1/permission-policies/${seg(name)}`;
+}
+
 @Injectable()
 export class HttpPolicyApi extends PolicyApi {
   private readonly client = inject(ApiClient);
 
+  /**
+   * The policies of a project come from `GET /projects/{project}/policies`, which an Owner of the project may call
+   * (R-AUTHZ-026, Q-AUTHZ-209); the instance-wide list needs `policies:read`. The project is the path then, not a filter.
+   */
   override list(filters: PolicyFilters): PageFetcher<PermissionPolicy> {
-    return this.client.page<PermissionPolicy>('/api/v1/permission-policies', cleanQuery(filters));
+    const { project, ...rest } = filters;
+    if (project) {
+      return this.client.page<PermissionPolicy>(`/api/v1/projects/${seg(project)}/policies`, cleanQuery(rest));
+    }
+    return this.client.page<PermissionPolicy>('/api/v1/permission-policies', cleanQuery(rest));
   }
 
-  override async load(name: string): Promise<LoadedPolicy> {
-    const r = await this.client.getJson<PermissionPolicy>(`/api/v1/permission-policies/${seg(name)}`);
+  override async load(name: string, project: string | null): Promise<LoadedPolicy> {
+    const r = await this.client.getJson<PermissionPolicy>(policyUrl(name, project));
     return { policy: r.body, etag: r.etag ?? `"${r.body.version}"` };
   }
 
-  override async create(input: PermissionPolicyInput, idempotencyKey: string): Promise<LoadedPolicy> {
-    const r = await this.client.post<PermissionPolicy>('/api/v1/permission-policies', input, {
-      idempotencyKey,
-    });
+  override async create(
+    project: string | null,
+    input: PermissionPolicyInput,
+    idempotencyKey: string,
+  ): Promise<LoadedPolicy> {
+    const url = project ? `/api/v1/projects/${seg(project)}/policies` : '/api/v1/permission-policies';
+    const r = await this.client.post<PermissionPolicy>(url, input, { idempotencyKey });
     return { policy: r.body, etag: r.etag ?? `"${r.body.version}"` };
   }
 
-  override async replace(name: string, input: PermissionPolicyInput, etag: string): Promise<LoadedPolicy> {
-    const r = await this.client.put<PermissionPolicy>(
-      `/api/v1/permission-policies/${seg(name)}`,
-      input,
-      etag,
-    );
+  override async replace(
+    name: string,
+    project: string | null,
+    input: PermissionPolicyInput,
+    etag: string,
+  ): Promise<LoadedPolicy> {
+    const r = await this.client.put<PermissionPolicy>(policyUrl(name, project), input, etag);
     return { policy: r.body, etag: r.etag ?? `"${r.body.version}"` };
   }
 
-  override async delete(name: string, etag?: string): Promise<void> {
-    await this.client.delete(`/api/v1/permission-policies/${seg(name)}`, { etag });
+  override async delete(name: string, project: string | null, etag?: string): Promise<void> {
+    await this.client.delete(policyUrl(name, project), { etag });
   }
 
   override async validate(input: PermissionPolicyInput): Promise<PolicyValidation> {

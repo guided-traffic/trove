@@ -55,11 +55,11 @@ func newTransferEnv(t *testing.T, opts ...func(*replicaOpts)) *transferEnv {
 	e.grant(te.a, "maint-all", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:maint": {"read", "deploy", "overwrite", "delete"}})
 	e.grant(te.a, "reader-read", []string{"generic-local"}, authz.PatternLists{}, map[string][]string{"user:reader": {"read"}})
 	te.await("the policies on both replicas", func(r *replica) bool {
-		return (r.put("ci", "/files/generic-local/.probe-ci", "x").status/100 == 2) && r.get("reader", "/files/generic-local/.probe-ci").status == 200 &&
-			r.get("maint", "/files/generic-local/.probe-ci").status == 200
+		return (r.put("ci", "/files/it/generic-local/.probe-ci", "x").status/100 == 2) && r.get("reader", "/files/it/generic-local/.probe-ci").status == 200 &&
+			r.get("maint", "/files/it/generic-local/.probe-ci").status == 200
 	})
 	// The probe file served only to wait for the policies.
-	if res := te.a.do("maint", "DELETE", "/files/generic-local/.probe-ci", nil); res.status != 204 {
+	if res := te.a.do("maint", "DELETE", "/files/it/generic-local/.probe-ci", nil); res.status != 204 {
 		t.Fatalf("remove the probe: %d %s", res.status, res.body)
 	}
 	return te
@@ -164,7 +164,7 @@ func TestR_STOR_004_LargeUploadIsStreamedThroughTheSpool(t *testing.T) {
 	e.breakGlass()
 	r := e.newReplica("a", replicaOpts{})
 	r.createRepository("big", nil)
-	path := "/files/big/installers/big-500mb.bin"
+	path := "/files/it/big/installers/big-500mb.bin"
 
 	up := newGenerator(size, 11)
 	req, err := http.NewRequest("PUT", r.baseURL+path, up)
@@ -255,7 +255,7 @@ func TestR_ARCH_024_ADownloadCutAtTheShutdownDeadlineResumesOnAnotherReplica(t *
 	const size = 96 << 20
 	te := newTransferEnv(t)
 	a, b := te.a, te.b
-	path := "/files/generic-local/drain/big.bin"
+	path := "/files/it/generic-local/drain/big.bin"
 	src := newGenerator(size, 21)
 	want := ""
 	{
@@ -359,7 +359,7 @@ func TestR_HA_011_UploadsDuringARolloutRestart(t *testing.T) {
 		}
 		out := make(chan result, 1)
 		go func() {
-			req, _ := http.NewRequest("PUT", a.baseURL+"/files/generic-local/roll/inflight.bin", body)
+			req, _ := http.NewRequest("PUT", a.baseURL+"/files/it/generic-local/roll/inflight.bin", body)
 			req.ContentLength = 200_000
 			req.Header.Set("Authorization", "Bearer ci")
 			res, err := client.Do(req) //nolint:bodyclose // the receiver of the channel closes it
@@ -380,13 +380,13 @@ func TestR_HA_011_UploadsDuringARolloutRestart(t *testing.T) {
 			t.Errorf("a response during the drain asks the client to reconnect: %v", r.res.Header)
 		}
 		_ = r.res.Body.Close()
-		if _, err := a.raw("ci", "PUT", "/files/generic-local/roll/after.bin", strings.NewReader("x")); err == nil { //nolint:bodyclose // the connection must be refused: there is no body
+		if _, err := a.raw("ci", "PUT", "/files/it/generic-local/roll/after.bin", strings.NewReader("x")); err == nil { //nolint:bodyclose // the connection must be refused: there is no body
 			t.Error("the stopped replica accepted a connection")
 		}
-		if res := b.put("ci", "/files/generic-local/roll/after.bin", "x"); res.status != 201 {
+		if res := b.put("ci", "/files/it/generic-local/roll/after.bin", "x"); res.status != 201 {
 			t.Fatalf("retry on the other replica: %d", res.status)
 		}
-		if res := b.get("reader", "/files/generic-local/roll/inflight.bin"); res.status != 200 || len(res.body) != 200_000 {
+		if res := b.get("reader", "/files/it/generic-local/roll/inflight.bin"); res.status != 200 || len(res.body) != 200_000 {
 			t.Fatalf("the finished upload: %d, %d bytes", res.status, len(res.body))
 		}
 	})
@@ -397,7 +397,7 @@ func TestR_HA_011_UploadsDuringARolloutRestart(t *testing.T) {
 		body, _ := trickle(200_000, 5*time.Second)
 		errc := make(chan error, 1)
 		go func() {
-			req, _ := http.NewRequest("PUT", a.baseURL+"/files/generic-local/roll/cut.bin", body)
+			req, _ := http.NewRequest("PUT", a.baseURL+"/files/it/generic-local/roll/cut.bin", body)
 			req.ContentLength = 200_000
 			req.Header.Set("Authorization", "Bearer ci")
 			res, err := client.Do(req) //nolint:bodyclose // the receiver of the channel closes it
@@ -421,7 +421,7 @@ func TestR_HA_011_UploadsDuringARolloutRestart(t *testing.T) {
 		if entries, _ := os.ReadDir(a.spoolDir); len(entries) != 0 {
 			t.Errorf("the spool of the cut upload was not removed: %v", entries)
 		}
-		if res := b.put("ci", "/files/generic-local/roll/cut.bin", string(content(200_000, 1))); res.status != 201 {
+		if res := b.put("ci", "/files/it/generic-local/roll/cut.bin", string(content(200_000, 1))); res.status != 201 {
 			t.Fatalf("retry: %d %s", res.status, res.body)
 		}
 	})
@@ -437,7 +437,7 @@ func TestR_HA_011_UploadsDuringARolloutRestart(t *testing.T) {
 		}
 		out := make(chan result, 1)
 		go func() {
-			req, _ := http.NewRequest("PUT", a.baseURL+"/files/generic-local/roll/commit.bin", strings.NewReader(string(data)))
+			req, _ := http.NewRequest("PUT", a.baseURL+"/files/it/generic-local/roll/commit.bin", strings.NewReader(string(data)))
 			req.Header.Set("Authorization", "Bearer ci")
 			res, err := client.Do(req) //nolint:bodyclose // the receiver of the channel closes it
 			if err != nil {
@@ -478,7 +478,7 @@ func TestConcurrentWritersOnOnePath(t *testing.T) {
 				if i%2 == 1 {
 					r = b
 				}
-				statuses[i] = r.put("maint", "/files/generic-local/race/one.bin", bodies[i]).status
+				statuses[i] = r.put("maint", "/files/it/generic-local/race/one.bin", bodies[i]).status
 			}()
 		}
 		wg.Wait()
@@ -490,7 +490,7 @@ func TestConcurrentWritersOnOnePath(t *testing.T) {
 		if c := te.number("SELECT count(*) FROM items WHERE path = 'race/one.bin'"); c != 1 {
 			t.Fatalf("%d items", c)
 		}
-		got := a.get("reader", "/files/generic-local/race/one.bin")
+		got := a.get("reader", "/files/it/generic-local/race/one.bin")
 		found := false
 		for _, b := range bodies {
 			found = found || string(got.body) == b
@@ -515,7 +515,7 @@ func TestConcurrentWritersOnOnePath(t *testing.T) {
 						return
 					default:
 					}
-					p := fmt.Sprintf("/files/generic-local/orph/d%d/f%d.bin", w%3, i%4)
+					p := fmt.Sprintf("/files/it/generic-local/orph/d%d/f%d.bin", w%3, i%4)
 					if s := r.put("maint", p, fmt.Sprint(w, i)).status; s != 201 && s != 200 {
 						fail.Add(1)
 					}

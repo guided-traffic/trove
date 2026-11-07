@@ -39,7 +39,9 @@ describe('App shell', () => {
     expect(root.querySelector('header.topbar')?.textContent).toContain('trove');
     expect(root.querySelector('nav[aria-label]')).toBeTruthy();
     expect(root.querySelector('main#main')).toBeTruthy();
-    expect(root.querySelector('main h1')?.textContent).toContain('Browse');
+    // The caller has exactly one project: the start page sends the caller into it (Q-UI-129).
+    expect(TestBed.inject(Router).url).toBe('/projects/web/packages');
+    expect(root.querySelector('main h1')?.textContent).toContain('Packages');
   });
 
   it('R-UI-002 the skip link is the first focusable element and focuses the main heading', async () => {
@@ -54,10 +56,10 @@ describe('App shell', () => {
 
   it('R-UI-002 shows the banner area only while a banner text is set', async () => {
     const { fixture, root } = await render();
-    expect(root.querySelector('[role="region"]')).toBeNull();
+    expect(root.querySelector('trove-banner [role="region"]')).toBeNull();
     TestBed.inject(BannerStore).set('Maintenance tonight');
     await fixture.whenStable();
-    const banner = root.querySelector('[role="region"]');
+    const banner = root.querySelector('trove-banner [role="region"]');
     expect(banner?.getAttribute('aria-label')).toBeTruthy();
     expect(banner?.textContent).toContain('Maintenance tonight');
   });
@@ -72,7 +74,8 @@ describe('App shell', () => {
   it('R-UI-002 Q-UI-127 the admin area has a sidebar of its own behind the Admin button, which only its users see', async () => {
     const admin = await render();
     const sidebar = () => admin.root.querySelector('aside.sidebar')?.textContent ?? '';
-    expect(sidebar()).toContain('Artifacts');
+    expect(sidebar()).toContain('Web platform');
+    expect(sidebar()).toContain('Packages');
     expect(sidebar()).not.toContain('System status');
     const button = admin.root.querySelector<HTMLAnchorElement>('header a.admin-button')!;
     expect(button.getAttribute('href')).toBe('/admin');
@@ -88,14 +91,14 @@ describe('App shell', () => {
     TestBed.resetTestingModule();
 
     const plain = await render('/', (api) => (api.meResult = { capabilities: [] }));
-    expect(plain.root.querySelector('aside.sidebar')?.textContent).toContain('Artifacts');
+    expect(plain.root.querySelector('aside.sidebar')?.textContent).toContain('Web platform');
     expect(plain.root.querySelector('header a.admin-button')).toBeNull();
   });
 
   it('R-UI-002 shows only the entries whose capability the caller holds, in each area', async () => {
     const { fixture, root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
     const links = () => [...root.querySelectorAll('nav a .nav-label')].map((a) => a.textContent?.trim());
-    expect(links()).toEqual(['Packages', 'Browse', 'Guides', 'Vulnerabilities']);
+    expect(links()).toEqual(['Packages', 'Browse', 'Repositories', 'Vulnerabilities', 'Members', 'Settings']);
     await TestBed.inject(Router).navigateByUrl('/admin/audit');
     await fixture.whenStable();
     expect(links()).toEqual(['Audit log']);
@@ -251,7 +254,7 @@ describe('App shell', () => {
     const { fixture, root } = await render('/admin/endpoints');
     const help = () => [...root.querySelectorAll<HTMLAnchorElement>('header a')].find((a) => a.textContent?.trim().endsWith('Documentation'));
     expect(help()?.getAttribute('href')).toBe('/help/admin/endpoints');
-    await TestBed.inject(Router).navigateByUrl('/browse');
+    await TestBed.inject(Router).navigateByUrl('/projects/web/browse');
     await fixture.whenStable();
     expect(help()?.getAttribute('href')).toBe('/help/user/files');
     await TestBed.inject(Router).navigateByUrl('/admin/system/jobs');

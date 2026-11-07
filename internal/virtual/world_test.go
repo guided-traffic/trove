@@ -177,7 +177,7 @@ func (w *world) advance(d time.Duration) {
 
 func (w *world) caller(sub authz.Subject) virtual.Caller {
 	w.t.Helper()
-	idx, err := w.authz.Begin(context.Background(), sub, "npm-all")
+	idx, err := w.authz.Begin(context.Background(), sub, qr("npm-all"))
 	if err != nil {
 		w.t.Fatal(err)
 	}

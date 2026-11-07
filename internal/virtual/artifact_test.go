@@ -33,7 +33,7 @@ func TestR_REPO_019_ArtifactTiers(t *testing.T) {
 		if slices.Contains(w.arts.Calls(), "fetch:npm-remote") || slices.Contains(w.arts.Calls(), "cached:npm-remote") {
 			t.Fatalf("a lower tier was asked: %v", w.arts.Calls())
 		}
-		if n := counter(t, w.reg, "trove_virtual_resolutions_total", map[string]string{"repo": "npm-all", "source": "local"}); n != 1 {
+		if n := counter(t, w.reg, "trove_virtual_resolutions_total", map[string]string{"repo": "it/npm-all", "source": "local"}); n != 1 {
 			t.Fatalf("trove_virtual_resolutions_total{local} = %v", n)
 		}
 	})
@@ -272,7 +272,7 @@ func TestR_REPO_019_StepsOneToFive(t *testing.T) {
 		// Bob reads npm-all and npm-local only: the remote member is unreadable for him.
 		vt.Put(w.arts.UpstreamItems, "npm-remote", "only-upstream/-/1.0.0.tgz", "public")
 		c, p := w.plan(bob, artifactOf("only-upstream", "1.0.0"))
-		if p.Unreadable != 1 || len(p.Members) != 1 || p.Members[0].Repo.Key != "npm-local" {
+		if p.Unreadable != 1 || len(p.Members) != 1 || p.Members[0].Repo.Name.Key != "npm-local" {
 			t.Fatalf("plan: unreadable %d members %v", p.Unreadable, p.Members)
 		}
 		rec := httptest.NewRecorder()
@@ -288,7 +288,7 @@ func TestR_REPO_019_StepsOneToFive(t *testing.T) {
 	t.Run("R-REPO-019 step 5 the order of the plan is the order of the route", func(t *testing.T) {
 		w := newWorld(t, func(o *worldOpts) { o.members = []repository.Repository{remote, local} })
 		_, p := w.plan(alice, artifactOf("left-pad", "1.0.0"))
-		if len(p.Members) != 2 || p.Members[0].Repo.Key != "npm-remote" || p.Members[0].Position != 0 || p.Members[1].Position != 1 {
+		if len(p.Members) != 2 || p.Members[0].Repo.Name.Key != "npm-remote" || p.Members[0].Position != 0 || p.Members[1].Position != 1 {
 			t.Fatalf("members %+v", p.Members)
 		}
 	})
@@ -334,19 +334,19 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 	t.Run("R-AUTHZ-009 rule 5 a write is decided on the deploy target and the deploy target is the one of the repository", func(t *testing.T) {
 		w := newWorld(t)
 		tgt, err := w.r.DeployTarget(w.v)
-		if err != nil || tgt.Key != "npm-local" {
-			t.Fatalf("target %v err %v", tgt.Key, err)
+		if err != nil || tgt.Name.Key != "npm-local" {
+			t.Fatalf("target %v err %v", tgt.Name, err)
 		}
 		// Alice may deploy into npm-local and read npm-all: the write through npm-all is allowed;
 		// a grant of deploy on npm-all itself would not matter (checked in the decision point).
 		e := vt.NewDecider(t, specs("read"), append(grants(), vt.Grant{Repos: []string{"npm-local"}, Principal: vt.Alice, Actions: []string{"deploy"}},
-			vt.Grant{Repos: []string{"npm-all"}, Principal: vt.Bob, Actions: []string{"deploy"}}))
-		write := authz.Coordinate{Repository: "npm-all", Class: repository.Virtual, Format: vt.Format, Kind: "write", Package: "p", Actions: []authz.Action{authz.Deploy}}
-		aIdx, _ := e.Begin(context.Background(), alice, "npm-all")
+			vt.Grant{Repos: []string{"it/npm-all"}, Principal: vt.Bob, Actions: []string{"deploy"}}))
+		write := authz.Coordinate{Repository: qr("npm-all"), Class: repository.Virtual, Format: vt.Format, Kind: "write", Package: "p", Actions: []authz.Action{authz.Deploy}}
+		aIdx, _ := e.Begin(context.Background(), alice, qr("npm-all"))
 		if d := e.DecideOn(context.Background(), aIdx, alice, write); d.Outcome != authz.Allow {
 			t.Fatalf("alice: %+v", d)
 		}
-		bIdx, _ := e.Begin(context.Background(), bob, "npm-all")
+		bIdx, _ := e.Begin(context.Background(), bob, qr("npm-all"))
 		if d := e.DecideOn(context.Background(), bIdx, bob, write); d.Outcome == authz.Allow {
 			t.Fatalf("bob holds deploy on the virtual repository only, which has no effect: %+v", d)
 		}
@@ -377,7 +377,7 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 		anon := func(repos ...string) *authz.Engine {
 			return vt.NewDecider(t, specs("read"), []vt.Grant{{Repos: repos, Principal: authz.AnonymousID, Actions: []string{"read"}}})
 		}
-		read := authz.Coordinate{Repository: "npm-all", Class: repository.Virtual, Format: vt.Format, Kind: "metadata", Package: "p", Actions: []authz.Action{authz.Read}}
+		read := authz.Coordinate{Repository: qr("npm-all"), Class: repository.Virtual, Format: vt.Format, Kind: "metadata", Package: "p", Actions: []authz.Action{authz.Read}}
 		for name, tc := range map[string]struct {
 			repos []string
 			want  authz.Outcome
@@ -387,7 +387,7 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 			"no gate on the repository": {[]string{"npm-local", "npm-remote"}, authz.DenyUnauthenticated},
 		} {
 			e := anon(tc.repos...)
-			idx, err := e.Begin(context.Background(), anonymousSubject(), "npm-all")
+			idx, err := e.Begin(context.Background(), anonymousSubject(), qr("npm-all"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -406,9 +406,9 @@ func TestR_AUTHZ_009_PerMemberDecisions(t *testing.T) {
 		keys := []string{"npm-all", "npm-local", "npm-remote"}
 		for sub, want := range map[string][]string{vt.Alice: {"npm-all", "npm-local"}, vt.Bob: {"npm-local", "npm-remote"}} {
 			s := subjectFor(sub)
-			idx, _ := e.Begin(context.Background(), s, keys...)
-			got, err := e.ReadableOn(context.Background(), idx, s, keys)
-			if err != nil || !slices.Equal(got, want) {
+			idx, _ := e.Begin(context.Background(), s, qrs(keys)...)
+			got, err := e.ReadableOn(context.Background(), idx, s, qrs(keys))
+			if err != nil || !slices.Equal(qkeys(got), want) {
 				t.Errorf("%s lists %v (%v), want %v", sub, got, err, want)
 			}
 		}

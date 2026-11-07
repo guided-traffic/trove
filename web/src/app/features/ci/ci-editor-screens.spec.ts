@@ -13,7 +13,8 @@ import { storedText, buttonByText, expectAccessible, renderScreen, settle, sleep
 import { ClaimTester } from './claim-tester';
 import { MappingEditor } from './mapping-editor';
 import { ProjectCi } from './project-ci';
-import { ProjectDetail } from '../projects/project-detail';
+import { projectEntries } from '../../core/navigation';
+import { SessionStore } from '../../core/session-store';
 
 type Get = <A>(token: abstract new (...args: never[]) => A) => A;
 const ci = (get: Get): FakeCiApi => get(CiApi) as FakeCiApi;
@@ -28,14 +29,14 @@ const checkbox = (root: HTMLElement, label: string): HTMLInputElement =>
   [...root.querySelectorAll('trove-checkbox')].find((c) => text(c).startsWith(label))!.querySelector('input') as HTMLInputElement;
 const select = (root: HTMLElement, i = 0): HTMLSelectElement => root.querySelectorAll('trove-ci-name-picker select')[i] as HTMLSelectElement;
 
-/** A caller without any capability that administers `web` (Q-AUTHZ-181, Q-CI-26). */
-function projectAdmin(managePolicies = true) {
+/** A caller without any capability that is Owner of `web` (Q-AUTHZ-207, Q-CI-26). */
+function projectAdmin() {
   return (get: Get): void => {
     (get(SessionApi) as FakeSessionApi).meResult = {
       roles: [],
       capabilities: [],
       principals: ['user:alice'],
-      projects: [{ key: 'web', managePolicies, manageRepositories: false }],
+      projects: [{ key: 'web', role: 'owner' }],
     };
     (get(RepositoriesApi) as FakeRepositoriesApi).repositories.forEach((r) => (r.project = r.key === 'generic-local' ? 'web' : r.project));
   };
@@ -324,12 +325,12 @@ describe('The mapping editor keeps a draft across a re-authentication (R-UI-042)
 });
 
 describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
-  const inputs = { key: 'web', issuer: 'gitlab-com' };
+  const inputs = { project: 'web', issuer: 'gitlab-com' };
 
-  it('Q-CI-26 starts with the name prefix, offers the project repositories and policies, and offers no groups', async () => {
+  it('Q-CI-26 R-CI-009 names the mapping within the project without a prefix, offers the project repositories and policies, and offers no groups', async () => {
     const { root } = await renderScreen(MappingEditor, { inputs, capabilities: [], setup: projectAdmin() });
-    expect(root.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('web-');
-    expect(text(root)).toContain('Starts with web- and cannot be changed later.');
+    expect(root.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('');
+    expect(text(root)).toContain('Unique within the project web and cannot be changed later.');
     expect(text(root)).toContain('Only the permission policies of this project can be named. Groups are global');
     expect(text(root)).not.toContain('Add a group');
     const policies = [...select(root).options].map((o) => o.value);
@@ -362,10 +363,6 @@ describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
     type(valueArea(root), '4242');
     buttonByText(root, 'Add inline grant').click();
     await settle(fixture);
-    buttonByText(root, 'Create mapping').click();
-    await sleep(fixture, 100);
-    expect(text(root)).toContain('The name must start with the key of the project and a hyphen.');
-    typeInto(root, 'Name', 'web-publish');
     type(root.querySelector('textarea[name="repositories-0"]') as HTMLTextAreaElement, 'npm-internal');
     buttonByText(root, 'Create mapping').click();
     await sleep(fixture, 100);
@@ -380,24 +377,9 @@ describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
     expect(text(root)).toContain('cannot carry groups');
   });
 
-  it('Q-CI-26 an administrator whose managePolicies switch is off reads the mapping and is told why it is read-only', async () => {
-    const { root } = await renderScreen(MappingEditor, {
-      inputs: { key: 'web', issuer: 'gitlab-com', mapping: 'web-x' },
-      capabilities: [],
-      setup: (g) => {
-        projectAdmin(false)(g);
-        ci(g).mappings = [sampleMapping({ name: 'web-x', tier: 'project:web' })];
-      },
-    });
-    expect(text(root)).toContain('Switched off for this project: managePolicies');
-    expect(root.querySelector('button[type="submit"]')).toBeNull();
-    // The project route of the snippet needs the switch: an administrator whose switch is off is not offered it.
-    expect(root.textContent).not.toContain('CI snippet');
-  });
-
-  it('R-UI-035 Q-CI-26 a project administrator is offered the CI snippet and reads it through the project route', async () => {
+  it('R-UI-035 Q-CI-26 a project Owner is offered the CI snippet and reads it through the project route', async () => {
     const { root, fixture, get } = await renderScreen(MappingEditor, {
-      inputs: { key: 'web', issuer: 'gitlab-com', mapping: 'web-x' },
+      inputs: { project: 'web', issuer: 'gitlab-com', mapping: 'web-x' },
       capabilities: [],
       setup: (g) => {
         projectAdmin()(g);
@@ -611,7 +593,7 @@ describe('The claim tester (R-UI-036, R-CI-019)', () => {
 
   it('R-UI-036 a project\'s tester asks for an issuer and evaluates over the project tier only', async () => {
     const { root, fixture, get } = await renderScreen(ClaimTester, {
-      inputs: { key: 'web' },
+      inputs: { project: 'web' },
       capabilities: [],
       setup: (g) => {
         projectAdmin()(g);
@@ -633,7 +615,7 @@ describe('The claim tester (R-UI-036, R-CI-019)', () => {
 describe('The CI identity of a project (R-UI-035, Q-CI-26)', () => {
   it('Q-CI-26 shows the issuers read-only, the project mappings with the project editor, the dry run and the project issuances', async () => {
     const { root, fixture } = await renderScreen(ProjectCi, {
-      inputs: { key: 'web' },
+      inputs: { project: 'web' },
       capabilities: [],
       setup: (g) => {
         projectAdmin()(g);
@@ -651,37 +633,29 @@ describe('The CI identity of a project (R-UI-035, Q-CI-26)', () => {
     // Only the project's mappings, with the project's routes.
     expect(text(sections[1]!)).toContain('web-x');
     expect(text(sections[1]!)).not.toContain('system-only');
-    expect(sections[1]!.querySelector('a[href="/admin/projects/web/ci/mappings/web-x?issuer=gitlab-com"]')).toBeTruthy();
-    expect(sections[1]!.querySelector('a[href="/admin/projects/web/ci/mappings/new"]')).toBeTruthy();
+    expect(sections[1]!.querySelector('a[href="/projects/web/ci/mappings/web-x?issuer=gitlab-com"]')).toBeTruthy();
+    expect(sections[1]!.querySelector('a[href="/projects/web/ci/mappings/new"]')).toBeTruthy();
     // Only the tokens of the project's mappings, and no bulk revoke.
     expect([...sections[2]!.querySelectorAll('tbody tr')]).toHaveLength(1);
     expect(sections[2]!.textContent).not.toContain('Revoke matching tokens');
-    expect(root.querySelector('a[href="/admin/projects/web/ci/test"]')).toBeTruthy();
+    expect(root.querySelector('a[href="/projects/web/ci/test"]')).toBeTruthy();
     await expectAccessible(root);
-  });
-
-  it('Q-CI-26 403 project_switch_off is shown as the other project screens show it, and nothing else is rendered', async () => {
-    const { root } = await renderScreen(ProjectCi, {
-      inputs: { key: 'web' },
-      capabilities: [],
-      setup: (g) => {
-        projectAdmin(false)(g);
-        ci(g).failure = new ApiError(403, { code: 'project_switch_off' }, 'r');
-      },
-    });
-    expect(text(root)).toContain('This is switched off for the project. An administrator of trove can switch it on.');
-    expect(root.querySelectorAll('section.card')).toHaveLength(0);
   });
 
 });
 
-describe('The project page links to the CI identity (Q-CI-26)', () => {
-  it('Q-CI-26 an administrator of the project and a holder of ci:read are offered it, others are not', async () => {
-    const admin = await renderScreen(ProjectDetail, { inputs: { key: 'web' }, capabilities: [], setup: projectAdmin() });
-    expect(admin.root.querySelector('a[href="/admin/projects/web/ci"]')).toBeTruthy();
-    const auditor = await renderScreen(ProjectDetail, { inputs: { key: 'web' }, capabilities: ['projects:read', 'ci:read'] });
-    expect(auditor.root.querySelector('a[href="/admin/projects/web/ci"]')).toBeTruthy();
-    const other = await renderScreen(ProjectDetail, { inputs: { key: 'web' }, capabilities: ['projects:read'] });
-    expect(other.root.querySelector('a[href="/admin/projects/web/ci"]')).toBeNull();
+describe('The project sidebar links to the CI identity (Q-CI-26, Q-UI-129)', () => {
+  const offered = (get: Get): boolean =>
+    projectEntries('web', get(SessionStore))
+      .flatMap((e) => (e.kind === 'group' ? e.items : [e]))
+      .some((i) => i.route === '/projects/web/ci');
+
+  it('Q-CI-26 an Owner of the project and a holder of ci:read are offered it, others are not', async () => {
+    const admin = await renderScreen(ProjectCi, { inputs: { project: 'web' }, capabilities: [], setup: projectAdmin() });
+    expect(offered(admin.get)).toBe(true);
+    const auditor = await renderScreen(ProjectCi, { inputs: { project: 'web' }, capabilities: ['projects:read', 'ci:read'] });
+    expect(offered(auditor.get)).toBe(true);
+    const other = await renderScreen(ProjectCi, { inputs: { project: 'web' }, capabilities: ['projects:read'] });
+    expect(offered(other.get)).toBe(false);
   });
 });

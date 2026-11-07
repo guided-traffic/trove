@@ -146,11 +146,11 @@ func (e *renv) start(n int) []*testenv.Replica {
 // get sends a GET of a path below a repository's registry URL as the reader.
 func (e *renv) get(r *testenv.Replica, repo, path string, hdr ...string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "GET", "/api/nuget/"+repo+"/"+path, e.tokReader, nil, hdr...)
+	return e.st.Do(r, "GET", "/api/nuget/it/"+repo+"/"+path, e.tokReader, nil, hdr...)
 }
 
 // feed is the v3 root of a repository as the documents of a replica name it.
-func feed(repo string) string { return feedBase + "/api/nuget/" + repo + "/v3/" }
+func feed(repo string) string { return feedBase + "/api/nuget/it/" + repo + "/v3/" }
 
 // versionsOf reads the version list of the flat container.
 func versionsOf(t testing.TB, a testenv.Answer) []string {

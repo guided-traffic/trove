@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/blob"
@@ -131,7 +133,7 @@ func New(o Options) (*Store, error) {
 // carried them.
 type RepoRef struct {
 	ID     int64
-	Key    string
+	Name   qname.Repo
 	Class  string
 	Format string
 	// Vuln is the download policy of the vulnerability scanning for the repository (R-VULN-015). A lookup of an item
@@ -161,7 +163,7 @@ func RepoOf(r repository.Repository) RepoRef {
 		}
 		n = n*10 + int64(r.ID[i]-'0')
 	}
-	return RepoRef{ID: n, Key: r.Key, Class: string(r.Class), Format: r.Format}
+	return RepoRef{ID: n, Name: r.Name, Class: string(r.Class), Format: r.Format}
 }
 
 // touch records the use of a repository.

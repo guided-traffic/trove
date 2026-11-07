@@ -51,7 +51,7 @@ func snupkg(t testing.TB, id, version, body string, entries map[string]string) [
 func (e *wenv) pushSymbols(r *testenv.Replica, repo, token string, pkg []byte) testenv.Answer {
 	e.t.Helper()
 	body, ct := form(e.t, pkg)
-	return e.st.Do(r, "PUT", "/api/nuget/"+repo+"/v3/symbolpackage", token, body, "Content-Type", ct)
+	return e.st.Do(r, "PUT", "/api/nuget/it/"+repo+"/v3/symbolpackage", token, body, "Content-Type", ct)
 }
 
 func (e *wenv) symbolPackages(repo string) int64 {
@@ -115,8 +115,8 @@ func TestR_NUGET_020_ASymbolPushIsStoredLinkedAndQueuedForIndexing(t *testing.T)
 func TestR_NUGET_020_TheSymbolPushIsListedInTheServiceIndex(t *testing.T) {
 	e := newWriteEnv(t)
 	a := e.replica("web-a")
-	ans := e.st.Do(a, "GET", "/api/nuget/nuget-local/v3/index.json", e.tokDev, nil)
-	if ans.Status != 200 || !strings.Contains(string(ans.Body), `"SymbolPackagePublish/4.9.0"`) || !strings.Contains(string(ans.Body), `/api/nuget/nuget-local/v3/symbolpackage"`) {
+	ans := e.st.Do(a, "GET", "/api/nuget/it/nuget-local/v3/index.json", e.tokDev, nil)
+	if ans.Status != 200 || !strings.Contains(string(ans.Body), `"SymbolPackagePublish/4.9.0"`) || !strings.Contains(string(ans.Body), `/api/nuget/it/nuget-local/v3/symbolpackage"`) {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}
 }

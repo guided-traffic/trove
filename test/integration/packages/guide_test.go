@@ -43,7 +43,7 @@ func TestR_API_053_TheGuideThroughTheStack(t *testing.T) {
 
 	t.Run("the configure and install snippets are the client setup's with credentials=env", func(t *testing.T) {
 		for _, client := range []string{"npm", "pnpm", "yarn", "yarn-classic"} {
-			g := guideSections(t, e.get(e.tokA, "/api/v1/repositories/npm-local/guide?client="+client))
+			g := guideSections(t, e.get(e.tokA, "/api/v1/projects/it/repositories/npm-local/guide?client="+client))
 			setup := snippets(t, e.setup(e.tokA, "npm-local", "client="+client+"&credentials=env"))
 			for _, tab := range []string{"configure", "install"} {
 				got := sectionSnippets(g["npm."+tab])
@@ -59,11 +59,11 @@ func TestR_API_053_TheGuideThroughTheStack(t *testing.T) {
 		}
 	})
 	t.Run("a caller who may deploy gets the target, one who may not is told", func(t *testing.T) {
-		a := e.get(e.tokA, "/api/v1/repositories/npm-local/guide?client=npm")
-		if v := a.JSON(t); v["publishTarget"] != "npm-local" || v["credentials"] != "env" || v["registryUrl"] != "http://trove.test/api/npm/npm-local/" {
+		a := e.get(e.tokA, "/api/v1/projects/it/repositories/npm-local/guide?client=npm")
+		if v := a.JSON(t); v["publishTarget"] != "it/npm-local" || v["credentials"] != "env" || v["registryUrl"] != "http://trove.test/api/npm/it/npm-local/" {
 			t.Fatalf("%v", v)
 		}
-		b := e.get(e.tokB, "/api/v1/repositories/npm-local/guide?client=npm")
+		b := e.get(e.tokB, "/api/v1/projects/it/repositories/npm-local/guide?client=npm")
 		if b.JSON(t)["publishTarget"] != nil {
 			t.Fatalf("%s", b.Body)
 		}
@@ -72,8 +72,8 @@ func TestR_API_053_TheGuideThroughTheStack(t *testing.T) {
 		}
 	})
 	t.Run("a caller who may not read the repository gets the 404 of a missing one", func(t *testing.T) {
-		missing := e.get(e.tokD, "/api/v1/repositories/npm-nowhere/guide?client=npm")
-		hidden := e.get(e.tokD, "/api/v1/repositories/npm-local/guide?client=npm")
+		missing := e.get(e.tokD, "/api/v1/projects/it/repositories/npm-nowhere/guide?client=npm")
+		hidden := e.get(e.tokD, "/api/v1/projects/it/repositories/npm-local/guide?client=npm")
 		if missing.Status != 404 || hidden.Status != 404 || missing.Code(t) != hidden.Code(t) {
 			t.Fatalf("missing %d %s, hidden %d %s", missing.Status, missing.Body, hidden.Status, hidden.Body)
 		}
@@ -82,7 +82,7 @@ func TestR_API_053_TheGuideThroughTheStack(t *testing.T) {
 		for _, tok := range []string{e.tokA, e.tokD} {
 			a := e.get(tok, "/api/v1/formats/npm/guide?class=virtual&client=yarn")
 			g := guideSections(t, a)
-			if v := a.JSON(t); v["repository"] != nil || v["registryUrl"] != "http://trove.test/api/npm/<repository>/" || g["npm.virtual.what"] == nil {
+			if v := a.JSON(t); v["repository"] != nil || v["registryUrl"] != "http://trove.test/api/npm/<project>/<repository>/" || g["npm.virtual.what"] == nil {
 				t.Fatalf("%v", v)
 			}
 		}
@@ -106,7 +106,7 @@ func TestR_API_053_TheGuideThroughTheStack(t *testing.T) {
 	t.Run("no guide names a token", func(t *testing.T) {
 		for _, tok := range []string{e.tokA, e.tokB, e.tokE} {
 			for _, client := range []string{"npm", "pnpm", "yarn", "yarn-classic"} {
-				for _, p := range []string{"/api/v1/repositories/npm-local/guide?client=" + client, "/api/v1/formats/npm/guide?class=remote&client=" + client} {
+				for _, p := range []string{"/api/v1/projects/it/repositories/npm-local/guide?client=" + client, "/api/v1/formats/npm/guide?class=remote&client=" + client} {
 					if a := e.get(tok, p); a.Status != 200 || shape.Match(a.Body) {
 						t.Fatalf("%s: %d", p, a.Status)
 					}
@@ -125,16 +125,16 @@ func TestR_API_053_TheGuideOnAnEndpointWithRules(t *testing.T) {
 		  FROM repositories WHERE key = 'npm-local'`)
 	endpoints := `{"partners":{"listen":"127.0.0.1:0","base_url":"https://partners.example.test","surface":["api"]}}`
 	r := e.st.Start(t, testenv.ReplicaOptions{Name: "web2", Endpoints: endpoints})
-	a := e.st.DoAt(r.Addr("partners"), "partners.example.test", "GET", "/api/v1/repositories/npm-local/guide?client=npm", e.tokBot, nil)
+	a := e.st.DoAt(r.Addr("partners"), "partners.example.test", "GET", "/api/v1/projects/it/repositories/npm-local/guide?client=npm", e.tokBot, nil)
 	g := guideSections(t, a)
 	v := a.JSON(t)
-	if v["exposureRules"] != true || v["registryUrl"] != "https://partners.example.test/api/npm/npm-local/" || g["npm.endpoint"] == nil {
+	if v["exposureRules"] != true || v["registryUrl"] != "https://partners.example.test/api/npm/it/npm-local/" || g["npm.endpoint"] == nil {
 		t.Fatalf("%v", v)
 	}
 	if html := g["npm.endpoint"]["html"].(string); !strings.Contains(html, "endpoint_read_only") {
 		t.Fatalf("%s", html)
 	}
-	if g := guideSections(t, e.get(e.tokE, "/api/v1/repositories/npm-local/guide?client=npm")); g["npm.endpoint"] != nil {
+	if g := guideSections(t, e.get(e.tokE, "/api/v1/projects/it/repositories/npm-local/guide?client=npm")); g["npm.endpoint"] != nil {
 		t.Fatal("the default endpoint has no exposure rules and got the note")
 	}
 }

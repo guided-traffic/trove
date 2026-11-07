@@ -76,10 +76,10 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 	}{
 		"api": {
 			other: []probe{
-				{"GET", "/files/generic-local/x"},
-				{"PUT", "/files/generic-local/x"},
+				{"GET", "/files/it/generic-local/x"},
+				{"PUT", "/files/it/generic-local/x"},
 				{"GET", "/api/npm/npm-local/@acme%2fsdk"},
-				{"GET", "/api/nuget/nuget-local/v3/index.json"},
+				{"GET", "/api/nuget/it/nuget-local/v3/index.json"},
 				{"GET", "/v2/"},
 			},
 			own: []probe{{"GET", "/api/v1/system/ping"}, {"GET", "/ui/"}, {"GET", "/"}},
@@ -94,9 +94,9 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 				{"GET", "/api/v1/repositories"},
 				{"POST", "/api/v1/repositories"},
 				{"POST", "/api/v1/auth/oidc/token"},
-				{"DELETE", "/api/v1/repositories/generic-local/content/x"},
+				{"DELETE", "/api/v1/projects/it/repositories/generic-local/content/x"},
 			},
-			own: []probe{{"GET", "/files/generic-local/x"}},
+			own: []probe{{"GET", "/files/it/generic-local/x"}},
 		},
 	}
 	for role, tc := range cases {
@@ -129,7 +129,7 @@ func TestR_ARCH_001_RouteFamiliesPerRole(t *testing.T) {
 			h := start(t, role, nil)
 			addr := h.app.EndpointAddr("default")
 			unknown := ask(t, addr, "GET", "/does-not-exist")
-			for _, p := range []string{"/api/v1/system/ping", "/ui/", "/files/generic-local/x"} {
+			for _, p := range []string{"/api/v1/system/ping", "/ui/", "/files/it/generic-local/x"} {
 				if got := ask(t, addr, "GET", p); got == unknown {
 					t.Errorf("%s on %s answers like an unknown path", p, role)
 				}
@@ -259,7 +259,7 @@ func TestR_EP_005_RoleNarrowedEndpoint(t *testing.T) {
 			}
 		}
 		router := httpserver.NewEndpointRouter(ep)
-		for _, pat := range []string{"GET /ui/", "GET /api/v1/system/ping", "POST /api/v1/auth/oidc/token", "GET /files/{key}/{path...}", "GET /api/npm/{key}/{rest...}"} {
+		for _, pat := range []string{"GET /ui/", "GET /api/v1/system/ping", "POST /api/v1/auth/oidc/token", "GET /files/{projectKey}/{repoKey}/{path...}", "GET /api/npm/{projectKey}/{repoKey}/{rest...}"} {
 			router.Handle(pat, http.NotFoundHandler())
 		}
 		if v := httpserver.CheckSurface(router.Patterns(), ep); len(v) != 0 {
@@ -268,7 +268,7 @@ func TestR_EP_005_RoleNarrowedEndpoint(t *testing.T) {
 		registered := fmt.Sprint(router.Patterns())
 		for pat, fam := range map[string]string{
 			"GET /ui/": "ui", "GET /api/v1/system/ping": "api", "POST /api/v1/auth/oidc/token": "ci_exchange",
-			"GET /files/{key}/{path...}": "files", "GET /api/npm/{key}/{rest...}": "packages",
+			"GET /files/{projectKey}/{repoKey}/{path...}": "files", "GET /api/npm/{projectKey}/{repoKey}/{rest...}": "packages",
 		} {
 			if has := strings.Contains(registered, pat); has != slices.Contains(want, fam) {
 				t.Errorf("%s: %q registered = %v", role, pat, has)

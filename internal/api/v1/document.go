@@ -63,7 +63,7 @@ type Document struct {
 	// the management API does not know them.
 	files map[string]Operation
 	// content are the operations of the UI's content routes below
-	// /api/v1/repositories/{repoKey}/content/ (R-API-025, Q-UI-106): in the document, left out of the generated
+	// /api/v1/projects/{projectKey}/repositories/{repoKey}/content/ (R-API-025, Q-UI-106): in the document, left out of the generated
 	// interface (a path of several segments is no generated route) and decided by the files handler like /files/.
 	content map[string]Operation
 }
@@ -202,7 +202,7 @@ func (d *Document) FileOperations() map[string]Operation {
 }
 
 // ContentOperations returns the operations of the UI's content routes
-// (/api/v1/repositories/{repoKey}/content/{path}) keyed by route pattern, with the {path} of the document.
+// (/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}) keyed by route pattern, with the {path} of the document.
 func (d *Document) ContentOperations() map[string]Operation {
 	out := make(map[string]Operation, len(d.content))
 	for k, v := range d.content {
@@ -285,7 +285,7 @@ func isContentPattern(p string) bool {
 	if _, rest, ok := strings.Cut(p, " "); ok {
 		p = strings.TrimSpace(rest)
 	}
-	return strings.HasPrefix(p, "/api/v1/repositories/{repoKey}/content/")
+	return strings.HasPrefix(p, "/api/v1/projects/{projectKey}/repositories/{repoKey}/content/")
 }
 
 // documentedFilesPattern turns the route of the files handler into the template

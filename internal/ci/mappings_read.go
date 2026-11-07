@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -49,8 +50,10 @@ func readMappings(ctx context.Context, qs *q.Queries, rows []q.CiMappingListRow)
 		var names []string
 		for _, b := range byPrincipal[out[i].PrincipalID] {
 			// A project's mapping shows the project's own policies only: it manages no other (Q-CI-26).
-			if out[i].Project == "" || b.Project == out[i].Project {
+			if out[i].Project == "" {
 				names = append(names, b.Policy)
+			} else if b.Project == out[i].Project {
+				names = append(names, strings.TrimPrefix(b.Policy, out[i].Project+"/"))
 			}
 		}
 		sort.Strings(names)
@@ -110,12 +113,17 @@ func (s *MappingService) List(ctx context.Context, issuer string) ([]Mapping, er
 	return out, err
 }
 
-// Get returns one mapping.
+// Get returns one mapping of the issuer's system tier.
 func (s *MappingService) Get(ctx context.Context, issuer, name string) (Mapping, error) {
+	return s.get(ctx, issuer, TierSystem, name)
+}
+
+// get reads the mapping name of the tier of the issuer.
+func (s *MappingService) get(ctx context.Context, issuer, tier, name string) (Mapping, error) {
 	var out Mapping
 	err := s.o.DB.Read(ctx, func(db q.DBTX) error {
 		qs := q.New(db)
-		rows, err := qs.CiMappingByName(ctx, q.CiMappingByNameParams{Issuer: issuer, Name: name})
+		rows, err := qs.CiMappingByName(ctx, q.CiMappingByNameParams{Issuer: issuer, Tier: tier, Name: name})
 		if err != nil {
 			return err
 		}
@@ -158,16 +166,9 @@ func (s *MappingService) ListIn(ctx context.Context, project string) ([]Mapping,
 	return out, err
 }
 
-// GetIn returns one project mapping; a mapping of another tier is 404, as one that does not exist.
+// GetIn returns one mapping of the project's tier; a mapping of another tier is 404, as one that does not exist.
 func (s *MappingService) GetIn(ctx context.Context, project, issuer, name string) (Mapping, error) {
-	m, err := s.Get(ctx, issuer, name)
-	if err != nil {
-		return Mapping{}, err
-	}
-	if m.Tier != ProjectTier(project) {
-		return Mapping{}, mappingNotFound(issuer, name)
-	}
-	return m, nil
+	return s.get(ctx, issuer, ProjectTier(project), name)
 }
 
 // CountIn returns the number of CI mappings of a project; the project service refuses to delete a

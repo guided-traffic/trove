@@ -8,6 +8,8 @@ package virtualtest
 import (
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -24,7 +26,7 @@ func Catalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: Format, Classes: []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}, Layout: Format,
-		ProtocolBasePath: "/api/" + Format + "/{key}/", PatternSubject: catalog.SubjectName,
+		ProtocolBasePath: "/api/" + Format + "/{project}/{key}/", PatternSubject: catalog.SubjectName,
 		PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: exactNames{}})
 	return r
@@ -38,7 +40,7 @@ func RemoteRepo(id int64, key string) repository.Repository { return repo(id, ke
 
 func repo(id int64, key string, class repository.Class) repository.Repository {
 	return repository.Repository{
-		ID: strconv.FormatInt(id, 10), Key: key, Class: class, Format: Format,
+		ID: strconv.FormatInt(id, 10), Name: qname.Repo{Project: "it", Key: key}, Class: class, Format: Format,
 		HideExistence: "inherit", Lifecycle: repository.Active,
 	}
 }

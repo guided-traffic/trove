@@ -4,7 +4,7 @@ The Packages screen lists the packages of all repositories you may read, with fi
 
 ## What the list shows
 
-Select **Packages** in the side bar. The list holds the npm packages of every repository you may read; generic repositories have no package names, so their files are in **Browse** instead (see [Browsing and transferring files](files.md)).
+Select **Packages** in the side bar of a project. The list holds the npm packages of every repository of the project that you may read; generic repositories have no package names, so their files are in **Browse** instead (see [Browsing and transferring files](files.md)).
 
 A package appears once, however many repositories hold it. Everything in its row is counted from the versions you may see: a version you may not read changes neither the latest version nor the counts. A remote repository contributes only the versions it has already cached.
 
@@ -56,7 +56,7 @@ Both are kept in this browser only, separately for each user. They are not avail
 
 ## Package details
 
-Select a package name to open its page. The page shows the name, the format and **All packages** to return to the list. The address of a package is `/packages/<format>/<name>`, for example `https://trove.example.com/ui/en/packages/npm/@team-a/ui`.
+Select a package name to open its page. The page shows the name, the format and **All packages** to return to the list. The address of a package is `/projects/<project>/packages/<format>/<name>`, for example `https://trove.example.com/ui/en/projects/web/packages/npm/@team-a/ui`.
 
 ### Choose a version
 

@@ -34,7 +34,7 @@ func newClaimTiming(t *testing.T, purpose string) *claimTiming {
 	// The ID is the run's and the test's (one process may run both tests), the query is its second part.
 	stem, word := "Partner"+fx.run, purpose+fx.run
 	c := &claimTiming{t: t, fx: fx, stub: nugetStub(t), id: stem + "." + word, pattern: stem + ".*"}
-	c.path = "/api/nuget/" + repos.all + "/v3/search?take=20&q=" + strings.ToLower(word)
+	c.path = nugetAddr(repos.all) + "/v3/search?take=20&q=" + strings.ToLower(word)
 	c.stub.nugetPublish(t, c.id, "1.0.0")
 	addrs, stop := packagesForwards(t)
 	t.Cleanup(stop)
@@ -89,7 +89,7 @@ func TestNuGetSearchClaimTiming(t *testing.T) {
 // claim (R-REPO-023).
 func setNuGetClaims(t *testing.T, adm *api, repo, pattern string, add bool) {
 	t.Helper()
-	g := adm.get("/api/v1/repositories/"+repo+"/claims").want(t, "read claims", 200)
+	g := adm.get(reposBase+repo+"/claims").want(t, "read claims", 200)
 	var cur struct {
 		Claims []struct {
 			Pattern, Source, Scope string
@@ -105,5 +105,5 @@ func setNuGetClaims(t *testing.T, adm *api, repo, pattern string, add bool) {
 	if add {
 		all = append(all, map[string]string{"pattern": pattern, "scope": "members"})
 	}
-	adm.do(http.MethodPut, "/api/v1/repositories/"+repo+"/claims", map[string]any{"claims": all}, "If-Match", g.Header.Get("ETag")).want(t, "write claims", 200)
+	adm.do(http.MethodPut, reposBase+repo+"/claims", map[string]any{"claims": all}, "If-Match", g.Header.Get("ETag")).want(t, "write claims", 200)
 }

@@ -234,7 +234,7 @@ func (r *run) rewrite() {
 	}
 	h := r.host(formats.Remote)
 	rc := formats.RemoteContext{Repo: h.Repo(), Upstream: up, Settings: fx.Settings}
-	ln := Links("", r.d.ID, h.Repo().Key)
+	ln := Links("", r.d.ID, h.Repo().Name)
 	ctx := context.Background()
 	meaningful := false
 	for _, d := range fx.Docs {

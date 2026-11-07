@@ -159,6 +159,7 @@ func NewStack(tb testing.TB, o StackOptions) *Stack {
 	s.sealed = WriteFile(tb, dir, "2026-10.key", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{42}, 32)))
 	s.base = append(s.environ(host, port, name, userFile, passFile), pooler...)
 	s.base = append(s.base, o.Env...)
+	s.Project(DefaultProject)
 	return s
 }
 

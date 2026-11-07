@@ -27,17 +27,17 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sa.heading">Service account</h1>
-      @if (project(); as projectKey) {
-        <a class="btn btn-tertiary" [routerLink]="['/admin/projects', projectKey]" i18n="@@sa.back-project">Back to the project</a>
+      @if (projectKey(); as key) {
+        <a class="btn btn-tertiary" [routerLink]="['/projects', key, 'service-accounts']" i18n="@@sa.back-project">All service accounts of the project</a>
       } @else {
         <a class="btn btn-tertiary" routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
       }
     </header>
     <p class="subject" translate="no">{{ name() }}</p>
-    @if (project(); as projectKey) {
+    @if (projectKey(); as key) {
       <p class="subject">
         <ng-container i18n="@@sa.project">Service account of project</ng-container>&ngsp;
-        <a [routerLink]="['/admin/projects', projectKey]" translate="no">{{ projectKey }}</a>
+        <span translate="no">{{ key }}</span>
       </p>
     }
     @if (!canWrite()) {
@@ -76,22 +76,16 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
               @if (a.status === 'active') {
                 <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
               } @else {
-                <button class="btn btn-tertiary" type="button" [disabled]="busy() || !canEnable()" aria-describedby="sa-enable-note" (click)="enable()" i18n="@@sa.enable">Enable</button>
+                <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="enable()" i18n="@@sa.enable">Enable</button>
               }
               <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
             </div>
           }
         </form>
-        @if (a.status !== 'active' && canWrite() && !canEnable()) {
-          <p id="sa-enable-note" class="muted" role="note">
-            <span class="material-icons" aria-hidden="true">lock</span>
-            <ng-container i18n="@@sa.enable-note">Enabling needs the project's switch for policies and service accounts, which is off. An administrator of trove can switch it on.</ng-container>
-          </p>
-        }
       </section>
 
       @if (session.has('roles:read') && !a.project) {
-        <trove-principal-roles [principal]="'sa:' + a.name" />
+        <trove-principal-roles [principal]="a.principal" />
       }
 
       <section class="card" aria-labelledby="sa-tokens">
@@ -107,8 +101,10 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
   styleUrl: '../../shared/access/access.scss',
 })
 export class ServiceAccountDetail {
-  /** Route parameter `:name`. */
+  /** Route parameter `:name`: bare within the project. */
   readonly name = input.required<string>();
+  /** Route parameter `:project`; absent for an instance-wide account (R-AUTHZ-026). */
+  readonly project = input<string>();
 
   private readonly api = inject(IdentityApi);
   private readonly confirmer = inject(Confirm);
@@ -125,23 +121,19 @@ export class ServiceAccountDetail {
   protected readonly description = signal('');
   protected readonly busy = signal(false);
 
-  /** The project of the account, or null for a global account (R-AUTHZ-026). */
-  protected readonly project = computed(() => this.account()?.project ?? null);
-  /** `identities:write`, or administration of the account's project (update, disable, delete: never blocked by a switch). */
+  /** The project of the account, or null for an instance-wide account (R-AUTHZ-026). */
+  protected readonly projectKey = computed(() => this.project() ?? null);
+  /** `identities:write`, or the Owner role of the account's project. */
   protected readonly canWrite = computed(
-    () => this.session.has('identities:write') || this.session.projectRights(this.project()) !== null,
-  );
-  /** Enabling needs `managePolicies` in a project (Q-AUTHZ-177); a disabled account of a project with it off waits for the switch. */
-  protected readonly canEnable = computed(
-    () => this.session.has('identities:write') || (this.session.projectRights(this.project())?.managePolicies ?? false),
+    () => this.session.has('identities:write') || this.session.isOwnerOf(this.projectKey()),
   );
   protected readonly canReadTokens = computed(
-    () => this.session.has('tokens:read') || this.session.projectRights(this.project()) !== null,
+    () => this.session.has('tokens:read') || this.session.isOwnerOf(this.projectKey()),
   );
   protected readonly scope = computed<TokenOwnerScope>(() => ({
     kind: 'service-account',
     name: this.name(),
-    project: this.project(),
+    project: this.projectKey(),
   }));
 
   constructor() {
@@ -154,7 +146,7 @@ export class ServiceAccountDetail {
   protected async load(): Promise<void> {
     this.loadError.set(null);
     try {
-      this.adopt(await this.api.serviceAccount(this.name()));
+      this.adopt(await this.api.serviceAccount(this.name(), this.projectKey()));
     } catch (e) {
       this.account.set(null);
       this.loadError.set(asApiError(e));
@@ -182,8 +174,8 @@ export class ServiceAccountDetail {
       const result = await this.conflicts.save<ServiceAccount>({
         etag: this.etag,
         patch,
-        send: (etag) => this.api.updateServiceAccount(a.name, patch, etag),
-        reload: () => this.api.serviceAccount(a.name),
+        send: (etag) => this.api.updateServiceAccount(a.name, this.projectKey(), patch, etag),
+        reload: () => this.api.serviceAccount(a.name, this.projectKey()),
       });
       if (result.outcome !== 'dismissed') this.adopt(result.current);
       if (result.outcome === 'saved') this.notifier.status($localize`:@@sa.saved:Service account saved.`);
@@ -204,14 +196,14 @@ export class ServiceAccountDetail {
     });
     if (answer === null) return;
     await this.act(async () => {
-      await this.api.disableServiceAccount(this.name(), { revokeTokens: answer.checked });
+      await this.api.disableServiceAccount(this.name(), this.projectKey(), { revokeTokens: answer.checked });
       await this.load();
     }, $localize`:@@sa.disabled-done:Service account disabled.`);
   }
 
   protected async enable(): Promise<void> {
     await this.act(async () => {
-      await this.api.enableServiceAccount(this.name());
+      await this.api.enableServiceAccount(this.name(), this.projectKey());
       await this.load();
     }, $localize`:@@sa.enabled-done:Service account enabled.`);
   }
@@ -225,10 +217,10 @@ export class ServiceAccountDetail {
     if (answer === null) return;
     this.actionError.set(null);
     try {
-      await this.api.deleteServiceAccount(this.name());
+      await this.api.deleteServiceAccount(this.name(), this.projectKey());
       this.notifier.status($localize`:@@sa.deleted:Service account deleted.`);
-      const projectKey = this.project();
-      await this.router.navigate(projectKey ? ['/admin/projects', projectKey] : ['/admin/service-accounts']);
+      const projectKey = this.projectKey();
+      await this.router.navigate(projectKey ? ['/projects', projectKey, 'service-accounts'] : ['/admin/service-accounts']);
     } catch (e) {
       this.actionError.set(asApiError(e));
     }

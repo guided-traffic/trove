@@ -84,6 +84,7 @@ type AuditEvent struct {
 	ResourceType pgtype.Text
 	ResourceID   pgtype.Text
 	Repository   pgtype.Text
+	Project      pgtype.Text
 	Path         pgtype.Text
 	Reason       pgtype.Text
 	Details      []byte
@@ -665,22 +666,21 @@ type Principal struct {
 }
 
 type Project struct {
-	ID                 pgtype.UUID
-	Key                string
-	DisplayName        string
-	Description        string
-	ManagePolicies     bool
-	ManageRepositories bool
-	Version            int64
-	CreatedAt          pgtype.Timestamptz
-	CreatedBy          pgtype.UUID
-	UpdatedAt          pgtype.Timestamptz
-	UpdatedBy          pgtype.UUID
+	ID          pgtype.UUID
+	Key         string
+	DisplayName string
+	Description string
+	Version     int64
+	CreatedAt   pgtype.Timestamptz
+	CreatedBy   pgtype.UUID
+	UpdatedAt   pgtype.Timestamptz
+	UpdatedBy   pgtype.UUID
 }
 
-type ProjectAdmin struct {
+type ProjectMember struct {
 	ProjectID   pgtype.UUID
 	PrincipalID pgtype.UUID
+	Role        string
 }
 
 type RemoteCacheEntry struct {
@@ -894,7 +894,6 @@ type UserPreference struct {
 	Locale            pgtype.Text
 	Theme             pgtype.Text
 	KeyboardShortcuts bool
-	ProjectFilter     pgtype.Text
 	Revision          int64
 	UpdatedAt         pgtype.Timestamptz
 }

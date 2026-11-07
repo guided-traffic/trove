@@ -40,7 +40,7 @@ func (Format) Descriptor() formats.Descriptor {
 			DisplayName:               "Generic",
 			Classes:                   []formats.Class{formats.Local},
 			Layout:                    Layout,
-			ProtocolBasePath:          "/files/{key}/",
+			ProtocolBasePath:          "/files/{project}/{key}/",
 			DefaultNotFoundTTLSeconds: &notFound,
 			PatternSubject:            formats.SubjectPath,
 		},

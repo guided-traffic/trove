@@ -418,7 +418,7 @@ flow is `engine.ServeHTTP` ([request.go](../../internal/bastion/engine/request.g
 |---|---|---|
 | 1 host | `stepHost`: the request's host, or the forwarded host of a trusted proxy (Q-BAS-83) | `421 misdirected_request` |
 | 2 block list | `stepBlocked` → `guard.Blocked` | `429 address_blocked` |
-| 3 path | `stepPath` → `classifyPath`: `/api/<format>/<key>/…` and `/files/<key>/…`, the key rule of INV-5; a percent-encoded family, format or key segment and a dot segment are refused, because the main installation's router decodes (Q-BAS-121) | `404 bastion_not_served`, no request |
+| 3 path | `stepPath` → `classifyPath`: `/api/<format>/<projectKey>/<repoKey>/…` and `/files/<projectKey>/<repoKey>/…` read by `qname.ParseAddress` (the key rules of INV-5 live there; the repository is the qualified name `<projectKey>/<repoKey>` in every answer key, check, cache entry and marking); one segment after the format, a `~cache` key, a percent-encoded family, format, project or key segment and a dot segment are refused, because the main installation's router decodes (Q-BAS-121) | `404 bastion_not_served`, no request |
 | 4 limits, credentials | `stepLimits` → `guard.Request`; for `GET` and `HEAD` `stepCredentials`: syntax and checksum before any request, `bst` and unknown prefixes refused, anonymous only while the handshake said `anonymousAccess` (before the first handshake: `503`, Q-BAS-99), the failed-authentication timeout for a credential without a usable answer | `429 rate_limited`, `401 invalid_token`, `401 credentials_required`, `429 auth_timeout` |
 | 5 method | `OPTIONS` → `405`; other methods → [probe.go](../../internal/bastion/engine/probe.go) (Q-BAS-81) | |
 | 6 read flow | [readflow.go](../../internal/bastion/engine/readflow.go) `read` | below |

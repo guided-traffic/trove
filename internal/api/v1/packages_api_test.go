@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/packages/readme"
 	"github.com/guided-traffic/trove/internal/packages/view"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -32,7 +33,7 @@ func TestR_API_029_WithoutTheReadModelEveryOperationAnswers503(t *testing.T) {
 		"/api/v1/packages/" + view.ID("npm", "left-pad") + "/versions",
 		"/api/v1/packages/" + view.ID("npm", "left-pad") + "/versions/1.0.0",
 		"/api/v1/packages/" + view.ID("npm", "left-pad") + "/versions/1.0.0/readme",
-		"/api/v1/repositories/npm-local/client-setup?client=npm",
+		"/api/v1/projects/it/repositories/npm-local/client-setup?client=npm",
 	} {
 		w := s.get(path)
 		var p errs.Problem
@@ -46,7 +47,8 @@ type packagesReader struct {
 	repos map[string]repository.Repository
 }
 
-func (f packagesReader) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (f packagesReader) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	key := name.Key
 	if r, ok := f.repos[key]; ok {
 		return r, nil
 	}
@@ -68,7 +70,7 @@ type packagesDecider struct {
 	deploy bool
 }
 
-func (packagesDecider) Begin(context.Context, authz.Subject, ...string) (*authz.Index, error) {
+func (packagesDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
 	return nil, nil
 }
 
@@ -80,13 +82,13 @@ func (f packagesDecider) CheckOn(_ *authz.Index, _ authz.Subject, items []authz.
 	return out, nil
 }
 
-func (packagesDecider) ReadableOn(context.Context, *authz.Index, authz.Subject, []string) ([]string, error) {
+func (packagesDecider) ReadableOn(context.Context, *authz.Index, authz.Subject, []qname.Repo) ([]qname.Repo, error) {
 	return nil, nil
 }
 
 type packagesScoper struct{}
 
-func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, string, []string) (authz.ReadScope, error) {
+func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, qname.Repo, []qname.Repo) (authz.ReadScope, error) {
 	return nil, nil
 }
 
@@ -112,16 +114,16 @@ func setupServerWith(t *testing.T, baseURL string, deploy bool, authn func(*http
 	if err != nil {
 		t.Fatal(err)
 	}
-	local := repository.Repository{Key: "npm-local", Class: repository.Local, Format: "npm"}
-	remote := repository.Repository{Key: "npm-remote", Class: repository.Remote, Format: "npm"}
+	local := repository.Repository{Name: qr("npm-local"), Class: repository.Local, Format: "npm"}
+	remote := repository.Repository{Name: qr("npm-remote"), Class: repository.Remote, Format: "npm"}
 	repos := packagesReader{repos: map[string]repository.Repository{
 		"npm-local":   local,
 		"npm-remote":  remote,
-		"files":       {Key: "files", Class: repository.Local, Format: "generic"},
-		"nuget-local": {Key: "nuget-local", Class: repository.Local, Format: "nuget"},
-		"npm-all": repository.Assemble(repository.Repository{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
+		"files":       {Name: qr("files"), Class: repository.Local, Format: "generic"},
+		"nuget-local": {Name: qr("nuget-local"), Class: repository.Local, Format: "nuget"},
+		"npm-all": repository.Assemble(repository.Repository{Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{local, remote}, &local, 0),
-		"npm-readonly": repository.Assemble(repository.Repository{Key: "npm-readonly", Class: repository.Virtual, Format: "npm"},
+		"npm-readonly": repository.Assemble(repository.Repository{Name: qr("npm-readonly"), Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{remote}, nil, 0),
 	}}
 	services := PackageServices{
@@ -153,7 +155,7 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 
 func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	h := setupServer(t, "https://trove.example.com", true)
-	w := get(h, "/api/v1/repositories/npm-local/client-setup?client=pnpm&credentials=env&package=a(b)&version=1.0.0")
+	w := get(h, "/api/v1/projects/it/repositories/npm-local/client-setup?client=pnpm&credentials=env&package=a(b)&version=1.0.0")
 	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
@@ -161,8 +163,8 @@ func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.RegistryUrl != "https://trove.example.com/api/npm/npm-local/" || out.EndpointPath != "//trove.example.com/api/npm/npm-local/" ||
-		out.Username == nil || *out.Username != "alice" || out.PublishTarget == nil || *out.PublishTarget != "npm-local" || out.TokenTtlSeconds != 36*3600 {
+	if out.RegistryUrl != "https://trove.example.com/api/npm/it/npm-local/" || out.EndpointPath != "//trove.example.com/api/npm/it/npm-local/" ||
+		out.Username == nil || *out.Username != "alice" || out.PublishTarget == nil || *out.PublishTarget != "it/npm-local" || out.TokenTtlSeconds != 36*3600 {
 		t.Fatalf("%+v", out)
 	}
 	got := map[string]string{}
@@ -172,7 +174,7 @@ func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	if got["pnpm.install"] != "pnpm add 'a(b)@1.0.0'\n" {
 		t.Errorf("install %q", got["pnpm.install"])
 	}
-	if got["pnpm.configure.npmrc"] != "registry=https://trove.example.com/api/npm/npm-local/\n//trove.example.com/api/npm/npm-local/:_authToken=${MY_TOKEN}\n" {
+	if got["pnpm.configure.npmrc"] != "registry=https://trove.example.com/api/npm/it/npm-local/\n//trove.example.com/api/npm/it/npm-local/:_authToken=${MY_TOKEN}\n" {
 		t.Errorf("npmrc %q", got["pnpm.configure.npmrc"])
 	}
 	if strings.Contains(w.Body.String(), "TROVE_TOKEN") {
@@ -187,8 +189,8 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 		return "trove_curl() {\n  curl --silent --show-error --config - \"$@\" <<EOF\n" + header + "EOF\n}\n"
 	}
 	const (
-		install = "trove_curl --fail --remote-name \"https://trove.example.com/files/files/<path>\"\n"
-		publish = "trove_curl --fail --upload-file <file> \"https://trove.example.com/files/files/<path>\"\n"
+		install = "trove_curl --fail --remote-name \"https://trove.example.com/files/it/files/<path>\"\n"
+		publish = "trove_curl --fail --upload-file <file> \"https://trove.example.com/files/it/files/<path>\"\n"
 	)
 	for _, c := range []struct {
 		credentials string
@@ -204,7 +206,7 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 		{"none", true, map[string]string{"curl.configure.function": function(""), "curl.install": install, "curl.publish": publish}},
 		{"env", false, map[string]string{"curl.configure.function": function("header = \"Authorization: Bearer ${MY_TOKEN}\"\n"), "curl.install": install}},
 	} {
-		w := get(setupServer(t, "https://trove.example.com", c.deploy), "/api/v1/repositories/files/client-setup?client=curl&credentials="+c.credentials)
+		w := get(setupServer(t, "https://trove.example.com", c.deploy), "/api/v1/projects/it/repositories/files/client-setup?client=curl&credentials="+c.credentials)
 		var out gen.ClientSetup
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
 			t.Fatalf("%s: %d %s", c.credentials, w.Code, w.Body.String())
@@ -219,7 +221,7 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s, deploy %v:\n%q\nwant\n%q", c.credentials, c.deploy, got, c.want)
 		}
-		if out.RegistryUrl != "https://trove.example.com/files/files/" || out.Format != "generic" {
+		if out.RegistryUrl != "https://trove.example.com/files/it/files/" || out.Format != "generic" {
 			t.Errorf("%+v", out)
 		}
 	}
@@ -227,7 +229,7 @@ func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
 
 func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 	for deploy, want := range map[bool]bool{true: true, false: false} {
-		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/repositories/npm-local/client-setup?client=npm")
+		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/projects/it/repositories/npm-local/client-setup?client=npm")
 		var out gen.ClientSetup
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 			t.Fatal(err)
@@ -237,7 +239,7 @@ func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 		}
 	}
 	// A remote repository takes no publish.
-	w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/repositories/npm-remote/client-setup?client=npm")
+	w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/projects/it/repositories/npm-remote/client-setup?client=npm")
 	var out gen.ClientSetup
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 || out.PublishTarget != nil {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
@@ -249,7 +251,7 @@ func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 func TestR_API_030_AddressesNeverComeFromTheHostOfTheRequest(t *testing.T) {
 	h := setupServer(t, "", true)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/v1/repositories/npm-local/client-setup?client=npm", nil)
+	req := httptest.NewRequest("GET", "/api/v1/projects/it/repositories/npm-local/client-setup?client=npm", nil)
 	req.Host = "evil.example"
 	h.ServeHTTP(w, req)
 	if w.Code != 503 || strings.Contains(w.Body.String(), "evil.example") {
@@ -279,12 +281,12 @@ func TestR_API_030_ClientSetupRefusesWhatItCannotAnswer(t *testing.T) {
 		"client=npm":            "files", // the generic format offers curl only
 		"client=curl&package=x": "files", // and has no package names
 	} {
-		w := get(h, "/api/v1/repositories/"+repo+"/client-setup?"+q)
+		w := get(h, "/api/v1/projects/it/repositories/"+repo+"/client-setup?"+q)
 		if w.Code != 400 {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())
 		}
 	}
-	if w := get(h, "/api/v1/repositories/ghost/client-setup?client=npm"); w.Code != 404 {
+	if w := get(h, "/api/v1/projects/it/repositories/ghost/client-setup?client=npm"); w.Code != 404 {
 		t.Errorf("a missing repository: %d", w.Code)
 	}
 }
@@ -314,10 +316,10 @@ func TestR_API_029_TaggedAnswers(t *testing.T) {
 
 func TestR_API_029_DownloadURLs(t *testing.T) {
 	for _, tc := range []struct{ format, repo, path, want string }{
-		{"npm", "npm-local", "@team-a/ui/-/ui-1.4.0.tgz", "https://t.example/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz"},
-		{"npm", "npm-local", "left-pad/-/left-pad-1.0.0.tgz", "https://t.example/api/npm/npm-local/left-pad/-/left-pad-1.0.0.tgz"},
-		{"npm", "npm-local", "a b/-/a%b.tgz", "https://t.example/api/npm/npm-local/a%20b/-/a%25b.tgz"},
-		{"generic", "files", "tools/widget 2.3/w.bin", "https://t.example/files/files/tools/widget%202.3/w.bin"},
+		{"npm", "it/npm-local", "@team-a/ui/-/ui-1.4.0.tgz", "https://t.example/api/npm/it/npm-local/@team-a/ui/-/ui-1.4.0.tgz"},
+		{"npm", "it/npm-local", "left-pad/-/left-pad-1.0.0.tgz", "https://t.example/api/npm/it/npm-local/left-pad/-/left-pad-1.0.0.tgz"},
+		{"npm", "it/npm-local", "a b/-/a%b.tgz", "https://t.example/api/npm/it/npm-local/a%20b/-/a%25b.tgz"},
+		{"generic", "it/files", "tools/widget 2.3/w.bin", "https://t.example/files/it/files/tools/widget%202.3/w.bin"},
 	} {
 		if got := downloadURL("https://t.example/", tc.format, tc.repo, tc.path); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.path, got, tc.want)
@@ -326,7 +328,7 @@ func TestR_API_029_DownloadURLs(t *testing.T) {
 }
 
 func TestR_API_029_FilterParsing(t *testing.T) {
-	spec := ListSpec{Filters: []string{"format", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"}, Sorts: []string{"name", "createdAt", "updatedAt"}, DefaultSort: "name"}
+	spec := ListSpec{Filters: []string{"format", "project", "repository", "q", "namePrefix", "keyword", "createdFrom", "createdTo"}, Sorts: []string{"name", "createdAt", "updatedAt"}, DefaultSort: "name"}
 	parse := func(query string) (ListQuery, error) {
 		return ParseList(httptest.NewRequest("GET", "/api/v1/packages?"+query, nil), spec, apiCfg())
 	}
@@ -340,6 +342,10 @@ func TestR_API_029_FilterParsing(t *testing.T) {
 	}
 	if lq.Sort != "updatedAt" || !lq.Desc {
 		t.Fatalf("sort %q desc %v", lq.Sort, lq.Desc)
+	}
+	lq, _ = parse("project=team-a")
+	if f, _ := packageFilter(lq); f.Project != "team-a" || f.HasRepositories {
+		t.Fatalf("the project filter is kept apart from the repository filter: %+v", f)
 	}
 	lq, _ = parse("")
 	if f, _ := packageFilter(lq); f.HasRepositories {
@@ -366,10 +372,10 @@ func TestR_API_029_FilterParsing(t *testing.T) {
 // credential the configure snippet binds (Q-API-180). Without the deploy right, for a
 // virtual repository without a target and for a remote one there are none.
 func TestR_API_030_NpmPublishSnippets(t *testing.T) {
-	const local, all = "https://trove.example.com/api/npm/npm-local/", "https://trove.example.com/api/npm/npm-all/"
+	const local, all = "https://trove.example.com/api/npm/it/npm-local/", "https://trove.example.com/api/npm/it/npm-all/"
 	publish := func(deploy bool, repo, client string) (map[string]gen.ClientSnippet, gen.ClientSetup) {
 		t.Helper()
-		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/repositories/"+repo+"/client-setup?client="+client+"&credentials=env")
+		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/projects/it/repositories/"+repo+"/client-setup?client="+client+"&credentials=env")
 		var out gen.ClientSetup
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
 			t.Fatalf("%s %s: %d %s", repo, client, w.Code, w.Body.String())
@@ -403,7 +409,7 @@ func TestR_API_030_NpmPublishSnippets(t *testing.T) {
 		if sn.Content != c.content || sn.Language != c.lang || (sn.FileName == nil) != (c.file == "") || (c.file != "" && *sn.FileName != c.file) {
 			t.Errorf("%s: %+v, want %q", c.id, sn, c.content)
 		}
-		if out.PublishTarget == nil || *out.PublishTarget != "npm-local" {
+		if out.PublishTarget == nil || *out.PublishTarget != "it/npm-local" {
 			t.Errorf("%s: publishTarget %v", c.repo, out.PublishTarget)
 		}
 	}
@@ -415,4 +421,12 @@ func TestR_API_030_NpmPublishSnippets(t *testing.T) {
 			t.Errorf("%s deploy=%v: %v %v", c.repo, c.deploy, got, out.PublishTarget)
 		}
 	}
+}
+
+func (f packagesReader) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
+}
+
+func (f packagesReader) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 }

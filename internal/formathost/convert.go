@@ -12,12 +12,12 @@ func repoRef(r repository.Repository) formats.RepoRef { return refOf(items.RepoO
 
 // refOf converts the item store's repository reference.
 func refOf(r items.RepoRef) formats.RepoRef {
-	return formats.RepoRef{ID: r.ID, Key: r.Key, Class: formats.Class(r.Class), Format: formats.ID(r.Format)}
+	return formats.RepoRef{ID: r.ID, Name: r.Name, Class: formats.Class(r.Class), Format: formats.ID(r.Format)}
 }
 
 // itemsRepo converts back to the item store's reference.
 func itemsRepo(r formats.RepoRef) items.RepoRef {
-	return items.RepoRef{ID: r.ID, Key: r.Key, Class: string(r.Class), Format: string(r.Format)}
+	return items.RepoRef{ID: r.ID, Name: r.Name, Class: string(r.Class), Format: string(r.Format)}
 }
 
 func itemRef(r items.Ref) formats.ItemRef {

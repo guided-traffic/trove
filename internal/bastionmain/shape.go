@@ -3,6 +3,8 @@ package bastionmain
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 )
@@ -35,5 +37,5 @@ type ShapeResolver interface {
 	// Shapes returns one entry per key, in the keys' terms; an unknown key is none with the status of a missing
 	// repository for that subject. The answer is computed on idx, so it agrees with every other decision of
 	// the request.
-	Shapes(ctx context.Context, idx *authz.Index, subject authz.Subject, keys []string) (map[string]Shape, error)
+	Shapes(ctx context.Context, idx *authz.Index, subject authz.Subject, keys []qname.Repo) (map[qname.Repo]Shape, error)
 }

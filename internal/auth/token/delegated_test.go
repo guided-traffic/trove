@@ -7,7 +7,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
-// TestR_AUTH_027_DelegatedTokenRules is the rule set of a token a project administrator
+// TestR_AUTH_027_DelegatedTokenRules is the rule set of a token a project Owner
 // issues (Q-AUTHZ-177, Q-AUTH-192): repository rights only, and never self-rotatable.
 func TestR_AUTH_027_DelegatedTokenRules(t *testing.T) {
 	cases := []struct {

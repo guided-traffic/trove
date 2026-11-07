@@ -36,7 +36,7 @@ const publishMatch = `{"all": [
 
 func npmPublish() claims.InlineGrant {
 	return claims.InlineGrant{
-		Repositories: []string{"npm-internal"},
+		Repositories: []string{"web/npm-internal"},
 		Packages:     &claims.PatternSet{Include: []string{"@{{ namespace_path | slug }}/*"}},
 		Actions:      []claims.Action{claims.Read, claims.Deploy},
 	}
@@ -247,41 +247,41 @@ func TestR_CI_014_TemplatesOnSave(t *testing.T) {
 		return claims.Spec{Inline: []claims.InlineGrant{{Repositories: repos, Packages: &claims.PatternSet{Include: pkgs}, Actions: []claims.Action{claims.Read}}}}
 	}
 	t.Run("R-CI-014 an unknown filter is template_invalid", func(t *testing.T) {
-		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"npm-internal"}, "{{ project_path | upper }}")), reason.TemplateInvalid, "/grants/inline/0/packages/include/0")
+		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"web/npm-internal"}, "{{ project_path | upper }}")), reason.TemplateInvalid, "/grants/inline/0/packages/include/0")
 	})
 	t.Run("R-CI-014 a repositories template without a literal anchor is template_unanchored", func(t *testing.T) {
 		for _, tpl := range []string{"{{ namespace_path | slug }}", "{{ namespace_path | slug }}*"} {
-			refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"npm-all", tpl}, "x")), reason.TemplateUnanchored, "/grants/inline/0/repositories/1")
+			refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"web/npm-all", tpl}, "x")), reason.TemplateUnanchored, "/grants/inline/0/repositories/1")
 		}
 	})
 	t.Run("R-CI-014 a repositories template never renders a class", func(t *testing.T) {
 		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"@any-{{ x | require \"local\" }}"}, "x")), reason.TemplateInvalid, "/grants/inline/0/repositories/0")
 	})
 	t.Run("R-CI-014 a literal selector has the syntax of R-AUTHZ-004", func(t *testing.T) {
-		for _, sel := range []string{"NPM", "@any-thing", "npm-internal:npm", "a"} {
+		for _, sel := range []string{"web/NPM", "@any-thing", "web/npm-internal:npm", "web/a", "npm-internal", "web/", "w/x/y"} {
 			refused(t, publicIssuer(), input(t, publishMatch, spec([]string{sel}, "x")), reason.InvalidPattern, "/grants/inline/0/repositories/0")
 		}
-		if _, _, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"@any-local:npm", "npm-team-*", "@any"}, "x"))); err != nil {
+		if _, _, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"@any-local:npm", "web/npm-team-*", "@any"}, "x"))); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("R-CI-014 an anchored repositories template without require warns repository_template_unconstrained", func(t *testing.T) {
-		_, warnings, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"{{ namespace_path | slug }}-releases"}, "x")))
+		_, warnings, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"web/{{ namespace_path | slug }}-releases"}, "x")))
 		if err != nil || !slices.Equal(codes(warnings), []string{string(reason.WarnRepositoryTemplateUnconstraint)}) {
 			t.Fatalf("%v %v", codes(warnings), err)
 		}
-		_, warnings, err = check(t, publicIssuer(), input(t, publishMatch, spec([]string{`{{ project_path | segment 0 | require "acme" }}-releases`}, "x")))
+		_, warnings, err = check(t, publicIssuer(), input(t, publishMatch, spec([]string{`web/{{ project_path | segment 0 | require "acme" }}-releases`}, "x")))
 		if err != nil || len(warnings) != 0 {
 			t.Fatalf("with require: %v %v", codes(warnings), err)
 		}
 	})
 	t.Run("R-CI-010 a template claim that is neither required nor guarded warns", func(t *testing.T) {
-		_, warnings, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"npm-internal"}, "@acme/{{ environment }}")))
+		_, warnings, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"web/npm-internal"}, "@acme/{{ environment }}")))
 		if err != nil || !slices.Equal(codes(warnings), []string{string(reason.WarnUnguardedTemplateClaim)}) || !strings.Contains(warnings[0].Detail, "environment") {
 			t.Fatalf("%+v %v", warnings, err)
 		}
 		guarded := `{"all":[{"claim":"namespace_id","in":["4711"]},{"claim":"environment","present":true}]}`
-		_, warnings, err = check(t, publicIssuer(), input(t, guarded, spec([]string{"npm-internal"}, "@acme/{{ environment }}")))
+		_, warnings, err = check(t, publicIssuer(), input(t, guarded, spec([]string{"web/npm-internal"}, "@acme/{{ environment }}")))
 		if err != nil || len(warnings) != 0 {
 			t.Fatalf("guarded: %v %v", codes(warnings), err)
 		}
@@ -291,7 +291,7 @@ func TestR_CI_014_TemplatesOnSave(t *testing.T) {
 		for i := range many {
 			many[i] = "a"
 		}
-		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"npm-internal"}, many...)), reason.InvalidPattern, "/grants/inline/0/packages/include")
+		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"web/npm-internal"}, many...)), reason.InvalidPattern, "/grants/inline/0/packages/include")
 	})
 }
 
@@ -352,17 +352,34 @@ func TestTheBoundsOfAProjectMapping(t *testing.T) {
 	f := publicIssuer()
 	f.Project = "web"
 	g := claims.Spec{Policies: []string{"web-read"}}
-	t.Run("a project mapping's name starts with the project key and a hyphen", func(t *testing.T) {
-		for _, name := range []string{"release", "web", "web-", "shop-release", "webrelease"} {
+	t.Run("R-CI-009 a project mapping's name carries no project prefix", func(t *testing.T) {
+		for _, name := range []string{"release", "web-release", "shop-release", "web"} {
 			in := input(t, publishMatch, g)
 			in.Name = name
-			refused(t, f, in, reason.ProjectPrefixRequired, "/name")
+			if _, _, err := check(t, f, in); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
 		}
-		in := input(t, publishMatch, g)
-		in.Name = "web-release"
-		if _, _, err := check(t, f, in); err != nil {
+	})
+	t.Run("R-CI-007 a project mapping names bare keys and a system mapping names the project", func(t *testing.T) {
+		grant := func(sel string) claims.Spec {
+			return claims.Spec{Inline: []claims.InlineGrant{{Repositories: []string{sel}, Packages: &claims.PatternSet{Include: []string{"x"}}, Actions: []claims.Action{claims.Read}}}}
+		}
+		for _, sel := range []string{"npm-local", "npm-*", "npm-*:npm", "@any-local", "{{ namespace_path | slug }}-npm"} {
+			if _, _, err := check(t, f, input(t, publishMatch, grant(sel))); err != nil {
+				t.Fatalf("project tier %q: %v", sel, err)
+			}
+			if _, _, err := check(t, publicIssuer(), input(t, publishMatch, grant(sel))); sel[0] != '@' && err == nil {
+				t.Fatalf("system tier %q: saved a bare selector", sel)
+			}
+		}
+		for _, sel := range []string{"web/npm-local", "*/npm-*", "web/{{ namespace_path | slug }}-npm"} {
+			refused(t, f, input(t, publishMatch, grant(sel)), reason.InvalidPattern, "/grants/inline/0/repositories/0")
+		}
+		if _, _, err := check(t, publicIssuer(), input(t, publishMatch, grant("web/{{ namespace_path | slug }}-npm"))); err != nil {
 			t.Fatal(err)
 		}
+		refused(t, publicIssuer(), input(t, publishMatch, grant("{{ namespace_path | slug }}-npm")), reason.InvalidPattern, "/grants/inline/0/repositories/0")
 	})
 	t.Run("groups are refused in a project", func(t *testing.T) {
 		in := input(t, publishMatch, claims.Spec{Policies: []string{"web-read"}, Groups: []string{"developers"}})
@@ -370,6 +387,11 @@ func TestTheBoundsOfAProjectMapping(t *testing.T) {
 		refused(t, f, in, reason.GroupsNotAllowedInProject, "/grants/groups")
 	})
 	t.Run("the rules of R-CI-010 and R-CI-011 apply unchanged in a project", func(t *testing.T) {
+		npmPublish := func() claims.InlineGrant {
+			g := npmPublish()
+			g.Repositories = []string{"npm-internal"}
+			return g
+		}
 		in := input(t, `{"claim":"namespace_path","glob":"acme/**"}`, g)
 		in.Name = "web-release"
 		refused(t, f, in, reason.PinRequired, "/match")

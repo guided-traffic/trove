@@ -212,6 +212,31 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-07 while reviewing the project model (T-3 to T-6):
+
+### Product
+
+- **F-67 · Counter series of a removed or moved repository stay until the process restarts** (read in the code by the review of
+  the project model). The gauges are deleted when a repository leaves the snapshot (`CappedLabels` `OnForget`,
+  `proxy.Engine.Forget`, `mirror.Metrics.Forget`, R-OPS-007), so no stale `trove_remote_upstream_up` keeps an alert firing.
+  The counters of the npm, NuGet, virtual, items and outbound packages keep the series of the old name, and a mirror pass that
+  is still running for a moved repository brings its old-name series back until it ends ([observability.md](../developer/observability.md),
+  [mirror.md](../developer/mirror.md)). Done when every series keyed by a repository name is deleted with the repository's name,
+  with a test per package.
+- **F-68 · The database guard of a move does not see a virtual-member write that skips the share locks** (read). `AI007`
+  (migration 00024) refuses a `project_id` change while a policy of the project or a virtual repository holds the repository
+  by ID; a virtual-member write that does not take `LockRepositoriesByKeys … FOR SHARE` could race it. Every write path takes
+  the locks today, so the gap is a missing second line, not a live defect. Done when the guard also covers that order (a
+  trigger on the member tables that locks the member repository) or a test pins every member write path to the locks.
+
+### Code
+
+- **F-69 · The package and vulnerability views key repositories by `<project>/<key>` strings and parse them per row** (read).
+  `packages/view/service.go` (`Name`, `Names`, `Strings`, `nameOf`) and `vuln/report/report.go` (`nameOf`) are adapters left by
+  the cut: the statements take repository IDs since the review (R9 of the review, measured in
+  [vulnerabilities.md](../developer/vulnerabilities.md#repositories-as-ids-in-the-statements-r-vuln-028)), the topologies above them still
+  hold names. Done when the topologies are keyed by `qname.Repo` or the ID and the adapters are gone.
+
 Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
 
 ### Product
@@ -224,8 +249,29 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   In the dispatched nightly run 42211913572 (release v0.19.5) the same subtest had no non-200 `/readyz` or `/healthz` at all. The 300 s
   outage, node loss and both primary losses behaved as before. Changed between the two runs on the object store's paths: the read of a
   lost object and the recheck of a `missing` mark (F-62, Q-STOR-151, Q-STOR-153), the shared UI asset store (F-58, not on `packages`),
-  the lease sessions' `idle_session_timeout` (F-65). Not known: which of them stalls the replicas. The run's artifact
-  `e2e-npm-cluster-state-ha-suite` has the pods' logs. Done when the cause is named and fixed and the set passes in a nightly run.
+  the lease sessions' `idle_session_timeout` (F-65). Read from the run's artifact `e2e-npm-cluster-state-ha-suite`, the
+  edge's access log and the job log (2026-11-07): the pods' logs do not hold the window (`2hqv7` and `bqtrr`, the pods that
+  stalled, were killed by their liveness probe at about 17:20 and replaced, the 5 min subtest deleted another, and the kubelet's
+  current log file of `t8gpz`, the one that came through, starts at 17:34), so the cause is **not named yet**. What is
+  known: the store was back at 17:18:27 (the last tarball `503` of the outage), blobs were served again 1.0 s after the return, and
+  the edge's connect time to all three pods (Tc, the TLS handshake included) rose from 12 ms to 0.5 s at 17:18:40 and to 2 s at
+  17:19:10 while the request rate was a quarter of the minute before the outage, with the time to the response headers (Tr) staying
+  at 0.1 to 0.3 s; k6's tarballs then took 20 to 30 s to transfer (the cluster's own npm clients 2 s); the probes of both pods timed
+  out (`context deadline exceeded`, not a `503`) from 17:19:05, six failures in 10 s periods end in the kill at about 17:20:05; the
+  uploads of the test were accepted only 84 s after the return. That is a stall of the process or of its node, beginning with the
+  store's return, not a check that waits on the object store (`/healthz` and `/readyz` answer from cached results and a stuck
+  watched loop would answer `503` at once). Read in the code between v0.19.5 and v0.20.2 and found no wait on the store in a
+  probe, a blocking call under a database transaction, or a per-request cost that grew (`blob.Store.Open`, `RecheckMissing`,
+  `items.Store.Usable`, `proxy` lost-item paths, `virtual` walk, the lease sessions' `idle_session_timeout`, which only the lease
+  connections carry; the shared UI asset store is wired on `api`, `web` and `all` only, `TestR_ARCH_001_RoleTableIsData`). No
+  fix is written for a cause that is not shown. The next nightly names it: the monitor of the fault tests now keeps what it
+  saw (`test/e2e/monitor_test.go`): the first four non-200 answers of every pod with their status and body (the failing
+  check, or the transport error) in the job log, and the log of each failing pod (`kubectl logs --timestamps`, since a minute
+  before the load) each fifteenth failing sample and at the end, with the previous instance of a restarted pod, in the artifact
+  `e2e-artifacts-ha-suite` under `podlogs-<fault>/`; the stuck-loop goroutine dump of `/healthz` (R-OPS-001) is in those logs.
+  Still missing and to be added with the next reading if the logs do not name it: the pods' CPU throttling (`cpu.stat`) and
+  memory (`/metrics` `go_memstats`, `trove_http_in_flight`) at the time. Done when the cause is named and fixed and the set
+  passes in a nightly run.
 - **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
   the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
   14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197). Cause: the leg ran on a GitHub-hosted runner (4 vCPUs for the cluster, both stubs and the
@@ -419,43 +465,9 @@ tasks come before the phase's own work packages (step 2, item 5), in this order;
 
 ### Build what the owner decided (spec first, then code)
 
-- **T-3 · Every repository belongs to exactly one project; none is shared**
-  ([Q-AUTHZ-206](../spec/authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project), gap H-540). The schema
-  makes `repositories.project_id` required (in place, rule 9); creating a repository names its project in the API and the wizard;
-  unassignment goes, a move to another project stays and changes the address; a virtual repository lists only repositories of
-  its own project; a public registry is proxied by a remote repository per project. Update R-AUTHZ-026, the manual page
-  `admin/projects.md` and the security page `delegated-administration.md`.
-- **T-4 · A repository is addressed inside its project**
-  ([Q-REPO-212](../spec/repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
-  gap H-541): `/api/<format>/<projectKey>/<repoKey>/…`, `/files/<projectKey>/<repoKey>/…`,
-  `/api/v1/projects/<projectKey>/repositories/<repoKey>…`; the key is unique within the project; the prefix rule for repository
-  keys and its overlap checks go. Every route, format page, client guide, endpoint and exposure rule, CI mapping and policy
-  selector that names a repository changes; the browser journeys and the e2e clients with them.
-- **T-5 · Members of a project with four roles**
-  ([Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-  [Q-AUTHZ-208](../spec/authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner), gap H-542): users and
-  groups are members with Reader (`read`), Developer (+ `annotate`, `deploy`), Maintainer (every action) or Owner (+ members and
-  roles, repositories, policies, service accounts, settings). The Owner administers the project on its own, so the switches
-  `managePolicies` and `manageRepositories` go; project policies stay for exceptions. `admin` creates and deletes projects and
-  names the first Owner; `admin` and `auditor` see every project. The project administrator of today becomes the Owner.
-- **T-6 · Names within the project**
-  ([Q-AUTHZ-209](../spec/authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones),
-  gap H-546): a project's policies and service accounts are named within the project, without the `<key>-` prefix, addressed under
-  `/api/v1/projects/<key>/…`; the prefix rules and their overlap checks go; administrators keep instance-wide service accounts and
-  their tokens. Build with T-4.
-- **T-7 · The project is the context of the content**
-  ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap H-550): the
-  start page lists your projects (one project: start in it); the content screens move under `/projects/<key>/…` with the
-  project's sidebar (packages, browse, repositories, members, settings) and a switcher at its top (recent, search); the top bar's
-  project filter (R-UI-041) goes; the admin area's lists name the project in a column. Needs T-5 for "your projects".
 - **T-8 · Storage per project** ([Q-STOR-155](../spec/storage.md#q-stor-155--a-project-is-charged-the-logical-size-of-what-it-holds),
   gap H-547): a project shows and is charged the logical size of the files it holds; the admin dashboard keeps the physical
   figure of the store.
-- **T-9 · The auditor's security dashboard**
-  ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area), gap
-  H-551): in the admin area, for `vulnerabilities:triage` or `content:metadata-read`: the counts and trend over all projects, a
-  search by advisory ID (CVE, GHSA), package and project, and the triage of each finding; the project's own Vulnerabilities screen
-  shows that project only. Check first what the current report already searches.
 - **T-12 · The logo's open point** ([design-language.md](../developer/design-language.md#logo)): `web/public/brand/drafts/` and
   the preview on the sign-in page removed once the owner calls the logo final. The reduced form for the favicon and the
   wordmark as paths are built ([Q-UI-145](../spec/api-and-ui.md#q-ui-145--the-logos-wordmark-as-paths-from-inter-bold-and-a-reduced-mark-as-the-favicon)).

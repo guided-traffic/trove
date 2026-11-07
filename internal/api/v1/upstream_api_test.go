@@ -39,7 +39,7 @@ func upstreamServer(t *testing.T, prober repository.UpstreamProber) *Server {
 	t.Helper()
 	cat := catalog.NewRegistry()
 	cat.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath, DefaultUpstreamURL: "https://registry.example.org/", ProbePath: "-/ping",
 	}})
 	svc, err := repository.NewService(repository.Options{
@@ -71,7 +71,7 @@ func TestUpstreamTestOperation(t *testing.T) {
 	t.Run("R-REPO-024 an unsaved test validates the section like a create and probes it", func(t *testing.T) {
 		p := &recordingProber{}
 		s := upstreamServer(t, p)
-		w := post(s, s.TestUpstream, `{"format":"npmlike","remote":{"authMode":"bearer","password":{"value":"tok"},"sourceNetwork":"10.99.0.0/24"}}`, "application/json")
+		w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, `{"format":"npmlike","remote":{"authMode":"bearer","password":{"value":"tok"},"sourceNetwork":"10.99.0.0/24"}}`, "application/json")
 		if w.Code != http.StatusOK {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -93,7 +93,7 @@ func TestUpstreamTestOperation(t *testing.T) {
 
 	t.Run("R-REPO-008 R-REPO-024 an unsaved test reports every violation in one 422", func(t *testing.T) {
 		s := upstreamServer(t, &recordingProber{})
-		w := post(s, s.TestUpstream, `{"format":"npmlike","remote":{"url":"https://u:p@x.example/","connectTimeoutMs":50,"sourceNetwork":"10.99.0.11"}}`, "application/json")
+		w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, `{"format":"npmlike","remote":{"url":"https://u:p@x.example/","connectTimeoutMs":50,"sourceNetwork":"10.99.0.11"}}`, "application/json")
 		if w.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -117,7 +117,7 @@ func TestUpstreamTestOperation(t *testing.T) {
 
 	t.Run("R-REPO-033 an unsaved test refuses the marker of a stored value", func(t *testing.T) {
 		s := upstreamServer(t, &recordingProber{})
-		w := post(s, s.TestUpstream, `{"format":"npmlike","remote":{"authMode":"bearer","password":{"set":true}}}`, "application/json")
+		w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, `{"format":"npmlike","remote":{"authMode":"bearer","password":{"set":true}}}`, "application/json")
 		if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "invalid_secret") {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -133,7 +133,7 @@ func TestUpstreamTestOperation(t *testing.T) {
 			`not json`:      http.StatusBadRequest,
 			`{"format":"npmlike","remote":{"password":{"value":"a","secretRef":{"file":"t"}}}}`: http.StatusUnprocessableEntity,
 		} {
-			if w := post(s, s.TestUpstream, body, "application/json"); w.Code != want {
+			if w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, body, "application/json"); w.Code != want {
 				t.Errorf("%s: %d %s", body, w.Code, w.Body)
 			}
 		}
@@ -141,18 +141,18 @@ func TestUpstreamTestOperation(t *testing.T) {
 
 	t.Run("R-API-003 the body must be JSON", func(t *testing.T) {
 		s := upstreamServer(t, &recordingProber{})
-		if w := post(s, s.TestUpstream, `{}`, "text/plain"); w.Code != http.StatusUnsupportedMediaType {
+		if w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, `{}`, "text/plain"); w.Code != http.StatusUnsupportedMediaType {
 			t.Fatalf("%d", w.Code)
 		}
 	})
 
 	t.Run("R-REPO-024 a replica without the upstream test answers 503", func(t *testing.T) {
 		s := upstreamServer(t, nil)
-		w := post(s, s.TestUpstream, `{"format":"npmlike","remote":{}}`, "application/json")
+		w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, `{"format":"npmlike","remote":{}}`, "application/json")
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
-		w = post(s, func(w http.ResponseWriter, r *http.Request) { s.TestRepositoryUpstream(w, r, "npm-remote") }, ``, "")
+		w = post(s, func(w http.ResponseWriter, r *http.Request) { s.TestRepositoryUpstream(w, r, "it", "npm-remote") }, ``, "")
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -160,10 +160,10 @@ func TestUpstreamTestOperation(t *testing.T) {
 
 	t.Run("R-REPO-024 without a repository service both operations answer 503", func(t *testing.T) {
 		s := &Server{o: Options{}}
-		if w := post(s, s.TestUpstream, `{}`, "application/json"); w.Code != http.StatusServiceUnavailable {
+		if w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestUpstream(w, r, "it") }, `{}`, "application/json"); w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%d", w.Code)
 		}
-		if w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestRepositoryUpstream(w, r, "npm-remote") }, ``, ""); w.Code != http.StatusServiceUnavailable {
+		if w := post(s, func(w http.ResponseWriter, r *http.Request) { s.TestRepositoryUpstream(w, r, "it", "npm-remote") }, ``, ""); w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%d", w.Code)
 		}
 	})

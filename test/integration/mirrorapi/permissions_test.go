@@ -20,12 +20,12 @@ func TestR_REPO_056_PermissionsOfTheStatus(t *testing.T) {
 		{"rita", "npm-mirror", http.StatusOK, ""},
 		{"olga", "npm-mirror", http.StatusOK, ""}, // repositories:read-config
 		{"ravi", "npm-mirror", http.StatusOK, ""},
-		{"mona", "npm-mirror", http.StatusOK, ""}, // manage on the repository
-		{"pam", "web-mirror", http.StatusOK, ""},  // administrator of its project, manageRepositories on
-		{"lena", "lab-mirror", http.StatusOK, ""}, // administrator of its project, manageRepositories off
+		{"mona", "npm-mirror", http.StatusOK, ""},     // manage on the repository
+		{"pam", "web/web-mirror", http.StatusOK, ""},  // Owner of its project
+		{"lena", "lab/lab-mirror", http.StatusOK, ""}, // Maintainer of its project: manage on its repositories
 		{"rex", "npm-mirror", http.StatusForbidden, "forbidden"},
 		{"dave", "npm-mirror", http.StatusNotFound, "not_found"},
-		{"pam", "npm-mirror", http.StatusNotFound, "not_found"}, // another project's administrator has no right here
+		{"pam", "npm-mirror", http.StatusNotFound, "not_found"}, // another project's Owner has no right here
 		{"dave", "no-such-repo", http.StatusNotFound, "not_found"},
 	} {
 		a := e.status(c.who, c.repo)
@@ -70,18 +70,18 @@ func TestR_REPO_056_PermissionsOfTheRun(t *testing.T) {
 		{"rita", "npm-bounded"},
 		{"ravi", "npm-state"},
 		{"mona", "npm-mirror"},
-		{"pam", "web-mirror"},
-		// Q-API-199: an administrator of a project holds manage on its repositories, whatever its switch manageRepositories says.
-		{"lena", "lab-mirror"},
+		{"pam", "web/web-mirror"},
+		// Q-API-199: the roles maintainer and owner hold manage on the repositories of their project.
+		{"lena", "lab/lab-mirror"},
 	} {
 		a := e.do(c.who, "POST", runPath(c.repo), nil)
 		if a.Status != http.StatusAccepted {
 			t.Errorf("%s runs %s: %d %s", c.who, c.repo, a.Status, a.Body)
 		}
-		if got := e.st.Text(`SELECT actor_id::text FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = $1`, c.repo); got != e.person(c.who).ID {
+		if got := e.st.Text(`SELECT actor_id::text FROM audit_event WHERE action = 'mirror.pass_requested' AND repository = $1`, qualified(c.repo)); got != e.person(c.who).ID {
 			t.Errorf("the event of %s names actor %s", c.who, got)
 		}
-		if got := e.st.Text(`SELECT pass_requested_by::text FROM mirror_state WHERE repo_id = (SELECT id FROM repositories WHERE key = $1)`, c.repo); got != e.person(c.who).ID {
+		if got := e.st.Text(`SELECT pass_requested_by::text FROM mirror_state WHERE repo_id = $1::text::bigint`, e.repoID(c.repo)); got != e.person(c.who).ID {
 			t.Errorf("the request of %s names %s", c.who, got)
 		}
 	}

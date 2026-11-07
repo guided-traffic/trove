@@ -5,11 +5,10 @@ import (
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/vuln"
 )
 
-// The upstream rules of a project administrator's write (R-AUTHZ-026, Q-REPO-127,
-// Q-REPO-128). A project administrator configures the upstream of its project's
+// The upstream rules of an Owner's write (R-AUTHZ-026, Q-REPO-127,
+// Q-REPO-128). An Owner configures the upstream of its project's
 // remote repositories, but three things are not its to send to a host it picks: the
 // secrets of the installation (the files of config_as_code.secrets_dir and the
 // TROVE_CAC_ variables a secretRef names), a credential an administrator of trove
@@ -23,20 +22,20 @@ import (
 //   - outboundProxy.mode direct and a sourceNetwork are an administrator's: a project
 //     administrator sets the defaults, or keeps the stored values while the url and
 //     the extra hosts stay;
-//   - the mirror mode is an administrator's: a project administrator keeps remote.mode
+//   - the mirror mode is an administrator's: an Owner keeps remote.mode
 //     and remote.mirror as stored, changes paused, or turns the mode back to
 //     pullThrough (Q-REPO-142, validate_mirror.go); while the stored mode is mirror and
 //     the write keeps it, the include and exclude patterns, the url and the extra hosts
 //     stay as stored as well, because they decide what the mirror stores and from where
 //     (Q-REPO-193).
 //
-// The unsaved upstream test of a project administrator has the rules of a create.
+// The unsaved upstream test of an Owner has the rules of a create.
 
-// delegatedRemote applies the rules to the document of a project administrator's
+// restrictedRemote applies the rules to the document of an Owner's
 // write. cur is the stored document of an update, nil on a create and for an unsaved
 // test.
-func delegatedRemote(v *validation, w Write, cur, nd *Document) {
-	if w.Delegate == "" || nd.Class != Remote {
+func restrictedRemote(v *validation, c Caller, cur, nd *Document) {
+	if !c.Restricted || nd.Class != Remote {
 		return
 	}
 	next, err := parseStoredRemote(nd.Remote)
@@ -56,7 +55,7 @@ func delegatedRemote(v *validation, w Write, cur, nd *Document) {
 	}
 }
 
-// checkDelegatedRemote adds the violations of a project administrator's remote
+// checkDelegatedRemote adds the violations of an Owner's remote
 // section to v. stored is the section the repository holds (nil for none), next the
 // validated section and pending its secret fields.
 func checkDelegatedRemote(v *validation, stored, next *RemoteSettings, pending []pendingSecret) {
@@ -65,7 +64,7 @@ func checkDelegatedRemote(v *validation, stored, next *RemoteSettings, pending [
 		switch {
 		case p.op == secretReference && !holdsReference(stored, p.ref):
 			v.add(p.field+"/secretRef", errs.CodeSecretValueRequired,
-				"a project administrator gives the secret as a value: a secretRef names a secret of the installation, and only the reference the repository holds may be sent back unchanged")
+				"an Owner gives the secret as a value: a secretRef names a secret of the installation, and only the reference the repository holds may be sent back unchanged")
 		case p.op != secretSeal && credentialsMove:
 			v.add(p.field, errs.CodeSecretValueRequired,
 				"the write changes where the stored credential goes (url, an extra host with sendCredentials, forwardAuthOnRedirect): give the value again, or remove it")
@@ -110,63 +109,21 @@ func pathHostsWiden(stored, next RemoteSettings) bool {
 	})
 }
 
-// A project administrator may not weaken the scanning (R-VULN-002, Q-VULN-69). manageRepositories lets it change a repository
-// of its project, but a download block lifts by a triage decision (vulnerabilities:triage) or a configuration of the whole
-// installation (repositories:write-config); a write that switched the member off or turned a block off would lift the blocks
-// of the repository without either.
+// An Owner may not weaken the scanning (R-VULN-002, Q-VULN-69). The role owner lets it change a repository of its project, but a
+// download block lifts by a triage decision (vulnerabilities:triage) or a configuration of the whole installation
+// (repositories:write-config); a write that switched the member off or turned a block off would lift the blocks of the
+// repository without either. vuln_weaken.go says what weakens.
 
-// weakensVulnerabilities lists what the new member does less than the stored one: scanning off, fewer public advisories
-// matched (always above auto above never), the malicious block off, the block on missing data off.
-func weakensVulnerabilities(cur, next vuln.Settings) []string {
-	var out []string
-	if cur.Enabled && !next.Enabled {
-		out = append(out, "enabled")
-	}
-	if matchRank(next.MatchPublicAdvisories) < matchRank(cur.MatchPublicAdvisories) {
-		out = append(out, "matchPublicAdvisories")
-	}
-	if cur.BlockMalicious && !next.BlockMalicious {
-		out = append(out, "blockMalicious")
-	}
-	if cur.OnMissingData == vuln.MissingBlock && next.OnMissingData != vuln.MissingBlock {
-		out = append(out, "onMissingData")
-	}
-	return out
-}
-
-func matchRank(m vuln.MatchPublic) int {
-	switch m {
-	case vuln.MatchAlways:
-		return 2
-	case vuln.MatchNever:
-		return 0
-	}
-	return 1
-}
-
-// weakenedVulnerabilities is the members the write weakens, for the audit event. A document without the member is the
-// defaults (a replace that leaves it out resets it; a patch carries the stored member into the new document).
-func weakenedVulnerabilities(cur, nd *Document) []string {
-	before, after := vuln.DefaultSettings(), vuln.DefaultSettings()
-	if cur.Vulnerabilities != nil {
-		before = *cur.Vulnerabilities
-	}
-	if nd.Vulnerabilities != nil {
-		after = *nd.Vulnerabilities
-	}
-	return weakensVulnerabilities(before, after)
-}
-
-// delegatedVulnerabilities refuses (403 vulnerability_weakening_refused) the write of a project administrator that weakens the
+// restrictedVulnerabilities refuses (403 vulnerability_weakening_refused) the write of a restricted caller that weakens the
 // member `vulnerabilities`, unless the writer holds vulnerabilities:triage. cur is the stored document.
-func delegatedVulnerabilities(w Write, cur, nd *Document) error {
-	if w.Delegate == "" || w.MayWeakenVulnerabilities {
+func restrictedVulnerabilities(c Caller, cur, nd *Document) error {
+	if !c.Restricted || c.MayWeakenVulnerabilities {
 		return nil
 	}
 	if weak := weakenedVulnerabilities(cur, nd); len(weak) > 0 {
 		return errs.E(errs.Forbidden, errs.CodeVulnerabilityWeakeningRefused,
 			"The write weakens vulnerabilities."+strings.Join(weak, ", vulnerabilities.")+
-				": that needs repositories:write-config or vulnerabilities:triage, which manageRepositories does not carry.")
+				": that needs repositories:write-config or vulnerabilities:triage, which the role owner does not carry.")
 	}
 	return nil
 }

@@ -25,7 +25,7 @@ func TestR_ARCH_027_FactsOfAKindTheStatementDidNotEvaluateAreNotStamped(t *testi
 		{"no key", servefacts.Key{}, "", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			it := itemFrom("r", c.key, q.GetLiveItemRow{Kind: KindFolder, FactKind: c.evaluated, FactTombstoned: true})
+			it := itemFrom(qr("r"), c.key, q.GetLiveItemRow{Kind: KindFolder, FactKind: c.evaluated, FactTombstoned: true})
 			if got := it.Facts.For(c.key); got != c.want {
 				t.Errorf("Facts.For(key) = %v, want %v (facts %+v)", got, c.want, it.Facts)
 			}

@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // nugetChanges are the writes of check 9: every hook and every route that changes package
@@ -337,7 +338,7 @@ type conformanceResolver struct {
 	scope formats.ReadScope
 }
 
-func (r conformanceResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (r conformanceResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return r.scope, nil
 }
 

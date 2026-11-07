@@ -193,7 +193,7 @@ func (m *Merger) Merge(_ context.Context, _ virtual.Descriptor, parts []virtual.
 					continue
 				}
 			}
-			c := pick{rank, p.Member.Position, p.Member.Repo.Key}
+			c := pick{rank, p.Member.Position, p.Member.Repo.Name.Key}
 			if b, ok := best[v]; !ok || c.rank < b.rank || (c.rank == b.rank && c.pos < b.pos) {
 				best[v] = c
 			}

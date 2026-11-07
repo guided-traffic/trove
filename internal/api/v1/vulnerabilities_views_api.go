@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
@@ -38,7 +40,7 @@ func (s *Server) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request,
 		httpserver.Problem(w, r, err)
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"repository", "format"}}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"project", "repository", "format"}}, s.o.API.Config)
 	if err == nil && (r.URL.Query().Has("limit") || r.URL.Query().Has("cursor")) {
 		err = badParam("limit", "is not known to this endpoint")
 	}
@@ -49,8 +51,11 @@ func (s *Server) GetVulnerabilitySummary(w http.ResponseWriter, r *http.Request,
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var f store.Filter
 	if err == nil {
-		repos, has := lq.Filter["repository"]
-		f = report.SummaryFilter(sn.ExpandFor(caller, splitValues(repos)), has, splitValues(lq.Filter["format"]))
+		var repos []int64
+		var has bool
+		if repos, has, err = findingRepos(lq, sn, caller); err == nil {
+			f = report.SummaryFilter(repos, has, splitValues(lq.Filter["format"]))
+		}
 	}
 	var sc report.Scope
 	if err == nil {
@@ -110,7 +115,7 @@ func (s *Server) GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request, _
 		httpserver.Problem(w, r, err)
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"from", "to", "repository", "format", "kind"}}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"from", "to", "project", "repository", "format", "kind"}}, s.o.API.Config)
 	if err == nil && (r.URL.Query().Has("limit") || r.URL.Query().Has("cursor")) {
 		err = badParam("limit", "is not known to this endpoint")
 	}
@@ -132,8 +137,11 @@ func (s *Server) GetVulnerabilityTrend(w http.ResponseWriter, r *http.Request, _
 	ctx, sn, caller, err := s.vulnRequest(r, rep)
 	var f store.Filter
 	if err == nil {
-		repos, has := lq.Filter["repository"]
-		f = store.Filter{Repos: sn.ExpandFor(caller, splitValues(repos)), HasRepos: has, Formats: splitValues(lq.Filter["format"]), Kind: kind}
+		var repos []int64
+		var has bool
+		if repos, has, err = findingRepos(lq, sn, caller); err == nil {
+			f = store.Filter{Repos: repos, HasRepos: has, Formats: splitValues(lq.Filter["format"]), Kind: kind}
+		}
 	}
 	var sc report.Scope
 	if err == nil {
@@ -368,10 +376,11 @@ func (s *Server) GetPackageVulnerabilities(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, r, http.StatusOK, out)
 }
 
-// RescanRepositoryVulnerabilities implements POST /api/v1/repositories/{key}/vulnerabilities/rescan (R-VULN-011): it enqueues
+// RescanRepositoryVulnerabilities implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan (R-VULN-011): it enqueues
 // a vuln-rescan job of the repository and answers 202 with the job, 409 with the running one. The caller holds manage on the
 // repository (declared, Q-VULN-27).
-func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, key string, _ gen.RescanRepositoryVulnerabilitiesParams) {
+func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.RescanRepositoryVulnerabilitiesParams) {
+	key := qname.Repo{Project: projectKey, Key: repoKeyText}
 	rep, err := s.vulnReport()
 	if err == nil && (s.idem == nil || s.o.API.Queue == nil) {
 		err = unavailable("The rescan")
@@ -383,7 +392,7 @@ func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.
 	sn, err := rep.Snapshot(r.Context())
 	var id int64
 	if err == nil {
-		repo, ok := sn.Repository(key)
+		repo, ok := sn.Repository(key.String())
 		switch {
 		case !ok:
 			err = errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key.")
@@ -400,8 +409,8 @@ func (s *Server) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.
 	}
 	err = s.idem.Do(w, r, nil, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
 		res, err := s.o.API.Queue.Enqueue(ctx, tx, jobs.EnqueueSpec{
-			Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: key, RepositoryID: id}, DedupKey: vuln.RescanKey(id),
-			TargetKind: "repository", TargetKey: key, CreatedBy: callerID(ctx),
+			Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: key.String(), RepositoryID: id}, DedupKey: vuln.RescanKey(id),
+			TargetKind: "repository", TargetKey: key.String(), CreatedBy: callerID(ctx),
 		})
 		if err != nil {
 			return Outcome{}, err

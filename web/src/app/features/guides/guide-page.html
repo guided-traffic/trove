@@ -45,11 +45,11 @@
         <input type="radio" name="guide-repository" value="" [checked]="!activeRepository()" (change)="pick({ repository: null })" />
         <span i18n="@@guides.repository.none">None in particular: the guide of a repository class</span>
       </label>
-      @for (r of repositoryOptions(); track r.key) {
+      @for (r of repositoryOptions(); track refOf(r)) {
         <label class="choice">
-          <input type="radio" name="guide-repository" [value]="r.key" [checked]="r.key === activeRepository()?.key" (change)="pick({ repository: r.key })" />
+          <input type="radio" name="guide-repository" [value]="refOf(r)" [checked]="refOf(r) === activeRef()" (change)="pick({ repository: refOf(r) })" />
           <span class="choice-text">
-            <span translate="no"><strong>{{ r.key }}</strong></span>
+            <span translate="no"><strong>{{ refOf(r) }}</strong></span>
             <span class="secondary">{{ classText(r.class) }}</span>
           </span>
         </label>

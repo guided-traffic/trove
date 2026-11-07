@@ -56,10 +56,10 @@ func (e *env) repoRow(key string, class repository.Class) repository.Repository 
 	e.t.Helper()
 	var id int64
 	if err := e.admin.QueryRow(context.Background(),
-		`INSERT INTO repositories (key, format, class) VALUES ($1, 'npm', $2) RETURNING id`, key, string(class)).Scan(&id); err != nil {
+		`INSERT INTO repositories (key, format, class, project_id) SELECT $1, 'npm', $2, id FROM project WHERE key = 'it' RETURNING id`, key, string(class)).Scan(&id); err != nil {
 		e.t.Fatal(err)
 	}
-	return repository.Repository{ID: strconv.FormatInt(id, 10), Key: key, Class: class, Format: "npm", Lifecycle: repository.Active}
+	return repository.Repository{ID: strconv.FormatInt(id, 10), Name: qr(key), Class: class, Format: "npm", Lifecycle: repository.Active}
 }
 
 func repoID(r repository.Repository) int64 {
@@ -172,7 +172,7 @@ func TestInvalidationAtScale(t *testing.T) {
 		ev := a.rec.last()
 		var d map[string]any
 		_ = json.Unmarshal(ev.Details, &d)
-		if ev.Type != audit.EventRepositoryCacheInvalidated || ev.Repository != "npm-remote" || d["scope"] != "metadata" || d["path"] != "" || d["count"] != float64(entries) {
+		if ev.Type != audit.EventRepositoryCacheInvalidated || ev.Repository != "it/npm-remote" || d["scope"] != "metadata" || d["path"] != "" || d["count"] != float64(entries) {
 			t.Errorf("event = %+v details %v", ev, d)
 		}
 	})
@@ -463,7 +463,7 @@ func TestInvalidationService(t *testing.T) {
 		ev := a.rec.last()
 		var d map[string]any
 		_ = json.Unmarshal(ev.Details, &d)
-		if ev.Type != "repository.cache_invalidated" || ev.Subject.Name != "npm-remote" || ev.Actor.Name != "alice" ||
+		if ev.Type != "repository.cache_invalidated" || ev.Subject.Name != "it/npm-remote" || ev.Actor.Name != "alice" ||
 			fmt.Sprint(d) != "map[count:1 path:left-pad scope:all]" {
 			t.Errorf("event = %+v %v", ev, d)
 		}

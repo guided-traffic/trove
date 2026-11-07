@@ -2,11 +2,12 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
@@ -92,9 +93,6 @@ func (s *Server) ListPermissionPolicies(w http.ResponseWriter, r *http.Request, 
 	if err == nil {
 		filter, err = policyFilter(lq)
 	}
-	if err == nil {
-		err = s.narrowPolicyList(r.Context(), &filter, lq.First("expandGroups"))
-	}
 	if err == nil && lq.After != nil && len(lq.After) != 1 {
 		err = invalidCursor()
 	}
@@ -128,153 +126,17 @@ func (s *Server) ListPermissionPolicies(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, errs.Wrap(err, "authz.listPolicies"))
 		return
 	}
+	for i := range page.Items {
+		page.Items[i] = viewPolicy(page.Items[i]) // a project's policy shows its name within the project
+	}
 	WritePage(w, r, page)
 }
 
-// The capabilities of the policy operations, which a project administrator may
-// exercise on the policies of its project instead (R-AUTHZ-026, Q-AUTHZ-180).
+// The capabilities of the policy operations.
 const (
 	capPoliciesRead  = string(authz.PoliciesRead)
 	capPoliciesWrite = string(authz.PoliciesWrite)
 )
-
-// narrowPolicyList narrows a caller of the list that holds policies:read only as a
-// project administrator to the project it names: without the filter the answer is
-// 403 (it would be every policy), a project it does not administer is 403 as well
-// (R-AUTHZ-026, Q-AUTHZ-187). A caller that holds the capability sees what the filter says.
-// The filter of a project administrator tests nothing outside its project: a principal
-// or repository that does not exist answers like one without a policy of the project,
-// and the group memberships of a principal are not expanded; asking for it with
-// expandGroups=true is 403 (Q-AUTHZ-197).
-func (s *Server) narrowPolicyList(ctx context.Context, f *authz.ListFilter, expandGroups string) error {
-	d, err := s.delegatedScope(ctx, capPoliciesRead)
-	if err != nil || d.Global {
-		return err
-	}
-	if f.Project == "" {
-		d.noteRefusal()
-		return errs.E(errs.Forbidden, errs.CodeForbidden, "A project administrator lists the policies of one project: send the filter project=<key>.")
-	}
-	if !d.Sees(f.Project) {
-		// The document answers 403 here, not 404; a project it does not administer
-		// answers as one that does not exist.
-		d.noteRefusal()
-		return errs.E(errs.Forbidden, errs.CodeForbidden, "The project does not exist or is not administered by the caller.")
-	}
-	if expandGroups == "true" {
-		d.noteRefusal()
-		return errs.E(errs.Forbidden, errs.CodeForbidden, "Expanding the groups of a principal needs the capability policies:read.")
-	}
-	f.Delegated, f.ExpandGroups = true, false
-	return nil
-}
-
-// narrowPolicyRead refuses a caller that holds policies:read only as a project
-// administrator a policy that is not one of its projects: a global policy and
-// another project's policy answer 404 as a missing one does.
-func (s *Server) narrowPolicyRead(ctx context.Context, p authz.Policy) error {
-	d, err := s.delegatedScope(ctx, capPoliciesRead)
-	if err != nil || d.Global {
-		return err
-	}
-	if p.Project == nil || !d.Sees(*p.Project) {
-		d.noteRefusal()
-		return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The permission policy %q does not exist.", p.Name))
-	}
-	return nil
-}
-
-// narrowPolicyWrite is the narrowing of a write of a new or validated policy for a
-// caller that holds policies:write only as a project administrator: the policy
-// names a project the caller administers with managePolicies. A global policy is 403,
-// a project the caller does not administer 422 unknown_project (the answer does
-// not tell whether it exists), a switch that is off 403 project_switch_off.
-//
-// The options it returns carry the project of a delegated caller into the write
-// (authz.AsDelegate): none for a caller that holds the capability.
-func (s *Server) narrowPolicyWrite(ctx context.Context, project *string) ([]authz.WriteOption, error) {
-	d, err := s.delegatedScope(ctx, capPoliciesWrite)
-	if err != nil || d.Global {
-		return nil, err
-	}
-	if project == nil {
-		d.noteRefusal()
-		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "A global policy needs the capability policies:write.")
-	}
-	if !d.Sees(*project) {
-		d.noteRefusal()
-		return nil, problemFields(errs.FieldError{
-			Pointer: "/project", Code: errs.CodeUnknownProject,
-			Detail: fmt.Sprintf("No project %q exists or it is not administered by the caller.", *project),
-		})
-	}
-	if err := refuseProject(d, *project, authz.ProjectManagePolicies); err != nil {
-		return nil, err
-	}
-	return []authz.WriteOption{authz.AsDelegate(*project)}, nil
-}
-
-// narrowPolicyWriteOf is narrowPolicyWrite for a stored policy: the project of the
-// policy of that name decides. Another project's policy answers 404, a global one
-// 403, as the table of docs/developer/projects.md says.
-func (s *Server) narrowPolicyWriteOf(ctx context.Context, svc *authz.Service, name string) ([]authz.WriteOption, error) {
-	d, err := s.delegatedScope(ctx, capPoliciesWrite)
-	if err != nil || d.Global {
-		return nil, err
-	}
-	project, err := svc.ProjectOf(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	if project == nil {
-		d.noteRefusal()
-		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "A global policy needs the capability policies:write.")
-	}
-	if !d.Sees(*project) {
-		d.noteRefusal()
-		return nil, errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The permission policy %q does not exist.", name))
-	}
-	if err := refuseProject(d, *project, authz.ProjectManagePolicies); err != nil {
-		return nil, err
-	}
-	// The write checks the project again under the policy lock (Q-AUTHZ-199).
-	return []authz.WriteOption{authz.AsDelegate(*project)}, nil
-}
-
-// narrowPolicyValidate is narrowPolicyWrite for the validation of a policy, which
-// the declaration admits with policies:read or project administration with
-// managePolicies: a caller that holds policies:read only validates a policy of a
-// project of its own.
-func (s *Server) narrowPolicyValidate(ctx context.Context, project *string) ([]authz.WriteOption, error) {
-	d, err := s.delegatedScope(ctx, capPoliciesRead)
-	if err != nil || d.Global {
-		return nil, err
-	}
-	if project == nil {
-		d.noteRefusal()
-		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "A policy without a project is validated with the capability policies:read.")
-	}
-	if !d.Sees(*project) {
-		d.noteRefusal()
-		return nil, problemFields(errs.FieldError{
-			Pointer: "/project", Code: errs.CodeUnknownProject,
-			Detail: fmt.Sprintf("No project %q exists or it is not administered by the caller.", *project),
-		})
-	}
-	if err := refuseProject(d, *project, authz.ProjectManagePolicies); err != nil {
-		return nil, err
-	}
-	return []authz.WriteOption{authz.AsDelegate(*project)}, nil
-}
-
-// problemFields is the 422 validation_failed of the given fields.
-func problemFields(fields ...errs.FieldError) error {
-	detail := fields[0].Detail
-	if len(fields) > 1 {
-		detail = fmt.Sprintf("%d fields are invalid.", len(fields))
-	}
-	return errs.E(errs.Invalid, errs.CodeValidation, detail, errs.WithFields(fields...))
-}
 
 // policyFilter reads the filters of the list: expandGroups is a boolean that
 // defaults to true and only means something with a principal.
@@ -311,16 +173,11 @@ func (s *Server) CreatePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	wopts, err := s.narrowPolicyWrite(r.Context(), in.Project)
-	if err != nil {
-		httpserver.Problem(w, r, err)
-		return
-	}
 	actor := caller(r)
 	base := httpserver.InfoFrom(r.Context()).BaseURL
 	var epoch int64
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		p, err := svc.CreateIn(ctx, tx, actor, in.PolicyInput, &epoch, wopts...)
+		p, err := svc.CreateIn(ctx, tx, actor, in.PolicyInput, &epoch)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -343,9 +200,6 @@ func (s *Server) GetPermissionPolicy(w http.ResponseWriter, r *http.Request, nam
 		return
 	}
 	p, err := svc.Get(r.Context(), name)
-	if err == nil {
-		err = s.narrowPolicyRead(r.Context(), p)
-	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -365,11 +219,7 @@ func (s *Server) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request,
 		httpserver.Problem(w, r, err)
 		return
 	}
-	wopts, err := s.narrowPolicyWriteOf(r.Context(), svc, name)
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	var in authz.Policy
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
@@ -388,7 +238,7 @@ func (s *Server) ReplacePermissionPolicy(w http.ResponseWriter, r *http.Request,
 	if rev, ok := pre.Revision(""); ok {
 		expected = rev
 	}
-	p, epoch, err := svc.Update(r.Context(), caller(r), name, expected, in.PolicyInput, wopts...)
+	p, epoch, err := svc.Update(r.Context(), caller(r), name, expected, in.PolicyInput)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -407,11 +257,7 @@ func (s *Server) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, n
 		httpserver.Problem(w, r, err)
 		return
 	}
-	wopts, err := s.narrowPolicyWriteOf(r.Context(), svc, name)
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	var raw []byte
 	if err == nil {
 		raw, err = ReadMergePatch(w, r, s.bodyLimit())
@@ -434,7 +280,7 @@ func (s *Server) PatchPermissionPolicy(w http.ResponseWriter, r *http.Request, n
 		httpserver.Problem(w, r, err)
 		return
 	}
-	p, epoch, err := svc.Update(r.Context(), caller(r), name, cur.Version, next.PolicyInput, wopts...)
+	p, epoch, err := svc.Update(r.Context(), caller(r), name, cur.Version, next.PolicyInput)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -456,11 +302,7 @@ func (s *Server) DeletePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	wopts, err := s.narrowPolicyWriteOf(r.Context(), svc, name)
-	var pre Precondition
-	if err == nil {
-		pre, err = ParseIfMatch(r)
-	}
+	pre, err := ParseIfMatch(r)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -469,7 +311,7 @@ func (s *Server) DeletePermissionPolicy(w http.ResponseWriter, r *http.Request, 
 	if rev, ok := pre.Revision(""); ok {
 		expected = rev
 	}
-	epoch, err := svc.Delete(r.Context(), caller(r), name, expected, wopts...)
+	epoch, err := svc.Delete(r.Context(), caller(r), name, expected)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -498,13 +340,15 @@ func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request
 	if err == nil {
 		err = DecodeJSON(w, r, &in, s.bodyLimit())
 	}
-	var wopts []authz.WriteOption
 	if err == nil {
-		wopts, err = s.narrowPolicyValidate(r.Context(), in.Project)
+		err = s.mayValidate(r, in.Project)
 	}
 	var rep authz.Report
 	if err == nil {
-		rep, err = svc.Validate(r.Context(), in.PolicyInput, wopts...)
+		if in.Project != nil { // a policy of a project names it in the body; the store knows the stored name
+			in = storedPolicy(in, *in.Project)
+		}
+		rep, err = svc.Validate(r.Context(), in.PolicyInput)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -515,6 +359,29 @@ func (s *Server) ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request
 		out.Errors = append(out.Errors, policyProblem{Pointer: p.Pointer, Code: p.Code, Detail: p.Detail})
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// mayValidate decides validate-policy, whose project is a member of the body: policies:read, or for a policy of a
+// project an Owner of it. A project the caller is no member of answers like a missing one (R-AUTHZ-016); a
+// member below Owner gets the 403 of the capability.
+func (s *Server) mayValidate(r *http.Request, projectKey *string) error {
+	ctx := r.Context()
+	if s.o.Access == nil {
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+	}
+	refusal := s.o.Access.Require(ctx, capPoliciesRead)
+	if refusal == nil {
+		return nil
+	}
+	if projectKey == nil || errs.KindOf(refusal) != errs.Forbidden {
+		return refusal
+	}
+	if pa, ok := s.o.Access.(ProjectAccess); ok {
+		if owns, err := pa.Owns(ctx, *projectKey); err == nil && owns {
+			return nil
+		}
+	}
+	return s.hideProject(r, *projectKey, refusal)
 }
 
 func nonNil(s []string) []string {
@@ -644,11 +511,11 @@ type authzMe struct {
 	Roles        []string `json:"roles"`
 	Capabilities []string `json:"capabilities"`
 	Principals   []string `json:"principals"`
-	// Projects are the projects the caller administers, with their switches
-	// (R-AUTHZ-026, Q-AUTHZ-181); [] for a caller that administers none.
-	Projects []authz.AdministeredProject `json:"projects"`
-	Scope    *scopeSummary               `json:"scope"`
-	Epoch    int64                       `json:"epoch"`
+	// Memberships are the projects the caller is a member of through this credential, with the role in
+	// force (Q-AUTHZ-207); [] for a caller that is a member of none.
+	Memberships []authz.Membership `json:"projects"`
+	Scope       *scopeSummary      `json:"scope"`
+	Epoch       int64              `json:"epoch"`
 }
 
 // GetAuthzMe implements GET /api/v1/authz/me (R-AUTHZ-022).
@@ -666,9 +533,9 @@ func (s *Server) GetAuthzMe(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	out := authzMe{Roles: []string{}, Capabilities: []string{}, Principals: nonNil(me.Principals), Projects: me.Projects, Epoch: me.Epoch}
-	if out.Projects == nil {
-		out.Projects = []authz.AdministeredProject{}
+	out := authzMe{Roles: []string{}, Capabilities: []string{}, Principals: nonNil(me.Principals), Memberships: me.Memberships, Epoch: me.Epoch}
+	if out.Memberships == nil {
+		out.Memberships = []authz.Membership{}
 	}
 	for _, role := range me.Roles {
 		out.Roles = append(out.Roles, string(role))
@@ -717,7 +584,8 @@ func (s *Server) CheckPermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]authz.CheckItem, len(in.Checks))
 	for i, c := range in.Checks {
-		items[i] = authz.CheckItem{Repository: c.Repository, Package: c.Package, Path: c.Path, Action: authz.Action(c.Action)}
+		name, _ := qname.ParseRepo(c.Repository) // a text that is no name stays the zero name, which no grant covers
+		items[i] = authz.CheckItem{Repository: name, Package: c.Package, Path: c.Path, Action: authz.Action(c.Action)}
 	}
 	// One index answers every check and names the epoch of the answer.
 	acc, err := edge.Resolve(r.Context(), s.o.Authz.Engine, caller(r))

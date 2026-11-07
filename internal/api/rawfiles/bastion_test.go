@@ -45,12 +45,12 @@ func TestR_BAS_013_FilesRoutesTellTheObserverTheirKind(t *testing.T) {
 		method, path, name, kind string
 		action                   authz.Action
 	}{
-		{"GET", "/files/files-local/a/b.zip", "files.get", bastionmain.KindDownload, authz.Read},
-		{"HEAD", "/files/files-local/a/b.zip", "files.get", bastionmain.KindDownload, authz.Read},
-		{"GET", "/files/files-local/a/", "files.list", bastionmain.KindMetadata, authz.Read},
-		{"GET", "/files/files-local/", "files.list", bastionmain.KindMetadata, authz.Read},
-		{"PUT", "/files/files-local/a/b.zip", "files.put", bastionmain.KindUpload, authz.Deploy},
-		{"DELETE", "/files/files-local/a/b.zip", "files.delete", bastionmain.KindDelete, authz.Delete},
+		{"GET", "/files/it/files-local/a/b.zip", "files.get", bastionmain.KindDownload, authz.Read},
+		{"HEAD", "/files/it/files-local/a/b.zip", "files.get", bastionmain.KindDownload, authz.Read},
+		{"GET", "/files/it/files-local/a/", "files.list", bastionmain.KindMetadata, authz.Read},
+		{"GET", "/files/it/files-local/", "files.list", bastionmain.KindMetadata, authz.Read},
+		{"PUT", "/files/it/files-local/a/b.zip", "files.put", bastionmain.KindUpload, authz.Deploy},
+		{"DELETE", "/files/it/files-local/a/b.zip", "files.delete", bastionmain.KindDelete, authz.Delete},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
@@ -60,14 +60,14 @@ func TestR_BAS_013_FilesRoutesTellTheObserverTheirKind(t *testing.T) {
 				t.Fatalf("matched %d times (answer %d)", len(o.matched), rec.Code)
 			}
 			m := o.matched[0]
-			if m.Format != bastionmain.FormatFiles || m.RepoKey != "files-local" || m.Name != tc.name || m.Kind != tc.kind || m.Action != tc.action || m.Method != tc.method {
+			if m.Format != bastionmain.FormatFiles || m.Repo != qr("files-local") || m.Name != tc.name || m.Kind != tc.kind || m.Action != tc.action || m.Method != tc.method {
 				t.Fatalf("match %+v", m)
 			}
 		})
 	}
 	t.Run("a path that is no valid path never reaches the observer", func(t *testing.T) {
 		o := &recordingObserver{}
-		if rec := observedRequest(t, o, "GET", "/files/files-local/a/../b"); rec.Code != 400 || len(o.matched) != 0 {
+		if rec := observedRequest(t, o, "GET", "/files/it/files-local/a/../b"); rec.Code != 400 || len(o.matched) != 0 {
 			t.Fatalf("%d, matched %v", rec.Code, o.matched)
 		}
 	})
@@ -76,13 +76,13 @@ func TestR_BAS_013_FilesRoutesTellTheObserverTheirKind(t *testing.T) {
 // TestR_BAS_014_FilesWritesAreRefusedByTheObserver: the refusal of the observer is the answer, before any decision.
 func TestR_BAS_014_FilesWritesAreRefusedByTheObserver(t *testing.T) {
 	o := &recordingObserver{refuse: errs.E(errs.Forbidden, errs.CodeBastionReadOnly, "read-only")}
-	rec := observedRequest(t, o, "PUT", "/files/files-local/a/b.zip")
+	rec := observedRequest(t, o, "PUT", "/files/it/files-local/a/b.zip")
 	if rec.Code != 403 || len(o.matched) != 1 {
 		t.Fatalf("%d, matched %v", rec.Code, o.matched)
 	}
 	t.Run("an observer that answered the request ends it", func(t *testing.T) {
 		o := &recordingObserver{handled: true}
-		if rec := observedRequest(t, o, "DELETE", "/files/files-local/a/b.zip"); rec.Code != 204 {
+		if rec := observedRequest(t, o, "DELETE", "/files/it/files-local/a/b.zip"); rec.Code != 204 {
 			t.Fatalf("%d", rec.Code)
 		}
 	})

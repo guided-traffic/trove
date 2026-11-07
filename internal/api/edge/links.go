@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/items"
 )
 
@@ -29,8 +31,8 @@ func escapePath(p string) string {
 }
 
 // File is the URL of a file or folder below /files/.
-func (l Links) File(repo, path string, folder bool) string {
-	u := l.base() + "/files/" + url.PathEscape(repo) + "/" + escapePath(path)
+func (l Links) File(repo qname.Repo, path string, folder bool) string {
+	u := l.base() + strings.TrimSuffix(qname.FilesBase(repo), "/") + "/" + escapePath(path)
 	if folder && path != "" {
 		u += "/"
 	}
@@ -40,18 +42,18 @@ func (l Links) File(repo, path string, folder bool) string {
 // ContentPath is the relative URL of the content route of a file (R-API-025, Q-UI-106): the URL the UI's downloads and
 // uploads use, which the session cookie authenticates on the role api. It is relative, so it follows the origin the UI
 // was loaded from.
-func ContentPath(repo, path string) string {
-	return "/api/v1/repositories/" + url.PathEscape(repo) + "/content/" + escapePath(path)
+func ContentPath(repo qname.Repo, path string) string {
+	return repoAPI(repo) + "/content/" + escapePath(path)
 }
 
 // Item is the URL of the item description in the management API.
-func (l Links) Item(repo, path string) string {
-	return l.base() + "/api/v1/repositories/" + url.PathEscape(repo) + "/items?path=" + url.QueryEscape(path)
+func (l Links) Item(repo qname.Repo, path string) string {
+	return l.base() + repoAPI(repo) + "/items?path=" + url.QueryEscape(path)
 }
 
 // Children is the URL of the listing of a folder in the management API.
-func (l Links) Children(repo, path string) string {
-	return l.base() + "/api/v1/repositories/" + url.PathEscape(repo) + "/children?path=" + url.QueryEscape(path)
+func (l Links) Children(repo qname.Repo, path string) string {
+	return l.base() + repoAPI(repo) + "/children?path=" + url.QueryEscape(path)
 }
 
 // Stamp is a time and the principal behind it (R-STOR-016 "created" and "modified").
@@ -73,25 +75,25 @@ type Digests struct {
 // groups no items into packages (R-GENERIC-006). The upstream URL is that of an
 // item a remote repository cached, null for an uploaded one.
 type ItemView struct {
-	Repository       string    `json:"repository"`
-	Path             string    `json:"path"`
-	Kind             string    `json:"kind"`
-	Size             *int64    `json:"size,omitempty"`
-	MediaType        *string   `json:"mediaType,omitempty"`
-	Explicit         *bool     `json:"explicit,omitempty"`
-	Created          Stamp     `json:"created"`
-	Modified         Stamp     `json:"modified"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-	Digests          *Digests  `json:"digests,omitempty"`
-	DeclaredDigests  *Digests  `json:"declaredDigests,omitempty"`
-	DeclaredMismatch *bool     `json:"declaredMismatch,omitempty"`
-	ContentStatus    *string   `json:"contentStatus,omitempty"`
-	Package          *struct{} `json:"package"`
-	UpstreamURL      *string   `json:"upstreamUrl"`
-	DownloadURL      *string   `json:"downloadUrl,omitempty"`
-	ContentURL       *string   `json:"contentUrl,omitempty"`
-	ListingURL       *string   `json:"listingUrl,omitempty"`
-	ItemURL          string    `json:"itemUrl"`
+	Repository       qname.Repo `json:"repository"`
+	Path             string     `json:"path"`
+	Kind             string     `json:"kind"`
+	Size             *int64     `json:"size,omitempty"`
+	MediaType        *string    `json:"mediaType,omitempty"`
+	Explicit         *bool      `json:"explicit,omitempty"`
+	Created          Stamp      `json:"created"`
+	Modified         Stamp      `json:"modified"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
+	Digests          *Digests   `json:"digests,omitempty"`
+	DeclaredDigests  *Digests   `json:"declaredDigests,omitempty"`
+	DeclaredMismatch *bool      `json:"declaredMismatch,omitempty"`
+	ContentStatus    *string    `json:"contentStatus,omitempty"`
+	Package          *struct{}  `json:"package"`
+	UpstreamURL      *string    `json:"upstreamUrl"`
+	DownloadURL      *string    `json:"downloadUrl,omitempty"`
+	ContentURL       *string    `json:"contentUrl,omitempty"`
+	ListingURL       *string    `json:"listingUrl,omitempty"`
+	ItemURL          string     `json:"itemUrl"`
 }
 
 func nonEmpty(s string) *string {
@@ -152,4 +154,9 @@ func declared(it items.Item) *Digests {
 		return nil
 	}
 	return &d
+}
+
+// repoAPI is the path of a repository in the management API, /api/v1/projects/<project>/repositories/<key>.
+func repoAPI(r qname.Repo) string {
+	return "/api/v1/projects/" + url.PathEscape(r.Project) + "/repositories/" + url.PathEscape(r.Key)
 }

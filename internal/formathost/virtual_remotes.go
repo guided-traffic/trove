@@ -98,7 +98,7 @@ func (v *vremotes) request(rc virtual.RemoteCall) (proxy.Request, error) {
 	if pkg == "" {
 		pkg = info.Package
 	}
-	ref := formats.RepoRef{ID: rem.ID(), Key: repo.Key, Class: formats.Remote, Format: formats.ID(repo.Format)}
+	ref := formats.RepoRef{ID: rem.ID(), Name: repo.Name, Class: formats.Remote, Format: formats.ID(repo.Format)}
 	return proxy.Request{
 		Remote: rem, Path: rc.Path, Variant: rc.Variant, Kind: kind, Package: pkg,
 		Adapter:      newAdapter(f, &repo, ref, v.o.Deps),
@@ -233,11 +233,11 @@ func (p *callPopulate) Deny(context.Context) error {
 
 func (p *callPopulate) Record(ctx context.Context, tx meta.Tx) error {
 	c := authz.Coordinate{
-		Repository: p.rc.Remote.Key, Class: repository.Remote, Format: p.rc.Remote.Format, Kind: authz.KindWrite,
-		Path: p.rc.Path, Package: p.info.Package, Version: p.info.Version, Addressed: p.rc.Addressed.Key,
+		Repository: p.rc.Remote.Name, Class: repository.Remote, Format: p.rc.Remote.Format, Kind: authz.KindWrite,
+		Path: p.rc.Path, Package: p.info.Package, Version: p.info.Version, Addressed: p.rc.Addressed.Name,
 		Actions: []formats.Action{formats.ActionRead},
 	}
-	return p.d.RecordAllowed(ctx, tx, p.rc.Subject, c, authz.Decision{Outcome: authz.Allow, Reason: authz.ReasonAllowGrant, Target: p.rc.Remote.Key})
+	return p.d.RecordAllowed(ctx, tx, p.rc.Subject, c, authz.Decision{Outcome: authz.Allow, Reason: authz.ReasonAllowGrant, Target: p.rc.Remote.Name.String()})
 }
 
 func (p *callPopulate) Endpoint() (string, bool) {

@@ -25,15 +25,15 @@ type authzCase struct {
 }
 
 func read(repo, pkg, path string) Coordinate {
-	return Coordinate{Repository: repo, Package: pkg, Path: path, Kind: KindArtifact, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: KindArtifact, Actions: []Action{Read}}
 }
 
 func metadata(repo string) Coordinate {
-	return Coordinate{Repository: repo, Kind: KindMetadata, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Kind: KindMetadata, Actions: []Action{Read}}
 }
 
 func write(repo, pkg, path string, actions ...Action) Coordinate {
-	return Coordinate{Repository: repo, Package: pkg, Path: path, Kind: KindWrite, Actions: actions}
+	return Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: KindWrite, Actions: actions}
 }
 
 var (
@@ -150,8 +150,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"deploy inside the include", aliceSub, write("npm-internal", "@web/button", "", Deploy), Allow, "", ""},
 			{"deploy on an excluded name", aliceSub, write("npm-internal", "@web/internal-keys", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 			{"a raw file without a package name never matches a name include", aliceSub, read("npm-internal", "", "readme.txt"), DenyHidden, ReasonNoGrant, Read},
-			{"a repository-level search matches whatever the patterns say", aliceSub, Coordinate{Repository: "npm-internal", Kind: KindSearch, Actions: []Action{Read}}, Allow, "", ""},
-			{"a repository-level coordinate does not widen deploy for another principal", bobSub, Coordinate{Repository: "npm-internal", Kind: KindWrite, Actions: []Action{Deploy}}, DenyVisible, ReasonNoGrant, Deploy},
+			{"a repository-level search matches whatever the patterns say", aliceSub, Coordinate{Repository: qr("npm-internal"), Kind: KindSearch, Actions: []Action{Read}}, Allow, "", ""},
+			{"a repository-level coordinate does not widen deploy for another principal", bobSub, Coordinate{Repository: qr("npm-internal"), Kind: KindWrite, Actions: []Action{Deploy}}, DenyVisible, ReasonNoGrant, Deploy},
 			{"NuGet include matches in any spelling", bobSub, read("nuget-internal", "acme.core", ""), Allow, "", ""},
 			{"NuGet include matches upper case", bobSub, read("nuget-internal", "ACME.Core.Tests", ""), Allow, "", ""},
 			{"NuGet include needs the dot", bobSub, read("nuget-internal", "AcmeCore", ""), DenyHidden, ReasonNoGrant, Read},
@@ -192,8 +192,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.policy(policyDef{name: "consumers", selectors: []string{"@any-virtual:npm", "@any-local:npm", "@any-remote:npm"}, entries: map[string][]string{idDevs: {"read"}}})
 		f.policy(policyDef{name: "web", selectors: []string{"npm-internal"}, pkgInc: []string{"@web/*"}, entries: map[string][]string{idWeb: {"read", "deploy"}}})
 		e := newTestEngine(t, f, nil)
-		readOnly := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all", "@any-local:npm", "@any-remote:npm"}, Actions: []string{"read"}}}}
-		narrow := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Packages: scope.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}}}
+		readOnly := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-all", "@any-local:npm", "@any-remote:npm"}, Actions: []string{"read"}}}}
+		narrow := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Packages: scope.Patterns{Include: []string{"@web/*"}}, Actions: []string{"read"}}}}
 		wide := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Actions: []string{"read", "deploy", "delete", "manage"}}}}
 		runAuthzCases(t, e, []authzCase{
 			{"a session has no ceiling", aliceSub, write("npm-internal", "@web/x", "", Deploy), Allow, "", ""},
@@ -208,7 +208,7 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 			{"a scope that names more than the owner holds yields nothing for the rest", tokenScop(bobSub, wide), write("npm-internal", "@web/x", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 			{"a wide scope does not widen a read the owner has", tokenScop(bobSub, wide), read("npm-internal", "x", ""), Allow, "", ""},
 			{"a scope never grants manage", tokenScop(aliceSub, wide), write("npm-internal", "@web/x", "", Manage), DenyVisible, ReasonNoGrant, Manage},
-			{"a scope without a matching selector admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"other-repo"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
+			{"a scope without a matching selector admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/other-repo"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
 			{"an empty restricted scope admits nothing", tokenScop(aliceSub, scope.Scope{}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
 			{"a scope with an invalid selector admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"NOT A KEY"}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
 			{"a scope with an invalid pattern admits nothing", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"@any"}, Packages: scope.Patterns{Include: []string{`x\`}}, Actions: []string{"read"}}}}), read("npm-internal", "x", ""), DenyHidden, ReasonScope, Read},
@@ -257,8 +257,8 @@ func TestE1_3_AuthorizationCases(t *testing.T) {
 		f.policy(policyDef{name: "everyone-reads-generic", selectors: []string{"generic-local"}, entries: map[string][]string{AuthenticatedID: {"read"}}})
 		f.policy(policyDef{name: "bot", selectors: []string{"npm-internal"}, entries: map[string][]string{idBot: {"read"}}})
 		e := newTestEngine(t, f, nil)
-		scoped := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npmjs"}, Actions: []string{"read"}}}}
-		scopedAll := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-all", "generic-local"}, Actions: []string{"read"}}}}
+		scoped := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npmjs"}, Actions: []string{"read"}}}}
+		scopedAll := scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-all", "it/generic-local"}, Actions: []string{"read"}}}}
 		runAuthzCases(t, e, []authzCase{
 			{"a user in no group reads through authenticated", carolSub, metadata("npm-all"), Allow, "", ""},
 			{"a user in no group reads a remote repository", carolSub, read("npmjs", "left-pad", ""), Allow, "", ""},
@@ -475,7 +475,7 @@ func (stubCeiling) Admits(_ *Index, endpoint string, c Coordinate, a Action) Cei
 	if a != Read {
 		return CeilingReadOnly
 	}
-	if c.Repository == "npm-hidden" {
+	if c.Repository.Key == "npm-hidden" {
 		return CeilingHidesRead
 	}
 	return CeilingAdmits

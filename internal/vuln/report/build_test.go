@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/packages/view"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -17,15 +19,15 @@ type fakeScope struct {
 	allow func(pkg, version string) bool
 }
 
-func (f *fakeScope) Shape(key string) authz.ReadShape {
-	if key == "npm-part" {
+func (f *fakeScope) Shape(key qname.Repo) authz.ReadShape {
+	if key.Key == "npm-part" {
 		return authz.ReadRows
 	}
 	return authz.ReadNone
 }
 
-func (f *fakeScope) MayRead(repo, pkg, version string) bool {
-	f.asked = append(f.asked, repo+" "+pkg+" "+version)
+func (f *fakeScope) MayRead(repo qname.Repo, pkg, version string) bool {
+	f.asked = append(f.asked, repo.Key+" "+pkg+" "+version)
 	return f.allow(pkg, version)
 }
 
@@ -38,8 +40,8 @@ type independent struct {
 func (i independent) VersionIndependent() bool { return i.free }
 
 func buildFixture() (*Service, *Snapshot) {
-	repos := []repository.Repository{{Key: "npm-part", Class: repository.Local, Format: "npm"}}
-	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: map[string]repository.Repository{"npm-part": repos[0]}}
+	repos := []repository.Repository{{ID: "11", Name: qr("npm-part"), Class: repository.Local, Format: "npm"}}
+	sn := &Snapshot{Repos: repos, Topo: view.NewTopology(repos), byKey: map[string]repository.Repository{"it/npm-part": repos[0]}}
 	return &Service{cfg: Config{MaxScopeRows: 1000}}, sn
 }
 
@@ -49,11 +51,11 @@ func buildFixture() (*Service, *Snapshot) {
 // On the per-version path MayRead gets the version of each row, so a rule that reads it (an exposure range) is applied.
 func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 	triples := []store.Candidate{
-		{Repository: "npm-part", Package: "@acme/sdk", Version: "1.9.0"},
-		{Repository: "npm-part", Package: "@acme/sdk", Version: "2.1.0"},
-		{Repository: "npm-part", Package: "other", Version: "1.0.0"},
+		{Repository: "it/npm-part", Package: "@acme/sdk", Version: "1.9.0"},
+		{Repository: "it/npm-part", Package: "@acme/sdk", Version: "2.1.0"},
+		{Repository: "it/npm-part", Package: "other", Version: "1.0.0"},
 	}
-	pairs := []store.Pair{{Repository: "npm-part", Package: "@acme/sdk"}, {Repository: "npm-part", Package: "other"}}
+	pairs := []store.Pair{{Repository: "it/npm-part", Package: "@acme/sdk"}, {Repository: "it/npm-part", Package: "other"}}
 	// A rule of an endpoint: @acme/sdk only from 2.0.0.
 	rule := func(pkg, version string) bool { return pkg == "@acme/sdk" && version >= "2" }
 	byPackage := func(pkg, version string) bool { return pkg == "@acme/sdk" }
@@ -63,10 +65,10 @@ func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 		t.Helper()
 		s, sn := buildFixture()
 		var n loaders
-		load := func([]string, int) ([]store.Candidate, error) { n.triples++; return triples, nil }
-		var loadPairs func([]string, int) ([]store.Pair, int, error)
+		load := func([]int64, int) ([]store.Candidate, error) { n.triples++; return triples, nil }
+		var loadPairs func([]int64, int) ([]store.Pair, int, error)
 		if pairLoader {
-			loadPairs = func([]string, int) ([]store.Pair, int, error) { n.pairs++; return pairs, len(triples), nil }
+			loadPairs = func([]int64, int) ([]store.Pair, int, error) { n.pairs++; return pairs, len(triples), nil }
 		}
 		sc, err := s.build(sn, Caller{Reads: rs}, nil, withWhole, load, loadPairs)
 		if err != nil {
@@ -81,7 +83,7 @@ func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 		if n != (loaders{pairs: 1}) {
 			t.Fatalf("loaders %+v, want the pairs only", n)
 		}
-		if len(sc.Packages) != 1 || sc.Packages[0] != "npm-part\x1f@acme/sdk" || len(sc.Rows) != 0 {
+		if len(sc.Packages) != 1 || sc.Packages[0] != "11\x1f@acme/sdk" || len(sc.Rows) != 0 {
 			t.Errorf("scope %+v", sc)
 		}
 		for _, a := range fs.asked {
@@ -96,7 +98,7 @@ func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 		if n != (loaders{triples: 1}) {
 			t.Fatalf("loaders %+v, want the triples only", n)
 		}
-		if len(sc.Rows) != 1 || sc.Rows[0] != "npm-part\x1f@acme/sdk\x1f2.1.0" || len(sc.Packages) != 0 {
+		if len(sc.Rows) != 1 || sc.Rows[0] != "11\x1f@acme/sdk\x1f2.1.0" || len(sc.Packages) != 0 {
 			t.Errorf("scope %+v: only 2.1.0 may be read", sc)
 		}
 		want := map[string]bool{"npm-part @acme/sdk 1.9.0": true, "npm-part @acme/sdk 2.1.0": true, "npm-part other 1.0.0": true}
@@ -132,18 +134,18 @@ func TestR_VULN_028_ScopeLoadsTheRowsTheScopeCanDecide(t *testing.T) {
 		s.cfg.MaxScopeRows = 2
 		fs := &fakeScope{allow: byPackage}
 		_, err := s.build(sn, Caller{Reads: independent{fs, true}}, nil, false,
-			func([]string, int) ([]store.Candidate, error) { return triples, nil },
-			func([]string, int) ([]store.Pair, int, error) { return pairs, 3, nil })
+			func([]int64, int) ([]store.Candidate, error) { return triples, nil },
+			func([]int64, int) ([]store.Pair, int, error) { return pairs, 3, nil })
 		if err == nil {
 			t.Error("the pair mode accepted 3 findings with a limit of 2")
 		}
 		_, err = s.build(sn, Caller{Reads: fs}, nil, false,
-			func([]string, int) ([]store.Candidate, error) { return triples, nil }, nil)
+			func([]int64, int) ([]store.Candidate, error) { return triples, nil }, nil)
 		if err == nil {
 			t.Error("the triple mode accepted 3 findings with a limit of 2")
 		}
 		_, err = s.build(sn, Caller{Reads: fs}, nil, false,
-			func([]string, int) ([]store.Candidate, error) { return nil, errors.New("down") }, nil)
+			func([]int64, int) ([]store.Candidate, error) { return nil, errors.New("down") }, nil)
 		if err == nil {
 			t.Error("a loader error was swallowed")
 		}

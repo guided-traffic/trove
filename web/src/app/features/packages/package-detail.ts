@@ -3,6 +3,7 @@ import { Component, computed, effect, inject, input, resource, untracked } from 
 import { TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { PackageVersionSummary, PackagesApi } from '../../api/packages-api';
+import { splitRef } from '../../api/repositories-api';
 import { collectAll } from '../../api/pagination';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
@@ -109,7 +110,8 @@ export class PackageDetail {
   private readonly vulnerabilityApi = inject(VulnerabilitiesApi);
   // <<< M4b vulnerabilities
 
-  /** Route parameters of the matcher, bound by component input binding. */
+  /** Route parameters: the project of `/projects/:project/packages`, then the matcher's, bound by component input binding. */
+  readonly project = input.required<string>();
   readonly format = input.required<string>();
   readonly name = input.required<string>();
   /** Query parameters. */
@@ -298,7 +300,13 @@ export class PackageDetail {
   );
 
   protected readonly externalRel = EXTERNAL_REL;
-  protected readonly commands = packageCommands;
+  protected commands = (format: string, name: string): string[] => packageCommands(this.project(), format, name);
+
+  /** The file tree of a repository (`<project>/<key>`), inside the project of that repository. */
+  protected browseLink(repository: string): string[] {
+    const { project, key } = splitRef(repository);
+    return ['/projects', project, 'browse', key];
+  }
   protected readonly size = formatSize;
 
   /**

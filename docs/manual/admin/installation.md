@@ -191,7 +191,7 @@ kubectl -n trove exec deploy/trove-api -- /usr/local/bin/trove admin break-glass
 | `trove admin break-glass end-sessions` | Ends every break-glass session |
 | `trove admin sessions end --user <username>` or `--all` | Ends the browser sessions of one user or of everyone |
 | `trove admin service-account create <name> [--description <text>] [--admin]` | Creates a service account; `--admin` binds the administrator role to it |
-| `trove admin token create --service-account <name> [--ttl 15m] [--scope-file <file>]` | Prints a new token of the service account once, and nothing else, so a script can capture it. The lifetime defaults to 15 minutes and may not exceed the service-account token maximum. |
+| `trove admin token create --service-account <name\|project/name> [--ttl 15m] [--scope-file <file>]` | Prints a new token of the service account (`<project>/<name>` for the account of a project) once, and nothing else, so a script can capture it. The lifetime defaults to 15 minutes and may not exceed the service-account token maximum. |
 | `trove admin token revoke --id <uuid>` or `--value-stdin` | Revokes a token by its ID, or by its value read from standard input |
 | `trove admin user disable <username> [--keep-tokens]` | Disables a user and ends the user's sessions; with `--keep-tokens` the tokens remain but fail while the user is disabled |
 

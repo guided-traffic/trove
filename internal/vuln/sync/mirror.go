@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"io"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -57,7 +59,11 @@ func (m RepositoryMirror) Stat(ctx context.Context, key, path string) (*MirrorIt
 	if repos == nil || itemStore == nil {
 		return nil, errs.E(errs.Unavailable, errs.CodeInternal, "the item store of this replica is not wired yet")
 	}
-	repo, err := repos.ByKey(ctx, key)
+	name, perr := qname.ParseRepo(key)
+	if perr != nil {
+		return nil, problemf(errs.CodeMirrorRepositoryInvalid, "the repository "+key+" is not a repository name <project>/<key>", perr)
+	}
+	repo, err := repos.ByName(ctx, name)
 	if e, ok := errs.As(err); ok && e.Kind == errs.NotFound {
 		return nil, problemf(errs.CodeMirrorRepositoryInvalid, "the repository "+key+" does not exist", err)
 	}

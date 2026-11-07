@@ -113,7 +113,7 @@ describe('The rules the editor mirrors (R-CI-011, R-CI-010)', () => {
   });
 
   it('R-CI-013 a project mapping sends no groups and the write body carries the resolved options', () => {
-    const form = { ...emptyMappingForm(10, 'web-'), groups: ['g'], policies: ['web-read'], name: 'web-x' };
+    const form = { ...emptyMappingForm(10), groups: ['g'], policies: ['web-read'], name: 'web-x' };
     expect(inputFromForm(form, 'web').grants.groups).toBeUndefined();
     expect(inputFromForm(form, null).grants.groups).toEqual(['g']);
     expect(inputFromForm(form, null).options).toEqual({ crossProjectSource: 'deny', allowUnprotectedRefs: false });

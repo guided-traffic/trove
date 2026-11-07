@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-06
+**Last updated:** 2026-11-07
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -1092,21 +1092,24 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   - ⚪ Node drain and PostgreSQL and Valkey failover under load
   - ⚪ Backup by the CronJob and restore into an empty namespace
 - ⚪ Objections from the walkthrough worked off
-  - ⚪ Every repository belongs to exactly one project and none is shared (owner, 2026-11-06,
-    [Q-AUTHZ-206](../spec/authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project), gap H-540); a
+  - 🟢 Every repository belongs to exactly one project and none is shared (owner, 2026-11-06,
+    [Q-AUTHZ-206](../spec/authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project)); a
     repository is addressed inside its project, `/api/<format>/<projectKey>/<repoKey>/…`
-    ([Q-REPO-212](../spec/repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
-    gap H-541); a virtual repository lists only repositories of its project; no compatibility path (CLAUDE.md)
-  - ⚪ Users and groups are members of a project with a role that grants its repositories (owner, 2026-11-06,
-    [Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories),
-    gap H-542); the project is the context of the content, chosen from your projects
-    ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects), gap
-    H-550); four roles Reader, Developer, Maintainer, Owner
+    ([Q-REPO-212](../spec/repositories-and-proxy.md#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared));
+    a virtual repository lists only repositories of its project; no compatibility path (CLAUDE.md)
+  - 🟢 Users and groups are members of a project with a role that grants its repositories (owner, 2026-11-06,
+    [Q-AUTHZ-207](../spec/authorization.md#q-authz-207--a-user-or-group-is-a-member-of-a-project-with-a-role-and-the-role-grants-the-projects-repositories));
+    four roles Reader, Developer, Maintainer, Owner
     ([Q-AUTHZ-208](../spec/authorization.md#q-authz-208--four-project-roles-reader-developer-maintainer-owner)), the Owner
-    administers the project on its own and the two switches go; `admin` and
-    `auditor` see every project, `admin` creates projects and assigns members; the auditor's instance-wide vulnerability
-    dashboard in the admin area ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area),
-    gap H-551)
+    administers the project on its own and the two switches are gone; `admin` and `auditor` see every project, `admin`
+    creates projects and names the first Owners; a project's policies, service accounts and CI mappings are named within it
+    ([Q-AUTHZ-209](../spec/authorization.md#q-authz-209--a-projects-policies-and-service-accounts-are-named-within-the-project-administrators-keep-instance-wide-ones))
+  - 🟢 The project is the context of the content, chosen from your projects
+    ([Q-UI-129](../spec/api-and-ui.md#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects),
+    [Q-UI-163](../spec/api-and-ui.md#q-ui-163--the-url-is-the-project-what-stays-outside-a-project-and-where-the-packages-of-a-project-come-from))
+  - 🟢 The auditor's instance-wide vulnerability dashboard in the admin area, `/admin/security`
+    ([Q-UI-130](../spec/api-and-ui.md#q-ui-130--the-auditor-has-an-instance-wide-vulnerability-dashboard-in-the-admin-area),
+    [Q-UI-165](../spec/api-and-ui.md#q-ui-165--the-security-dashboard-is-the-content-report-mounted-in-the-admin-area-with-its-own-links-project-column-and-search))
 - ⚪ All exit checks green again
 - 🟡 Beta documentation: installation guide, configuration reference, known limitations. The first edition of the
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known

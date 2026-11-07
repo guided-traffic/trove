@@ -8,8 +8,8 @@ import "testing"
 // timing of the second answer shows what the cache holds (Q-BAS-42, Q-BAS-124, security finding P4).
 func TestR_BAS_024_ANarrowedReaderCannotTellACachedHiddenNameFromAMissingOne(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	const hidden = "/api/npm/npm-all/secret/-/secret-1.0.0.tgz"
-	const missing = "/api/npm/npm-all/nothere/-/nothere-1.0.0.tgz"
+	const hidden = "/api/npm/web/npm-all/secret/-/secret-1.0.0.tgz"
+	const missing = "/api/npm/web/npm-all/nothere/-/nothere-1.0.0.tgz"
 	s.site.artifacts[hidden] = []byte("secret bytes")
 	if w := s.get(hidden, "Authorization", bearer(s.full)); w.Code != 200 {
 		t.Fatalf("the full reader: %d", w.Code)

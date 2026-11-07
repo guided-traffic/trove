@@ -19,6 +19,27 @@ function required(name: string): string {
   return v;
 }
 
+/**
+ * The project the journeys create their repositories, policies and accounts in (R-REPO-001): every repository belongs
+ * to a project and is addressed inside it (R-REPO-002). `global-setup.ts` creates it before the first journey.
+ */
+export const e2eProject = 'e2e';
+
+/** `/api/v1/projects/<project>/repositories`: the collection in which a repository is created. */
+export function repositories(project = e2eProject): string {
+  return `/api/v1/projects/${project}/repositories`;
+}
+
+/** `/api/v1/projects/<project>/repositories/<key>`: one repository of the management API. */
+export function repositoryApi(key: string, project = e2eProject): string {
+  return `${repositories(project)}/${key}`;
+}
+
+/** The qualified name `<project>/<key>` that selectors, scopes and filters use outside a project. */
+export function qualified(key: string, project = e2eProject): string {
+  return `${project}/${key}`;
+}
+
 /** A name that no earlier run used, so a rerun needs no cleanup to start. */
 export function unique(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}`;

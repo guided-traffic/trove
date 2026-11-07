@@ -18,7 +18,7 @@ import (
 
 func TestR_REPO_003_TheCatalogFactsOfNPM(t *testing.T) {
 	d := New().Descriptor()
-	if d.ID != "npm" || d.Layout != "npm" || d.ProtocolBasePath != "/api/npm/{key}/" || d.PatternSubject != formats.SubjectName {
+	if d.ID != "npm" || d.Layout != "npm" || d.ProtocolBasePath != "/api/npm/{project}/{key}/" || d.PatternSubject != formats.SubjectName {
 		t.Fatalf("%+v", d.Facts)
 	}
 	if d.DefaultUpstreamURL != "https://registry.npmjs.org/" || d.ProbePath != "-/ping" ||

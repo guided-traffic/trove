@@ -35,7 +35,7 @@ import { ErrorNotice } from '../../shared/error-notice';
       }
     </div>
     @if (project(); as key) {
-      <trove-project-needs id="needs-ci-mappings" [state]="state()" capability="ci:write" right="managePolicies" />
+      <trove-project-needs id="needs-ci-mappings" [state]="state()" capability="ci:write" />
     } @else {
       <trove-needs id="needs-ci-mappings" capability="ci:write" />
     }
@@ -118,9 +118,9 @@ export class MappingList {
   protected readonly loading = signal(false);
   protected readonly error = signal<ApiError | null>(null);
 
-  protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'managePolicies', 'ci:write'));
+  protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'ci:write'));
   protected readonly writable = computed(() => (this.project() ? this.state() === 'enabled' : this.session.has('ci:write')));
-  /** The dry run is the `ci:read` operation or the project's; the project administrator holds the latter. */
+  /** The dry run is the `ci:read` operation or the project's; the project Owner holds the latter. */
   protected readonly testable = computed(() => this.issuer() !== '' || this.project() !== null);
 
   protected readonly caption = $localize`:@@ci.mappings.caption:Mappings in evaluation order`;

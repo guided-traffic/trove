@@ -7,25 +7,38 @@
 -- meets the driver's no-rows error.
 
 -- name: ListRepositories :many
--- Byte order, whatever the database's collation: the list's cursor is the last key
+-- Every repository of the installation, by project key and key in byte order,
+-- whatever the database's collation: the list's cursor is the last (project, key)
 -- of a page compared in Go, byte by byte (R-REPO-012). Under en_US.UTF-8 the hyphen
 -- weighs nothing at the first level, so `weba` sorted before `web-b` and the page
 -- after `weba` skipped `web-b`.
-SELECT *
-  FROM repositories
- ORDER BY key COLLATE "C";
+SELECT r.*
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ ORDER BY p.key COLLATE "C", r.key COLLATE "C";
 
--- name: GetRepositoryByKey :many
-SELECT *
-  FROM repositories
- WHERE key = sqlc.arg(key)::text;
+-- name: ListProjectRepositories :many
+-- The repositories of one project by key in byte order (Q-REPO-212).
+SELECT r.*
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text
+ ORDER BY r.key COLLATE "C";
 
--- name: LockRepositoryByKey :many
+-- name: GetRepositoryByName :many
+-- A repository is named by its project key and its key (Q-REPO-212).
+SELECT r.*
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = sqlc.arg(key)::text;
+
+-- name: LockRepositoryByName :many
 -- The row lock serialises the writers of one repository; a reader needs none.
-SELECT *
-  FROM repositories
- WHERE key = sqlc.arg(key)::text
-   FOR UPDATE;
+SELECT r.*
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = sqlc.arg(key)::text
+   FOR UPDATE OF r;
 
 -- name: GetRepositoryByID :many
 SELECT *
@@ -33,15 +46,14 @@ SELECT *
  WHERE id = sqlc.arg(id)::bigint;
 
 -- name: InsertRepository :many
--- A key that is taken (also by a repository being deleted) conflicts on the
--- unique index; ON CONFLICT DO NOTHING returns no row and the caller answers
--- repository_exists. project_id is empty for a repository without a project; a
--- project administrator's repository is assigned in this statement, in the
--- transaction that creates it (R-AUTHZ-026).
+-- A key that is taken in the project (also by a repository being deleted) conflicts
+-- on the unique constraint repositories_project_key; ON CONFLICT DO NOTHING returns
+-- no row and the caller answers already_exists. The project is required
+-- (Q-AUTHZ-206): the repository is created in it, in this statement.
 INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
 VALUES (sqlc.arg(key)::text, sqlc.arg(format)::text, sqlc.arg(class)::text, sqlc.arg(config)::text::jsonb,
-        NULLIF(sqlc.arg(project_id)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
-ON CONFLICT (key) DO NOTHING
+        sqlc.arg(project_id)::text::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
+ON CONFLICT (project_id, key) DO NOTHING
 RETURNING *;
 
 -- name: UpdateRepositoryConfig :many
@@ -83,20 +95,11 @@ DELETE FROM repositories WHERE id = sqlc.arg(id)::bigint AND lifecycle = 'deleti
 
 -- name: RepositoryProjectKeys :many
 -- Every project's id and key: the readers resolve project_id of the rows they hold
--- to the key (R-AUTHZ-026).
+-- to the key (Q-REPO-212).
 SELECT id::text AS id, key FROM project;
 
 -- name: RepositoryProjectShare :many
--- The project a repository is created in, locked FOR SHARE: a concurrent delete of
--- the project (FOR UPDATE, which counts the repositories under that lock) waits for
--- this transaction, so the new repository is counted or the project is gone.
+-- The project a repository is created in or moved into, locked FOR SHARE: a concurrent
+-- delete of the project (FOR UPDATE, which counts the repositories under that lock)
+-- waits for this transaction, so the new repository is counted or the project is gone.
 SELECT id::text AS id, key FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
-
--- name: RepositoryProjectsByKeys :many
--- The project key of each named repository, empty for one that belongs to none;
--- an unknown key has no row. A project administrator's virtual repository checks
--- its new members and its deploy target with it (Q-AUTHZ-178).
-SELECT r.key, COALESCE(p.key, '')::text AS project
-  FROM repositories r
-  LEFT JOIN project p ON p.id = r.project_id
- WHERE r.key = ANY(sqlc.arg(keys)::text[]);

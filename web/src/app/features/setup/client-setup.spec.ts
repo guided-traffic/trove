@@ -28,7 +28,7 @@ function validToken(fill = 'x'): string {
 }
 
 async function open(
-  inputs: Record<string, unknown> = { repository: 'npm-all' },
+  inputs: Record<string, unknown> = { repository: 'web/npm-all' },
   options: { capabilities?: readonly string[]; anonymous?: boolean; setup?: (get: Opened['get']) => void } = {},
 ) {
   const r = await renderScreen(ClientSetupPage, {
@@ -89,7 +89,7 @@ describe('Client setup', () => {
       'yarn-classic',
     ]);
     const repositories = [...r.root.querySelectorAll<HTMLInputElement>('input[name="repository"]')].map((i) => i.value);
-    expect(repositories).toEqual(['npm-all', 'npm-readonly', 'npm-local', 'npm-remote']);
+    expect(repositories).toEqual(['web/npm-all', 'web/npm-readonly', 'web/npm-local', 'web/npm-remote']);
     const t = text(r.root);
     expect(t).toContain('recommended');
     expect(t).toContain('Read only');
@@ -105,17 +105,17 @@ describe('Client setup', () => {
     expect(radio(first, 'format', 'generic').checked).toBe(true);
     expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="client"]')].map((i) => i.value)).toEqual(['curl']);
 
-    const r = await open({ repository: 'generic-local' }, { setup: withGeneric });
+    const r = await open({ repository: 'web/generic-local' }, { setup: withGeneric });
     expect(radio(r, 'format', 'generic').checked).toBe(true);
-    expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'generic-local', query: { client: 'curl', credentials: 'env' } });
+    expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/generic-local', query: { client: 'curl', credentials: 'env' } });
     const [configure] = snippets(r);
     expect(configure).toContain('trove_curl() {');
     expect(configure).toContain('header = "Authorization: Bearer ${TROVE_TOKEN}"');
     expect(text(r.root)).toContain('hands curl the credential on standard input');
     await tab(r, 'Install');
-    expect(snippets(r)).toContain('trove_curl --fail --remote-name "https://trove.example.net/files/generic-local/<path>"\n');
+    expect(snippets(r)).toContain('trove_curl --fail --remote-name "https://trove.example.net/files/web/generic-local/<path>"\n');
     await tab(r, 'Publish');
-    expect(snippets(r)).toContain('trove_curl --fail --upload-file <file> "https://trove.example.net/files/generic-local/<path>"\n');
+    expect(snippets(r)).toContain('trove_curl --fail --upload-file <file> "https://trove.example.net/files/web/generic-local/<path>"\n');
     expect(text(r.root)).toContain('also needs the overwrite permission');
     await expectAccessible(r.root);
 
@@ -124,10 +124,10 @@ describe('Client setup', () => {
   });
 
   it('R-UI-016 a link from a repository opens the page prepared: the repository and client come from the query', async () => {
-    const r = await open({ repository: 'npm-local', client: 'pnpm' });
-    expect(radio(r, 'repository', 'npm-local').checked).toBe(true);
+    const r = await open({ repository: 'web/npm-local', client: 'pnpm' });
+    expect(radio(r, 'repository', 'web/npm-local').checked).toBe(true);
     expect(radio(r, 'client', 'pnpm').checked).toBe(true);
-    expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'npm-local', query: { client: 'pnpm' } });
+    expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/npm-local', query: { client: 'pnpm' } });
   });
 
   it('R-UI-016 nothing is requested before a repository is chosen', async () => {
@@ -139,7 +139,7 @@ describe('Client setup', () => {
     const r = await open();
     expect(r.setup.calls.at(-1)?.query.credentials).toBe('env');
     const npmrc = snippets(r)[0]!;
-    expect(npmrc).toContain('//trove.example.net/api/npm/npm-all/:_authToken=${TROVE_TOKEN}');
+    expect(npmrc).toContain('//trove.example.net/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}');
     expect(text(r.root)).not.toMatch(/trv_(pat|sat|cit)_/);
     expect(radio(r, 'credentials', 'env').checked).toBe(true);
     const link = [...r.root.querySelectorAll('a')].find((a) => text(a).includes('Create a token to put into the variable'));
@@ -148,32 +148,32 @@ describe('Client setup', () => {
 
   it('R-UI-016 R-UI-017 the npm client shows the registry and credential key with the trailing slash and the install and publish commands', async () => {
     const r = await open();
-    expect(snippets(r).some((s) => s.startsWith('registry=https://trove.example.net/api/npm/npm-all/\n'))).toBe(true);
+    expect(snippets(r).some((s) => s.startsWith('registry=https://trove.example.net/api/npm/web/npm-all/\n'))).toBe(true);
     await tab(r, 'Install');
     expect(snippets(r)).toContain('npm install <package>');
     await tab(r, 'Publish');
-    expect(snippets(r)).toContain('npm publish --registry https://trove.example.net/api/npm/npm-all/\n');
+    expect(snippets(r)).toContain('npm publish --registry https://trove.example.net/api/npm/web/npm-all/\n');
   });
 
   it('R-UI-017 Yarn Berry gets a .yarnrc.yml with npmRegistryServer, npmAlwaysAuth and npmAuthToken, and its publish registry', async () => {
-    const r = await open({ repository: 'npm-all', client: 'yarn' });
+    const r = await open({ repository: 'web/npm-all', client: 'yarn' });
     const yml = snippets(r)[0]!;
-    expect(yml).toContain('npmRegistryServer: "https://trove.example.net/api/npm/npm-all/"');
+    expect(yml).toContain('npmRegistryServer: "https://trove.example.net/api/npm/web/npm-all/"');
     expect(yml).toContain('npmAlwaysAuth: true');
     expect(yml).toContain('npmAuthToken: "${TROVE_TOKEN}"');
     await tab(r, 'Publish');
-    expect(snippets(r).some((s) => s.includes('npmPublishRegistry: "https://trove.example.net/api/npm/npm-all/"'))).toBe(true);
+    expect(snippets(r).some((s) => s.includes('npmPublishRegistry: "https://trove.example.net/api/npm/web/npm-all/"'))).toBe(true);
   });
 
   it('R-UI-017 Yarn Classic and pnpm use the .npmrc and their own add and publish commands', async () => {
-    const classic = await open({ repository: 'npm-all', client: 'yarn-classic' });
-    expect(snippets(classic)[0]).toContain('registry=https://trove.example.net/api/npm/npm-all/');
+    const classic = await open({ repository: 'web/npm-all', client: 'yarn-classic' });
+    expect(snippets(classic)[0]).toContain('registry=https://trove.example.net/api/npm/web/npm-all/');
     await tab(classic, 'Install');
     expect(snippets(classic)).toContain('yarn add <package>');
     await tab(classic, 'Publish');
-    expect(snippets(classic)).toContain('yarn publish --registry https://trove.example.net/api/npm/npm-all/\n');
+    expect(snippets(classic)).toContain('yarn publish --registry https://trove.example.net/api/npm/web/npm-all/\n');
 
-    const pnpm = await open({ repository: 'npm-all', client: 'pnpm' });
+    const pnpm = await open({ repository: 'web/npm-all', client: 'pnpm' });
     await tab(pnpm, 'Install');
     expect(snippets(pnpm)).toContain('pnpm add <package>');
   });
@@ -222,9 +222,9 @@ describe('Client setup', () => {
       await settle(r.fixture);
 
       const request = r.tokens.lastRequest!;
-      expect(request.description).toMatch(/^Client setup: npm, npm-all, \d{4}-\d{2}-\d{2}$/);
+      expect(request.description).toMatch(/^Client setup: npm, web\/npm-all, \d{4}-\d{2}-\d{2}$/);
       expect(request.ttlSeconds).toBe(2_592_000);
-      expect(request.scope).toEqual({ repositories: [{ repositories: ['npm-all'], actions: ['read'] }] });
+      expect(request.scope).toEqual({ repositories: [{ repositories: ['web/npm-all'], actions: ['read'] }] });
       const shown = r.root.querySelector('.token-value')?.textContent ?? '';
       expect(shown).toMatch(/^trv_pat_/);
       expect(snippets(r)[0]).toContain(`:_authToken=${shown}`);
@@ -246,11 +246,11 @@ describe('Client setup', () => {
       button(r.root, 'Create token').click();
       await settle(r.fixture);
       expect(r.tokens.lastRequest?.scope?.repositories).toEqual([
-        { repositories: ['npm-all'], actions: ['read'] },
-        { repositories: ['npm-local'], actions: ['read', 'deploy'] },
+        { repositories: ['web/npm-all'], actions: ['read'] },
+        { repositories: ['web/npm-local'], actions: ['read', 'deploy'] },
       ]);
 
-      const readOnly = await open({ repository: 'npm-remote' });
+      const readOnly = await open({ repository: 'web/npm-remote' });
       await choose(readOnly, 'credentials', 'create');
       expect(text(readOnly.root)).not.toContain('may also publish');
     });
@@ -266,7 +266,7 @@ describe('Client setup', () => {
       expect(location.href).not.toContain('trv_');
 
       // The router binds the query parameter; the spec sets the input the router would set.
-      r.fixture.componentRef.setInput('repository', 'npm-local');
+      r.fixture.componentRef.setInput('repository', 'web/npm-local');
       await settle(r.fixture);
       expect(r.root.querySelector('.token-value')).toBeNull();
       expect(r.root.textContent).not.toContain(token);
@@ -303,7 +303,7 @@ describe('Client setup', () => {
       button(r.root, 'Create token').click();
       await settle(r.fixture);
 
-      r.fixture.componentRef.setInput('repository', 'npm-local');
+      r.fixture.componentRef.setInput('repository', 'web/npm-local');
       await settle(r.fixture);
       release();
       await settle(r.fixture);
@@ -312,7 +312,7 @@ describe('Client setup', () => {
       const held = r.fixture.componentInstance as unknown as { token: () => string | null };
       expect(held.token()).toBeNull();
       expect(r.tokens.calls.filter((c) => c.startsWith('revoke '))).toHaveLength(1);
-      expect(r.tokens.lastRequest?.scope?.repositories?.[0]?.repositories).toEqual(['npm-all']);
+      expect(r.tokens.lastRequest?.scope?.repositories?.[0]?.repositories).toEqual(['web/npm-all']);
     });
 
     it('R-UI-016 a failed creation (recent sign-in needed, no right) is shown and no token appears', async () => {
@@ -417,7 +417,7 @@ describe('Client setup', () => {
   });
 
   it('R-UI-016 an anonymous viewer skips the credentials step and gets snippets without authentication lines', async () => {
-    const r = await open({ repository: 'npm-all' }, { anonymous: true });
+    const r = await open({ repository: 'web/npm-all' }, { anonymous: true });
     expect(r.setup.calls.at(-1)?.query.credentials).toBe('none');
     expect(r.root.querySelector('input[name="credentials"]')).toBeNull();
     expect(text(r.root)).toContain('You are not signed in.');
@@ -426,20 +426,20 @@ describe('Client setup', () => {
   });
 
   it('R-UI-016 a virtual repository without a default deployment target shows an explanation instead of the publish snippets, and links the members for those who may read the configuration', async () => {
-    const r = await open({ repository: 'npm-readonly' });
+    const r = await open({ repository: 'web/npm-readonly' });
     await tab(r, 'Publish');
     expect(text(r.root)).toContain('no default deployment target');
     expect(snippets(r)).toEqual([]);
     const link = [...r.root.querySelectorAll('a')].find((a) => text(a).includes('see its members'));
-    expect(link?.getAttribute('href')).toBe('/admin/repositories/npm-readonly');
+    expect(link?.getAttribute('href')).toBe('/projects/web/repositories/npm-readonly');
 
-    const plain = await open({ repository: 'npm-readonly' }, { capabilities: [] });
+    const plain = await open({ repository: 'web/npm-readonly' }, { capabilities: [] });
     await tab(plain, 'Publish');
     expect([...plain.root.querySelectorAll('a')].some((a) => text(a).includes('see its members'))).toBe(false);
   });
 
   it('R-UI-016 a repository the user cannot publish to says so on the Publish tab', async () => {
-    const r = await open({ repository: 'npm-remote' });
+    const r = await open({ repository: 'web/npm-remote' });
     await tab(r, 'Publish');
     expect(text(r.root)).toContain('You cannot publish to this repository');
   });
@@ -451,7 +451,7 @@ describe('Client setup', () => {
   });
 
   it('R-UI-016 a failing setup answer is shown with a retry', async () => {
-    const r = await open({ repository: 'npm-all' }, { setup: (get) => ((get(ClientSetupApi) as FakeClientSetupApi).failure = new ApiError(503, { code: 'unavailable' }, null)) });
+    const r = await open({ repository: 'web/npm-all' }, { setup: (get) => ((get(ClientSetupApi) as FakeClientSetupApi).failure = new ApiError(503, { code: 'unavailable' }, null)) });
     expect(text(r.root)).toContain('temporarily unavailable');
     button(r.root, 'Retry').click();
     await settle(r.fixture);
@@ -474,18 +474,18 @@ describe('Client setup', () => {
         'visual-studio',
       ]);
       expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="repository"]')].map((i) => i.value)).toEqual([
-        'nuget-all',
-        'nuget-local',
-        'nuget-remote',
+        'web/nuget-all',
+        'web/nuget-local',
+        'web/nuget-remote',
       ]);
       await expectAccessible(r.root);
     });
 
     it('R-UI-018 R-NUGET-026 the .NET CLI source uses the index.json URL, the environment reference and the clear-text flag; the nuget.config clears the other sources', async () => {
-      const r = await open({ repository: 'nuget-all', client: 'dotnet' });
-      expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'nuget-all', query: { client: 'dotnet', credentials: 'env' } });
+      const r = await open({ repository: 'web/nuget-all', client: 'dotnet' });
+      expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/nuget-all', query: { client: 'dotnet', credentials: 'env' } });
       const [shell, powershell, config] = snippets(r);
-      expect(shell).toContain('dotnet nuget add source https://trove.example.net/api/nuget/nuget-all/v3/index.json --name trove');
+      expect(shell).toContain('dotnet nuget add source https://trove.example.net/api/nuget/web/nuget-all/v3/index.json --name trove');
       expect(shell).toContain('--password "${TROVE_TOKEN}" --store-password-in-clear-text');
       expect(powershell).toContain('--password "$env:TROVE_TOKEN"');
       expect(config).toContain('<clear />');
@@ -498,31 +498,31 @@ describe('Client setup', () => {
     });
 
     it('R-UI-018 install and publish: the push names the repository the caller chose, with the token as the API key', async () => {
-      const r = await open({ repository: 'nuget-all', client: 'dotnet' });
+      const r = await open({ repository: 'web/nuget-all', client: 'dotnet' });
       await tab(r, 'Install');
       expect(snippets(r)[0]).toContain('dotnet add package <package>');
       await tab(r, 'Publish');
       expect(snippets(r)[0]).toContain(
-        'dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source https://trove.example.net/api/nuget/nuget-all/v3/index.json --api-key "${TROVE_TOKEN}"',
+        'dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source https://trove.example.net/api/nuget/web/nuget-all/v3/index.json --api-key "${TROVE_TOKEN}"',
       );
       expect(text(r.root)).toContain('The token travels as the API key.');
     });
 
     it('R-UI-018 nuget.exe and Visual Studio each get their own source instructions', async () => {
-      const exe = await open({ repository: 'nuget-local', client: 'nuget' });
-      expect(snippets(exe)[0]).toContain('nuget sources add -Name trove -Source https://trove.example.net/api/nuget/nuget-local/v3/index.json');
+      const exe = await open({ repository: 'web/nuget-local', client: 'nuget' });
+      expect(snippets(exe)[0]).toContain('nuget sources add -Name trove -Source https://trove.example.net/api/nuget/web/nuget-local/v3/index.json');
       await tab(exe, 'Publish');
       expect(snippets(exe)[0]).toContain('nuget push Acme.Widgets.1.2.3.nupkg -Source');
 
-      const vs = await open({ repository: 'nuget-local', client: 'visual-studio' });
-      expect(snippets(vs)[0]).toContain('<add key="trove" value="https://trove.example.net/api/nuget/nuget-local/v3/index.json" protocolVersion="3" />');
+      const vs = await open({ repository: 'web/nuget-local', client: 'visual-studio' });
+      expect(snippets(vs)[0]).toContain('<add key="trove" value="https://trove.example.net/api/nuget/web/nuget-local/v3/index.json" protocolVersion="3" />');
       await tab(vs, 'Install');
       expect(snippets(vs)[0]).toContain('<PackageReference Include="<package>" />');
       await expectAccessible(vs.root);
     });
 
     it('R-UI-018 a remote NuGet repository cannot be published to', async () => {
-      const r = await open({ repository: 'nuget-remote', client: 'dotnet' });
+      const r = await open({ repository: 'web/nuget-remote', client: 'dotnet' });
       await tab(r, 'Publish');
       expect(text(r.root)).toContain('You cannot publish to this repository');
     });

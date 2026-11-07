@@ -15,7 +15,7 @@
 }
 
 @if (project()) {
-  <trove-project-needs [state]="state()" capability="ci:write" right="managePolicies" />
+  <trove-project-needs [state]="state()" capability="ci:write" />
 } @else {
   <trove-needs capability="ci:write" />
 }
@@ -199,8 +199,7 @@
               type="textarea"
               [value]="row.repositories"
               (valueChange)="setRow(row.id, { repositories: $event })"
-              i18n-hint="@@ci.editor.repositories-hint"
-              hint="One key or pattern per line. A template needs literal text next to the claim."
+              [hint]="repositoriesHint()"
             />
             @if (project() && projectRepositories().length > 0 && writable()) {
               <div class="quick" role="group" aria-label="Repositories of the project" i18n-aria-label="@@ci.editor.project-repos">

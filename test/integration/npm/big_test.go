@@ -26,7 +26,7 @@ func TestR_NPM_006_ProvenanceBundle(t *testing.T) {
 	bundle := []byte(`{"mediaType":"application/vnd.dev.sigstore.bundle+json;version=0.3"}`)
 	e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "@acme/signed", Version: "1.0.0", Sigstore: bundle})
 	path := "@acme/signed/-/signed-1.0.0.sigstore"
-	raw := e.st.Do(a, "GET", "/files/npm-local/"+path, e.tokA, nil)
+	raw := e.st.Do(a, "GET", "/files/it/npm-local/"+path, e.tokA, nil)
 	if raw.Status != 200 || string(raw.Body) != string(bundle) {
 		t.Fatalf("%d %q", raw.Status, raw.Body)
 	}

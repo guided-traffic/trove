@@ -85,25 +85,51 @@ func (s *Stack) Token(p Person, sc scope.Scope) string {
 	return raw
 }
 
-// Repository inserts a repository row. cfg is the JSON settings document ("{}"
-// for the defaults). The row bypasses the repository service: it is for the
-// state a test starts from, not for what it tests; a test of the service goes
-// through the management API.
+// Repository inserts a repository row into the default project [DefaultProject]. A key of the form
+// "<project>/<key>" names another project, created on first use. cfg is the JSON settings document ("{}"
+// for the defaults). The row bypasses the repository service: it is for the state a test starts from,
+// not for what it tests; a test of the service goes through the management API.
 func (s *Stack) Repository(key, class, format, cfg string) {
+	s.tb.Helper()
+	project, k := splitName(key)
+	s.RepositoryIn(project, k, class, format, cfg)
+}
+
+// RepositoryIn inserts a repository row into the project, which is created when it does not exist.
+func (s *Stack) RepositoryIn(project, key, class, format, cfg string) {
 	s.tb.Helper()
 	if cfg == "" {
 		cfg = "{}"
 	}
-	s.Exec("INSERT INTO repositories (key, class, format, config) VALUES ($1, $2, $3, $4::text::jsonb)", key, class, format, cfg)
+	s.Project(project)
+	s.Exec("INSERT INTO repositories (key, class, format, config, project_id) SELECT $1, $2, $3, $4::text::jsonb, id FROM project WHERE key = $5",
+		key, class, format, cfg, project)
 }
 
-// Policy creates a permission policy that grants actions on the repositories
-// named by key to the principals.
+// Project creates the project (display name equal to the key) unless it exists. The stack's seed
+// creates [DefaultProject]; every repository belongs to a project (Q-AUTHZ-206).
+func (s *Stack) Project(key string) {
+	s.tb.Helper()
+	s.Exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING", key)
+}
+
+// Member makes a user or group a member of the project with the role (reader, developer, maintainer or
+// owner); the project is created when it does not exist.
+func (s *Stack) Member(project string, p Person, role string) {
+	s.tb.Helper()
+	s.Project(project)
+	s.Exec("INSERT INTO project_member (project_id, principal_id, role) SELECT id, $2::uuid, $3 FROM project WHERE key = $1", project, p.ID, role)
+}
+
+// Policy creates a global permission policy that grants actions on the repositories
+// named by key (a bare key of the default project, or "<project>/<key>") to the principals.
 func (s *Stack) Policy(name string, actions []string, repositories []string, members ...Person) {
 	s.tb.Helper()
 	id := s.Text("INSERT INTO authz_policy (id, name) VALUES (gen_random_uuid(), $1) RETURNING id::text", name)
 	for i, key := range repositories {
-		s.Exec("INSERT INTO authz_policy_selector (policy_id, ordinal, kind, repository_id) SELECT $1::uuid, $2, 'key', id FROM repositories WHERE key = $3", id, i, key)
+		project, k := splitName(key)
+		s.Exec(`INSERT INTO authz_policy_selector (policy_id, ordinal, kind, repository_id)
+			SELECT $1::uuid, $2, 'key', r.id FROM repositories r JOIN project p ON p.id = r.project_id WHERE p.key = $3 AND r.key = $4`, id, i, project, k)
 	}
 	for _, m := range members {
 		s.Exec("INSERT INTO authz_policy_entry (policy_id, principal_id, actions) VALUES ($1::uuid, $2::uuid, $3)", id, m.ID, actions)

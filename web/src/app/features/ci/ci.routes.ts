@@ -50,33 +50,30 @@ export const CI_ROUTES: Routes = [
 ];
 
 /**
- * The same screens under a project (Q-CI-26), mounted in the projects' routes: the project's overview,
- * its mapping editor (the issuer travels in the query: `?issuer=`) and the dry run over the project's
- * tier.
+ * The same screens under a project (Q-CI-26), mounted at `/projects/:project/ci` (Q-UI-129): the project's overview, its
+ * mapping editor (the issuer travels in the query: `?issuer=`) and the dry run over the project's tier.
  */
 export const PROJECT_CI_ROUTES: Routes = [
   {
-    path: ':key/ci',
+    path: '',
     title: $localize`:@@route.project-ci.title:CI identity`,
-    children: [
-      { path: '', loadComponent: () => import('./project-ci').then((m) => m.ProjectCi) },
-      {
-        path: 'test',
-        title: $localize`:@@route.project-ci.test.title:Claim tester`,
-        loadComponent: () => import('./claim-tester').then((m) => m.ClaimTester),
-      },
-      {
-        path: 'mappings/new',
-        title: $localize`:@@route.project-ci.mapping.new.title:New mapping`,
-        canDeactivate: [unsavedChangesGuard],
-        loadComponent: () => import('./mapping-editor').then((m) => m.MappingEditor),
-      },
-      {
-        path: 'mappings/:mapping',
-        title: $localize`:@@route.project-ci.mapping.title:Mapping`,
-        canDeactivate: [unsavedChangesGuard],
-        loadComponent: () => import('./mapping-editor').then((m) => m.MappingEditor),
-      },
-    ],
+    loadComponent: () => import('./project-ci').then((m) => m.ProjectCi),
+  },
+  {
+    path: 'test',
+    title: $localize`:@@route.project-ci.test.title:Claim tester`,
+    loadComponent: () => import('./claim-tester').then((m) => m.ClaimTester),
+  },
+  {
+    path: 'mappings/new',
+    title: $localize`:@@route.project-ci.mapping.new.title:New mapping`,
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./mapping-editor').then((m) => m.MappingEditor),
+  },
+  {
+    path: 'mappings/:mapping',
+    title: $localize`:@@route.project-ci.mapping.title:Mapping`,
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./mapping-editor').then((m) => m.MappingEditor),
   },
 ];

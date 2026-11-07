@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -25,7 +27,7 @@ func refuseGlobal(context.Context) error {
 func (r *replica) autoClaim(repoKey, name string) (repository.AutoClaimResult, error) {
 	r.t.Helper()
 	ctx := context.Background()
-	repo, err := r.reader.ByKey(ctx, repoKey)
+	repo, err := r.reader.ByName(ctx, qr(repoKey))
 	if err != nil {
 		return repository.AutoClaimResult{}, err
 	}
@@ -65,16 +67,16 @@ func TestClaims(t *testing.T) {
 	a.mustCreate("all", "virtual", "pkgfmt", `"virtual":{"members":["team-a","team-b","remote"]}`)
 
 	put := func(rep *replica, key string, pre repository.Precondition, in repository.ClaimInput, guard repository.GlobalGuard) (repository.ClaimSet, error) {
-		return rep.svc.PutClaims(ctx, caller, key, pre, in, guard)
+		return rep.svc.PutClaims(ctx, caller, qr(key), pre, in, guard)
 	}
 	claim := func(p, scope string) repository.ClaimEntry { return repository.ClaimEntry{Pattern: p, Scope: scope} }
 
 	t.Run("R-REPO-023 a new repository has no claims and claims_version 1", func(t *testing.T) {
-		set, err := a.svc.Claims(ctx, "team-a")
+		set, err := a.svc.Claims(ctx, qr("team-a"))
 		if err != nil || len(set.Claims) != 0 || set.Version != 1 {
 			t.Fatalf("claims = %+v, %v", set, err)
 		}
-		_, err = a.svc.Claims(ctx, "ghost")
+		_, err = a.svc.Claims(ctx, qr("ghost"))
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 
@@ -215,7 +217,7 @@ func TestClaims(t *testing.T) {
 		}
 		waitFor(t, "B to see the claim", 2*time.Second, func() bool {
 			m, err := b.routing.ClaimsFor(ctx, "pkgfmt", "@fresh/x")
-			return err == nil && len(m) == 1 && m[0].Repository == "sandbox"
+			return err == nil && len(m) == 1 && m[0].Repository == "it/sandbox"
 		})
 		if d := time.Since(start); d > 2*time.Second {
 			t.Fatalf("took %s", d)
@@ -224,15 +226,15 @@ func TestClaims(t *testing.T) {
 
 	t.Run("R-REPO-023 B routes a claimed name through the claim", func(t *testing.T) {
 		waitFor(t, "B to know the virtual repository", 3*poll, func() bool {
-			r, err := b.reader.ByKey(ctx, "all")
+			r, err := b.reader.ByName(ctx, qr("all"))
 			return err == nil && len(r.Members()) == 3
 		})
-		v, _ := b.reader.ByKey(ctx, "all")
+		v, _ := b.reader.ByName(ctx, qr("all"))
 		route, err := b.routing.Route(ctx, v, repository.RouteRequest{Name: "@acme/util"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := keysOf(route.Members); !slices.Equal(got, []string{"team-a"}) || !slices.Equal(route.Decision.ClaimedBy, []string{"team-a"}) {
+		if got := keysOf(route.Members); !slices.Equal(got, []string{"team-a"}) || !slices.Equal(route.Decision.ClaimedBy, []qname.Repo{qr("team-a")}) {
 			t.Fatalf("route = %+v", route)
 		}
 		route, _ = b.routing.Route(ctx, v, repository.RouteRequest{Name: "@acme/billing-core"})
@@ -246,7 +248,7 @@ func TestClaims(t *testing.T) {
 	})
 
 	t.Run("R-REPO-023 remote refusal uses the global claims", func(t *testing.T) {
-		rem, _ := b.reader.ByKey(ctx, "remote")
+		rem, _ := b.reader.ByName(ctx, qr("remote"))
 		refused, err := b.routing.RemoteRefused(ctx, rem, "@acme/new-thing", nil)
 		if err != nil || !refused {
 			t.Fatalf("refused = %v, %v", refused, err)
@@ -270,11 +272,11 @@ func TestAutoClaim(t *testing.T) {
 	a.mustCreate("manual", "local", "pkgfmt", `"local":{"autoClaim":false}`)
 	a.mustCreate("remote", "remote", "pkgfmt", "")
 	a.mustCreate("all", "virtual", "pkgfmt", `"virtual":{"members":["team-a","team-b","remote"]}`)
-	if _, err := a.svc.PutClaims(ctx, caller, "team-a", repository.MatchAny(),
+	if _, err := a.svc.PutClaims(ctx, caller, qr("team-a"), repository.MatchAny(),
 		repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@acme/*"}}}, allowGlobal); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.svc.PutClaims(ctx, caller, "sandbox", repository.MatchAny(),
+	if _, err := a.svc.PutClaims(ctx, caller, qr("sandbox"), repository.MatchAny(),
 		repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@org/*", Scope: "global"}}}, allowGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +290,7 @@ func TestAutoClaim(t *testing.T) {
 		if claimsVersion(e, "team-b") != before+1 {
 			t.Fatal("claims_version did not move")
 		}
-		set, _ := a.svc.Claims(ctx, "team-b")
+		set, _ := a.svc.Claims(ctx, qr("team-b"))
 		if !slices.Equal(claimPatterns(set), []string{"auto:members:left-pad"}) {
 			t.Fatalf("claims = %v", claimPatterns(set))
 		}
@@ -369,11 +371,11 @@ func TestAutoClaim(t *testing.T) {
 	})
 
 	t.Run("R-REPO-023 after an auto claim, a PUT with the tag read before answers 412 with the new tag", func(t *testing.T) {
-		set, _ := a.svc.Claims(ctx, "team-b")
+		set, _ := a.svc.Claims(ctx, qr("team-b"))
 		if _, err := a.autoClaim("team-b", "right-pad"); err != nil {
 			t.Fatal(err)
 		}
-		_, err := a.svc.PutClaims(ctx, caller, "team-b", repository.MatchVersion(set.Version), repository.ClaimInput{}, allowGlobal)
+		_, err := a.svc.PutClaims(ctx, caller, qr("team-b"), repository.MatchVersion(set.Version), repository.ClaimInput{}, allowGlobal)
 		wantCode(t, err, 412, errs.CodePreconditionFailed)
 		if cur, _ := errs.CurrentRevision(err); cur != set.Version+1 {
 			t.Fatalf("current = %d, want %d", cur, set.Version+1)
@@ -381,22 +383,22 @@ func TestAutoClaim(t *testing.T) {
 	})
 
 	t.Run("R-REPO-023 a PUT replaces the manual claims and keeps the automatic ones unless removeAuto names them", func(t *testing.T) {
-		set, _ := a.svc.Claims(ctx, "team-b")
-		got, err := a.svc.PutClaims(ctx, caller, "team-b", repository.MatchVersion(set.Version),
+		set, _ := a.svc.Claims(ctx, qr("team-b"))
+		got, err := a.svc.PutClaims(ctx, caller, qr("team-b"), repository.MatchVersion(set.Version),
 			repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@team-b/*"}}}, allowGlobal)
 		if err != nil || !slices.Equal(claimPatterns(got), []string{"manual:members:@team-b/*", "auto:members:left-pad", "auto:members:right-pad"}) {
 			t.Fatalf("claims = %v, %v", claimPatterns(got), err)
 		}
-		got, err = a.svc.PutClaims(ctx, caller, "team-b", repository.MatchVersion(got.Version),
+		got, err = a.svc.PutClaims(ctx, caller, qr("team-b"), repository.MatchVersion(got.Version),
 			repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@team-b/*"}}, RemoveAuto: []string{"right-pad"}}, allowGlobal)
 		if err != nil || !slices.Equal(claimPatterns(got), []string{"manual:members:@team-b/*", "auto:members:left-pad"}) {
 			t.Fatalf("claims = %v, %v", claimPatterns(got), err)
 		}
-		_, err = a.svc.PutClaims(ctx, caller, "team-b", repository.MatchVersion(got.Version),
+		_, err = a.svc.PutClaims(ctx, caller, qr("team-b"), repository.MatchVersion(got.Version),
 			repository.ClaimInput{RemoveAuto: []string{"@team-b/*"}}, allowGlobal)
 		wantCode(t, err, 422, errs.CodeValidation) // a manual claim is no automatic claim
 		// Listing an automatic claim's pattern as manual turns it into a manual claim (Q-REPO-106).
-		got, err = a.svc.PutClaims(ctx, caller, "team-b", repository.MatchVersion(got.Version),
+		got, err = a.svc.PutClaims(ctx, caller, qr("team-b"), repository.MatchVersion(got.Version),
 			repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@team-b/*"}, {Pattern: "left-pad"}}}, allowGlobal)
 		if err != nil || !slices.Equal(claimPatterns(got), []string{"manual:members:@team-b/*", "manual:members:left-pad"}) {
 			t.Fatalf("claims = %v, %v", claimPatterns(got), err)
@@ -413,7 +415,7 @@ func TestAutoClaim(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				waitFor(t, "the replica to know the repository", 3*time.Second, func() bool {
-					_, err := rep.reader.ByKey(ctx, "sandbox")
+					_, err := rep.reader.ByName(ctx, qr("sandbox"))
 					return err == nil
 				})
 				results[i], errsOut[i] = rep.autoClaim("sandbox", "contested")
@@ -442,7 +444,7 @@ func TestAutoClaim(t *testing.T) {
 		}
 		waitFor(t, "B to see the auto claim", 2*time.Second, func() bool {
 			m, err := b.routing.ClaimsFor(ctx, "pkgfmt", "fast-name")
-			return err == nil && len(m) == 1 && m[0].Source == "auto" && m[0].Repository == "team-a"
+			return err == nil && len(m) == 1 && m[0].Source == "auto" && m[0].Repository == "it/team-a"
 		})
 	})
 
@@ -458,11 +460,11 @@ func TestAutoClaim(t *testing.T) {
 
 	t.Run("R-REPO-023 R-REPO-048 the claims of the repository, the exposure set and the covered check", func(t *testing.T) {
 		waitFor(t, "B to know the repositories", 3*poll, func() bool {
-			r, err := b.reader.ByKey(ctx, "all")
+			r, err := b.reader.ByName(ctx, qr("all"))
 			return err == nil && len(r.Members()) == 3
 		})
-		teamA, _ := b.reader.ByKey(ctx, "team-a")
-		lonely, _ := b.reader.ByKey(ctx, "lonely")
+		teamA, _ := b.reader.ByName(ctx, qr("team-a"))
+		lonely, _ := b.reader.ByName(ctx, qr("lonely"))
 		waitFor(t, "B to see the claims", 3*poll, func() bool {
 			c, err := b.routing.CoveredByOwnClaim(ctx, teamA, "@acme/util")
 			return err == nil && c
@@ -471,7 +473,7 @@ func TestAutoClaim(t *testing.T) {
 			t.Fatal("covered a name no claim covers")
 		}
 		set, err := b.routing.ExposureSet(ctx, teamA, "brand-new")
-		if err != nil || len(set) != 1 || set[0].Virtual.Key != "all" || set[0].Remote.Key != "remote" {
+		if err != nil || len(set) != 1 || set[0].Virtual.Name != qr("all") || set[0].Remote.Name != qr("remote") {
 			t.Fatalf("exposure set = %+v, %v", set, err)
 		}
 		if set, _ := b.routing.ExposureSet(ctx, lonely, "brand-new"); len(set) != 0 {
@@ -482,7 +484,7 @@ func TestAutoClaim(t *testing.T) {
 			t.Fatalf("exposure set under a global claim = %+v", set)
 		}
 		// A pin rule that names both the local and the remote repository keeps the pair.
-		if _, err := a.svc.Patch(ctx, caller, "all", repository.MatchAny(),
+		if _, err := a.svc.Patch(ctx, caller, qr("all"), repository.MatchAny(),
 			mergePatch(`{"virtual":{"pinning":{"rules":[{"packages":["@both/*"],"members":["team-a","remote"]},{"packages":["@remote-only/*"],"members":["remote"]}]}}}`)); err != nil {
 			t.Fatal(err)
 		}
@@ -490,7 +492,7 @@ func TestAutoClaim(t *testing.T) {
 			set, err := b.routing.ExposureSet(ctx, teamA, "@remote-only/x")
 			return err == nil && len(set) == 0
 		})
-		if set, err := b.routing.ExposureSet(ctx, teamA, "@both/x"); err != nil || len(set) != 1 || set[0].Remote.Key != "remote" {
+		if set, err := b.routing.ExposureSet(ctx, teamA, "@both/x"); err != nil || len(set) != 1 || set[0].Remote.Name != qr("remote") {
 			t.Fatalf("a pin rule naming both repositories: exposure set = %+v, %v", set, err)
 		}
 	})
@@ -504,16 +506,16 @@ func TestClaimsGoWithTheRepository(t *testing.T) {
 	ctx := context.Background()
 	a.mustCreate("owner", "local", "pkgfmt", "")
 	a.mustCreate("remote", "remote", "pkgfmt", "")
-	if _, err := a.svc.PutClaims(ctx, caller, "owner", repository.MatchAny(),
+	if _, err := a.svc.PutClaims(ctx, caller, qr("owner"), repository.MatchAny(),
 		repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "@gone/*", Scope: "global"}}}, allowGlobal); err != nil {
 		t.Fatal(err)
 	}
-	rem, _ := a.reader.ByKey(ctx, "remote")
+	rem, _ := a.reader.ByName(ctx, qr("remote"))
 	waitFor(t, "the claim to be in force on A", 3*poll, func() bool {
 		ok, err := a.routing.RemoteRefused(ctx, rem, "@gone/x", nil)
 		return err == nil && ok
 	})
-	res, err := a.svc.Delete(ctx, caller, "owner", false)
+	res, err := a.svc.Delete(ctx, caller, qr("owner"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

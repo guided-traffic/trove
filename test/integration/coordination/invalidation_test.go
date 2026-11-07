@@ -60,11 +60,15 @@ func TestInvalidationPropagation(t *testing.T) {
 		t.Run("R-OPS-021 R-REPO-045 an invalidation is in force on the other replica "+mode.name, func(t *testing.T) {
 			e := newEnv(t)
 			var repoID int64
-			if err := e.admin.QueryRow(context.Background(),
-				`INSERT INTO repositories (key, format, class) VALUES ('npm-remote', 'npm', 'remote') RETURNING id`).Scan(&repoID); err != nil {
+			if _, err := e.admin.Exec(context.Background(),
+				`INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it') ON CONFLICT (key) DO NOTHING`); err != nil {
 				t.Fatal(err)
 			}
-			repo := repository.Repository{ID: strconv.FormatInt(repoID, 10), Key: "npm-remote", Class: repository.Remote, Format: "npm", Lifecycle: repository.Active}
+			if err := e.admin.QueryRow(context.Background(),
+				`INSERT INTO repositories (key, format, class, project_id) SELECT 'npm-remote', 'npm', 'remote', id FROM project WHERE key = 'it' RETURNING id`).Scan(&repoID); err != nil {
+				t.Fatal(err)
+			}
+			repo := repository.Repository{ID: strconv.FormatInt(repoID, 10), Name: qr("npm-remote"), Class: repository.Remote, Format: "npm", Lifecycle: repository.Active}
 			cc := defaultCluster()
 			cc.EpochPollInterval = mode.poll
 			a := e.newInvReplica("inv-a", replicaOpts{role: "web", valkey: mode.valkey, clu: cc})

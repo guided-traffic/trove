@@ -1,11 +1,11 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@repo.detail.heading">Repository</h1>
-  <a class="btn btn-tertiary" routerLink="/admin/repositories" i18n="@@repo.detail.back">All repositories</a>
-  <a class="btn btn-tertiary" [routerLink]="['/browse', key()]" i18n="@@repo.action.browse">Browse</a>
+  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'repositories']" i18n="@@repo.detail.back">All repositories</a>
+  <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'browse', key()]" i18n="@@repo.action.browse">Browse</a>
   <!-- >>> M4b vulnerabilities -->
   @if (stored(); as repo) {
     @if (repo.format !== 'generic' && repo.class !== 'virtual') {
-      <a class="btn btn-tertiary" routerLink="/vulnerabilities" [queryParams]="{ repository: key() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
+      <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'vulnerabilities']" [queryParams]="{ repository: ref() }" i18n="@@repo.action.vulnerabilities">Vulnerabilities</a>
     }
   }
   <!-- <<< M4b vulnerabilities -->
@@ -17,7 +17,7 @@
   <p role="status" i18n="@@repo.loading">Loading.</p>
 } @else {
   <p class="subject" translate="no">
-    <strong>{{ key() }}</strong>
+    <strong>{{ ref() }}</strong>
   </p>
 
   @if (consumer(); as c) {
@@ -44,7 +44,7 @@
     @if (clientsOf(c.format).length > 0) {
       <section class="how-to-use" aria-labelledby="repo-how-to-use">
         <h2 id="repo-how-to-use" i18n="@@repo.tab.guide">How to use</h2>
-        <trove-repository-guide [key]="key()" [format]="c.format" [clients]="clientsOf(c.format)" />
+        <trove-repository-guide [key]="ref()" [format]="c.format" [clients]="clientsOf(c.format)" />
       </section>
     }
   } @else if (stored(); as repo) {
@@ -66,7 +66,7 @@
       <dd>{{ classText(repo.class) }}</dd>
       @if (repo.project; as projectKey) {
         <dt i18n="@@repo.detail.project">Project</dt>
-        <dd><a [routerLink]="['/admin/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
+        <dd><a [routerLink]="['/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
       }
       <dt i18n="@@repo.col.format">Format</dt>
       <dd translate="no">{{ repo.format }}</dd>
@@ -134,6 +134,7 @@
           <trove-tab [label]="tabUpstream">
             <div class="tab">
               <trove-upstream-settings
+                [project]="project()"
                 [form]="current"
                 (formChange)="setForm($event)"
                 [format]="upstreamFormat"
@@ -161,7 +162,7 @@
               <div class="tab">
                 @if (mirrorStatusShown()) {
                   <trove-mirror-status
-                    [key]="key()"
+                    [key]="ref()"
                     [canChange]="canWrite() && repo.lifecycle !== 'deleting'"
                     [busy]="pausing()"
                     [refresh]="mirrorRefresh()"
@@ -188,7 +189,7 @@
           <trove-tab [label]="tabGuide">
             <ng-template troveTabContent>
               <div class="tab">
-                <trove-repository-guide [key]="key()" [format]="repo.format" [clients]="clientsOf(repo.format)" />
+                <trove-repository-guide [key]="ref()" [format]="repo.format" [clients]="clientsOf(repo.format)" />
               </div>
             </ng-template>
           </trove-tab>
@@ -237,6 +238,24 @@
             Delete
           </button>
         </div>
+        @if (canMove() && moveOptions().length > 1) {
+          <section class="move" aria-labelledby="repo-move">
+            <h2 id="repo-move" i18n="@@repo.move.heading">Move to another project</h2>
+            <p class="hint" i18n="@@repo.move.hint">
+              The repository keeps its key and its content; its address changes. You must be Owner of the target project too.
+            </p>
+            <trove-select-field
+              i18n-label="@@repo.move.target"
+              label="Target project"
+              name="moveTarget"
+              [options]="moveOptions()"
+              [(value)]="moveTarget"
+            />
+            <button class="btn btn-default" type="button" [disabled]="!moveTarget() || moving()" (click)="move()" i18n="@@repo.move.action">
+              Move repository
+            </button>
+          </section>
+        }
       }
       @if (deletion(); as job) {
         <div class="deleting">

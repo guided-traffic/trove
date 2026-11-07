@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -208,40 +211,58 @@ func (f fakeClaims) ClaimsFor(_ context.Context, format, name string) ([]reposit
 
 type fakeRepos map[string]repository.Repository
 
-func (f fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
-	r, ok := f[key]
+func (f fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	r, ok := f[name.Key]
 	if !ok {
-		return repository.Repository{}, errors.New("not found")
+		if name.Key == "broken" {
+			return repository.Repository{}, errors.New("the snapshot cannot be read")
+		}
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 	}
 	return r, nil
 }
 func (f fakeRepos) List(context.Context) ([]repository.Repository, error) { return nil, nil }
 
+func (f fakeRepos) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
+}
+
 // R-VULN-010: a name is internal when a claim of a local repository of the format that does not set always covers it; the
 // claim of a repository with always, of a remote or of another format does not count.
 func TestR_VULN_010_ClaimRule(t *testing.T) {
 	local := func(key, format string) repository.Repository {
-		return repository.Repository{Key: key, Class: repository.Local, Format: format}
+		return repository.Repository{Name: qr(key), Class: repository.Local, Format: format}
 	}
-	repos := fakeRepos{"npm-local": local("npm-local", "npm"), "npm-nugetish": local("npm-nugetish", "nuget"), "npm-remote": {Key: "npm-remote", Class: repository.Remote, Format: "npm"}}
+	repos := fakeRepos{"npm-local": local("npm-local", "npm"), "npm-nugetish": local("npm-nugetish", "nuget"), "npm-remote": {Name: qr("npm-remote"), Class: repository.Remote, Format: "npm"}}
 	claims := fakeClaims{
-		"npm/@acme/ui":   {{Repository: "npm-local", Pattern: "@acme/*"}},
-		"npm/other":      {{Repository: "npm-nugetish"}},
-		"npm/remote-one": {{Repository: "npm-remote"}},
-		"npm/ghost":      {{Repository: "missing"}},
-		"npm/two":        {{Repository: "npm-remote"}, {Repository: "npm-local"}},
+		"npm/@acme/ui":   {{Repository: "it/npm-local", Pattern: "@acme/*"}},
+		"npm/other":      {{Repository: "it/npm-nugetish"}},
+		"npm/remote-one": {{Repository: "it/npm-remote"}},
+		"npm/ghost":      {{Repository: "it/missing"}},
+		"npm/two":        {{Repository: "it/npm-remote"}, {Repository: "it/npm-local"}},
+		// The claim index holds a repository id the snapshot lacks (created on another replica a moment ago): the claim
+		// comes without a name and withholds like any holder the snapshot does not hold.
+		"npm/unnamed": {{Repository: ""}},
 	}
 	rule := ClaimRule{Claims: claims, Repos: repos}
 	cases := map[string]struct {
 		internal bool
 		repo     string
 	}{
-		"@acme/ui": {true, "npm-local"}, "other": {false, ""}, "remote-one": {false, ""}, "ghost": {true, "missing"}, "two": {true, "npm-local"}, "free": {false, ""},
+		"@acme/ui": {true, "it/npm-local"}, "other": {false, ""}, "remote-one": {false, ""}, "ghost": {true, "it/missing"}, "two": {true, "it/npm-local"}, "free": {false, ""},
+		"unnamed": {true, ""},
 	}
 	for name, want := range cases {
 		repo, internal, err := rule.Claim(context.Background(), "npm", name)
 		if err != nil || internal != want.internal || repo != want.repo {
 			t.Errorf("Claim(%q) = %q, %v, %v; want %q, %v", name, repo, internal, err, want.repo, want.internal)
+		}
+	}
+	// A holder the snapshot cannot read is an error, never an answer: a failing read must not pass for "withheld".
+	for name, claim := range map[string]string{"unreadable": "it/broken", "malformed": "no-slash"} {
+		failing := ClaimRule{Claims: fakeClaims{"npm/" + name: {{Repository: claim}}}, Repos: repos}
+		if repo, internal, err := failing.Claim(context.Background(), "npm", name); err == nil {
+			t.Errorf("Claim(%q) = %q, %v, nil; want an error", name, repo, internal)
 		}
 	}
 	got, err := rule.InternalNames(context.Background(), "npm", []string{"@acme/ui", "free", "two"})
@@ -286,7 +307,7 @@ func TestR_VULN_010_ScopeOfARemote(t *testing.T) {
 type recorder struct{ calls []string }
 
 func (r *recorder) OnVersionCommitted(_ context.Context, _ meta.Tx, c vuln.CommittedVersion) error {
-	r.calls = append(r.calls, "committed:"+string(c.Trigger)+":"+c.RepoKey+":"+strconv.FormatInt(c.ItemID, 10))
+	r.calls = append(r.calls, "committed:"+string(c.Trigger)+":"+c.Repo.Key+":"+strconv.FormatInt(c.ItemID, 10))
 	return nil
 }
 
@@ -324,7 +345,7 @@ func TestR_VULN_011_HooksOrder(t *testing.T) {
 	log := &recorder{}
 	h := Hooks(innerHooks{log: log}, log)
 	ctx := context.Background()
-	repo := items.RepoRef{ID: 7, Key: "npm-local", Format: "npm"}
+	repo := items.RepoRef{ID: 7, Name: qr("npm-local"), Format: "npm"}
 	if err := h.OnCommit(ctx, nil, items.CommitEvent{Origin: items.OriginUpload, Repo: repo, Item: items.Ref{ID: 3}}); err != nil {
 		t.Fatal(err)
 	}
@@ -378,4 +399,8 @@ func TestR_VULN_002_RepositoryHookIgnoresRepositoriesTheScanningDoesNotApplyTo(t
 	if err := h.OnDelete(context.Background(), nil, repository.Caller{}, repository.Repository{}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (f fakeRepos) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }

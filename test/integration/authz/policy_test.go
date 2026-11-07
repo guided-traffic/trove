@@ -55,7 +55,7 @@ func TestR_AUTHZ_021_PolicyLifecycle(t *testing.T) {
 
 	in := authz.PolicyInput{
 		Name: "team-web-publish", Description: "Team web publishes its own npm scope",
-		Resources: authz.Resources{Repositories: []string{"npm-internal"}, Packages: authz.PatternLists{Include: []string{"@web/*"}}},
+		Resources: authz.Resources{Repositories: []string{"it/npm-internal"}, Packages: authz.PatternLists{Include: []string{"@web/*"}}},
 		Entries:   []authz.Entry{{Principal: "group:team-web", Actions: []string{"write"}}, {Principal: "user:lead-web", Actions: []string{"deploy", "manage", "read"}}},
 	}
 
@@ -88,7 +88,7 @@ func TestR_AUTHZ_021_PolicyLifecycle(t *testing.T) {
 
 	t.Run("R-AUTHZ-021 get returns the policy", func(t *testing.T) {
 		got, err := a.svc.Get(ctx, "team-web-publish")
-		if err != nil || got.Version != 1 || got.Description != in.Description || got.Resources.Repositories[0] != "npm-internal" ||
+		if err != nil || got.Version != 1 || got.Description != in.Description || got.Resources.Repositories[0] != "it/npm-internal" ||
 			got.Resources.Packages.Include[0] != "@web/*" || got.CreatedBy != "user:sec-alice" || len(got.Entries) != 2 {
 			t.Fatalf("%+v %v", got, err)
 		}
@@ -129,7 +129,7 @@ func TestR_AUTHZ_021_PolicyLifecycle(t *testing.T) {
 		_, _, err = a.svc.Create(ctx, admin, bad)
 		problem(t, err, 422, errs.CodeUnknownPrincipal)
 		bad.Entries = nil
-		bad.Resources.Repositories = []string{"no-such-repo"}
+		bad.Resources.Repositories = []string{"it/no-such-repo"}
 		_, _, err = a.svc.Create(ctx, admin, bad)
 		problem(t, err, 422, errs.CodeUnknownRepository)
 		if e.authzEpoch() != n || e.number("SELECT count(*) FROM authz_policy WHERE name = 'bad'") != 0 {
@@ -191,7 +191,7 @@ func TestR_AUTHZ_029_NoChangeWithoutItsAuditRecord(t *testing.T) {
 	svc := authz.NewService(authz.ServiceOptions{DB: a.db, Changes: a.changes, Principals: sqlPrincipals{e}, Repositories: sqlRepositories{e}, Recorder: &failingRecorder{}})
 	n, changes := e.authzEpoch(), e.authzChanges()
 	_, _, err := svc.Create(t.Context(), sub(person{}), authz.PolicyInput{
-		Name: "p", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+		Name: "p", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 		Entries: []authz.Entry{{Principal: "user:alice", Actions: []string{"read"}}},
 	})
 	if err == nil {
@@ -212,7 +212,7 @@ func TestR_AUTHZ_004_InertPoliciesAndDynamicSelectors(t *testing.T) {
 	ctx := t.Context()
 
 	_, _, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-		Name: "legacy", Resources: authz.Resources{Repositories: []string{"npm-old"}},
+		Name: "legacy", Resources: authz.Resources{Repositories: []string{"it/npm-old"}},
 		Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 	})
 	if err != nil {
@@ -244,7 +244,7 @@ func TestR_AUTHZ_004_InertPoliciesAndDynamicSelectors(t *testing.T) {
 		return exec("DELETE FROM repositories WHERE key = 'npm-old'")
 	})
 	repoTx(func(exec func(string, ...any) error) error {
-		return exec("INSERT INTO repositories (key, class, format, config) VALUES ('npm-old', 'local', 'npm', '{}')")
+		return exec("INSERT INTO repositories (key, class, format, config, project_id) SELECT 'npm-old', 'local', 'npm', '{}', id FROM project WHERE key = 'it'")
 	})
 	p, err := a.svc.Get(ctx, "legacy")
 	if err != nil || !p.Inert || len(p.Resources.Repositories) != 0 {
@@ -256,13 +256,13 @@ func TestR_AUTHZ_004_InertPoliciesAndDynamicSelectors(t *testing.T) {
 
 	t.Run("R-AUTHZ-004 a pattern selector covers a repository created later, on another replica, without a message", func(t *testing.T) {
 		if _, _, err := a.svc.Create(ctx, admin, authz.PolicyInput{
-			Name: "team-repos", Resources: authz.Resources{Repositories: []string{"npm-team-*"}},
+			Name: "team-repos", Resources: authz.Resources{Repositories: []string{"*/npm-team-*"}},
 			Entries: []authz.Entry{{Principal: "group:developers", Actions: []string{"read"}}},
 		}); err != nil {
 			t.Fatal(err)
 		}
 		repoTx(func(exec func(string, ...any) error) error {
-			return exec("INSERT INTO repositories (key, class, format, config) VALUES ('npm-team-x', 'local', 'npm', '{}')")
+			return exec("INSERT INTO repositories (key, class, format, config, project_id) SELECT 'npm-team-x', 'local', 'npm', '{}', id FROM project WHERE key = 'it'")
 		})
 		start := time.Now()
 		waitFor(t, "replica b reading the new repository", 2*time.Second+time.Second, func() bool {
@@ -373,7 +373,7 @@ func TestR_AUTHZ_028_EveryWriteAdvancesTheEpoch(t *testing.T) {
 	e.repo("npm-internal", "local", "npm", "")
 	ctx := t.Context()
 	in := authz.PolicyInput{
-		Name: "p", Resources: authz.Resources{Repositories: []string{"npm-internal"}},
+		Name: "p", Resources: authz.Resources{Repositories: []string{"it/npm-internal"}},
 		Entries: []authz.Entry{{Principal: "user:alice", Actions: []string{"read"}}},
 	}
 	steps := []struct {

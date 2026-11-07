@@ -27,7 +27,8 @@ type probe struct {
 	reader *repository.SnapshotReader
 }
 
-func (e *stackEnv) newProbe(name string, poll time.Duration) *probe {
+// newProbe builds the probe; onLoad, when given, is the reader's OnLoad.
+func (e *stackEnv) newProbe(name string, poll time.Duration, onLoad ...func([]repository.Repository)) *probe {
 	t := e.t
 	t.Helper()
 	clu := config.Cluster{
@@ -60,6 +61,11 @@ func (e *stackEnv) newProbe(name string, poll time.Duration) *probe {
 	p.reader, err = repository.NewReader(repository.ReaderOptions{
 		Runner: p.runner, Catalog: catalog.Default(), Caches: caches, Poller: changes,
 		SafetyTTL: 5 * time.Minute, UnknownKeys: 10000, LookupWait: 5 * time.Second, Log: quiet,
+		OnLoad: func(repos []repository.Repository) {
+			for _, f := range onLoad {
+				f(repos)
+			}
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

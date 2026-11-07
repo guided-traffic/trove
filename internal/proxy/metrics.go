@@ -82,6 +82,20 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	return m
 }
 
+// forget deletes every series of the repository name from the families with a repo label.
+func (m *metrics) forget(name string) {
+	l := prometheus.Labels{"repo": name}
+	m.lookups.DeletePartialMatch(l)
+	m.upstreamReqs.DeletePartialMatch(l)
+	m.upstreamDur.DeletePartialMatch(l)
+	m.upstreamUp.DeletePartialMatch(l)
+	m.collapsed.DeletePartialMatch(l)
+	m.sourceNet.DeletePartialMatch(l)
+	m.queueWait.DeletePartialMatch(l)
+	m.integrity.DeletePartialMatch(l)
+	m.egressDenied.DeletePartialMatch(l)
+}
+
 // The lookup results of trove_remote_cache_lookups_total.
 const (
 	resultHit      = "hit"

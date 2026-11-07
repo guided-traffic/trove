@@ -36,7 +36,7 @@ func TestR_VULN_028_AVersionRuleOfAnEndpointNarrowsEveryAnswerByVersion(t *testi
 		Endpoints: `{"customers":{"listen":"127.0.0.1:0","base_url":"https://` + host + `","surface":["api"]}}`,
 	})
 	rule := e.st.Do(cust, "POST", "/api/v1/endpoints/customers/exposure-rules", e.tokRita,
-		[]byte(`{"name":"acme","repository":"npm-local","packages":{"include":["@acme/*"]},"versions":{"range":">=2.0.0"}}`),
+		[]byte(`{"name":"acme","repository":"it/npm-local","packages":{"include":["@acme/*"]},"versions":{"range":">=2.0.0"}}`),
 		"Content-Type", "application/json")
 	if rule.Status != http.StatusCreated {
 		t.Fatalf("rule: %d %s", rule.Status, rule.Body)

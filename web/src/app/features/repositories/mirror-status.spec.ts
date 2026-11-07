@@ -35,14 +35,14 @@ async function render(
 ) {
   const r = await renderScreen(MirrorStatusPanel, {
     inputs: {
-      key: 'npm-remote',
+      key: 'web/npm-remote',
       canChange: options.canChange ?? true,
       intervalMs: options.intervalMs ?? 60_000,
       busy: options.busy ?? false,
     },
     setup: (get) => {
       const fake = get(RepositoriesApi) as FakeRepositoriesApi;
-      fake.repositories.push({ key: 'npm-remote', class: 'remote', format: 'npm' });
+      fake.repositories.push({ key: 'npm-remote', project: 'web', class: 'remote', format: 'npm' });
       fake.mirrorStatuses = [...statuses];
     },
   });
@@ -225,10 +225,10 @@ describe('Mirror status panel', () => {
 
     it('R-UI-021 a failed read of the status is shown with a retry', async () => {
       const r = await renderScreen(MirrorStatusPanel, {
-        inputs: { key: 'npm-remote', canChange: true },
+        inputs: { key: 'web/npm-remote', canChange: true },
         setup: (get) => {
           const fake = get(RepositoriesApi) as FakeRepositoriesApi;
-          fake.repositories.push({ key: 'npm-remote', class: 'remote', format: 'npm' });
+          fake.repositories.push({ key: 'npm-remote', project: 'web', class: 'remote', format: 'npm' });
           fake.mirrorStatusError = new ApiError(503, { code: 'unavailable' }, null);
         },
       });
@@ -326,7 +326,7 @@ describe('Mirror status panel', () => {
       button(r.root, 'Run a pass now').click();
       await settle(r.fixture);
       expect(fake.mirrorRuns).toHaveLength(1);
-      expect(fake.mirrorRuns[0]).toMatchObject({ key: 'npm-remote', full: false });
+      expect(fake.mirrorRuns[0]).toMatchObject({ key: 'web/npm-remote', full: false });
       expect(fake.mirrorRuns[0]!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
       const notice = r.root.querySelector('.notices')!;
       expect(text(notice)).toContain('A pass is queued.');

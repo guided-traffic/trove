@@ -76,5 +76,5 @@ func body(t testing.TB, p pkg) []byte {
 
 // pubPath is the request path of a publish: a scoped name is written the way npm writes it, the slash as %2f.
 func pubPath(repo, name string) string {
-	return "/api/npm/" + repo + "/" + strings.ReplaceAll(name, "/", "%2f")
+	return "/api/npm/it/" + repo + "/" + strings.ReplaceAll(name, "/", "%2f")
 }

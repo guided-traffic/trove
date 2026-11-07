@@ -63,7 +63,7 @@ func TestR_BAS_001_TheRoleOpensNoConnectionToPostgreSQL(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 	waitReady(t, &harness{srv: srv, logs: logs})
 
-	_, _, _ = get(t, "http://"+srv.ClientAddr().String()+"/api/npm/npm-all/lodash")
+	_, _, _ = get(t, "http://"+srv.ClientAddr().String()+"/api/npm/web/npm-all/lodash")
 	_, _, _ = get(t, "http://"+srv.ClientAddr().String()+"/api/v1/system/ping")
 	time.Sleep(300 * time.Millisecond) // a connection attempt made in the background would show by now
 

@@ -3,6 +3,8 @@ package items
 import (
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/servefacts"
@@ -21,7 +23,7 @@ const (
 type Item struct {
 	ID         int64
 	RepoID     int64
-	Repository string
+	Repository qname.Repo
 	Path       string
 	Kind       string
 	Size       int64
@@ -60,7 +62,7 @@ type Item struct {
 }
 
 // itemFrom converts the row of GetLiveItem.
-func itemFrom(repoKey string, key servefacts.Key, r q.GetLiveItemRow) Item {
+func itemFrom(repoKey qname.Repo, key servefacts.Key, r q.GetLiveItemRow) Item {
 	it := Item{
 		ID: r.ID, RepoID: r.RepoID, Repository: repoKey, Path: r.Path, Kind: r.Kind,
 		DeclaredSHA256: r.DeclaredSha256, DeclaredSHA512: r.DeclaredSha512, DeclaredSHA1: r.DeclaredSha1, DeclaredMD5: r.DeclaredMd5,
@@ -109,7 +111,7 @@ func (it Item) MediaTypeOrDefault() string {
 }
 
 // Root is the synthetic folder of a repository root.
-func Root(key string, created, updated time.Time) Item {
+func Root(key qname.Repo, created, updated time.Time) Item {
 	return Item{
 		Repository: key, Kind: KindFolder, Explicit: true,
 		CreatedAt: created.UTC(), ModifiedAt: updated.UTC(), UpdatedAt: updated.UTC(),

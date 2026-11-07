@@ -10,7 +10,7 @@ import { ProjectNeeds, createState } from './project-access';
 /**
  * The permission policies of a project (R-UI-041, R-AUTHZ-026): the policies that carry the project's
  * key, with the editor of the permissions area opened in the project's context. Creating one needs
- * `policies:write` or `managePolicies` on the project.
+ * `policies:write` or the role Owner in the project.
  */
 @Component({
   selector: 'trove-project-policies',
@@ -19,8 +19,7 @@ import { ProjectNeeds, createState } from './project-access';
     <div class="toolbar">
       @if (state() === 'enabled') {
         <a class="btn btn-confirm"
-          routerLink="/admin/permissions/new"
-          [queryParams]="{ project: project() }"
+          [routerLink]="['/projects', project(), 'policies', 'new']"
           i18n="@@project-policies.create"
           >Create policy</a
         >
@@ -30,7 +29,7 @@ import { ProjectNeeds, createState } from './project-access';
         </button>
       }
     </div>
-    <trove-project-needs id="needs-project-policies" [state]="state()" capability="policies:write" right="managePolicies" />
+    <trove-project-needs id="needs-project-policies" [state]="state()" capability="policies:write" />
 
     <trove-data-table
       [caption]="caption"
@@ -48,7 +47,7 @@ import { ProjectNeeds, createState } from './project-access';
       @for (p of list.items(); track p.name) {
         <tr>
           <th scope="row">
-            <a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a>
+            <a [routerLink]="['/projects', project(), 'policies', p.name]" translate="no">{{ p.name }}</a>
             @if (p.inert) {
               <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@project-policies.inert">Grants nothing</ng-container></span>
             }
@@ -69,7 +68,7 @@ export class ProjectPolicies {
   private readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<PermissionPolicy>();
-  protected readonly state = computed(() => createState(this.session, this.project(), 'managePolicies', 'policies:write'));
+  protected readonly state = computed(() => createState(this.session, this.project(), 'policies:write'));
   protected readonly principalSummary = principalSummary;
   protected readonly actionSummary = actionSummary;
   protected readonly caption = $localize`:@@project-policies.caption:Permission policies of the project`;

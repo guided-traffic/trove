@@ -20,15 +20,15 @@ import (
 // mirrorOptions configure the sources of mode repository.
 func mirrorOptions(extra ...string) options {
 	return options{Filler: 100, Env: append([]string{
-		"TROVE_VULNERABILITIES_SOURCES_OSV_MODE=repository", "TROVE_VULNERABILITIES_SOURCES_OSV_REPOSITORY=" + mirrorRepo,
-		"TROVE_VULNERABILITIES_SOURCES_KEV_MODE=repository", "TROVE_VULNERABILITIES_SOURCES_KEV_REPOSITORY=" + mirrorRepo,
+		"TROVE_VULNERABILITIES_SOURCES_OSV_MODE=repository", "TROVE_VULNERABILITIES_SOURCES_OSV_REPOSITORY=" + mirrorName,
+		"TROVE_VULNERABILITIES_SOURCES_KEV_MODE=repository", "TROVE_VULNERABILITIES_SOURCES_KEV_REPOSITORY=" + mirrorName,
 	}, extra...)}
 }
 
-// put uploads a file to the mirror repository the way an operator does, with any client that writes to /files/.
+// put uploads a file to the mirror repository the way an operator does, with any client that writes to /files/it/.
 func (e *env) put(path string, body []byte) {
 	e.t.Helper()
-	res := e.st.Do(e.web, "PUT", "/files/"+mirrorRepo+"/"+path, e.admin, body)
+	res := e.st.Do(e.web, "PUT", "/files/it/"+mirrorRepo+"/"+path, e.admin, body)
 	if res.Status != 201 && res.Status != 200 {
 		e.t.Fatalf("PUT %s: %d %s", path, res.Status, res.Body)
 	}
@@ -185,8 +185,8 @@ func TestR_VULN_005_TheCatalogIsReadFromTheMirrorRepository(t *testing.T) {
 // R-VULN-005: the repository MUST be a generic local repository; anything else fails every run with mirror_repository_invalid.
 func TestR_VULN_005_TheMirrorRepositoryMustBeAGenericLocalRepository(t *testing.T) {
 	for _, tc := range []struct{ name, repo string }{
-		{"a repository that does not exist", "no-such-repository"},
-		{"a local repository of another format", "npm-local"},
+		{"a repository that does not exist", "it/no-such-repository"},
+		{"a local repository of another format", "it/npm-local"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := mirrorOptions()

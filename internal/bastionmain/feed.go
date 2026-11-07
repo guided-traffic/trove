@@ -28,6 +28,15 @@ const nilUUID = "00000000-0000-0000-0000-000000000000"
 // has to start again (Q-BAS-49 item 3).
 const behindFactor = 4
 
+// The audit actions of the project model that the feed reads. They are names, not constants of the audit package:
+// the registry of the audit package stays the one list, and TestR_BAS_015_EveryJournaledEventIsClassified holds
+// these to it.
+const (
+	eventRepositoryMoved      = "repository.moved"
+	eventProjectMemberRemoved = "authz.project.member_removed"
+	eventProjectMemberChanged = "authz.project.member_changed"
+)
+
 // feedActions are the audit actions that can yield an entry (R-BAS-015). The registry of the audit package
 // stays the one list of journaled actions; this is the subset the mapping reads, passed to the query as a text
 // array. An action in the journal that is not here is in noFeedEntry with the reason it yields no entry.
@@ -40,7 +49,7 @@ func feedActions() []string {
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
 		"endpoint.exposure.updated", "endpoint.exposure.deleted",
-		audit.EventSettingsAuthChanged, audit.EventProjectRepositoryUnassigned,
+		audit.EventSettingsAuthChanged, eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
 		audit.EventNPMUnpublish, audit.EventPackageDeleted,
 		audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened,
 	}
@@ -54,12 +63,10 @@ func FeedActions() []string { return feedActions() }
 // the feed or listed here; TestR_BAS_015_EveryJournaledEventIsClassified holds the two lists to the registry.
 func noFeedEntry() map[string]string {
 	return map[string]string{
-		"authz.ownership.removed":      "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
-		"authz.ownership.released":     "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
-		audit.EventPackagePublished:    "reserves the version numbers a publish took (R-HA-054); a Bastion never publishes",
-		audit.EventProjectUpdated:      "the switches managePolicies and manageRepositories bound what project administrators may change; no read follows from them",
-		audit.EventProjectDeleted:      "a project is deleted only when it holds no repository and no service account, and its policies are deleted before it, each journaled as authz.policy.deleted (grants)",
-		audit.EventProjectAdminRemoved: "the administration of a project gives manage on its repositories, and no action implies read (R-AUTHZ-001)",
+		"authz.ownership.removed":   "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
+		"authz.ownership.released":  "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
+		audit.EventPackagePublished: "reserves the version numbers a publish took (R-HA-054); a Bastion never publishes",
+		audit.EventProjectDeleted:   "a project is deleted only when it holds no repository and no service account, and its policies are deleted before it, each journaled as authz.policy.deleted (grants)",
 	}
 }
 
@@ -183,12 +190,13 @@ func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {
 		return grants
 	case audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
-		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted:
-		return grants
-	case audit.EventProjectRepositoryUnassigned:
-		// The repository leaves the project's policies behind (R-AUTHZ-026): any caller's read of it, and of every
-		// virtual repository over it, may have narrowed. A content entry drops only the URL answers of a repository,
-		// not its shape answers, so only grants is exact enough (Q-BAS-120).
+		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
+		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged:
+		// A move takes the repository out of its project's roles and policies and changes its address (R-REPO-060),
+		// and a removed or re-roled member loses reads on every repository of the project (R-AUTHZ-026): the event
+		// names a project or one repository, not the callers or the virtual repositories over it. A content entry
+		// drops only the URL answers of a repository, not its shape answers, so only grants is exact enough
+		// (Q-BAS-120).
 		return grants
 	case "endpoint.exposure.updated", "endpoint.exposure.deleted":
 		// Only the exposure of the default endpoint reaches a Bastion, which connects to it (Q-BAS-4).
@@ -421,20 +429,20 @@ func (f *Feed) lookups(ctx context.Context, qs *q.Queries, mapped [][]rawEntry) 
 			}
 		}
 	}
-	for _, key := range repos {
-		keys, err := qs.BastionVirtualClosure(ctx, []string{key})
+	for _, name := range repos {
+		members, err := qs.BastionVirtualClosure(ctx, []string{name})
 		if err != nil {
 			return l, err
 		}
-		// The repository first, then every virtual repository that includes it; an unknown key (the
-		// repository was deleted) is reported alone.
-		out := []string{key}
-		for _, k := range keys {
-			if k != key {
-				out = append(out, k)
+		// The repository first, then every virtual repository that includes it, all by their qualified names; an
+		// unknown name (the repository was deleted) is reported alone.
+		out := []string{name}
+		for _, m := range members {
+			if m != name {
+				out = append(out, m)
 			}
 		}
-		l.closure[key] = out
+		l.closure[name] = out
 	}
 	if len(names) > 0 {
 		rows, err := qs.BastionPrincipalIDsByName(ctx, names)

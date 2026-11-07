@@ -92,8 +92,8 @@ func (e *env) run(t *testing.T) {
 
 func ev(i int) iface.DownloadEvent {
 	return iface.DownloadEvent{
-		At: time.Date(2026, 11, 2, 10, 0, 0, i*1_000_000, time.UTC), TokenID: "t", ClientAddress: "203.0.113.7", Repository: "npm-all",
-		Path: fmt.Sprintf("/api/npm/npm-all/pkg-%d.tgz", i), SHA256: strings.Repeat("a", 64), Replica: "replica-a",
+		At: time.Date(2026, 11, 2, 10, 0, 0, i*1_000_000, time.UTC), TokenID: "t", ClientAddress: "203.0.113.7", Repository: "web/npm-all",
+		Path: fmt.Sprintf("/api/npm/web/npm-all/pkg-%d.tgz", i), SHA256: strings.Repeat("a", 64), Replica: "replica-a",
 	}
 }
 

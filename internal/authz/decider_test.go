@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The tests of the per-request contract (Decider, Q-AUTHZ-159) and of the
@@ -20,7 +22,7 @@ func swappedIndex(t *testing.T) (e *Engine, before *Index) {
 	granted := newFixture().repo("npm-internal", "local", "npm", "")
 	granted.policy(policyDef{name: "p", selectors: []string{"npm-internal"}, entries: map[string][]string{idAlice: {"read"}}})
 	e = newTestEngine(t, granted, nil)
-	before, err := e.Begin(t.Context(), aliceSub, "npm-internal")
+	before, err := e.Begin(t.Context(), aliceSub, qr("npm-internal"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,13 +46,13 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 				t.Fatalf("decision %d on the begun index: %+v", i, d)
 			}
 		}
-		if got, err := e.ReadableOn(t.Context(), idx, aliceSub, []string{"npm-internal"}); err != nil || !slices.Equal(got, []string{"npm-internal"}) {
+		if got, err := e.ReadableOn(t.Context(), idx, aliceSub, []qname.Repo{qr("npm-internal")}); err != nil || !slices.Equal(qkeys(got), []string{"npm-internal"}) {
 			t.Fatalf("ReadableOn = %v, %v", got, err)
 		}
 		if got, err := e.PathsAllowedOn(t.Context(), idx, aliceSub, read("npm-internal", "", ""), Read, []string{"a"}, nil); err != nil || !slices.Equal(got, []bool{true}) {
 			t.Fatalf("PathsAllowedOn = %v, %v", got, err)
 		}
-		if got, err := e.CheckOn(idx, aliceSub, []CheckItem{{Repository: "npm-internal", Action: Read}}); err != nil || !slices.Equal(got, []bool{true}) {
+		if got, err := e.CheckOn(idx, aliceSub, []CheckItem{{Repository: qr("npm-internal"), Action: Read}}); err != nil || !slices.Equal(got, []bool{true}) {
 			t.Fatalf("CheckOn = %v, %v", got, err)
 		}
 		// Decide twice would not: each call takes the installed index.
@@ -60,11 +62,11 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 	})
 	t.Run("Know keeps the index of a key it holds and advances to the installed index for one it does not", func(t *testing.T) {
 		e, idx := swappedIndex(t)
-		same, err := e.Know(t.Context(), idx, aliceSub, "npm-internal")
+		same, err := e.Know(t.Context(), idx, aliceSub, qr("npm-internal"))
 		if err != nil || same != idx {
 			t.Fatalf("Know of a held key: %p, %v; want the begun index %p", same, err, idx)
 		}
-		next, err := e.Know(t.Context(), idx, aliceSub, "learned-later")
+		next, err := e.Know(t.Context(), idx, aliceSub, qr("learned-later"))
 		if err != nil || next == idx || next.Epoch() != 2 {
 			t.Fatalf("Know of an unknown key: epoch %d, same %v, %v", next.Epoch(), next == idx, err)
 		}
@@ -75,7 +77,7 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 		keys := []string{"files-virtual", "generic-auth", "generic-local", "generic-other", "npm-customers"}
 		ctx := t.Context()
 		for _, sub := range []Subject{onEP(adminSub, "customers"), onEP(botSub, "customers"), botSub, anonSub, onEP(carolSub, "default")} {
-			idx, err := e.Begin(ctx, sub, keys...)
+			idx, err := e.Begin(ctx, sub, qrs(keys)...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,13 +85,13 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 			if a, b := e.Decide(ctx, sub, c), e.DecideOn(ctx, idx, sub, c); a.Outcome != b.Outcome || a.Reason != b.Reason {
 				t.Errorf("%s: Decide %+v, DecideOn %+v", sub.Name, a, b)
 			}
-			ra, ea := e.Readable(ctx, sub, keys)
-			rb, eb := e.ReadableOn(ctx, idx, sub, keys)
+			ra, ea := e.Readable(ctx, sub, qrs(keys))
+			rb, eb := e.ReadableOn(ctx, idx, sub, qrs(keys))
 			if !slices.Equal(ra, rb) || (ea == nil) != (eb == nil) {
 				t.Errorf("%s: Readable %v %v, ReadableOn %v %v", sub.Name, ra, ea, rb, eb)
 			}
-			xa, _ := e.Exposed(ctx, sub, keys)
-			if xb := e.ExposedOn(idx, sub, keys); !slices.Equal(xa, xb) {
+			xa, _ := e.Exposed(ctx, sub, qrs(keys))
+			if xb := e.ExposedOn(idx, sub, qrs(keys)); !slices.Equal(xa, xb) {
 				t.Errorf("%s: Exposed %v, ExposedOn %v", sub.Name, xa, xb)
 			}
 			pa, _ := e.PathsAllowed(ctx, sub, c, Read, []string{"releases/a", "internal/x"}, nil)
@@ -104,7 +106,7 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 			if hb := e.HoldsOn(idx, sub, "policies:read"); ha != hb {
 				t.Errorf("%s: Holds %v, HoldsOn %v", sub.Name, ha, hb)
 			}
-			items := []CheckItem{{Repository: "generic-local", Path: "releases/a", Action: Read}, {Repository: "generic-local", Path: "internal/x", Action: Read}}
+			items := []CheckItem{{Repository: qr("generic-local"), Path: "releases/a", Action: Read}, {Repository: qr("generic-local"), Path: "internal/x", Action: Read}}
 			ca, epoch, ea := e.Check(ctx, sub, items)
 			cb, eb := e.CheckOn(idx, sub, items)
 			if !slices.Equal(ca, cb) || (ea == nil) != (eb == nil) || (ea == nil && epoch != idx.Epoch()) {
@@ -174,7 +176,7 @@ func TestR_EP_013_ADecisionOnADetachedContextKeepsTheCeiling(t *testing.T) {
 	t.Run("a fan-out over the members decides every probe under the ceiling", func(t *testing.T) {
 		members := []string{"generic-local", "generic-other", "files-virtual"}
 		out := make([]Outcome, len(members))
-		idx, err := e.Begin(context.Background(), customers, members...)
+		idx, err := e.Begin(context.Background(), customers, qrs(members)...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,16 +202,16 @@ func TestR_EP_013_ADecisionOnADetachedContextKeepsTheCeiling(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := e.ExposedOn(idx, onEP(adminSub, "customers"), keys); !slices.Equal(got, []string{"files-virtual", "generic-local", "npm-customers"}) {
+		if got := e.ExposedOn(idx, onEP(adminSub, "customers"), qrs(keys)); !slices.Equal(qkeys(got), []string{"files-virtual", "generic-local", "npm-customers"}) {
 			t.Errorf("ExposedOn = %v", got)
 		}
-		if got, _ := e.ReadableOn(ctx, idx, onEP(adminSub, "customers"), keys); slices.Contains(got, "generic-other") {
+		if got, _ := e.ReadableOn(ctx, idx, onEP(adminSub, "customers"), qrs(keys)); slices.Contains(got, qr("generic-other")) {
 			t.Errorf("ReadableOn lists a repository the endpoint does not expose: %v", got)
 		}
 		if got, _ := e.PathsAllowedOn(ctx, idx, onEP(botSub, "customers"), read("generic-local", "", ""), Read, []string{"releases/a", "internal/x"}, nil); !slices.Equal(got, []bool{true, false}) {
 			t.Errorf("PathsAllowedOn = %v", got)
 		}
-		if got, _ := e.CheckOn(idx, onEP(botSub, "customers"), []CheckItem{{Repository: "generic-local", Path: "internal/x", Action: Read}}); !slices.Equal(got, []bool{false}) {
+		if got, _ := e.CheckOn(idx, onEP(botSub, "customers"), []CheckItem{{Repository: qr("generic-local"), Path: "internal/x", Action: Read}}); !slices.Equal(got, []bool{false}) {
 			t.Errorf("CheckOn = %v", got)
 		}
 	})

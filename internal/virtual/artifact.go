@@ -10,7 +10,8 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
-// ResolvedFromHeader names the member that served an artifact (R-REPO-019). It is a member the
+// ResolvedFromHeader names the member that served an artifact (R-REPO-019) by its key: a member lives in the project
+// of its virtual repository (Q-REPO-217), so the key names it. It is a member the
 // caller can read, so it discloses nothing new; it is never sent on an endpoint with exposure
 // rules, because members are not exposed there (R-EP-018).
 const ResolvedFromHeader = "Trove-Resolved-From"
@@ -25,16 +26,16 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 	// >>> WP2.9 exposure
 	defer func() { err = c.asAddressed(p, err) }()
 	// <<< WP2.9 exposure
-	repo, d := p.Virtual.Key, p.Descriptor
+	repo, d := p.Virtual.Name, p.Descriptor
 	if !p.Admitted {
-		r.m.resolved(repo, sourceNone)
+		r.m.resolved(repo.String(), sourceNone)
 		return notFound()
 	}
 	serve := func(m Member, hit Hit, source string) error {
 		if !c.Rules {
-			w.Header().Set(ResolvedFromHeader, m.Repo.Key)
+			w.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
-		r.m.resolved(repo, source)
+		r.m.resolved(repo.String(), source)
 		return hit(w)
 	}
 	for _, m := range p.Local() {
@@ -65,11 +66,11 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Key)
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		herr := hit(tw)
 		if herr == nil || tw.wrote || !contentLost(herr) {
-			r.m.resolved(repo, sourceCache)
+			r.m.resolved(repo.String(), sourceCache)
 			return herr
 		}
 		failure = cmp.Or(failure, herr)
@@ -91,11 +92,11 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		}
 		tw := &trackWriter{ResponseWriter: w}
 		if !c.Rules {
-			tw.Header().Set(ResolvedFromHeader, m.Repo.Key)
+			tw.Header().Set(ResolvedFromHeader, m.Repo.Name.Key)
 		}
 		found, err := t.RemoteFetch(ctx, m, d, tw)
 		if found && err == nil {
-			r.m.resolved(repo, sourceUpstream)
+			r.m.resolved(repo.String(), sourceUpstream)
 			return nil
 		}
 		if !tw.wrote {
@@ -107,13 +108,13 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 		case tw.wrote || !isTransient(err) || ctx.Err() != nil:
 			// A failure after the first byte, or one that is not about reaching the member,
 			// ends the request: the next member cannot continue it.
-			r.m.resolved(repo, sourceNone)
+			r.m.resolved(repo.String(), sourceNone)
 			return err
 		case failure == nil:
 			failure = err
 		}
 	}
-	r.m.resolved(repo, sourceNone)
+	r.m.resolved(repo.String(), sourceNone)
 	if failure != nil {
 		return failure
 	}
@@ -164,7 +165,7 @@ func (c Caller) asAddressed(p *Plan, err error) error {
 	if info, found := errs.Lookup(e.Code); found {
 		title = info.Title
 	}
-	out := errs.E(e.Kind, e.Code, p.Virtual.Key+" could not answer the request: "+strings.ToLower(title)+".",
+	out := errs.E(e.Kind, e.Code, p.Virtual.Name.String()+" could not answer the request: "+strings.ToLower(title)+".",
 		errs.WithCause(err), errs.WithRetryAfter(e.RetryAfter))
 	out.Headers = maps.Clone(e.Headers)
 	return out

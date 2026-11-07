@@ -29,13 +29,14 @@ SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.pri
  ORDER BY (m.tier <> 'system'), m.tier, m.priority;
 
 -- name: CiMappingByName :many
+-- A name is unique within the issuer's tier (R-CI-009): the same name may be a system mapping and one of each project.
 SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.principal_id::text AS principal_id, m.tier, COALESCE(m.project_id::text, '')::text AS project_id,
        COALESCE(m.delegation_id::text, '')::text AS delegation_id, m.name, m.priority, m.enabled, m.subject_kinds,
        m.match, m.grants, COALESCE(extract(epoch FROM m.max_ttl), 0)::bigint AS max_ttl_secs, m.options, m.description, m.version,
        m.created_by, (extract(epoch FROM m.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM m.updated_at) * 1000000)::bigint AS updated_us
   FROM ci_mappings m JOIN ci_issuers i ON i.id = m.issuer_id
- WHERE i.name = sqlc.arg(issuer)::text AND m.name = sqlc.arg(name)::text;
+ WHERE i.name = sqlc.arg(issuer)::text AND m.tier = sqlc.arg(tier)::text AND m.name = sqlc.arg(name)::text;
 
 -- name: CiMappingCount :one
 SELECT count(*) FROM ci_mappings WHERE issuer_id = sqlc.arg(issuer_id)::text::uuid;
@@ -77,7 +78,8 @@ UPDATE ci_issuers SET mappings_version = mappings_version + 1 WHERE id = sqlc.ar
 RETURNING mappings_version;
 
 -- name: CiMappingPrincipalInsert :one
--- The mapping's principal (R-CI-009, Q-CI-10): kind ci_mapping, name <issuer>/<mapping>.
+-- The mapping's principal (R-CI-009, Q-CI-10): kind ci_mapping, name <issuer>/<mapping>, or
+-- <issuer>/<project key>/<mapping> for a mapping of a project's tier (Q-AUTHZ-214).
 INSERT INTO principal (id, kind, name, created_by)
 VALUES (sqlc.arg(id)::text::uuid, 'ci_mapping', sqlc.arg(name)::text, NULLIF(sqlc.arg(actor)::text, '')::uuid)
 RETURNING id::text AS id;
@@ -228,6 +230,8 @@ SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.pri
  WHERE m.id = sqlc.arg(id)::text::uuid;
 
 -- name: CiRepositoryFormats :many
--- The format of each of the keys that is an active repository, for the snippet: it configures the repositories
--- of the client's format only.
-SELECT key, format FROM repositories WHERE lifecycle = 'active' AND key = ANY(sqlc.arg(keys)::text[]);
+-- The format of each of the repositories (named <project>/<key>) that is active, for the snippet: it configures
+-- the repositories of the client's format only.
+SELECT (p.key || '/' || r.key)::text AS name, r.format
+  FROM repositories r JOIN project p ON p.id = r.project_id
+ WHERE r.lifecycle = 'active' AND (p.key || '/' || r.key) = ANY(sqlc.arg(names)::text[]);

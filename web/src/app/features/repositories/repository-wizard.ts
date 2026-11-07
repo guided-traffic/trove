@@ -11,7 +11,7 @@ import {
   untracked,
 } from '@angular/core';
 import { Listbox, Option } from '@angular/aria/listbox';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError, FieldProblem } from '../../api/problem';
 import {
@@ -19,7 +19,11 @@ import {
   RepositoriesApi,
   Repository,
   RepositoryClass,
+  repoRef,
 } from '../../api/repositories-api';
+import { collectAll } from '../../api/pagination';
+import { ProjectsApi } from '../../api/projects-api';
+import { SelectField, SelectOption } from '../../shared/access/fields';
 import { Notifier } from '../../core/notifier';
 import { ServerAddress } from '../../core/server-address';
 import { SessionStore } from '../../core/session-store';
@@ -121,6 +125,7 @@ export function classHelp(cls: string): string {
     UpstreamSettings,
     Listbox,
     Option,
+    SelectField,
   ],
   templateUrl: './repository-wizard.html',
   styleUrl: './repository-wizard.scss',
@@ -134,8 +139,42 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private readonly serverAddress = inject(ServerAddress);
   private readonly destroyed = inject(DestroyRef);
 
-  /** Query parameter `project`: the project the new repository is assigned to; its key starts the repository key (R-AUTHZ-026). */
+  /**
+   * Route parameter `:project` below `/projects/:project/repositories`: the project the repository is created in, fixed
+   * (Q-UI-129). In the admin area it is the query parameter `project`, the project the form starts with.
+   */
   readonly project = input<string | undefined>();
+  private readonly route = inject(ActivatedRoute);
+  /** The wizard runs inside a project: the project is not chosen but given. */
+  protected readonly inProject = (): boolean => this.route.snapshot.paramMap.has('project');
+  protected readonly cancelLink = computed(() =>
+    this.inProject() ? ['/projects', this.chosenProject(), 'repositories'] : ['/admin/repositories'],
+  );
+  /** The project the repository is created in (R-REPO-001); chosen in the basic step. */
+  protected readonly chosenProject = linkedSignal(() => this.project() ?? '');
+  private readonly projectsApi = inject(ProjectsApi);
+  /**
+   * The projects the caller may create in: every project for a holder of `projects:read` (an administrator), the
+   * projects it is an Owner of otherwise (R-REPO-001). The server decides.
+   */
+  protected readonly projects = resource({
+    loader: async (): Promise<readonly string[]> => {
+      const owned = this.session
+        .projects()
+        .filter((p) => p.role === 'owner')
+        .map((p) => p.key);
+      if (!this.session.has('projects:read')) return owned;
+      try {
+        return (await collectAll(this.projectsApi.list({}))).map((p) => p.key);
+      } catch {
+        return owned;
+      }
+    },
+  });
+  protected readonly projectOptions = computed<readonly SelectOption[]>(() => [
+    { value: '', label: $localize`:@@repo.wizard.project-choose:Choose a project` },
+    ...(valueOf(this.projects) ?? []).map((k) => ({ value: k, label: k })),
+  ]);
 
   /** Generated when the wizard opens and kept until it closes (R-UI-042). */
   private readonly idempotencyKey = newIdempotencyKey();
@@ -151,7 +190,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly keyCheck = signal<KeyCheck>('idle');
   protected readonly showErrors = signal(false);
   private created = false;
-  /** The form as the wizard opened it: empty, or with the key prefix of the project. */
+  /** The form as the wizard opened it. */
   private initialForm: RepositoryForm = EMPTY_FORM;
   private keyTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -202,7 +241,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly mirrorSection = computed(
     () => this.cls() === 'remote' && this.format()?.mirror === true,
   );
-  /** Without `repositories:write-config` (a project administrator) the section is read-only (Q-REPO-142). */
+  /** Without `repositories:write-config` (a project Owner) the section is read-only (Q-REPO-142). */
   protected readonly mirrorRestricted = computed(
     () => !this.session.has('repositories:write-config'),
   );
@@ -279,20 +318,20 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly body = computed<Repository | null>(() => {
     const cls = this.cls();
     const member = this.member();
-    return cls && member ? documentOf(cls, member, this.form(), this.project()) : null;
+    return cls && member ? documentOf(cls, member, this.form()) : null;
   });
   /** The request as shown: a typed password is never displayed (R-UI-043). */
   protected readonly requestJson = computed(() => JSON.stringify(maskSecrets(this.body()), null, 2));
   protected readonly curl = computed(() => {
     const doc = this.body();
     return doc
-      ? curlOf('POST', apiAddress(valueOf(this.baseUrl), '/api/v1/repositories'), maskSecrets(doc), [
+      ? curlOf('POST', apiAddress(valueOf(this.baseUrl), `/api/v1/projects/${this.chosenProject() || '<project>'}/repositories`), maskSecrets(doc), [
           'Idempotency-Key: <a fresh UUID>',
         ])
       : '';
   });
   protected readonly address = computed(() =>
-    clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, this.form().key),
+    clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, repoRef(this.chosenProject(), this.form().key)),
   );
   protected readonly includes = computed(() => lines(this.form().includePatterns));
   protected readonly excludes = computed(() => lines(this.form().excludePatterns));
@@ -324,21 +363,12 @@ export class RepositoryWizard implements HasUnsavedChanges {
         }),
       );
     });
-    // A repository of a project starts with the key prefix the server requires (R-AUTHZ-026).
-    effect(() => {
-      const project = this.project();
-      untracked(() => {
-        if (project && this.form() === EMPTY_FORM) {
-          this.initialForm = { ...EMPTY_FORM, key: `${project}-` };
-          this.form.set(this.initialForm);
-        }
-      });
-    });
-    // Live check of the key (R-UI-021): the shape at once, availability after a pause.
+    // Live check of the key (R-UI-021): the shape at once, availability after a pause, within the chosen project.
     effect(() => {
       const key = this.form().key;
-      const valid = this.keyValid();
-      untracked(() => this.scheduleKeyCheck(key, valid));
+      const valid = this.keyValid() && this.chosenProject() !== '';
+      const project = this.chosenProject();
+      untracked(() => this.scheduleKeyCheck(key, project, valid));
     });
   }
 
@@ -425,7 +455,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
       case STEP_CLASS:
         return this.cls() !== null;
       case STEP_BASIC:
-        return this.keyValid() && this.keyCheck() !== 'taken';
+        return this.chosenProject() !== '' && this.keyValid() && this.keyCheck() !== 'taken';
       default:
         return true;
     }
@@ -454,12 +484,12 @@ export class RepositoryWizard implements HasUnsavedChanges {
     this.creating.set(true);
     this.failure.set(null);
     try {
-      const created = await this.api.create(doc, this.idempotencyKey);
+      const created = await this.api.create(this.chosenProject(), doc, this.idempotencyKey);
       this.created = true;
       this.notifier.status(
         $localize`:@@repo.wizard.created:Repository ${created.value.key}:key: created.`,
       );
-      await this.router.navigate(['/admin/repositories', created.value.key]);
+      await this.router.navigate(['/projects', this.chosenProject(), 'repositories', created.value.key]);
     } catch (e) {
       const error = asApiError(e);
       this.failure.set(error);
@@ -526,23 +556,23 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected classHelpText = classHelp;
   protected formatIcon = formatIcon;
 
-  private scheduleKeyCheck(key: string, valid: boolean): void {
+  private scheduleKeyCheck(key: string, project: string, valid: boolean): void {
     clearTimeout(this.keyTimer);
     if (!valid) {
       this.keyCheck.set('idle');
       return;
     }
     this.keyCheck.set('checking');
-    this.keyTimer = setTimeout(() => void this.checkKey(key), 400);
+    this.keyTimer = setTimeout(() => void this.checkKey(key, project), 400);
   }
 
-  /** A `GET` of the key that answers 404 means the key is free (R-UI-021). */
-  private async checkKey(key: string): Promise<void> {
+  /** A `GET` of the key within the project that answers 404 means the key is free (R-UI-021). */
+  private async checkKey(key: string, project: string): Promise<void> {
     try {
-      await this.api.get(key);
-      if (this.form().key === key) this.keyCheck.set('taken');
+      await this.api.get(repoRef(project, key));
+      if (this.form().key === key && this.chosenProject() === project) this.keyCheck.set('taken');
     } catch (e) {
-      if (this.form().key !== key) return;
+      if (this.form().key !== key || this.chosenProject() !== project) return;
       this.keyCheck.set(e instanceof ApiError && e.status === 404 ? 'free' : 'unknown');
     }
   }

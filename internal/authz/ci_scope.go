@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/ci/claims"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -51,7 +52,7 @@ func (s CIScope) Held(a claims.Action, selector string) bool {
 	if s.idx == nil {
 		return false
 	}
-	sel, err := parseSelector(selector)
+	sel, err := parseSelector(selector, instanceContext)
 	if err != nil {
 		return false
 	}
@@ -85,7 +86,7 @@ func (s CIScope) holdsOn(act Action, r *repoInfo) bool {
 			}
 		}
 		for _, ig := range c.inlineFor(r) {
-			if slices.Contains(ig.Actions, claims.Action(act)) && s.e.compile.selectorsMatch(ig.Repositories, r.repoView) {
+			if slices.Contains(ig.Actions, claims.Action(act)) && s.e.compile.selectorsMatch(ig.Repositories, qname.Context{}, r.repoView) {
 				return true
 			}
 		}

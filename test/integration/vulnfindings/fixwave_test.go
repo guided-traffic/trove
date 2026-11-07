@@ -237,7 +237,7 @@ func TestR_VULN_015_AResolvedBlockedFindingFollowsItsAdvisoryIntoANewGroup(t *te
 	// The advisory joins the group of another record: the group's identifier is GHSA-aaaa-aaaa-3001 from now on.
 	e.st.Exec(`UPDATE vuln_advisory SET canonical_id = 'GHSA-aaaa-aaaa-3001', aliases = ARRAY['GHSA-aaaa-aaaa-3001'], modified = now() + interval '1 hour' WHERE id = 'GHSA-aaaa-aaaa-3002'`)
 	svc := e.service(evaluate.Options{States: fixedStates{"npm": {Complete: true}}})
-	b, err := svc.EvaluateMiss(context.Background(), vuln.Miss{RepoKey: "npm-remote", Format: "npm", Name: "trove-test-rekey", Version: "1.0.0"})
+	b, err := svc.EvaluateMiss(context.Background(), vuln.Miss{Repo: qr("npm-remote"), Format: "npm", Name: "trove-test-rekey", Version: "1.0.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements(t *testing.
 		repoID := e.st.Number(`SELECT id FROM repositories WHERE key = $1`, repo)
 		tr.reset()
 		if err := db.InTx(ctx, func(tx meta.Tx) error {
-			return svc.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{RepoID: repoID, RepoKey: repo, Format: "npm", ItemID: item})
+			return svc.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{RepoID: repoID, Repo: qr(repo), Format: "npm", ItemID: item})
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -540,7 +540,7 @@ type forbiddenRepos struct {
 
 func (f forbiddenRepos) ByKey(ctx context.Context, key string) (repository.Repository, error) {
 	f.t.Errorf("the commit's evaluation read the replica's repository snapshot for %s", key)
-	return f.Reader.ByKey(ctx, key)
+	return f.ByName(ctx, qr(key))
 }
 
 func (f forbiddenRepos) List(ctx context.Context) ([]repository.Repository, error) {
@@ -565,7 +565,7 @@ func TestR_VULN_011_TheCommitEvaluationReadsTheClaimsAndTheRepositoryInItsTransa
 	commit := func() {
 		t.Helper()
 		if err := db.InTx(ctx, func(tx meta.Tx) error {
-			return svc.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{RepoID: repoID, RepoKey: "npm-noclaim", Format: "npm", ItemID: item})
+			return svc.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{RepoID: repoID, Repo: qr("npm-noclaim"), Format: "npm", ItemID: item})
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -592,7 +592,7 @@ func TestR_VULN_011_TheCommitEvaluationReadsTheClaimsAndTheRepositoryInItsTransa
 func TestR_VULN_010_InScopeIsTheRuleOfTheMiss(t *testing.T) {
 	e := newEnv(t)
 	e.publish("npm-local", "trove-test-scope", "1.0.0")
-	svc := e.service(evaluate.Options{Claims: fixedClaims{"trove-test-scope": "npm-local"}})
+	svc := e.service(evaluate.Options{Claims: fixedClaims{"trove-test-scope": "it/npm-local"}})
 	ctx := context.Background()
 	for _, tc := range []struct {
 		repo, name string
@@ -605,7 +605,7 @@ func TestR_VULN_010_InScopeIsTheRuleOfTheMiss(t *testing.T) {
 		{"npm-local", "trove-test-scope", false},
 		{"files-internal", "left-pad", false},
 	} {
-		repo, err := e.rep.App.Repositories().ByKey(ctx, tc.repo)
+		repo, err := e.rep.App.Repositories().ByName(ctx, qr(tc.repo))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -90,9 +90,10 @@ builds, on a role with a client listener and without the `formathost` area, a `f
 dispatcher (`wireServeCheckHost`), which the format's `ServeCheck` reads its stored marks through. **Unserved families** (Q-ARCH-302,
 Q-ARCH-306): every path rule of a chain stage asks `httpserver.Endpoint.ServesRequest` first, so a request of a family the process does not
 serve is the request to `/does-not-exist`, before and after authentication. The authentication stage is given `EndpointRules.Served` and
-its rules read the path of `rulePath` ([stage.go](../../internal/auth/stage.go)): `""` for an unserved family, which no rule matches (no
+its rules read the paths of `rulePaths` ([stage.go](../../internal/auth/stage.go)): `""` for an unserved family, which no rule matches (no
 exchange, no always-open route, no public operation, no session-cookie path rule, no hard limit of `/api/v1`, the challenge of an unknown
-path). The preflight and stage 7 ask `familyServed` ([ratelimit.go](../../internal/api/v1/ratelimit.go)): no header of the management API,
+path). Of a served family, the limiting rules read the unescaped path the router routes by and the opening rules the escaped path as
+received (R-AUTH-037). The preflight and stage 7 ask `familyServed` ([ratelimit.go](../../internal/api/v1/ratelimit.go)): no header of the management API,
 no CORS answer, no rate-limit class. A new path rule in a stage asks the same question; `TestR_ARCH_001_AFamilyOfTheOtherRoleIsAnUnknownPath`
 ([roles_test.go](../../test/integration/roles/roles_test.go)) compares status, header and body of every unserved family with
 `/does-not-exist` and fails on a rule that does not.
@@ -106,7 +107,7 @@ chain instance and TLS block; the sections below describe the chain once, [endpo
 
 The limiters' fallback count (`replicaCount`) is the live replicas of the role in the pool plus the `all` replicas (Q-ARCH-303). The fetch share does not use it: the proxy engine divides by `cluster.FillCount`, the live replicas that fill client misses
 (`packages`, `web`, `all`, pools included; [wire_proxy_engine.go](../../internal/app/wire_proxy_engine.go), Q-ARCH-297, Q-OPS-165).
-The content routes of `api` (`/api/v1/repositories/{repoKey}/content/{path}`, R-API-025, Q-UI-106) are registered with `/files/`
+The content routes of `api` (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`, R-API-025, Q-UI-106) are registered with `/files/`
 in [wire_files.go](../../internal/app/wire_files.go) and dropped by family from the router of `packages`; the files service
 behind them reaches the format's serve check through the host of `wireServeCheckHost`.
 

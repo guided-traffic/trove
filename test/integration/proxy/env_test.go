@@ -34,6 +34,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -152,6 +154,7 @@ func newEnv(t *testing.T) *env {
 		cfg = testenv.ThroughPgBouncer(t, cfg, user, maint)
 	}
 	e := &env{t: t, db: name, cfg: cfg, admin: connect(name), ks: randHex(8), prefix: "trove:itp" + randHex(3) + ":"}
+	e.exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it')")
 	e.s3, e.obj = newS3(t)
 	return e
 }
@@ -276,7 +279,7 @@ func (e *env) remote(key string, up *proxytest.Upstream, mutate ...func(*reposit
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.exec("INSERT INTO repositories (key, format, class, config) VALUES ($1, 'proxytest', 'remote', $2::jsonb)", key, string(raw))
+	e.exec("INSERT INTO repositories (key, format, class, config, project_id) SELECT $1, 'proxytest', 'remote', $2::jsonb, id FROM project WHERE key = 'it'", key, string(raw))
 	return e.lookup(key)
 }
 
@@ -284,9 +287,9 @@ func (e *env) remote(key string, up *proxytest.Upstream, mutate ...func(*reposit
 func (e *env) lookup(key string) proxy.Remote {
 	e.t.Helper()
 	r := e.newReader()
-	repo, err := r.ByKey(context.Background(), key)
+	repo, err := r.ByName(context.Background(), qname.Repo{Project: testenv.DefaultProject, Key: key})
 	if err != nil {
-		e.t.Fatalf("ByKey(%s): %v", key, err)
+		e.t.Fatalf("ByName(%s): %v", key, err)
 	}
 	rem, err := proxy.NewRemote(repo)
 	if err != nil {
@@ -770,11 +773,18 @@ func gather(reg *prometheus.Registry, name string, labels ...string) float64 {
 	return 0
 }
 
+// labelsMatch reports whether the metric has the labels, which are name, value pairs. The value of the
+// label repo is the qualified name of the repository (R-OPS-007); a bare key stands for the repository of that
+// key in the default project.
 func labelsMatch(m *dto.Metric, want []string) bool {
 	for i := 0; i+1 < len(want); i += 2 {
+		value := want[i+1]
+		if want[i] == "repo" && !strings.Contains(value, "/") {
+			value = testenv.DefaultProject + "/" + value
+		}
 		found := false
 		for _, l := range m.GetLabel() {
-			if l.GetName() == want[i] && l.GetValue() == want[i+1] {
+			if l.GetName() == want[i] && l.GetValue() == value {
 				found = true
 			}
 		}

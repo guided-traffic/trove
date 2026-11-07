@@ -38,18 +38,18 @@ func classifyStatus(rem Remote, resp *http.Response) failure {
 	switch s := resp.StatusCode; s {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		f.err = errs.E(errs.UpstreamFailed, errs.CodeUpstreamAuthFailed,
-			"The upstream of "+rem.Repo.Key+" refused the repository's credentials.")
+			"The upstream of "+rem.Repo.Name.String()+" refused the repository's credentials.")
 	case http.StatusTooManyRequests:
 		f.count = true
 		f.retryAfter = retryAfterOf(resp.Header, time.Duration(rem.Settings.Availability.CircuitOpenSeconds)*time.Second)
 		f.err = errs.E(errs.Unavailable, errs.CodeUnavailable,
-			"The upstream of "+rem.Repo.Key+" is rate limiting trove.", errs.WithRetryAfter(f.retryAfter))
+			"The upstream of "+rem.Repo.Name.String()+" is rate limiting trove.", errs.WithRetryAfter(f.retryAfter))
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		f.count = true
-		f.err = errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rem.Repo.Key+" answered "+strconv.Itoa(s)+".")
+		f.err = errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rem.Repo.Name.String()+" answered "+strconv.Itoa(s)+".")
 	default:
 		f.err = errs.E(errs.UpstreamFailed, errs.CodeUpstreamUnexpectedStatus,
-			"The upstream of "+rem.Repo.Key+" answered "+strconv.Itoa(s)+", which trove does not act on.")
+			"The upstream of "+rem.Repo.Name.String()+" answered "+strconv.Itoa(s)+", which trove does not act on.")
 	}
 	return f
 }
@@ -81,7 +81,7 @@ func (e *Engine) classifyError(rem Remote, target *url.URL, err error, idle bool
 	switch {
 	case idle:
 		return failure{count: true, err: errs.E(errs.UpstreamTimeout, errs.CodeUpstreamTimeout,
-			"The upstream of "+rem.Repo.Key+" stopped sending.")}
+			"The upstream of "+rem.Repo.Name.String()+" stopped sending.")}
 	case errors.Is(err, context.Canceled), errors.Is(err, errShuttingDown):
 		return failure{err: errs.E(errs.Unavailable, errs.CodeShuttingDown, "The replica is shutting down; retry.", errs.WithRetryAfter(time.Second))}
 	}
@@ -96,7 +96,7 @@ func (e *Engine) classifyError(rem Remote, target *url.URL, err error, idle bool
 			"The address of "+host+" is refused by the egress address policy.")}
 	case upstream.CodeSourceNetwork:
 		return failure{sourceNetwork: true, err: errs.E(errs.UpstreamFailed, errs.CodeSourceNetworkUnavailable,
-			"This replica has no interface address inside the sourceNetwork of "+rem.Repo.Key+".")}
+			"This replica has no interface address inside the sourceNetwork of "+rem.Repo.Name.String()+".")}
 	case upstream.CodeTLSUntrusted:
 		return failure{event: "tls", err: errs.E(errs.UpstreamFailed, errs.CodeTLSUntrusted,
 			"The certificate of "+host+" is not trusted.")}
@@ -105,10 +105,10 @@ func (e *Engine) classifyError(rem Remote, target *url.URL, err error, idle bool
 	case upstream.CodeInsecureRedirect:
 		return failure{err: errs.E(errs.UpstreamFailed, errs.CodeInsecureRedirect, "The upstream redirected from https to http, which trove refuses.")}
 	case upstream.CodeTimeout:
-		return failure{count: true, err: errs.E(errs.UpstreamTimeout, errs.CodeUpstreamTimeout, "The upstream of "+rem.Repo.Key+" did not answer in time.")}
+		return failure{count: true, err: errs.E(errs.UpstreamTimeout, errs.CodeUpstreamTimeout, "The upstream of "+rem.Repo.Name.String()+" did not answer in time.")}
 	}
 	return failure{count: true, err: errs.E(errs.UpstreamFailed, errs.CodeUpstreamUnreachable,
-		"The upstream of "+rem.Repo.Key+" cannot be reached.", errs.WithCause(err))}
+		"The upstream of "+rem.Repo.Name.String()+" cannot be reached.", errs.WithCause(err))}
 }
 
 // retryable reports whether a failure before any request byte was sent is one of

@@ -35,7 +35,7 @@ func (opaqueFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "opaque", DisplayName: "Opaque", Classes: []formats.Class{formats.Local}, Layout: "opaque",
-			ProtocolBasePath: "/api/opaque/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			ProtocolBasePath: "/api/opaque/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 		},
 		ContractVersion: formats.ContractVersion, Names: foldedNames{}, PropertyPrefix: "opaque.",
 	}
@@ -124,19 +124,19 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 	r := e.start("a")
 
 	t.Run("R-EP-018 the format is served on the default endpoint", func(t *testing.T) {
-		if a := e.send(r.def, "trove.test", "GET", "/api/opaque/opaque-local/left-pad", e.opsPAT, nil); a.Status != http.StatusOK {
+		if a := e.send(r.def, "trove.test", "GET", "/api/opaque/it/opaque-local/left-pad", e.opsPAT, nil); a.Status != http.StatusOK {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 	var epoch string
 	t.Run("R-EP-018 R-EP-012 a rule for a repository of a format without the adapter is 422 format_not_exposable", func(t *testing.T) {
-		a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"opaque","repository":"opaque-local"}`))
+		a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"opaque","repository":"it/opaque-local"}`))
 		if a.Status != http.StatusUnprocessableEntity || fieldCode(t, a, "/repository") != errs.CodeFormatNotExposable {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		// A rule for another repository moves the epoch, so the requests below are decided on
 		// an index that holds every rule written so far.
-		ok := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"files","repository":"generic-local","paths":{"include":["releases/**"]}}`))
+		ok := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"files","repository":"it/generic-local","paths":{"include":["releases/**"]}}`))
 		if ok.Status != http.StatusCreated {
 			t.Fatalf("%d %s", ok.Status, ok.Body)
 		}
@@ -144,25 +144,25 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 	})
 	t.Run("R-EP-018 every read route answers 404 on customers, byte-identical to a missing repository, for every subject", func(t *testing.T) {
 		for _, tok := range []string{e.acmeSAT, e.botAdminSAT} {
-			hidden := e.send(r.cust, customersHost, "GET", "/api/opaque/opaque-local/left-pad", tok, nil, "Trove-Authz-Min-Epoch", epoch)
-			missing := e.send(r.cust, customersHost, "GET", "/api/opaque/no-such-repo/left-pad", tok, nil, "Trove-Authz-Min-Epoch", epoch)
+			hidden := e.send(r.cust, customersHost, "GET", "/api/opaque/it/opaque-local/left-pad", tok, nil, "Trove-Authz-Min-Epoch", epoch)
+			missing := e.send(r.cust, customersHost, "GET", "/api/opaque/it/no-such-repo/left-pad", tok, nil, "Trove-Authz-Min-Epoch", epoch)
 			if hidden.Status != http.StatusNotFound || string(hidden.Body) != string(missing.Body) || strings.Contains(string(hidden.Body), "2.0.0-internal") {
 				t.Fatalf("hidden %d %s, missing %d %s", hidden.Status, hidden.Body, missing.Status, missing.Body)
 			}
 		}
 	})
 	t.Run("R-EP-018 R-EP-013 Q-EP-57 a write is the read-only refusal of every write on the endpoint", func(t *testing.T) {
-		a := e.send(r.cust, customersHost, "PUT", "/api/opaque/opaque-local/left-pad", e.botAdminSAT, []byte("{}"), "Trove-Authz-Min-Epoch", epoch)
+		a := e.send(r.cust, customersHost, "PUT", "/api/opaque/it/opaque-local/left-pad", e.botAdminSAT, []byte("{}"), "Trove-Authz-Min-Epoch", epoch)
 		if a.Status != http.StatusForbidden || !strings.Contains(string(a.Body), errs.CodeEndpointReadOnly) {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 	t.Run("R-EP-012 R-NPM-048 npm is exposable: its rules are accepted and its ranges checked strictly", func(t *testing.T) {
-		bad := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"bad","repository":"npm-customers","versions":{"range":">=2.0.0 <"}}`))
+		bad := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(`{"name":"bad","repository":"it/npm-customers","versions":{"range":">=2.0.0 <"}}`))
 		if bad.Status != http.StatusUnprocessableEntity || fieldCode(t, bad, "/versions/range") != errs.CodeInvalidVersionRange {
 			t.Fatalf("%d %s", bad.Status, bad.Body)
 		}
-		rule := `{"name":"acme-sdk","repository":"npm-customers","packages":{"include":["@acme/sdk","@acme/sdk-*"],"exclude":["@acme/sdk-internal"]},` +
+		rule := `{"name":"acme-sdk","repository":"it/npm-customers","packages":{"include":["@acme/sdk","@acme/sdk-*"],"exclude":["@acme/sdk-internal"]},` +
 			`"versions":{"exclude":["2.0.1"],"range":">=2.0.0"},"prereleases":false,"distTags":{"include":["latest","lts"]}}`
 		if a := e.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(rule)); a.Status != http.StatusCreated {
 			t.Fatalf("%d %s", a.Status, a.Body)
@@ -170,7 +170,7 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 	})
 	t.Run("R-EP-016 R-NPM-048 the dry run judges npm versions with npm's syntax", func(t *testing.T) {
 		a := e.api("POST", "/api/v1/endpoints/customers/check-exposure",
-			[]byte(`{"repository":"npm-customers","package":"@acme/sdk","versions":["1.9.0","2.0.0","2.0.1","2.1.0-rc.1","2.1.0"]}`))
+			[]byte(`{"repository":"it/npm-customers","package":"@acme/sdk","versions":["1.9.0","2.0.0","2.0.1","2.1.0-rc.1","2.1.0"]}`))
 		var res struct {
 			PackageExposed bool `json:"packageExposed"`
 			Versions       []struct {
@@ -216,7 +216,7 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 			} `json:"distTags"`
 			Warnings []string `json:"warnings"`
 		}
-		for _, body := range []string{`{"repository":"npm-customers","package":"@acme/sdk"}`, `{"repository":"npm-customers","package":"@acme/sdk","versions":[]}`} {
+		for _, body := range []string{`{"repository":"it/npm-customers","package":"@acme/sdk"}`, `{"repository":"it/npm-customers","package":"@acme/sdk","versions":[]}`} {
 			a := e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(body))
 			res.Versions, res.DistTags = nil, nil
 			if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil {
@@ -251,20 +251,20 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 			}
 		}
 		// Versions named in the request are judged as sent, and the tags are still answered.
-		a := e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"npm-customers","package":"@acme/sdk","versions":["2.0.0"]}`))
+		a := e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"it/npm-customers","package":"@acme/sdk","versions":["2.0.0"]}`))
 		res.Versions, res.DistTags = nil, nil
 		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 1 || len(res.DistTags) != 3 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		// A virtual repository stores nothing of its own: the answer says it cannot list, instead of
 		// passing an empty list off as "nothing is stored".
-		a = e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"npm-virtual","package":"@acme/sdk"}`))
+		a = e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"it/npm-virtual","package":"@acme/sdk"}`))
 		res.Versions, res.DistTags, res.Warnings = nil, nil, nil
 		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 0 || len(res.Warnings) != 1 || res.Warnings[0] != "stored_versions_not_listed" {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		// A package the repository does not hold lists nothing.
-		a = e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"npm-customers","package":"@acme/none"}`))
+		a = e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"it/npm-customers","package":"@acme/none"}`))
 		res.Versions, res.DistTags = nil, nil
 		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 0 || len(res.DistTags) != 0 {
 			t.Fatalf("%d %s", a.Status, a.Body)
@@ -279,7 +279,7 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 		// @acme/sdk, seeded above with versions and tags, is a package the caller may not read.
 		check := func(pkgName string) (versions, tags int, body string) {
 			a := e.send(r.def, "trove.test", "POST", "/api/v1/endpoints/customers/check-exposure", platPAT,
-				[]byte(`{"repository":"npm-customers","package":"`+pkgName+`"}`))
+				[]byte(`{"repository":"it/npm-customers","package":"`+pkgName+`"}`))
 			var res struct {
 				Versions []json.RawMessage `json:"versions"`
 				DistTags []json.RawMessage `json:"distTags"`

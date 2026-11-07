@@ -277,31 +277,34 @@ SELECT count(*)::bigint AS n
   FROM (SELECT 1
           FROM vuln_finding f
           JOIN repositories r ON r.id = f.repo_id
-         WHERE (r.key = ANY($1::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($2::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($3::text[]))
-           AND (NOT $4::boolean OR r.key = ANY($5::text[]))
+         WHERE (f.repo_id = ANY($1::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($2::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($3::text[]))
+           AND (NOT $4::boolean OR f.repo_id = ANY($5::bigint[]))
      AND (cardinality($6::text[]) = 0 OR r.format = ANY($6::text[]))
      AND (cardinality($7::text[]) = 0 OR f.package_name = ANY($7::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest($7::text[]) AS x)))
      AND ($8::text = '' OR starts_with(f.package_name, lower($8::text)))
      AND (cardinality($9::text[]) = 0 OR f.version = ANY($9::text[]))
      AND ($10::text = '' OR f.ecosystem = $10::text)
-     AND ($11::text = '' OR f.advisory_id = $11::text
-          OR EXISTS (SELECT 1 FROM vuln_advisory a
-                      WHERE a.ecosystem = f.ecosystem AND a.canonical_id = f.advisory_id
-                        AND (a.id = $11::text OR $11::text = ANY(a.aliases))))
+     AND ($11::text = '' OR (f.ecosystem, f.advisory_id) IN (
+          SELECT a.ecosystem, a.canonical_id FROM vuln_advisory a
+           WHERE a.id = $11::text OR a.aliases @> ARRAY[$11::text]
+          UNION
+          SELECT v.ecosystem, v.advisory_id FROM vuln_finding v
+           WHERE v.advisory_id = $11::text
+             AND NOT EXISTS (SELECT 1 FROM vuln_advisory n WHERE n.id = $11::text OR n.aliases @> ARRAY[$11::text])))
      AND (cardinality($12::text[]) = 0 OR f.severity = ANY($12::text[]))
      AND ((cardinality($13::text[]) = 0 AND f.status <> 'resolved') OR f.status = ANY($13::text[]))
      AND ($14::text = '' OR f.kind = $14::text)
      AND (NOT $15::boolean OR f.known_exploited = $16::boolean)
      AND (NOT $17::boolean OR f.fix_available = $18::boolean)
-     AND (NOT $19::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY($20::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY($21::text[]) THEN 'malicious'
+     AND (NOT $19::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND f.repo_id = ANY($20::bigint[])
+          THEN CASE WHEN f.kind = 'malicious' AND f.repo_id = ANY($21::bigint[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) IS NOT NULL) = $22::boolean)
-     AND ($23::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY($20::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY($21::text[]) THEN 'malicious'
+     AND ($23::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND f.repo_id = ANY($20::bigint[])
+          THEN CASE WHEN f.kind = 'malicious' AND f.repo_id = ANY($21::bigint[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) = $23::text)
      AND (NOT $24::boolean OR f.detected_at >= NULLIF($25::text, '')::timestamptz)
@@ -319,11 +322,11 @@ SELECT count(*)::bigint AS n
 `
 
 type VulnFindingsCountParams struct {
-	Whole             []string
+	Whole             []int64
 	Rows              []string
 	PackageRows       []string
 	HasRepos          bool
-	Repos             []string
+	Repos             []int64
 	Formats           []string
 	Packages          []string
 	PackagePrefix     string
@@ -338,8 +341,8 @@ type VulnFindingsCountParams struct {
 	HasFixAvailable   bool
 	FixAvailable      bool
 	HasBlocked        bool
-	EnabledRepos      []string
-	MaliciousRepos    []string
+	EnabledRepos      []int64
+	MaliciousRepos    []int64
 	Blocked           bool
 	BlockReason       string
 	HasFrom           bool
@@ -392,38 +395,42 @@ func (q *Queries) VulnFindingsCount(ctx context.Context, arg VulnFindingsCountPa
 
 const vulnFindingsList = `-- name: VulnFindingsList :many
 WITH base AS NOT MATERIALIZED (
-  SELECT f.id, r.key AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
+  SELECT f.id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
          f.severity_rank, f.cvss_score AS cvss_raw, COALESCE(f.cvss_score, -1)::float8 AS cvss_score, f.known_exploited, f.fix_available,
          f.fixed_versions, f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason,
          COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.comment, '')::text AS comment,
          f.revision, f.detected_at, f.resolved_at, f.status_changed_at, f.status_changed_by
     FROM vuln_finding f
     JOIN repositories r ON r.id = f.repo_id
-   WHERE (r.key = ANY($2::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($3::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($4::text[]))
-     AND (NOT $5::boolean OR r.key = ANY($6::text[]))
+    JOIN project rp ON rp.id = r.project_id
+   WHERE (f.repo_id = ANY($2::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($3::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($4::text[]))
+     AND (NOT $5::boolean OR f.repo_id = ANY($6::bigint[]))
      AND (cardinality($7::text[]) = 0 OR r.format = ANY($7::text[]))
      AND (cardinality($8::text[]) = 0 OR f.package_name = ANY($8::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest($8::text[]) AS x)))
      AND ($9::text = '' OR starts_with(f.package_name, lower($9::text)))
      AND (cardinality($10::text[]) = 0 OR f.version = ANY($10::text[]))
      AND ($11::text = '' OR f.ecosystem = $11::text)
-     AND ($12::text = '' OR f.advisory_id = $12::text
-          OR EXISTS (SELECT 1 FROM vuln_advisory a
-                      WHERE a.ecosystem = f.ecosystem AND a.canonical_id = f.advisory_id
-                        AND (a.id = $12::text OR $12::text = ANY(a.aliases))))
+     AND ($12::text = '' OR (f.ecosystem, f.advisory_id) IN (
+          SELECT a.ecosystem, a.canonical_id FROM vuln_advisory a
+           WHERE a.id = $12::text OR a.aliases @> ARRAY[$12::text]
+          UNION
+          SELECT v.ecosystem, v.advisory_id FROM vuln_finding v
+           WHERE v.advisory_id = $12::text
+             AND NOT EXISTS (SELECT 1 FROM vuln_advisory n WHERE n.id = $12::text OR n.aliases @> ARRAY[$12::text])))
      AND (cardinality($13::text[]) = 0 OR f.severity = ANY($13::text[]))
      AND ((cardinality($14::text[]) = 0 AND f.status <> 'resolved') OR f.status = ANY($14::text[]))
      AND ($15::text = '' OR f.kind = $15::text)
      AND (NOT $16::boolean OR f.known_exploited = $17::boolean)
      AND (NOT $18::boolean OR f.fix_available = $19::boolean)
-     AND (NOT $20::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY($21::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY($22::text[]) THEN 'malicious'
+     AND (NOT $20::boolean OR ((CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND f.repo_id = ANY($21::bigint[])
+          THEN CASE WHEN f.kind = 'malicious' AND f.repo_id = ANY($22::bigint[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) IS NOT NULL) = $23::boolean)
-     AND ($24::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY($21::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY($22::text[]) THEN 'malicious'
+     AND ($24::text = '' OR (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND f.repo_id = ANY($21::bigint[])
+          THEN CASE WHEN f.kind = 'malicious' AND f.repo_id = ANY($22::bigint[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) = $24::text)
      AND (NOT $25::boolean OR f.detected_at >= NULLIF($26::text, '')::timestamptz)
@@ -526,11 +533,11 @@ SELECT p.id::text AS id, p.repo_key, p.format, p.ecosystem, p.package_name, p.ve
 
 type VulnFindingsListParams struct {
 	Descending        bool
-	Whole             []string
+	Whole             []int64
 	Rows              []string
 	PackageRows       []string
 	HasRepos          bool
-	Repos             []string
+	Repos             []int64
 	Formats           []string
 	Packages          []string
 	PackagePrefix     string
@@ -545,8 +552,8 @@ type VulnFindingsListParams struct {
 	HasFixAvailable   bool
 	FixAvailable      bool
 	HasBlocked        bool
-	EnabledRepos      []string
-	MaliciousRepos    []string
+	EnabledRepos      []int64
+	MaliciousRepos    []int64
 	Blocked           bool
 	BlockReason       string
 	HasFrom           bool
@@ -690,22 +697,23 @@ func (q *Queries) VulnFindingsList(ctx context.Context, arg VulnFindingsListPara
 }
 
 const vulnFindingsLock = `-- name: VulnFindingsLock :many
-SELECT f.id::text AS id, r.key AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
+SELECT f.id::text AS id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE f.id = ANY($1::text[]::uuid[])
-   AND (r.key = ANY($2::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($3::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($4::text[]))
+   AND (f.repo_id = ANY($2::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($3::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($4::text[]))
  ORDER BY f.id
    FOR UPDATE OF f
 `
 
 type VulnFindingsLockParams struct {
 	Ids         []string
-	Whole       []string
+	Whole       []int64
 	Rows        []string
 	PackageRows []string
 }
@@ -766,21 +774,22 @@ func (q *Queries) VulnFindingsLock(ctx context.Context, arg VulnFindingsLockPara
 }
 
 const vulnPackageCandidates = `-- name: VulnPackageCandidates :many
-SELECT r.key AS repo_key, p.name, pv.version
+SELECT (rp.key || '/' || r.key)::text AS repo_key, p.name, pv.version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY($1::text[])
+   AND p.repo_id = ANY($1::bigint[])
    AND r.format = $2::text
    AND p.name = $3::text
    AND ($4::text = '' OR pv.version = $4::text)
- ORDER BY r.key, pv.version
+ ORDER BY (rp.key || '/' || r.key), pv.version
  LIMIT $5::int
 `
 
 type VulnPackageCandidatesParams struct {
-	Keys    []string
+	Keys    []int64
 	Format  string
 	Name    string
 	Version string
@@ -828,9 +837,9 @@ SELECT f.version, f.severity, count(*)::bigint AS n
  WHERE r.format = $1::text
    AND f.package_name = $2::text
    AND f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (r.key = ANY($3::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($4::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($5::text[]))
+   AND (f.repo_id = ANY($3::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($4::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
  GROUP BY f.version, f.severity
  ORDER BY f.version, f.severity
 `
@@ -838,7 +847,7 @@ SELECT f.version, f.severity, count(*)::bigint AS n
 type VulnPackageCountsParams struct {
 	Format      string
 	Name        string
-	Whole       []string
+	Whole       []int64
 	Rows        []string
 	PackageRows []string
 }
@@ -878,10 +887,11 @@ func (q *Queries) VulnPackageCounts(ctx context.Context, arg VulnPackageCountsPa
 
 const vulnScopeCandidates = `-- name: VulnScopeCandidates :many
 
-SELECT r.key AS repo_key, f.package_name AS name, f.version AS version
+SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name, f.version AS version
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE r.key = ANY($1::text[])
+  JOIN project rp ON rp.id = r.project_id
+ WHERE f.repo_id = ANY($1::bigint[])
    AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
    AND (cardinality($3::text[]) = 0 OR f.package_name = ANY($3::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest($3::text[]) AS x)))
@@ -893,7 +903,7 @@ SELECT r.key AS repo_key, f.package_name AS name, f.version AS version
 `
 
 type VulnScopeCandidatesParams struct {
-	Keys          []string
+	Keys          []int64
 	Formats       []string
 	Packages      []string
 	PackagePrefix string
@@ -914,15 +924,18 @@ type VulnScopeCandidatesRow struct {
 //
 // The caller's right is passed in as data, as in package_view.sql (R-VULN-019):
 //
-//	whole   keys of the repositories whose every finding the caller may read (authz.ReadAll);
-//	rows    one entry "<repository key>\x1f<package name>\x1f<version>" per version the caller may read in the other
+//	whole   IDs of the repositories whose every finding the caller may read (authz.ReadAll);
+//	rows    one entry "<repository id>\x1f<package name>\x1f<version>" per version the caller may read in the other
 //	        repositories, decided by the decision point row by row (authz.ReadRows);
 //	package_rows
-//	        one entry "<repository key>\x1f<package name>" per package the caller may read in the other repositories whose
+//	        one entry "<repository id>\x1f<package name>" per package the caller may read in the other repositories whose
 //	        decision does not depend on the version (authz.VersionIndependent, Q-VULN-81): every version of it is readable.
 //
 // A repository in neither list contributes no row. The filters narrow what a request asks about and never widen it.
-// The policy of the repositories (R-VULN-015) is passed in as data too: enabled_repos are the keys whose scanning is on, and
+// Repositories travel as their numeric IDs (f.repo_id = ANY(...)), never as the qualified name the statements return: a
+// predicate on (project key || '/' || repository key) cannot use the index of vuln_finding.repo_id and is evaluated for every
+// finding of the join (measured at 100,000 findings in docs/developer/vulnerabilities.md).
+// The policy of the repositories (R-VULN-015) is passed in as data too: enabled_repos are the IDs whose scanning is on, and
 // malicious_repos those that also block the malicious findings; the block of a finding is computed by the one rule of
 // vuln.Policy.BlockReasonOf, which the Go side applies to every row it returns (vuln.Verdict) and these statements mirror
 // only to filter and count.
@@ -960,10 +973,11 @@ func (q *Queries) VulnScopeCandidates(ctx context.Context, arg VulnScopeCandidat
 }
 
 const vulnScopePackages = `-- name: VulnScopePackages :many
-SELECT r.key AS repo_key, f.package_name AS name
+SELECT (rp.key || '/' || r.key)::text AS repo_key, f.package_name AS name
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE r.key = ANY($1::text[])
+  JOIN project rp ON rp.id = r.project_id
+ WHERE f.repo_id = ANY($1::bigint[])
    AND (cardinality($2::text[]) = 0 OR r.format = ANY($2::text[]))
    AND (cardinality($3::text[]) = 0 OR f.package_name = ANY($3::text[])
           OR (f.ecosystem = 'NuGet' AND f.package_name = ANY(SELECT lower(x) FROM unnest($3::text[]) AS x)))
@@ -975,7 +989,7 @@ SELECT r.key AS repo_key, f.package_name AS name
 `
 
 type VulnScopePackagesParams struct {
-	Keys          []string
+	Keys          []int64
 	Formats       []string
 	Packages      []string
 	PackagePrefix string
@@ -1083,25 +1097,25 @@ const vulnSummaryBlocked = `-- name: VulnSummaryBlocked :one
 SELECT count(DISTINCT (f.repo_id, f.package_name, f.version))::bigint AS n
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
- WHERE (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND r.key = ANY($1::text[])
-          THEN CASE WHEN f.kind = 'malicious' AND r.key = ANY($2::text[]) THEN 'malicious'
+ WHERE (CASE WHEN f.status IN ('needs_triage', 'confirmed', 'blocked') AND f.repo_id = ANY($1::bigint[])
+          THEN CASE WHEN f.kind = 'malicious' AND f.repo_id = ANY($2::bigint[]) THEN 'malicious'
                     WHEN f.status = 'blocked' THEN 'triage' END
      END) IS NOT NULL
-   AND (r.key = ANY($3::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($4::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($5::text[]))
-   AND (NOT $6::boolean OR r.key = ANY($7::text[]))
+   AND (f.repo_id = ANY($3::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($4::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
+   AND (NOT $6::boolean OR f.repo_id = ANY($7::bigint[]))
    AND (cardinality($8::text[]) = 0 OR r.format = ANY($8::text[]))
 `
 
 type VulnSummaryBlockedParams struct {
-	EnabledRepos   []string
-	MaliciousRepos []string
-	Whole          []string
+	EnabledRepos   []int64
+	MaliciousRepos []int64
+	Whole          []int64
 	Rows           []string
 	PackageRows    []string
 	HasRepos       bool
-	Repos          []string
+	Repos          []int64
 	Formats        []string
 }
 
@@ -1129,20 +1143,20 @@ SELECT f.severity, f.kind, count(*)::bigint AS total,
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
  WHERE f.status IN ('needs_triage', 'confirmed', 'blocked')
-   AND (r.key = ANY($1::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($2::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($3::text[]))
-   AND (NOT $4::boolean OR r.key = ANY($5::text[]))
+   AND (f.repo_id = ANY($1::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($2::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($3::text[]))
+   AND (NOT $4::boolean OR f.repo_id = ANY($5::bigint[]))
    AND (cardinality($6::text[]) = 0 OR r.format = ANY($6::text[]))
  GROUP BY f.severity, f.kind
 `
 
 type VulnSummaryCountsParams struct {
-	Whole       []string
+	Whole       []int64
 	Rows        []string
 	PackageRows []string
 	HasRepos    bool
-	Repos       []string
+	Repos       []int64
 	Formats     []string
 }
 
@@ -1194,10 +1208,10 @@ SELECT to_char(GREATEST((f.detected_at AT TIME ZONE 'UTC')::date, $1::text::date
   FROM vuln_finding f
   JOIN repositories r ON r.id = f.repo_id
  WHERE (f.detected_at AT TIME ZONE 'UTC')::date <= $2::text::date
-   AND (r.key = ANY($3::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($4::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($5::text[]))
-   AND (NOT $6::boolean OR r.key = ANY($7::text[]))
+   AND (f.repo_id = ANY($3::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($4::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
+   AND (NOT $6::boolean OR f.repo_id = ANY($7::bigint[]))
    AND (cardinality($8::text[]) = 0 OR r.format = ANY($8::text[]))
    AND ($9::text = '' OR f.kind = $9::text)
  GROUP BY 1, 2
@@ -1206,11 +1220,11 @@ SELECT to_char(GREATEST((f.detected_at AT TIME ZONE 'UTC')::date, $1::text::date
 type VulnTrendDetectedParams struct {
 	FromDay     string
 	ToDay       string
-	Whole       []string
+	Whole       []int64
 	Rows        []string
 	PackageRows []string
 	HasRepos    bool
-	Repos       []string
+	Repos       []int64
 	Formats     []string
 	Kind        string
 }
@@ -1260,10 +1274,10 @@ SELECT to_char(GREATEST((f.resolved_at AT TIME ZONE 'UTC')::date, $1::text::date
   JOIN repositories r ON r.id = f.repo_id
  WHERE f.status = 'resolved' AND f.resolved_at IS NOT NULL
    AND (f.resolved_at AT TIME ZONE 'UTC')::date <= $2::text::date
-   AND (r.key = ANY($3::text[])
-          OR concat_ws(chr(31), r.key, f.package_name, f.version) = ANY($4::text[])
-          OR concat_ws(chr(31), r.key, f.package_name) = ANY($5::text[]))
-   AND (NOT $6::boolean OR r.key = ANY($7::text[]))
+   AND (f.repo_id = ANY($3::bigint[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name, f.version) = ANY($4::text[])
+          OR concat_ws(chr(31), f.repo_id::text, f.package_name) = ANY($5::text[]))
+   AND (NOT $6::boolean OR f.repo_id = ANY($7::bigint[]))
    AND (cardinality($8::text[]) = 0 OR r.format = ANY($8::text[]))
    AND ($9::text = '' OR f.kind = $9::text)
  GROUP BY 1, 2
@@ -1272,11 +1286,11 @@ SELECT to_char(GREATEST((f.resolved_at AT TIME ZONE 'UTC')::date, $1::text::date
 type VulnTrendResolvedParams struct {
 	FromDay     string
 	ToDay       string
-	Whole       []string
+	Whole       []int64
 	Rows        []string
 	PackageRows []string
 	HasRepos    bool
-	Repos       []string
+	Repos       []int64
 	Formats     []string
 	Kind        string
 }

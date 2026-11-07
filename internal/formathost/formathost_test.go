@@ -133,7 +133,7 @@ func (d *fakeDecider) RecordAllowed(_ context.Context, _ meta.Tx, _ authz.Subjec
 func testRequest(kind formats.RouteKind) *formats.Request {
 	rq := &formats.Request{
 		Request: httptest.NewRequest(http.MethodGet, "/api/probe/key/x", nil),
-		Repo:    &repository.Repository{ID: "42", Key: "key", Class: repository.Local, Format: "probe"},
+		Repo:    &repository.Repository{ID: "42", Name: qr("key"), Class: repository.Local, Format: "probe"},
 		Route:   &formats.Route{Name: "probe.get", Kind: kind},
 		Subject: authz.Subject{Name: "alice", Endpoint: "default"},
 	}
@@ -170,9 +170,9 @@ func TestR_ARCH_009_AuthorizeCompletesTheCoordinate(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := authz.Coordinate{
-		Repository: "key", Class: repository.Local, Format: "probe", Kind: authz.KindArtifact,
+		Repository: qr("key"), Class: repository.Local, Format: "probe", Kind: authz.KindArtifact,
 		Path: "left-pad/-/x.tgz", Package: "left-pad", Version: "1.0.0", Actions: []authz.Action{authz.Read},
-		Addressed: "key",
+		Addressed: qr("key"),
 	}
 	if !reflect.DeepEqual(d.got, want) {
 		t.Fatalf("coordinate = %+v\nwant         %+v", d.got, want)
@@ -262,7 +262,7 @@ func TestR_AUTHZ_018_ClaimFailsClosed(t *testing.T) {
 			t.Fatalf("the refusal of the rule must reach the caller: %v", err)
 		}
 		c := own.got[0]
-		if !c.Write.Publish || !c.Write.FirstVersion || c.Coordinate.Package != "left-pad" || c.Coordinate.Repository != "key" ||
+		if !c.Write.Publish || !c.Write.FirstVersion || c.Coordinate.Package != "left-pad" || c.Coordinate.Repository != qr("key") ||
 			c.Coordinate.Kind != authz.KindWrite || c.Subject.Endpoint != "default" {
 			t.Fatalf("check = %+v", c)
 		}
@@ -284,21 +284,21 @@ func TestR_AUTHZ_018_CheckOwnershipFailsClosed(t *testing.T) {
 		t.Fatalf("the refusal must reach the caller, and nothing may be enforced: %v %d %d", err, len(own.prechck), len(own.got))
 	}
 	c := own.prechck[0]
-	if !c.Write.FirstVersion || c.Coordinate.Package != "left-pad" || c.Coordinate.Repository != "key" || c.Subject.Endpoint != "default" {
+	if !c.Write.FirstVersion || c.Coordinate.Package != "left-pad" || c.Coordinate.Repository != qr("key") || c.Subject.Endpoint != "default" {
 		t.Fatalf("check = %+v", c)
 	}
 }
 
 func TestR_ARCH_007_LinksComeFromTheBaseURL(t *testing.T) {
-	l := linkBuilder{base: "https://trove.example.com", format: "npm", key: "npm-local"}
+	l := linkBuilder{base: "https://trove.example.com", format: "npm", key: qr("npm-local")}
 	for got, want := range map[string]string{
-		l.Base():                          "https://trove.example.com",
-		l.Registry("npm-remote~cache"):    "https://trove.example.com/api/npm/npm-remote~cache/",
-		l.Repository():                    "https://trove.example.com/api/npm/npm-local/",
-		l.Path("@acme/ui/-/ui-1.0.0.tgz"): "https://trove.example.com/api/npm/npm-local/@acme/ui/-/ui-1.0.0.tgz",
-		l.Path("a b/c#d"):                 "https://trove.example.com/api/npm/npm-local/a%20b/c%23d",
-		l.Path(""):                        "https://trove.example.com/api/npm/npm-local/",
-		l.File("npm-local", "@acme/ui/ui-1.0.0.tgz"): "https://trove.example.com/files/npm-local/@acme/ui/ui-1.0.0.tgz",
+		l.Base():                           "https://trove.example.com",
+		l.Registry(qr("npm-remote~cache")): "https://trove.example.com/api/npm/it/npm-remote~cache/",
+		l.Repository():                     "https://trove.example.com/api/npm/it/npm-local/",
+		l.Path("@acme/ui/-/ui-1.0.0.tgz"):  "https://trove.example.com/api/npm/it/npm-local/@acme/ui/-/ui-1.0.0.tgz",
+		l.Path("a b/c#d"):                  "https://trove.example.com/api/npm/it/npm-local/a%20b/c%23d",
+		l.Path(""):                         "https://trove.example.com/api/npm/it/npm-local/",
+		l.File(qr("npm-local"), "@acme/ui/ui-1.0.0.tgz"): "https://trove.example.com/files/it/npm-local/@acme/ui/ui-1.0.0.tgz",
 	} {
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
@@ -315,7 +315,7 @@ func TestR_ARCH_012_RenditionCacheStoresWhatFitsAnEighth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k := formats.RenditionKey{Repo: formats.RepoRef{ID: 1, Key: "k"}, Package: "p", RevSeq: 3, Variant: "full", Endpoint: "default"}
+	k := formats.RenditionKey{Repo: formats.RepoRef{ID: 1, Name: qr("k")}, Package: "p", RevSeq: 3, Variant: "full", Endpoint: "default"}
 	rc.Put(k, make([]byte, 900))
 	if doc, ok := rc.Get(k); !ok || len(doc) != 900 {
 		t.Fatalf("a document within an eighth of the budget is stored: %d %v", len(doc), ok)

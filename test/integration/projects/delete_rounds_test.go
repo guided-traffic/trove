@@ -50,11 +50,11 @@ func TestR_AUTHZ_026_DeleteRetriesForNewPolicies(t *testing.T) {
 	t.Run("R-AUTHZ-026 a policy that appears between the policy deletion and the close is deleted in a second round", func(t *testing.T) {
 		f := newFixture(t)
 		f.create("web")
-		f.seedProjectPolicy("web", "web-first")
+		f.seedProjectPolicy("web", "first")
 		h := &policyHook{}
 		h.after = func(name string) {
-			if name == "web-first" {
-				f.seedProjectPolicy("web", "web-late")
+			if name == "web/first" {
+				f.seedProjectPolicy("web", "late")
 			}
 		}
 		svc, actor := f.serviceWith(h)
@@ -65,7 +65,7 @@ func TestR_AUTHZ_026_DeleteRetriesForNewPolicies(t *testing.T) {
 		if got := h.calls.Load(); got != 2 {
 			t.Errorf("policy deletions = %d, want web-first and web-late", got)
 		}
-		if f.e.Number("SELECT count(*) FROM project WHERE key = 'web'") != 0 || f.e.Number("SELECT count(*) FROM authz_policy WHERE name LIKE 'web-%'") != 0 {
+		if f.e.Number("SELECT count(*) FROM project WHERE key = 'web'") != 0 || f.e.Number("SELECT count(*) FROM authz_policy WHERE name LIKE 'web/%'") != 0 {
 			t.Error("the project or one of its policies remains")
 		}
 		if f.events("authz.policy.deleted") != 2 {
@@ -76,9 +76,9 @@ func TestR_AUTHZ_026_DeleteRetriesForNewPolicies(t *testing.T) {
 	t.Run("R-AUTHZ-026 a project whose policies keep appearing answers 409 after three rounds and keeps what is left", func(t *testing.T) {
 		f := newFixture(t)
 		f.create("web")
-		f.seedProjectPolicy("web", "web-first")
+		f.seedProjectPolicy("web", "first")
 		h := &policyHook{}
-		h.after = func(string) { f.seedProjectPolicy("web", fmt.Sprintf("web-again-%d", h.calls.Load())) }
+		h.after = func(string) { f.seedProjectPolicy("web", fmt.Sprintf("again-%d", h.calls.Load())) }
 		svc, actor := f.serviceWith(h)
 		_, err := svc.Delete(context.Background(), actor, "web", -1)
 		if errs.KindOf(err) != errs.Conflict {
@@ -93,41 +93,36 @@ func TestR_AUTHZ_026_DeleteRetriesForNewPolicies(t *testing.T) {
 	})
 }
 
-// TestR_AUTHZ_026_DeleteSparesAGlobalPolicyOfTheSameName forces the window of the delete
-// by name: the policy of the project is gone and a global policy took its name before
-// the policy store ran (Q-AUTHZ-204). The version read in the precheck is the If-Match
-// of the deletion, so the global policy stays.
-func TestR_AUTHZ_026_DeleteSparesAGlobalPolicyOfTheSameName(t *testing.T) {
-	// The project delete lists its policies, then deletes each at the version it read and
-	// for its project (Q-AUTHZ-204, Q-AUTHZ-199). A global policy created under the freed name
-	// in between survives, whether its version differs from the one read or not (H-407).
-	for _, c := range []struct {
-		name    string
-		version int
-	}{{"an edited project policy (version 2)", 2}, {"a never-edited project policy (version 1)", 1}} {
-		t.Run(c.name, func(t *testing.T) {
-			f := newFixture(t)
-			f.create("web")
-			f.seedProjectPolicy("web", "web-x")
-			f.e.Exec(fmt.Sprintf("UPDATE authz_policy SET version = %d WHERE name = 'web-x'", c.version))
-			h := &policyHook{}
-			h.before = func(name string) {
-				if name != "web-x" {
-					return
-				}
-				f.e.Exec("DELETE FROM authz_policy WHERE name = 'web-x'")
-				f.e.Exec("INSERT INTO authz_policy (id, name) VALUES (gen_random_uuid(), 'web-x')")
-			}
-			svc, actor := f.serviceWith(h)
-			if _, err := svc.Delete(context.Background(), actor, "web", -1); err != nil {
-				t.Fatalf("Delete: %v", err)
-			}
-			if f.e.Number("SELECT count(*) FROM authz_policy WHERE name = 'web-x' AND project_id IS NULL") != 1 {
-				t.Error("the global policy that took the name was deleted")
-			}
-			if f.e.Number("SELECT count(*) FROM project WHERE key = 'web'") != 0 {
-				t.Error("the project remains")
-			}
-		})
+// TestQ_AUTHZ_209_DeleteSparesThePoliciesOfTheSameNameElsewhere: the policies of a project are named within it and
+// stored as <project>/<name> (Q-AUTHZ-209), so the delete of web removes web's x and never the global x or mobile's x
+// (Q-AUTHZ-204), also when a policy of web is replaced under its name between the list and the deletion: the
+// replacement belongs to web and goes in a further round.
+func TestQ_AUTHZ_209_DeleteSparesThePoliciesOfTheSameNameElsewhere(t *testing.T) {
+	f := newFixture(t)
+	f.create("web")
+	f.create("mobile")
+	f.seedProjectPolicy("web", "x")
+	f.seedProjectPolicy("mobile", "x")
+	f.e.Exec("INSERT INTO authz_policy (id, name) VALUES (gen_random_uuid(), 'x')")
+	f.e.Exec("UPDATE authz_policy SET version = 2 WHERE name = 'web/x'")
+	h := &policyHook{}
+	replaced := false
+	h.before = func(name string) {
+		if name != "web/x" || replaced {
+			return
+		}
+		replaced = true
+		f.e.Exec("DELETE FROM authz_policy WHERE name = 'web/x'")
+		f.seedProjectPolicy("web", "x")
+	}
+	svc, actor := f.serviceWith(h)
+	if _, err := svc.Delete(context.Background(), actor, "web", -1); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if n := f.e.Number("SELECT count(*) FROM authz_policy WHERE name IN ('x', 'mobile/x')"); n != 2 {
+		t.Errorf("%d of the policies of the same name elsewhere remain, want 2", n)
+	}
+	if f.e.Number("SELECT count(*) FROM project WHERE key = 'web'") != 0 || f.e.Number("SELECT count(*) FROM authz_policy WHERE name = 'web/x'") != 0 {
+		t.Error("the project or its policy remains")
 	}
 }

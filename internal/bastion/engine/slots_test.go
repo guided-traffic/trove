@@ -50,7 +50,7 @@ func TestR_BAS_025_EveryPathClosesTheResponseBodyAndSoReleasesItsSlot(t *testing
 	dir := t.TempDir()
 	m := maintest.New(t)
 	m.SetAnonymous(true)
-	st := newSite("npm-all")
+	st := newSite("web/npm-all")
 	m.SetForward(st.handler())
 	m.SetCheck(func(req iface.CheckRequest) iface.CheckAnswer { a, _ := st.checkFn(req); return a })
 
@@ -58,14 +58,14 @@ func TestR_BAS_025_EveryPathClosesTheResponseBodyAndSoReleasesItsSlot(t *testing
 	st.addReader(full, &reader{id: "full", read: iface.ReadFull})
 	st.addReader(part, &reader{id: "part", read: iface.ReadPartial, allowed: func(p string) bool { return strings.Contains(p, "/@acme/") }})
 	art := func(name string, n int) string {
-		p := "/api/npm/npm-all/@acme/" + name + ".tgz"
+		p := "/api/npm/web/npm-all/@acme/" + name + ".tgz"
 		st.artifacts[p] = payload(n)
 		return p
 	}
 	cold, gone, rng, corrupt := art("cold", 200<<10), art("gone", 5000), art("range", 100<<10), art("corrupt", 200<<10)
 	st.corrupt[corrupt] = true
-	st.docs["/api/npm/npm-all/shared"] = "all packages"
-	st.docs["/api/npm/npm-all/@acme/private"] = "mine"
+	st.docs["/api/npm/web/npm-all/shared"] = "all packages"
+	st.docs["/api/npm/web/npm-all/@acme/private"] = "mine"
 
 	cfg := testConfig(t, func(c *configT) {
 		c.Bastion.Main.MaxConcurrent, c.Bastion.Replicas, c.Bastion.Main.QueueTimeout = 1, 1, 300*time.Millisecond
@@ -150,15 +150,15 @@ func TestR_BAS_025_EveryPathClosesTheResponseBodyAndSoReleasesItsSlot(t *testing
 	clk.advance(2 * time.Second)
 	expect("a 304 whose bytes are gone", call("304 gone", http.MethodGet, gone, auth(full)...), 200)
 	expect("a Range request on a miss", call("range", http.MethodGet, rng, append(auth(full), "Range", "bytes=10-99")...), 206)
-	expect("a shared document", call("shared", http.MethodGet, "/api/npm/npm-all/shared", auth(full)...), 200)
+	expect("a shared document", call("shared", http.MethodGet, "/api/npm/web/npm-all/shared", auth(full)...), 200)
 	clk.advance(2 * time.Second)
-	expect("a shared document revalidated (304)", call("shared 304", http.MethodGet, "/api/npm/npm-all/shared", auth(full)...), 200)
-	expect("a private copy", call("private", http.MethodGet, "/api/npm/npm-all/@acme/private", auth(part)...), 200)
-	expect("a private copy revalidated (304)", call("private 304", http.MethodGet, "/api/npm/npm-all/@acme/private", auth(part)...), 200)
-	expect("an absent name", call("absent", http.MethodGet, "/api/npm/npm-all/nope", auth(full)...), 404)
-	expect("a pass-through", call("search", http.MethodGet, "/api/npm/npm-all/-/v1/search?text=a", auth(full)...), 200)
-	expect("a refusal", call("refusal", http.MethodGet, "/api/npm/npm-all/@acme/hidden.tgz", auth(none(t, st))...), 404)
-	expect("a write probe", call("probe", http.MethodPut, "/api/npm/npm-all/x", auth(full)...), 403)
+	expect("a shared document revalidated (304)", call("shared 304", http.MethodGet, "/api/npm/web/npm-all/shared", auth(full)...), 200)
+	expect("a private copy", call("private", http.MethodGet, "/api/npm/web/npm-all/@acme/private", auth(part)...), 200)
+	expect("a private copy revalidated (304)", call("private 304", http.MethodGet, "/api/npm/web/npm-all/@acme/private", auth(part)...), 200)
+	expect("an absent name", call("absent", http.MethodGet, "/api/npm/web/npm-all/nope", auth(full)...), 404)
+	expect("a pass-through", call("search", http.MethodGet, "/api/npm/web/npm-all/-/v1/search?text=a", auth(full)...), 200)
+	expect("a refusal", call("refusal", http.MethodGet, "/api/npm/web/npm-all/@acme/hidden.tgz", auth(none(t, st))...), 404)
+	expect("a write probe", call("probe", http.MethodPut, "/api/npm/web/npm-all/x", auth(full)...), 403)
 	expect("an invalid token", call("invalid", http.MethodGet, cold, auth(bad)...), 401)
 	call("a fill whose digest does not match", http.MethodGet, corrupt, auth(full)...)
 

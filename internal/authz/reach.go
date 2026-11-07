@@ -3,6 +3,8 @@ package authz
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -51,7 +53,7 @@ type ReachResult struct {
 type Reacher interface {
 	// ReachOn classifies keys for the subject on the request's index. A key the index does not know is
 	// ReachNone with the refusal of a missing repository. An error is a refusal to decide (503, 412).
-	ReachOn(ctx context.Context, idx *Index, sub Subject, keys []string) (map[string]ReachResult, error)
+	ReachOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) (map[qname.Repo]ReachResult, error)
 }
 
 var _ Reacher = (*Engine)(nil)
@@ -73,12 +75,12 @@ const maxReachDepth = 16
 //     virtual repository is asked as a member's read); partial otherwise.
 //   - An anonymous subject is none while anonymous access is off and on a repository that requires
 //     authentication.
-func (e *Engine) ReachOn(ctx context.Context, idx *Index, sub Subject, keys []string) (map[string]ReachResult, error) {
+func (e *Engine) ReachOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) (map[qname.Repo]ReachResult, error) {
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
 	}
-	out := make(map[string]ReachResult, len(keys))
+	out := make(map[qname.Repo]ReachResult, len(keys))
 	st := e.newEvalState(idx, sub)
 	// The same state without content:metadata-read: the shape of what the grants alone let the subject read,
 	// which is what an artifact read is decided on.
@@ -97,7 +99,7 @@ type reachCtx struct {
 }
 
 // reachNone builds the refusal a read of key gets, from the decision point itself.
-func (e *Engine) reachNone(c *reachCtx, key string) ReachResult {
+func (e *Engine) reachNone(c *reachCtx, key qname.Repo) ReachResult {
 	d := e.evaluate(c.st.idx, c.st.sub, Coordinate{Repository: key, Kind: KindMetadata, Actions: []Action{Read}})
 	if d.Outcome == Allow {
 		// Allowed at the gate and still nothing readable: the packages are what is refused, which a read
@@ -107,7 +109,7 @@ func (e *Engine) reachNone(c *reachCtx, key string) ReachResult {
 	return ReachResult{Reach: ReachNone, Denial: d.Outcome}
 }
 
-func (e *Engine) reachOf(c *reachCtx, key string) ReachResult {
+func (e *Engine) reachOf(c *reachCtx, key qname.Repo) ReachResult {
 	idx, sub := c.st.idx, c.st.sub
 	r := idx.repo(key)
 	if r == nil || (sub.Anonymous && sub.anon != anonOn) {
@@ -116,10 +118,10 @@ func (e *Engine) reachOf(c *reachCtx, key string) ReachResult {
 	if r.Class == repository.Virtual {
 		return e.reachVirtual(c, r)
 	}
-	if len(e.ExposedOn(idx, sub, []string{key})) == 0 {
+	if len(e.ExposedOn(idx, sub, []qname.Repo{key})) == 0 {
 		return e.reachNone(c, key)
 	}
-	switch e.leafReach(c, r, "") {
+	switch e.leafReach(c, r, qname.Repo{}) {
 	case ReachNone:
 		return e.reachNone(c, key)
 	case ReachFull:
@@ -130,7 +132,7 @@ func (e *Engine) reachOf(c *reachCtx, key string) ReachResult {
 
 // leafReach classifies a local or remote repository on the request's terms; addressed is the virtual
 // repository the client named, "" for a request on the repository itself.
-func (e *Engine) leafReach(c *reachCtx, r *repoInfo, addressed string) Reach {
+func (e *Engine) leafReach(c *reachCtx, r *repoInfo, addressed qname.Repo) Reach {
 	sub := c.st.sub
 	if r.Class == repository.Virtual || (sub.Anonymous && r.requireAuth) {
 		return ReachNone
@@ -143,7 +145,7 @@ func (e *Engine) leafReach(c *reachCtx, r *repoInfo, addressed string) Reach {
 	}
 	if r.Class == repository.Remote {
 		d, _ := e.populate(c.st.idx, sub, Coordinate{
-			Repository: r.Key, Kind: KindArtifact, Actions: []Action{Read}, Addressed: addressed,
+			Repository: r.Name, Kind: KindArtifact, Actions: []Action{Read}, Addressed: addressed,
 		})
 		if d.Outcome != Allow {
 			return ReachPartial
@@ -154,11 +156,11 @@ func (e *Engine) leafReach(c *reachCtx, r *repoInfo, addressed string) Reach {
 
 func (e *Engine) reachVirtual(c *reachCtx, v *repoInfo) ReachResult {
 	idx, sub := c.st.idx, c.st.sub
-	gate := e.evaluate(idx, sub, Coordinate{Repository: v.Key, Kind: KindMetadata, Actions: []Action{Read}})
+	gate := e.evaluate(idx, sub, Coordinate{Repository: v.Name, Kind: KindMetadata, Actions: []Action{Read}})
 	if gate.Outcome != Allow {
 		return ReachResult{Reach: ReachNone, Denial: gate.Outcome}
 	}
-	artGate := e.evaluate(idx, sub, Coordinate{Repository: v.Key, Kind: KindArtifact, Actions: []Action{Read}})
+	artGate := e.evaluate(idx, sub, Coordinate{Repository: v.Name, Kind: KindArtifact, Actions: []Action{Read}})
 	all, any := true, false
 	var walk func(r *repoInfo, depth int)
 	walk = func(r *repoInfo, depth int) {
@@ -174,7 +176,7 @@ func (e *Engine) reachVirtual(c *reachCtx, v *repoInfo) ReachResult {
 			case m.Class == repository.Virtual:
 				// A nested virtual repository is a member like another: the resolver skips it when its own gate
 				// refuses the read as a read through the addressed repository (MemberUsable, R-AUTHZ-015).
-				nested := Coordinate{Repository: m.Key, Kind: KindMetadata, Actions: []Action{Read}, Addressed: v.Key}
+				nested := Coordinate{Repository: m.Name, Kind: KindMetadata, Actions: []Action{Read}, Addressed: v.Name}
 				if e.evaluate(idx, sub, nested).Outcome != Allow {
 					all = false
 					continue
@@ -185,7 +187,7 @@ func (e *Engine) reachVirtual(c *reachCtx, v *repoInfo) ReachResult {
 				}
 				walk(m, depth+1)
 			default:
-				switch e.leafReach(c, m, v.Key) {
+				switch e.leafReach(c, m, v.Name) {
 				case ReachFull:
 					any = true
 				case ReachPartial:

@@ -51,14 +51,14 @@ func TestR_BAS_013_SubjectHeaderRefusesMalformedValues(t *testing.T) {
 func TestR_BAS_013_MarkingIsSetParsedAndStripped(t *testing.T) {
 	h := http.Header{}
 	iface.Marking{
-		Class: iface.ClassShared, Repository: "npm-all", Read: iface.ReadFull,
+		Class: iface.ClassShared, Repository: "web/npm-all", Read: iface.ReadFull,
 		Subject: iface.Subject{Kind: iface.SubjectAnonymous}, Interface: iface.InterfaceVersion,
 	}.Set(h)
 	m, ok, err := iface.ParseMarking(h)
 	if err != nil || !ok {
 		t.Fatalf("ParseMarking: ok=%v err=%v", ok, err)
 	}
-	if m.Class != iface.ClassShared || m.Repository != "npm-all" || m.Read != iface.ReadFull || m.Subject.Kind != iface.SubjectAnonymous || m.Interface != iface.InterfaceVersion {
+	if m.Class != iface.ClassShared || m.Repository != "web/npm-all" || m.Read != iface.ReadFull || m.Subject.Kind != iface.SubjectAnonymous || m.Interface != iface.InterfaceVersion {
 		t.Fatalf("marking = %+v", m)
 	}
 	h.Set("Content-Type", "application/json")
@@ -121,7 +121,7 @@ func TestR_BAS_009_DecodeStrictRefusesWhatTheReaderDoesNotKnow(t *testing.T) {
 }
 
 func TestR_BAS_011_CheckRequestSendsAnExplicitNullCredential(t *testing.T) {
-	b, err := iface.Marshal(iface.CheckRequest{ClientAddress: "203.0.113.7", Repositories: []string{"npm-all"}})
+	b, err := iface.Marshal(iface.CheckRequest{ClientAddress: "203.0.113.7", Repositories: []string{"web/npm-all"}})
 	if err != nil {
 		t.Fatal(err)
 	}

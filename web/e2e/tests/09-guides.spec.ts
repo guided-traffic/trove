@@ -1,4 +1,4 @@
-import { expect, expectAccessible, signInLocal, signOut, test, unique } from '../support';
+import { e2eProject, expect, expectAccessible, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
 // R-UI-047 journey "guides" (E2.13; R-UI-049, R-API-053): the side bar opens the guides with every format that has
 // clients; the guide of a virtual npm repository opens from there and from the repository's "How to use" tab, shows the
@@ -10,17 +10,17 @@ const localKey = unique('ui-guide-local');
 const virtualKey = unique('ui-guide-all');
 
 test.beforeAll(async ({ admin }) => {
-  const local = await admin.post('/api/v1/repositories', { data: { key: localKey, class: 'local', format: 'npm' } });
+  const local = await admin.post(repositories(), { data: { key: localKey, class: 'local', format: 'npm' } });
   expect(local.status(), await local.text()).toBe(201);
-  const virtual = await admin.post('/api/v1/repositories', {
+  const virtual = await admin.post(repositories(), {
     data: { key: virtualKey, class: 'virtual', format: 'npm', virtual: { members: [localKey], deployTarget: localKey } },
   });
   expect(virtual.status(), await virtual.text()).toBe(201);
 });
 
 test.afterAll(async ({ admin }) => {
-  await admin.delete(`/api/v1/repositories/${virtualKey}`);
-  await admin.delete(`/api/v1/repositories/${localKey}`);
+  await admin.delete(repositoryApi(virtualKey));
+  await admin.delete(repositoryApi(localKey));
 });
 
 test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippet equals the setup page', async ({
@@ -29,9 +29,10 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
 }) => {
   await signInLocal(page);
 
-  await test.step('the side bar opens the guides, which offer generic with curl and npm with its four clients', async () => {
-    await page.goto('/ui/en/packages');
-    await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Guides' }).click();
+  await test.step('the user menu opens the guides, which offer generic with curl and npm with its four clients', async () => {
+    await page.goto(`/ui/en/projects/${e2eProject}/packages`);
+    await page.getByRole('button', { name: /User menu/ }).click();
+    await page.getByRole('menuitem', { name: 'Guides', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Guides', level: 1 })).toBeVisible();
     const formats = page.getByRole('group', { name: 'Package type' });
     // The catalog is ordered by name, so generic opens first.
@@ -47,14 +48,14 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
 
   let guideSnippet = '';
   await test.step('the repository screen shows the guide of the repository in its How to use tab', async () => {
-    await page.goto(`/ui/en/admin/repositories/${virtualKey}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories/${virtualKey}`);
     await page.getByRole('tab', { name: 'How to use' }).click();
     await expect(page.getByRole('heading', { name: 'What a virtual repository is', level: 2 })).toBeVisible();
-    await expect(page.getByText(`For ${virtualKey} that is ${localKey}.`)).toBeVisible();
+    await expect(page.getByText(new RegExp(`For (${e2eProject}/)?${virtualKey} that is (${e2eProject}/)?${localKey}\\.`))).toBeVisible();
     const snippet = page.locator('[data-section="npm.configure"] .snippet pre');
     await expect(snippet).toHaveCount(1);
     guideSnippet = (await snippet.textContent()) ?? '';
-    expect(guideSnippet).toContain(`/api/npm/${virtualKey}/:_authToken=\${TROVE_TOKEN}`);
+    expect(guideSnippet).toContain(`/api/npm/${e2eProject}/${virtualKey}/:_authToken=\${TROVE_TOKEN}`);
     await expectAccessible(page, 'repository detail, how to use');
   });
 

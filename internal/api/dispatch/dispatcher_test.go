@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -29,7 +30,7 @@ func (p probe) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "probe", Classes: []formats.Class{formats.Local, formats.Remote}, Layout: "probe",
-			ProtocolBasePath: "/api/probe/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/api/probe/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}
@@ -107,14 +108,16 @@ type fakeDecider struct {
 	authz.Decider
 	mu       sync.Mutex
 	decision authz.Decision
-	asked    []authz.Coordinate
-	begun    []string
+	// by, when set, decides per addressed repository instead of decision.
+	by    func(qname.Repo) authz.Decision
+	asked []authz.Coordinate
+	begun []string
 }
 
-func (d *fakeDecider) Begin(_ context.Context, _ authz.Subject, keys ...string) (*authz.Index, error) {
+func (d *fakeDecider) Begin(_ context.Context, _ authz.Subject, keys ...qname.Repo) (*authz.Index, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.begun = append(d.begun, keys...)
+	d.begun = append(d.begun, qkeys(keys)...)
 	return nil, nil
 }
 
@@ -122,21 +125,24 @@ func (d *fakeDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subjec
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.asked = append(d.asked, c)
+	if d.by != nil {
+		return d.by(c.Repository)
+	}
 	return d.decision
 }
 
 type fakeRepos struct {
 	repository.Reader
 	mu     sync.Mutex
-	byKey  map[string]repository.Repository
-	lookup []string
+	byKey  map[qname.Repo]repository.Repository
+	lookup []qname.Repo
 }
 
-func (r *fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r *fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.lookup = append(r.lookup, key)
-	if repo, ok := r.byKey[key]; ok {
+	r.lookup = append(r.lookup, name)
+	if repo, ok := r.byKey[name]; ok {
 		return repo, nil
 	}
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no")
@@ -162,8 +168,8 @@ func (h fakeHost) Begin(*formats.Request) func() {
 type noDeployResolver struct{ formats.Resolver }
 
 func (noDeployResolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
-	if rq.Repo.Key == "virtual-with-target" {
-		return &repository.Repository{ID: "1", Key: "local", Class: repository.Local, Format: "probe"}, nil
+	if rq.Repo.Name == qr("virtual-with-target") {
+		return &repository.Repository{ID: "1", Name: qr("local"), Class: repository.Local, Format: "probe"}, nil
 	}
 	return nil, errs.E(errs.MethodNotAllowed, errs.CodeNoDeployTarget, "none")
 }
@@ -183,22 +189,22 @@ type rig struct {
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{t: t, decider: &fakeDecider{}, repos: &fakeRepos{byKey: map[string]repository.Repository{
-		"local":               {ID: "1", Key: "local", Class: repository.Local, Format: "probe"},
-		"remote":              {ID: "2", Key: "remote", Class: repository.Remote, Format: "probe"},
-		"virt":                {ID: "3", Key: "virt", Class: repository.Virtual, Format: "probe"},
-		"other":               {ID: "4", Key: "other", Class: repository.Local, Format: "bare"},
-		"off":                 {ID: "5", Key: "off", Class: repository.Local, Format: "probe", Disabled: true},
-		"dying":               {ID: "6", Key: "dying", Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
-		"virtual":             {ID: "7", Key: "virtual", Class: repository.Virtual, Format: "probe"},
-		"virtual-with-target": {ID: "8", Key: "virtual-with-target", Class: repository.Virtual, Format: "probe"},
+	r := &rig{t: t, decider: &fakeDecider{}, repos: &fakeRepos{byKey: map[qname.Repo]repository.Repository{
+		qr("local"):               {ID: "1", Name: qr("local"), Class: repository.Local, Format: "probe"},
+		qr("remote"):              {ID: "2", Name: qr("remote"), Class: repository.Remote, Format: "probe"},
+		qr("virt"):                {ID: "3", Name: qr("virt"), Class: repository.Virtual, Format: "probe"},
+		qr("other"):               {ID: "4", Name: qr("other"), Class: repository.Local, Format: "bare"},
+		qr("off"):                 {ID: "5", Name: qr("off"), Class: repository.Local, Format: "probe", Disabled: true},
+		qr("dying"):               {ID: "6", Name: qr("dying"), Class: repository.Local, Format: "probe", Lifecycle: repository.Deleting},
+		qr("virtual"):             {ID: "7", Name: qr("virtual"), Class: repository.Virtual, Format: "probe"},
+		qr("virtual-with-target"): {ID: "8", Name: qr("virtual-with-target"), Class: repository.Virtual, Format: "probe"},
 	}}}
 	p := probe{handler: func(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
 		view := ""
 		if rq.CacheView {
 			view = " cache-view"
 		}
-		r.reached = append(r.reached, rq.Route.Name+" "+rq.Repo.Key+" "+rq.Params.Get("package")+view)
+		r.reached = append(r.reached, rq.Route.Name+" "+rq.Repo.Name.String()+" "+rq.Params.Get("package")+view)
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}}
@@ -233,11 +239,11 @@ func TestR_ARCH_005_OnlyAFormatWithRoutesGetsAPrefix(t *testing.T) {
 			patterns = append(patterns, p)
 		}
 	}
-	want := "/api/probe/{repoKey},/api/probe/{repoKey}/{rest...}"
+	want := "/api/probe/{projectKey}/{repoKey},/api/probe/{projectKey}/{repoKey}/{rest...}"
 	if strings.Join(patterns, ",") != want {
 		t.Fatalf("patterns = %v, want %s", patterns, want)
 	}
-	if rec := r.do("GET", "/api/bare/local/x"); rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "" {
+	if rec := r.do("GET", "/api/bare/it/local/x"); rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "" {
 		t.Fatalf("a format without routes has no prefix: %d %v", rec.Code, rec.Header())
 	}
 }
@@ -245,13 +251,13 @@ func TestR_ARCH_005_OnlyAFormatWithRoutesGetsAPrefix(t *testing.T) {
 func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 	t.Run("a served request reaches the handler with the route, the repository and the params; the route is the label", func(t *testing.T) {
 		r := newRig(t)
-		if rec := r.do("GET", "/api/probe/local/left-pad"); rec.Code != 204 {
+		if rec := r.do("GET", "/api/probe/it/local/left-pad"); rec.Code != 204 {
 			t.Fatalf("answer %d", rec.Code)
 		}
-		if strings.Join(r.reached, ",") != "probe.doc.get local left-pad" || strings.Join(r.labels, ",") != "probe.doc.get" {
+		if strings.Join(r.reached, ",") != "probe.doc.get it/local left-pad" || strings.Join(r.labels, ",") != "probe.doc.get" {
 			t.Fatalf("reached %v, labels %v", r.reached, r.labels)
 		}
-		if got := r.decider.asked[0]; got.Repository != "local" || got.Kind != authz.KindMetadata || len(got.Actions) != 1 || got.Actions[0] != authz.Read || got.Path != "" || got.Package != "" {
+		if got := r.decider.asked[0]; got.Repository != qr("local") || got.Kind != authz.KindMetadata || len(got.Actions) != 1 || got.Actions[0] != authz.Read || got.Path != "" || got.Package != "" {
 			t.Fatalf("the coarse coordinate is the repository level: %+v", got)
 		}
 		if strings.Join(r.decider.begun, ",") != "local" {
@@ -260,7 +266,7 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 	})
 	t.Run("R-ARCH-005 an unclean path is 400 before the decision point is asked", func(t *testing.T) {
 		r := newRig(t)
-		for _, p := range []string{"/api/probe/local/%2e%2e", "/api/probe/local/a//b", "/api/probe/local/a/../b", "/api/probe/local//x"} {
+		for _, p := range []string{"/api/probe/it/local/%2e%2e", "/api/probe/it/local/a//b", "/api/probe/it/local/a/../b", "/api/probe/it/local//x"} {
 			rec := r.do("GET", p)
 			if rec.Code != 400 || rec.Header().Get("X-Probe-Error") != "invalid_path" {
 				t.Errorf("%s: %d %v", p, rec.Code, rec.Header())
@@ -273,7 +279,7 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 	t.Run("R-ARCH-011 a refusal of the coarse check comes before the repository lookup and before the handler", func(t *testing.T) {
 		r := newRig(t)
 		r.decider.decision = authz.Decision{Outcome: authz.DenyHidden}
-		rec := r.do("GET", "/api/probe/local/left-pad")
+		rec := r.do("GET", "/api/probe/it/local/left-pad")
 		if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "not_found" {
 			t.Fatalf("answer %d %v", rec.Code, rec.Header())
 		}
@@ -281,23 +287,23 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 			t.Fatalf("looked up %v, reached %v", r.repos.lookup, r.reached)
 		}
 		r.decider.decision = authz.Decision{Outcome: authz.DenyVisible}
-		if rec := r.do("PUT", "/api/probe/local/left-pad/-/x.tgz"); rec.Code != 403 {
+		if rec := r.do("PUT", "/api/probe/it/local/left-pad/-/x.tgz"); rec.Code != 403 {
 			t.Fatalf("a write without deploy: %d", rec.Code)
 		}
 	})
 	t.Run("an unknown route is 404 and a wrong method 405 with Allow, in the format's shape", func(t *testing.T) {
 		r := newRig(t)
-		if rec := r.do("GET", "/api/probe/local/a/b/c"); rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "not_found" {
+		if rec := r.do("GET", "/api/probe/it/local/a/b/c"); rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "not_found" {
 			t.Fatalf("answer %d %v", rec.Code, rec.Header())
 		}
-		rec := r.do("DELETE", "/api/probe/local/left-pad")
+		rec := r.do("DELETE", "/api/probe/it/local/left-pad")
 		if rec.Code != 405 || rec.Header().Get("Allow") != "GET,HEAD" {
 			t.Fatalf("answer %d %v", rec.Code, rec.Header())
 		}
 	})
 	t.Run("a key of the wrong shape is repository_not_found without a lookup", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("GET", "/api/probe/NOPE/left-pad")
+		rec := r.do("GET", "/api/probe/it/NOPE/left-pad")
 		if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "repository_not_found" || len(r.repos.lookup) != 0 {
 			t.Fatalf("answer %d %v, looked up %v", rec.Code, rec.Header(), r.repos.lookup)
 		}
@@ -305,7 +311,7 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 	t.Run("a repository of another format, a disabled one and one being deleted are not served", func(t *testing.T) {
 		r := newRig(t)
 		for key, want := range map[string]string{"other": "repository_not_found", "off": "repository_disabled", "dying": "repository_not_found", "ghost": "repository_not_found"} {
-			rec := r.do("GET", "/api/probe/"+key+"/left-pad")
+			rec := r.do("GET", "/api/probe/it/"+key+"/left-pad")
 			if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != want {
 				t.Errorf("%s: %d %v, want %s", key, rec.Code, rec.Header(), want)
 			}
@@ -316,11 +322,11 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 	})
 	t.Run("a route the class does not serve is 405; a write to a virtual repository without a deploy target is no_deploy_target", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("PUT", "/api/probe/remote/left-pad/-/x.tgz")
+		rec := r.do("PUT", "/api/probe/it/remote/left-pad/-/x.tgz")
 		if rec.Code != 405 || rec.Header().Get("X-Probe-Error") != "method_not_allowed" {
 			t.Fatalf("remote: %d %v", rec.Code, rec.Header())
 		}
-		rec = r.do("PUT", "/api/probe/virtual/left-pad/-/x.tgz")
+		rec = r.do("PUT", "/api/probe/it/virtual/left-pad/-/x.tgz")
 		if rec.Code != 405 || rec.Header().Get("X-Probe-Error") != "no_deploy_target" {
 			t.Fatalf("virtual: %d %v", rec.Code, rec.Header())
 		}
@@ -332,27 +338,27 @@ func TestR_ARCH_005_TheRequestPathOfTheDispatcher(t *testing.T) {
 
 func TestR_REPO_032_TheCacheViewIsTheRemoteRepositoryAddressedWithAMark(t *testing.T) {
 	r := newRig(t)
-	if rec := r.do("GET", "/api/probe/remote~cache/left-pad"); rec.Code != 204 {
+	if rec := r.do("GET", "/api/probe/it/remote~cache/left-pad"); rec.Code != 204 {
 		t.Fatalf("answer %d", rec.Code)
 	}
-	if strings.Join(r.reached, ",") != "probe.doc.get remote left-pad cache-view" {
+	if strings.Join(r.reached, ",") != "probe.doc.get it/remote left-pad cache-view" {
 		t.Fatalf("reached %v: the request is decided and served on the remote repository, marked as the cache view", r.reached)
 	}
-	if got := r.decider.asked[0].Repository; got != "remote" {
+	if got := r.decider.asked[0].Repository; got != qr("remote") {
 		t.Fatalf("the coarse check asked for %q", got)
 	}
 	r.reached = nil
-	if rec := r.do("GET", "/api/probe/remote/left-pad"); rec.Code != 204 || strings.Join(r.reached, ",") != "probe.doc.get remote left-pad" {
+	if rec := r.do("GET", "/api/probe/it/remote/left-pad"); rec.Code != 204 || strings.Join(r.reached, ",") != "probe.doc.get it/remote left-pad" {
 		t.Fatalf("the plain address: %d %v", rec.Code, r.reached)
 	}
 	for _, key := range []string{"local~cache", "virt~cache", "ghost~cache", "~cache"} {
-		rec := r.do("GET", "/api/probe/"+key+"/left-pad")
+		rec := r.do("GET", "/api/probe/it/"+key+"/left-pad")
 		if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "repository_not_found" {
 			t.Errorf("%s: %d %v", key, rec.Code, rec.Header())
 		}
 	}
 	// A write to the cache view is a write to the remote repository: its class refuses it.
-	if rec := r.do("PUT", "/api/probe/remote~cache/left-pad/-/x.tgz"); rec.Code != 405 {
+	if rec := r.do("PUT", "/api/probe/it/remote~cache/left-pad/-/x.tgz"); rec.Code != 405 {
 		t.Errorf("a write to the cache view: %d", rec.Code)
 	}
 }
@@ -360,27 +366,27 @@ func TestR_REPO_032_TheCacheViewIsTheRemoteRepositoryAddressedWithAMark(t *testi
 func TestR_NPM_029_EveryKindOfWriteToAVirtualRepositoryGoesToItsDeployTarget(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct{ method, path, route string }{
-		{"PUT", "/api/probe/virtual-with-target/left-pad/-/x.tgz", "probe.file.put"},
-		{"PUT", "/api/probe/virtual-with-target/-/tag/left-pad", "probe.tag.put"},
-		{"DELETE", "/api/probe/virtual-with-target/left-pad/-rev/1-x", "probe.rev.delete"},
+		{"PUT", "/api/probe/it/virtual-with-target/left-pad/-/x.tgz", "probe.file.put"},
+		{"PUT", "/api/probe/it/virtual-with-target/-/tag/left-pad", "probe.tag.put"},
+		{"DELETE", "/api/probe/it/virtual-with-target/left-pad/-rev/1-x", "probe.rev.delete"},
 	} {
 		r.reached = nil
 		if rec := r.do(c.method, c.path); rec.Code != 204 {
 			t.Errorf("%s %s: %d %v", c.method, c.path, rec.Code, rec.Header())
 		}
-		if len(r.reached) != 1 || !strings.HasPrefix(r.reached[0], c.route+" local ") {
+		if len(r.reached) != 1 || !strings.HasPrefix(r.reached[0], c.route+" it/local ") {
 			t.Errorf("%s %s reached %v, want %s on the target", c.method, c.path, r.reached, c.route)
 		}
 	}
 	for _, c := range []struct{ method, path string }{
-		{"PUT", "/api/probe/virtual/-/tag/left-pad"}, {"DELETE", "/api/probe/virtual/left-pad/-rev/1-x"},
+		{"PUT", "/api/probe/it/virtual/-/tag/left-pad"}, {"DELETE", "/api/probe/it/virtual/left-pad/-rev/1-x"},
 	} {
 		if rec := r.do(c.method, c.path); rec.Code != 405 || rec.Header().Get("X-Probe-Error") != "no_deploy_target" {
 			t.Errorf("%s %s without a target: %d %v", c.method, c.path, rec.Code, rec.Header())
 		}
 	}
 	// The refusal of a class names the class, so that a format words it itself.
-	if rec := r.do("DELETE", "/api/probe/remote/left-pad/-rev/1-x"); rec.Code != 405 {
+	if rec := r.do("DELETE", "/api/probe/it/remote/left-pad/-rev/1-x"); rec.Code != 405 {
 		t.Errorf("a delete on a remote repository: %d", rec.Code)
 	}
 }
@@ -397,7 +403,7 @@ func TestR_ARCH_023_TheChainsRefusalsOnAPrefixAreTheFormatsShape(t *testing.T) {
 			return httpserver.Principal{}, errs.E(errs.Unauthenticated, errs.CodeInvalidToken, "bad", errs.WithChallenge("Bearer"))
 		},
 	}.Handler()
-	for path, wantShape := range map[string]bool{"/api/probe/local/left-pad": true, "/api/v1/ping": false} {
+	for path, wantShape := range map[string]bool{"/api/probe/it/local/left-pad": true, "/api/v1/ping": false} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 401 {
@@ -433,20 +439,20 @@ func TestNewRefusesADispatcherWithoutItsParts(t *testing.T) {
 // fakeCeiling answers the fingerprint and the view the dispatcher hands a format.
 type fakeCeiling struct{ view *authz.ExposureView }
 
-func (fakeCeiling) ExposureFingerprint(_ *authz.Index, endpoint, repoKey string) string {
-	return "sha256:" + endpoint + "/" + repoKey
+func (fakeCeiling) ExposureFingerprint(_ *authz.Index, endpoint string, repoKey qname.Repo) string {
+	return "sha256:" + endpoint + "/" + repoKey.Key
 }
 
-func (c fakeCeiling) View(*authz.Index, string, string) *authz.ExposureView { return c.view }
+func (c fakeCeiling) View(*authz.Index, string, qname.Repo) *authz.ExposureView { return c.view }
 
 // TestR_EP_018_TheEndpointFactsCarryTheView: the view and the fingerprint a format
 // receives come from the same ceiling and the same index; an endpoint that does not
 // restrict hands no view, never a nil pointer in a non-nil interface.
 func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/probe/local/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/probe/it/local/x", nil)
 	access := func(t *testing.T, endpoint string) *edge.Access {
 		t.Helper()
-		a, err := edge.Resolve(req.Context(), &fakeDecider{}, authz.Subject{Name: "bot", Endpoint: endpoint}, "local")
+		a, err := edge.Resolve(req.Context(), &fakeDecider{}, authz.Subject{Name: "bot", Endpoint: endpoint}, qr("local"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -455,20 +461,20 @@ func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
 	t.Run("R-EP-018 a restricting endpoint: the view and the fingerprint of the addressed repository", func(t *testing.T) {
 		v := &authz.ExposureView{}
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: v}}}
-		facts := d.endpointFacts(req, access(t, "customers"), "local")
+		facts := d.endpointFacts(req, access(t, "customers"), qr("local"))
 		if facts.Exposure != formats.ExposureView(v) || facts.ExposureFingerprint != "sha256:customers/local" || facts.Name != "customers" {
 			t.Fatalf("facts %+v", facts)
 		}
 	})
 	t.Run("R-EP-018 mode all: no view", func(t *testing.T) {
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{}}}
-		if facts := d.endpointFacts(req, access(t, "default"), "local"); facts.Exposure != nil {
+		if facts := d.endpointFacts(req, access(t, "default"), qr("local")); facts.Exposure != nil {
 			t.Fatalf("a view in mode all: %#v", facts.Exposure)
 		}
 	})
 	t.Run("R-EP-018 no endpoint (a job's subject): no view and no fingerprint", func(t *testing.T) {
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: &authz.ExposureView{}}}}
-		if facts := d.endpointFacts(req, access(t, ""), "local"); facts.Exposure != nil || facts.ExposureFingerprint != "" {
+		if facts := d.endpointFacts(req, access(t, ""), qr("local")); facts.Exposure != nil || facts.ExposureFingerprint != "" {
 			t.Fatalf("facts %+v", facts)
 		}
 	})
@@ -477,9 +483,9 @@ func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
 func TestR_ARCH_011_TheDispatcherBeginsTheRequestOnTheHostAndFinishesItOnEveryPath(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct{ method, path string }{
-		{"GET", "/api/probe/local/left-pad"},          // served
-		{"PUT", "/api/probe/remote/left-pad/-/x.tgz"}, // refused by the class
-		{"GET", "/api/probe/local/a/b/c"},             // refused by the match: never begun
+		{"GET", "/api/probe/it/local/left-pad"},          // served
+		{"PUT", "/api/probe/it/remote/left-pad/-/x.tgz"}, // refused by the class
+		{"GET", "/api/probe/it/local/a/b/c"},             // refused by the match: never begun
 	} {
 		r.do(c.method, c.path)
 	}
@@ -491,30 +497,34 @@ func TestR_ARCH_011_TheDispatcherBeginsTheRequestOnTheHostAndFinishesItOnEveryPa
 func TestR_NUGET_001_ARefusalKnowsTheRepositoryTheClientAddressed(t *testing.T) {
 	r := newRig(t)
 	for path, want := range map[string]string{
-		"/api/probe/local/a/b/c":      "/api/probe/local/",        // no route
-		"/api/probe/remote~cache/x/y": "/api/probe/remote~cache/", // the cache view as addressed
-		"/api/probe/ghost/left-pad":   "/api/probe/ghost/",        // an unknown key of a valid shape
+		"/api/probe/it/local/a/b/c":      "/api/probe/it/local/",        // no route
+		"/api/probe/it/remote~cache/x/y": "/api/probe/it/remote~cache/", // the cache view as addressed
+		"/api/probe/it/ghost/left-pad":   "/api/probe/it/ghost/",        // an unknown key of a valid shape
 	} {
 		rec := r.do("GET", path)
 		if got := rec.Header().Get("X-Probe-Registry"); got != want {
 			t.Errorf("%s: registry %q, want %q (%d)", path, got, want, rec.Code)
 		}
 	}
-	if rec := r.do("GET", "/api/probe/NOPE/left-pad"); rec.Header().Get("X-Probe-Registry") != "" {
+	if rec := r.do("GET", "/api/probe/it/NOPE/left-pad"); rec.Header().Get("X-Probe-Registry") != "" {
 		t.Errorf("a key of the wrong shape is no repository to link to: %q", rec.Header().Get("X-Probe-Registry"))
 	}
 }
 
 func TestR_NUGET_001_ARepositoryOfAnotherFormatSaysSo(t *testing.T) {
 	r := newRig(t)
-	rec := r.do("GET", "/api/probe/other/left-pad")
+	rec := r.do("GET", "/api/probe/it/other/left-pad")
 	if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "repository_not_found" {
 		t.Fatalf("%d %v", rec.Code, rec.Header())
 	}
 	if got := rec.Header().Get("X-Probe-Detail"); got != "The repository is not a probe repository." {
 		t.Fatalf("detail %q", got)
 	}
-	if got := r.do("GET", "/api/probe/ghost/left-pad").Header().Get("X-Probe-Detail"); got == "The repository is not a probe repository." {
+	if got := r.do("GET", "/api/probe/it/ghost/left-pad").Header().Get("X-Probe-Detail"); got == "The repository is not a probe repository." {
 		t.Fatal("a missing repository says it is of another format")
 	}
+}
+
+func (r *fakeRepos) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
 }

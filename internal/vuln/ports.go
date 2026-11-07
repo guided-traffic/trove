@@ -3,6 +3,8 @@ package vuln
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
 )
@@ -24,10 +26,10 @@ type States interface {
 // runs, names the version; an item without one (a file that belongs to no version) is no evaluation.
 type CommittedVersion struct {
 	RepoID int64
-	// RepoKey is the repository's key; the evaluation reads the repository's snapshot with it, which costs no query.
-	RepoKey string
-	Format  string
-	ItemID  int64
+	// Repo is the repository's name; the evaluation reads the repository's snapshot with it, which costs no query.
+	Repo   qname.Repo
+	Format string
+	ItemID int64
 	// Trigger is TriggerPublish for an upload and TriggerFill for the fill of a remote cache.
 	Trigger Trigger
 }
@@ -35,9 +37,9 @@ type CommittedVersion struct {
 // Miss is a remote miss that is about to be fetched (R-VULN-015 "Remote miss"): the version a path maps to
 // (formats.PathInfo) in a repository, before anything is fetched.
 type Miss struct {
-	// RepoKey is the repository the miss is in; the evaluation reads its snapshot (class, upstream, claims, member).
-	RepoKey string
-	Format  string
+	// Repo is the repository the miss is in; the evaluation reads its snapshot (class, upstream, claims, member).
+	Repo   qname.Repo
+	Format string
 	// Name and Version are normalized by the format.
 	Name, Version string
 }

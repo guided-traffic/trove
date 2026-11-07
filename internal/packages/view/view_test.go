@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -48,7 +49,7 @@ func TestR_API_029_ParseIDRefusesWhatIsNoID(t *testing.T) {
 }
 
 func repoOf(key string, class repository.Class) repository.Repository {
-	return repository.Repository{Key: key, Class: class, Format: "npm"}
+	return repository.Repository{Name: qr(key), Class: class, Format: "npm"}
 }
 
 func TestR_API_029_TopologyExpandsVirtualRepositories(t *testing.T) {
@@ -58,35 +59,35 @@ func TestR_API_029_TopologyExpandsVirtualRepositories(t *testing.T) {
 	empty := repository.Assemble(repoOf("npm-empty", repository.Virtual), nil, nil, 0)
 	topo := NewTopology([]repository.Repository{a, b, c, inner, outer, empty})
 
-	if got, want := topo.Physical(), []string{"npm-a", "npm-b", "npm-remote"}; !slices.Equal(got, want) {
+	if got, want := topo.Physical(), []string{"it/npm-a", "it/npm-b", "it/npm-remote"}; !slices.Equal(got, want) {
 		t.Errorf("Physical %v", got)
 	}
-	if got, want := topo.Virtual(), []string{"npm-empty", "npm-inner", "npm-outer"}; !slices.Equal(got, want) {
+	if got, want := topo.Virtual(), []string{"it/npm-empty", "it/npm-inner", "it/npm-outer"}; !slices.Equal(got, want) {
 		t.Errorf("Virtual %v", got)
 	}
 	for _, tc := range []struct {
 		in   []string
 		want []string
 	}{
-		{[]string{"npm-a"}, []string{"npm-a"}},
-		{[]string{"npm-inner"}, []string{"npm-a", "npm-remote"}},
-		{[]string{"npm-outer"}, []string{"npm-a", "npm-b", "npm-remote"}},
-		{[]string{"npm-outer", "npm-a", "npm-inner"}, []string{"npm-a", "npm-b", "npm-remote"}},
-		{[]string{"npm-empty"}, nil},
-		{[]string{"ghost"}, nil},
+		{[]string{"it/npm-a"}, []string{"it/npm-a"}},
+		{[]string{"it/npm-inner"}, []string{"it/npm-a", "it/npm-remote"}},
+		{[]string{"it/npm-outer"}, []string{"it/npm-a", "it/npm-b", "it/npm-remote"}},
+		{[]string{"it/npm-outer", "it/npm-a", "it/npm-inner"}, []string{"it/npm-a", "it/npm-b", "it/npm-remote"}},
+		{[]string{"it/npm-empty"}, nil},
+		{[]string{"it/ghost"}, nil},
 		{nil, nil},
 	} {
 		if got := topo.Expand(tc.in); !slices.Equal(got, tc.want) {
 			t.Errorf("Expand(%v) = %v, want %v", tc.in, got, tc.want)
 		}
 	}
-	if got := topo.Containers("npm-a"); !slices.Equal(got, []string{"npm-inner", "npm-outer"}) {
+	if got := topo.Containers("it/npm-a"); !slices.Equal(got, []string{"it/npm-inner", "it/npm-outer"}) {
 		t.Errorf("Containers(npm-a) = %v", got)
 	}
-	if got := topo.Containers("npm-b"); !slices.Equal(got, []string{"npm-outer"}) {
+	if got := topo.Containers("it/npm-b"); !slices.Equal(got, []string{"it/npm-outer"}) {
 		t.Errorf("Containers(npm-b) = %v", got)
 	}
-	if c, ok := topo.Class("npm-remote"); !ok || c != repository.Remote {
+	if c, ok := topo.Class("it/npm-remote"); !ok || c != repository.Remote {
 		t.Errorf("Class %v %v", c, ok)
 	}
 }
@@ -99,11 +100,11 @@ func TestR_API_029_HoldersShowOnlyReadableVirtualRepositories(t *testing.T) {
 	inner := repository.Assemble(repoOf("npm-all", repository.Virtual), []repository.Repository{a, c}, nil, 0)
 	hidden := repository.Assemble(repoOf("npm-secret", repository.Virtual), []repository.Repository{a}, nil, 0)
 	topo := NewTopology([]repository.Repository{a, c, inner, hidden})
-	sc := Scope{topo: topo, virtualReadable: map[string]bool{"npm-all": true}}
-	if got := sc.holders([]string{"npm-remote", "npm-a"}); !slices.Equal(got, []string{"npm-a", "npm-remote", "npm-all"}) {
+	sc := Scope{topo: topo, virtualReadable: map[string]bool{"it/npm-all": true}}
+	if got := sc.holders([]string{"it/npm-remote", "it/npm-a"}); !slices.Equal(got, []string{"it/npm-a", "it/npm-remote", "it/npm-all"}) {
 		t.Fatalf("%v", got)
 	}
-	if got := sc.holders([]string{"npm-a"}); slices.Contains(got, "npm-secret") {
+	if got := sc.holders([]string{"it/npm-a"}); slices.Contains(got, "it/npm-secret") {
 		t.Fatalf("a virtual repository the caller may not read is shown: %v", got)
 	}
 }
@@ -199,5 +200,34 @@ func TestR_API_029_CursorKeysFollowTheSort(t *testing.T) {
 func TestR_API_029_NilSlicesAreSentAsEmptyArrays(t *testing.T) {
 	if keys(nil) == nil || ids(nil) == nil {
 		t.Fatal("a nil slice reaches the driver as NULL, and NOT (x = ANY(NULL)) drops every row")
+	}
+}
+
+// TestR_API_029_ProjectNarrowsToThePhysicalRepositoriesOfTheProject: the project filter of the list (Q-UI-129) becomes
+// a repository filter; it intersects with the asked repositories, and a virtual repository stands for its members.
+func TestR_API_029_ProjectNarrowsToThePhysicalRepositoriesOfTheProject(t *testing.T) {
+	a := repository.Repository{Name: qname.Repo{Project: "it", Key: "npm-a"}, Class: repository.Local, Format: "npm"}
+	b := repository.Repository{Name: qname.Repo{Project: "other", Key: "npm-b"}, Class: repository.Local, Format: "npm"}
+	v := repository.Assemble(repository.Repository{Name: qname.Repo{Project: "it", Key: "npm-all"}, Class: repository.Virtual, Format: "npm"},
+		[]repository.Repository{a, b}, nil, 0)
+	topo := NewTopology([]repository.Repository{a, b, v})
+	for _, tc := range []struct {
+		name string
+		in   Filter
+		want []string
+	}{
+		{"project only", Filter{Project: "it"}, []string{"it/npm-a"}},
+		{"another project", Filter{Project: "other"}, []string{"other/npm-b"}},
+		{"unknown project lists nothing", Filter{Project: "ghost"}, nil},
+		{"a virtual repository stands for its members, cut to the project", Filter{Project: "it", HasRepositories: true, Repositories: []string{"it/npm-all"}}, []string{"it/npm-a"}},
+		{"excluded by the repository filter", Filter{Project: "it", HasRepositories: true, Repositories: []string{"other/npm-b"}}, nil},
+	} {
+		got := topo.InProject(tc.in)
+		if !got.HasRepositories || got.Project != "" || !slices.Equal(got.Repositories, tc.want) {
+			t.Errorf("%s: %+v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if got := topo.InProject(Filter{Q: "x"}); got.HasRepositories || got.Q != "x" {
+		t.Errorf("no project must leave the filter alone: %+v", got)
 	}
 }

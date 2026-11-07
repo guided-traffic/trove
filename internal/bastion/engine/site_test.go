@@ -14,6 +14,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // readCounter reads the value of a counter or gauge.
@@ -116,15 +117,11 @@ func (s *site) checkFn(req iface.CheckRequest) (iface.CheckAnswer, error) {
 }
 
 func (s *site) repoOf(target string) string {
-	p := strings.TrimPrefix(target, "/")
-	parts := strings.Split(p, "/")
-	if parts[0] == "files" && len(parts) > 1 {
-		return parts[1]
+	a, ok := qname.ParseAddress(target)
+	if !ok {
+		return ""
 	}
-	if len(parts) > 2 {
-		return parts[2]
-	}
-	return ""
+	return a.Repo.String()
 }
 
 func (s *site) doFn(f mainclient.Forward) (*mainclient.Response, error) {
@@ -208,7 +205,7 @@ type siteHarness struct {
 
 func newSiteHarness(t *testing.T, o options) *siteHarness {
 	t.Helper()
-	sh := &siteHarness{site: newSite("npm-all")}
+	sh := &siteHarness{site: newSite("web/npm-all")}
 	sh.full, sh.part, sh.none = newToken(t, "pat"), newToken(t, "pat"), newToken(t, "pat")
 	sh.bad = newToken(t, "pat")
 	sh.site.addReader(sh.full, &reader{id: "full", read: iface.ReadFull})

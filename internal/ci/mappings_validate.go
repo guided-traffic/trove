@@ -22,7 +22,7 @@ func namedMappingCodes() []string {
 	return []string{
 		errs.CodePinRequired, errs.CodeCatchAllCondition, errs.CodeUnprotectedWrite, errs.CodeUnpinnedWrite,
 		errs.CodeActionNotAllowed, errs.CodeEmptyGrant, errs.CodeTemplateInvalid, errs.CodeTemplateUnanchored,
-		errs.CodeConditionInvalid, errs.CodeJobTokenFallbackNone, errs.CodeProjectPrefixRequired,
+		errs.CodeConditionInvalid, errs.CodeJobTokenFallbackNone,
 		errs.CodeGroupsNotAllowedInProject, errs.CodePolicyOutsideProject, errs.CodeRepositoryOutsideProject,
 		errs.CodeUnknownPolicy, errs.CodeUnknownGroup, errs.CodeMappingLimitReached,
 	}

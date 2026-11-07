@@ -120,7 +120,7 @@ func TestSurfaceFamilies(t *testing.T) {
 
 	t.Run("R-EP-005 SA9 the planned package, file and API routes pass", func(t *testing.T) {
 		ps := []string{
-			"/api/npm/{repoKey}/{rest...}", "/api/pypi/{repoKey}/simple/{name}/", "/files/{repoKey}/{path...}",
+			"/api/npm/{projectKey}/{repoKey}/{rest...}", "/api/pypi/{repoKey}/simple/{name}/", "/files/{projectKey}/{repoKey}/{path...}",
 			"GET /api/v1/system/ping", "POST /api/v1/auth/oidc/token", "POST /-/npm/v1/oidc/token/exchange/package/{name...}",
 			"/api/maven/{repoKey}/{path...}",
 		}
@@ -155,7 +155,7 @@ func TestFallbackFamilies(t *testing.T) {
 				t.Errorf("%s: %+v differs from the unknown path %+v", path, p, u)
 			}
 		}
-		if w := get("GET", "/api/npm/repo/x"); w.Code != 405 || w.Header().Get("Allow") == "" {
+		if w := get("GET", "/api/npm/it/repo/x"); w.Code != 405 || w.Header().Get("Allow") == "" {
 			t.Errorf("a served family keeps its 405: %d", w.Code)
 		}
 	})

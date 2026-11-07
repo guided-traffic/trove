@@ -28,6 +28,8 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -126,12 +128,12 @@ type Caller struct {
 	// made against the index of the moment of the commit, not the one the request
 	// began with (R-AUTHZ-015, Q-ARCH-208). Nil decides again on Access, which is
 	// right for a caller whose request is short.
-	Recheck func(ctx context.Context, key string) (Access, error)
+	Recheck func(ctx context.Context, key qname.Repo) (Access, error)
 }
 
 // afterBody returns the caller whose decisions are made on the index of this
 // moment, for the decisions that follow the arrival of a request body.
-func (c Caller) afterBody(ctx context.Context, key string) (Caller, error) {
+func (c Caller) afterBody(ctx context.Context, key qname.Repo) (Caller, error) {
 	if c.Recheck == nil {
 		return c, nil
 	}
@@ -149,7 +151,7 @@ func (c Caller) afterBody(ctx context.Context, key string) (Caller, error) {
 //
 // A key the grant index does not hold yet was made known when the request began
 // its index (authz.Decider.Begin, R-ARCH-011 step 2, R-API-052).
-func (c Caller) decide(ctx context.Context, repo, path string, pc PathClass, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
+func (c Caller) decide(ctx context.Context, repo qname.Repo, path string, pc PathClass, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
 	d := c.Access.Decide(ctx, coordinate(repo, path, pc, kind, actions...))
 	if !d.Allowed() {
 		return d, d.Err()
@@ -159,13 +161,13 @@ func (c Caller) decide(ctx context.Context, repo, path string, pc PathClass, kin
 
 // coordinate is the coordinate of a path of a repository with the package and
 // the version its format gives it (R-EP-014).
-func coordinate(repo, path string, pc PathClass, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
+func coordinate(repo qname.Repo, path string, pc PathClass, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
 	return authz.Coordinate{Repository: repo, Path: path, Package: pc.Package, Version: pc.Version, Kind: kind, Actions: actions}
 }
 
 // recorder returns the callback that records an allowed write in the item
 // store's transaction (R-AUTHZ-029).
-func (c Caller) recorder(repo, path string, pc PathClass, d authz.Decision, actions ...authz.Action) func(context.Context, meta.Tx) error {
+func (c Caller) recorder(repo qname.Repo, path string, pc PathClass, d authz.Decision, actions ...authz.Action) func(context.Context, meta.Tx) error {
 	return func(ctx context.Context, tx meta.Tx) error {
 		return c.Access.RecordAllowed(ctx, tx, coordinate(repo, path, pc, authz.KindWrite, actions...), d)
 	}
@@ -190,8 +192,8 @@ type target struct {
 // by [target.resolved] once the decision allowed the request, so a missing
 // repository and a hidden one answer alike. A repository the snapshot does not
 // hold gets the class of no format, and the decision refuses it.
-func (s *Service) locate(ctx context.Context, key, path string, folder bool) target {
-	r, err := s.repos.ByKey(ctx, key)
+func (s *Service) locate(ctx context.Context, key qname.Repo, path string, folder bool) target {
+	r, err := s.repos.ByName(ctx, key)
 	t := target{repo: r, err: err}
 	if err == nil {
 		t.class = s.classify(r, path, folder)
@@ -216,8 +218,8 @@ func (t target) resolved(strict bool) (repository.Repository, error) {
 }
 
 // errForbidden is the 403 of an action the caller does not hold on a path.
-func errForbidden(a authz.Action, repo, path string) error {
-	target := repo
+func errForbidden(a authz.Action, repo qname.Repo, path string) error {
+	target := repo.String()
 	if path != "" {
 		target += "/" + path
 	}

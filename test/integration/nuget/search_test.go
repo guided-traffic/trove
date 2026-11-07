@@ -180,7 +180,7 @@ func (r result) versions() []string {
 
 func (e *searchEnv) search(token, query string) found {
 	e.t.Helper()
-	a := e.st.Do(e.r, "GET", "/api/nuget/nuget-search/v3/search?"+query, token, nil)
+	a := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-search/v3/search?"+query, token, nil)
 	if a.Status != 200 {
 		e.t.Fatalf("search?%s: %d %s", query, a.Status, a.Body)
 	}
@@ -312,7 +312,7 @@ func TestR_NUGET_010_VisibilityOfVersions(t *testing.T) {
 		if r.Version != c.latest || !slices.Equal(r.versions(), c.versions) {
 			t.Errorf("%q: version %q, versions %v, want %q %v", c.query, r.Version, r.versions(), c.latest, c.versions)
 		}
-		if want := feedBase + "/api/nuget/nuget-search/v3/" + c.hive + "/acme.widgets/index.json"; r.Reg != want {
+		if want := feedBase + "/api/nuget/it/nuget-search/v3/" + c.hive + "/acme.widgets/index.json"; r.Reg != want {
 			t.Errorf("%q: registration %q, want %q", c.query, r.Reg, want)
 		}
 		last := r.Versions[len(r.Versions)-1].ID
@@ -391,12 +391,12 @@ func TestR_NUGET_010_PagingIsStableAndTotalHitsDoesNotDependOnIt(t *testing.T) {
 		t.Errorf("take above max_take is clamped, not refused: %v", got.ids())
 	}
 	for _, bad := range []string{"skip=3001", "skip=-1", "take=-1", "take=x", "skip=1.5"} {
-		a := e.st.Do(e.r, "GET", "/api/nuget/nuget-search/v3/search?"+bad, e.tokAll, nil)
+		a := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-search/v3/search?"+bad, e.tokAll, nil)
 		if a.Status != 400 || !strings.HasPrefix(string(a.Body), "malformed_request: ") {
 			t.Errorf("%s: %d %s", bad, a.Status, a.Body)
 		}
 	}
-	if a := e.st.Do(e.r, "HEAD", "/api/nuget/nuget-search/v3/search?take=1", e.tokAll, nil); a.Status != 200 || len(a.Body) != 0 {
+	if a := e.st.Do(e.r, "HEAD", "/api/nuget/it/nuget-search/v3/search?take=1", e.tokAll, nil); a.Status != 200 || len(a.Body) != 0 {
 		t.Errorf("HEAD: %d, %d bytes", a.Status, len(a.Body))
 	}
 }
@@ -446,7 +446,7 @@ func TestR_AUTHZ_016_TotalHitsCountsWhatTheCallerMayRead(t *testing.T) {
 	if got := e.search(e.tokNoWidgets, q("acme")+"&packageType=DotnetTool"); !slices.Equal(got.ids(), []string{"Acme.Tool"}) || got.TotalHits != 1 {
 		t.Errorf("the package type under row-by-row reads: %v (%d)", got.ids(), got.TotalHits)
 	}
-	if a := e.st.Do(e.r, "GET", "/api/nuget/nuget-search/v3/search", e.tokNobody, nil); a.Status != 404 {
+	if a := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-search/v3/search", e.tokNobody, nil); a.Status != 404 {
 		t.Errorf("a caller without a grant: %d %s", a.Status, a.Body)
 	}
 }
@@ -458,12 +458,12 @@ func TestR_NUGET_010_OnlyTheRepositoryItselfIsSearched(t *testing.T) {
 	if got := e.search(e.tokAll, q("other")); got.TotalHits != 0 {
 		t.Errorf("q=other in nuget-search: %v", got.ids())
 	}
-	a := e.st.Do(e.r, "GET", "/api/nuget/nuget-other/v3/search?q=other", e.tokAll, nil)
+	a := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-other/v3/search?q=other", e.tokAll, nil)
 	var f found
 	if err := json.Unmarshal(a.Body, &f); err != nil || a.Status != 200 || !slices.Equal(f.ids(), []string{"Acme.Other"}) {
 		t.Errorf("nuget-other: %d %s", a.Status, a.Body)
 	}
-	if !strings.Contains(string(a.Body), "/api/nuget/nuget-other/v3/registration/acme.other/index.json") {
+	if !strings.Contains(string(a.Body), "/api/nuget/it/nuget-other/v3/registration/acme.other/index.json") {
 		t.Errorf("the links name the repository that was addressed: %s", a.Body)
 	}
 }

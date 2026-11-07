@@ -116,7 +116,12 @@ never emits them outside `trove_build_info`.
    changes first.
 3. Label values must be bounded: enumerations in code, handler names from the route table, `repo` and
    `subscription` through `m.Repos().Value(family, key)` / `m.Subscriptions().Value(...)` (cap, `_other`,
-   overflow counter). Never a user name, token ID, IP, path, package name, version, trace ID or error text.
+   overflow counter). A `repo` value is the repository's qualified name `qname.Repo.String()` (`<projectKey>/<repoKey>`); the `repo`
+   cap follows the repository snapshot: `SnapshotReader` calls `ReaderOptions.OnLoad` with the repositories in creation order on
+   every rebuild, and `App.updateRepoLabels` ([wire_repository.go](../../internal/app/wire_repository.go)) hands them to
+   `CappedLabels.UpdateRepositories`, which matches `repository_label_include` against them and announces every name that left the snapshot (a deleted repository, or a moved one under its old name) to the functions registered with `CappedLabels.OnForget`. The owners of families with a `repo` label register there and delete the series of that name (R-OPS-007): the remote engine (`proxy.Engine.Forget`: every `repo` family and the entry that republishes `trove_remote_upstream_up`) and the mirror (`mirror.Metrics.Forget`); the wiring is in `wire_proxy_engine.go`, `wire_mirror_host.go` and `wire_mirror.go`. A family with a `repo` label that is a gauge must register there; a counter of the other packages keeps its series of a gone repository until the process restarts. The entries are selectors of an instance
+   context (`web/npm-*`, classes such as `@any-remote`), refused at start when one is a bare key; `*` stays within the project or the
+   key. Never a user name, token ID, IP, path, package name, version, trace ID or error text.
 4. Take `*observability.Metrics` (or only a `prometheus.Registerer` from `m.Registry()`) in your constructor.
    A family a role does not run must not be registered on that role ("absent, not zero").
 5. In your package test call `observability.CheckFamilies` over the gathered registry (or `m.Check()`), so a

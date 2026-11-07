@@ -212,9 +212,9 @@ func TestR_BAS_020_AnswersAreSharedThroughTheSharedStoreAndAnUnreadableRecordIsI
 	if w.Code != 200 || a.main.count() != before {
 		t.Fatalf("replica B did not use the answers of replica A: %d, %d new requests", w.Code, a.main.count()-before)
 	}
-	key := memKey(answers.Shape, shapeKey("garbled", "npm-all"))
+	key := memKey(answers.Shape, shapeKey("garbled", "web/npm-all"))
 	_ = st.Answers.Put(context.Background(), shared.AnswerShape, hashKey(key), []byte(`not json`), time.Hour)
-	if b.e.answers.shape(context.Background(), "garbled", "npm-all") != nil {
+	if b.e.answers.shape(context.Background(), "garbled", "web/npm-all") != nil {
 		t.Fatal("an unreadable record was accepted")
 	}
 	if counterValue(t, b, "answers", "shape", "bad_signature") != 1 {
@@ -304,7 +304,7 @@ func TestR_BAS_020_AnAnswerInTheLastFifthOfItsPeriodIsRefreshedInTheBackgroundWi
 		t.Fatalf("%+v", reqs)
 	}
 	// the answer is renewed: its time is the time of the refresh
-	sa := s.e.answers.shape(context.Background(), credentialKey(s.full), "npm-all")
+	sa := s.e.answers.shape(context.Background(), credentialKey(s.full), "web/npm-all")
 	if sa == nil || !sa.ObtainedAt.Equal(s.clock.now()) {
 		t.Fatalf("the shape answer was not renewed: %+v", sa)
 	}
@@ -327,7 +327,7 @@ func TestR_BAS_020_ARequestHoldingTheShapeOfBeforeTheRefreshStartsNoSecondCheck(
 	warm(t, s)
 	s.clock.advance(s.cfg.Bastion.Answers.Period/5*4 + time.Second)
 	key := credentialKey(s.full)
-	stale := s.e.answers.shape(context.Background(), key, "npm-all")
+	stale := s.e.answers.shape(context.Background(), key, "web/npm-all")
 	if stale == nil {
 		t.Fatal("warm left no shape answer")
 	}
@@ -336,7 +336,7 @@ func TestR_BAS_020_ARequestHoldingTheShapeOfBeforeTheRefreshStartsNoSecondCheck(
 	}
 	s.e.wg.Wait()
 	before := s.main.count()
-	q := &rq{e: s.e, cred: credential{token: s.full, key: key}, repo: "npm-all"}
+	q := &rq{e: s.e, cred: credential{token: s.full, key: key}, repo: "web/npm-all"}
 	s.e.refreshShape(q, stale)
 	s.e.wg.Wait()
 	if got := s.main.count(); got != before {

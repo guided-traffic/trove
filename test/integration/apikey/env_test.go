@@ -48,7 +48,7 @@ func (keyedFormat) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "keyed", DisplayName: "Keyed", Classes: []formats.Class{formats.Local}, Layout: "keyed",
-			ProtocolBasePath: "/api/keyed/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
+			ProtocolBasePath: "/api/keyed/{project}/{key}/", PatternSubject: formats.SubjectName, PackageNames: true,
 		},
 		ContractVersion: formats.ContractVersion, Names: foldedNames{}, PropertyPrefix: "keyed.",
 	}
@@ -112,7 +112,7 @@ func (keyedFormat) WriteError(w http.ResponseWriter, r *http.Request, err error)
 
 const (
 	repoKey   = "keyed-local"
-	feed      = "/api/keyed/" + repoKey
+	feed      = "/api/keyed/it/" + repoKey
 	push      = feed + "/package"
 	version   = feed + "/package/acme.widgets/1.2.3"
 	apiKey    = "X-NuGet-ApiKey"

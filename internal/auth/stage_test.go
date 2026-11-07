@@ -340,6 +340,62 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 		_, err := on.Authenticate(req("POST", "/api/v1/repositories"), defaultRules())
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
+	t.Run("R-AUTH-037 the hard limit of /api/v1 holds for a path the router unescapes to /api/v1", func(t *testing.T) {
+		// ServeMux routes on the unescaped segments, so /api/v%31/… reaches the management API: the limit reads the
+		// path the router routes by, never the escaped one as received.
+		mux := http.NewServeMux()
+		for _, p := range []string{"/api/v1/", "/api/", "/"} {
+			mux.Handle(p, http.NotFoundHandler())
+		}
+		if _, p := mux.Handler(req("POST", "/api/v%31/projects")); p != "/api/v1/" {
+			t.Fatalf("the premise: ServeMux routes /api/v%%31/projects to %q", p)
+		}
+		for _, c := range []struct{ m, p string }{
+			{"POST", "/api/v%31/projects"},
+			{"DELETE", "/api/v%31/projects/it/repositories/npm-local"},
+			{"PATCH", "/%61pi/v1/settings/auth"},
+			{"PUT", "/api/%761/projects/it/repositories/npm-local"},
+			{"POST", "/api/v%31"},
+		} {
+			_, err := on.Authenticate(req(c.m, c.p), defaultRules())
+			e := wantErr(t, err, 401, errs.CodeCredentialsRequired)
+			if e.Challenge != `Bearer realm="trove"` {
+				t.Errorf("%s %s: challenge %q, the one of /api/v1", c.m, c.p, e.Challenge)
+			}
+		}
+		// The same paths with a safe method stay anonymous, as /api/v1 does.
+		if res, err := on.Authenticate(req("GET", "/api/v%31/projects"), defaultRules()); err != nil || !res.Anonymous {
+			t.Fatalf("GET: %+v %v", res, err)
+		}
+	})
+	t.Run("R-AUTH-037 an escape never opens a route: the always-open rules read the path as received", func(t *testing.T) {
+		for _, c := range []struct{ m, p string }{
+			{"POST", "/api/v1/tokens/revok%65"},
+			{"GET", "/api/v1/auth/login-option%73"},
+			{"POST", "/api/v1/auth%2Fdevice/authorize"},
+			{"GET", "/u%69/"},
+		} {
+			_, err := off.Authenticate(req(c.m, c.p), defaultRules())
+			wantErr(t, err, 401, errs.CodeCredentialsRequired)
+		}
+	})
+	t.Run("R-AUTH-001 the session cookie's path rule reads the path the router routes by", func(t *testing.T) {
+		live := newStage(ft, Options{Sessions: fakeSessions{info: session.Info{ID: "s1", Principal: alice}}, Settings: fakeAnon{on: true}})
+		ep := defaultRules()
+		ep.AcceptsSession = true
+		// /api/np%6d/… is a package route to the router: the cookie is ignored for an unsafe method, as on /api/npm/….
+		for _, p := range []string{"/api/np%6d/it/npm-local/pkg", "/api/npm/it/npm-local/pkg"} {
+			res, err := live.Authenticate(req("PUT", p, "Cookie", SessionCookie+"=sess"), ep)
+			if err != nil || res.Credential.Method == MethodSession {
+				t.Errorf("PUT %s: %+v %v, want the cookie ignored", p, res, err)
+			}
+		}
+		// /api/v%31/… is the management API: the cookie is the credential for every method.
+		res, err := live.Authenticate(req("POST", "/api/v%31/projects", "Cookie", SessionCookie+"=sess"), ep)
+		if err != nil || res.Credential.Method != MethodSession {
+			t.Errorf("POST /api/v%%31/projects: %+v %v, want the session", res, err)
+		}
+	})
 	t.Run("R-EP-010 an endpoint with auth.anonymous false makes no request anonymous", func(t *testing.T) {
 		ep := defaultRules()
 		ep.Anonymous = false
@@ -396,7 +452,7 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 			}
 		}
 		// A route it does serve stays open.
-		if res, err := off.Authenticate(req("GET", "/api/npm/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
+		if res, err := off.Authenticate(req("GET", "/api/npm/it/npm-all/-/v1/login"), packagesOnly); err != nil || !res.Anonymous {
 			t.Errorf("the npm login start on packages: %+v %v", res, err)
 		}
 		// Without the rule, every family is served, as before.
@@ -414,7 +470,7 @@ func TestR_AUTH_037_AnonymousAccess(t *testing.T) {
 		wantErr(t, err, 401, errs.CodeCredentialsRequired)
 	})
 	t.Run("R-AUTH-001 exchange routes receive the ID token as Authorization without evaluation", func(t *testing.T) {
-		for _, p := range []string{"/api/v1/auth/oidc/token", "/-/npm/v1/oidc/token/exchange/package/@acme%2Fui", "/api/npm/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui"} {
+		for _, p := range []string{"/api/v1/auth/oidc/token", "/-/npm/v1/oidc/token/exchange/package/@acme%2Fui", "/api/npm/it/npm-all/-/npm/v1/oidc/token/exchange/package/@acme%2Fui"} {
 			res, err := off.Authenticate(req("POST", p, "Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"), defaultRules())
 			if err != nil || !res.Anonymous {
 				t.Errorf("%s: %+v %v", p, res, err)

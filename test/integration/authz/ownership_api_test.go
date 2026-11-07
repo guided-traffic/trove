@@ -124,7 +124,7 @@ func want(t *testing.T, a ownAnswer, status int, code string) {
 	}
 }
 
-const ownersOf = "/api/v1/repositories/npm-internal/packages/"
+const ownersOf = "/api/v1/projects/it/repositories/npm-internal/packages/"
 
 // TestR_AUTHZ_019_OwnershipOperationsOverHTTP drives the four operations of
 // R-AUTHZ-019 through the management API: the package name as one encoded path
@@ -176,7 +176,7 @@ func TestR_AUTHZ_019_OwnershipOperationsOverHTTP(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-016 a refused owner change is 403 whether or not the repository or name exists", func(t *testing.T) {
-		for _, path := range []string{notYet, ownersOf + "@nope%2Fnothing/owners", "/api/v1/repositories/ghost/packages/x/owners"} {
+		for _, path := range []string{notYet, ownersOf + "@nope%2Fnothing/owners", "/api/v1/projects/it/repositories/ghost/packages/x/owners"} {
 			want(t, api.do(t, api.a, "carol", "POST", path, `{"owner":"user:carol"}`), 403, errs.CodeForbidden)
 		}
 		want(t, api.do(t, api.a, "carol", "DELETE", notYet+"/group:team-web", ""), 403, errs.CodeForbidden)
@@ -218,7 +218,7 @@ func TestR_AUTHZ_019_OwnershipOperationsOverHTTP(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-016 reading the owners needs read: 404 for a caller without it", func(t *testing.T) {
 		want(t, api.do(t, api.a, "carol", "GET", notYet, ""), 404, errs.CodeNotFound)
-		want(t, api.do(t, api.a, "root", "GET", "/api/v1/repositories/npmjs/packages/left-pad/owners", ""), 404, errs.CodeNotFound)
+		want(t, api.do(t, api.a, "root", "GET", "/api/v1/projects/it/repositories/npmjs/packages/left-pad/owners", ""), 404, errs.CodeNotFound)
 	})
 	t.Run("R-AUTHZ-019 R-API-010 the names an identity owns, page by page", func(t *testing.T) {
 		var names []string
@@ -243,7 +243,7 @@ func TestR_AUTHZ_019_OwnershipOperationsOverHTTP(t *testing.T) {
 			}
 			path = "/api/v1/package-owners?owner=group:team-web&limit=1&cursor=" + *page.NextCursor
 		}
-		if strings.Join(names, ",") != "npm-internal/@acme/mapped,npm-internal/@acme/not-yet" {
+		if strings.Join(names, ",") != "it/npm-internal/@acme/mapped,it/npm-internal/@acme/not-yet" {
 			t.Fatalf("names %v", names)
 		}
 		want(t, api.do(t, api.b, "mallory", "GET", "/api/v1/package-owners?owner=group:team-web", ""), 403, errs.CodeForbidden)

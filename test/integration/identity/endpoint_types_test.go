@@ -17,7 +17,7 @@ import (
 // endpoint that does not accept the token's type (R-EP-011).
 func endpointRules(o scope.Options) scope.Options {
 	e := idapi.ScopeOptions()
-	o.Endpoint, o.EndpointAccepts = e.Endpoint, e.EndpointAccepts
+	o.Endpoint, o.EndpointAccepts, o.Pattern = e.Endpoint, e.EndpointAccepts, e.Pattern
 	return o
 }
 

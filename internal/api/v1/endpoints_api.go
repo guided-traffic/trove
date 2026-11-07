@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -154,7 +156,6 @@ type endpointConfD struct {
 	Hosts         []string          `json:"hosts"`
 	WildcardHost  *string           `json:"wildcardHost"`
 	HostRoots     map[string]string `json:"hostRoots"`
-	WildcardRoot  string            `json:"wildcardRoot"`
 	Pool          *string           `json:"pool"`
 	Surface       []string          `json:"surface"`
 	Auth          endpointAuthD     `json:"auth"`
@@ -192,7 +193,7 @@ func listenPort(addr string) *int {
 func (s *Server) configurationOf(e config.ResolvedEndpoint) *endpointConfD {
 	c := &endpointConfD{
 		Default: e.Default, Port: listenPort(e.Listen), BaseURL: e.BaseURL, Hosts: orEmpty(e.Hosts),
-		WildcardHost: optString(e.WildcardHost), HostRoots: e.HostRoots, WildcardRoot: e.WildcardRoot,
+		WildcardHost: optString(e.WildcardHost), HostRoots: e.HostRoots,
 		Pool: optString(e.Pool), Surface: orEmpty(e.Surface),
 		Auth:     endpointAuthD{TokenTypes: orEmpty(e.TokenTypes), BoundTokensOnly: e.BoundTokensOnly, Anonymous: e.Anonymous},
 		Exposure: e.Exposure, CacheFill: e.CacheFill, ReplicaHeader: e.ReplicaHeader,
@@ -617,11 +618,15 @@ func (s *Server) checkReadFilter(ctx context.Context, acc *edge.Access, repo str
 	if s.o.Endpoints.Scoper == nil {
 		return nil, nil
 	}
-	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", []string{repo})
+	name, ok := repoNameOf(repo)
+	if !ok {
+		return nil, nil // a text that is no repository name lists nothing
+	}
+	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, []qname.Repo{name})
 	if err != nil {
 		return nil, err
 	}
-	return func(pkg, version string) bool { return rs.MayRead(repo, pkg, version) }, nil
+	return func(pkg, version string) bool { return rs.MayRead(name, pkg, version) }, nil
 }
 
 // requireRead decides read on the repository for the caller, under the ceiling of
@@ -633,11 +638,12 @@ func (s *Server) requireRead(ctx context.Context, repo string) (*edge.Access, er
 	if d == nil {
 		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}
-	acc, err := edge.Resolve(ctx, d, SubjectFrom(ctx), repo)
+	name, _ := qname.ParseRepo(repo) // a text that is no name stays the zero name, which no repository has
+	acc, err := edge.Resolve(ctx, d, SubjectFrom(ctx), name)
 	if err != nil {
 		return nil, err
 	}
-	c := authz.Coordinate{Repository: repo, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
+	c := authz.Coordinate{Repository: name, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
 	if err := acc.Decide(ctx, c).Err(); err != nil {
 		return nil, err
 	}
@@ -661,4 +667,10 @@ func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {
 		out.Paths = append(out.Paths, checkPath{Path: p.Value, Exposed: p.Exposed, Rule: optString(p.Rule), Reason: p.Reason})
 	}
 	return out
+}
+
+// repoNameOf reads a qualified repository name; ok is false for a text that is none.
+func repoNameOf(text string) (qname.Repo, bool) {
+	name, err := qname.ParseRepo(text)
+	return name, err == nil
 }

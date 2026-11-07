@@ -14,7 +14,7 @@ import {
 } from '../packages-api';
 import { Page, PageFetcher } from '../pagination';
 import { ApiError } from '../problem';
-import { Repository } from '../repositories-api';
+import { Repository, refOf } from '../repositories-api';
 
 /*
  * In-memory fakes of the packages and client setup services (R-UI-047 component tier). The setup
@@ -40,6 +40,7 @@ function pages<T>(all: readonly T[]): PageFetcher<T> {
 /** The generic repository of the fakes, the first repository of the catalog fake. */
 export const GENERIC_REPOSITORY: Repository = {
   key: 'generic-local',
+  project: 'web',
   class: 'local',
   format: 'generic',
   description: 'Installers and build outputs',
@@ -47,17 +48,17 @@ export const GENERIC_REPOSITORY: Repository = {
 
 /** The npm repositories of the fakes: a local, a remote, a virtual with and one without a target. */
 export const NPM_REPOSITORIES: readonly Repository[] = [
-  { key: 'npm-local', class: 'local', format: 'npm', description: 'Internal packages' },
-  { key: 'npm-remote', class: 'remote', format: 'npm', description: 'Public registry cache' },
-  { key: 'npm-all', class: 'virtual', format: 'npm', description: 'Everything for npm clients' },
-  { key: 'npm-readonly', class: 'virtual', format: 'npm', description: 'Read-only view' },
+  { key: 'npm-local', project: 'web', class: 'local', format: 'npm', description: 'Internal packages' },
+  { key: 'npm-remote', project: 'web', class: 'remote', format: 'npm', description: 'Public registry cache' },
+  { key: 'npm-all', project: 'web', class: 'virtual', format: 'npm', description: 'Everything for npm clients' },
+  { key: 'npm-readonly', project: 'web', class: 'virtual', format: 'npm', description: 'Read-only view' },
 ];
 
 /** The NuGet repositories of the fakes: a local, a remote and a virtual one that deploys to the local one. */
 export const NUGET_REPOSITORIES: readonly Repository[] = [
-  { key: 'nuget-local', class: 'local', format: 'nuget', description: 'Internal packages' },
-  { key: 'nuget-remote', class: 'remote', format: 'nuget', description: 'nuget.org cache' },
-  { key: 'nuget-all', class: 'virtual', format: 'nuget', description: 'Everything for NuGet clients' },
+  { key: 'nuget-local', project: 'web', class: 'local', format: 'nuget', description: 'Internal packages' },
+  { key: 'nuget-remote', project: 'web', class: 'remote', format: 'nuget', description: 'nuget.org cache' },
+  { key: 'nuget-all', project: 'web', class: 'virtual', format: 'nuget', description: 'Everything for NuGet clients' },
 ];
 
 interface FakeVersion extends PackageVersion {
@@ -97,16 +98,16 @@ function version(
       engines: { node: '>=22' },
     },
     repositories: [
-      { key: 'npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' },
-      { key: 'npm-all', class: 'virtual', publishedAt: '2026-10-20T09:12:44.512Z' },
+      { key: 'web/npm-local', class: 'local', publishedAt: '2026-10-20T09:12:44.512Z' },
+      { key: 'web/npm-all', class: 'virtual', publishedAt: '2026-10-20T09:12:44.512Z' },
     ],
     files: [
       {
         path: file,
         sizeBytes: 48213,
         sha256: sha(0x5be0c1d2),
-        downloadUrl: `${BASE}/api/npm/npm-local/${file}`,
-        contentUrl: `/api/v1/repositories/npm-local/content/${file}`,
+        downloadUrl: `${BASE}/api/npm/web/npm-local/${file}`,
+        contentUrl: `/api/v1/projects/web/repositories/npm-local/content/${file}`,
       },
     ],
     readme: {
@@ -161,14 +162,14 @@ function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
         { targetFramework: 'net462', dependencies: [] },
       ],
     },
-    repositories: [{ key: 'nuget-local', class: 'local', publishedAt: '2026-10-25T00:00:00.000Z' }],
+    repositories: [{ key: 'web/nuget-local', class: 'local', publishedAt: '2026-10-25T00:00:00.000Z' }],
     files: [
       {
         path: file,
         sizeBytes: 20480,
         sha256: sha(0x7ac3),
-        downloadUrl: `${BASE}/api/nuget/nuget-local/v3/flatcontainer/${file}`,
-        contentUrl: `/api/v1/repositories/nuget-local/content/${file}`,
+        downloadUrl: `${BASE}/api/nuget/web/nuget-local/v3/flatcontainer/${file}`,
+        contentUrl: `/api/v1/projects/web/repositories/nuget-local/content/${file}`,
       },
     ],
     readme: {
@@ -190,7 +191,7 @@ export class FakePackagesApi extends PackagesApi {
       description: 'Shared UI components',
       latestVersion: '1.4.0',
       keywords: ['ui', 'components'],
-      repositories: ['npm-local', 'npm-all'],
+      repositories: ['web/npm-local', 'web/npm-all'],
       createdAt: '2026-09-02T08:00:12.201Z',
       updatedAt: '2026-10-20T09:12:44.512Z',
       versionCount: 3,
@@ -203,7 +204,7 @@ export class FakePackagesApi extends PackagesApi {
       description: 'Pads a string on the left',
       latestVersion: '1.3.0',
       keywords: ['string'],
-      repositories: ['npm-remote', 'npm-all'],
+      repositories: ['web/npm-remote', 'web/npm-all'],
       createdAt: '2026-08-11T12:00:00.000Z',
       updatedAt: '2026-08-11T12:00:00.000Z',
       versionCount: 1,
@@ -216,7 +217,7 @@ export class FakePackagesApi extends PackagesApi {
       description: null,
       latestVersion: '2.3.1',
       keywords: [],
-      repositories: ['nuget-local'],
+      repositories: ['web/nuget-local'],
       createdAt: '2026-10-01T00:00:00.000Z',
       updatedAt: '2026-10-25T00:00:00.000Z',
       versionCount: 2,
@@ -331,9 +332,9 @@ export class FakeClientSetupApi extends ClientSetupApi {
   calls: { repository: string; query: ClientSetupQuery }[] = [];
   failure: ApiError | null = null;
   /** The virtual repository without a default deployment target has no publish snippets. */
-  noTarget = new Set<string>(['npm-readonly']);
+  noTarget = new Set<string>(['web/npm-readonly']);
   /** Repositories the caller may read but not publish to. */
-  readOnly = new Set<string>(['npm-remote']);
+  readOnly = new Set<string>(['web/npm-remote']);
   ttl = 2_592_000;
   /**
    * The base URL each Bastion registration reported and the installation lists (R-BAS-007); `null` is a
@@ -348,15 +349,15 @@ export class FakeClientSetupApi extends ClientSetupApi {
       this.failure = null;
       throw e;
     }
-    if (repository === GENERIC_REPOSITORY.key) {
+    if (repository === refOf(GENERIC_REPOSITORY)) {
       return curlSetup(repository, query, !this.readOnly.has(repository), this.ttl);
     }
-    const nuget = NUGET_REPOSITORIES.find((r) => r.key === repository);
+    const nuget = NUGET_REPOSITORIES.find((r) => refOf(r) === repository);
     if (nuget) {
       const mayPublish = !this.readOnly.has(repository) && nuget.class !== 'remote' && !this.noTarget.has(repository);
       return nugetSetup(nuget, query, mayPublish, this.ttl);
     }
-    const repo = NPM_REPOSITORIES.find((r) => r.key === repository);
+    const repo = NPM_REPOSITORIES.find((r) => refOf(r) === repository);
     if (!repo) throw notFound();
     const credentials = query.credentials ?? 'placeholder';
     let base = BASE;
@@ -372,7 +373,7 @@ export class FakeClientSetupApi extends ClientSetupApi {
       query.bastion || this.readOnly.has(repository) || this.noTarget.has(repository)
         ? null
         : repo.class === 'virtual'
-          ? 'npm-local'
+          ? 'web/npm-local'
           : repository;
     const token = credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '${TROVE_TOKEN}' : null;
     const auth = (line: string): string => (token === null ? '' : line.replace('TOKEN', token));
@@ -468,9 +469,9 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
   }
   const credentials = query.credentials ?? 'placeholder';
-  const registryUrl = `${BASE}/api/nuget/${repo.key}/`;
+  const registryUrl = `${BASE}/api/nuget/${refOf(repo)}/`;
   const source = `${registryUrl}v3/index.json`;
-  const target = mayPublish ? (repo.class === 'virtual' ? 'nuget-local' : repo.key) : null;
+  const target = mayPublish ? (repo.class === 'virtual' ? 'web/nuget-local' : refOf(repo)) : null;
   const refs = {
     sh: credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '${TROVE_TOKEN}' : null,
     cmd: credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '%TROVE_TOKEN%' : null,
@@ -540,7 +541,7 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     }
   }
   return {
-    repository: repo.key,
+    repository: refOf(repo),
     format: 'nuget',
     client: query.client,
     credentials,

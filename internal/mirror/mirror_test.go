@@ -14,8 +14,8 @@ func TestMirrorNames(t *testing.T) {
 		}
 	})
 	t.Run("the arguments of a pass carry the repository and the full flag", func(t *testing.T) {
-		b, err := json.Marshal(PassArgs{Repository: "npm-types", RepositoryID: 7, Full: true})
-		if err != nil || string(b) != `{"repository":"npm-types","repositoryId":7,"full":true}` {
+		b, err := json.Marshal(PassArgs{Repository: qr("npm-types"), RepositoryID: 7, Full: true})
+		if err != nil || string(b) != `{"repository":"it/npm-types","repositoryId":7,"full":true}` {
 			t.Fatalf("%s, %v", b, err)
 		}
 	})

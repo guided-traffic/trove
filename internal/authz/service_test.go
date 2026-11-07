@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -35,16 +36,30 @@ func (f fakePrincipals) Groups(context.Context, string) ([]principal.GroupRef, e
 
 type fakeRepos struct{ list []repository.Repository }
 
-func (f fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (f fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
 	for _, r := range f.list {
-		if r.Key == key {
+		if r.Name == name {
 			return r, nil
 		}
 	}
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
 
+func (f fakeRepos) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}
+
 func (f fakeRepos) List(context.Context) ([]repository.Repository, error) { return f.list, nil }
+
+func (f fakeRepos) ListProject(_ context.Context, project string) ([]repository.Repository, error) {
+	var out []repository.Repository
+	for _, r := range f.list {
+		if r.Name.Project == project {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
 
 func testService() *Service {
 	p := fakePrincipals{}
@@ -58,11 +73,11 @@ func testService() *Service {
 	}
 	repos := fakeRepos{}
 	for i, r := range []repository.Repository{
-		{Key: "npm-internal", Class: repository.Local, Format: "npm"},
-		{Key: "npmjs", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"read"}}`)},
-		{Key: "npm-frozen", Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"deploy"}}`)},
-		{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
-		{Key: "files-internal", Class: repository.Local, Format: "generic"},
+		{Name: qr("npm-internal"), Class: repository.Local, Format: "npm"},
+		{Name: qr("npmjs"), Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"read"}}`)},
+		{Name: qr("npm-frozen"), Class: repository.Remote, Format: "npm", Config: []byte(`{"remote":{"cacheFillAction":"deploy"}}`)},
+		{Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
+		{Name: qr("files-internal"), Class: repository.Local, Format: "generic"},
 	} {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
@@ -70,8 +85,15 @@ func testService() *Service {
 	return NewService(ServiceOptions{Principals: p, Repositories: repos, Formats: testRegistry(), Projects: fakeProjects{}})
 }
 
+// input is a global policy on one selector; a bare fixture key or key pattern is written in the form of the
+// instance context (qualifySelector), as a global policy names repositories (Q-AUTHZ-216).
 func input(sel string, entries ...Entry) PolicyInput {
-	return PolicyInput{Name: "p", Resources: Resources{Repositories: []string{sel}}, Entries: entries}
+	return PolicyInput{Name: "p", Resources: Resources{Repositories: []string{qualifySelector(sel)}}, Entries: entries}
+}
+
+// bare is a global policy whose selector is taken as written, for the refusals of the instance context.
+func bare(sel string) PolicyInput {
+	return PolicyInput{Name: "p", Resources: Resources{Repositories: []string{sel}}}
 }
 
 func firstProblem(t *testing.T, s *Service, in PolicyInput) (ProblemField, int) {
@@ -111,18 +133,26 @@ func TestR_AUTHZ_021_PolicyValidation(t *testing.T) {
 		{"R-AUTHZ-004 an unknown key selector", input("no-such-repo", Entry{"group:team-web", []string{"read"}}), errs.CodeUnknownRepository, "/resources/repositories/0"},
 		{"R-AUTHZ-004 an unknown format filter", input("@any-local:rubygems", Entry{"group:team-web", []string{"read"}}), errs.CodeUnknownFormat, "/resources/repositories/0"},
 		{"R-AUTHZ-004 a malformed selector", input("@any-everything", Entry{"group:team-web", []string{"read"}}), errs.CodeInvalidPattern, "/resources/repositories/0"},
-		{"R-AUTHZ-005 an invalid package pattern", PolicyInput{Name: "p", Resources: Resources{Repositories: []string{"npm-internal"}, Packages: PatternLists{Include: []string{`x\`}}}}, errs.CodeInvalidPattern, "/resources/packages/include/0"},
-		{"R-AUTHZ-005 an invalid path pattern", PolicyInput{Name: "p", Resources: Resources{Repositories: []string{"npm-internal"}, Paths: PatternLists{Exclude: []string{"a//b"}}}}, errs.CodeInvalidPattern, "/resources/paths/exclude/0"},
-		{"R-AUTHZ-005 too many patterns", PolicyInput{Name: "p", Resources: Resources{Repositories: []string{"npm-internal"}, Packages: PatternLists{Include: make([]string, 257)}}}, errs.CodeInvalidPattern, "/resources/packages/include"},
+		{"R-AUTHZ-004 Q-AUTHZ-216 a bare key in a global policy is refused, never a selector that matches nothing", bare("npm-internal"), errs.CodeInvalidPattern, "/resources/repositories/0"},
+		{"R-AUTHZ-004 Q-AUTHZ-216 a bare key pattern in a global policy is refused", bare("npm-*"), errs.CodeInvalidPattern, "/resources/repositories/0"},
+		{"R-AUTHZ-004 a key names its project", bare("it/npm-internal"), "", ""},
+		{"R-AUTHZ-004 a key of another project is no repository", bare("web/npm-internal"), errs.CodeUnknownRepository, "/resources/repositories/0"},
+		{"R-AUTHZ-004 a pattern across projects", bare("*/npm-*"), "", ""},
+		{"R-AUTHZ-004 a pattern of project and key", bare("i?/npm-*:npm"), "", ""},
+		{"R-AUTHZ-004 a glob never crosses the slash", bare("*npm-internal"), errs.CodeInvalidPattern, "/resources/repositories/0"},
+		{"R-AUTHZ-005 an invalid package pattern", PolicyInput{Name: "p", Resources: Resources{Repositories: []string{inst("npm-internal")}, Packages: PatternLists{Include: []string{`x\`}}}}, errs.CodeInvalidPattern, "/resources/packages/include/0"},
+		{"R-AUTHZ-005 an invalid path pattern", PolicyInput{Name: "p", Resources: Resources{Repositories: []string{inst("npm-internal")}, Paths: PatternLists{Exclude: []string{"a//b"}}}}, errs.CodeInvalidPattern, "/resources/paths/exclude/0"},
+		{"R-AUTHZ-005 too many patterns", PolicyInput{Name: "p", Resources: Resources{Repositories: []string{inst("npm-internal")}, Packages: PatternLists{Include: make([]string, 257)}}}, errs.CodeInvalidPattern, "/resources/packages/include"},
 		{"R-AUTHZ-002 an unknown principal", input("npm-internal", Entry{"user:nobody", []string{"read"}}), errs.CodeUnknownPrincipal, "/entries/0/principal"},
 		{"R-AUTHZ-002 a malformed reference", input("npm-internal", Entry{"alice", []string{"read"}}), errs.CodeUnknownPrincipal, "/entries/0/principal"},
 		{"R-AUTHZ-002 a reference of an unknown kind", input("npm-internal", Entry{"team:web", []string{"read"}}), errs.CodeUnknownPrincipal, "/entries/0/principal"},
 		{"R-AUTHZ-021 a principal twice", input("npm-internal", Entry{"group:team-web", []string{"read"}}, Entry{"group:team-web", []string{"deploy"}}), errs.CodeDuplicatePrincipal, "/entries/1/principal"},
 		{"R-AUTHZ-021 an unknown action", input("npm-internal", Entry{"group:team-web", []string{"publish"}}), errs.CodeInvalidAction, "/entries/0/actions"},
 		{"R-AUTHZ-021 an entry without actions", input("npm-internal", Entry{"group:team-web", nil}), errs.CodeInvalidAction, "/entries/0/actions"},
-		{"R-AUTHZ-021 an invalid name", PolicyInput{Name: "Not Valid", Resources: Resources{Repositories: []string{"npm-internal"}}}, "invalid_name", "/name"},
+		{"R-AUTHZ-021 an invalid name", PolicyInput{Name: "Not Valid", Resources: Resources{Repositories: []string{inst("npm-internal")}}}, "invalid_name", "/name"},
+		{"R-AUTHZ-021 Q-AUTHZ-209 a name never carries a project", PolicyInput{Name: "it/p", Resources: Resources{Repositories: []string{inst("npm-internal")}}}, "invalid_name", "/name"},
 		{"R-AUTHZ-021 a build policy is not available in M1", PolicyInput{Name: "b", ResourceType: "build"}, "unsupported_resource_type", "/resourceType"},
-		{"R-AUTHZ-021 a description over 1024 characters", PolicyInput{Name: "p", Description: strings.Repeat("x", 1025), Resources: Resources{Repositories: []string{"npm-internal"}}}, "invalid_description", "/description"},
+		{"R-AUTHZ-021 a description over 1024 characters", PolicyInput{Name: "p", Description: strings.Repeat("x", 1025), Resources: Resources{Repositories: []string{inst("npm-internal")}}}, "invalid_description", "/description"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -142,7 +172,7 @@ func TestR_AUTHZ_021_PolicyValidation(t *testing.T) {
 	})
 
 	t.Run("R-AUTHZ-001 a preset is expanded when the policy is written", func(t *testing.T) {
-		rp, problems, err := s.resolve(t.Context(), input("npm-internal", Entry{"group:team-web", []string{"write"}}), false)
+		rp, problems, err := s.resolve(t.Context(), input("npm-internal", Entry{"group:team-web", []string{"write"}}))
 		if err != nil || len(problems) != 0 {
 			t.Fatal(err, problems)
 		}
@@ -162,11 +192,11 @@ func TestR_AUTHZ_021_Warnings(t *testing.T) {
 		return r.Warnings
 	}
 	t.Run("R-AUTHZ-005 path patterns on a package format are flagged", func(t *testing.T) {
-		in := PolicyInput{Name: "p", Resources: Resources{Repositories: []string{"npm-internal"}, Paths: PatternLists{Include: []string{"a/**"}}}}
+		in := PolicyInput{Name: "p", Resources: Resources{Repositories: []string{inst("npm-internal")}, Paths: PatternLists{Include: []string{"a/**"}}}}
 		if w := warn(in); len(w) != 1 || w[0] != WarnPathPatternsOnPackageFormat {
 			t.Fatalf("%v", w)
 		}
-		in.Resources.Repositories = []string{"files-internal"}
+		in.Resources.Repositories = []string{inst("files-internal")}
 		if w := warn(in); len(w) != 0 {
 			t.Fatalf("a generic repository takes path patterns: %v", w)
 		}
@@ -192,7 +222,7 @@ func TestR_AUTHZ_021_Warnings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := strings.Join(r.Covers, ","); got != "npm-all,npm-frozen,npm-internal" {
+		if got := strings.Join(r.Covers, ","); got != "it/npm-all,it/npm-frozen,it/npm-internal" {
 			t.Fatalf("covers %s", got)
 		}
 	})

@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // indexDecider is a decision point that hands out a new index on every Begin
@@ -27,20 +28,20 @@ type indexDecider struct {
 	failure error
 }
 
-func (d *indexDecider) Begin(_ context.Context, _ authz.Subject, keys ...string) (*authz.Index, error) {
+func (d *indexDecider) Begin(_ context.Context, _ authz.Subject, keys ...qname.Repo) (*authz.Index, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.failure != nil {
 		return nil, d.failure
 	}
 	d.begins++
-	d.keys = append(d.keys, keys)
+	d.keys = append(d.keys, qkeys(keys))
 	s := &authz.Snapshot{}
 	s.Label.AuthzEpoch = int64(d.begins)
 	return authz.BuildIndex(s, nil, nil), nil
 }
 
-func (d *indexDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ string) (*authz.Index, error) {
+func (d *indexDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ qname.Repo) (*authz.Index, error) {
 	return idx, nil
 }
 
@@ -68,12 +69,12 @@ func (d *indexDecider) DecideOn(_ context.Context, idx *authz.Index, _ authz.Sub
 	return authz.Decision{Outcome: authz.Allow}
 }
 
-func (d *indexDecider) ReadableOn(_ context.Context, idx *authz.Index, _ authz.Subject, keys []string) ([]string, error) {
+func (d *indexDecider) ReadableOn(_ context.Context, idx *authz.Index, _ authz.Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	d.record("readable", idx)
 	return keys, nil
 }
 
-func (d *indexDecider) ExposedOn(idx *authz.Index, _ authz.Subject, keys []string) []string {
+func (d *indexDecider) ExposedOn(idx *authz.Index, _ authz.Subject, keys []qname.Repo) []qname.Repo {
 	d.record("exposed", idx)
 	return keys
 }
@@ -106,7 +107,7 @@ func TestR_AUTHZ_015_TheSharedStepAndTheHandlerDecideOnOneIndex(t *testing.T) {
 		if _, err := s.holds(ctx, capabilityReadConfig); err != nil {
 			t.Error(err)
 		}
-		ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, "generic-local")
+		ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, qr("generic-local"))
 		if err != nil {
 			t.Error(err)
 			return
@@ -114,9 +115,9 @@ func TestR_AUTHZ_015_TheSharedStepAndTheHandlerDecideOnOneIndex(t *testing.T) {
 		if acc != held {
 			t.Error("the handler took a holder of its own")
 		}
-		acc.Decide(ctx, authz.Coordinate{Repository: "generic-local"})
-		_, _ = acc.Readable(ctx, []string{"generic-local"})
-		acc.Exposed([]string{"generic-local"})
+		acc.Decide(ctx, authz.Coordinate{Repository: qr("generic-local")})
+		_, _ = acc.Readable(ctx, []qname.Repo{qr("generic-local")})
+		acc.Exposed([]qname.Repo{qr("generic-local")})
 		handlerEpoch = acc.Epoch()
 	})
 	step.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/things/generic-local", nil))
@@ -198,7 +199,7 @@ func TestR_AUTHZ_015_AHandlerThatReceivedNoHolderBeginsOneAndPassesItOn(t *testi
 	d := &indexDecider{}
 	s := New(Options{Access: NewAccess(d), Repositories: RepositoryServices{Authz: d}})
 	ctx := context.Background()
-	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, "generic-local")
+	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, qr("generic-local"))
 	if err != nil || acc == nil {
 		t.Fatalf("%v %v", acc, err)
 	}

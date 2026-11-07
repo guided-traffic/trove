@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 type ctxKey int
@@ -45,8 +46,8 @@ type RequestInfo struct {
 	// HostLabel is the label a wildcard host matched (R-EP-003), "" otherwise.
 	HostLabel string
 	// RootRepository is the repository the effective host's root is bound to
-	// (R-EP-006), "" when unbound. No route reads it in the MVP.
-	RootRepository string
+	// (R-EP-006, Q-EP-76), the zero value when unbound. No route reads it in the MVP.
+	RootRepository qname.Repo
 	// ForwardedHostIgnored is true when a trusted peer sent a forwarded host
 	// outside the endpoint's host set.
 	ForwardedHostIgnored bool

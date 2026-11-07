@@ -13,7 +13,7 @@ commands:
   break-glass status|unlock|end-sessions       the break-glass lockout, rotation hold and sessions (R-AUTH-015)
   sessions end --user <username> | --all       end UI sessions (R-AUTH-015)
   service-account create <name> [--description <text>] [--admin]   create a service account (R-AUTH-015)
-  token create --service-account <name> [--ttl 15m] [--scope-file <file>]   print a token once (R-AUTH-015)
+  token create --service-account <name|project/name> [--ttl 15m] [--scope-file <file>]   print a token once (R-AUTH-015)
   token revoke --id <uuid> | --value-stdin     revoke a token (R-AUTH-015)
   user disable <username> [--keep-tokens]      disable a user (R-AUTH-015)
   bastion create <name> [--description <text>]   register a Bastion (R-BAS-004)

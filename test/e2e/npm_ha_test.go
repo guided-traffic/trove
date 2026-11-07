@@ -15,6 +15,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -193,12 +194,14 @@ func runLoadFault[R any](t *testing.T, record, name string, before, after time.D
 		r.initial[p.Name] = true
 	}
 	r.mon = startMonitor(t)
+	r.mon.dir = filepath.Join(cfg.out, "podlogs-"+name)
 	r.faultAt = time.Now()
 	fault()
 	r.faultEnd = time.Now()
 	time.Sleep(after)
 	r.mon.stop()
 	r.restarts = r.mon.restarts(t)
+	r.mon.report(t, r.restarts)
 	r.res = stop(t)
 	rec := map[string]any{
 		"fault_seconds": r.faultEnd.Sub(r.faultAt).Seconds(), "readyz_non200": r.mon.ready, "healthz_non200": r.mon.health, "restarts": r.restarts,

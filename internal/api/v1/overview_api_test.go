@@ -237,7 +237,7 @@ func TestR_OPS_004_SystemOverview(t *testing.T) {
 	})
 
 	t.Run("the overview requires settings:read", func(t *testing.T) {
-		if got := requirementOf(t, "getSystemOverview"); got.Permission != PermissionSystemRead || got.ProjectAdmin != "" {
+		if got := requirementOf(t, "getSystemOverview"); got.Permission != PermissionSystemRead || got.ProjectRole != "" {
 			t.Errorf("declaration = %s, want permission %s", got, PermissionSystemRead)
 		}
 		store := newOverviewStore()

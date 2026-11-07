@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -349,19 +351,19 @@ type claimsEventDetails struct {
 // Claims implements GET .../claims: the claims of a repository from PostgreSQL
 // and their revision. A repository that cannot hold claims (not local, or of a
 // format without claims) has none.
-func (s *Service) Claims(ctx context.Context, key string) (ClaimSet, error) {
+func (s *Service) Claims(ctx context.Context, name qname.Repo) (ClaimSet, error) {
 	var out ClaimSet
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		rows, err := qs.GetRepositoryByKey(ctx, key)
+		rows, err := qs.GetRepositoryByName(ctx, q.GetRepositoryByNameParams{Project: name.Project, Key: name.Key})
 		if err != nil {
 			return err
 		}
 		if len(rows) == 0 {
-			return notFound(key)
+			return notFound(name)
 		}
 		claims, err := qs.ListRepositoryClaims(ctx, rows[0].ID)
 		if err != nil {
@@ -436,7 +438,7 @@ func parseClaimInput(cat *catalog.Registry, format string, in ClaimInput, v *val
 // claims_version (R-REPO-023). guard is called, in the transaction, when a global
 // claim is added, kept, narrowed or removed. A write that changes nothing writes
 // nothing and keeps the revision.
-func (s *Service) PutClaims(ctx context.Context, c Caller, key string, pre Precondition, in ClaimInput, guard GlobalGuard) (ClaimSet, error) {
+func (s *Service) PutClaims(ctx context.Context, c Caller, name qname.Repo, pre Precondition, in ClaimInput, guard GlobalGuard) (ClaimSet, error) {
 	if !pre.Any && pre.Version < 1 {
 		return ClaimSet{}, errors.New("repository: a claims write needs a precondition")
 	}
@@ -446,12 +448,12 @@ func (s *Service) PutClaims(ctx context.Context, c Caller, key string, pre Preco
 		if err != nil {
 			return err
 		}
-		rows, err := qs.LockRepositoryByKey(ctx, key)
+		rows, err := qs.LockRepositoryByName(ctx, q.LockRepositoryByNameParams{Project: name.Project, Key: name.Key})
 		if err != nil {
 			return err
 		}
 		if len(rows) == 0 {
-			return notFound(key)
+			return notFound(name)
 		}
 		row := rows[0]
 		if Lifecycle(row.Lifecycle) == Deleting {
@@ -460,7 +462,7 @@ func (s *Service) PutClaims(ctx context.Context, c Caller, key string, pre Preco
 		if !pre.Any && pre.Version != row.ClaimsVersion {
 			return errs.Stale("The claims", row.ClaimsVersion)
 		}
-		out, err = s.putClaims(ctx, tx, qs, c, row, in, guard)
+		out, err = s.putClaims(ctx, tx, qs, c, row, name.Project, in, guard)
 		return err
 	})
 	if err != nil {
@@ -469,7 +471,7 @@ func (s *Service) PutClaims(ctx context.Context, c Caller, key string, pre Preco
 	return out, nil
 }
 
-func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository,
+func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, project string,
 	in ClaimInput, guard GlobalGuard,
 ) (ClaimSet, error) {
 	v := &validation{}
@@ -503,7 +505,7 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	}
 	version := row.ClaimsVersion
 	if len(added) > 0 || len(removed) > 0 {
-		if version, err = s.applyClaimChange(ctx, tx, qs, c, row, added, removed); err != nil {
+		if version, err = s.applyClaimChange(ctx, tx, qs, c, row, project, added, removed); err != nil {
 			return ClaimSet{}, err
 		}
 	}
@@ -578,7 +580,7 @@ func diffClaims(want wantClaims, manual map[string]string) (added []claimChange,
 // applyClaimChange writes a change of the manual claims, bumps claims_version and
 // records the audit event and the change notification, in the transaction. It
 // returns the new version.
-func (s *Service) applyClaimChange(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository,
+func (s *Service) applyClaimChange(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, project string,
 	added []claimChange, removed []string,
 ) (int64, error) {
 	actor := c.principalID()
@@ -596,7 +598,7 @@ func (s *Service) applyClaimChange(ctx context.Context, tx meta.Tx, qs *q.Querie
 	if err != nil {
 		return 0, err
 	}
-	r, _ := toRepository(row, s.cat)
+	r, _ := toRepository(row, project, s.cat)
 	if err := recordClaims(ctx, tx, s.rec, s.notif, c, r, SourceManual, added, removed, version); err != nil {
 		return 0, err
 	}
@@ -657,9 +659,9 @@ func recordClaims(ctx context.Context, tx meta.Tx, rec audit.Recorder, notif Not
 	}
 	if err := rec.RecordTx(ctx, tx, audit.Event{
 		Type: EventClaimsChanged, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Key}, Details: raw,
+		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name.String()}, Project: r.Name.Project, Details: raw,
 	}); err != nil {
 		return err
 	}
-	return notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Key, Op: source})
+	return notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: r.ID, Key: r.Name.String(), Op: source})
 }

@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { PackagesApi } from '../../api/packages-api';
 import { FakePackagesApi } from '../../api/testing/fakes-packages';
-import { expectAccessible, renderScreen, settle, text } from '../../testing/screen';
+import { expectAccessible, inProject, renderScreen, settle, text } from '../../testing/screen';
 import { PackageDetail } from './package-detail';
 import { PackageMemory } from './package-memory';
 
@@ -13,10 +13,10 @@ async function open(
   setup?: (fake: FakePackagesApi) => void,
   name = '@team-a/ui',
 ) {
-  const r = await renderScreen(PackageDetail, {
+  const r = await renderScreen(PackageDetail, inProject({
     inputs: { format: 'npm', name, ...inputs },
     setup: (get) => setup?.(get(PackagesApi) as FakePackagesApi),
-  });
+  }));
   return { ...r, fake: r.get(PackagesApi) as FakePackagesApi };
 }
 
@@ -128,7 +128,7 @@ describe('Package details', () => {
     expect(text(r.root)).toContain(sha);
     expect(r.root.querySelector('.pkg-tabs trove-copy-button button')?.getAttribute('aria-label')).toBe('Copy SHA-256');
     const download = [...r.root.querySelectorAll('a')].find((a) => a.textContent?.trim() === 'Download')!;
-    expect(download.getAttribute('href')).toBe('/api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz');
+    expect(download.getAttribute('href')).toBe('/api/v1/projects/web/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz');
     expect(download.hasAttribute('download')).toBe(true);
     await expectAccessible(r.root);
   });
@@ -148,17 +148,17 @@ describe('Package details', () => {
       };
     });
     const download = [...r.root.querySelectorAll('a')].find((a) => a.textContent?.trim() === 'Download')!;
-    expect(download.getAttribute('href')).toMatch(/^https:\/\/.*\/api\/npm\/npm-local\//);
+    expect(download.getAttribute('href')).toMatch(/^https:\/\/.*\/api\/npm\/web\/npm-local\//);
   });
 
   it('R-UI-007 the Repositories tab lists each repository with its class and a link that shows it in the browser', async () => {
     const r = await open({ tab: 'repositories' });
     const rows = [...r.root.querySelectorAll('tbody tr')];
     expect(rows.map((row) => text(row))).toEqual([
-      expect.stringContaining('npm-localLocal'),
-      expect.stringContaining('npm-allVirtual'),
+      expect.stringContaining('web/npm-localLocal'),
+      expect.stringContaining('web/npm-allVirtual'),
     ]);
-    expect(rows[0]?.querySelector('a')?.getAttribute('href')).toBe('/browse/npm-local');
+    expect(rows[0]?.querySelector('a')?.getAttribute('href')).toBe('/projects/web/browse/npm-local');
     await expectAccessible(r.root);
   });
 
@@ -167,7 +167,7 @@ describe('Package details', () => {
     const rows = [...r.root.querySelectorAll('tbody tr')].map((row) => text(row));
     expect(rows).toHaveLength(3);
     expect(rows[0]).toContain('1.5.0-beta.1pre-release');
-    expect(rows[1]).toMatch(/^1\.4\.0.*47\.1 KiBnpm-local, npm-all410/);
+    expect(rows[1]).toMatch(/^1\.4\.0.*47\.1 KiBweb\/npm-local, web\/npm-all410/);
     await expectAccessible(r.root);
   });
 

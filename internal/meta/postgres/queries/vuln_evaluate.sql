@@ -372,11 +372,12 @@ SELECT v.id::text AS id, v.canonical_id::text AS canonical_id, v.aliases::text[]
 -- The namespace claims of the local repositories of a format that can cover a name, with the holder's scanning inputs, read in the
 -- transaction of a commit: the claims rule of R-VULN-010 must not take a second connection while the commit holds one. The
 -- prefilter only narrows (an exact claim, or a literal prefix of the name); a pattern with an escape is always returned and the
--- caller matches every row with the pattern semantics of the claim index.
-SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+-- caller matches every row with the pattern semantics of the claim index. The key is the qualified name <project>/<key>.
+SELECT c.repo_id::bigint AS repo_id, (rp.key || '/' || r.key)::text AS key, r.config::text AS config,
        c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
   FROM namespace_claims c
   JOIN repositories r ON r.id = c.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE r.format = sqlc.arg(format)::text
    AND r.class = 'local'
    AND (c.pattern = sqlc.arg(name)::text
@@ -385,10 +386,11 @@ SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS confi
 
 -- name: VulnClaimHoldersForItem :many
 -- VulnClaimHolders for the name of an item (the commit hook, Q-VULN-82): the same prefilter, with the name read from the item.
-SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+SELECT c.repo_id::bigint AS repo_id, (rp.key || '/' || r.key)::text AS key, r.config::text AS config,
        c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
   FROM namespace_claims c
   JOIN repositories r ON r.id = c.repo_id
+  JOIN project rp ON rp.id = r.project_id
   CROSS JOIN (SELECT p.name AS name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id

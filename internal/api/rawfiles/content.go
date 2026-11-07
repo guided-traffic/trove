@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -15,7 +15,7 @@ import (
 // role api after the cut into task areas (R-ARCH-001, R-EP-010), and /files/ is served by packages, so the UI's
 // downloads and uploads go through
 //
-//	GET, HEAD, PUT /api/v1/repositories/{repoKey}/content/{path...}
+//	GET, HEAD, PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}
 //
 // on the API's own origin. The routes share everything with /files/ through [Handler.serve] (path cleaning, the decision
 // of every request on one index, Range and conditional requests, Repr-Digest, the content headers, the blocking of
@@ -25,14 +25,14 @@ import (
 // offered (the UI deletes through the items operation), so the session's DELETE answers 405 (Q-ARCH-307).
 
 const (
-	contentBase   = "/api/v1/repositories/"
+	contentBase   = "/api/v1/projects/"
 	contentMiddle = "/content/"
 )
 
 // ContentPattern is the ServeMux pattern of the content routes for a method, the {path...} form of the multi-segment
 // wildcard. The document names the same template with {path} (api/openapi.yaml).
 func ContentPattern(method string) string {
-	return method + " " + contentBase + "{repoKey}" + contentMiddle + "{path...}"
+	return method + " " + contentBase + "{projectKey}/repositories/{repoKey}" + contentMiddle + "{path...}"
 }
 
 // Content is the handler of the content routes. Create it with [Handler.Content].
@@ -55,7 +55,7 @@ func (c *Content) Register(r *httpserver.Router) {
 		r.Handle(ContentPattern(m), c)
 	}
 	r.HideMethods(contentBase, func(req *http.Request) bool {
-		_, _, ok := splitContentPath(req.URL.EscapedPath())
+		_, ok := qname.ParseContentAddress(req.URL.EscapedPath())
 		return ok && !bySession(req)
 	})
 }
@@ -74,29 +74,12 @@ func (c *Content) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}
-	key, rest, ok := splitContentPath(r.URL.EscapedPath())
+	addr, ok := qname.ParseContentAddress(r.URL.EscapedPath())
 	if !ok {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}
-	c.h.serve(w, r, key, rest, c.maxUpload)
-}
-
-// splitContentPath cuts "/api/v1/repositories/<key>/content/<rest>" and decodes the key; rest stays escaped.
-func splitContentPath(escaped string) (key, rest string, ok bool) {
-	tail, found := strings.CutPrefix(escaped, contentBase)
-	if !found {
-		return "", "", false
-	}
-	rawKey, rest, found := strings.Cut(tail, contentMiddle)
-	if !found || strings.Contains(rawKey, "/") {
-		return "", "", false
-	}
-	key, err := url.PathUnescape(rawKey)
-	if err != nil || key == "" {
-		return "", "", false
-	}
-	return key, rest, true
+	c.h.serve(w, r, addr.Repo, addr.Rest, c.maxUpload)
 }
 
 // limitBody refuses a body above the limit of the UI's uploads. A declared length above it fails the first read, so

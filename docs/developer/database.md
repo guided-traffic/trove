@@ -569,47 +569,47 @@ shared one: [bastion_registration.sql](../../internal/meta/postgres/queries/bast
 
 ## Projects tables (00019 to 00025)
 
-Migrations 00019 to 00025 are expand steps (R-AUTHZ-026) in the shape R-HA-018 asks of a step that touches tables that
-already exist (Q-AUTHZ-203):
+Migrations 00019 to 00025 hold the project model (R-AUTHZ-026, Q-AUTHZ-206 to Q-AUTHZ-209, Q-REPO-212), edited in place before the
+first stable release; they keep the shape of expand steps that R-HA-018 asks of a step that touches tables that already exist
+(Q-AUTHZ-203):
 
 | Step | Content |
 |---|---|
-| [00019_projects](../../internal/meta/postgres/migrations/00019_projects.sql) | the new tables `project` and `project_admin`; `project_id` added plain to `repositories`, `service_account` and `authz_policy` with their foreign keys `NOT VALID`; the triggers `AI002`, `AI003`, `AI004` |
-| [00020](../../internal/meta/postgres/migrations/00020_projects_repositories_index.sql) to [00022](../../internal/meta/postgres/migrations/00022_projects_policy_index.sql) | one `CREATE INDEX CONCURRENTLY IF NOT EXISTS` per file (`-- trove:no-transaction`, one statement): `repositories_project`, `service_account_project`, `authz_policy_project` |
+| [00019_projects](../../internal/meta/postgres/migrations/00019_projects.sql) | the new tables `project` and `project_member`; `project_id` added to `repositories` (`NOT NULL`), `service_account` and `authz_policy` with their foreign keys `NOT VALID`; the triggers `project_member_kind` (`AI001`), `AI002`, `AI003` (the key of a project and the stored names of its service accounts and policies), `AI004` |
+| [00020](../../internal/meta/postgres/migrations/00020_projects_repositories_index.sql) to [00022](../../internal/meta/postgres/migrations/00022_projects_policy_index.sql) | one `CREATE INDEX CONCURRENTLY IF NOT EXISTS` per file (`-- trove:no-transaction`, one statement): `repositories_project_key` (unique, `(project_id, key)`), `service_account_project`, `authz_policy_project` |
 | [00023](../../internal/meta/postgres/migrations/00023_projects_policy_unique.sql) | `CREATE UNIQUE INDEX CONCURRENTLY` on `authz_policy (id, project_id)` |
-| [00024](../../internal/meta/postgres/migrations/00024_projects_policy_entries.sql) | `ADD CONSTRAINT authz_policy_id_project UNIQUE USING INDEX` (no scan), the entry table with its composite foreign key, the trigger `AI005` |
+| [00024](../../internal/meta/postgres/migrations/00024_projects_policy_entries.sql) | `ADD CONSTRAINT … UNIQUE USING INDEX` for `authz_policy_id_project` and `repositories_project_key` (no scan), the entry table with its composite foreign key, the triggers `AI005`, `AI006` and `AI007` (`repositories_move_guard`: a repository its project holds by ID, a project policy's key selector or a virtual repository's member list, pin rule or deployment target, does not change `project_id`; `authz_policy_selector_project`: a project policy's key selector names a repository of its project) |
 | [00025](../../internal/meta/postgres/migrations/00025_projects_validate.sql) | `VALIDATE CONSTRAINT` of the three foreign keys of 00019 |
 
 The runner applies every step under `SET lock_timeout = migrate.ddl_lock_timeout`; a no-transaction step drops an `INVALID`
 index of its name that a failed attempt left before it retries. The new tables are empty and take their indexes and keys
-inline. A step that adds an index to an existing table in a later migration follows the same shape. The
-[test](../../test/integration/postgres/projects_test.go) checks that no foreign key is left `NOT VALID`, that the indexes are
-valid and that the unique constraint exists.
+inline. The [test](../../test/integration/postgres/projects_test.go) checks that no foreign key is left `NOT VALID`, that the indexes
+are valid, that the unique constraints exist and every guard below.
 
-The queries are in [project.sql](../../internal/meta/postgres/queries/project.sql); the registrations (`project`, `project_admin`,
-`authz_project_policy_entry`, and `project.version` as a revision column) are in
-queries are in [project.sql](../../internal/meta/postgres/queries/project.sql); the registrations (`project`, `project_admin`,
+The queries are in [project.sql](../../internal/meta/postgres/queries/project.sql) and
+[authz.sql](../../internal/meta/postgres/queries/authz.sql); the registrations (`project`, `project_member`,
 `authz_project_policy_entry`, and `project.version` as a revision column) are in
 [tables_projects.go](../../internal/meta/postgres/tables_projects.go). The page [projects.md](projects.md) lists who uses what.
 
 | Table or column | Purpose | Notes | Class |
 |---|---|---|---|
-| `project` | A project: key (immutable), display name, description, the two switches, `version` (ETag) | `version` moves with the PUT fields only (Q-AUTHZ-185) | data |
-| `project_admin` | Administrators of a project: users and groups | trigger `principal_kind_guard` (SQLSTATE `AI001`) refuses other kinds; cascade on both sides | data |
-| `repositories.project_id` | The project a repository is assigned to | foreign key to `project (id)` (added `NOT VALID`, validated in 00025), no cascade: the project cannot be deleted while a repository is assigned | (column) |
-| `service_account.project_id` | The project of a project service account | no cascade; trigger `AI003`: the name starts with `<key>-`, the project never changes | (column) |
-| `authz_policy.project_id` | The project of a project policy | `ON DELETE CASCADE`; `UNIQUE (id, project_id)` lets the entry table name the project | (column) |
-| `authz_project_policy_entry` | The grants of project policies | composite foreign key `(policy_id, project_id)` allows rows of project policies only; the previous release does not read it (Q-AUTHZ-174) | data |
+| `project` | A project: key (immutable, `AI003`), display name, description, `version` (ETag) | `version` moves with the PUT fields only (Q-AUTHZ-185) | data |
+| `project_member` | The members of a project: users and groups with the role `reader`, `developer`, `maintainer` or `owner` (Q-AUTHZ-207) | primary key `(project_id, principal_id)`; trigger `principal_kind_guard` (`AI001`) refuses other kinds; cascade on both sides; the partial index `project_member_owner` serves the last-Owner count | data |
+| `repositories.project_id` | The project of a repository; the key is unique within it (`repositories_project_key`) | `NOT NULL`; foreign key without cascade: the project cannot be deleted while a repository belongs to it; changed by a move only | (column) |
+| `service_account.project_id` | The project of a project service account | no cascade; trigger `AI003`: the stored name is `<key>/<name>`, an instance-wide one has no `/`, the project never changes | (column) |
+| `authz_policy.project_id` | The project of a project policy | `ON DELETE CASCADE`; trigger `AI003` on the stored name `<key>/<name>`; `UNIQUE (id, project_id)` lets the entry table name the project | (column) |
+| `authz_project_policy_entry` | The grants of project policies | composite foreign key `(policy_id, project_id)` allows rows of project policies only (Q-AUTHZ-174) | data |
 
 Guards that the database enforces whatever the API checked. Together with the earlier ones, the SQLSTATE classes are:
 
 | SQLSTATE | Guard | What it refuses |
 |---|---|---|
-| `AI001` | `principal_builtin_guard`, `principal_kind_guard` | a change of a built-in principal; a row that names a principal of the wrong kind, among them `project_admin` (only users and groups) and `authz_role_binding` |
+| `AI001` | `principal_builtin_guard`, `principal_kind_guard` | a change of a built-in principal; a row that names a principal of the wrong kind, among them `project_member` (only users and groups) and `authz_role_binding` |
 | `AI002` | `group_member_not_project_account` on `group_membership` | a project service account as a group member |
-| `AI003` | `service_account_project_guard` | a project service account whose name does not start with `<key>-` (also exactly `<key>-`), and a change of its project |
-| `AI004` | `authz_policy_entry_global_only` on `authz_policy_entry` | a row for a project policy: the binaries before projects write there and must fail rather than make a project policy global. A rewrite of a project policy with zero entries writes no row, so the guard does not fire for it; the code side of that case is [H-395](../spec/authorization.md#h-395--during-a-rollout-from-09x-the-rights-of-a-project-are-partly-absent-and-its-name-rules-are-not-enforced)'s |
-| `AI005` | `project_account_principal_guard` on `authz_role_binding`, `authz_policy_entry` and `authz_project_policy_entry` | a project service account as the principal of a role binding or of an entry of a global policy, and of an entry of a policy of another project (Q-AUTHZ-175, Q-AUTHZ-203); a global service account and the project's own accounts pass |
+| `AI003` | `project_key_immutable`, `service_account_project_guard`, `authz_policy_project_guard` | a change of a project's key; a stored name of a project's service account or policy that is not `<key>/<name>` of its project, a `/` in the name of an instance-wide one, a change of their project |
+| `AI004` | `authz_policy_entry_global_only` on `authz_policy_entry` | a row for a project policy |
+| `AI005` | `project_account_principal_guard` on `authz_role_binding`, `authz_policy_entry` and `authz_project_policy_entry` | a project service account as the principal of a role binding or of an entry of a global policy, and of an entry of a policy of another project (Q-AUTHZ-175); a global service account and the project's own accounts pass |
+| `AI006` | `virtual_same_project_guard` on `virtual_members`, `virtual_deploy_targets`, `virtual_pin_members` | a member, pin member or deployment target of another project than the virtual repository's (Q-AUTHZ-206); a move that would leave one is refused by the service (409 `repository_in_use`) |
 
 Tested in [projects_test.go](../../test/integration/postgres/projects_test.go).
 

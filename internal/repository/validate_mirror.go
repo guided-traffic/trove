@@ -110,7 +110,7 @@ func boundingIncludes(include []string) bool {
 	return true
 }
 
-// checkDelegatedMirror applies Q-REPO-142 to a project administrator's write: the mode and the mirror members stay as
+// checkDelegatedMirror applies Q-REPO-142 to a project Owner's write: the mode and the mirror members stay as
 // stored (the defaults on a create), except that paused may change and the mode may go back to pullThrough.
 func checkDelegatedMirror(v *validation, stored, next *RemoteSettings) {
 	base := RemoteSettings{Mode: ModePullThrough, Mirror: DefaultMirrorSettings()}
@@ -119,22 +119,22 @@ func checkDelegatedMirror(v *validation, stored, next *RemoteSettings) {
 	}
 	if next.Mode != base.Mode && next.Mode != ModePullThrough {
 		v.add("/remote/mode", errs.CodeMirrorRestricted,
-			"only a holder of repositories:write-config makes a remote repository a mirror; a project administrator may turn it back to pullThrough")
+			"only a holder of repositories:write-config makes a remote repository a mirror; a project Owner may turn it back to pullThrough")
 	}
 	if !sameMirrorButPause(base.Mirror, next.Mirror) {
 		v.add("/remote/mirror", errs.CodeMirrorRestricted,
-			"a project administrator keeps the mirror settings an administrator of trove chose; it may change paused only")
+			"a project Owner keeps the mirror settings an administrator of trove chose; it may change paused only")
 	}
 }
 
-// checkDelegatedMirrorScope applies Q-REPO-193 to a project administrator's update of a repository that is a mirror
+// checkDelegatedMirrorScope applies Q-REPO-193 to a project Owner's update of a repository that is a mirror
 // and stays one: what the mirror covers (includePatterns, excludePatterns) and where it reads from (remote.url,
 // remote.extraHosts) are the administrator's. A write that turns the mode back to pullThrough may change them.
 func checkDelegatedMirrorScope(v *validation, stored, next *RemoteSettings, cur, nd *Document) {
 	if stored == nil || stored.Mode != ModeMirror || next.Mode != ModeMirror {
 		return
 	}
-	const why = "a project administrator keeps what an administrator of trove chose for a mirror; turn the mode back to pullThrough to change it"
+	const why = "a project Owner keeps what an administrator of trove chose for a mirror; turn the mode back to pullThrough to change it"
 	if !sameStrings(cur.IncludePatterns, nd.IncludePatterns) {
 		v.add("/includePatterns", errs.CodeMirrorRestricted, why)
 	}

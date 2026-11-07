@@ -54,13 +54,13 @@ func TestR_BAS_008_AForwardedRequestIsRecognizedOnlyByAValidBastionToken(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	rp := s.do(packageRequest("/api/npm/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+revoked, iface.HeaderInterface, v))
+	rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+revoked, iface.HeaderInterface, v))
 	if rp.Status != http.StatusUnauthorized || rp.code() != errs.CodeBastionTokenInvalid || rp.Header.Get("Content-Type") != errs.ProblemContentType {
 		t.Errorf("a revoked Bastion token: %d %s %s", rp.Status, rp.Header.Get("Content-Type"), rp.Body)
 	}
 
 	// $PAT in Trove-Bastion-Authorization: ordinary request, no marking header, the headers are ignored.
-	rp = s.do(packageRequest("/api/npm/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+caller,
+	rp = s.do(packageRequest("/api/npm/it/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+caller,
 		iface.HeaderInterface, v, iface.HeaderReplica, "pod", iface.HeaderProbe, "1"))
 	var got echo
 	rp.decode(t, &got)
@@ -74,7 +74,7 @@ func TestR_BAS_008_AForwardedRequestIsRecognizedOnlyByAValidBastionToken(t *test
 	}
 
 	// A valid Bastion token: the caller's credential is untouched, the Bastion's is not passed on.
-	rp = s.do(packageRequest("/api/npm/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v))
+	rp = s.do(packageRequest("/api/npm/it/npm-all/lodash", "Authorization", "Bearer "+caller, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v))
 	rp.decode(t, &got)
 	if rp.Status != http.StatusOK || got.Principal != "acme-full" || got.Authorization != "Bearer "+caller || got.BastionAuthorization != "" {
 		t.Errorf("a recognized request: %d %+v", rp.Status, got)
@@ -90,7 +90,7 @@ func TestR_BAS_008_AForwardedRequestIsRecognizedOnlyByAValidBastionToken(t *test
 	}
 
 	// A caller without a credential through a Bastion is anonymous, as without one.
-	rp = s.do(packageRequest("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v))
+	rp = s.do(packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v))
 	rp.decode(t, &got)
 	if !got.Anonymous {
 		t.Errorf("a forwarded request without a credential: %+v", got)
@@ -104,8 +104,8 @@ func TestR_BAS_009_AnotherInterfaceVersionAnswersAMismatchOnEveryRoute(t *testin
 	s := e.newSite(siteOpts{})
 	bst := s.registered("partners", e.registration("partners"))
 	for name, c := range map[string]call{
-		"package route, none":      packageRequest("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst),
-		"package route, version 2": packageRequest("/api/npm/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, "2"),
+		"package route, none":      packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst),
+		"package route, version 2": packageRequest("/api/npm/it/npm-all/lodash", iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, "2"),
 		"handshake, version 0":     {method: http.MethodGet, path: iface.PathHandshake, header: http.Header{"Authorization": {"Bearer " + bst}, iface.HeaderInterface: {"0"}}},
 	} {
 		rp := s.do(c)
@@ -134,7 +134,7 @@ func TestR_BAS_008_AnInterfaceRouteTakesAnyOtherCredentialAsNoBastion(t *testing
 	}
 	// The Bastion token as the caller's credential of a package route is an unknown token like any other type
 	// the endpoint does not accept (R-BAS-005): the request is the caller's, not the Bastion's.
-	rp = s.do(packageRequest("/api/npm/npm-all/lodash", "Authorization", "Bearer "+bst))
+	rp = s.do(packageRequest("/api/npm/it/npm-all/lodash", "Authorization", "Bearer "+bst))
 	if rp.Status != http.StatusUnauthorized || rp.code() != errs.CodeInvalidToken {
 		t.Errorf("a Bastion token as Authorization of a package route: %d %s", rp.Status, rp.Body)
 	}
@@ -205,7 +205,7 @@ func TestR_BAS_017_TheRealClientAndTheBastionsHostReachTheMainInstallation(t *te
 			}
 			v := strconv.Itoa(iface.InterfaceVersion)
 
-			rp := s.do(packageRequest("/api/npm/npm-all/lodash", append(bastionForwarded("203.0.113.7"), iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
+			rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", append(bastionForwarded("203.0.113.7"), iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
 			var got echo
 			rp.decode(t, &got)
 			if rp.Status != http.StatusOK || got.Client != "203.0.113.7" || got.BaseURL != "https://packages.example.com" {
@@ -219,7 +219,7 @@ func TestR_BAS_017_TheRealClientAndTheBastionsHostReachTheMainInstallation(t *te
 				t.Fatal(err)
 			}
 			waitFor(t, "the revocation", 10*time.Second, func() bool {
-				rp := s.do(packageRequest("/api/npm/npm-all/lodash", append(bastionForwarded("203.0.113.7"), "Authorization", "Bearer "+full.Secret, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
+				rp := s.do(packageRequest("/api/npm/it/npm-all/lodash", append(bastionForwarded("203.0.113.7"), "Authorization", "Bearer "+full.Secret, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
 				return rp.Status == http.StatusUnauthorized
 			})
 			waitFor(t, "token.rejected with the caller's address", 10*time.Second, func() bool {
@@ -232,7 +232,7 @@ func TestR_BAS_017_TheRealClientAndTheBastionsHostReachTheMainInstallation(t *te
 			// A caller's loop of failed credentials is throttled by its address, the second caller is not slowed.
 			request := func(addr string) reply {
 				raw, _ := token.Generate(token.TypePAT)
-				return s.do(packageRequest("/api/npm/npm-all/lodash", append(bastionForwarded(addr), "Authorization", "Bearer "+raw, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
+				return s.do(packageRequest("/api/npm/it/npm-all/lodash", append(bastionForwarded(addr), "Authorization", "Bearer "+raw, iface.HeaderAuthorization, "Bearer "+bst, iface.HeaderInterface, v)...))
 			}
 			throttled := 0
 			for range 40 {

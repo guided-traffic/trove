@@ -70,7 +70,7 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 		return errNoSuchResource()
 	}
 	links := rq.Host.Links(rq)
-	serving := rq.Addressed() + servingSuffix(rq)
+	serving := servingName(rq).String()
 	inputs := func(rev int64) document.Inputs {
 		return document.Inputs{
 			RenderVersion: RenderVersion, Repo: repo.ID, Package: int64(row.Ref.ID), Rev: rev, Variant: spec.variant,

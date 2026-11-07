@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync/atomic"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
@@ -68,7 +70,7 @@ func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.R
 			return err
 		}
 	}
-	feed := rq.Host.Links(rq).Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"
+	feed := rq.Host.Links(rq).Registry(servingName(rq)) + FeedSegment + "/"
 	body, err := search.Render(feed, p.SemVer2, total, hits)
 	if err != nil {
 		return err
@@ -90,8 +92,8 @@ func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.R
 // include or exclude patterns is counted and paged by the store; any other is scanned in rank
 // order (Q-NUGET-45, Q-NUGET-77).
 func (f *Format) runSearch(ctx context.Context, rq *formats.Request, st Store, p search.Params) (hits []rows.SearchHit, total int, err error) {
-	key := rq.Repo.Key
-	scope, err := rq.Host.Resolver().ReadScope(ctx, rq, []string{key})
+	key := rq.Repo.Name
+	scope, err := rq.Host.Resolver().ReadScope(ctx, rq, []qname.Repo{key})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -101,7 +103,7 @@ func (f *Format) runSearch(ctx context.Context, rq *formats.Request, st Store, p
 // searchTarget is one repository a search reads the rows of: the repository the client
 // addressed, or a local member of the virtual repository the client addressed.
 type searchTarget struct {
-	key string
+	key qname.Repo
 	id  int64
 	// admits is the test of the include and exclude patterns that apply to the IDs of the
 	// search (R-REPO-005, Q-NUGET-77): the repository's own and, for a member, the virtual

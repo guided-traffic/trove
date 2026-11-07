@@ -10,7 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
-// Q-CI-26: a project administrator's record shows the contributions of its project's tier only.
+// Q-CI-26: a project Owner's record shows the contributions of its project's tier only.
 func TestQ_CI_26_AProjectsRecordShowsItsOwnMappingsOnly(t *testing.T) {
 	var f claims.Frozen
 	f.Version, f.Issuer, f.IssuerID, f.ProjectID = claims.FrozenVersion, "gitlab-main", "i", "4711"

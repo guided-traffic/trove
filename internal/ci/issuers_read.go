@@ -93,7 +93,7 @@ func (s *Service) set(ctx context.Context) (*issuerSet, error) {
 	return s.issuers.Load(ctx, struct{}{}, s.loadSet)
 }
 
-// Choices lists the issuers read-only for a project administrator (Q-CI-26): the name, the kind, the
+// Choices lists the issuers read-only for a project Owner (Q-CI-26): the name, the kind, the
 // issuer URL and whether it is public, from the in-process copy, ordered by name.
 func (s *Service) Choices(ctx context.Context) ([]IssuerChoice, error) {
 	set, err := s.set(ctx)

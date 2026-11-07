@@ -169,7 +169,7 @@ func (h *Host) Links(rq *formats.Request) formats.LinkBuilder { return newLinks(
 // the request, so a format names none of them (Q-ARCH-189).
 func coordinate(rq *formats.Request, t formats.Target) authz.Coordinate {
 	return authz.Coordinate{
-		Repository: rq.Repo.Key, Class: rq.Repo.Class, Format: rq.Repo.Format,
+		Repository: rq.Repo.Name, Class: rq.Repo.Class, Format: rq.Repo.Format,
 		Kind: rq.Route.Kind.RequestKind(), Path: t.Path, Package: t.Package, Version: t.Version, Actions: t.Actions,
 		Addressed: rq.Addressed(),
 	}

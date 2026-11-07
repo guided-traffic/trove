@@ -54,10 +54,10 @@ func TestDelete(t *testing.T) {
 	web := e.newReplica("del-web", stackOpts{deleteBatch: 2, poll: poll})
 	ctx := context.Background()
 
-	if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "to-delete"))); err != nil {
+	if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "to-delete"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "keeper"))); err != nil {
+	if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "keeper"))); err != nil {
 		t.Fatal(err)
 	}
 	e.addItems("to-delete", 3, 5)
@@ -70,7 +70,7 @@ func TestDelete(t *testing.T) {
 	t.Run("R-REPO-013 the first transaction marks the repository deleting and enqueues the job", func(t *testing.T) {
 		// Stop the worker from racing the assertions below: the job is claimed within
 		// a poll interval, so look at the state in the same transaction instead.
-		res, err := web.svc.Delete(ctx, caller, "to-delete", false)
+		res, err := web.svc.Delete(ctx, caller, qr("to-delete"), false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,15 +116,15 @@ func TestDelete(t *testing.T) {
 			return len(evs) == 1 && phase(t, evs[0]) == "completed"
 		})
 		waitFor(t, "the web replica to drop the repository", 3*poll, func() bool {
-			_, err := web.reader.ByKey(ctx, "to-delete")
+			_, err := web.reader.ByName(ctx, qr("to-delete"))
 			return err != nil
 		})
-		_, err := web.reader.ByKey(ctx, "to-delete")
+		_, err := web.reader.ByName(ctx, qr("to-delete"))
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 
 	t.Run("R-REPO-013 the key is free again and the new repository is empty", func(t *testing.T) {
-		if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "to-delete"))); err != nil {
+		if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "to-delete"))); err != nil {
 			t.Fatal(err)
 		}
 		if e.scalar(`SELECT count(*) FROM items i JOIN repositories r ON r.id = i.repo_id WHERE r.key = 'to-delete'`) != 0 {
@@ -136,34 +136,34 @@ func TestDelete(t *testing.T) {
 		// A paused world: mark the row by hand-free means by deleting through a replica
 		// that has no worker to run the job (the web replica enqueues, the worker
 		// would claim it), so use a repository the worker cannot start on yet.
-		if _, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "held"))); err != nil {
+		if _, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "held"))); err != nil {
 			t.Fatal(err)
 		}
 		e.exec(`UPDATE repositories SET lifecycle = 'deleting' WHERE key = 'held'`)
-		_, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "held")))
+		_, err := web.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(genericBody, "held")))
 		wantCode(t, err, 409, errs.CodeAlreadyExists)
-		_, err = web.svc.Patch(ctx, caller, "held", repository.MatchAny(), mergePatch(`{"description":"x"}`))
+		_, err = web.svc.Patch(ctx, caller, qr("held"), repository.MatchAny(), mergePatch(`{"description":"x"}`))
 		wantCode(t, err, 409, errs.CodeConflict)
-		got, err := web.svc.Get(ctx, "held")
+		got, err := web.svc.Get(ctx, qr("held"))
 		if err != nil || got.Repository.Lifecycle != repository.Deleting {
 			t.Fatalf("Get = %+v, %v", got.Repository, err)
 		}
 		list, _ := web.svc.List(ctx, repository.ListFilter{})
 		for _, it := range list.Items {
-			if it.Repository.Key == "held" {
+			if it.Repository.Name == qr("held") {
 				t.Fatal("a repository being deleted is listed without IncludeDeleting")
 			}
 		}
 		list, _ = web.svc.List(ctx, repository.ListFilter{IncludeDeleting: true})
 		found := false
 		for _, it := range list.Items {
-			found = found || it.Repository.Key == "held"
+			found = found || it.Repository.Name == qr("held")
 		}
 		if !found {
 			t.Fatal("IncludeDeleting does not list it")
 		}
 		// A delete of it joins the job: the worker finishes the deletion.
-		res, err := web.svc.Delete(ctx, caller, "held", false)
+		res, err := web.svc.Delete(ctx, caller, qr("held"), false)
 		if err != nil || res.JobID == "" {
 			t.Fatalf("Delete = %+v, %v", res, err)
 		}
@@ -176,7 +176,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	t.Run("R-REPO-013 deleting a repository that does not exist is 404", func(t *testing.T) {
-		_, err := web.svc.Delete(ctx, caller, "never-was", false)
+		_, err := web.svc.Delete(ctx, caller, qr("never-was"), false)
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 }

@@ -154,11 +154,11 @@ func (s *store) set(id int64, rows ...repository.StoredSecret) {
 func testCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath, ProbePath: "-/ping",
 	}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "indexfmt", Classes: []catalog.Class{catalog.Remote}, Layout: "indexfmt", ProtocolBasePath: "/api/indexfmt/{key}/",
+		ID: "indexfmt", Classes: []catalog.Class{catalog.Remote}, Layout: "indexfmt", ProtocolBasePath: "/api/indexfmt/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath,
 	}})
 	return r
@@ -245,7 +245,7 @@ func settings(rawURL, mode string) repository.RemoteSettings {
 }
 
 func repo(id int64, key string, version int64) repository.Repository {
-	return repository.Repository{ID: strconv.FormatInt(id, 10), Key: key, Class: repository.Remote, Format: "npmlike", Version: version}
+	return repository.Repository{ID: strconv.FormatInt(id, 10), Name: qr(key), Class: repository.Remote, Format: "npmlike", Version: version}
 }
 
 func get(t *testing.T, c *Client, rawURL string) (*http.Response, error) {

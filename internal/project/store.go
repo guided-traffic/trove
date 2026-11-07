@@ -30,18 +30,15 @@ type authzChange struct {
 }
 
 // repoChange is the payload of a repo_config change, the shape the repository
-// package writes (internal/repository changePayload): the repository id and the
-// config_version the write left (R-REPO-008).
+// package writes (internal/repository changePayload): the repository id, its
+// qualified name and the config_version the write left (R-REPO-008); a move
+// writes it (move.go).
 type repoChange struct {
 	ID      string `json:"id"`
 	Key     string `json:"key"`
 	Op      string `json:"op"`
 	Version int64  `json:"version"`
 }
-
-// opUpdated is the repo_config op of an assignment: the repository's document
-// changed (its project member), which is what an "updated" says.
-const opUpdated = "updated"
 
 var errNoEpochRow = errors.New("project: the authz epoch row is missing")
 
@@ -172,11 +169,10 @@ func refOfRow(kind, name string) string {
 // head is the project row as both read statements return it.
 type head = q.ProjectGetRow
 
-func toProject(h head, admins []PrincipalRef) Project {
+func toProject(h head, members []Member) Project {
 	return Project{
 		ID: h.ID, Key: h.Key, DisplayName: h.DisplayName, Description: h.Description,
-		Rights:       Rights{ManagePolicies: h.ManagePolicies, ManageRepositories: h.ManageRepositories},
-		Admins:       admins,
+		Members:      members,
 		Repositories: int(h.Repositories), ServiceAccounts: int(h.ServiceAccounts), Policies: int(h.Policies), CIMappings: int(h.CiMappings),
 		Version:   h.Version,
 		CreatedAt: time.UnixMicro(h.CreatedUs).UTC(), CreatedBy: refOfRow(h.CreatedByKind, h.CreatedByName),
@@ -184,7 +180,7 @@ func toProject(h head, admins []PrincipalRef) Project {
 	}
 }
 
-// load reads one project with its administrators.
+// load reads one project with its members.
 func load(ctx context.Context, qs *q.Queries, key string) (Project, error) {
 	rows, err := qs.ProjectGet(ctx, key)
 	if err != nil {
@@ -193,96 +189,55 @@ func load(ctx context.Context, qs *q.Queries, key string) (Project, error) {
 	if len(rows) == 0 {
 		return Project{}, notFound(key)
 	}
-	adm, err := qs.ProjectAdmins(ctx, key)
+	mem, err := qs.ProjectMembers(ctx, key)
 	if err != nil {
 		return Project{}, err
 	}
-	admins := make([]PrincipalRef, 0, len(adm))
-	for _, a := range adm {
-		admins = append(admins, PrincipalRef{Kind: PrincipalKind(a.PrincipalKind), Name: a.PrincipalName, ID: a.PrincipalID})
+	members := make([]Member, 0, len(mem))
+	for _, m := range mem {
+		if member, ok := memberOf(key, m.PrincipalKind, m.PrincipalName, m.PrincipalID, m.Role); ok {
+			members = append(members, member)
+		}
 	}
-	return toProject(rows[0], admins), nil
-}
-
-// switches is the access-bearing state of a project: what the journal entry of an
-// update compares (R-AUTHZ-031).
-type switches struct {
-	ManagePolicies     bool `json:"managePolicies"`
-	ManageRepositories bool `json:"manageRepositories"`
+	return toProject(rows[0], members), nil
 }
 
 // state is the state of a project an event records before and after a change.
 type state struct {
 	DisplayName string `json:"displayName"`
 	Description string `json:"description"`
-	switches
 }
 
 func stateOf(p Project) *state {
-	return &state{
-		DisplayName: p.DisplayName, Description: p.Description,
-		switches: switches{ManagePolicies: p.ManagePolicies, ManageRepositories: p.ManageRepositories},
+	return &state{DisplayName: p.DisplayName, Description: p.Description}
+}
+
+// memberOf builds a member from a row; a row of a kind that is neither user nor group is skipped
+// (the table admits no other).
+func memberOf(project, kind, name, id, role string) (Member, bool) {
+	r, ok := authz.ParseProjectRole(role)
+	if !ok || (kind != string(KindUser) && kind != string(KindGroup)) {
+		return Member{}, false
 	}
+	return Member{Project: project, Principal: PrincipalRef{Kind: PrincipalKind(kind), Name: name, ID: id}, Role: r}, true
 }
 
 func subjectOf(p Project) audit.Subject { return audit.Subject{Kind: "project", ID: p.ID, Name: p.Key} }
 
 // projectEvent builds the event of a write to the project itself. The journal
-// entry of an update carries the two switches before and after, that of a delete
-// the ID and key (R-AUTHZ-031).
+// entry of a delete carries the ID and key (R-AUTHZ-031); an update changes the
+// display name and the description, which are not access-bearing and are not
+// journaled. Every event names the project (Q-AUTHZ-209).
 func projectEvent(name string, actor authz.Subject, p Project, before, after *state, epoch int64, policies []string) audit.Event {
 	details := map[string]any{"epoch": epoch, "project": p.Key, "projectId": p.ID, "version": p.Version, "before": before, "after": after}
 	if len(policies) > 0 {
 		details["policiesDeleted"] = policies
 	}
 	ev := audit.Event{
-		Type: name, Actor: actorOf(actor), Outcome: audit.Success, Subject: subjectOf(p), Details: mustJSON(details),
+		Type: name, Actor: actorOf(actor), Outcome: audit.Success, Subject: subjectOf(p), Project: p.Key, Details: mustJSON(details),
 	}
-	switch name {
-	case audit.EventProjectUpdated:
-		ev.Journal = mustJSON(map[string]any{
-			"projectId": p.ID, "project": p.Key, "before": before.switches, "after": after.switches,
-		})
-	case audit.EventProjectDeleted:
+	if name == audit.EventProjectDeleted {
 		ev.Journal = mustJSON(map[string]any{"projectId": p.ID, "project": p.Key})
-	}
-	return ev
-}
-
-func adminEvent(name string, actor authz.Subject, p Project, ref PrincipalRef, epoch int64) audit.Event {
-	ev := audit.Event{
-		Type: name, Actor: actorOf(actor), Outcome: audit.Success, Subject: subjectOf(p),
-		Details: mustJSON(map[string]any{
-			"epoch": epoch, "project": p.Key, "projectId": p.ID, "principal": ref.String(), "principalId": ref.ID,
-		}),
-	}
-	if name == audit.EventProjectAdminRemoved {
-		ev.Journal = mustJSON(map[string]any{"projectId": p.ID, "project": p.Key, "principalId": ref.ID, "principal": ref.String()})
-	}
-	return ev
-}
-
-// repoMove names the repository of an assignment event and, for a move, the other
-// project.
-type repoMove struct {
-	ID, Key string
-	Moved   bool
-	Other   string
-}
-
-func assignmentEvent(name string, actor authz.Subject, p Project, r repoMove, epoch int64) audit.Event {
-	details := map[string]any{
-		"epoch": epoch, "project": p.Key, "projectId": p.ID, "repository": r.Key, "repositoryId": r.ID, "moved": r.Moved,
-	}
-	if r.Other != "" {
-		details["otherProject"] = r.Other
-	}
-	ev := audit.Event{
-		Type: name, Actor: actorOf(actor), Outcome: audit.Success, Subject: subjectOf(p), Repository: r.Key,
-		Details: mustJSON(details),
-	}
-	if name == audit.EventProjectRepositoryUnassigned {
-		ev.Journal = mustJSON(map[string]any{"projectId": p.ID, "project": p.Key, "repositoryId": r.ID, "repository": r.Key})
 	}
 	return ev
 }

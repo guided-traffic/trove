@@ -19,10 +19,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
@@ -193,12 +196,20 @@ func (e *env) ciMapping(name string) person {
 	return person{ID: e.principalRow("ci_mapping", name), Name: name, Kind: principal.KindCI}
 }
 
-func (e *env) repo(key, class, format, cfg string) {
+// repo inserts a repository into the project "it", or into the project a name "<project>/<key>" names, which
+// it creates when it does not exist yet: every repository belongs to a project (Q-AUTHZ-206). The members and
+// the deploy target of a virtual repository are keys of its own project.
+func (e *env) repo(name, class, format, cfg string) {
 	e.t.Helper()
+	project, key := "it", name
+	if p, k, ok := strings.Cut(name, "/"); ok {
+		project, key = p, k
+	}
 	if cfg == "" {
 		cfg = "{}"
 	}
-	e.exec("INSERT INTO repositories (key, class, format, config) VALUES ($1, $2, $3, $4::jsonb)", key, class, format, cfg)
+	pid := e.project(project)
+	e.exec("INSERT INTO repositories (key, class, format, config, project_id) VALUES ($1, $2, $3, $4::jsonb, $5::uuid)", key, class, format, cfg, pid)
 	// The members and the deploy target of a virtual repository are rows of
 	// their own (R-REPO-017): a test writes them in the document and they are
 	// split off here, as the repository service does.
@@ -213,12 +224,29 @@ func (e *env) repo(key, class, format, cfg string) {
 	}
 	for i, m := range doc.Virtual.Members {
 		e.exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
-		        SELECT v.id, $2, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $3`, key, i, m)
+		        SELECT v.id, $2, m.id FROM repositories v, repositories m
+		         WHERE v.key = $1 AND m.key = $3 AND v.project_id = $4::uuid AND m.project_id = $4::uuid`, key, i, m, pid)
 	}
 	if t := doc.Virtual.DeployTarget; t != "" {
 		e.exec(`INSERT INTO virtual_deploy_targets (virtual_id, target_id)
-		        SELECT v.id, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $2`, key, t)
+		        SELECT v.id, m.id FROM repositories v, repositories m
+		         WHERE v.key = $1 AND m.key = $2 AND v.project_id = $3::uuid AND m.project_id = $3::uuid`, key, t, pid)
 	}
+}
+
+// project creates the project with the key once and returns its ID.
+func (e *env) project(key string) string {
+	e.t.Helper()
+	e.exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING", key)
+	return e.text("SELECT id::text FROM project WHERE key = $1", key)
+}
+
+// member makes a user or a group a member of the project with the role, straight in the table; the caller
+// notifies the change.
+func (e *env) member(project string, p person, role string) {
+	e.t.Helper()
+	e.exec(`INSERT INTO project_member (project_id, principal_id, role) VALUES ($1::uuid, $2::uuid, $3)
+	        ON CONFLICT (project_id, principal_id) DO UPDATE SET role = EXCLUDED.role`, e.project(project), p.ID, role)
 }
 
 // sub builds the subject the authentication stage would hand over.
@@ -272,7 +300,7 @@ type sqlRepositories struct{ e *env }
 func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([]repository.Repository, error) {
 	s.e.mu.Lock()
 	defer s.e.mu.Unlock()
-	rows, err := s.e.admin.Query(ctx, "SELECT id, key, class, format, config, COALESCE(project_id::text, '') FROM repositories "+where+" ORDER BY key", args...)
+	rows, err := s.e.admin.Query(ctx, "SELECT r.id, p.key, r.key, r.class, r.format, r.config, r.project_id::text FROM repositories r JOIN project p ON p.id = r.project_id "+where+" ORDER BY p.key, r.key", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +310,7 @@ func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([
 		var r repository.Repository
 		var id int64
 		var class string
-		if err := rows.Scan(&id, &r.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
+		if err := rows.Scan(&id, &r.Name.Project, &r.Name.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
 			return nil, err
 		}
 		r.ID, r.Class = strconv.FormatInt(id, 10), repository.Class(class)
@@ -291,8 +319,19 @@ func (s sqlRepositories) list(ctx context.Context, where string, args ...any) ([
 	return out, rows.Err()
 }
 
-func (s sqlRepositories) ByKey(ctx context.Context, key string) (repository.Repository, error) {
-	rs, err := s.list(ctx, "WHERE key = $1", key)
+func (s sqlRepositories) ByName(ctx context.Context, name qname.Repo) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE p.key = $1 AND r.key = $2", name.Project, name.Key)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+	if len(rs) == 0 {
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
+	}
+	return rs[0], nil
+}
+
+func (s sqlRepositories) ByID(ctx context.Context, id int64) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE r.id = $1", id)
 	if err != nil {
 		return repository.Repository{}, err
 	}
@@ -304,6 +343,10 @@ func (s sqlRepositories) ByKey(ctx context.Context, key string) (repository.Repo
 
 func (s sqlRepositories) List(ctx context.Context) ([]repository.Repository, error) {
 	return s.list(ctx, "")
+}
+
+func (s sqlRepositories) ListProject(ctx context.Context, project string) ([]repository.Repository, error) {
+	return s.list(ctx, "WHERE p.key = $1", project)
 }
 
 // recorder keeps the audit events of a replica.
@@ -447,9 +490,9 @@ func waitFor(t testing.TB, what string, within time.Duration, cond func() bool) 
 }
 
 func read(repo, pkg, path string) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Package: pkg, Path: path, Kind: authz.KindArtifact, Actions: []authz.Action{authz.Read}}
+	return authz.Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: authz.KindArtifact, Actions: []authz.Action{authz.Read}}
 }
 
 func write(repo, pkg, path string, actions ...authz.Action) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Package: pkg, Path: path, Kind: authz.KindWrite, Actions: actions}
+	return authz.Coordinate{Repository: qr(repo), Package: pkg, Path: path, Kind: authz.KindWrite, Actions: actions}
 }

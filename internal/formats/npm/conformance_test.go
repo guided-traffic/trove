@@ -237,17 +237,17 @@ func conformance(t *testing.T) formattest.Fixture {
 				{
 					Name: "a local member and a remote member that share a version", Path: "lodash",
 					Parts: []formats.MemberDocument{
-						{Member: formats.RepoRef{Key: "local"}, Tier: formats.TierLocal, Position: 0, Doc: markedDocument("lodash", "local", "4.17.21")},
-						{Member: formats.RepoRef{Key: "remote"}, Tier: formats.TierRemote, Position: 1, Doc: markedDocument("lodash", "remote", "4.17.20", "4.17.21")},
+						{Member: formats.RepoRef{Name: qr("local")}, Tier: formats.TierLocal, Position: 0, Doc: markedDocument("lodash", "local", "4.17.21")},
+						{Member: formats.RepoRef{Name: qr("remote")}, Tier: formats.TierRemote, Position: 1, Doc: markedDocument("lodash", "remote", "4.17.20", "4.17.21")},
 					},
 					Sources: []string{"local", "remote"},
 				},
 				{
 					Name: "a remote member with a cached tarball before one without, local last", Path: "@acme%2fui",
 					Parts: []formats.MemberDocument{
-						{Member: formats.RepoRef{Key: "first"}, Tier: formats.TierRemote, Position: 0, Doc: markedDocument("@acme/ui", "first", "1.0.0", "2.0.0")},
-						{Member: formats.RepoRef{Key: "second"}, Tier: formats.TierRemoteCached, Position: 1, Doc: markedDocument("@acme/ui", "second", "1.0.0")},
-						{Member: formats.RepoRef{Key: "third"}, Tier: formats.TierLocal, Position: 2, Doc: markedDocument("@acme/ui", "third", "2.0.0")},
+						{Member: formats.RepoRef{Name: qr("first")}, Tier: formats.TierRemote, Position: 0, Doc: markedDocument("@acme/ui", "first", "1.0.0", "2.0.0")},
+						{Member: formats.RepoRef{Name: qr("second")}, Tier: formats.TierRemoteCached, Position: 1, Doc: markedDocument("@acme/ui", "second", "1.0.0")},
+						{Member: formats.RepoRef{Name: qr("third")}, Tier: formats.TierLocal, Position: 2, Doc: markedDocument("@acme/ui", "third", "2.0.0")},
 					},
 					Sources: []string{"first", "second", "third"},
 				},

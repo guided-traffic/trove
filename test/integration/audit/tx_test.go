@@ -46,7 +46,10 @@ func change(t testing.TB, tx meta.Tx, key string) {
 	if !ok {
 		t.Fatal("not a PostgreSQL transaction")
 	}
-	if _, err := ptx.Exec(context.Background(), "INSERT INTO trove.repositories (key, format, class) VALUES ($1, 'generic', 'local')", key); err != nil {
+	if _, err := ptx.Exec(context.Background(), "INSERT INTO trove.project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it') ON CONFLICT (key) DO NOTHING"); err != nil {
+		t.Fatalf("change: project: %v", err)
+	}
+	if _, err := ptx.Exec(context.Background(), "INSERT INTO trove.repositories (key, format, class, project_id) SELECT $1, 'generic', 'local', id FROM trove.project WHERE key = 'it'", key); err != nil {
 		t.Fatalf("change: %v", err)
 	}
 }

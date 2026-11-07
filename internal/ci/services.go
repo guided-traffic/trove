@@ -44,6 +44,9 @@ type SnippetRequest struct {
 	// Mapping names the mapping the snippet is for; Format is npm or nuget.
 	Mapping string
 	Format  string
+	// Project is the key of the project whose tier holds the mapping (a name is unique within an issuer's
+	// tier, R-CI-009); empty for a mapping of the system tier.
+	Project string
 }
 
 // Issuers is the issuer and signing-key service (R-CI-001, R-CI-002, R-CI-003, R-CI-005, Q-CI-16),
@@ -86,7 +89,7 @@ type Issuers interface {
 	// ci.keys.refreshed or ci.keys.refresh_failed.
 	RefreshKeys(ctx context.Context, actor Actor, name string, trigger RefreshTrigger) (KeyStatus, error)
 
-	// Choices lists the issuers read-only for a project administrator: name, kind, issuer URL and
+	// Choices lists the issuers read-only for a project Owner: name, kind, issuer URL and
 	// public_issuer (Q-CI-26). It reads the in-process copy.
 	Choices(ctx context.Context) ([]IssuerChoice, error)
 	// Resolve returns the issuer whose `issuer` equals iss exactly, from the in-process copy
@@ -142,9 +145,9 @@ type Mappings interface {
 	// Delete deletes the mapping, revokes its tokens and deletes its principal. expected is optional.
 	Delete(ctx context.Context, actor Actor, issuer, name string, expected int64) error
 	// The project forms (Q-CI-26) are the same operations on the tier "project:<key>". The HTTP handler
-	// has already narrowed to a project the caller administers with managePolicies (requireProject);
-	// the service enforces the bounds of a project mapping on every write: the name starts with
-	// "<project>-", no groups, policies only the project's own, inline grants whose repositories are the
+	// has already narrowed to a project the caller is an Owner of (requireProject);
+	// the service enforces the bounds of a project mapping on every write: the name is bare and
+	// unique within the project's tier (R-CI-009), no groups, policies only the project's own, inline grants whose repositories are the
 	// project's (`@any` and patterns mean the project's repositories), never manage, and then the rules
 	// of claims.Check with IssuerFacts.Project set. The write takes the issuer row FOR UPDATE and bumps
 	// mappings_version like a system write; its events carry `project`.

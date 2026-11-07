@@ -39,7 +39,7 @@ func remoteTestCatalog() *catalog.Registry {
 	ttl, neg := 7200, 1800
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath, DefaultUpstreamURL: "https://registry.example.org/", DefaultExtraHosts: []string{"*.cdn.example.org"},
 		DefaultMetadataTTLSeconds: &ttl, DefaultNotFoundTTLSeconds: &neg, ProbePath: "-/ping",
 	}})
@@ -155,7 +155,7 @@ func (e *env) newRemoteReplica(name string, ring *secrets.KeyRing, trusted ...*h
 // create writes a remote repository of the test format.
 func (r *remoteReplica) create(t *testing.T, key, remote string) repository.Stored {
 	t.Helper()
-	st, err := r.svc.Create(context.Background(), caller, []byte(fmt.Sprintf(`{"key":%q,"class":"remote","format":"npmlike","remote":%s}`, key, remote)))
+	st, err := r.svc.Create(context.Background(), caller, "it", []byte(fmt.Sprintf(`{"key":%q,"class":"remote","format":"npmlike","remote":%s}`, key, remote)))
 	if err != nil {
 		t.Fatalf("create %s: %v", key, err)
 	}
@@ -188,7 +188,7 @@ func TestRemoteSettings(t *testing.T) {
 
 	t.Run("R-REPO-024 a remote created with only url reads back every member with its default", func(t *testing.T) {
 		st := r.create(t, "npm-defaults", `{"url":"https://registry.example.com"}`)
-		got, err := r.svc.Get(ctx, "npm-defaults")
+		got, err := r.svc.Get(ctx, qr("npm-defaults"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -217,7 +217,7 @@ func TestRemoteSettings(t *testing.T) {
 
 	t.Run("R-REPO-024 the snapshot of another replica parses the settings", func(t *testing.T) {
 		b := e.newRemoteReplica("remote-b", r.ring, stub.srv)
-		repo, err := b.reader.ByKey(ctx, "npm-defaults")
+		repo, err := b.reader.ByName(ctx, qr("npm-defaults"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,7 +229,7 @@ func TestRemoteSettings(t *testing.T) {
 
 	t.Run("R-REPO-024 an omitted url takes the upstream and the extra hosts of the format", func(t *testing.T) {
 		st := r.create(t, "npm-format-default", `{}`)
-		repo, err := r.reader.ByKey(ctx, st.Document.Key)
+		repo, err := r.reader.ByName(ctx, st.Repository.Name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -241,12 +241,12 @@ func TestRemoteSettings(t *testing.T) {
 
 	t.Run("R-REPO-024 R-REPO-008 a value outside its range answers 422 out_of_range and writes nothing", func(t *testing.T) {
 		before := e.scalar(`SELECT count(*) FROM repositories`)
-		_, err := r.svc.Create(ctx, caller, []byte(`{"key":"npm-bad","class":"remote","format":"npmlike","remote":{"url":"https://r.example/","connectTimeoutMs":50}}`))
+		_, err := r.svc.Create(ctx, caller, "it", []byte(`{"key":"npm-bad","class":"remote","format":"npmlike","remote":{"url":"https://r.example/","connectTimeoutMs":50}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 		if got := fieldCodes(t, err); got["/remote/connectTimeoutMs"] != "out_of_range" {
 			t.Fatalf("fields = %v", got)
 		}
-		_, err = r.svc.Patch(ctx, caller, "npm-defaults", repository.MatchAny(), mergePatch(`{"remote":{"cache":{"metadataTtlSeconds":99999999}}}`))
+		_, err = r.svc.Patch(ctx, caller, qr("npm-defaults"), repository.MatchAny(), mergePatch(`{"remote":{"cache":{"metadataTtlSeconds":99999999}}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 		if e.scalar(`SELECT count(*) FROM repositories`) != before {
 			t.Fatal("a refused create wrote a row")
@@ -263,14 +263,14 @@ func TestRemoteSettings(t *testing.T) {
 			t.Fatalf("warnings = %+v", st.Warnings)
 		}
 		// An update that keeps the settings reports them again: they describe the document.
-		st, err := r.svc.Patch(ctx, caller, "npm-warn", repository.MatchAny(), mergePatch(`{"description":"x"}`))
+		st, err := r.svc.Patch(ctx, caller, qr("npm-warn"), repository.MatchAny(), mergePatch(`{"description":"x"}`))
 		if err != nil || len(st.Warnings) != 2 {
 			t.Fatalf("warnings = %+v, %v", st.Warnings, err)
 		}
 	})
 
 	t.Run("R-REPO-008 R-REPO-024 a url with user info answers 422 invalid_upstream_url", func(t *testing.T) {
-		_, err := r.svc.Create(ctx, caller, []byte(`{"key":"npm-userinfo","class":"remote","format":"npmlike","remote":{"url":"https://user:pw@registry.example.com/"}}`))
+		_, err := r.svc.Create(ctx, caller, "it", []byte(`{"key":"npm-userinfo","class":"remote","format":"npmlike","remote":{"url":"https://user:pw@registry.example.com/"}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 		if got := fieldCodes(t, err); got["/remote/url"] != "invalid_upstream_url" {
 			t.Fatalf("fields = %v", got)
@@ -278,12 +278,12 @@ func TestRemoteSettings(t *testing.T) {
 	})
 
 	t.Run("R-REPO-008 a misspelt member of the remote section answers 400 malformed_request", func(t *testing.T) {
-		_, err := r.svc.Create(ctx, caller, []byte(`{"key":"npm-typo","class":"remote","format":"npmlike","remote":{"url":"https://r.example/","connectTimeout":5}}`))
+		_, err := r.svc.Create(ctx, caller, "it", []byte(`{"key":"npm-typo","class":"remote","format":"npmlike","remote":{"url":"https://r.example/","connectTimeout":5}}`))
 		wantCode(t, err, 400, errs.CodeInvalid)
 	})
 
 	t.Run("R-REPO-008 the P1 members are refused until they are built", func(t *testing.T) {
-		_, err := r.svc.Create(ctx, caller, []byte(`{"key":"npm-p1","class":"remote","format":"npmlike","remote":{"url":"https://r.example/","headers":[{"name":"X-Api-Key","value":{"value":"k"},"sensitive":true}],"clientCertificate":"mtls"}}`))
+		_, err := r.svc.Create(ctx, caller, "it", []byte(`{"key":"npm-p1","class":"remote","format":"npmlike","remote":{"url":"https://r.example/","headers":[{"name":"X-Api-Key","value":{"value":"k"},"sensitive":true}],"clientCertificate":"mtls"}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 		got := fieldCodes(t, err)
 		if got["/remote/headers"] != errs.CodeNotApplicable || got["/remote/clientCertificate"] != errs.CodeNotApplicable {
@@ -302,7 +302,7 @@ func TestRemoteSecrets(t *testing.T) {
 
 	t.Run("R-REPO-033 the read shows {\"set\": true} and the value is nowhere in the database", func(t *testing.T) {
 		r.create(t, "npm-partner", fmt.Sprintf(`{"url":%q,"authMode":"bearer","password":{"value":%q}}`, stub.srv.URL, token))
-		got, err := r.svc.Get(ctx, "npm-partner")
+		got, err := r.svc.Get(ctx, qr("npm-partner"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -349,7 +349,7 @@ func TestRemoteSecrets(t *testing.T) {
 	})
 
 	t.Run("R-REPO-033 a bearer token arrives at the upstream on every request, built from the stored row", func(t *testing.T) {
-		repo, err := r.reader.ByKey(ctx, "npm-partner")
+		repo, err := r.reader.ByName(ctx, qr("npm-partner"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -373,7 +373,7 @@ func TestRemoteSecrets(t *testing.T) {
 
 	t.Run("R-REPO-033 basic sends Authorization: Basic and no Bearer header", func(t *testing.T) {
 		r.create(t, "npm-basic", fmt.Sprintf(`{"url":%q,"authMode":"basic","username":"ci","password":{"value":"hunter2"}}`, stub.srv.URL))
-		res, err := r.svc.UpstreamTest(ctx, "npm-basic")
+		res, err := r.svc.UpstreamTest(ctx, qr("npm-basic"))
 		if err != nil || !res.Reachable {
 			t.Fatalf("result = %+v, %v", res, err)
 		}
@@ -383,35 +383,35 @@ func TestRemoteSecrets(t *testing.T) {
 	})
 
 	t.Run("R-REPO-033 a document that was read can be sent back: the secret is kept, not blanked or leaked", func(t *testing.T) {
-		got, _ := r.svc.Get(ctx, "npm-partner")
+		got, _ := r.svc.Get(ctx, qr("npm-partner"))
 		body, err := json.Marshal(got.Document)
 		if err != nil {
 			t.Fatal(err)
 		}
-		st, err := r.svc.Replace(ctx, caller, "npm-partner", repository.MatchVersion(got.Repository.Version), body)
+		st, err := r.svc.Replace(ctx, caller, qr("npm-partner"), repository.MatchVersion(got.Repository.Version), body)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if st.Repository.Version != got.Repository.Version {
 			t.Fatalf("sending back what was read moved the version to %d", st.Repository.Version)
 		}
-		if _, err := r.svc.UpstreamTest(ctx, "npm-partner"); err != nil || stub.last(t) != "Bearer "+token {
+		if _, err := r.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || stub.last(t) != "Bearer "+token {
 			t.Fatalf("the secret did not survive: %q %v", stub.last(t), err)
 		}
 	})
 
 	t.Run("R-REPO-033 a patch of another setting keeps the secret", func(t *testing.T) {
-		if _, err := r.svc.Patch(ctx, caller, "npm-partner", repository.MatchAny(), mergePatch(`{"remote":{"connectTimeoutMs":4000}}`)); err != nil {
+		if _, err := r.svc.Patch(ctx, caller, qr("npm-partner"), repository.MatchAny(), mergePatch(`{"remote":{"connectTimeoutMs":4000}}`)); err != nil {
 			t.Fatal(err)
 		}
-		if res, err := r.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer "+token {
+		if res, err := r.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable || stub.last(t) != "Bearer "+token {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 	})
 
 	t.Run("R-REPO-033 a new value replaces the old one on the next request, and moves the version", func(t *testing.T) {
-		before, _ := r.svc.Get(ctx, "npm-partner")
-		st, err := r.svc.Patch(ctx, caller, "npm-partner", repository.MatchAny(), mergePatch(`{"remote":{"password":{"value":"rotated-token"}}}`))
+		before, _ := r.svc.Get(ctx, qr("npm-partner"))
+		st, err := r.svc.Patch(ctx, caller, qr("npm-partner"), repository.MatchAny(), mergePatch(`{"remote":{"password":{"value":"rotated-token"}}}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -421,20 +421,20 @@ func TestRemoteSecrets(t *testing.T) {
 		if got := r.rec.last(); got.Type != repository.EventUpdated || !strings.Contains(string(got.Details), `"remote"`) || strings.Contains(string(got.Details), "rotated-token") {
 			t.Fatalf("event = %s %s", got.Type, got.Details)
 		}
-		if res, err := r.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-token" {
+		if res, err := r.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-token" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 	})
 
 	t.Run("R-REPO-033 the new value reaches another replica with the new version", func(t *testing.T) {
 		b := e.newRemoteReplica("secrets-b", ring, stub.srv)
-		if res, err := b.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-token" {
+		if res, err := b.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-token" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
-		if _, err := r.svc.Patch(ctx, caller, "npm-partner", repository.MatchAny(), mergePatch(`{"remote":{"password":{"value":"rotated-again"}}}`)); err != nil {
+		if _, err := r.svc.Patch(ctx, caller, qr("npm-partner"), repository.MatchAny(), mergePatch(`{"remote":{"password":{"value":"rotated-again"}}}`)); err != nil {
 			t.Fatal(err)
 		}
-		if res, err := b.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
+		if res, err := b.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 	})
@@ -444,7 +444,7 @@ func TestRemoteSecrets(t *testing.T) {
 		partnerID, otherID := r.repoID(t, e, "npm-partner"), r.repoID(t, e, "npm-other")
 		e.exec(`UPDATE repository_secrets SET sealed = (SELECT sealed FROM repository_secrets WHERE repo_id = $1 AND field = '/remote/password')
 		         WHERE repo_id = $2 AND field = '/remote/password'`, partnerID, otherID)
-		repo, err := r.reader.ByKey(ctx, "npm-other")
+		repo, err := r.reader.ByName(ctx, qr("npm-other"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -454,19 +454,19 @@ func TestRemoteSecrets(t *testing.T) {
 		if strings.Contains(ee.Detail, "rotated") || strings.Contains(ee.Detail, "other-token") {
 			t.Fatalf("detail = %q", ee.Detail)
 		}
-		res, err := r.svc.UpstreamTest(ctx, "npm-other")
+		res, err := r.svc.UpstreamTest(ctx, qr("npm-other"))
 		if err != nil || res.Reachable || res.Error == nil || res.Error.Code != "upstream_secret_unavailable" {
 			t.Fatalf("test result = %+v, %v", res, err)
 		}
 		// The other repository is unaffected.
-		if res, err := r.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable {
+		if res, err := r.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable {
 			t.Fatalf("%+v %v", res, err)
 		}
 	})
 
 	t.Run("R-REPO-033 a reference to a trove variable is refused with 422 invalid_secret", func(t *testing.T) {
 		for _, ref := range []string{`{"env":"TROVE_DATABASE_PASSWORD"}`, `{"file":"../db-password"}`, `{"file":"/etc/trove/database-password"}`} {
-			_, err := r.svc.Create(ctx, caller, []byte(fmt.Sprintf(`{"key":"npm-ref","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"secretRef":%s}}}`, stub.srv.URL, ref)))
+			_, err := r.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(`{"key":"npm-ref","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"secretRef":%s}}}`, stub.srv.URL, ref)))
 			wantCode(t, err, 422, errs.CodeValidation)
 			if got := fieldCodes(t, err); got["/remote/password/secretRef"] != "invalid_secret" {
 				t.Fatalf("%s: fields = %v", ref, got)
@@ -485,13 +485,13 @@ func TestRemoteSecrets(t *testing.T) {
 		if e.scalar(`SELECT count(*) FROM repository_secrets WHERE repo_id = $1 AND sealed IS NULL AND secret_ref = '{"file":"partner-token"}'::jsonb`, r.repoID(t, e, "npm-file")) != 1 {
 			t.Fatal("the reference is not stored")
 		}
-		if res, err := r.svc.UpstreamTest(ctx, "npm-file"); err != nil || !res.Reachable || stub.last(t) != "Bearer file-token" {
+		if res, err := r.svc.UpstreamTest(ctx, qr("npm-file")); err != nil || !res.Reachable || stub.last(t) != "Bearer file-token" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 	})
 
 	t.Run("R-REPO-033 the marker of a value that does not exist is 422 invalid_secret", func(t *testing.T) {
-		_, err := r.svc.Create(ctx, caller, []byte(fmt.Sprintf(`{"key":"npm-marker","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"set":true}}}`, stub.srv.URL)))
+		_, err := r.svc.Create(ctx, caller, "it", []byte(fmt.Sprintf(`{"key":"npm-marker","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"set":true}}}`, stub.srv.URL)))
 		wantCode(t, err, 422, errs.CodeValidation)
 		if got := fieldCodes(t, err); got["/remote/password"] != "invalid_secret" {
 			t.Fatalf("fields = %v", got)
@@ -503,21 +503,21 @@ func TestRemoteSecrets(t *testing.T) {
 
 	t.Run("R-REPO-033 removing the password removes its row", func(t *testing.T) {
 		id := r.repoID(t, e, "npm-basic")
-		if _, err := r.svc.Patch(ctx, caller, "npm-basic", repository.MatchAny(), mergePatch(`{"remote":{"authMode":"none","password":null}}`)); err != nil {
+		if _, err := r.svc.Patch(ctx, caller, qr("npm-basic"), repository.MatchAny(), mergePatch(`{"remote":{"authMode":"none","password":null}}`)); err != nil {
 			t.Fatal(err)
 		}
 		if e.scalar(`SELECT count(*) FROM repository_secrets WHERE repo_id = $1`, id) != 0 {
 			t.Fatal("the row stayed")
 		}
-		if res, err := r.svc.UpstreamTest(ctx, "npm-basic"); err != nil || !res.Reachable || stub.last(t) != "" {
+		if res, err := r.svc.UpstreamTest(ctx, qr("npm-basic")); err != nil || !res.Reachable || stub.last(t) != "" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 	})
 
 	t.Run("R-REPO-033 a failed update leaves the old secret", func(t *testing.T) {
-		_, err := r.svc.Patch(ctx, caller, "npm-partner", repository.MatchAny(), mergePatch(`{"remote":{"password":{"value":"never-stored"},"connectTimeoutMs":1}}`))
+		_, err := r.svc.Patch(ctx, caller, qr("npm-partner"), repository.MatchAny(), mergePatch(`{"remote":{"password":{"value":"never-stored"},"connectTimeoutMs":1}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
-		if res, err := r.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
+		if res, err := r.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 	})
@@ -556,7 +556,7 @@ func TestRemoteSecrets(t *testing.T) {
 		}
 		// Step 4: the old key leaves the ring; a replica with only the new key serves it.
 		onlyNew := e.newRemoteReplica("secrets-c", writeKeyring(t, "2027-04", "2027-04"), stub.srv)
-		if res, err := onlyNew.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
+		if res, err := onlyNew.svc.UpstreamTest(ctx, qr("npm-partner")); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 		// A later rotation, and a batch whose transaction is repeated (a deadlock, a serialization failure) is walked
@@ -600,7 +600,7 @@ func TestUpstreamChangeHook(t *testing.T) {
 	var calls []string
 	var failNext bool
 	r.svc.Bind(repository.RemoteDeps{Ring: r.ring, OnUpstreamChanged: func(_ context.Context, _ meta.Tx, _ repository.Caller, repo repository.Repository) error {
-		calls = append(calls, repo.Key)
+		calls = append(calls, repo.Name.Key)
 		if failNext {
 			return errors.New("invalidation store unavailable")
 		}
@@ -612,7 +612,7 @@ func TestUpstreamChangeHook(t *testing.T) {
 	}
 	patch := func(p string) {
 		t.Helper()
-		if _, err := r.svc.Patch(ctx, caller, "npm-hook", repository.MatchAny(), mergePatch(p)); err != nil {
+		if _, err := r.svc.Patch(ctx, caller, qr("npm-hook"), repository.MatchAny(), mergePatch(p)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -639,10 +639,10 @@ func TestUpstreamChangeHook(t *testing.T) {
 		})
 	}
 	t.Run("R-REPO-011 R-REPO-045 an update that changes nothing does not call it", func(t *testing.T) {
-		got, _ := r.svc.Get(ctx, "npm-hook")
+		got, _ := r.svc.Get(ctx, qr("npm-hook"))
 		body, _ := json.Marshal(got.Document)
 		before := len(calls)
-		if _, err := r.svc.Replace(ctx, caller, "npm-hook", repository.MatchAny(), body); err != nil {
+		if _, err := r.svc.Replace(ctx, caller, qr("npm-hook"), repository.MatchAny(), body); err != nil {
 			t.Fatal(err)
 		}
 		if len(calls) != before {
@@ -652,12 +652,12 @@ func TestUpstreamChangeHook(t *testing.T) {
 	t.Run("R-REPO-045 a hook that fails fails the update with it", func(t *testing.T) {
 		failNext = true
 		defer func() { failNext = false }()
-		before, _ := r.svc.Get(ctx, "npm-hook")
-		_, err := r.svc.Patch(ctx, caller, "npm-hook", repository.MatchAny(), mergePatch(`{"remote":{"url":"https://third.example.com/"}}`))
+		before, _ := r.svc.Get(ctx, qr("npm-hook"))
+		_, err := r.svc.Patch(ctx, caller, qr("npm-hook"), repository.MatchAny(), mergePatch(`{"remote":{"url":"https://third.example.com/"}}`))
 		if err == nil {
 			t.Fatal("the update succeeded")
 		}
-		after, _ := r.svc.Get(ctx, "npm-hook")
+		after, _ := r.svc.Get(ctx, qr("npm-hook"))
 		if after.Repository.Version != before.Repository.Version {
 			t.Fatal("the update was not rolled back")
 		}
@@ -674,7 +674,7 @@ func TestUpstreamTestAgainstThePrivateUpstream(t *testing.T) {
 
 	t.Run("R-REPO-024 a reachable upstream is reachable, with its certificate", func(t *testing.T) {
 		r.create(t, "npm-up", fmt.Sprintf(`{"url":%q}`, stub.srv.URL))
-		res, err := r.svc.UpstreamTest(ctx, "npm-up")
+		res, err := r.svc.UpstreamTest(ctx, qr("npm-up"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -687,7 +687,7 @@ func TestUpstreamTestAgainstThePrivateUpstream(t *testing.T) {
 		r.create(t, "npm-nx", `{"url":"https://registry.does-not-exist.invalid/"}`)
 		beforeRows, beforeEpoch := circuit(), upstreamEpoch()
 		for range 10 { // more than availability.failureThreshold
-			res, err := r.svc.UpstreamTest(ctx, "npm-nx")
+			res, err := r.svc.UpstreamTest(ctx, qr("npm-nx"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -702,7 +702,7 @@ func TestUpstreamTestAgainstThePrivateUpstream(t *testing.T) {
 
 	t.Run("R-REPO-038 R-REPO-024 http://169.254.169.254/ is saved and the test reports egress_denied", func(t *testing.T) {
 		r.create(t, "npm-imds", `{"url":"http://169.254.169.254/latest/"}`)
-		res, err := r.svc.UpstreamTest(ctx, "npm-imds")
+		res, err := r.svc.UpstreamTest(ctx, qr("npm-imds"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -716,31 +716,31 @@ func TestUpstreamTestAgainstThePrivateUpstream(t *testing.T) {
 
 	t.Run("R-REPO-024 the test of an unsaved section validates, probes and stores nothing", func(t *testing.T) {
 		before := e.scalar(`SELECT count(*) FROM repositories`)
-		res, err := r.svc.UpstreamTestUnsaved(ctx, []byte(fmt.Sprintf(`{"format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"value":"probe-only"}}}`, stub.srv.URL)))
+		res, err := r.svc.UpstreamTestUnsaved(ctx, caller, []byte(fmt.Sprintf(`{"format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"value":"probe-only"}}}`, stub.srv.URL)))
 		if err != nil || !res.Reachable || stub.last(t) != "Bearer probe-only" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
 		if e.scalar(`SELECT count(*) FROM repositories`) != before || e.scalar(`SELECT count(*) FROM repository_secrets WHERE sealed IS NOT NULL AND repo_id NOT IN (SELECT id FROM repositories)`) != 0 {
 			t.Fatal("the unsaved test stored something")
 		}
-		_, err = r.svc.UpstreamTestUnsaved(ctx, []byte(`{"format":"npmlike","remote":{"readTimeoutMs":1}}`))
+		_, err = r.svc.UpstreamTestUnsaved(ctx, caller, []byte(`{"format":"npmlike","remote":{"readTimeoutMs":1}}`))
 		wantCode(t, err, 422, errs.CodeValidation)
 	})
 
 	t.Run("R-REPO-024 the test of a local repository or a missing one is refused", func(t *testing.T) {
-		if _, err := r.svc.Create(ctx, caller, []byte(`{"key":"npm-local","class":"local","format":"npmlike"}`)); err != nil {
+		if _, err := r.svc.Create(ctx, caller, "it", []byte(`{"key":"npm-local","class":"local","format":"npmlike"}`)); err != nil {
 			t.Fatal(err)
 		}
-		_, err := r.svc.UpstreamTest(ctx, "npm-local")
+		_, err := r.svc.UpstreamTest(ctx, qr("npm-local"))
 		wantCode(t, err, 400, errs.CodeNotApplicable)
-		_, err = r.svc.UpstreamTest(ctx, "nope")
+		_, err = r.svc.UpstreamTest(ctx, qr("nope"))
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 
 	t.Run("R-REPO-030 an offline repository is not contacted by the test", func(t *testing.T) {
 		r.create(t, "npm-off", fmt.Sprintf(`{"url":%q,"availability":{"mode":"offline"}}`, stub.srv.URL))
 		before := len(stub.auths())
-		res, err := r.svc.UpstreamTest(ctx, "npm-off")
+		res, err := r.svc.UpstreamTest(ctx, qr("npm-off"))
 		if err != nil || res.Reachable || res.Error == nil || res.Error.Code != "offline" || len(stub.auths()) != before {
 			t.Fatalf("%+v %v (%d requests)", res, err, len(stub.auths())-before)
 		}

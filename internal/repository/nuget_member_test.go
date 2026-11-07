@@ -20,7 +20,7 @@ func nugetValidate(t *testing.T, body string) (Document, error) {
 	t.Helper()
 	r := settingsCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "nuget", Classes: []Class{Local}, Layout: "nuget", ProtocolBasePath: "/api/nuget/{key}/",
+		ID: "nuget", Classes: []Class{Local}, Layout: "nuget", ProtocolBasePath: "/api/nuget/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, SettingsSchema: []byte(nugetLikeSchema),
 	}, Names: lower{}})
 	d, err := DecodeDocument([]byte(body))

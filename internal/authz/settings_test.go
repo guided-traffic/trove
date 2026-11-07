@@ -20,7 +20,7 @@ func (r *txRecorder) RecordTx(_ context.Context, _ meta.Tx, ev audit.Event) erro
 func (r *txRecorder) Record(context.Context, audit.Event) {}
 
 func settingsRepo(class repository.Class, requireAuth bool, hide, config string) repository.Repository {
-	return repository.Repository{ID: "12", Key: "r", Class: class, Format: "generic", RequireAuthentication: requireAuth, HideExistence: hide, Config: []byte(config)}
+	return repository.Repository{ID: "12", Name: qr("r"), Class: class, Format: "generic", RequireAuthentication: requireAuth, HideExistence: hide, Config: []byte(config)}
 }
 
 func TestR_AUTHZ_031_SettingsChangedIsRecordedByTheRepositoryUpdate(t *testing.T) {
@@ -70,7 +70,7 @@ func TestR_AUTHZ_031_SettingsChangedIsRecordedByTheRepositoryUpdate(t *testing.T
 				t.Fatalf("%d events", len(evs))
 			}
 			ev := evs[0]
-			if ev.Type != EventSettingsChanged || ev.Repository != "r" || ev.Actor.Name != "sec-alice" || ev.Source.ClientAddr != "10.0.0.1" || ev.Outcome != audit.Success {
+			if ev.Type != EventSettingsChanged || ev.Repository != "it/r" || ev.Actor.Name != "sec-alice" || ev.Source.ClientAddr != "10.0.0.1" || ev.Outcome != audit.Success {
 				t.Fatalf("%+v", ev)
 			}
 			// The journal entry names the repository by ID and carries only the changed settings.

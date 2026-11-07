@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -349,7 +351,7 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 		}); err != nil {
 			return err
 		}
-		if err := s.recordCommitted(ctx, tx, repo.Key, spec, out.overwritten); err != nil {
+		if err := s.recordCommitted(ctx, tx, repo.Name, spec, out.overwritten); err != nil {
 			return err
 		}
 		return readCommitted(ctx, qs, repo, path, out)
@@ -461,7 +463,7 @@ func lockAncestors(ctx context.Context, qs *q.Queries, rid int64, path string) (
 // recordCommitted writes the audit row of a commit that changed a row. An upload
 // is artifact.deployed; a fill has no event of its own yet (the cache event is
 // webhook-only and the proxy raises it), so it writes none (Q-STOR-146).
-func (s *Store) recordCommitted(ctx context.Context, tx meta.Tx, repoKey string, spec CommitSpec, overwritten bool) error {
+func (s *Store) recordCommitted(ctx context.Context, tx meta.Tx, repoKey qname.Repo, spec CommitSpec, overwritten bool) error {
 	if spec.Origin != OriginUpload {
 		return nil
 	}
@@ -472,7 +474,7 @@ func (s *Store) recordCommitted(ctx context.Context, tx meta.Tx, repoKey string,
 	}
 	return s.rec.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventArtifactDeployed, Actor: spec.Actor, Outcome: audit.Success, Source: spec.Source, Endpoint: spec.Endpoint,
-		Subject: audit.Subject{Kind: "repository", Name: repoKey}, Repository: repoKey, Path: spec.Path.Path, Details: raw,
+		Subject: audit.Subject{Kind: "repository", Name: repoKey.String()}, Repository: repoKey.String(), Project: repoKey.Project, Path: spec.Path.Path, Details: raw,
 	})
 }
 
@@ -560,7 +562,7 @@ func (s *Store) CreateFolder(ctx context.Context, spec FolderSpec) (FolderResult
 		return FolderResult{}, err
 	}
 	if !found {
-		it = Item{Repository: repo.Key, Path: path, Kind: KindFolder, Explicit: true}
+		it = Item{Repository: repo.Name, Path: path, Kind: KindFolder, Explicit: true}
 	}
 	return FolderResult{Created: created, Item: it}, nil
 }

@@ -49,7 +49,7 @@ func TestR_AUTHZ_026_TheBuildSkipsAProjectAccountOutsideItsProject(t *testing.T)
 	})
 	t.Run("a system role bound to a project account is not applied", func(t *testing.T) {
 		e := newTestEngine(t, accountOf(projectFixture().bind(RoleAdmin, idBot), idBot, pWeb), nil)
-		idx, err := e.Begin(t.Context(), botSub, "web-npm")
+		idx, err := e.Begin(t.Context(), botSub, qr("web-npm"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,7 +59,7 @@ func TestR_AUTHZ_026_TheBuildSkipsAProjectAccountOutsideItsProject(t *testing.T)
 	})
 	t.Run("a role bound to a global account is applied", func(t *testing.T) {
 		e := newTestEngine(t, projectFixture().bind(RoleAdmin, idBot), nil)
-		idx, err := e.Begin(t.Context(), botSub, "web-npm")
+		idx, err := e.Begin(t.Context(), botSub, qr("web-npm"))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -688,6 +688,35 @@ func (q *Queries) IdentityGroupMembers(ctx context.Context, arg IdentityGroupMem
 	return items, nil
 }
 
+const identityGroupProjects = `-- name: IdentityGroupProjects :many
+SELECT p.key FROM project_member m JOIN project p ON p.id = m.project_id
+ WHERE m.principal_id = $1::text::uuid ORDER BY p.key
+`
+
+// The keys of the projects the group is a member of. An auto-join group is never a
+// project member (every user is in it), so turning the flag on is refused while the
+// list is not empty (R-AUTH-019, R-AUTHZ-026); the member write reads the flag under
+// the same row lock (ProjectGroupAutoJoinShare).
+func (q *Queries) IdentityGroupProjects(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityGroupProjects, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityGroupRoles = `-- name: IdentityGroupRoles :many
 SELECT role FROM authz_role_binding WHERE principal_id = $1::text::uuid ORDER BY role
 `
@@ -911,8 +940,8 @@ type IdentityInsertProjectServiceAccountParams struct {
 	ProjectID   string
 }
 
-// A service account of a project (Q-AUTHZ-169): the row's trigger refuses a name
-// that does not start with the project key and a hyphen.
+// A service account of a project (Q-AUTHZ-169, Q-AUTHZ-209): its principal's name is
+// <project key>/<name>; the row's trigger refuses any other name.
 func (q *Queries) IdentityInsertProjectServiceAccount(ctx context.Context, arg IdentityInsertProjectServiceAccountParams) error {
 	_, err := q.db.Exec(ctx, identityInsertProjectServiceAccount, arg.ID, arg.Description, arg.ProjectID)
 	return err
@@ -1105,6 +1134,69 @@ func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroups
 			&i.CreatedAt,
 			&i.Revision,
 			&i.MemberCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityListProjectServiceAccounts = `-- name: IdentityListProjectServiceAccounts :many
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       pr.key::text AS project
+  FROM principal p JOIN service_account s ON s.principal_id = p.id
+  JOIN project pr ON pr.id = s.project_id
+ WHERE p.kind = 'service_account' AND pr.key = $1::text AND p.name > $2::text
+   AND ($3::text = '' OR substr(p.name, char_length(pr.key) + 2) ILIKE '%' || $3::text || '%')
+ ORDER BY p.name
+ LIMIT $4::int
+`
+
+type IdentityListProjectServiceAccountsParams struct {
+	Project string
+	After   string
+	Query   string
+	MaxRows int32
+}
+
+type IdentityListProjectServiceAccountsRow struct {
+	ID          string
+	Name        string
+	Status      string
+	CreatedAt   pgtype.Timestamptz
+	Revision    int64
+	Description string
+	Project     string
+}
+
+// The accounts of one project by the key of the project, ordered by stored name
+// (<project>/<name>); the text filter matches the name within the project.
+func (q *Queries) IdentityListProjectServiceAccounts(ctx context.Context, arg IdentityListProjectServiceAccountsParams) ([]IdentityListProjectServiceAccountsRow, error) {
+	rows, err := q.db.Query(ctx, identityListProjectServiceAccounts,
+		arg.Project,
+		arg.After,
+		arg.Query,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityListProjectServiceAccountsRow{}
+	for rows.Next() {
+		var i IdentityListProjectServiceAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Status,
+			&i.CreatedAt,
+			&i.Revision,
+			&i.Description,
+			&i.Project,
 		); err != nil {
 			return nil, err
 		}
@@ -2681,8 +2773,7 @@ func (q *Queries) IdentityUserMemberships(ctx context.Context, memberID string) 
 
 const preferencesGet = `-- name: PreferencesGet :many
 
-SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts,
-       coalesce(project_filter, '')::text AS project_filter, revision
+SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts, revision
   FROM user_preferences WHERE user_id = $1::text::uuid
 `
 
@@ -2690,7 +2781,6 @@ type PreferencesGetRow struct {
 	Locale            string
 	Theme             string
 	KeyboardShortcuts bool
-	ProjectFilter     string
 	Revision          int64
 }
 
@@ -2708,7 +2798,6 @@ func (q *Queries) PreferencesGet(ctx context.Context, userID string) ([]Preferen
 			&i.Locale,
 			&i.Theme,
 			&i.KeyboardShortcuts,
-			&i.ProjectFilter,
 			&i.Revision,
 		); err != nil {
 			return nil, err
@@ -2722,15 +2811,15 @@ func (q *Queries) PreferencesGet(ctx context.Context, userID string) ([]Preferen
 }
 
 const preferencesUpsert = `-- name: PreferencesUpsert :many
-INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, project_filter, revision)
+INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, revision)
 VALUES ($1::text::uuid, NULLIF($2::text, ''), NULLIF($3::text, ''),
-        $4::boolean, NULLIF($5::text, ''), 2)
+        $4::boolean, 2)
 ON CONFLICT (user_id) DO UPDATE
    SET locale = EXCLUDED.locale, theme = EXCLUDED.theme, keyboard_shortcuts = EXCLUDED.keyboard_shortcuts,
-       project_filter = EXCLUDED.project_filter, revision = p.revision + 1, updated_at = now()
- WHERE $6::bigint = 0 OR p.revision = $6::bigint
+       revision = p.revision + 1, updated_at = now()
+ WHERE $5::bigint = 0 OR p.revision = $5::bigint
 RETURNING coalesce(p.locale, '')::text AS locale, coalesce(p.theme, '')::text AS theme, p.keyboard_shortcuts,
-          coalesce(p.project_filter, '')::text AS project_filter, p.revision
+          p.revision
 `
 
 type PreferencesUpsertParams struct {
@@ -2738,7 +2827,6 @@ type PreferencesUpsertParams struct {
 	Locale            string
 	Theme             string
 	KeyboardShortcuts bool
-	ProjectFilter     string
 	IfRevision        int64
 }
 
@@ -2746,7 +2834,6 @@ type PreferencesUpsertRow struct {
 	Locale            string
 	Theme             string
 	KeyboardShortcuts bool
-	ProjectFilter     string
 	Revision          int64
 }
 
@@ -2759,7 +2846,6 @@ func (q *Queries) PreferencesUpsert(ctx context.Context, arg PreferencesUpsertPa
 		arg.Locale,
 		arg.Theme,
 		arg.KeyboardShortcuts,
-		arg.ProjectFilter,
 		arg.IfRevision,
 	)
 	if err != nil {
@@ -2773,7 +2859,6 @@ func (q *Queries) PreferencesUpsert(ctx context.Context, arg PreferencesUpsertPa
 			&i.Locale,
 			&i.Theme,
 			&i.KeyboardShortcuts,
-			&i.ProjectFilter,
 			&i.Revision,
 		); err != nil {
 			return nil, err

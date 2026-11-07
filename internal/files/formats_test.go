@@ -62,8 +62,8 @@ func (s *packageSeam) CheckRemoval(_ context.Context, _ meta.Tx, rm Removal) err
 func packageService(t *testing.T, st *store, seam *packageSeam) *Service {
 	t.Helper()
 	svc, err := New(Options{Items: st, Formats: seam, Repos: repos{
-		"generic-local": {ID: "5", Key: "generic-local", Class: repository.Local, Format: "generic"},
-		"pkg-local":     {ID: "7", Key: "pkg-local", Class: repository.Local, Format: "pkgfmt"},
+		"generic-local": {ID: "5", Name: qr("generic-local"), Class: repository.Local, Format: "generic"},
+		"pkg-local":     {ID: "7", Name: qr("pkg-local"), Class: repository.Local, Format: "pkgfmt"},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestR_EP_014_FilesDecideOnTheFormatsCoordinate(t *testing.T) {
 	t.Run("R-EP-014 a download of a format's file is decided on the package and the version the format gives it", func(t *testing.T) {
 		acc := &access{allow: true}
 		st := &store{found: true, live: items.Item{Kind: items.KindFile, Path: "ui/-/ui-1.0.0.tgz"}}
-		if _, err := packageService(t, st, &packageSeam{}).Stat(ctx, caller(acc), "pkg-local", repository.Cleaned{Path: "ui/-/ui-1.0.0.tgz"}); err != nil {
+		if _, err := packageService(t, st, &packageSeam{}).Stat(ctx, caller(acc), qr("pkg-local"), repository.Cleaned{Path: "ui/-/ui-1.0.0.tgz"}); err != nil {
 			t.Fatal(err)
 		}
 		if len(acc.decides) != 1 || acc.decides[0].Package != "ui" || acc.decides[0].Version != "1.0.0" || acc.decides[0].Path != "ui/-/ui-1.0.0.tgz" {
@@ -91,7 +91,7 @@ func TestR_EP_014_FilesDecideOnTheFormatsCoordinate(t *testing.T) {
 	t.Run("R-EP-014 a path of a generic repository is decided on the path alone", func(t *testing.T) {
 		acc := &access{allow: true}
 		st := &store{found: true, live: items.Item{Kind: items.KindFile, Path: "ui/-/ui-1.0.0.tgz"}}
-		if _, err := packageService(t, st, &packageSeam{}).Stat(ctx, caller(acc), "generic-local", repository.Cleaned{Path: "ui/-/ui-1.0.0.tgz"}); err != nil {
+		if _, err := packageService(t, st, &packageSeam{}).Stat(ctx, caller(acc), qr("generic-local"), repository.Cleaned{Path: "ui/-/ui-1.0.0.tgz"}); err != nil {
 			t.Fatal(err)
 		}
 		if acc.decides[0].Package != "" || acc.decides[0].Version != "" {
@@ -100,7 +100,7 @@ func TestR_EP_014_FilesDecideOnTheFormatsCoordinate(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-016 a repository the snapshot does not hold is decided on the path and refused as a hidden one", func(t *testing.T) {
 		acc, st := &access{allow: false}, &store{}
-		_, err := packageService(t, st, &packageSeam{}).Stat(ctx, caller(acc), "ghost", repository.Cleaned{Path: "ui/-/ui-1.0.0.tgz"})
+		_, err := packageService(t, st, &packageSeam{}).Stat(ctx, caller(acc), qr("ghost"), repository.Cleaned{Path: "ui/-/ui-1.0.0.tgz"})
 		if e, ok := errs.As(err); !ok || e.Kind != errs.NotFound || e.Code != errs.CodeNotFound {
 			t.Fatalf("err = %v", err)
 		}
@@ -111,7 +111,7 @@ func TestR_EP_014_FilesDecideOnTheFormatsCoordinate(t *testing.T) {
 	t.Run("R-EP-014 R-STOR-017 the entries of a listing are decided on the coordinate the format gives each of them", func(t *testing.T) {
 		acc := &access{allow: true}
 		st := &store{found: true, live: items.Item{Kind: items.KindFolder}}
-		if _, err := packageService(t, st, &packageSeam{}).Children(ctx, caller(acc), "pkg-local", ChildrenQuery{Folders: true, Limit: 10, Strict: true}); err != nil {
+		if _, err := packageService(t, st, &packageSeam{}).Children(ctx, caller(acc), qr("pkg-local"), ChildrenQuery{Folders: true, Limit: 10, Strict: true}); err != nil {
 			t.Fatal(err)
 		}
 		if want := []string{"a.bin=a.bin@", "secret/b.bin=secret@"}; !slices.Equal(acc.classified, want) {
@@ -120,15 +120,15 @@ func TestR_EP_014_FilesDecideOnTheFormatsCoordinate(t *testing.T) {
 	})
 	t.Run("R-API-025 the items operations' shared step is completed with the format's coordinate", func(t *testing.T) {
 		svc := packageService(t, &store{}, &packageSeam{})
-		got := svc.Classified(ctx, authz.Coordinate{Repository: "pkg-local", Path: "ui/-/ui-1.0.0.tgz", Actions: []authz.Action{authz.Read}})
+		got := svc.Classified(ctx, authz.Coordinate{Repository: qr("pkg-local"), Path: "ui/-/ui-1.0.0.tgz", Actions: []authz.Action{authz.Read}})
 		if got.Package != "ui" || got.Version != "1.0.0" {
 			t.Fatalf("coordinate = %+v", got)
 		}
 		for _, c := range []authz.Coordinate{
-			{Repository: "generic-local", Path: "ui/-/ui-1.0.0.tgz"},
-			{Repository: "ghost", Path: "ui/x"},
-			{Repository: "pkg-local"},
-			{Repository: "pkg-local", Path: "ui/x", Package: "other"},
+			{Repository: qr("generic-local"), Path: "ui/-/ui-1.0.0.tgz"},
+			{Repository: qr("ghost"), Path: "ui/x"},
+			{Repository: qr("pkg-local")},
+			{Repository: qr("pkg-local"), Path: "ui/x", Package: "other"},
 		} {
 			if got := svc.Classified(ctx, c); got.Package != c.Package || got.Version != "" {
 				t.Errorf("%+v became %+v", c, got)
@@ -142,7 +142,7 @@ func TestR_AUTHZ_018_FilesDeleteAsksTheFormat(t *testing.T) {
 	t.Run("R-STOR-018 R-EP-014 the subtree is decided per item on its package", func(t *testing.T) {
 		acc, seam := &access{allow: true}, &packageSeam{}
 		st := &store{found: true, live: items.Item{Kind: items.KindFolder}}
-		if _, err := packageService(t, st, seam).Delete(ctx, caller(acc), DeleteRequest{Repo: "pkg-local", Path: "ui", Strict: true}); err != nil {
+		if _, err := packageService(t, st, seam).Delete(ctx, caller(acc), DeleteRequest{Repo: qr("pkg-local"), Path: "ui", Strict: true}); err != nil {
 			t.Fatal(err)
 		}
 		if acc.decides[0].Package != "ui" || len(acc.recorded) != 1 || acc.recorded[0].Package != "ui" {
@@ -156,14 +156,14 @@ func TestR_AUTHZ_018_FilesDeleteAsksTheFormat(t *testing.T) {
 		idx := new(authz.Index)
 		acc, seam := &access{allow: true, idx: idx}, &packageSeam{}
 		st := &store{found: true, live: items.Item{Kind: items.KindFolder}}
-		if _, err := packageService(t, st, seam).Delete(ctx, caller(acc), DeleteRequest{Repo: "pkg-local", Path: "ui", Strict: true}); err != nil {
+		if _, err := packageService(t, st, seam).Delete(ctx, caller(acc), DeleteRequest{Repo: qr("pkg-local"), Path: "ui", Strict: true}); err != nil {
 			t.Fatal(err)
 		}
 		if len(seam.removals) != 1 {
 			t.Fatalf("removals = %+v", seam.removals)
 		}
 		rm := seam.removals[0]
-		if rm.Repo.Key != "pkg-local" || !slices.Equal(rm.Files, []string{"ui/x", "ui/y"}) || rm.Index != idx || rm.Subject.Endpoint != "customers" {
+		if rm.Repo.Name != qr("pkg-local") || !slices.Equal(rm.Files, []string{"ui/x", "ui/y"}) || rm.Index != idx || rm.Subject.Endpoint != "customers" {
 			t.Fatalf("removal = %+v", rm)
 		}
 	})
@@ -171,7 +171,7 @@ func TestR_AUTHZ_018_FilesDeleteAsksTheFormat(t *testing.T) {
 		owned := errs.E(errs.Forbidden, errs.CodePackageOwnedByOtherOwner, "owned")
 		acc, seam := &access{allow: true}, &packageSeam{refuse: owned}
 		st := &store{found: true, live: items.Item{Kind: items.KindFile}}
-		_, err := packageService(t, st, seam).Delete(ctx, caller(acc), DeleteRequest{Repo: "pkg-local", Path: "ui/-/ui-1.0.0.tgz", Strict: true})
+		_, err := packageService(t, st, seam).Delete(ctx, caller(acc), DeleteRequest{Repo: qr("pkg-local"), Path: "ui/-/ui-1.0.0.tgz", Strict: true})
 		if !errors.Is(err, owned) {
 			t.Fatalf("err = %v", err)
 		}
@@ -187,7 +187,7 @@ func TestR_STOR_007_FilesRefusesRawDeploysIntoFormats(t *testing.T) {
 		}
 		t.Run("R-STOR-007 R-API-025 Q-ARCH-223 "+name+" of a format with a protocol of its own is refused before the body is read", func(t *testing.T) {
 			acc, st, body := &access{allow: true}, &store{}, &readCounter{}
-			req := DeployRequest{Repo: "pkg-local", Path: repository.Cleaned{Path: "ui/-/ui-2.0.0.tgz", Folder: folder}, Body: body, ContentLength: 1}
+			req := DeployRequest{Repo: qr("pkg-local"), Path: repository.Cleaned{Path: "ui/-/ui-2.0.0.tgz", Folder: folder}, Body: body, ContentLength: 1}
 			_, err := packageService(t, st, &packageSeam{}).Deploy(ctx, caller(acc), req)
 			if e, ok := errs.As(err); !ok || e.Kind != errs.Conflict {
 				t.Fatalf("err = %v", err)

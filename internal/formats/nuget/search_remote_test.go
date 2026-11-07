@@ -20,6 +20,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The forwarded search of a remote repository addressed directly (R-NUGET-016) over the in-memory
@@ -28,7 +29,7 @@ import (
 // (discovery, cache, circuit, populate check) run against a database and a test upstream in
 // test/integration/nuget (forwarded_search_test.go).
 
-const feedOfOrg = "https://trove.test/api/nuget/nuget-org/v3/"
+const feedOfOrg = "https://trove.test/api/nuget/it/nuget-org/v3/"
 
 // upstreamAnswer is an upstream's answer to a search: three results, the first with every member
 // a forwarded search keeps (its deprecation and vulnerabilities in nuget.org's JSON-LD form, one
@@ -60,12 +61,12 @@ type remoteResolver struct {
 	asked []string
 }
 
-func (r *remoteResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (r *remoteResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return r.scope, nil
 }
 
 func (r *remoteResolver) KeepsAway(_ context.Context, rq *formats.Request, member formats.RepoRef, term string) (bool, error) {
-	if member.Key != rq.Repo.Key {
+	if member.Name != rq.Repo.Name {
 		return false, errs.E(errs.Internal, errs.CodeInternal, "not the request's repository")
 	}
 	r.mu.Lock()
@@ -94,8 +95,8 @@ func newForwarding(t *testing.T, subject authz.Subject, cached ...rows.SearchHit
 	m := &formattest.MemRemote{Queries: func(_ context.Context, rq *formats.Request, q formats.Query) (*formats.QueryResult, error) {
 		fw.mu.Lock()
 		defer fw.mu.Unlock()
-		if rq.Repo.Key != "nuget-org" {
-			t.Errorf("the query ran on %q", rq.Repo.Key)
+		if rq.Repo.Name != qr("nuget-org") {
+			t.Errorf("the query ran on %q", rq.Repo.Name)
 		}
 		fw.queries = append(fw.queries, q)
 		if fw.err != nil {

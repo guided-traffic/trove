@@ -34,6 +34,8 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.last_admin:The last administrator binding cannot be removed.`;
     case 'auto_join_admin_conflict':
       return $localize`:@@problem.auto_join_admin_conflict:An auto-join group cannot hold the administrator role.`;
+    case 'auto_join_member_conflict':
+      return $localize`:@@problem.auto_join_member_conflict:A group that is a member of a project cannot be an auto-join group. Remove it from the projects first.`;
     case 'role_binding_managed_by_configuration':
       return $localize`:@@problem.role_binding_managed_by_configuration:This role binding is declared in the system configuration and can only be removed there.`;
     case 'role_not_allowed':
@@ -96,22 +98,12 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.unknown_project:The project does not exist, or you do not administer it.`;
     case 'principal_outside_project':
       return $localize`:@@problem.principal_outside_project:A service account of a project can only be granted by the policies of its own project.`;
-    case 'project_prefix_required':
-      return $localize`:@@problem.project_prefix_required:The name must start with the key of the project and a hyphen.`;
-    case 'name_reserved_by_project':
-      return $localize`:@@problem.name_reserved_by_project:The name starts with the key of a project and a hyphen, which only that project's service accounts may use. Choose another name, or create the account in the project.`;
     case 'project_account_not_groupable':
       return $localize`:@@problem.project_account_not_groupable:A service account of a project cannot be a member of a group.`;
     case 'project_not_empty':
-      return $localize`:@@problem.project_not_empty:The project still has repositories or service accounts. Unassign the repositories and delete the service accounts first.`;
-    case 'repository_assigned':
-      return $localize`:@@problem.repository_assigned:The repository belongs to another project. Move it to take it over.`;
-    case 'project_owner_changed':
-      return $localize`:@@problem.project_owner_changed:The repository was moved to another project in the meantime. Read it again and decide again.`;
-    case 'project_key_overlap':
-      return $localize`:@@problem.project_key_overlap:The key overlaps another project's key (no key is another's key followed by a hyphen) or the start of a service account's name.`;
-    case 'project_switch_off':
-      return $localize`:@@problem.project_switch_off:This is switched off for the project. An administrator of trove can switch it on.`;
+      return $localize`:@@problem.project_not_empty:The project still has repositories or service accounts. Move or delete the repositories and delete the service accounts first.`;
+    case 'principal_not_allowed':
+      return $localize`:@@problem.principal_not_allowed:Only users and groups can be members of a project. A service account, a CI mapping, anonymous and authenticated cannot.`;
     case 'secret_value_required':
       return $localize`:@@problem.secret_value_required:Enter the password or token of this upstream again.`;
     case 'outbound_path_restricted':

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -244,26 +245,57 @@ type discard struct{}
 
 func (*discard) Write(p []byte) (int, error) { return len(p), nil }
 
+// repoLabels is the snapshot of the keys "<project>/<key>" as the label cap reads it, in the given order.
+func repoLabels(names []string) []RepoLabel {
+	out := make([]RepoLabel, len(names))
+	for i, n := range names {
+		project, key, _ := strings.Cut(n, "/")
+		out[i] = RepoLabel{Name: n, Project: project, Key: key}
+	}
+	return out
+}
+
 func TestCappedLabels(t *testing.T) {
 	t.Run("R-OPS-007 repository cap: include patterns first, then creation order, rest is _other", func(t *testing.T) {
 		m := NewMetrics("web", WithMetricsConfig(config.Metrics{
 			Enabled:     true,
-			LabelLimits: config.MetricsLabelLimits{Repository: 3}, RepositoryLabelInclude: []string{"npm-*", "nuget-prod"},
+			LabelLimits: config.MetricsLabelLimits{Repository: 3}, RepositoryLabelInclude: []string{"web/npm-*", "*/nuget-prod"},
 		}))
-		m.Repos().Update([]string{"a", "b", "npm-x", "nuget-prod", "npm-y", "c"})
+		keys := []string{"web/a", "web/b", "web/npm-x", "ops/nuget-prod", "web/npm-y", "ops/c", "ops/npm-z"}
+		m.Repos().UpdateRepositories(repoLabels(keys))
 		got := []string{}
-		for _, k := range []string{"a", "b", "npm-x", "nuget-prod", "npm-y", "c"} {
+		for _, k := range keys {
 			got = append(got, m.Repos().Value("trove_repository_requests_total", k))
 		}
-		// limit 3: npm-x, npm-y (pattern npm-*), then nuget-prod
-		exp := map[string]string{"a": "_other", "b": "_other", "npm-x": "npm-x", "nuget-prod": "nuget-prod", "npm-y": "npm-y", "c": "_other"}
-		for i, k := range []string{"a", "b", "npm-x", "nuget-prod", "npm-y", "c"} {
+		// limit 3: web/npm-x, web/npm-y (pattern web/npm-*; "*" does not cross the "/" of the qualified name),
+		// then ops/nuget-prod (pattern */nuget-prod). ops/npm-z matches no pattern and comes after the cap.
+		exp := map[string]string{"web/a": "_other", "web/b": "_other", "web/npm-x": "web/npm-x", "ops/nuget-prod": "ops/nuget-prod", "web/npm-y": "web/npm-y", "ops/c": "_other", "ops/npm-z": "_other"}
+		for i, k := range keys {
 			if got[i] != exp[k] {
 				t.Errorf("%s -> %s, want %s", k, got[i], exp[k])
 			}
 		}
-		if !strings.Contains(scrapeBody(t, m, ""), `trove_metrics_label_overflow_total{family="trove_repository_requests_total",label="repo"} 3`) {
+		if !strings.Contains(scrapeBody(t, m, ""), `trove_metrics_label_overflow_total{family="trove_repository_requests_total",label="repo"} 4`) {
 			t.Errorf("overflow:\n%s", grepLines(scrapeBody(t, m, ""), "overflow"))
+		}
+	})
+
+	t.Run("R-OPS-007 a class selector and a format filter match the snapshot's repositories", func(t *testing.T) {
+		m := NewMetrics("web", WithMetricsConfig(config.Metrics{
+			Enabled:     true,
+			LabelLimits: config.MetricsLabelLimits{Repository: 2}, RepositoryLabelInclude: []string{"@any-remote", "web/*:nuget"},
+		}))
+		m.Repos().UpdateRepositories([]RepoLabel{
+			{Name: "web/a", Project: "web", Key: "a", Class: "local", Format: "npm"},
+			{Name: "web/b", Project: "web", Key: "b", Class: "local", Format: "nuget"},
+			{Name: "ops/up", Project: "ops", Key: "up", Class: "remote", Format: "npm"},
+			{Name: "web/c", Project: "web", Key: "c", Class: "virtual", Format: "npm"},
+		})
+		// limit 2: @any-remote selects ops/up, then web/*:nuget selects web/b; web/a would be first by creation order.
+		for key, want := range map[string]string{"ops/up": "ops/up", "web/b": "web/b", "web/a": OtherLabel, "web/c": OtherLabel} {
+			if got := m.Repos().Value("f", key); got != want {
+				t.Errorf("%s -> %s, want %s", key, got, want)
+			}
 		}
 	})
 
@@ -400,5 +432,28 @@ func TestBuildInfoRoleValuesOfTheCut(t *testing.T) {
 				t.Errorf("build info lacks role=%q:\n%s", role, grepLines(body, "build_info"))
 			}
 		})
+	}
+}
+
+// R-OPS-007: a repository that left the snapshot (deleted, or moved and so renamed) is announced once to the owners of the
+// families with a repo label, which delete its series.
+func TestR_OPS_007_RepositoriesThatLeftTheSnapshotAreForgotten(t *testing.T) {
+	m := NewMetrics("web", WithMetricsConfig(config.Metrics{Enabled: true, LabelLimits: config.MetricsLabelLimits{Repository: 1}}))
+	var forgotten []string
+	m.Repos().OnForget(func(name string) { forgotten = append(forgotten, name) })
+	m.Repos().UpdateRepositories(repoLabels([]string{"web/a", "web/b", "web/c"}))
+	if len(forgotten) != 0 {
+		t.Fatalf("the first snapshot forgot %v", forgotten)
+	}
+	// web/b is deleted and web/c moved to ops/c; web/b lay beyond the cap and is announced all the same.
+	m.Repos().UpdateRepositories(repoLabels([]string{"web/a", "ops/c"}))
+	sort.Strings(forgotten)
+	if strings.Join(forgotten, ",") != "web/b,web/c" {
+		t.Fatalf("forgotten = %v, want web/b and web/c", forgotten)
+	}
+	forgotten = nil
+	m.Repos().UpdateRepositories(repoLabels([]string{"web/a", "ops/c"}))
+	if len(forgotten) != 0 {
+		t.Errorf("an unchanged snapshot forgot %v", forgotten)
 	}
 }

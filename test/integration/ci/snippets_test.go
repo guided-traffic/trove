@@ -21,7 +21,7 @@ func TestR_API_035_TheGitLabCISnippetOfAMapping(t *testing.T) {
 	e.stack.Repository("nuget-internal", "local", "nuget", "{}")
 	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), mapping("acme-publish", 100,
 		all(eq("project_id", "4242"), eq("ref_protected", true)),
-		grants(inline("npm-internal", []string{"@acme/*"}, "read", "deploy"), inline("nuget-internal", []string{"Acme.*"}, "read", "deploy")))), 201, "")
+		grants(inline("it/npm-internal", []string{"@acme/*"}, "read", "deploy"), inline("it/nuget-internal", []string{"Acme.*"}, "read", "deploy")))), 201, "")
 	snippet := func(format string) string {
 		t.Helper()
 		path := issuersPath + "/gitlab-main/snippets/gitlab-ci?mapping=acme-publish"
@@ -44,8 +44,8 @@ func TestR_API_035_TheGitLabCISnippetOfAMapping(t *testing.T) {
 		"grant_type=urn:ietf:params:oauth:grant-type:token-exchange", "subject_token_type=urn:ietf:params:oauth:token-type:id_token",
 		"/api/v1/auth/oidc/token",
 		"{error, error_description, reason, requestId}", // a failed exchange prints what the administrator needs
-		"//trove.test/api/npm/npm-internal/:_authToken=${TROVE_TOKEN}",
-		"npm publish --registry " + snippetBase + "/api/npm/npm-internal/",
+		"//trove.test/api/npm/it/npm-internal/:_authToken=${TROVE_TOKEN}",
+		"npm publish --registry " + snippetBase + "/api/npm/it/npm-internal/",
 		"$CI_COMMIT_REF_PROTECTED", // the mapping requires a protected ref
 	} {
 		if !strings.Contains(npm, want) {
@@ -62,7 +62,7 @@ func TestR_API_035_TheGitLabCISnippetOfAMapping(t *testing.T) {
 
 	nuget := snippet("nuget")
 	for _, want := range []string{
-		"dotnet nuget push", "/api/nuget/nuget-internal/v3/index.json", `--api-key "$TROVE_TOKEN"`, "%TROVE_TOKEN%",
+		"dotnet nuget push", "/api/nuget/it/nuget-internal/v3/index.json", `--api-key "$TROVE_TOKEN"`, "%TROVE_TOKEN%",
 		"{error, error_description, reason, requestId}", "id_tokens:",
 	} {
 		if !strings.Contains(nuget, want) {
@@ -90,22 +90,22 @@ func TestR_API_035_TheGitLabCISnippetOfAMapping(t *testing.T) {
 	})
 }
 
-func TestQ_CI_26_AProjectAdministratorReadsTheSnippetOfItsMappings(t *testing.T) {
+func TestQ_CI_26_AProjectOwnerReadsTheSnippetOfItsMappings(t *testing.T) {
 	p := newProjectEnv(t)
 	a := p.a
 	wantStatus(t, p.bob(a, "POST", projectMappings("web"), webPublish("web-publish", 100)), 201, "")
-	wantStatus(t, p.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping("sys-read", 10, all(eq("project_id", "4242")), "other-npm")), 201, "")
+	wantStatus(t, p.do(a, "POST", mappingsOf("gitlab-main"), readOnlyMapping("sys-read", 10, all(eq("project_id", "4242")), "data/other-npm")), 201, "")
 	path := "/api/v1/projects/web/ci/issuers/gitlab-main/snippets/gitlab-ci?mapping="
 
 	r := p.bob(a, "GET", path+"web-publish", nil)
 	wantStatus(t, r, 200, "")
-	if !strings.Contains(string(r.Body), "//trove.test/api/npm/web-npm/:_authToken=${TROVE_TOKEN}") || !strings.Contains(string(r.Body), "id_tokens:") {
+	if !strings.Contains(string(r.Body), "//trove.test/api/npm/web/web-npm/:_authToken=${TROVE_TOKEN}") || !strings.Contains(string(r.Body), "id_tokens:") {
 		t.Errorf("the snippet of the project's mapping:\n%s", r.Body)
 	}
-	// A mapping of another tier is not the project administrator's: 404, as a mapping that does not exist.
+	// A mapping of another tier is not the project Owner's: 404, as a mapping that does not exist.
 	wantStatus(t, p.bob(a, "GET", path+"sys-read", nil), 404, "not_found")
 	wantStatus(t, p.bob(a, "GET", "/api/v1/projects/data/ci/issuers/gitlab-main/snippets/gitlab-ci?mapping=web-publish", nil), 404, "not_found")
 	if r := p.bob(a, "GET", issuersPath+"/gitlab-main/snippets/gitlab-ci?mapping=web-publish", nil); r.Status != 403 {
-		t.Errorf("the system route answered %d to a project administrator", r.Status)
+		t.Errorf("the system route answered %d to a project Owner", r.Status)
 	}
 }

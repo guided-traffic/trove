@@ -17,7 +17,7 @@ function verify(host: string, port: number, servername: string): Promise<void> {
  * any journey runs. The browser contexts ignore HTTPS errors (Chromium reads no extra CA file), so this is the
  * place where a wrong or expired certificate stops the run.
  *
- * It then removes the users alice and bob: they are created just in time at their first sign-in (R-AUTH-007), and a
+ * It creates the project `e2e` that the journeys use, and removes the users alice and bob: they are created just in time at their first sign-in (R-AUTH-007), and a
  * user left by an earlier run is bound to the subject of an identity provider that may since have been rebuilt,
  * which the sign-in refuses with `username_taken` (the same preparation E1.1 makes).
  */
@@ -39,6 +39,15 @@ export default async function globalSetup(): Promise<void> {
   if (kc) {
     const [host, port] = kc.split(':');
     await verify(host ?? '127.0.0.1', Number(port), 'trove-keycloak.trove.svc');
+  }
+  // The journeys create their repositories in this project (R-REPO-001); an earlier run may have left it.
+  const project = await fetch(`${edge.origin}/api/v1/projects`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env['TROVE_E2E_ADMIN_TOKEN']}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'e2e', displayName: 'Browser journeys', description: 'Created by the browser journeys' }),
+  });
+  if (project.status !== 201 && project.status !== 409) {
+    throw new Error(`POST /api/v1/projects: ${project.status} ${await project.text()}`);
   }
   for (const user of ['alice', 'bob']) {
     const res = await fetch(`${edge.origin}/api/v1/users/${user}`, {

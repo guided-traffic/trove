@@ -15,7 +15,7 @@ func TestQ_AUTHZ_172_AuditorFindsNuGetPackages(t *testing.T) {
 	e := newAuditorEnv(t)
 	search := func(token string) (int, string) {
 		t.Helper()
-		a := e.st.Do(e.r, "GET", "/api/nuget/nuget-local/v3/search?q=widgets", token, nil)
+		a := e.st.Do(e.r, "GET", "/api/nuget/it/nuget-local/v3/search?q=widgets", token, nil)
 		return a.Status, string(a.Body)
 	}
 	for _, who := range []struct{ name, token string }{{"a user bound to auditor", e.tokAud}, {"a member of a group bound through authz.role_bindings", e.tokMem}} {

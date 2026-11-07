@@ -18,14 +18,14 @@ func TestR_BAS_014_R_BAS_025_AProbeTakesTheSlotClassOfTheCaller(t *testing.T) {
 	m.budget = mainclient.NewBudget(mainclient.BudgetOptions{
 		MaxConcurrent: 4, Replicas: 1, AnonymousShare: 0, QueueTimeout: 20 * time.Millisecond, Metrics: s.m,
 	})
-	w := s.do(http.MethodPut, "/api/npm/npm-all/acme-sdk", nil, "Authorization", bearer(s.full))
+	w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", nil, "Authorization", bearer(s.full))
 	if w.Code != http.StatusForbidden || problemCode(w) != "bastion_read_only" {
 		t.Fatalf("a credentialed write: %d %s", w.Code, w.Body)
 	}
 	if p := m.peakAnon.Load(); p != 0 {
 		t.Fatalf("the probe of a credentialed caller counted as anonymous (%d)", p)
 	}
-	w = s.do(http.MethodPost, "/api/npm/npm-all/acme-sdk", nil)
+	w = s.do(http.MethodPost, "/api/npm/web/npm-all/acme-sdk", nil)
 	if w.Code != http.StatusServiceUnavailable || problemCode(w) != "bastion_busy" {
 		t.Fatalf("a write without a credential, no anonymous slot: %d %s", w.Code, w.Body)
 	}

@@ -11,11 +11,20 @@ export interface HelpTopic {
  * `docs/manual/<section>/`.
  */
 export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[] = [
-  ['/packages', { section: 'user', page: 'packages' }],
-  ['/browse', { section: 'user', page: 'files' }],
+  // The screens of a project (`/projects/<key>/…`, Q-UI-129) are looked up as `/project/…`, whatever the key.
+  ['/project', { section: 'admin', page: 'projects' }],
+  ['/project/packages', { section: 'user', page: 'packages' }],
+  ['/project/browse', { section: 'user', page: 'files' }],
+  ['/project/repositories', { section: 'user', page: 'repositories' }],
   // >>> M4b vulnerabilities
-  ['/vulnerabilities', { section: 'user', page: 'vulnerabilities' }],
+  ['/project/vulnerabilities', { section: 'user', page: 'vulnerabilities' }],
   // <<< M4b vulnerabilities
+  ['/project/policies', { section: 'admin', page: 'permissions' }],
+  ['/project/service-accounts', { section: 'admin', page: 'sign-in-and-identity' }],
+  // >>> M4 ci
+  ['/project/ci', { section: 'admin', page: 'gitlab-ci' }],
+  // <<< M4 ci
+  ['/projects', { section: 'admin', page: 'projects' }],
   ['/guides', { section: 'user', page: 'client-setup' }],
   ['/setup', { section: 'user', page: 'client-setup' }],
   ['/profile/tokens', { section: 'user', page: 'access-tokens' }],
@@ -36,17 +45,19 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
   ['/admin/permissions', { section: 'admin', page: 'permissions' }],
   ['/admin/roles', { section: 'admin', page: 'permissions' }],
   ['/admin/dashboard', { section: 'admin', page: 'dashboard' }],
+  ['/admin/security', { section: 'admin', page: 'security-dashboard' }],
   ['/admin/system', { section: 'admin', page: 'operations' }],
   ['/admin/audit', { section: 'admin', page: 'operations' }],
+  // >>> M4b vulnerabilities
+  ['/admin/advisory-sources', { section: 'admin', page: 'vulnerability-sources' }],
+  // <<< M4b vulnerabilities
 ];
 
 /** The router commands of the help for a URL: the matching page, or the overview. */
 export function helpFor(url: string): readonly string[] {
-  const path = url.split(/[?#]/, 1)[0] ?? '';
-  // >>> M4 ci
-  // The CI screens of a project (Q-CI-26) live under the project, and explain themselves on the CI page.
-  if (/^\/admin\/projects\/[^/]+\/ci(\/|$)/.test(path)) return ['/help', 'admin', 'gitlab-ci'];
-  // <<< M4 ci
+  const raw = url.split(/[?#]/, 1)[0] ?? '';
+  const inProject = /^\/projects\/[^/]+(\/.*)?$/.exec(raw);
+  const path = inProject ? `/project${inProject[1] ?? ''}` : raw;
   let best: readonly [string, HelpTopic] | undefined;
   for (const entry of HELP_TOPICS) {
     const [route] = entry;

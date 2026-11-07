@@ -41,7 +41,7 @@ func TestR_VULN_010_TheClaimHolderIsTheRulesNotAPatternMatch(t *testing.T) {
 			holder[it.Name] = *it.ClaimRepository
 		}
 	}
-	if holder["@acme/y"] != "npm-local" {
+	if holder["@acme/y"] != "it/npm-local" {
 		t.Errorf("@acme/y is held by %q", holder["@acme/y"])
 	}
 	if holder["@pub/x"] != "<none>" {

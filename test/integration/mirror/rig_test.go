@@ -347,7 +347,7 @@ func (r *rig) web(name string, extra ...string) *testenv.Replica {
 // get is a client's GET of a path below the remote's registry URL.
 func (r *rig) get(rep *testenv.Replica, path string) testenv.Answer {
 	r.t.Helper()
-	return r.st.Do(rep, http.MethodGet, "/api/"+r.format+"/"+repoKey+"/"+path, r.reader, nil)
+	return r.st.Do(rep, http.MethodGet, "/api/"+r.format+"/"+testenv.DefaultProject+"/"+repoKey+"/"+path, r.reader, nil)
 }
 
 func (r *rig) api(rep *testenv.Replica, method, path string, body any, hdr ...string) testenv.Answer {
@@ -359,7 +359,7 @@ func (r *rig) api(rep *testenv.Replica, method, path string, body any, hdr ...st
 func (r *rig) waitAdmits(rep *testenv.Replica, name string) {
 	r.t.Helper()
 	testenv.WaitFor(r.t, "the snapshot to admit "+name, 30*time.Second, func() bool {
-		repo, err := rep.App.Repositories().ByKey(context.Background(), repoKey)
+		repo, err := rep.App.Repositories().ByName(context.Background(), testenvName(repoKey))
 		return err == nil && repo.Admits(name, false)
 	})
 }
@@ -464,7 +464,7 @@ func (r *rig) storedItem(path string) bool {
 
 // series is the name of a metric series of the mirror repository with its labels: the text format writes them sorted by name.
 func series(name string, labels ...string) string {
-	pairs := []string{`repo="` + repoKey + `"`}
+	pairs := []string{`repo="` + repoName + `"`}
 	for i := 0; i+1 < len(labels); i += 2 {
 		pairs = append(pairs, labels[i]+`="`+labels[i+1]+`"`)
 	}

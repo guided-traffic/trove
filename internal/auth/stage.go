@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // SessionCookie is the name of the UI session cookie (Q-AUTH-2).
@@ -104,8 +105,8 @@ func New(o Options) *Stage {
 // Authenticate implements [Authenticator].
 func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) {
 	ctx := r.Context()
-	p := rulePath(r, ep)
-	if isExchangeRoute(r.Method, p) {
+	p, raw := rulePaths(r, ep)
+	if isExchangeRoute(r.Method, raw) {
 		// The ID token in the Authorization header of an exchange is not a
 		// credential for this stage (R-AUTH-001).
 		return anonymousResult(), nil
@@ -124,20 +125,27 @@ func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) 
 			return s.bySession(r, p, c.Value)
 		}
 	}
-	return s.noCredential(ctx, r, p, ep)
+	return s.noCredential(ctx, r, p, raw, ep)
 }
 
-// rulePath is the path the stage's path rules read: the request path where the process serves the route family of the
-// request on its endpoint ([EndpointRules.Served]), and "" where it does not, which no rule matches. A request of an
-// unserved family is so decided like an unknown path by every rule at once - the exchange routes, the path rule of the
-// session cookie, the routes that are always open, the public operations, the hard limit on an unsafe anonymous request
-// to /api/v1 and the challenge - and its answer, before and after authentication, is the one of GET /does-not-exist
-// (R-EP-005, Q-ARCH-302, Q-ARCH-306).
-func rulePath(r *http.Request, ep EndpointRules) string {
+// rulePaths are the two readings of the request path the stage's path rules take, where the process serves the route
+// family of the request on its endpoint ([EndpointRules.Served]), and "" for both where it does not, which no rule
+// matches. A request of an unserved family is so decided like an unknown path by every rule at once - the exchange
+// routes, the path rule of the session cookie, the routes that are always open, the public operations, the hard limit on
+// an unsafe anonymous request to /api/v1 and the challenge - and its answer, before and after authentication, is the one
+// of GET /does-not-exist (R-EP-005, Q-ARCH-302, Q-ARCH-306).
+//
+// path is the unescaped path, the one ServeMux routes by (it unescapes each segment): the rules that limit a request -
+// the hard limit of /api/v1, the session cookie's path rule and the challenge - read it, so an escape in the path
+// (/api/v%31/…) cannot step around a limit of the family the router sends the request to. raw is the escaped path as
+// received: the rules that open a route read it - the always-open routes, the npm login start and the exchange routes,
+// whose repository address qname.ParseAddress reads as the dispatcher does (a "%" in a named segment is no address) -
+// so an escape never opens a route (R-AUTH-037).
+func rulePaths(r *http.Request, ep EndpointRules) (path, raw string) {
 	if ep.Served != nil && !ep.Served(r) {
-		return ""
+		return "", ""
 	}
-	return r.URL.Path
+	return r.URL.Path, r.URL.EscapedPath()
 }
 
 // routeAnswer asks [EndpointRules.APIKeyRoute] at most once per request, and only
@@ -215,7 +223,7 @@ func (s *Stage) fail(method Method, reason string, err error) (Result, error) {
 }
 
 // challenge renders the WWW-Authenticate value of the request (R-AUTH-002) for the
-// path of [rulePath]. A rejected token adds error="invalid_token" on the management
+// unescaped path of [rulePaths]. A rejected token adds error="invalid_token" on the management
 // API. Basic is offered only to package clients on the package and raw-file routes,
 // which answer it with configured credentials; a browser, recognised by its Fetch
 // Metadata headers, would answer it with its native login dialog instead of trove's
@@ -240,7 +248,7 @@ func fromBrowser(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Mode") != "" || r.Header.Get("Sec-Fetch-Dest") != ""
 }
 
-// unauthenticated is the 401 of the request whose path rules read path ([rulePath]).
+// unauthenticated is the 401 of the request whose path rules read path ([rulePaths]).
 func unauthenticated(r *http.Request, path, code, detail string, tokenRejected bool) error {
 	return errs.E(errs.Unauthenticated, code, detail, errs.WithChallenge(challenge(r, path, tokenRejected)))
 }
@@ -441,16 +449,17 @@ func (s *Stage) bySession(r *http.Request, path, cookie string) (Result, error) 
 // the route is one that is always reachable without a credential. An endpoint that
 // admits no anonymous request turns every request without a credential into a 401,
 // those routes included (R-EP-010 item 4), so an outside audience learns nothing
-// from the answer about which routes the endpoint serves (R-EP-005). path is the
-// one of [rulePath]: a route of a family the process does not serve is neither
-// always open nor public, and the hard limit of /api/v1 does not apply to it, so
-// it is decided like an unknown path (Q-ARCH-302).
-func (s *Stage) noCredential(ctx context.Context, r *http.Request, path string, ep EndpointRules) (Result, error) {
+// from the answer about which routes the endpoint serves (R-EP-005). path and raw
+// are the readings of [rulePaths]: a route of a family the process does not serve is
+// neither always open nor public, and the hard limit of /api/v1 does not apply to it,
+// so it is decided like an unknown path (Q-ARCH-302). The always-open routes read
+// raw, the hard limit reads path.
+func (s *Stage) noCredential(ctx context.Context, r *http.Request, path, raw string, ep EndpointRules) (Result, error) {
 	if !ep.Anonymous {
 		ep.refused(r, Refusal{Reason: RefusedAnonymous})
 		return s.fail(MethodNone, "no_credential", unauthenticated(r, path, errs.CodeCredentialsRequired, "This endpoint requires a credential.", false))
 	}
-	if path != "" && (alwaysOpen(r.Method, path) || (ep.PublicRoute != nil && ep.PublicRoute(r))) {
+	if path != "" && (alwaysOpen(r.Method, raw) || (ep.PublicRoute != nil && ep.PublicRoute(r))) {
 		return anonymousResult(), nil
 	}
 	// Anonymous never passes an unsafe method on /api/v1 (R-AUTH-037 hard limit).
@@ -484,9 +493,9 @@ func isManagementAPI(p string) bool { return p == "/api/v1" || strings.HasPrefix
 // on /api/<format> for GET and HEAD, and ignored everywhere else. The login
 // options ignore it too: an ended session's cookie would make the sign-in screen
 // unreachable, and the browser cannot drop an HttpOnly cookie (Q-AUTH-177). p is
-// the path of [rulePath], so a route of a family the process does not serve
-// ignores the cookie as an unknown path does, an ended session's included
-// (Q-ARCH-306).
+// the unescaped path of [rulePaths], so a route of a family the process does not
+// serve ignores the cookie as an unknown path does, an ended session's included
+// (Q-ARCH-306), and an escape does not move a request out of its family's rule.
 func sessionAllowed(method, p string) bool {
 	switch {
 	case p == "/api/v1/auth/login-options":
@@ -507,7 +516,8 @@ func sessionAllowed(method, p string) bool {
 // value, the npm login start, and reads of / (the redirect to the UI) and of the
 // UI shell under /ui/, whose data
 // comes from the management API (Q-AUTH-19). A credential sent to one of them is
-// still evaluated.
+// still evaluated. p is the escaped path of [rulePaths]: a route reached only through
+// an escape (/api/v1/tokens/revok%65) is not open.
 func alwaysOpen(method, p string) bool {
 	switch {
 	case p == "/" || p == "/ui" || strings.HasPrefix(p, "/ui/"):
@@ -523,27 +533,24 @@ func alwaysOpen(method, p string) bool {
 }
 
 // npmLoginStart reports whether p is the npm web login start (R-AUTH-034):
-// /-/v1/login, or /api/npm/<repoKey>/-/v1/login with one key segment. Any other
-// path that merely ends in /-/v1/login, under /files/ or /api/v1/ for example,
-// is not open.
+// /-/v1/login, or /api/npm/<projectKey>/<repoKey>/-/v1/login, read by
+// qname.ParseAddress (one segment after the format is no address, and a "%" in the
+// named segments is none either). Any other path that merely ends in /-/v1/login,
+// under /files/ or /api/v1/ for example, is not open.
 func npmLoginStart(p string) bool {
 	if p == "/-/v1/login" {
 		return true
 	}
-	rest, ok := strings.CutPrefix(p, "/api/npm/")
-	if !ok {
-		return false
-	}
-	key, tail, ok := strings.Cut(rest, "/")
-	return ok && key != "" && tail == "-/v1/login"
+	a, ok := qname.ParseAddress(p)
+	return ok && a.Family == qname.FamilyAPI && a.Format == "npm" && a.Rest == "-/v1/login"
 }
 
 // isExchangeRoute reports whether a request is a POST to a route that takes a
 // GitLab ID token as request input: the CI exchange and the npm trusted-publishing
 // exchanges (R-AUTH-001). The stage does not evaluate the Authorization header
-// of these; the handler validates the ID token. p is the path of [rulePath]: on a
-// process that does not serve the exchange, the header is a credential as on any
-// other path (Q-ARCH-302).
+// of these; the handler validates the ID token. p is the escaped path of [rulePaths]:
+// on a process that does not serve the exchange, the header is a credential as on
+// any other path (Q-ARCH-302), and an escaped exchange path is no exchange.
 func isExchangeRoute(method, p string) bool {
 	if method != http.MethodPost {
 		return false
@@ -555,9 +562,6 @@ func isExchangeRoute(method, p string) bool {
 	if strings.HasPrefix(p, "/-/npm/v1/oidc/token/exchange/package/") {
 		return true
 	}
-	if rest, ok := strings.CutPrefix(p, "/api/npm/"); ok {
-		_, tail, ok := strings.Cut(rest, "/")
-		return ok && strings.HasPrefix(tail, marker[1:])
-	}
-	return false
+	a, ok := qname.ParseAddress(p)
+	return ok && a.Family == qname.FamilyAPI && a.Format == "npm" && strings.HasPrefix(a.Rest, marker[1:])
 }

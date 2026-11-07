@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { expect, expectAccessible, openFilter, signInLocal, signOut, test, unique } from '../support';
+import { e2eProject, expect, expectAccessible, openFilter, qualified, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
 // R-UI-047 journey "packages" (E2.8; R-UI-006 to R-UI-009, R-UI-016, R-UI-017): a version published to an npm local
 // repository through the npm protocol appears in the packages list, its README renders sanitized, and the client setup
@@ -75,7 +75,7 @@ function publishBody(): object {
         dist: {
           integrity: `sha512-${createHash('sha512').update(tgz).digest('base64')}`,
           shasum: createHash('sha1').update(tgz).digest('hex'),
-          tarball: `https://localhost/api/npm/${repoKey}/${pkgName}/-/${pkgName}-${version}.tgz`,
+          tarball: `https://localhost/api/npm/${e2eProject}/${repoKey}/${pkgName}/-/${pkgName}-${version}.tgz`,
         },
       },
     },
@@ -96,7 +96,7 @@ function publishBody(): object {
  * repository is not anonymously readable.
  */
 function matrixSnippet(client: string, edgePort: string): { file: string; content: string } {
-  const registry = `https://localhost:${edgePort}/api/npm/${repoKey}/`;
+  const registry = `https://localhost:${edgePort}/api/npm/${e2eProject}/${repoKey}/`;
   const npmrc = `registry=${registry}\n${registry.replace(/^https:/, '')}:_authToken=\${TROVE_TOKEN}\n`;
   switch (client) {
     case 'npm':
@@ -121,16 +121,16 @@ const clients = [
 ];
 
 test.beforeAll(async ({ admin }) => {
-  const created = await admin.post('/api/v1/repositories', { data: { key: repoKey, class: 'local', format: 'npm' } });
+  const created = await admin.post(repositories(), { data: { key: repoKey, class: 'local', format: 'npm' } });
   expect(created.status(), await created.text()).toBe(201);
-  const published = await admin.put(`/api/npm/${repoKey}/${pkgName}`, { data: publishBody() });
+  const published = await admin.put(`/api/npm/${e2eProject}/${repoKey}/${pkgName}`, { data: publishBody() });
   expect(published.status(), await published.text()).toBe(201);
 });
 
 test.afterAll(async ({ admin }) => {
-  await admin.delete(`/api/v1/repositories/${repoKey}`);
-  await admin.delete(`/api/v1/repositories/${wizardKey}`);
-  await admin.delete(`/api/v1/repositories/${mirrorKey}`);
+  await admin.delete(repositoryApi(repoKey));
+  await admin.delete(repositoryApi(wizardKey));
+  await admin.delete(repositoryApi(mirrorKey));
 });
 
 test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its sanitized README and the setup snippets of the npm matrix', async ({
@@ -141,11 +141,11 @@ test('E2.8 R-UI-006 R-UI-008 R-UI-016 the published version in the list, its san
   await signInLocal(page);
 
   await test.step('the published version appears in the packages list', async () => {
-    await page.goto('/ui/en/packages');
+    await page.goto(`/ui/en/projects/${e2eProject}/packages`);
     await expect(page.getByRole('heading', { name: 'Packages', level: 1 })).toBeVisible();
     await expectAccessible(page, 'package list');
     await openFilter(page, 'Repository');
-    await page.getByRole('checkbox', { name: repoKey, exact: true }).check();
+    await page.getByRole('checkbox', { name: qualified(repoKey), exact: true }).check();
     await page.getByRole('button', { name: 'Search' }).click();
     const row = page.getByRole('table', { name: 'Packages' }).getByRole('row', { name: new RegExp(pkgName) });
     await expect(row.getByRole('link', { name: pkgName })).toBeVisible();
@@ -205,7 +205,7 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
   await signInLocal(page);
   const guard = page.getByRole('checkbox', { name: 'latestGuard' });
   const npmMember = async () => {
-    const res = await admin.get(`/api/v1/repositories/${wizardKey}`);
+    const res = await admin.get(repositoryApi(wizardKey));
     expect(res.status()).toBe(200);
     return ((await res.json()) as { npm?: Record<string, unknown> }).npm;
   };
@@ -216,6 +216,7 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
     await page.getByRole('button', { name: 'Next' }).click();
     await page.getByRole('radio', { name: /^Local/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByLabel('Project', { exact: true }).selectOption(e2eProject);
     await page.locator('#f-key').fill(wizardKey);
     await expect(page.getByText('The key is available.')).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
@@ -227,7 +228,7 @@ test('R-UI-021 R-ARCH-004 the npm settings in the wizard and on the edit form, r
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('latestGuard: false')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${wizardKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${wizardKey}$`));
     expect(await npmMember()).toEqual({ latestGuard: false });
   });
 
@@ -266,6 +267,7 @@ test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the w
     await expect(page.getByRole('radio', { name: /^Virtual/ })).toBeEnabled();
     await page.getByRole('radio', { name: /^Remote/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByLabel('Project', { exact: true }).selectOption(e2eProject);
     await page.locator('#f-key').fill(mirrorKey);
     await expect(page.getByText('The key is available.')).toBeVisible();
     await page.getByRole('button', { name: 'Next' }).click();
@@ -307,8 +309,8 @@ test('R-UI-021 R-REPO-050 the Mirror section of a remote npm repository in the w
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('Pull-through (no mirror).')).toBeVisible();
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${mirrorKey}$`));
-    const res = await admin.get(`/api/v1/repositories/${mirrorKey}`);
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${mirrorKey}$`));
+    const res = await admin.get(repositoryApi(mirrorKey));
     expect(res.status()).toBe(200);
     const remote = ((await res.json()) as { remote?: { mode?: string; mirror?: Record<string, unknown> } }).remote;
     expect(remote?.mode).toBe('pullThrough');

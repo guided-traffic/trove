@@ -1,5 +1,5 @@
 // Package nuget is the NuGet v3 format (R-NUGET-001 to R-NUGET-034): the routes below
-// /api/nuget/<repoKey>/v3/, the classification of paths, the settings of a repository, the
+// /api/nuget/<projectKey>/<repoKey>/v3/, the classification of paths, the settings of a repository, the
 // native error shape, the service index, and the write side: the push, the unlist, the relist
 // and the delete of a version, the tombstones that keep a removed number from returning, and
 // the serve check (handlers_publish.go, handlers_delete.go, hooks.go, hooks_remove.go,
@@ -76,7 +76,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			DisplayName:      "NuGet",
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
-			ProtocolBasePath: "/api/nuget/{key}/",
+			ProtocolBasePath: "/api/nuget/{project}/{key}/",
 			// The upstream a remote repository proposes and the host family nuget.org serves
 			// search and symbols from (R-NUGET-014). The upstream test requests the service
 			// index itself, so there is no probe path (R-REPO-024).

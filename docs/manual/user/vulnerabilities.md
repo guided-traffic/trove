@@ -6,11 +6,11 @@ The Vulnerabilities screen shows which stored package versions are affected by a
 
 trove keeps a copy of public advisory data for the package formats it serves (npm and NuGet) and compares it with the versions stored in your repositories. It compares names and versions only; it does not open the files. A match is a **finding**: one advisory affects one stored version in one repository. A finding is created when a version is published or fetched into a repository, and again when the advisory data changes.
 
-The report shows the findings of the repositories you may read, and only those. A repository you may not read contributes no row and no count.
+The report shows the findings of the repositories you may read, and only those. A repository you may not read contributes no row and no count. An auditor, who reads the metadata of every project, finds the findings of all projects in the [security dashboard](../admin/security-dashboard.md) of the admin area, with a search by advisory identifier, package and project.
 
 ## The report
 
-Select **Vulnerabilities** in the side bar.
+Select **Vulnerabilities** in the side bar of a project. The report shows the findings of that project's repositories.
 
 **The counts.** The top of the screen counts the open findings by severity (**Critical**, **High**, **Medium**, **Low**, **Unknown**), then **Malicious**, **Needs triage** and **Blocked versions**. An open finding is one that needs triage, is confirmed, or is blocked. Each count is a link: it opens the list below with that filter applied. A line under the counts says how many of your repositories are scanned, hold only internal names, wait for advisory data or are not covered.
 
@@ -74,4 +74,4 @@ The **Vulnerabilities** tab of a package version lists, per repository you may r
 
 If you may read the settings, **Advisory sources** at the top of the report opens the table of sources: per source and ecosystem its mode, whether its data is current or stale, when it was last synchronised, the failed runs in a row with the last error, the number of records, rejected records and ranges trove cannot compare, and the next run. With the permission to change settings you can start a synchronisation from there.
 
-A source in the mode **Mirror repository** reads its files from a generic local repository instead of the network, for installations without internet access. The screen shows the commands that download each file on a connected machine and upload it to that repository, which the commands name (the setting `vulnerabilities.sources.<source>.repository`).
+A source in the mode **Mirror repository** reads its files from a generic local repository instead of the network, for installations without internet access. The screen shows the commands that download each file on a connected machine and upload it to that repository, which the commands name (the setting `vulnerabilities.sources.<source>.repository`, the repository's qualified name `<projectKey>/<repoKey>`).

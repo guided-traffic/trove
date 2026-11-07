@@ -102,7 +102,7 @@ func (e *env) publish(repo string, s spec) {
 	if s.Tag == "" {
 		s.Tag = "latest"
 	}
-	a := e.st.Do(e.r, "PUT", "/api/npm/"+repo+"/"+strings.ReplaceAll(s.Name, "/", "%2f"), e.tokA, publishBody(e.t, s))
+	a := e.st.Do(e.r, "PUT", "/api/npm/it/"+repo+"/"+strings.ReplaceAll(s.Name, "/", "%2f"), e.tokA, publishBody(e.t, s))
 	if a.Status != 201 {
 		e.t.Fatalf("publish %s@%s to %s: %d %s", s.Name, s.Version, repo, a.Status, a.Body)
 	}

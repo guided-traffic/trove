@@ -3,6 +3,7 @@ package view
 import (
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -33,17 +34,17 @@ func NewTopology(repos []repository.Repository) Topology {
 		containers: map[string][]string{},
 	}
 	for _, r := range repos {
-		t.class[r.Key] = r.Class
-		t.repos[r.Key] = r
+		t.class[r.Name.String()] = r.Class
+		t.repos[r.Name.String()] = r
 	}
 	for _, r := range repos {
 		if r.Class != repository.Virtual {
 			continue
 		}
 		phys := physicalMembers(r, 0)
-		t.members[r.Key] = phys
+		t.members[r.Name.String()] = phys
 		for _, k := range phys {
-			t.containers[k] = append(t.containers[k], r.Key)
+			t.containers[k] = append(t.containers[k], r.Name.String())
 		}
 	}
 	for k := range t.containers {
@@ -62,8 +63,22 @@ func physicalMembers(v repository.Repository, depth int) []string {
 			out = append(out, physicalMembers(m, depth+1)...)
 			continue
 		}
-		if !slices.Contains(out, m.Key) {
-			out = append(out, m.Key)
+		if !slices.Contains(out, m.Name.String()) {
+			out = append(out, m.Name.String())
+		}
+	}
+	return out
+}
+
+// ID returns the database ID of the repository of a qualified name, 0 for a name the topology does not know.
+func (t Topology) ID(key string) int64 { return t.repos[key].NumericID() }
+
+// IDs returns the database IDs of the repositories of the given qualified names; a name the topology does not know is left out.
+func (t Topology) IDs(keys []string) []int64 {
+	out := make([]int64, 0, len(keys))
+	for _, k := range keys {
+		if id := t.ID(k); id != 0 {
+			out = append(out, id)
 		}
 	}
 	return out
@@ -115,6 +130,28 @@ func (t Topology) Expand(keys []string) []string {
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// InProject turns the project of a filter into a repository filter: the physical repositories of the project,
+// intersected with the repositories the filter names (a virtual repository standing for its members). A filter
+// without a project is returned as it is. A project whose repositories the filter excludes lists nothing.
+func (t Topology) InProject(f Filter) Filter {
+	if f.Project == "" {
+		return f
+	}
+	physical := t.Physical()
+	if f.HasRepositories {
+		physical = t.Expand(f.Repositories)
+	}
+	prefix := f.Project + "/"
+	var in []string
+	for _, k := range physical {
+		if strings.HasPrefix(k, prefix) {
+			in = append(in, k)
+		}
+	}
+	f.Repositories, f.HasRepositories, f.Project = in, true, ""
+	return f
 }
 
 // Containers returns the virtual repositories that contain a physical one.

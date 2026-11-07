@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -92,7 +94,7 @@ func (k RouteKind) RequestKind() RequestKind {
 // connection is aborted instead ([ServeRoute]).
 type HandlerFunc func(ctx context.Context, rq *Request, w http.ResponseWriter) error
 
-// Route is one protocol operation below /api/<id>/<repoKey>/ (R-ARCH-008).
+// Route is one protocol operation below /api/<id>/<projectKey>/<repoKey>/ (R-ARCH-008).
 type Route struct {
 	// Name is the stable metric, log and audit label: "npm.tarball.get". The
 	// request log and the metrics name the handler of a request by it.
@@ -295,7 +297,7 @@ type Request struct {
 	// resolution consults on its behalf, "" otherwise. Only Member sets it and only
 	// Addressed reads it, so no format can name another repository as the addressed one
 	// (R-AUTHZ-015, Q-EP-11, Q-AUTHZ-163, Q-ARCH-252).
-	via    string
+	via    qname.Repo
 	Route  *Route
 	Params Params
 	// Path is the canonical repository path (repository.CleanPath); Escaped is the
@@ -330,17 +332,25 @@ type Request struct {
 type Refusal struct {
 	// Format is the ID of the format that owns the prefix.
 	Format ID
-	// Key is the repository segment as addressed: the key, or "<remote>~cache" for the
-	// cache view of a remote repository (R-REPO-032). It has the shape of a key.
-	Key string
+	// Name is the repository segment as addressed: the key, or "<remote>~cache" for the
+	// cache view of a remote repository (R-REPO-032): the name of the repository, CacheView set.
+	Name qname.Repo
+	// CacheView is true when the path addressed the cache view of the remote repository, Name
+	// without the "~cache" suffix.
+	CacheView bool
 	// BaseURL is the response base URL, "https://trove.example.com", without a
 	// trailing slash.
 	BaseURL string
 }
 
-// Registry is "<base>/api/<format>/<key>/", the URL of the addressed repository.
+// Registry is "<base>/api/<format>/<project>/<key>/", the URL of the addressed repository
+// ("<key>~cache" for the cache view).
 func (f Refusal) Registry() string {
-	return f.BaseURL + "/api/" + string(f.Format) + "/" + url.PathEscape(f.Key) + "/"
+	r := f.Name
+	if f.CacheView {
+		r.Key += qname.CacheSuffix
+	}
+	return f.BaseURL + qname.ProtocolBase("/api/"+string(f.Format)+"/{project}/{key}/", r)
 }
 
 type refusalKey struct{}
@@ -455,11 +465,11 @@ type PathInfo struct {
 // otherwise. It is the Addressed of every decision about the request (R-AUTHZ-015), so
 // the populate check, the exposure and the lift of a scope that names the virtual
 // repository follow what the client named (Q-EP-11, Q-AUTHZ-163).
-func (rq *Request) Addressed() string {
-	if rq.via != "" {
+func (rq *Request) Addressed() qname.Repo {
+	if !rq.via.IsZero() {
 		return rq.via
 	}
-	return rq.Repo.Key
+	return rq.Repo.Name
 }
 
 // Member returns a copy of the request made for a member of the repository the request
@@ -467,13 +477,13 @@ func (rq *Request) Addressed() string {
 // client named. A repository that is not a member of rq.Repo is refused, so a request can
 // never be given the standing of a virtual repository it does not belong to.
 func (rq *Request) Member(m *repository.Repository) (*Request, error) {
-	if m == nil || !slices.ContainsFunc(rq.Repo.Members(), func(x repository.Repository) bool { return x.Key == m.Key }) {
-		key := ""
+	if m == nil || !slices.ContainsFunc(rq.Repo.Members(), func(x repository.Repository) bool { return x.Name == m.Name }) {
+		var key qname.Repo
 		if m != nil {
-			key = m.Key
+			key = m.Name
 		}
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "A repository that is not a member was asked for as a member.",
-			errs.WithCause(fmt.Errorf("%q is not a member of %q", key, rq.Repo.Key)))
+			errs.WithCause(fmt.Errorf("%q is not a member of %q", key, rq.Repo.Name)))
 	}
 	c := *rq
 	c.Repo = m
@@ -489,7 +499,7 @@ func (rq *Request) Member(m *repository.Repository) (*Request, error) {
 func (rq *Request) WriteTarget(target *repository.Repository) *Request {
 	c := *rq
 	c.Repo = target
-	c.via = ""
+	c.via = qname.Repo{}
 	return &c
 }
 
@@ -505,5 +515,5 @@ func (rq *Request) RepoRef() RepoRef {
 		}
 		n = n*10 + int64(rq.Repo.ID[i]-'0')
 	}
-	return RepoRef{ID: n, Key: rq.Repo.Key, Class: rq.Repo.Class, Format: ID(rq.Repo.Format)}
+	return RepoRef{ID: n, Name: rq.Repo.Name, Class: rq.Repo.Class, Format: ID(rq.Repo.Format)}
 }

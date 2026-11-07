@@ -622,7 +622,8 @@ export interface paths {
          * Change a group
          * @description `description`, `autoJoin` and `name` (a rename). A group owned by the identity provider's SCIM client answers
          *     `409 managed_by_scim`; auto-join on a group with an administration role binding answers
-         *     `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019). JSON merge patch; read-only members are ignored.
+         *     `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019); auto-join on a group that is a member of a project answers
+         *     `409 auto_join_member_conflict` and names the projects (R-AUTHZ-026). JSON merge patch; read-only members are ignored.
          */
         patch: operations["updateGroup"];
         trace?: never;
@@ -666,27 +667,56 @@ export interface paths {
         };
         /**
          * List service accounts
-         * @description Service accounts ordered by name (R-AUTH-020). Cursor pagination (R-API-010) over `name`. With
-         *     `identities:read` the list holds every account, global and project ones (`project` is the key of the
-         *     account's project, `null` for a global account). An administrator of a project without that
-         *     capability must send `project=<key>` of a project it administers and sees that project's accounts only
-         *     (`403` without the parameter, `404` for a project it does not administer; R-AUTHZ-026, Q-AUTHZ-169).
+         * @description The instance-wide service accounts ordered by name, and, with `identities:read`, the project service accounts too
+         *     (R-AUTH-020, Q-AUTHZ-209). Cursor pagination (R-API-010) over `name`. `project` is the key of the account's project,
+         *     `null` for an instance-wide account; the same `name` may appear for several projects and once instance-wide. The
+         *     `project` parameter keeps the accounts of one project. The accounts of one project are managed under
+         *     `/api/v1/projects/{projectKey}/service-accounts`.
          */
         get: operations["listServiceAccounts"];
         put?: never;
         /**
          * Create a service account
-         * @description A non-human principal for automation (R-AUTH-020). It has no login, session or UI access. Binding the role
-         *     `admin` to it is an operation of the authorization API. Optional `Idempotency-Key`.
-         *
-         *     With `project` the account is a project service account (R-AUTHZ-026, Q-AUTHZ-169): its name starts with
-         *     `<project>-` (`422 project_prefix_required`), it is no group member and no role holder, and only the
-         *     project's own policies grant to it. An administrator of the project creates it while `managePolicies` is
-         *     on (`403 project_switch_off` otherwise); a caller with `identities:write` creates it for any project. A
-         *     caller that is only a project administrator must send `project`. An account without `project` takes no
-         *     name that starts with the key of a project and a hyphen (`422 name_reserved_by_project`, Q-AUTHZ-176).
+         * @description A non-human principal for automation (R-AUTH-020), instance-wide: it belongs to no project and its name is unique
+         *     among the instance-wide accounts. It has no login, session or UI access. Binding the role `admin` to it is an
+         *     operation of the authorization API. An account of a project is created under
+         *     `/api/v1/projects/{projectKey}/service-accounts`. Optional `Idempotency-Key`.
          */
         post: operations["createServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/service-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the service accounts of a project
+         * @description The service accounts of the project, ordered by name, with cursor pagination (R-API-010) over `name`
+         *     (R-AUTH-020, Q-AUTHZ-209). The names are unique within the project, so `name` is the name inside it; the
+         *     principal reference is `sa:<project>/<name>`. An Owner of the project, or a holder of `identities:read`, may call
+         *     it; a project the caller cannot see answers `404`.
+         */
+        get: operations["listProjectServiceAccounts"];
+        put?: never;
+        /**
+         * Create a service account of a project
+         * @description A non-human principal of the project for automation (R-AUTH-020, Q-AUTHZ-169, Q-AUTHZ-209). It has no login,
+         *     session or UI access, is no group member and no role holder, and only the project's own policies grant to it.
+         *     Its name is unique within the project: the same name may exist in another project and as an instance-wide
+         *     account (`409 already_exists` when the project has it). An Owner of the project, or a holder of
+         *     `identities:write`, creates it. Optional `Idempotency-Key`.
+         */
+        post: operations["createProjectServiceAccount"];
         delete?: never;
         options?: never;
         head?: never;
@@ -702,8 +732,8 @@ export interface paths {
         };
         /**
          * Read a service account
-         * @description One service account (R-AUTH-020). A project administrator reads the accounts of its project; any other
-         *     account answers `404` to it.
+         * @description One instance-wide service account (R-AUTH-020). The name of a project's account answers `404` here; read it under the
+         *     project.
          */
         get: operations["getServiceAccount"];
         put?: never;
@@ -722,6 +752,38 @@ export interface paths {
         patch: operations["updateServiceAccount"];
         trace?: never;
     };
+    "/api/v1/projects/{projectKey}/service-accounts/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a service account of a project
+         * @description One service account of the project (R-AUTH-020). An account of another project, or an instance-wide one, answers
+         *     `404` here.
+         */
+        get: operations["getProjectServiceAccount"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a service account of a project
+         * @description Deletes the account with its tokens (R-AUTH-020).
+         */
+        delete: operations["deleteProjectServiceAccount"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a service account of a project
+         * @description Changes the description (R-AUTH-020). JSON merge patch; read-only members are ignored.
+         */
+        patch: operations["updateProjectServiceAccount"];
+        trace?: never;
+    };
     "/api/v1/service-accounts/{name}/disable": {
         parameters: {
             query?: never;
@@ -737,6 +799,30 @@ export interface paths {
          *     also revoked; the default is `false`, so enabling the account again restores its tokens (Q-AUTH-41).
          */
         post: operations["disableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/service-accounts/{name}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable a service account of a project
+         * @description Every token of the account fails with `401 principal_disabled` (R-AUTH-020). With `revokeTokens: true` they are
+         *     also revoked; the default is `false`, so enabling the account again restores its tokens (Q-AUTH-41).
+         */
+        post: operations["disableProjectServiceAccount"];
         delete?: never;
         options?: never;
         head?: never;
@@ -763,6 +849,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectKey}/service-accounts/{name}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable a service account of a project
+         * @description Enables the account (R-AUTH-020).
+         */
+        post: operations["enableProjectServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tokens": {
         parameters: {
             query?: never;
@@ -773,8 +882,8 @@ export interface paths {
         /**
          * List tokens
          * @description Tokens newest first (R-AUTH-028). A caller without `tokens:read` sees its own tokens only and `owner` is forced
-         *     to `me`, except that an administrator of a project lists the tokens of a service account of its project with
-         *     `owner=sa:<name>` (R-AUTHZ-026, Q-AUTHZ-177). The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
+         *     to `me`, except that an Owner of a project lists the tokens of a service account of its project with
+         *     `owner=sa:<project>/<name>` (R-AUTHZ-026, Q-AUTHZ-177). The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
          *     (R-API-010) over the token `id`.
          */
         get: operations["listTokens"];
@@ -969,22 +1078,50 @@ export interface paths {
         put?: never;
         /**
          * Create a service-account token
-         * @description Creates a SAT (R-AUTH-027). The caller is an administrator (a session with recent authentication, or a token
-         *     with `admin: true`), a SAT of the same account under the derivation rule, or, for a project service
-         *     account (R-AUTHZ-026, Q-AUTHZ-169), an administrator of its project while `managePolicies` is on. A
-         *     non-expiring token (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`.
-         *     A token a project administrator creates is never non-expiring, lives at most `auth.tokens.sat` maximum
-         *     lifetime, names no `system` item and has `admin: false` (`422 invalid_scope`); an `endpoints` binding
-         *     is allowed (Q-AUTHZ-177). The value is in this answer only and the answer is never cached.
+         * @description Creates a SAT (R-AUTH-027) of an instance-wide service account. The caller is an administrator (a session with recent
+         *     authentication, or a token with `admin: true`) or a SAT of the same account under the derivation rule. A non-expiring
+         *     token (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`. The value is in this answer
+         *     only and the answer is never cached. The tokens of a project's account are created under
+         *     `/api/v1/projects/{projectKey}/service-accounts/{name}/tokens`.
          */
         post: operations["createServiceAccountToken"];
         /**
          * Revoke all tokens of a service account
-         * @description Revokes every active token of the account with reason `admin` (R-AUTH-029). An administrator of the
-         *     account's project revokes the tokens of a project service account, whatever the project's switches say
-         *     (Q-AUTHZ-177); any other account answers `404` to it.
+         * @description Revokes every active token of an instance-wide service account with reason `admin` (R-AUTH-029).
          */
         delete: operations["revokeServiceAccountTokens"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/service-accounts/{name}/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a token of a project service account
+         * @description Creates a SAT of a service account of the project (R-AUTH-027, Q-AUTHZ-177). The caller is an Owner of the
+         *     project acting with a session (with recent authentication) or a token with `admin: true`, or an administrator
+         *     of trove. A non-expiring token (`ttlSeconds: 0`) needs an administrator of trove and
+         *     `auth.tokens.sat.allow_non_expiring`. A token an Owner creates is never non-expiring, lives at most
+         *     `auth.tokens.sat` maximum lifetime, names no `system` item and has `admin: false` (`422 invalid_scope`); an
+         *     `endpoints` binding is allowed. The value is in this answer only and the answer is never cached.
+         */
+        post: operations["createProjectServiceAccountToken"];
+        /**
+         * Revoke all tokens of a project service account
+         * @description Revokes every active token of the account with reason `admin` (R-AUTH-029).
+         */
+        delete: operations["revokeProjectServiceAccountTokens"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1170,32 +1307,68 @@ export interface paths {
         };
         /**
          * List permission policies
-         * @description Every permission policy, ordered by name, with cursor pagination (R-API-010). Filters:
-         *     `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`, `anonymous`, `authenticated`)
-         *     keeps the policies with an entry for that principal and, while `expandGroups` is `true` (the
-         *     default), also those with an entry for a group the principal belongs to; `repository=<key>`
-         *     keeps the policies whose selectors cover that repository. A principal or repository that does
-         *     not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052). `project=<key>`
-         *     keeps the policies of a project (R-AUTHZ-026); an administrator of a project without `policies:read`
-         *     sees the policies of its project and no global policy (Q-AUTHZ-180).
+         * @description Every instance-wide permission policy ordered by name, and, with `policies:read`, the project policies too, with
+         *     cursor pagination (R-API-010). Filters: `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`,
+         *     `sa:web/deploy`, `anonymous`, `authenticated`) keeps the policies with an entry for that principal and, while
+         *     `expandGroups` is `true` (the default), also those with an entry for a group the principal belongs to;
+         *     `repository=<project>/<key>` keeps the policies whose selectors cover that repository. A principal or repository that
+         *     does not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052). `project=<key>` keeps the
+         *     policies of a project; every item shows its project in `project`, `null` for an instance-wide policy (Q-AUTHZ-209). The
+         *     policies of one project are managed under `/api/v1/projects/{projectKey}/policies`.
          */
         get: operations["listPermissionPolicies"];
         put?: never;
         /**
          * Create a permission policy
-         * @description Validates the policy (R-AUTHZ-021), stores it and notifies the `authz` change area in one
-         *     transaction with the audit event `authz.policy.created`. The answer carries the epoch the write
-         *     produced in `Trove-Authz-Epoch` and the policy's `ETag`. Warnings do not block saving. A name
-         *     that exists answers `409 already_exists`; a rule that fails answers `422` with the code of the
-         *     first problem and every problem in `errors` (`unknown_principal`, `unknown_repository`,
-         *     `unknown_format`, `invalid_pattern`, `invalid_action`, `duplicate_principal`,
-         *     `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
-         *     `virtual_action_not_applicable`, `action_not_allowed`; for a project policy also
-         *     `repository_outside_project`, `project_prefix_required`, `principal_outside_project`, `unknown_project`).
-         *     An administrator of a project creates policies with `"project": "<its key>"` while `managePolicies`
-         *     is on and `403`s for a global policy (R-AUTHZ-026).
+         * @description Validates the policy (R-AUTHZ-021), stores it as an instance-wide policy and notifies the `authz` change area in one
+         *     transaction with the audit event `authz.policy.created`. Its selectors are qualified: `<projectGlob>/<keyGlob>`,
+         *     `@any…` (a bare key is `422 invalid_pattern`). The name is unique among the instance-wide policies: `409
+         *     already_exists`. The answer carries the epoch the write produced in `Trove-Authz-Epoch` and the policy's `ETag`.
+         *     Warnings do not block saving; a rule that fails answers `422` with the code of the first problem and every problem in
+         *     `errors` (`unknown_principal`, `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
+         *     `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
+         *     `virtual_action_not_applicable`, `action_not_allowed`, `principal_outside_project`). A policy of a project is created
+         *     under `/api/v1/projects/{projectKey}/policies`.
          */
         post: operations["createPermissionPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the permission policies of a project
+         * @description The policies of the project (Q-AUTHZ-209), ordered by name, with cursor pagination (R-API-010). The names are
+         *     unique within the project. Filters `principal` and `expandGroups` act as on `GET /api/v1/permission-policies`;
+         *     `repository` is a bare key of the project. An Owner of the project, or a holder of `policies:read`, may call
+         *     it; a project the caller cannot see answers `404`.
+         */
+        get: operations["listProjectPermissionPolicies"];
+        put?: never;
+        /**
+         * Create a permission policy of a project
+         * @description Validates the policy (R-AUTHZ-021), stores it in the project and notifies the `authz` change area in one
+         *     transaction with the audit event `authz.policy.created`. The name is unique within the project: the same
+         *     name may exist in another project and as a global policy (`409 already_exists` when the project has it).
+         *     The selectors name repositories of the project by bare key (`422 repository_outside_project` for another
+         *     project's); the entries grant to users, groups, global service accounts, CI mappings and the project's own
+         *     service accounts (`422 principal_outside_project` for another's). The answer carries the epoch the write
+         *     produced in `Trove-Authz-Epoch` and the policy's `ETag`. Warnings do not block saving; a rule that fails
+         *     answers `422` with the code of the first problem and every problem in `errors`. An Owner of the project,
+         *     or a holder of `policies:write`, creates it.
+         */
+        post: operations["createProjectPermissionPolicy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1214,7 +1387,8 @@ export interface paths {
         };
         /**
          * Read a permission policy
-         * @description Answers the policy with its warnings and its `ETag` (the version, R-API-012).
+         * @description Answers the instance-wide policy with its warnings and its `ETag` (the version, R-API-012). The name of a project's
+         *     policy answers `404` here; read it under the project.
          */
         get: operations["getPermissionPolicy"];
         /**
@@ -1247,6 +1421,49 @@ export interface paths {
         patch: operations["patchPermissionPolicy"];
         trace?: never;
     };
+    "/api/v1/projects/{projectKey}/policies/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a permission policy of a project
+         * @description Answers the policy of the project with its warnings and its `ETag` (the version, R-API-012). A global policy, or
+         *     one of another project, answers `404` here.
+         */
+        get: operations["getProjectPermissionPolicy"];
+        /**
+         * Replace a permission policy of a project
+         * @description Replaces the whole policy (R-AUTHZ-021); the name is immutable. `If-Match` is required: a missing header answers
+         *     `428`, a version that is not current `412` with `currentEtag`, and `If-Match: *` is the deliberate blind
+         *     write. The answer carries the new `ETag` and `Trove-Authz-Epoch`. The audit event `authz.policy.updated` is
+         *     journaled (R-AUTHZ-031).
+         */
+        put: operations["replaceProjectPermissionPolicy"];
+        post?: never;
+        /**
+         * Delete a permission policy of a project
+         * @description Removes the policy with its selectors, patterns and entries. `If-Match` is optional; when sent, a version that is
+         *     not current answers `412`. The audit event `authz.policy.deleted` is journaled (R-AUTHZ-031).
+         */
+        delete: operations["deleteProjectPermissionPolicy"];
+        options?: never;
+        head?: never;
+        /**
+         * Change members of a permission policy of a project
+         * @description A JSON merge patch (RFC 7396, R-API-013) applied to the current policy; the result is validated and written
+         *     exactly like a replacement. `name` is immutable.
+         */
+        patch: operations["patchProjectPermissionPolicy"];
+        trace?: never;
+    };
     "/api/v1/authz/validate-policy": {
         parameters: {
             query?: never;
@@ -1258,9 +1475,12 @@ export interface paths {
         put?: never;
         /**
          * Validate a permission policy without storing it
-         * @description Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the
-         *     keys of the repositories the selectors currently cover. A policy with problems is still a `200`
-         *     answer with `valid: false`; the editor shows the list. The name need not be unused.
+         * @description Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the names of the
+         *     repositories the selectors currently cover. A policy with problems is still a `200` answer with `valid: false`; the
+         *     editor shows the list. The name need not be unused. A policy that names a project in the body (`project`) is
+         *     validated as a policy of that project (bare keys, the name within the project); the caller holds `policies:read` or is
+         *     an Owner of the project, and a project the caller cannot see answers `404`. Without `project` the policy is validated
+         *     as an instance-wide policy (qualified selectors; `policies:read`).
          */
         post: operations["validatePermissionPolicy"];
         delete?: never;
@@ -1359,8 +1579,8 @@ export interface paths {
         /**
          * What the caller may do
          * @description The system roles and capabilities the caller's credential exercises, the principals the caller
-         *     acts as (the user, its groups, `authenticated`), the projects it administers with their switches
-         *     (`projects`, R-AUTHZ-026) and a summary of the credential's scope, which
+         *     acts as (the user, its groups, `authenticated`), the projects it is a member of with the role
+         *     in force (`memberships`, R-AUTHZ-026, Q-AUTHZ-207) and a summary of the credential's scope, which
          *     is a ceiling (R-AUTHZ-013). The answer says nothing about other principals. `epoch` is the
          *     epoch of the index that answered.
          */
@@ -1430,21 +1650,23 @@ export interface paths {
         };
         /**
          * List projects
-         * @description The projects, ordered by key, with cursor pagination (R-API-010). A holder of `projects:read` (the
-         *     roles `admin`, `security-admin`, `repository-admin` and `auditor`) sees every project; an
-         *     administrator of a project without that capability sees the projects it administers and no other
-         *     (R-AUTHZ-026, Q-AUTHZ-180). The answer carries the administrators, the counts and the privilege
-         *     switches. `q` matches the key and the display name case-insensitively.
+         * @description The projects the caller can see, ordered by key, with cursor pagination (R-API-010). A holder of `projects:read` (the
+         *     roles `admin`, `security-admin`, `repository-admin` and `auditor`) sees every project; any other caller sees the
+         *     projects it is a member of (Q-AUTHZ-207) and no other. The answer carries the owners, the counts and, for a member,
+         *     the caller's own role in `role`. `q` matches the key and the display name case-insensitively.
          */
         get: operations["listProjects"];
         put?: never;
         /**
          * Create a project
-         * @description Creates a project (R-AUTHZ-026). The key is immutable and must not overlap another project's key or
-         *     the name of a global service account (`409 project_key_overlap`, Q-AUTHZ-176); a key that exists
-         *     answers `409 already_exists`. `managePolicies` defaults to `true` and `manageRepositories` to
-         *     `false`. A new project has no administrator and no repository; both are separate operations. The
-         *     write notifies the `authz` change area and records `authz.project.created`. Optional `Idempotency-Key`.
+         * @description Creates a project (R-AUTHZ-026). The key is immutable; a key that exists answers `409 already_exists`. A new project
+         *     has no repository; `owners` names the users and groups that become its first Owners in the same transaction, each
+         *     recorded as `authz.project.member_added` (Q-AUTHZ-229): an unknown principal answers `404`, a reference that is no user or
+         *     group, or an auto-join group, `422 principal_not_allowed`, and the whole create is refused. Without `owners` the project has no
+         *     member; members are added by `PUT /api/v1/projects/{projectKey}/members/{principalRef}`. A repository is created in it
+         *     by `POST /api/v1/projects/{projectKey}/repositories`. Only a holder of
+         *     `projects:write` creates a project. The write notifies the `authz` change area and records `authz.project.created`.
+         *     Optional `Idempotency-Key`.
          */
         post: operations["createProject"];
         delete?: never;
@@ -1453,44 +1675,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}": {
+    "/api/v1/projects/{projectKey}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
         /**
          * Read a project
-         * @description The project with its administrators, counts and `ETag` (the version, R-API-012). Readable with
-         *     `projects:read` and by an administrator of the project; any other caller, also for a project that
-         *     does not exist, gets `404`. The `ETag` is the version of the fields `PUT` replaces; the body also holds
-         *     administrators and counts, which do not move it (Q-AUTHZ-185), so the read ignores `If-None-Match` and
-         *     always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
+         * @description The project with its owners, counts and `ETag` (the version, R-API-012). Readable with `projects:read` and by a member
+         *     of the project; any other caller, also for a project that does not exist, gets `404`. The `ETag` is the version of the
+         *     fields `PUT` replaces; the body also holds members and counts, which do not move it (Q-AUTHZ-185), so the read ignores
+         *     `If-None-Match` and always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
          */
         get: operations["getProject"];
         /**
-         * Replace a project's display name, description and switches
-         * @description Replaces `displayName`, `description`, `managePolicies` and `manageRepositories` as a whole; the key
-         *     is immutable (a different value answers `422`). `If-Match` is required: without it `428` and
-         *     nothing changes, `*` is the deliberate blind write, a stale tag answers `412` with `currentEtag`.
-         *     The switches are a grant change: a stale `PUT` must not switch `manageRepositories` back on after
-         *     another administrator turned it off. The version moves with these four fields only, not with
-         *     administrators or assignments (Q-AUTHZ-185). Turning a switch off takes the right from the
-         *     project's administrators at once on every replica and records `authz.project.updated`, journaled
-         *     (R-AUTHZ-031).
+         * Replace a project's display name and description
+         * @description Replaces `displayName` and `description` as a whole; the key is immutable (a different value answers `422`).
+         *     `If-Match` is required: without it `428` and nothing changes, `*` is the deliberate blind write, a stale tag answers
+         *     `412` with `currentEtag`. The version moves with these two fields only, not with members or repositories
+         *     (Q-AUTHZ-185). An Owner of the project, or a holder of `projects:write`, may call it. Records `authz.project.updated`.
          */
         put: operations["replaceProject"];
         post?: never;
         /**
          * Delete an empty project
-         * @description Deletes the project, its project policies (each deleted, audited and journaled like any policy
-         *     deletion) and its administrator entries. A project with a repository, in any lifecycle state, a
-         *     service account or a CI mapping of its tier is not empty: `409 project_not_empty`. `If-Match` is optional; a stale one answers
-         *     `412` (Q-AUTHZ-185).
+         * @description Deletes the project, its project policies (each deleted, audited and journaled like any policy deletion) and its
+         *     member entries. A project with a repository, in any lifecycle state, a service account or a CI mapping is not empty:
+         *     `409 project_not_empty`. Only a holder of `projects:write` deletes a project. `If-Match` is optional; a stale one
+         *     answers `412` (Q-AUTHZ-185).
          */
         delete: operations["deleteProject"];
         options?: never;
@@ -1498,97 +1715,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/admins/{principalRef}": {
+    "/api/v1/projects/{projectKey}/members": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key. */
-                key: string;
-                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` never administer a project (`422`). */
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the members of a project
+         * @description The users and groups that are members of the project, each with its role (Q-AUTHZ-207, Q-AUTHZ-208), ordered by
+         *     kind and name. A member of the project, a holder of `projects:read`, and nobody else may read it; a project the
+         *     caller cannot see answers `404`.
+         */
+        get: operations["listProjectMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/members/{principalRef}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
                 principalRef: string;
             };
             cookie?: never;
         };
         get?: never;
         /**
-         * Add a project administrator
-         * @description Makes a user or a group an administrator of the project (R-AUTHZ-026). Idempotent: `201` when it was
-         *     added, `200` when it already was one; the pair needs no `If-Match`. A user or group that does not
-         *     exist answers `404`. The write records `authz.project.admin_added`.
+         * Add a member to a project, or change its role
+         * @description Makes a user or a group a member of the project with the role in the body, or changes the role of a member
+         *     (Q-AUTHZ-207, Q-AUTHZ-208). Idempotent: `201` when the member was added, `200` when it already was one (also with
+         *     the same role); the pair needs no `If-Match`. A user or group that does not exist answers `404`. An Owner of the
+         *     project, or a holder of `projects:write`, may call it. The last Owner of a project cannot be demoted:
+         *     `409 last_owner`, unless the caller holds `projects:write` (an administrator of trove may). Granting or removing
+         *     a role is effective on every replica at once. Records `authz.project.member_added` when the member was added and `authz.project.member_changed` when its role
+         *     changed (journaled, R-AUTHZ-031; a change to a lower role narrows), the latter with the previous and the new role.
          */
-        put: operations["addProjectAdmin"];
+        put: operations["setProjectMember"];
         post?: never;
         /**
-         * Remove a project administrator
-         * @description Removes the administrator at once on every replica. A principal that is no administrator of the
-         *     project answers `404`. The event `authz.project.admin_removed` is journaled (R-AUTHZ-031).
+         * Remove a member from a project
+         * @description Removes the member at once on every replica. A principal that is no member answers `404`. The last Owner of a
+         *     project cannot be removed: `409 last_owner`, unless the caller holds `projects:write`. An Owner may remove
+         *     itself while another Owner remains. Records `authz.project.member_removed`, journaled (R-AUTHZ-031).
          */
-        delete: operations["removeProjectAdmin"];
+        delete: operations["removeProjectMember"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/repositories/{repoKey}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The project key. */
-                key: string;
-                /** @description The repository key (R-REPO-002). */
-                repoKey: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Assign a repository to a project
-         * @description A repository belongs to at most one project (R-AUTHZ-026). Assigning one that belongs to another
-         *     project answers `409 repository_assigned`; `move=true` moves it (an unassignment and an assignment in
-         *     one transaction). Assigning it to the project it already belongs to answers `204`. Repository keys and
-         *     URLs do not change. The assignment notifies `authz` and `repo_config` and needs no `If-Match`. Policies
-         *     of the old project that select the repository by key stop covering it and report
-         *     `selector_outside_project` (Q-AUTHZ-179).
-         *
-         *     `from` names the project the caller expects the repository to belong to now (an empty value: to no
-         *     project). It is compared under the locks of the write, before anything else, and a different current
-         *     owner answers `409 project_owner_changed` with the extension `currentProject` (the key, or `null` for
-         *     none) and writes nothing; this includes an assignment to the project the repository already belongs to.
-         *     Without `from` the request acts on whichever project holds the repository (Q-AUTHZ-205).
-         */
-        put: operations["assignProjectRepository"];
-        post?: never;
-        /**
-         * Unassign a repository from a project
-         * @description The repository belongs to no project afterwards; its project policies stop covering it at once. A
-         *     repository that is not assigned to this project answers `404`. The event
-         *     `authz.project.repository_unassigned` is journaled (R-AUTHZ-031).
-         */
-        delete: operations["unassignProjectRepository"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{key}/principals": {
+    "/api/v1/projects/{projectKey}/principals": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
         /**
          * Look up users and groups to name in a project's policies
-         * @description How a project administrator without `identities:read` finds the users and groups it names in project
-         *     policies (Q-AUTHZ-182): the active users and groups whose name starts with `q` (at least 2
-         *     characters), at most 20, by kind and name. The answer holds the kind and the name and nothing else:
-         *     no e-mail address, no membership. Needs the capability or administration of the project with
-         *     `managePolicies`.
+         * @description How an Owner of a project without `identities:read` finds the users and groups it adds as members and names in
+         *     project policies (Q-AUTHZ-182): the active users and groups whose name starts with `q` (at least 2 characters), at
+         *     most 20, by kind and name. The answer holds the kind and the name and nothing else: no e-mail address, no
+         *     membership. Needs the capability, or the role Owner of the project.
          */
         get: operations["lookupProjectPrincipals"];
         put?: never;
@@ -1608,73 +1812,110 @@ export interface paths {
         };
         /**
          * List repositories
-         * @description The repositories the caller may see, sorted by key, with cursor pagination (R-REPO-012,
-         *     R-API-010). A caller without `repositories:read-config` sees the repositories on which it holds
-         *     `read` (R-AUTHZ-016); a holder of `repositories:read-config` sees every repository, those being
-         *     deleted included. `view=summary` (default) returns a short description of each; `view=full`
-         *     returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class`
-         *     and `format` take the values as spelled in documents, repeated or comma-separated; `q` matches
-         *     the key and the description case-insensitively; `state=inactive` keeps the disabled
-         *     repositories. `project` selects the repositories of a project, by its key (`404` is never answered: an
-         *     unknown key selects none). An administrator of a project sees the repositories of its project with the full
-         *     document, as a holder of `repositories:read-config` does (R-AUTHZ-026, Q-AUTHZ-184). An anonymous caller sees what anonymous holds `read` on,
-         *     or gets `401` where anonymous access is off.
+         * @description The repositories the caller may see, across all projects, sorted by project key and key, with cursor pagination
+         *     (R-REPO-012, R-API-010). Every item names its project in `project`; the cursor is the last (project, key). A caller
+         *     without `repositories:read-config` sees the repositories on which it holds `read` (R-AUTHZ-016), which includes
+         *     every repository of a project it is a member of (Q-AUTHZ-208); a holder of `repositories:read-config` sees every
+         *     repository, those being deleted included. `view=summary` (default) returns a short description of each; `view=full`
+         *     returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class` and `format` take the
+         *     values as spelled in documents, repeated or comma-separated; `q` matches the key and the description
+         *     case-insensitively; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
+         *     project, by its key (`404` is never answered: an unknown key selects none). A repository of a project the caller can
+         *     neither see nor read is not listed. An anonymous caller sees what anonymous holds `read` on, or gets `401` where
+         *     anonymous access is off.
          */
         get: operations["listRepositories"];
         put?: never;
-        /**
-         * Create a repository
-         * @description Creates a repository from its configuration document (R-REPO-009). Omitted settings take
-         *     their defaults. The document is validated in one pass and every violation is reported (`422`,
-         *     R-REPO-008); an unknown or duplicate member is `400 malformed_request` with its JSON pointer.
-         *     Create is never an upsert: a key that is taken, also by a repository being deleted, answers
-         *     `409 already_exists`. The configuration, the audit event and the change-log row are one
-         *     transaction, so the repository is usable on every replica as soon as this answers
-         *     (R-API-052). The body of the answer is the stored document plus `warnings`.
-         *
-         *     With `project` the repository is assigned to that project in the same transaction (R-AUTHZ-026). An
-         *     administrator of the project with `manageRepositories` creates it: the key starts with `<project>-`
-         *     (`422 project_prefix_required`), and a virtual repository's members and deploy target are repositories of
-         *     the project (`422 repository_outside_project`, Q-AUTHZ-178). A caller that is only a project administrator
-         *     must send `project` (`403 project_switch_off` while the switch is off, `404` for a project it does not
-         *     administer). A holder of `repositories:write-config` assigns any project and may leave `project` out.
-         */
-        post: operations["createRepository"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{key}": {
+    "/api/v1/projects/{projectKey}/repositories": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The repository key (R-REPO-002). */
-                key: string;
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List the repositories of a project
+         * @description The repositories of the project (Q-REPO-212), sorted by key, with cursor pagination (R-REPO-012,
+         *     R-API-010). A caller who holds `repositories:read-config`, or is a member of the project with the role
+         *     Owner, sees every repository of the project with the full document, those being deleted included. Any
+         *     other caller sees the repositories on which it holds `read`, which includes every repository for a member
+         *     of the project (Q-AUTHZ-207, Q-AUTHZ-208). `view`, `class`, `format`, `q` and `state` act as on
+         *     `GET /api/v1/repositories`. A project the caller cannot see answers `404`, exactly as a project that does
+         *     not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member
+         *     of it, or reads one of its repositories whatever the filters and the cursor (R-AUTHZ-016). A project it sees
+         *     answers `200`, an empty page included.
+         */
+        get: operations["listProjectRepositories"];
+        put?: never;
+        /**
+         * Create a repository
+         * @description Creates a repository from its configuration document (R-REPO-009). Omitted settings take
+         *     their defaults. The document is validated in one pass and every violation is reported (`422`,
+         *     R-REPO-008); an unknown or duplicate member is `400 malformed_request` with its JSON pointer.
+         *     Create is never an upsert: a key that is taken in the project, also by a repository being deleted,
+         *     answers `409 already_exists`. The configuration, the audit event and the change-log row are one
+         *     transaction, so the repository is usable on every replica as soon as this answers
+         *     (R-API-052). The body of the answer is the stored document plus `warnings`.
+         *
+         *     The repository is created in the project of the path and stays in it (Q-AUTHZ-206): `project` in the body, if
+         *     present, must equal it (`422`). The key is unique within the project, not in the installation (Q-REPO-212): a
+         *     key that is taken in the project answers `409 already_exists`. A caller who holds
+         *     `repositories:write-config`, or is an Owner of the project, creates it. A virtual repository's members and
+         *     deploy target are repositories of the same project, named by their bare keys (`422
+         *     repository_outside_project`, Q-AUTHZ-178). A project the caller cannot see answers `404`.
+         *     An Owner's create whose member `vulnerabilities` is weaker than the defaults (`enabled: false`,
+         *     `matchPublicAdvisories: never`, `blockMalicious: false`) answers `403 vulnerability_weakening_refused` unless the
+         *     caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
+         */
+        post: operations["createProjectRepository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
             };
             cookie?: never;
         };
         /**
          * Read a repository
-         * @description The configuration document of a repository (R-REPO-010). A holder of
-         *     `repositories:read-config` receives the full document, `ETag: "<config_version>"`; a caller
-         *     who holds a repository action on it receives the consumer view (`key`, `class`, `format`,
-         *     `description`, `layout`, `addresses`), `ETag: "<config_version>-consumer"`; a caller who
-         *     holds nothing on it, and a caller on a repository that does not exist, receive the same `404`
-         *     (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that
-         *     committed on another replica shows at once (R-API-052).
+         * @description The configuration document of a repository (R-REPO-010). A holder of `repositories:read-config`, or an Owner of the
+         *     project, receives the full document, `ETag: "<config_version>"`; a caller who holds a repository action on it (which
+         *     a member of the project does through the role, Q-AUTHZ-208) receives the consumer view (`key`, `class`, `format`,
+         *     `description`, `layout`, `addresses`, `project`), `ETag: "<config_version>-consumer"`; a caller who holds nothing on
+         *     it, a caller on a repository that does not exist, and a caller who cannot see the project receive the same `404`
+         *     (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that committed on another
+         *     replica shows at once (R-API-052).
          */
         get: operations["getRepository"];
         /**
          * Replace a repository configuration
          * @description Replaces the configuration with a complete document; settings that are omitted revert to their
-         *     defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). A body
+         *     defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). `project` is read-only: the
+         *     path names the project, and a different value in the body answers `422`; `POST …/move` changes it. A body
          *     obtained by `GET` can be sent back: the read-only members are ignored. `If-Match` is required
          *     (`428` without it, `412` with `currentEtag` when stale, `*` for a deliberate blind write). Key,
          *     class and format cannot change (`422 validation_failed`, field code `immutable`). `PUT` never creates a repository.
-         *     A project administrator's replace that weakens the member `vulnerabilities`, which includes leaving out a member that sets
+         *     An Owner's replace that weakens the member `vulnerabilities`, which includes leaving out a member that sets
          *     stricter values than the defaults, answers `403 vulnerability_weakening_refused` unless the caller also holds
          *     `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
          */
@@ -1687,9 +1928,10 @@ export interface paths {
          *     for a repository without content. From the first transaction on the repository is not
          *     resolvable and not addressable, and it is listed only to holders of
          *     `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
-         *     honoured when sent. A repository that a virtual repository lists as a member, a deploy target
+         *     honoured when sent. A repository that a virtual repository of the project lists as a member, a deploy target
          *     or a pin-rule member answers `409 repository_referenced` naming those repositories; with
-         *     `detach=true` the references are removed in the same transaction (R-REPO-013).
+         *     `detach=true` the references are removed in the same transaction (R-REPO-013). The key is free in the
+         *     project again once the job has removed the row.
          */
         delete: operations["deleteRepository"];
         options?: never;
@@ -1700,11 +1942,54 @@ export interface paths {
          *     (R-REPO-011): arrays are replaced as a whole, `null` removes an optional setting. `If-Match` is
          *     required. A patch that changes nothing writes nothing: same version, no event. Key, class and
          *     format cannot change (`422 validation_failed`, field code `immutable`); a value equal to the stored one is ignored.
-         *     A project administrator's patch that weakens the member `vulnerabilities` (`enabled` to false, fewer public advisories
+         *     An Owner's patch that weakens the member `vulnerabilities` (`enabled` to false, fewer public advisories
          *     matched, `blockMalicious` to false, `onMissingData` from `block` to `allow`) answers `403 vulnerability_weakening_refused`
          *     unless the caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
          */
         patch: operations["updateRepository"];
+        trace?: never;
+    };
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a repository to another project
+         * @description Moves the repository to the project named in the body (Q-AUTHZ-206, Q-REPO-212). Its content, statistics and
+         *     id stay; its address changes, because the address contains the project: `/api/<format>/<projectKey>/<repoKey>/…`
+         *     and `/files/<projectKey>/<repoKey>/…` answer `404` for the old project from the moment the move commits, on
+         *     every replica.
+         *
+         *     The move is refused with `409 repository_in_use` while an object of the source project references the
+         *     repository: a virtual repository lists it as a member or pin-rule member or deploys into it, a project policy
+         *     selects it by key, or a CI mapping of the project grants on it. The answer carries the extension member `references`, a list of `{kind, name}` (the kinds are
+         *     `virtual_member`, `pin_rule`, `virtual_deployment_target`, `policy`, `ci_mapping`, `member`,
+         *     `deployment_target` and `global_policy`; `name` is the name of the object within the source project, of a
+         *     global policy its name); remove them, then move. A caller without `repositories:write-config`, an Owner of
+         *     both projects, is refused as well while a key selector of a global policy names the repository (kind
+         *     `global_policy`, Q-REPO-232): that grant is held by the repository's ID and would follow it into the target
+         *     project, whose other Owners cannot remove it; an administrator of trove moves it or removes the selector. It is refused with `409 already_exists` when the target project has a repository with the key,
+         *     also one being deleted. A target equal to the source changes nothing and answers `200` with the repository as it is. The move needs no
+         *     `If-Match`: the path names the source. It records `repository.moved` in the source project and `repository.moved_in` in the target project (Q-REPO-233), notifies `authz`
+         *     and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
+         *     Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
+         *     below Owner `403`.
+         */
+        post: operations["moveRepository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/ci/issuers": {
@@ -2041,19 +2326,19 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/ci/issuers": {
+    "/api/v1/projects/{projectKey}/ci/issuers": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
         /**
-         * List the CI issuers a project administrator can choose from
-         * @description Read-only: name, kind, issuer URL and `publicIssuer` of every issuer (Q-CI-26). Issuers are written by system administrators and the Helm values only. A project administrator of this project with `managePolicies` may call it; a project it does not administer answers `404`, a switch that is off `403 project_switch_off`.
+         * List the CI issuers an Owner of a project can choose from
+         * @description Read-only: name, kind, issuer URL and `publicIssuer` of every issuer (Q-CI-26). Issuers are written by system administrators and the Helm values only. An Owner of this project may call it; a project the caller cannot see answers `404`.
          */
         get: operations["listProjectCiIssuers"];
         put?: never;
@@ -2064,25 +2349,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/ci/mappings": {
+    "/api/v1/projects/{projectKey}/ci/mappings": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
         /**
          * List the CI mappings of a project
-         * @description The project's mappings of every issuer, tier `project:<key>` (Q-CI-26, R-CI-009). A project administrator sees these and no other tier.
+         * @description The project's mappings of every issuer, tier `project:<key>` (Q-CI-26, R-CI-009). An Owner of the project sees these and no other tier.
          */
         get: operations["listProjectCiMappings"];
         put?: never;
         /**
          * Create a CI mapping of a project
-         * @description The body names the `issuer`. The mapping takes the tier `project:<key>`; its name starts with `<key>-` (`422 project_prefix_required`); it grants through policies of the project and inline grants over the project's repositories (`@any` means every repository of the project), never `groups` (`422 groups_not_allowed_in_project`) and never `manage`. Every save-time rule of R-CI-010 and R-CI-011 applies. Notifies `ci_mappings` and records `ci.mapping.created` with the project.
+         * @description The body names the `issuer`. The mapping takes the tier `project:<key>`; its name is unique within the project and stored and referenced as `<key>/<name>` (principal `ci:<issuer>/<key>/<name>`, Q-AUTHZ-209); it grants through policies of the project and inline grants over the project's repositories (`@any` means every repository of the project; repositories are named by their bare keys), never `groups` (`422 groups_not_allowed_in_project`) and never `manage`. Every save-time rule of R-CI-010 and R-CI-011 applies. Notifies `ci_mappings` and records `ci.mapping.created` with the project.
          */
         post: operations["createProjectCiMapping"];
         delete?: never;
@@ -2091,13 +2376,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/ci/mappings/{issuer}/{name}": {
+    "/api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
                 /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
@@ -2126,13 +2411,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate": {
+    "/api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
             };
@@ -2151,13 +2436,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}": {
+    "/api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
                 /** @description The CI system of the snippet; `gitlab-ci` in this release. */
@@ -2179,13 +2464,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{key}/ci/issuances": {
+    "/api/v1/projects/{projectKey}/ci/issuances": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -2202,7 +2487,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/items": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/items": {
         parameters: {
             query?: {
                 /**
@@ -2213,6 +2498,8 @@ export interface paths {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -2249,11 +2536,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/children": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/children": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         /**
@@ -2275,11 +2565,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/stats": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/stats": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         /**
@@ -2298,17 +2591,19 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/files/{repoKey}/{path}": {
+    "/files/{projectKey}/{repoKey}/{path}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
                  *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
                  *     a backslash or a control character). A trailing slash names a folder. The server route is
-                 *     `/files/{repoKey}/{path...}`.
+                 *     `/files/{projectKey}/{repoKey}/{path...}`.
                  */
                 path: string;
             };
@@ -2352,7 +2647,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a file or folder
-         * @description The same operation as `DELETE /api/v1/repositories/{repoKey}/items` on the path (R-STOR-018):
+         * @description The same operation as `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/items` on the path (R-STOR-018):
          *     `204`, or `202` with the job of a large subtree, the ownership of the packages it removes
          *     checked as there. A path outside the repository's include and exclude patterns answers `404`
          *     for every caller.
@@ -2367,15 +2662,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/content/{path}": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
-                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
-                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 * @description The path in the repository, as for `/files/{projectKey}/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}`.
                  */
                 path: string;
             };
@@ -2383,7 +2680,7 @@ export interface paths {
         };
         /**
          * Download a file for the UI
-         * @description The transfer of `GET /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+         * @description The transfer of `GET /files/{projectKey}/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
          *     authenticates, served by the role `api`: path cleaning, the decision of every request, `Range`,
          *     conditional requests, `Repr-Digest`, the content headers, the blocking of R-VULN-015 and the download
          *     statistics are those of `/files/`. A request that the session cookie did not authenticate (a token, a CI
@@ -2395,7 +2692,7 @@ export interface paths {
         get: operations["downloadContent"];
         /**
          * Deploy a file or create a folder for the UI
-         * @description The transfer of `PUT /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+         * @description The transfer of `PUT /files/{projectKey}/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
          *     authenticates, served by the role `api`: the same decision (`deploy`, and `overwrite` to replace different
          *     content, both decided before the body is read), the same `Repr-Digest` check, the same answers. The request
          *     needs the session's CSRF token like every unsafe request of a session. A request that the session cookie did
@@ -2734,11 +3031,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/client-setup": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         /**
@@ -2768,11 +3068,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/guide": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/guide": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         /**
@@ -2808,7 +3111,7 @@ export interface paths {
         /**
          * The guide of a format for one class and client
          * @description The guide of the format for a class and a client without a repository (R-API-053, R-UI-049): the same
-         *     sections as `GET /api/v1/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
+         *     sections as `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
          *     and `<repository>` where the repository key goes, no deployment target, and the snippets of the
          *     client setup rendered for that address. Any caller; an anonymous caller only where anonymous access is
          *     on, else `401`. An unknown format answers `404`; a class or client the format does not have `400`;
@@ -2872,11 +3175,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/cache/invalidate": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         get?: never;
@@ -2905,11 +3211,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/cache/entries": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         /**
@@ -2930,13 +3239,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{key}/upstream-test": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -2963,11 +3274,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/upstream-tests": {
+    "/api/v1/projects/{projectKey}/upstream-tests": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         get?: never;
@@ -2986,11 +3300,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/claims": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/claims": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
             };
@@ -3029,11 +3345,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/resolution": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/resolution": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The key of a virtual repository (R-REPO-002). */
                 repoKey: string;
             };
@@ -3062,11 +3380,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/packages/{packageName}/owners": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
@@ -3105,11 +3425,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
@@ -3315,7 +3637,9 @@ export interface paths {
          * @description The Bastion interface (R-BAS-011, R-BAS-012). Validates the caller's credential as a direct request would (R-AUTH-023
          *     including the failed-credential throttle for `clientAddress`, `token.rejected` with that address) and answers the
          *     subject and, for at most `bastions.check.max_repositories` repository keys, the read shape `full`, `partial` or `none`
-         *     with the status the caller would receive. It writes no `authz.denied` events.
+         *     with the status the caller would receive. It writes no `authz.denied` events. A repository name without a project
+         *     (`npm-all` instead of `web/npm-all`) answers `400 malformed_request`, like a body that does not read; another
+         *     interface version answers `400 bastion_interface_mismatch`.
          */
         post: operations["bastionCheck"];
         delete?: never;
@@ -3643,13 +3967,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{key}/vulnerabilities/rescan": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -3668,13 +3994,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{key}/mirror": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -3696,13 +4024,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/repositories/{key}/mirror/run": {
+    "/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run": {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -3716,8 +4046,8 @@ export interface paths {
          *     queued or running, `409 mirror_off` for a remote in mode `pullThrough`, `409 mirror_paused` for a paused mirror,
          *     `409 mirror_rate_limited` (extension `until`) while the upstream's wait lies ahead;
          *     a local or virtual repository answers `400 not_applicable`. The request writes the audit event
-         *     `mirror.pass_requested`. Needs `repositories:write-config`, `manage` on the repository, or administration of its
-         *     project with `manageRepositories`; a repository that is hidden from the caller answers `404`.
+         *     `mirror.pass_requested`. Needs `repositories:write-config`, `manage` on the repository (which the role Maintainer and Owner
+         *     grant), or the role Owner of its project; a repository that is hidden from the caller answers `404`.
          */
         post: operations["runRepositoryMirror"];
         delete?: never;
@@ -3730,7 +4060,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`. */
+        /** @description RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`. */
         Problem: {
             /**
              * @description The relative URI `/api/v1/problems/<code>`.
@@ -3752,9 +4082,15 @@ export interface components {
             errors?: components["schemas"]["FieldError"][];
             /** @description Extension of `precondition_failed`: the current ETag of the resource (R-API-012). */
             currentEtag?: string;
-            /** @description Extension of `project_owner_changed`: the key of the project the repository belongs to now, `null` when it belongs to none (Q-AUTHZ-205). */
-            currentProject?: string | null;
             job?: components["schemas"]["JobReference"];
+            /** @description Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository, and for an Owner without `repositories:write-config` the global policies that name it by key (R-REPO-060, Q-REPO-232). */
+            references?: components["schemas"]["RepositoryReference"][];
+        };
+        RepositoryReference: {
+            /** @enum {string} */
+            kind: "virtual_member" | "pin_rule" | "virtual_deployment_target" | "policy" | "ci_mapping" | "member" | "deployment_target" | "global_policy";
+            /** @description The name of the object within the source project; for `global_policy` the name of the global policy. */
+            name: string;
         };
         FieldError: {
             /** @description RFC 6901 JSON pointer into the request body. */
@@ -4556,18 +4892,18 @@ export interface components {
              */
             source: "manual" | "auto";
         };
-        /** @description A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName`, `description` and the two switches only. */
+        /** @description A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName` and `description` only. */
         Project: {
             key: string;
             displayName: string;
             description: string;
-            /** @description The administrators create, change and delete project policies, create and enable project service accounts, issue their tokens and look up users and groups. */
-            managePolicies: boolean;
-            /** @description The administrators create, change and delete the project's repositories of every class and test the upstream of its remotes. */
-            manageRepositories: boolean;
-            /** @description References of the administrators, `user:<name>` and `group:<name>`, ordered by kind and name. */
-            admins: string[];
-            /** @description Repositories assigned to the project, those being deleted included. */
+            /** @description References of the members with the role Owner, `user:<name>` and `group:<name>`, ordered by kind and name. */
+            owners: string[];
+            /** @description The number of members, users and groups. */
+            members: number;
+            /** @description The caller's own role in the project, absent for a caller that is no member (a holder of `projects:read`). */
+            role?: components["schemas"]["ProjectRole"];
+            /** @description Repositories of the project, those being deleted included. */
             repositories: number;
             serviceAccounts: number;
             policies: number;
@@ -4581,18 +4917,17 @@ export interface components {
             updatedAt: string;
             updatedBy: string;
         };
-        /** @description What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`, `managePolicies` and `manageRepositories`. */
+        /** @description What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`. */
         ProjectInput: {
             /** @description Required on create; on replace it must equal the key of the path. */
             key?: string;
             displayName?: string;
             /** @default  */
             description: string;
-            /** @description Default `true` on create; required on replace. */
-            managePolicies?: boolean;
-            /** @description Default `false` on create; required on replace. */
-            manageRepositories?: boolean;
-            readonly admins?: string[];
+            /** @description On create, the references (`user:<name>`, `group:<name>`) that become the first Owners of the project in the transaction of the create (Q-AUTHZ-229); a reference that is no user or group answers `422 principal_not_allowed`, one that does not exist `404`. Ignored on replace. */
+            owners?: string[];
+            readonly members?: number;
+            readonly role?: components["schemas"]["ProjectRole"];
             readonly repositories?: number;
             readonly serviceAccounts?: number;
             readonly policies?: number;
@@ -4610,26 +4945,59 @@ export interface components {
             /** @description Opaque; `null` on the last page. */
             nextCursor: string | null;
         };
-        ProjectAdmin: {
+        /**
+         * @description The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+         *     repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+         *     (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+         *     their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+         *     with `admin: true`.
+         * @enum {string}
+         */
+        ProjectRole: "reader" | "developer" | "maintainer" | "owner";
+        /** @description A member of a project (Q-AUTHZ-207). Only users and groups are members; a service account reaches a project through its policies. */
+        Member: {
+            /** @description The project key. */
             project: string;
             /** @description `user:<name>` or `group:<name>`. */
             principal: string;
+            /** @enum {string} */
+            kind: "user" | "group";
+            name: string;
+            role: components["schemas"]["ProjectRole"];
+        };
+        /** @description The role of a member. The read-only members of `Member` are accepted and ignored. */
+        MemberInput: {
+            role: components["schemas"]["ProjectRole"];
+            readonly project?: string;
+            readonly principal?: string;
+            readonly kind?: string;
+            readonly name?: string;
+        };
+        MemberList: {
+            items: components["schemas"]["Member"][];
+        };
+        MoveRepositoryRequest: {
+            /** @description The key of the target project. The project of the path itself is allowed, and the answer is `200` with nothing changed. */
+            project: string;
         };
         ProjectPrincipal: {
             /** @enum {string} */
             kind: "user" | "group";
             name: string;
-            /** @description The reference to put in a policy entry. */
+            /** @description The reference to put in a policy entry or a member. */
             principal: string;
         };
         ProjectPrincipalList: {
             items: components["schemas"]["ProjectPrincipal"][];
         };
-        /** @description A project the caller administers, with the switches in force on the index that answered (R-AUTHZ-026). */
-        AdministeredProject: {
+        /**
+         * @description A project the caller is a member of through this credential (Q-AUTHZ-207). `role` is the role in force for the credential:
+         *     `owner` only when the credential may administer (a session, or a token with `admin: true`), otherwise `maintainer`, which is
+         *     what the role Owner holds beyond the administration (D2 of Q-AUTHZ-208).
+         */
+        Membership: {
             key: string;
-            managePolicies: boolean;
-            manageRepositories: boolean;
+            role: components["schemas"]["ProjectRole"];
         };
         /**
          * @description The full representation of an issuer that a client writes (R-CI-002). An omitted optional member takes its default;
@@ -5044,7 +5412,7 @@ export interface components {
                 [key: string]: unknown;
             };
             requestedScope?: string | null;
-            /** @description The scope the token was issued with. Empty in a project administrator's view, whose kept contributions show their own inline grants (Q-CI-52). */
+            /** @description The scope the token was issued with. Empty in an Owner's view, whose kept contributions show their own inline grants (Q-CI-52). */
             grantedScope: string;
             crossProject: boolean;
             /** Format: date-time */
@@ -5148,7 +5516,7 @@ export interface components {
             /** @description Equals the `X-Request-Id` response header. */
             requestId: string;
         };
-        /** @description What a project administrator sees of an issuer (Q-CI-26). */
+        /** @description What an Owner of a project sees of an issuer (Q-CI-26). */
         CiIssuerChoice: {
             name: string;
             kind: string;
@@ -5159,10 +5527,11 @@ export interface components {
             items: components["schemas"]["CiIssuerChoice"][];
         };
         /**
-         * @description A service account (R-AUTH-020).
+         * @description A service account (R-AUTH-020). `name` is the name within its project, unique among the accounts of that project, or among the instance-wide accounts when `project` is `null` (Q-AUTHZ-209).
          * @example {
          *       "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a12",
          *       "name": "ci-bot",
+         *       "principal": "sa:ci-bot",
          *       "description": "Deploy jobs",
          *       "status": "active",
          *       "createdAt": "2026-09-01T08:00:00Z",
@@ -5172,13 +5541,16 @@ export interface components {
         ServiceAccount: {
             /** Format: uuid */
             id: string;
+            /** @description The name within the project; the stored name is `<project>/<name>` for a project's account. */
             name: string;
+            /** @description The reference, `sa:<name>` or `sa:<project>/<name>`. */
+            principal: string;
             description: string;
             /** @enum {string} */
             status: "active" | "disabled";
             /** Format: date-time */
             createdAt: string;
-            /** @description The key of the project the account belongs to (R-AUTHZ-026), `null` for a global account. Fixed at creation. */
+            /** @description The key of the project the account belongs to (R-AUTHZ-026), `null` for an instance-wide account. Fixed at creation. */
             project: string | null;
         };
         ServiceAccountList: {
@@ -5193,11 +5565,9 @@ export interface components {
          *     }
          */
         NewServiceAccount: {
-            /** @description Matches `^[a-z0-9][a-z0-9-]{1,62}$`; `<project>-…` for a project service account. */
+            /** @description Matches `^[a-z0-9][a-z0-9-]{1,62}$`, unique within the project of the route (or among the instance-wide accounts). */
             name: string;
             description?: string;
-            /** @description The key of a project; makes the account a project service account (R-AUTHZ-026, Q-AUTHZ-169). */
-            project?: string | null;
         };
         /** @description The read-only members of `ServiceAccount` are accepted and ignored. */
         ServiceAccountPatch: {
@@ -5610,7 +5980,6 @@ export interface components {
          *       "locale": "de",
          *       "theme": null,
          *       "keyboardShortcuts": false,
-         *       "projectFilter": null,
          *       "revision": 2
          *     }
          */
@@ -5620,7 +5989,6 @@ export interface components {
             /** @description `light`, `dark` or `null` (the system decides). */
             theme: string | null;
             keyboardShortcuts: boolean;
-            projectFilter: string | null;
             revision: number;
         };
         /** @description `null` resets a member to its default. `revision` is accepted and ignored. */
@@ -5630,7 +5998,6 @@ export interface components {
             /** @description `light`, `dark` or `null`. */
             theme?: string | null;
             keyboardShortcuts?: boolean | null;
-            projectFilter?: string | null;
         };
         /** @description The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted. */
         PatternLists: {
@@ -5663,8 +6030,8 @@ export interface components {
              * @enum {string}
              */
             resourceType: "repository";
-            /** @description The key of the project the policy belongs to, `null` (the default) for a global policy. Fixed at creation. A project policy is named `<project>-…` (`422 project_prefix_required`), selects repositories of its project only (`422 repository_outside_project`) and grants to users, groups, global service accounts, CI mappings and the project's own service accounts (`422 principal_outside_project` for another's). */
-            project?: string | null;
+            /** @description The key of the project the policy belongs to, `null` for an instance-wide policy; the route decides, and a different value in a body answers `422`. A project policy selects repositories of its project only, by bare key (`422 repository_outside_project`), and grants to users, groups, instance-wide service accounts, CI mappings and the project's own service accounts (`422 principal_outside_project` for another's). */
+            readonly project?: string | null;
             resources?: components["schemas"]["PolicyResources"];
             entries?: components["schemas"]["PolicyEntry"][];
             readonly inert?: boolean;
@@ -5678,13 +6045,13 @@ export interface components {
             readonly updatedAt?: string;
             readonly updatedBy?: string;
         };
-        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing`, `anonymous_populates_remote` and, for a project policy, `selector_outside_project` (a key selector whose repository left the project, Q-AUTHZ-179). `version` is the ETag source. */
+        /** @description A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source. */
         PermissionPolicy: {
             name: string;
             description: string;
             /** @enum {string} */
             resourceType: "repository";
-            /** @description The project key, `null` for a global policy. */
+            /** @description The project key, `null` for an instance-wide policy. */
             project: string | null;
             resources: components["schemas"]["PolicyResources"];
             entries: components["schemas"]["PolicyEntry"][];
@@ -5764,8 +6131,8 @@ export interface components {
             capabilities: string[];
             /** @description The references the caller acts as; it never lists other principals. */
             principals: string[];
-            /** @description The projects the caller administers through this credential, with their switches, ordered by key; empty for a caller that administers none and for a token without `admin` (R-AUTHZ-026, Q-AUTHZ-181). The UI shows the project screens from it. */
-            projects: components["schemas"]["AdministeredProject"][];
+            /** @description The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it. */
+            projects: components["schemas"]["Membership"][];
             scope: components["schemas"]["ScopeSummary"] | null;
             /** Format: int64 */
             epoch: number;
@@ -5885,7 +6252,7 @@ export interface components {
          *     they are ignored.
          */
         Repository: {
-            /** @description Fixed at creation; reserved names are the sub-paths of `/api/v1/repositories`. */
+            /** @description Fixed at creation; unique within the project (Q-REPO-212). */
             key: string;
             /**
              * @description Fixed at creation.
@@ -5896,12 +6263,11 @@ export interface components {
             format: string;
             readonly layout?: string;
             /**
-             * @description The key of the project the repository is assigned to (R-AUTHZ-026), `null` or absent when it belongs to
-             *     none. Read on every answer; written on create only, which assigns the repository in the same
-             *     transaction. A replace or patch ignores a value equal to the stored one and answers `422` for another:
-             *     `PUT /api/v1/projects/{key}/repositories/{repoKey}` moves a repository.
+             * @description The key of the project the repository belongs to (Q-AUTHZ-206). Read on every answer; the path names the
+             *     project on a write, and a value that differs from it answers `422`. `POST …/move` moves the repository. The
+             *     members, deploy target and pin rules of a virtual repository name repositories of this project by bare key.
              */
-            project?: string | null;
+            readonly project?: string;
             description?: string;
             /** @description Only for holders of `repositories:read-config`. */
             adminNotes?: string;
@@ -6060,8 +6426,8 @@ export interface components {
             lifecycle?: "active" | "deleting";
             /** Format: date-time */
             lastActivityAt: string | null;
-            /** @description The key of the project the repository is assigned to, `null` when it belongs to none (R-AUTHZ-026). */
-            project: string | null;
+            /** @description The key of the project the repository belongs to; the name is `<project>/<key>` (Q-AUTHZ-206). */
+            project: string;
         };
         RepositoryList: {
             items: (components["schemas"]["RepositorySummary"] | components["schemas"]["Repository"])[];
@@ -6106,7 +6472,7 @@ export interface components {
             upstreamUrl: null;
             /** @description Files only. */
             downloadUrl?: string;
-            /** @description Files only. The relative URL of the content route of the file (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106). */
+            /** @description Files only. The relative URL of the content route of the file (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106). */
             contentUrl?: string;
             /** @description Folders only. */
             listingUrl?: string;
@@ -6158,12 +6524,10 @@ export interface components {
             /** @description The exact hosts of the host set (R-EP-003). */
             hosts: string[];
             wildcardHost: string | null;
-            /** @description Host-root bindings, host to repository key (R-EP-006). */
+            /** @description Host-root bindings, host to repository, the value being `<projectKey>/<repoKey>` (R-EP-006). */
             hostRoots: {
                 [key: string]: string;
             };
-            /** @enum {string} */
-            wildcardRoot: "none" | "label";
             /** @description The web pool that serves the endpoint; `null` for the main web Deployment. */
             pool: string | null;
             surface: ("ui" | "api" | "ci_exchange" | "packages" | "files")[];
@@ -6207,7 +6571,7 @@ export interface components {
          * @example {
          *       "name": "acme-sdk",
          *       "description": "SDK releases for customers",
-         *       "repository": "npm-customers",
+         *       "repository": "web/npm-customers",
          *       "enabled": true,
          *       "packages": {
          *         "include": [
@@ -6398,7 +6762,7 @@ export interface components {
             sha256: string;
             /** @description Absolute, built on the public base URL. */
             downloadUrl: string;
-            /** @description The relative URL of the content route of the file item (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106). */
+            /** @description The relative URL of the content route of the file item (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106). */
             contentUrl: string;
         };
         PackageVersion: {
@@ -6471,7 +6835,7 @@ export interface components {
             endpointPath: string;
             /** @description The caller's name; null for an anonymous caller. */
             username: string | null;
-            /** @description The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target. */
+            /** @description The qualified name `<project>/<key>` of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target. */
             publishTarget: string | null;
             /**
              * Format: int64
@@ -6489,7 +6853,7 @@ export interface components {
             repository: string | null;
             /** @description The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format. */
             registryUrl: string;
-            /** @description The repository a publish through this one reaches, when the caller may deploy there; null otherwise. */
+            /** @description The qualified name `<project>/<key>` of the repository a publish through this one reaches, when the caller may deploy there; null otherwise. */
             publishTarget: string | null;
             /**
              * @description How the snippets reference the credential; `none` for an anonymous caller.
@@ -6716,7 +7080,7 @@ export interface components {
              * @description `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
              *     upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
              *     `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
-             *     another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+             *     another upstream the warning `mirror_unbounded`; an Owner without `repositories:write-config` `422 mirror_restricted` (Q-REPO-142).
              * @default pullThrough
              * @enum {string}
              */
@@ -7199,7 +7563,8 @@ export interface components {
          *     the download agree.
          * @example {
          *       "id": "01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11",
-         *       "repository": "npm-remote",
+         *       "project": "web",
+         *       "repository": "web/npm-remote",
          *       "format": "npm",
          *       "package": "lodash",
          *       "version": "4.17.20",
@@ -7230,6 +7595,9 @@ export interface components {
         VulnerabilityFinding: {
             /** Format: uuid */
             id: string;
+            /** @description The key of the project of the repository. */
+            project: string;
+            /** @description The qualified name `<project>/<key>`. */
             repository: string;
             format: string;
             package: string;
@@ -7538,7 +7906,7 @@ export interface components {
         };
         /**
          * @description The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
-         *     request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+         *     request omitted it; they take effect in `mode: mirror` only. An Owner without `repositories:write-config` keeps them as stored and may
          *     change `paused` only (Q-REPO-142, `422 mirror_restricted`).
          */
         MirrorSettings: {
@@ -7596,7 +7964,7 @@ export interface components {
          * @enum {string}
          */
         MirrorBoundKind: "bytes" | "quota" | "capacity";
-        /** @description The optional body of `POST /api/v1/repositories/{key}/mirror/run` (R-REPO-056). */
+        /** @description The optional body of `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` (R-REPO-056). */
         MirrorRunRequest: {
             /**
              * @description Make the requested pass a full one, which discovers every name again instead of reading the feed from its cursor (R-REPO-051).
@@ -7902,6 +8270,10 @@ export interface components {
         };
     };
     parameters: {
+        /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+        ProjectKey: string;
+        /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+        RepoKey: string;
         /**
          * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
          *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
@@ -9279,6 +9651,89 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    listProjectServiceAccounts: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive substring of the name. */
+                q?: string;
+                /** @description `name` is the default; a leading `-` reverses the order. */
+                sort?: "name";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of service accounts. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccountList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createProjectServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewServiceAccount"];
+            };
+        };
+        responses: {
+            /** @description The service account. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     getServiceAccount: {
         parameters: {
             query?: never;
@@ -9386,6 +9841,119 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    getProjectServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The service account. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteProjectServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The service account is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateProjectServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["ServiceAccountPatch"];
+            };
+        };
+        responses: {
+            /** @description The service account after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     disableServiceAccount: {
         parameters: {
             query?: never;
@@ -9419,11 +9987,74 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    disableProjectServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DisableRequest"];
+            };
+        };
+        responses: {
+            /** @description The service account is disabled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     enableServiceAccount: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The service account is enabled. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    enableProjectServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
             cookie?: never;
@@ -9864,6 +10495,80 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    createProjectServiceAccountToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The token with its value. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the answer holds a secret or must not be reused. */
+                    "Cache-Control"?: "no-store";
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeProjectServiceAccountTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tokens are revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     getAuthSettings: {
         parameters: {
             query?: never;
@@ -10188,9 +10893,9 @@ export interface operations {
                 principal?: string;
                 /** @description Include the policies of the principal's groups (default `true`); only with `principal`. */
                 expandGroups?: boolean;
-                /** @description A repository key. */
+                /** @description A repository name `<project>/<key>`. */
                 repository?: string;
-                /** @description A project key; keeps the policies of that project. An administrator of a project sees its project's policies and must send this filter (`403` without it, `404` for a project it does not administer). */
+                /** @description A project key; keeps the policies of that project. */
                 project?: string;
                 /** @description `name` (default) or `-name`. */
                 sort?: "name" | "-name";
@@ -10348,6 +11053,179 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
+    listProjectPermissionPolicies: {
+        parameters: {
+            query?: {
+                /** @description A principal reference. */
+                principal?: string;
+                /** @description Include the policies of the principal's groups (default `true`); only with `principal`. */
+                expandGroups?: boolean;
+                /** @description A repository key. */
+                repository?: string;
+                /** @description `name` (default) or `-name`. */
+                sort?: "name" | "-name";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of policies. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "name": "team-web-publish",
+                     *           "description": "Team web publishes and tags its own npm scope",
+                     *           "resourceType": "repository",
+                     *           "project": null,
+                     *           "resources": {
+                     *             "repositories": [
+                     *               "npm-internal"
+                     *             ],
+                     *             "packages": {
+                     *               "include": [
+                     *                 "@web/*"
+                     *               ],
+                     *               "exclude": []
+                     *             },
+                     *             "paths": {
+                     *               "include": [],
+                     *               "exclude": []
+                     *             }
+                     *           },
+                     *           "entries": [
+                     *             {
+                     *               "principal": "group:team-web",
+                     *               "actions": [
+                     *                 "annotate",
+                     *                 "deploy",
+                     *                 "read"
+                     *               ]
+                     *             },
+                     *             {
+                     *               "principal": "user:lead-web",
+                     *               "actions": [
+                     *                 "deploy",
+                     *                 "manage",
+                     *                 "read"
+                     *               ]
+                     *             }
+                     *           ],
+                     *           "inert": false,
+                     *           "warnings": [],
+                     *           "version": 4,
+                     *           "createdAt": "2026-10-28T09:12:44Z",
+                     *           "createdBy": "user:root",
+                     *           "updatedAt": "2026-10-28T10:01:02Z",
+                     *           "updatedBy": "user:sec-alice"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PermissionPolicyList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createProjectPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "team-web-publish",
+                 *       "description": "Team web publishes and tags its own npm scope",
+                 *       "resources": {
+                 *         "repositories": [
+                 *           "npm-internal"
+                 *         ],
+                 *         "packages": {
+                 *           "include": [
+                 *             "@web/*"
+                 *           ],
+                 *           "exclude": []
+                 *         }
+                 *       },
+                 *       "entries": [
+                 *         {
+                 *           "principal": "group:team-web",
+                 *           "actions": [
+                 *             "annotate",
+                 *             "deploy",
+                 *             "read"
+                 *           ]
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The policy was created. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
     getPermissionPolicy: {
         parameters: {
             query?: never;
@@ -10474,6 +11352,182 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "description": "Team web publishes its own npm scope"
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The policy after the patch. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getProjectPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The policy. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replaceProjectPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description The policy after the replacement. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteProjectPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The policy was deleted. */
+            204: {
+                headers: {
+                    /** @description The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next request to see the change on whichever replica answers (R-AUTHZ-032). */
+                    "Trove-Authz-Epoch"?: number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    patchProjectPermissionPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
                 name: string;
             };
@@ -10768,7 +11822,12 @@ export interface operations {
                      *         "group:team-web",
                      *         "authenticated"
                      *       ],
-                     *       "projects": [],
+                     *       "projects": [
+                     *         {
+                     *           "key": "web",
+                     *           "role": "developer"
+                     *         }
+                     *       ],
                      *       "scope": null,
                      *       "epoch": 1842
                      *     }
@@ -10796,12 +11855,12 @@ export interface operations {
                  * @example {
                  *       "checks": [
                  *         {
-                 *           "repository": "npm-internal",
+                 *           "repository": "web/npm-internal",
                  *           "package": "@web/button",
                  *           "action": "deploy"
                  *         },
                  *         {
-                 *           "repository": "npm-all",
+                 *           "repository": "web/npm-all",
                  *           "action": "read"
                  *         }
                  *       ]
@@ -10870,7 +11929,7 @@ export interface operations {
                      *           ],
                      *           "clients": [],
                      *           "layout": "generic",
-                     *           "protocolBasePath": "/files/{key}/",
+                     *           "protocolBasePath": "/files/{project}/{key}/",
                      *           "defaultUpstreamUrl": null,
                      *           "defaultExtraHosts": [],
                      *           "defaultMetadataTtlSeconds": null,
@@ -10927,14 +11986,14 @@ export interface operations {
                      *           "key": "web",
                      *           "displayName": "Web platform",
                      *           "description": "The web team's repositories and partners",
-                     *           "managePolicies": true,
-                     *           "manageRepositories": false,
-                     *           "admins": [
+                     *           "owners": [
                      *             "group:web-leads"
                      *           ],
+                     *           "members": 4,
                      *           "repositories": 2,
                      *           "serviceAccounts": 1,
                      *           "policies": 2,
+                     *           "role": "owner",
                      *           "version": 3,
                      *           "createdAt": "2026-11-02T09:12:44Z",
                      *           "createdBy": "user:root",
@@ -10973,9 +12032,7 @@ export interface operations {
                  * @example {
                  *       "key": "web",
                  *       "displayName": "Web platform",
-                 *       "description": "The web team's repositories and partners",
-                 *       "managePolicies": true,
-                 *       "manageRepositories": false
+                 *       "description": "The web team's repositories and partners"
                  *     }
                  */
                 "application/json": components["schemas"]["ProjectInput"];
@@ -10998,6 +12055,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
@@ -11013,7 +12071,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -11047,7 +12105,7 @@ export interface operations {
             };
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -11091,7 +12149,7 @@ export interface operations {
             };
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -11116,101 +12174,127 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
-    addProjectAdmin: {
+    listProjectMembers: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key. */
-                key: string;
-                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` never administer a project (`422`). */
-                principalRef: string;
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The principal already was an administrator. */
+            /** @description The members. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "project": "web",
+                     *           "principal": "group:web-leads",
+                     *           "kind": "group",
+                     *           "name": "web-leads",
+                     *           "role": "owner"
+                     *         },
+                     *         {
+                     *           "project": "web",
+                     *           "principal": "user:alice",
+                     *           "kind": "user",
+                     *           "name": "alice",
+                     *           "role": "developer"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MemberList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    setProjectMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
+                principalRef: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "role": "developer"
+                 *     }
+                 */
+                "application/json": components["schemas"]["MemberInput"];
+            };
+        };
+        responses: {
+            /** @description The principal already was a member; its role is the one of the body now. */
             200: {
                 headers: {
                     "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProjectAdmin"];
+                    "application/json": components["schemas"]["Member"];
                 };
             };
-            /** @description The administrator was added. */
+            /** @description The member was added. */
             201: {
                 headers: {
                     "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProjectAdmin"];
+                    "application/json": components["schemas"]["Member"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
         };
     };
-    removeProjectAdmin: {
+    removeProjectMember: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key. */
-                key: string;
-                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` never administer a project (`422`). */
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
                 principalRef: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The administrator was removed. */
-            204: {
-                headers: {
-                    "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            429: components["responses"]["TooManyRequests"];
-            500: components["responses"]["Internal"];
-            503: components["responses"]["Unavailable"];
-        };
-    };
-    assignProjectRepository: {
-        parameters: {
-            query?: {
-                /** @description Move a repository that belongs to another project. */
-                move?: boolean;
-                /** @description The key of the project the repository is expected to belong to now; empty: expected to belong to no project. Absent: no expectation. */
-                from?: string;
-            };
-            header?: never;
-            path: {
-                /** @description The project key. */
-                key: string;
-                /** @description The repository key (R-REPO-002). */
-                repoKey: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The repository belongs to the project. */
+            /** @description The member was removed. */
             204: {
                 headers: {
                     "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
@@ -11223,37 +12307,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
-            429: components["responses"]["TooManyRequests"];
-            500: components["responses"]["Internal"];
-            503: components["responses"]["Unavailable"];
-        };
-    };
-    unassignProjectRepository: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The project key. */
-                key: string;
-                /** @description The repository key (R-REPO-002). */
-                repoKey: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The repository was unassigned. */
-            204: {
-                headers: {
-                    "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -11272,7 +12325,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -11322,7 +12375,7 @@ export interface operations {
                 format?: string[];
                 q?: string;
                 state?: "inactive";
-                /** @description A project key; keeps the repositories assigned to that project. */
+                /** @description A project key; keeps the repositories of that project. */
                 project?: string;
                 view?: "summary" | "full";
                 /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
@@ -11352,11 +12405,11 @@ export interface operations {
                      *           "format": "generic",
                      *           "description": "Installers and build outputs",
                      *           "addresses": [
-                     *             "https://trove.example.net/files/generic-local/"
+                     *             "https://trove.example.net/files/web/generic-local/"
                      *           ],
                      *           "disabled": false,
                      *           "lastActivityAt": "2026-10-28T09:14:03.117Z",
-                     *           "project": null
+                     *           "project": "web"
                      *         }
                      *       ],
                      *       "nextCursor": null
@@ -11373,14 +12426,79 @@ export interface operations {
             503: components["responses"]["Unavailable"];
         };
     };
-    createRepository: {
+    listProjectRepositories: {
+        parameters: {
+            query?: {
+                /** @description Repeat the parameter, or separate values with commas. */
+                class?: ("local" | "remote" | "virtual")[];
+                /** @description Repeat the parameter, or separate values with commas. */
+                format?: string[];
+                q?: string;
+                state?: "inactive";
+                view?: "summary" | "full";
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of repositories. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "key": "generic-local",
+                     *           "class": "local",
+                     *           "format": "generic",
+                     *           "description": "Installers and build outputs",
+                     *           "addresses": [
+                     *             "https://trove.example.net/files/web/generic-local/"
+                     *           ],
+                     *           "disabled": false,
+                     *           "lastActivityAt": "2026-10-28T09:14:03.117Z",
+                     *           "project": "web"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RepositoryList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createProjectRepository: {
         parameters: {
             query?: never;
             header?: {
                 /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         requestBody: {
@@ -11433,8 +12551,10 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
-                /** @description The repository key (R-REPO-002). */
-                key: string;
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
             };
             cookie?: never;
         };
@@ -11450,6 +12570,7 @@ export interface operations {
                     /**
                      * @example {
                      *       "key": "generic-local",
+                     *       "project": "web",
                      *       "class": "local",
                      *       "format": "generic",
                      *       "layout": "generic",
@@ -11487,8 +12608,10 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The repository key (R-REPO-002). */
-                key: string;
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
             };
             cookie?: never;
         };
@@ -11535,8 +12658,10 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The repository key (R-REPO-002). */
-                key: string;
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
             };
             cookie?: never;
         };
@@ -11580,8 +12705,10 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The repository key (R-REPO-002). */
-                key: string;
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
             };
             cookie?: never;
         };
@@ -11618,6 +12745,54 @@ export interface operations {
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
             428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    moveRepository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+                /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
+                repoKey: components["parameters"]["RepoKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "project": "shop"
+                 *     }
+                 */
+                "application/json": components["schemas"]["MoveRepositoryRequest"];
+            };
+        };
+        responses: {
+            /** @description The repository in its new project. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    Location: components["headers"]["Location"];
+                    "Trove-Authz-Epoch": components["headers"]["AuthzEpoch"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Repository"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
@@ -12311,7 +13486,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -12340,7 +13515,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -12369,7 +13544,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -12409,7 +13584,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
                 /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
@@ -12446,7 +13621,7 @@ export interface operations {
             };
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
                 /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
@@ -12494,7 +13669,7 @@ export interface operations {
             };
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
                 /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
@@ -12527,7 +13702,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
             };
@@ -12571,7 +13746,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
                 /** @description The CI system of the snippet; `gitlab-ci` in this release. */
@@ -12617,7 +13792,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
-                key: string;
+                projectKey: string;
             };
             cookie?: never;
         };
@@ -12652,6 +13827,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -12690,7 +13867,7 @@ export interface operations {
                      *       "contentStatus": "ok",
                      *       "package": null,
                      *       "upstreamUrl": null,
-                     *       "downloadUrl": "https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin",
+                     *       "downloadUrl": "https://trove.example.com/files/web/generic-local/tools/widget/2.3/widget-2.3.bin",
                      *       "contentUrl": "/api/v1/repositories/generic-local/content/tools/widget/2.3/widget-2.3.bin",
                      *       "itemUrl": "https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin"
                      *     }
@@ -12718,6 +13895,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -12767,6 +13946,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -12819,6 +14000,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -12864,12 +14047,14 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
                  *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
                  *     a backslash or a control character). A trailing slash names a folder. The server route is
-                 *     `/files/{repoKey}/{path...}`.
+                 *     `/files/{projectKey}/{repoKey}/{path...}`.
                  */
                 path: string;
             };
@@ -12940,12 +14125,14 @@ export interface operations {
                 "If-None-Match"?: string;
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
                  *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
                  *     a backslash or a control character). A trailing slash names a folder. The server route is
-                 *     `/files/{repoKey}/{path...}`.
+                 *     `/files/{projectKey}/{repoKey}/{path...}`.
                  */
                 path: string;
             };
@@ -13006,12 +14193,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
                  *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
                  *     a backslash or a control character). A trailing slash names a folder. The server route is
-                 *     `/files/{repoKey}/{path...}`.
+                 *     `/files/{projectKey}/{repoKey}/{path...}`.
                  */
                 path: string;
             };
@@ -13050,12 +14239,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The path in the repository. It contains slashes: every segment is percent-encoded, and the
                  *     path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
                  *     a backslash or a control character). A trailing slash names a folder. The server route is
-                 *     `/files/{repoKey}/{path...}`.
+                 *     `/files/{projectKey}/{repoKey}/{path...}`.
                  */
                 path: string;
             };
@@ -13106,10 +14297,12 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
-                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
-                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 * @description The path in the repository, as for `/files/{projectKey}/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}`.
                  */
                 path: string;
             };
@@ -13180,10 +14373,12 @@ export interface operations {
                 "If-None-Match"?: string;
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
-                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
-                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 * @description The path in the repository, as for `/files/{projectKey}/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}`.
                  */
                 path: string;
             };
@@ -13244,10 +14439,12 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
-                 * @description The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
-                 *     once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+                 * @description The path in the repository, as for `/files/{projectKey}/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+                 *     once. The server route is `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}`.
                  */
                 path: string;
             };
@@ -13322,7 +14519,6 @@ export interface operations {
                      *             ],
                      *             "wildcardHost": null,
                      *             "hostRoots": {},
-                     *             "wildcardRoot": "none",
                      *             "pool": null,
                      *             "surface": [
                      *               "ui",
@@ -13360,7 +14556,6 @@ export interface operations {
                      *             ],
                      *             "wildcardHost": null,
                      *             "hostRoots": {},
-                     *             "wildcardRoot": "none",
                      *             "pool": "ep-customers",
                      *             "surface": [
                      *               "packages"
@@ -13797,6 +14992,11 @@ export interface operations {
             query?: {
                 /** @description Repeat the parameter for several formats (`npm`, `nuget`, …). */
                 format?: string[];
+                /**
+                 * @description A project key: only the versions in the physical repositories of that project count (Q-UI-129). It
+                 *     combines with `repository` by intersection. A project the caller cannot see lists nothing.
+                 */
+                project?: string;
                 /** @description Repeat the parameter for several repository keys. */
                 repository?: string[];
                 /** @description Case-insensitive substring of the name or the description. */
@@ -14050,7 +15250,7 @@ export interface operations {
                      *           "path": "@team-a/ui/-/ui-1.4.0.tgz",
                      *           "sizeBytes": 48213,
                      *           "sha256": "5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567",
-                     *           "downloadUrl": "https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz",
+                     *           "downloadUrl": "https://trove.example.com/api/npm/web/npm-local/@team-a/ui/-/ui-1.4.0.tgz",
                      *           "contentUrl": "/api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz"
                      *         }
                      *       ]
@@ -14134,6 +15334,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
             };
@@ -14149,14 +15351,14 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "repository": "npm-all",
+                     *       "repository": "web/npm-all",
                      *       "format": "npm",
                      *       "client": "npm",
                      *       "credentials": "placeholder",
-                     *       "registryUrl": "https://trove.example.com/api/npm/npm-all/",
-                     *       "endpointPath": "//trove.example.com/api/npm/npm-all/",
+                     *       "registryUrl": "https://trove.example.com/api/npm/web/npm-all/",
+                     *       "endpointPath": "//trove.example.com/api/npm/web/npm-all/",
                      *       "username": "alice",
-                     *       "publishTarget": "npm-local",
+                     *       "publishTarget": "web/npm-local",
                      *       "tokenTtlSeconds": 2592000,
                      *       "snippets": [
                      *         {
@@ -14164,7 +15366,7 @@ export interface operations {
                      *           "tab": "configure",
                      *           "fileName": ".npmrc",
                      *           "language": "ini",
-                     *           "content": "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken={{token}}\n"
+                     *           "content": "registry=https://trove.example.com/api/npm/web/npm-all/\n//trove.example.com/api/npm/web/npm-all/:_authToken={{token}}\n"
                      *         },
                      *         {
                      *           "id": "npm.install",
@@ -14197,6 +15399,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
             };
@@ -14215,9 +15419,9 @@ export interface operations {
                      *       "format": "npm",
                      *       "class": "virtual",
                      *       "client": "npm",
-                     *       "repository": "npm-all",
-                     *       "registryUrl": "https://trove.example.com/api/npm/npm-all/",
-                     *       "publishTarget": "npm-local",
+                     *       "repository": "web/npm-all",
+                     *       "registryUrl": "https://trove.example.com/api/npm/web/npm-all/",
+                     *       "publishTarget": "web/npm-local",
                      *       "credentials": "env",
                      *       "exposureRules": false,
                      *       "sections": [
@@ -14232,7 +15436,7 @@ export interface operations {
                      *               "tab": "configure",
                      *               "fileName": ".npmrc",
                      *               "language": "ini",
-                     *               "content": "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}\n"
+                     *               "content": "registry=https://trove.example.com/api/npm/web/npm-all/\n//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}\n"
                      *             }
                      *           ]
                      *         }
@@ -14403,6 +15607,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -14458,6 +15664,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
             cookie?: never;
@@ -14507,8 +15715,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -14552,7 +15762,10 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
+            };
             cookie?: never;
         };
         requestBody: {
@@ -14581,6 +15794,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
@@ -14597,6 +15811,8 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
             };
@@ -14648,6 +15864,8 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
             };
@@ -14708,6 +15926,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The key of a virtual repository (R-REPO-002). */
                 repoKey: string;
             };
@@ -14723,7 +15943,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "repository": "npm-all",
+                     *       "repository": "web/npm-all",
                      *       "descriptor": {
                      *         "path": "@acme/util/-/util-1.4.0.tgz",
                      *         "kind": "artifact",
@@ -14766,6 +15986,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
@@ -14785,7 +16007,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "repository": "npm-internal",
+                     *       "repository": "web/npm-internal",
                      *       "domain": "npm-internal",
                      *       "format": "npm",
                      *       "package": "@acme/frontend",
@@ -14820,6 +16042,8 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
@@ -14881,6 +16105,8 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
                  * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
@@ -14940,7 +16166,7 @@ export interface operations {
                      * @example {
                      *       "items": [
                      *         {
-                     *           "repository": "npm-internal",
+                     *           "repository": "web/npm-internal",
                      *           "format": "npm",
                      *           "package": "@acme/frontend",
                      *           "state": "claimed",
@@ -15368,7 +16594,9 @@ export interface operations {
     listVulnerabilityFindings: {
         parameters: {
             query?: {
-                /** @description A repository key; a virtual repository expands to the members the caller can read. Repeat for several. */
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
+                /** @description A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID, for example npm or nuget. Repeat for several. */
                 format?: string[];
@@ -15433,7 +16661,9 @@ export interface operations {
     exportVulnerabilityFindings: {
         parameters: {
             query?: {
-                /** @description A repository key; a virtual repository expands to the members the caller can read. Repeat for several. */
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
+                /** @description A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID, for example npm or nuget. Repeat for several. */
                 format?: string[];
@@ -15658,7 +16888,9 @@ export interface operations {
     getVulnerabilitySummary: {
         parameters: {
             query?: {
-                /** @description A repository key. Repeat for several. */
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
+                /** @description A repository name `<project>/<key>`. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID. Repeat for several. */
                 format?: string[];
@@ -15693,7 +16925,9 @@ export interface operations {
                 from?: string;
                 /** @description Last day, inclusive (RFC 3339 date); default today. */
                 to?: string;
-                /** @description A repository key. Repeat for several. */
+                /** @description A project key: the findings of the project's repositories. Repeat for several. */
+                project?: string[];
+                /** @description A repository name `<project>/<key>`. Repeat for several. */
                 repository?: string[];
                 /** @description A format ID. Repeat for several. */
                 format?: string[];
@@ -15847,8 +17081,10 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -15881,8 +17117,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };
@@ -15972,8 +17210,10 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
-                key: string;
+                repoKey: string;
             };
             cookie?: never;
         };

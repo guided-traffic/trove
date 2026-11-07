@@ -37,7 +37,7 @@ func (h *hooks) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEvent) e
 		trigger = vuln.TriggerFill
 	}
 	return h.ev.OnVersionCommitted(ctx, tx, vuln.CommittedVersion{
-		RepoID: e.Repo.ID, RepoKey: e.Repo.Key, Format: e.Repo.Format, ItemID: e.Item.ID, Trigger: trigger,
+		RepoID: e.Repo.ID, Repo: e.Repo.Name, Format: e.Repo.Format, ItemID: e.Item.ID, Trigger: trigger,
 	})
 }
 
@@ -88,7 +88,7 @@ func (h *RepositoryHook) OnUpdated(ctx context.Context, tx meta.Tx, _ repository
 		return nil
 	}
 	_, err := h.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
-		Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: after.Key, RepositoryID: id}, DedupKey: vuln.RescanKey(id), TargetKind: "repository", TargetKey: after.Key,
+		Kind: vuln.KindRescan, Args: vuln.RescanArgs{Repository: after.Name.String(), RepositoryID: id}, DedupKey: vuln.RescanKey(id), TargetKind: "repository", TargetKey: after.Name.String(),
 	})
 	return err
 }

@@ -128,7 +128,7 @@ func (r *rig) fillObject(kind EntryKind, data []byte) string {
 }
 
 func (r *rig) entry(kind EntryKind, data []byte) Entry {
-	return Entry{Kind: kind, SHA256: digest(data), Size: int64(len(data)), Repository: "npm-all", Status: 200, ValidatedAt: r.clock.Now()}
+	return Entry{Kind: kind, SHA256: digest(data), Size: int64(len(data)), Repository: "web/npm-all", Status: 200, ValidatedAt: r.clock.Now()}
 }
 
 // objectPath is where the volume keeps the bytes of a content address.

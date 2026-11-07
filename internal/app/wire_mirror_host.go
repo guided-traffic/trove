@@ -232,6 +232,7 @@ func (b *mirrorHostBuilder) buildEngine() error {
 		if err != nil {
 			return err
 		}
+		a.tele.metrics.Repos().OnForget(e.Forget)
 		b.engine = e
 	}
 	if !b.started {

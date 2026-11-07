@@ -6,6 +6,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/servefacts"
@@ -15,7 +17,7 @@ import (
 type RepoRef struct {
 	// ID is the numeric id of the repository row.
 	ID     int64
-	Key    string
+	Name   qname.Repo
 	Class  Class
 	Format ID
 }

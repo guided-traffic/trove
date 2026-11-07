@@ -79,7 +79,7 @@ func (s *IssuanceStore) List(ctx context.Context, f IssuanceFilter) (IssuancePag
 
 // ListForProject returns the records of tokens whose contributing mappings include a mapping of the project's
 // tier, newest first (Q-CI-26). A record shows the project's mappings only: the names and IDs of the others and
-// their contributions are left out, so a project administrator learns nothing of another tier's mappings.
+// their contributions are left out, so a project Owner learns nothing of another tier's mappings.
 func (s *IssuanceStore) ListForProject(ctx context.Context, project string, f IssuanceFilter) (IssuancePage, error) {
 	after, err := decodeAfter(f.Cursor)
 	if err != nil {
@@ -147,12 +147,11 @@ func onlyProject(is Issuance, tier string) Issuance {
 	return is
 }
 
-// mappingName is the mapping's name of a reference "ci:<issuer>/<mapping>".
+// mappingName is the mapping's name of a reference "ci:<issuer>/<mapping>" or
+// "ci:<issuer>/<project>/<mapping>" without its issuer: "<mapping>" or "<project>/<mapping>" (R-CI-007).
 func mappingName(ref string) string {
-	for i := len(ref) - 1; i >= 0; i-- {
-		if ref[i] == '/' {
-			return ref[i+1:]
-		}
+	if _, name, ok := strings.Cut(ref, "/"); ok {
+		return name
 	}
 	return ref
 }

@@ -71,7 +71,7 @@ func subject(p itstack.Person) authz.Subject {
 }
 
 func deploy(repo, path string) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Path: path, Kind: authz.KindWrite, Actions: []authz.Action{authz.Deploy}}
+	return authz.Coordinate{Repository: qr(repo), Path: path, Kind: authz.KindWrite, Actions: []authz.Action{authz.Deploy}}
 }
 
 func want(t *testing.T, r itstack.Response, status int, code string) {
@@ -108,7 +108,7 @@ const policiesPath = "/api/v1/permission-policies"
 
 func policy(name string) map[string]any {
 	return map[string]any{
-		"name": name, "resources": map[string]any{"repositories": []string{"npm-internal"}},
+		"name": name, "resources": map[string]any{"repositories": []string{"it/npm-internal"}},
 		"entries": []any{map[string]any{"principal": "user:bob", "actions": []string{"read"}}},
 	}
 }
@@ -170,14 +170,14 @@ func TestE1_5_PolicyChangesAndDeniedDeploysAreFoundAndLogged(t *testing.T) {
 		}
 		items := f.find(t, "action=authz.denied&outcome=denied&actor=bob", 1)
 		ev := items[0]
-		if ev["repository"] != "npm-internal" || ev["path"] != "a/b.zip" || detail(ev, "required_action") != "deploy" || ev["reason"] != "deny.no-grant" {
+		if ev["repository"] != "it/npm-internal" || ev["path"] != "a/b.zip" || detail(ev, "required_action") != "deploy" || ev["reason"] != "deny.no-grant" {
 			t.Fatalf("%v", ev)
 		}
 		if !f.inLog(ev["id"].(string)) {
 			t.Fatal("not in the log stream")
 		}
 		// The same by the actor's ID and by the repository filter.
-		f.find(t, "actor="+f.bob.ID+"&repository=npm-internal&category=authz", 1)
+		f.find(t, "actor="+f.bob.ID+"&repository=it/npm-internal&category=authz", 1)
 	})
 	t.Run("E1.5 R-OPS-017 a refused management operation is found by the trace ID the client received", func(t *testing.T) {
 		r := f.b.Do(f.bob.Name, "POST", policiesPath, policy("nope"))
@@ -306,14 +306,14 @@ func TestR_OPS_017_DenialSummariesStayCorrect(t *testing.T) {
 	// Another path, another repository and another action are other keys.
 	f.a.Engine.Decide(ctx, bob, deploy("npm-internal", "y.zip"))
 	f.a.Engine.Decide(ctx, bob, deploy("npm-other", "x.zip"))
-	f.a.Engine.Decide(ctx, bob, authz.Coordinate{Repository: "npm-internal", Path: "x.zip", Kind: authz.KindWrite, Actions: []authz.Action{authz.Delete}})
+	f.a.Engine.Decide(ctx, bob, authz.Coordinate{Repository: qr("npm-internal"), Path: "x.zip", Kind: authz.KindWrite, Actions: []authz.Action{authz.Delete}})
 
 	t.Run("R-OPS-015 five refusals of one key are one event and one summary of four", func(t *testing.T) {
 		// first events of four keys, then the summary of the first one
 		items := f.find(t, "action=authz.denied&actor=bob&limit=100", 5)
 		var first, summary map[string]any
 		for _, ev := range items {
-			if ev["path"] == "x.zip" && ev["repository"] == "npm-internal" && detail(ev, "required_action") == "deploy" {
+			if ev["path"] == "x.zip" && ev["repository"] == "it/npm-internal" && detail(ev, "required_action") == "deploy" {
 				if detail(ev, "repeat_of") != nil {
 					summary = ev
 				} else {
@@ -332,7 +332,7 @@ func TestR_OPS_017_DenialSummariesStayCorrect(t *testing.T) {
 		}
 		sum := 0.0
 		for _, ev := range items {
-			if ev["path"] == "x.zip" && ev["repository"] == "npm-internal" && detail(ev, "required_action") == "deploy" {
+			if ev["path"] == "x.zip" && ev["repository"] == "it/npm-internal" && detail(ev, "required_action") == "deploy" {
 				sum += detail(ev, "count").(float64)
 			}
 		}
@@ -499,23 +499,23 @@ func TestR_AUTHZ_031_RepositoryUpdateRecordsSettingsChanged(t *testing.T) {
 	f := newAPIFx(t, itstack.Options{})
 	ctx := context.Background()
 	caller := repository.Caller{Actor: audit.Actor{Kind: "user", ID: f.admin.ID, Name: f.admin.Name}}
-	st, err := f.a.Repos.Create(ctx, caller, []byte(`{"key":"generic-hook","class":"local","format":"generic"}`))
+	st, err := f.a.Repos.Create(ctx, caller, "it", []byte(`{"key":"generic-hook","class":"local","format":"generic"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchVersion(st.Repository.Version), v1.MergePatcher([]byte(`{"description":"nothing of authorization"}`))); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, qr("generic-hook"), repository.MatchVersion(st.Repository.Version), v1.MergePatcher([]byte(`{"description":"nothing of authorization"}`))); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.e.Number("SELECT count(*) FROM audit_event WHERE action = 'authz.settings.changed'"); n != 0 {
 		t.Fatalf("%d events for a change of the description", n)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchAny(), v1.MergePatcher([]byte(`{"requireAuthentication":true}`))); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, qr("generic-hook"), repository.MatchAny(), v1.MergePatcher([]byte(`{"requireAuthentication":true}`))); err != nil {
 		t.Fatal(err)
 	}
 	ev := f.find(t, "action=authz.settings.changed", 1)[0]
 	before, _ := detail(ev, "before").(map[string]any)
 	after, _ := detail(ev, "after").(map[string]any)
-	if ev["repository"] != "generic-hook" || before["requireAuthentication"] != false || after["requireAuthentication"] != true || ev["actor"].(map[string]any)["name"] != "sec-alice" {
+	if ev["repository"] != "it/generic-hook" || before["requireAuthentication"] != false || after["requireAuthentication"] != true || ev["actor"].(map[string]any)["name"] != "sec-alice" {
 		t.Fatalf("%v", ev)
 	}
 	// The journal row of the revocation journal was written with the event.

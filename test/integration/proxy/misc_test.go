@@ -420,7 +420,7 @@ func TestObservability(t *testing.T) {
 		if rec == nil {
 			t.Fatalf("no upstream log record for the artifact in %q", logs.String())
 		}
-		if rec["repo"] != "obs" || rec["flight_role"] != "leader" || !strings.HasPrefix(asString(rec["cache_status"]), "trove; fwd=uri-miss") {
+		if rec["repo"] != "it/obs" || rec["flight_role"] != "leader" || !strings.HasPrefix(asString(rec["cache_status"]), "trove; fwd=uri-miss") {
 			t.Fatalf("%v", rec)
 		}
 		if n, _ := rec["collapsed_waiters"].(float64); n < 15 {

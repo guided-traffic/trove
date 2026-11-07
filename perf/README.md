@@ -117,7 +117,7 @@ cache, against this lockfile through the virtual repository `npm-all`. At least 
 | File | What it is |
 |---|---|
 | `reference/package.json` | `private`, `dependencies` only (59 roots whose closure by package name covers at least 540 packages), no scripts. Written by `npmstub reference` from `corpus.Reference`; the choice is deterministic |
-| `reference/package-lock.json` | Resolved by the npm bundled in the pinned Node image against the stub: `npm install --package-lock-only --ignore-scripts`. `resolved` is `https://localhost:8080/api/npm/npm-all/<name>/-/<file>.tgz` (the dev profile's `npm-all`), `integrity` is the corpus's |
+| `reference/package-lock.json` | Resolved by the npm bundled in the pinned Node image against the stub: `npm install --package-lock-only --ignore-scripts`. `resolved` is `https://localhost:8080/api/npm/e2e/npm-all/<name>/-/<file>.tgz` (the `npm-all` of the project `e2e`), `integrity` is the corpus's |
 
 ### Regenerate
 
@@ -151,7 +151,7 @@ package set of [test/nugetstub](../test/nugetstub), so the counting test upstrea
 |---|---|
 | `nuget/reference/Reference.sln` | one project |
 | `nuget/reference/Reference/Reference.csproj` | `net10.0`, `PackageReference`s on eight roots of the set, each at its latest stable version |
-| `nuget/reference/nuget.config` | `<clear />` and one source, the dev profile's `nuget-all` (`https://localhost:8080/api/nuget/nuget-all/v3/index.json`); the e2e tests pass `--source` instead |
+| `nuget/reference/nuget.config` | `<clear />` and one source, the `nuget-all` of the project `e2e` (`https://localhost:8080/api/nuget/e2e/nuget-all/v3/index.json`); the e2e tests pass `--source` instead |
 
 Written by `go run ./test/nugetstub/cmd/nugetstub reference -out perf/nuget/reference`; `-check perf/nuget/reference` compares.
 The files are deterministic. `TestR_NUGET_027_ReferenceSolutionIsCurrent` fails when they differ from a regeneration, and

@@ -7,8 +7,8 @@ bundle, a dist-tag write and an unpublish, the generic layer asks it for every d
 items API (Q-AUTHZ-161), the remote engine asks the populate check before a fill, the virtual engine asks `MemberUsableOn` per
 member and the shadowing check before a first version, and the host decides a format's write again when it commits
 (Q-ARCH-225). The role bindings of the system configuration (`authz.role_bindings`, applied by `trove migrate`) and the
-auditor's metadata read (`content:metadata-read`) are built. CI inline grants do not exist yet. Projects and the rights of their administrators are on
-[delegated-administration.md](delegated-administration.md); [what the engine does with them](#projects-and-project-policies) is below.
+auditor's metadata read (`content:metadata-read`) are built. Projects, their members and roles are on [delegated-administration.md](delegated-administration.md);
+[what the engine does with them](#projects-and-project-policies) is below.
 
 This page says what keeps a request from doing more than it was granted, how long a removed grant can still work, and what
 an attacker who controls one of the inputs gains. The mechanics are in
@@ -77,6 +77,12 @@ the same key is not covered by the old key selector (the policy reports `inert`)
   A listing that belongs to a request through a virtual repository (NuGet's merged search) names the addressed repository, and every row
   is decided as a read through it: the exposure of the virtual repository and the lift of a token scope that names it apply, and a
   repository it does not reach reads as nothing (Q-AUTHZ-168, `TestQ_AUTHZ_168_AReadScopeThroughAVirtualRepositoryAgreesWithTheDecisionPoint`).
+- The repositories of one project (`GET /api/v1/projects/{projectKey}/repositories`) answer an empty page only to a caller that sees
+  the project: a holder of `projects:read` or `repositories:read-config`, a member (within its token's scope), or a caller that reads
+  one of its repositories whatever the filters. To anyone else a project that exists and one that does not both answer 404 with the
+  same detail, so the list is no oracle for project keys (`projectSeen` in
+  [repositories_api.go](../../internal/api/v1/repositories_api.go), `hideProject` for the refusals of the other project routes;
+  `TestR_AUTHZ_026_AMemberSeesItsOwnProjectsOnly`).
 - `authz.hide_existence: false` (R-AUTHZ-017) turns the refusal of a read of an existing repository into 403. It is a
   troubleshooting switch; the endpoint-exposure 404 and the anonymous 401 do not change.
 
@@ -124,7 +130,7 @@ is what **Create a token for this setup** creates, used to pass the gate and be 
 
 What does not change: the grants of the owner are evaluated before the scope and decide alone whether anything is allowed, so the lift
 removes a refusal by the scope and grants nothing; a token never reads more through the virtual repository than its owner reads
-through it. A member addressed directly (`/api/npm/<member>/…`), a repository that is no member, search and listing across
+through it. A member addressed directly (`/api/npm/<projectKey>/<member>/…`), a repository that is no member, search and listing across
 repositories (decided on the repository itself), writes (decided on the deploy target, which a scope names itself) and every other action
 are decided by the scope as before. Tests: `TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt` (the
 cases above one by one, a token of a user without the right included) and
@@ -259,20 +265,20 @@ segments, so `@acme%2F..%2Fx` is one name and never a path (`TestR_AUTHZ_019_Own
 
 ## Projects and project policies
 
-R-AUTHZ-026 lets a team's administrators write policies for the team's repositories. What keeps that from widening anything
-is a property of the grant index and of the write, not of the caller's good behaviour.
+Every repository belongs to a project (R-AUTHZ-026). A member's role and a project's policies reach the project's repositories and
+nothing else; what keeps that from widening is a property of the grant index and of the write, not of the caller's good behaviour.
 
 | Mechanism | Effect | Where |
 |---|---|---|
-| Scoped compile | A project policy covers only repositories of its project, whatever its stored selectors say: a pattern or class selector is matched against the project's repositories, a key selector outside the project covers nothing (and the policy reports `selector_outside_project`). The match cache is keyed by project, so a global pattern and the same text in a project policy cannot share a result | `builder.covered`, `TestR_AUTHZ_026_MatchCacheKeyIncludesTheProject` |
-| Write rules | A project policy names repositories of its project (an unknown key is refused alike), is named `<key>-…`, grants to no `anonymous` or `authenticated`, to no CI mapping `manage`, to no service account of another project (to a project administrator that answers `unknown_principal`, as for a name that does not exist), to no auto-join group; a global policy names no project service account and takes no `<key>-…` name; the project of a policy never changes; a delegate's update and delete compare the policy's project again under the policy lock | `Service.resolve`, `Service.projectRule`, `Service.Update`, `delegateOwns` ([Q-AUTHZ-197](../spec/authorization.md#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects), [Q-AUTHZ-199](../spec/authorization.md#q-authz-199--a-delegates-policy-write-is-checked-under-the-policy-lock-and-its-project-lookups-run-in-the-writes-transaction), [Q-AUTHZ-200](../spec/authorization.md#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)) |
-| Second entry table | The grants of a project policy are in `authz_project_policy_entry`; a replica of the previous release reads only `authz_policy_entry` and sees a project policy without entries, so it grants nothing for it. The database refuses a row of `authz_policy_entry` for a project policy (`AI004`) | `writeChildren`, `TestR_AUTHZ_026_ProjectPolicyIsInvisibleToTheOldBuild` |
-| Administrators hold `manage` only | A project administrator holds `manage` on each repository of the project and nothing else. It is not a grant in the index: the decision allows `manage` when the subject administers the project (a user or a member of a listed group, through a session or a token with `admin: true`), by the rule of `ProjectsOn`. A service account, a CI identity and anonymous never hold it, not even as a member of an administrator group, and a token without `admin: true` does not either ([Q-AUTHZ-196](../spec/authorization.md#q-authz-196--the-manage-of-a-project-administrator-is-decided-from-the-administration-not-from-a-grant-per-repository)) | `grantedBy`, `projectInfo.administeredBy`, `TestR_AUTHZ_026_ManageOfAProjectAdministratorFollowsTheCredential` |
-| Narrowing in the handler | The declaration admits a caller that administers some project with the right; the handler restricts it to the project the request names. A foreign and an unknown project answer alike, and so do a principal or repository of the policy list's filters that does not exist and one of another project (an empty list; the groups of a principal are not expanded). A refusal is audited as `authz.denied` of the capability ([Q-AUTHZ-201](../spec/authorization.md#q-authz-201--a-project-administrators-refusals-are-audited-as-the-denial-of-the-capability)) | `narrowPolicy*` ([Q-AUTHZ-187](../spec/authorization.md#q-authz-187--what-a-project-administrator-sees-and-is-refused-on-the-policy-operations)) |
+| Roles | A member's role (the highest over the user and its groups) grants its actions on every repository of its project, as one more source of the union, `role:<projectKey>:<role>`; the token's scope bounds it like a grant, and a token is a member only of the projects its scope reaches (`scopeReachesProject`, [delegated-administration.md](delegated-administration.md#what-a-role-grants-and-through-which-credential)). A service account, a CI identity, a Bastion registration and anonymous carry none, also as a member of a member group; a row of another kind and an auto-join group are skipped by the build ([delegated-administration.md](delegated-administration.md#what-a-role-grants-and-through-which-credential)) | `grantedBy`, `roleOf`, `TestR_AUTHZ_026_EachRoleGrantsItsActionsOnTheProjectsRepositories` |
+| Selector contexts | A global policy, a token scope and an exposure rule name `<project>/<key>`, a pattern over project and key, or a class; a bare key there is refused, never read as a selector that matches nothing. A project policy names bare keys of its project only ([Q-AUTHZ-216](../spec/authorization.md#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)) | `parseSelector`, `ValidateSelectorIn` |
+| Scoped compile | A project policy covers only repositories of its project, whatever its stored selectors say. The match cache is keyed by project, so a global pattern and the same text in a project policy cannot share a result | `builder.covered`, `TestR_AUTHZ_026_MatchCacheKeyIncludesTheProject` |
+| Write rules | A project policy is stored as `<project>/<name>`, grants to no `anonymous` or `authenticated`, to no CI mapping `manage`, to no service account of another project (to an Owner without a policies capability that answers `unknown_principal`, as for a name that does not exist), to no auto-join group; a global policy names no project service account; the project of a policy never changes; an Owner's update and delete compare the policy's project again under the policy lock | `Service.resolve`, `Service.projectRule`, `Service.Update`, `ownsPolicy` ([Q-AUTHZ-197](../spec/authorization.md#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects), [Q-AUTHZ-199](../spec/authorization.md#q-authz-199--a-delegates-policy-write-is-checked-under-the-policy-lock-and-its-project-lookups-run-in-the-writes-transaction), [Q-AUTHZ-200](../spec/authorization.md#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)) |
+| Second entry table | The grants of a project policy are in `authz_project_policy_entry`; the database refuses a row of `authz_policy_entry` for a project policy (`AI004`) | `writeChildren`, `TestR_AUTHZ_026_ProjectPolicyGrantsHaveTheirOwnTable` |
 | Roles and owners | A project service account takes no system role (`role_not_allowed`, also in `authz.role_bindings`) and owns no package outside its project; the build skips an entry of a global policy or of another project's policy and a role binding that names one ([Q-AUTHZ-198](../spec/authorization.md#q-authz-198--a-project-service-account-outside-its-project-is-refused-in-every-path-and-skipped-by-the-build)) | `Service.bindable`, `refuseForeignAccount` |
 
-Removing an administrator, turning a switch off or moving a repository out of a project takes effect on every replica within
-the bound of R-AUTHZ-028 (`TestR_AUTHZ_028_ProjectAdministratorRemovalIsRefusedOnAnotherReplica`).
+Removing a member, lowering a role or moving a repository out of a project takes effect on every replica within the bound of
+R-AUTHZ-028 (`TestR_AUTHZ_028_AMemberChangeReachesAnotherReplica`, `TestR_REPO_060_AMoveTakesTheRepositoryOutOfItsProjectsRoles`).
 
 ## A Bastion registration holds nothing
 
@@ -283,7 +289,7 @@ Bastion interface, and the interface admits the recognition stage's proof, not a
 
 | Line | What refuses | Answer |
 |---|---|---|
-| The writes | a policy entry and its validation, a role binding, an owner record, a group member and a project administrator that names `bastion:<name>` ([Q-BAS-60](../spec/bastion.md#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)) | `422 principal_not_allowed`; `TestR_BAS_004_ABastionHoldsNoGrant` and the unit tests next to each path |
+| The writes | a policy entry and its validation, a role binding, an owner record, a group member and a project member that names `bastion:<name>` ([Q-BAS-60](../spec/bastion.md#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)) | `422 principal_not_allowed`; `TestR_BAS_004_ABastionHoldsNoGrant` and the unit tests next to each path |
 | The database | the guards of `authz_role_binding` and `group_membership` name the kinds they admit (`AI001`) | the row is refused; the same test writes around the API |
 | The decision point | the kind `bastion` has an empty principal set: no `authenticated`, no own ID, no role, no capability ([decide.go](../../internal/authz/decide.go), [index.go](../../internal/authz/index.go)) | every decision refuses it, should a route ever ask; `TestR_BAS_004_ABastionRegistrationIsNeverPartOfAuthenticated` |
 
@@ -331,15 +337,14 @@ removed between that decision and the commit does not stop it, and the credentia
 
 ### H-396 · A project administrator's policy write is decided on the replica's index
 
-The handler narrows a project administrator to its project with the index of the request, which may be up to
-`authz.cache.max_staleness` behind (R-AUTHZ-028), and the policy write does not decide again on the state its own
-transaction reads. A project administrator that was removed, a group it belonged to that lost the project, or a switch
-`managePolicies` that was turned off can therefore still create, replace or delete a project policy for as long as the
-replica it reaches holds the older index: typically 100 ms plus one build, at most `cluster.epoch_poll_interval` plus 1 s on a
-replica whose change-log poll works, never longer than `authz.cache.max_staleness`. Live for every project write; what
-makes it real is a delegate whose rights are being removed and who acts in that window. The write itself stays inside the
-project (the rules of the service read the database, not the index), so the window widens who may write, not what a project
-policy can grant.
+The declaration admits an Owner of the project on the index of the request, which
+may be up to `authz.cache.max_staleness` behind (R-AUTHZ-028), and the policy write does not decide again on the state its own
+transaction reads. An Owner that was removed or demoted, or a group it belonged to that lost the role, can therefore still create,
+replace or delete a project policy, and change members, for as long as the replica it reaches holds the older index: typically
+100 ms plus one build, at most `cluster.epoch_poll_interval` plus 1 s on a replica whose change-log poll works, never longer than
+`authz.cache.max_staleness`. Live for every project write; what makes it real is a member whose role is being removed and who acts
+in that window. The write itself stays inside the project (the rules of the service read the database, not the index), and the
+last-Owner rule counts the rows under the project's lock, so the window widens who may write, not what a project policy can grant.
 
 ### H-105 · The revocation journal is written and not replayed
 

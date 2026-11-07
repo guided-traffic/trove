@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -31,8 +33,8 @@ func DeleteJobSpec(h jobs.Handler) jobs.KindSpec {
 // DeleteArgs are the arguments of a deletion job. The actor is kept so that the
 // events name who asked.
 type DeleteArgs struct {
-	RepoID int64  `json:"repoId"`
-	Key    string `json:"key"`
+	RepoID int64      `json:"repoId"`
+	Key    qname.Repo `json:"key"`
 	// Class and Format are what a storage hook dispatches on; empty in a job
 	// queued before they were recorded.
 	Class  string      `json:"class,omitempty"`
@@ -232,7 +234,7 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 			}
 		}
 		for _, r := range removed {
-			if err := s.recordDeleted(ctx, tx, w, repo.Key, r.Path, r.BlobSha256, r.Size.Int64); err != nil {
+			if err := s.recordDeleted(ctx, tx, w, repo.Name, r.Path, r.BlobSha256, r.Size.Int64); err != nil {
 				return err
 			}
 		}
@@ -250,14 +252,14 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 	return nil
 }
 
-func (s *Store) recordDeleted(ctx context.Context, tx meta.Tx, w who, repoKey, path string, digest []byte, size int64) error {
+func (s *Store) recordDeleted(ctx context.Context, tx meta.Tx, w who, repoKey qname.Repo, path string, digest []byte, size int64) error {
 	raw, err := json.Marshal(map[string]any{"path": path, "sha256": hex.EncodeToString(digest), "size": size})
 	if err != nil {
 		return err
 	}
 	return s.rec.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventArtifactDeleted, Actor: w.actor, Outcome: audit.Success, Source: w.source, Endpoint: w.endpoint,
-		Subject: audit.Subject{Kind: "repository", Name: repoKey}, Repository: repoKey, Path: path, Details: raw,
+		Subject: audit.Subject{Kind: "repository", Name: repoKey.String()}, Repository: repoKey.String(), Project: repoKey.Project, Path: path, Details: raw,
 	})
 }
 
@@ -337,8 +339,8 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 		}
 		job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
 			Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(repo.ID, 10) + ":" + spec.Path,
-			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Key, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID},
-			TargetKind: "item", TargetKey: repo.Key + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
+			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Name, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID},
+			TargetKind: "item", TargetKey: repo.Name.String() + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
 		})
 		if err != nil {
 			return err
@@ -392,7 +394,7 @@ func (s *Store) RunDeleteJob(ctx context.Context, run *jobs.Run) error {
 
 func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi string, batch int) (int64, error) {
 	var n int64
-	repo := RepoRef{ID: a.RepoID, Key: a.Key, Class: a.Class, Format: a.Format}
+	repo := RepoRef{ID: a.RepoID, Name: a.Key, Class: a.Class, Format: a.Format}
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {

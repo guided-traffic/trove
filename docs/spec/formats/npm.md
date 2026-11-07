@@ -3,7 +3,7 @@
 Status: specification — local repositories partly implemented (routes, classification, error shape, publish, the data port; the work packages of documents, dist-tags, unpublish and identity, and the remote and virtual classes, are not built)
 
 This page specifies how trove speaks the npm registry protocol for local, remote and virtual
-npm repositories: the endpoints below `/api/npm/<repoKey>/`, how the npm format plug-in classifies
+npm repositories: the endpoints below `/api/npm/<projectKey>/<repoKey>/`, how the npm format plug-in classifies
 requests, how package documents are generated, cached and merged, how publish, dist-tags,
 deprecation and unpublish change state, how a remote repository fetches and validates npm
 metadata, how a virtual repository merges members, how npm behaves when requests reach `web`
@@ -38,11 +38,12 @@ Covers: every MVP and P1 entry of the npm format catalog
 
 Conventions on this page:
 
-- `https://trove.example.com` is the public base URL *(example)*; `npm-local`, `npm-remote` and
-  `npm-all` (virtual, members `npm-local` then `npm-remote`, deployment target `npm-local`) are
-  example repository keys; `@acme` is an example internal scope; `${TROVE_TOKEN}` is a trove
-  token (INV-8).
-- The *registry URL* of a repository is `<public base URL>/api/npm/<repoKey>/`, always with a
+- `https://trove.example.com` is the public base URL *(example)*; `web` is an example project key, and
+  `npm-local`, `npm-remote` and `npm-all` (virtual, members `npm-local` then `npm-remote`, deployment target
+  `npm-local`) are example repository keys of that project; `@acme` is an example internal scope;
+  `${TROVE_TOKEN}` is a trove token (INV-8). A repository named outside its project is written
+  `<projectKey>/<repoKey>` (`web/npm-local`).
+- The *registry URL* of a repository is `<public base URL>/api/npm/<projectKey>/<repoKey>/`, always with a
   trailing slash. Paths in tables are relative to it unless marked **host root**.
 - `{name}` is a package name; in request paths it may arrive as `@scope%2fname`, `%40scope%2fname`
   or `@scope/name` (R-NPM-002).
@@ -64,13 +65,17 @@ Conventions on this page:
 Priority: **MVP** · Covers: PKG-NPM-001, PKG-NPM-002, PKG-NPM-056, REPO-005
 
 Every npm repository, whatever its class, MUST answer the npm registry protocol under its registry
-URL `/api/npm/<repoKey>/` (INV-6). A request for a repository key that does not exist, or whose
-format is not npm, answers 404 with the npm error body (R-NPM-005).
+URL `/api/npm/<projectKey>/<repoKey>/` (INV-6). A request for a project or a repository key that does not
+exist, for a project the caller cannot see, or for a repository whose format is not npm, answers 404 with the
+npm error body (R-NPM-005); a hidden project answers exactly like a missing repository. `/api/npm/<projectKey>`
+alone (one segment after the format) answers 404. A `%` in the project or repository segment is refused
+before any lookup ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-002).
 
 - The router MUST work on the escaped request path (Go: `URL.EscapedPath()`), never on a path in
   which `%2f` has already become `/` or that has been cleaned, so `@scope%2fname` and
   `@scope/name` reach the same handler (R-NPM-002).
-- A first path segment of `-` is reserved for protocol operations (`-/ping`, `-/whoami`, `-/v1/…`,
+- The first two segments after `/api/npm/` are the project key and the repository key; the paths below
+  are relative to the registry URL behind them. A first path segment of `-` is reserved for protocol operations (`-/ping`, `-/whoami`, `-/v1/…`,
   `-/package/…`, `-/user/…`, `-/npm/v1/…`, `-/external/…`). Anything else is a package name: one
   segment for an unscoped name; for a name starting with `@`, two segments or one segment
   containing `%2f`.
@@ -80,8 +85,8 @@ format is not npm, answers 404 with the npm error body (R-NPM-005).
 - `GET` on the registry URL itself answers 200 `{}`. Every `GET` route also answers `HEAD`.
 - One prefix at the **host root** of the public base URL belongs to the npm plug-in (INV-6,
   Q-NPM-1): `/-/npm/v1/oidc/token/exchange/package/` (R-NPM-022, P1). npm builds that URL against
-  the host root of the registry URL, not its path, so it cannot live below `/api/npm/<repoKey>/`;
-  it needs no repository key, because the exchange is bound to a package by its path. The same
+  the host root of the registry URL, not its path, so it cannot live below `/api/npm/<projectKey>/<repoKey>/`;
+  it needs no project or repository key, because the exchange is bound to a package by its path. The same
   exchange is also served below every registry URL (`-/npm/v1/oidc/token/exchange/package/{name}`),
   where Yarn 4 and current pnpm releases post it. trove owns the host root of `server.base_url`,
   which is an origin without a path ([operations-and-observability.md](../operations-and-observability.md)
@@ -133,14 +138,15 @@ The web-login poll URL lives outside the registry URL (R-NPM-020).
 
 Acceptance criteria:
 
-- `curl -s https://trove.example.com/api/npm/npm-all/` answers 200 `{}`;
-  `curl -s -o /dev/null -w '%{http_code}' https://trove.example.com/api/npm/does-not-exist/lodash`
-  prints `404`.
+- `curl -s https://trove.example.com/api/npm/web/npm-all/` answers 200 `{}`;
+  `curl -s -o /dev/null -w '%{http_code}' https://trove.example.com/api/npm/web/does-not-exist/lodash`,
+  the same request for a project that does not exist (`…/api/npm/nope/npm-all/lodash`) and
+  `…/api/npm/web` each print `404`.
 - `npm view lodash version` with `--registry` set to `…/npm-local/` (holding lodash, published
   there by a `manage` holder because the test upstream serves it,
   [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-048), `…/npm-remote/` and
   `…/npm-all/` succeeds in each case.
-- `npm publish --registry https://trove.example.com/api/npm/npm-remote/` fails with `E405` and
+- `npm publish --registry https://trove.example.com/api/npm/web/npm-remote/` fails with `E405` and
   a message naming the repository as remote.
 - A `HEAD` on a package document returns the same `ETag` as the `GET`.
 
@@ -206,7 +212,7 @@ Consequences:
   metadata and files, so the catalog's trap of a policy that admits the tarball but not the
   separately stored metadata (PKG-NPM-047) cannot occur.
 - Every stored tarball is an item at its canonical path (storage.md); raw access through
-  `/files/<repoKey>/<path>` (INV-6) uses the same path, and is refused wherever the npm tarball
+  `/files/<projectKey>/<repoKey>/<path>` (INV-6) uses the same path, and is refused wherever the npm tarball
   route refuses the tarball: a tombstoned version (R-NPM-015, R-NPM-047) or a version removed
   upstream (R-NPM-026) answers 404 on `/files` and on the cache view as well. Package documents are
   generated and have no item.
@@ -216,7 +222,7 @@ Consequences:
 
 Acceptance criteria:
 
-- The resolution trace (`GET /api/v1/repositories/npm-all/resolution?path=@acme/ui/-/ui-1.2.0.tgz`)
+- The resolution trace (`GET /api/v1/projects/web/repositories/npm-all/resolution?path=@acme/ui/-/ui-1.2.0.tgz`)
   reports kind `artifact` and package `@acme/ui`; for `path=@acme/ui` it reports `metadata`.
 - With `excludePatterns: ["@acme/**"]` on `npm-remote`, neither `npm view @acme/ui` nor a tarball
   request for an `@acme` package reaches the test upstream.
@@ -251,13 +257,13 @@ R-AUTHZ-016 the 401/403/404 choice. This requirement adds what npm clients need 
 
 Acceptance criteria:
 
-- With `registry=https://trove.example.com/api/npm/npm-all/` and
-  `//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}` in `.npmrc`, `npm install
+- With `registry=https://trove.example.com/api/npm/web/npm-all/` and
+  `//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}` in `.npmrc`, `npm install
   lodash` succeeds against a repository without anonymous read; without the second line it fails
   with `E401` and never prompts for a one-time password.
 - `curl -u anything:${TROVE_TOKEN} …/npm-all/lodash` returns 200.
 - A request with `Host: evil.example` gets a document whose `dist.tarball` URLs all start with
-  `https://trove.example.com/api/npm/`.
+  `https://trove.example.com/api/npm/web/npm-all/`.
 - The acceptance criteria of R-AUTHZ-007 to R-AUTHZ-009 pass with every gate row of R-NPM-045.
 
 ### R-NPM-005 · Error bodies and protocol headers
@@ -283,7 +289,7 @@ Priority: **MVP** · Covers: PKG-NPM-060
 | 501 | `npm_audit_unavailable`, `npm_not_implemented` | R-NPM-038, unimplemented `POST` endpoints |
 | 502 | `npm_invalid_upstream_document` | R-NPM-024 |
 | 503 | `vulnerability_data_unavailable` (generic, from M4b) | An audit in mode `local` before trove's npm advisory data is complete ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017) |
-| 507 | `quota_exceeded` (generic, [storage.md](../storage.md) R-STOR-029, P1) | A publish or raw deploy would exceed the system capacity limit or the target repository's quota (storage.md Q-STOR-7). The `error` text names the limit: the repository key or the system limit. npm retries the publish `PUT` on a `5xx` twice by default (after 10 s and 60 s), so `npm publish` reports it after about 70 s |
+| 507 | `quota_exceeded` (generic, [storage.md](../storage.md) R-STOR-029, P1) | A publish or raw deploy would exceed the system capacity limit or the target repository's quota (storage.md Q-STOR-7). The `error` text names the limit: the repository (`<projectKey>/<repoKey>`) or the system limit. npm retries the publish `PUT` on a `5xx` twice by default (after 10 s and 60 s), so `npm publish` reports it after about 70 s |
 
 - `npm-notice` (a response header npm prints on any response,
   [npm-registry-fetch](https://github.com/npm/npm-registry-fetch/blob/main/lib/check-response.js);
@@ -372,7 +378,7 @@ CREATE TABLE npm_tombstones (                     -- outlives trash and permanen
 Acceptance criteria:
 
 - After `npm publish` of `@acme/ui@1.2.0` to `npm-local`,
-  `curl -sI https://trove.example.com/files/npm-local/@acme/ui/-/ui-1.2.0.tgz` returns 200 and
+  `curl -sI https://trove.example.com/files/web/npm-local/@acme/ui/-/ui-1.2.0.tgz` returns 200 and
   the item API shows properties `npm.name=@acme/ui`, `npm.version=1.2.0`, `npm.scope=@acme`.
 
 ### R-NPM-007 · Publish
@@ -744,7 +750,7 @@ Priority: **MVP** · Covers: PKG-NPM-025, PKG-NPM-029, FMT-011
       "hasInstallScript": false,
       "_npmUser": { "name": "alice" },
       "dist": {
-        "tarball": "https://trove.example.com/api/npm/npm-local/@acme/ui/-/ui-1.2.0.tgz",
+        "tarball": "https://trove.example.com/api/npm/web/npm-local/@acme/ui/-/ui-1.2.0.tgz",
         "integrity": "sha512-…", "shasum": "…", "fileCount": 42, "unpackedSize": 123456
       }
     }
@@ -1043,7 +1049,7 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
   from the body, and every other difference is ignored. A body without `versions` (npm's partial
   maintainer update, PKG-NPM-022) answers 400 `npm_bad_publish` with "maintainer lists are not
   supported; ownership is managed in trove".
-- A raw `DELETE /files/<npm local>/<tarball path>` (R-STOR-018) unpublishes that version the same
+- A raw `DELETE /files/<projectKey>/<npm local>/<tarball path>` (R-STOR-018) unpublishes that version the same
   way (`OnItemsRemoved`). So does the `PUT` and the `DELETE` above: they remove the files of the
   versions through the package writer in the transaction that checked ownership and the revision,
   and the same hook writes the tombstone, the tags and the audit event (Q-NPM-27).
@@ -1103,7 +1109,7 @@ Priority: **MVP** · Covers: PKG-NPM-011, PKG-NPM-058
 
 | Method | Path | Response | Permission |
 |---|---|---|---|
-| GET | `-/whoami` | 200 `{"username": "<name>"}`, the name rendered per R-AUTH-033 (user name, `sa:<name>`, `ci:<CI issuer name>/<mapping name>`); 401 for anonymous callers | authenticated subject who can read the repository, 404 for one who cannot (R-AUTHZ-007, Q-AUTHZ-167) |
+| GET | `-/whoami` | 200 `{"username": "<name>"}`, the name rendered per R-AUTH-033 (user name; `sa:<name>` for a service account of no project, `sa:<projectKey>/<name>` for a project's; `ci:<CI issuer name>/<mapping name>` for a mapping of the system tier, `ci:<CI issuer name>/<projectKey>/<mapping name>` for one of a project's tier); 401 for anonymous callers | authenticated subject who can read the repository, 404 for one who cannot (R-AUTHZ-007, Q-AUTHZ-167) |
 | GET | `-/ping` (query `write=true` accepted and ignored) | 200 `{}`; 401 for anonymous callers, also where the repository is anonymously readable (Q-NPM-29) | authenticated subject who can read the repository, 404 for one who cannot (R-AUTHZ-007, Q-AUTHZ-167) |
 
 Acceptance criteria:
@@ -1142,7 +1148,7 @@ The flow, its data model and its settings are
 
 Acceptance criteria:
 
-- `npm login --registry=https://trove.example.com/api/npm/npm-all/ --auth-type=web`, `pnpm login
+- `npm login --registry=https://trove.example.com/api/npm/web/npm-all/ --auth-type=web`, `pnpm login
   --auth-type=web` and `yarn npm login --web-login` (Yarn 4) each complete after approval in the
   browser and write a working token into `~/.npmrc` or `~/.yarnrc.yml`; also in the `scatter`
   profile of [architecture.md](../architecture.md) R-ARCH-032, where the access logs show the
@@ -1245,7 +1251,7 @@ npm:
 Acceptance criteria:
 
 - A GitLab job with `id_tokens: { NPM_ID_TOKEN: { aud: "npm:trove.example.com" } }`, the
-  registry set to `https://trove.example.com/api/npm/npm-all/`, no configured token, and a
+  registry set to `https://trove.example.com/api/npm/web/npm-all/`, no configured token, and a
   mapping that grants `deploy` on `@acme/*` publishes `@acme/ui` with `npm publish` (npm 11 and 12
   gate rows, host-root route), `pnpm publish` (pnpm 11 and 12 rows, registry-relative route) and
   `yarn npm publish` (Yarn 4 row, registry-relative route); the audit log shows the exchange and
@@ -1253,7 +1259,7 @@ Acceptance criteria:
 - The same job publishing `left-pad` fails, and no token was issued.
 - The returned token gets 404 or 403 on any package other than `{name}`.
 - `POST /-/npm/v1/oidc/token/exchange/package/@acme%2F*`, and the same path below
-  `…/api/npm/npm-all/`, answer 400 and issue no token.
+  `…/api/npm/web/npm-all/`, answer 400 and issue no token.
 - An ID token whose only audience is `https://other.example.com` answers 401 on both routes.
 
 ## Remote repositories
@@ -1425,7 +1431,7 @@ Priority: **MVP** · Covers: PKG-NPM-038, PKG-NPM-062, RMT-022
 Acceptance criteria:
 
 - `npm view lodash@4.17.21 dist.tarball` through `npm-remote` prints
-  `https://trove.example.com/api/npm/npm-remote/lodash/-/lodash-4.17.21.tgz`; through `npm-all`
+  `https://trove.example.com/api/npm/web/npm-remote/lodash/-/lodash-4.17.21.tgz`; through `npm-all`
   the `npm-all` URL.
 - A test upstream serving a tarball that does not match its integrity makes `npm install` fail
   with 502 and leaves no item; once fixed, a retry succeeds.
@@ -1487,7 +1493,7 @@ Acceptance criteria:
 
 - The test upstream drops `evil@1.0.1` from its document; after the period, `npm view evil
   versions` through trove no longer lists it and its cached tarball answers 404, through
-  `/files/npm-remote/evil/-/evil-1.0.1.tgz` as well and on every replica; the audit log has the
+  `/files/web/npm-remote/evil/-/evil-1.0.1.tgz` as well and on every replica; the audit log has the
   event. After `valkey-cli FLUSHALL`, the tarball still answers 404. With
   `serveRemovedVersions: true` the tarball is still served.
 - The test upstream then answers one refresh with an older copy of the document (lower
@@ -1762,8 +1768,8 @@ Priority: **P1** · Covers: PKG-NPM-046, REPO-040
 Dependencies that are not registry packages make clients fetch from the internet directly. A
 virtual npm repository can rewrite some of them so the client fetches through trove.
 
-- The setting names generic remote repositories (one upstream each, INV-5) that may serve external
-  dependencies; the allow list is exactly their upstream URLs. A dependency is rewritten only if
+- The setting names generic remote repositories of the virtual repository's project, by bare key (one upstream
+  each, INV-5), that may serve external dependencies; the allow list is exactly their upstream URLs. A dependency is rewritten only if
   its URL starts with one of them.
 - Rewritten forms in P1: `http`/`https` tarball URLs in `dependencies`, `optionalDependencies` and
   `peerDependencies` of served manifests (all variants). The value becomes
@@ -1782,7 +1788,7 @@ Configuration (`npm` section of a virtual repository):
 npm:
   externalDependencies:
     enabled: false               # default (proposed)
-    remotes: [ext-tarballs]      # example; generic remote repositories
+    remotes: [ext-tarballs]      # example; generic remote repositories of the same project, bare keys
 ```
 
 Acceptance criteria:
@@ -1797,7 +1803,7 @@ Acceptance criteria:
 ### R-NPM-035 · Recalculate npm metadata
 Priority: **P1** · Covers: PKG-NPM-030, FMT-012, REPO-009
 
-`POST /api/v1/repositories/{key}/reindex` ([repositories-and-proxy.md](../repositories-and-proxy.md)
+`POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` ([repositories-and-proxy.md](../repositories-and-proxy.md)
 R-REPO-016) on an npm local repository runs the npm rebuild as a job: for every live version it
 re-reads the tarball from the blob store, recomputes `file_count`, `unpacked_size`,
 `has_install_script`, `has_shrinkwrap` and the readme source, re-checks the dist-tag invariants of
@@ -1828,7 +1834,7 @@ Acceptance criteria:
 ### R-NPM-036 · Deploy a tarball without the npm client
 Priority: **P1** · Covers: PKG-NPM-017, PKG-NPM-018, ART-006
 
-- From P1, `PUT /files/<npm local>/<path>` with a `.tgz` body (also used by the UI deploy dialog)
+- From P1, `PUT /files/<projectKey>/<npm local>/<path>` with a `.tgz` body (also used by the UI deploy dialog)
   is a publish: name and version come from the tarball's `package.json`, which is also the
   manifest, and R-NPM-007 (without the manifest comparison), R-NPM-008 and R-NPM-016 apply. The
   tag is `latest` unless the query parameter `distTag` names another. Until then `/files/` refuses
@@ -1843,7 +1849,7 @@ Priority: **P1** · Covers: PKG-NPM-017, PKG-NPM-018, ART-006
 Acceptance criteria:
 
 - `curl -T ui-1.3.0.tgz -H "Authorization: Bearer ${TROVE_TOKEN}"
-  https://trove.example.com/files/npm-local/@acme/ui/-/ui-1.3.0.tgz` answers 201 and `npm
+  https://trove.example.com/files/web/npm-local/@acme/ui/-/ui-1.3.0.tgz` answers 201 and `npm
   install @acme/ui@1.3.0` installs it; uploading the same file to `…/npm-local/misc/ui.tgz` answers
   400 naming `@acme/ui/-/ui-1.3.0.tgz`.
 
@@ -1885,7 +1891,7 @@ Priority: **P1** · Covers: PKG-NPM-048, SRCH-050
 
 Acceptance criteria:
 
-- `npm search acme --registry https://trove.example.com/api/npm/npm-all/` lists `@acme/ui`
+- `npm search acme --registry https://trove.example.com/api/npm/web/npm-all/` lists `@acme/ui`
   immediately after its publish; `npm search scope:acme` lists only `@acme` packages; a caller
   without `read` on `npm-local` gets no hit from it; the test upstream receives no search request.
 
@@ -1939,9 +1945,9 @@ names, each with a list of versions:
   members first, R-REPO-022) that is enabled and whose mode is `forward`, whoever asks (Q-NPM-62).
 - Mode `disabled`, every local repository, a virtual repository without a forwarding member, a
   remote that may not contact its upstream (offline, its own mode or `proxy.global_offline`,
-  R-REPO-030, R-REPO-031), the cache view `<key>~cache`, and an endpoint that does not fill caches
+  R-REPO-030, R-REPO-031), the cache view `<repoKey>~cache`, and an endpoint that does not fill caches
   or has exposure rules (R-NPM-048) answer **501** `npm_audit_unavailable` with "security audit is
-  not available on repository <key>; it is disabled or no upstream provides advisories". Why 501
+  not available on repository <projectKey>/<repoKey>; it is disabled or no upstream provides advisories". Why 501
   and not 404: the repository and the endpoint exist, and "not found" sends users looking for a
   wrong registry URL; 501 is the HTTP status for a function the server does not support; npm never
   retries a `POST`; `npm install` logs the audit failure and completes; `npm audit` and `pnpm audit`
@@ -2002,7 +2008,7 @@ Acceptance criteria:
   `npm-local`, nor a name covered by a claim, nor a name `npm-remote` never fetched.
 - A lockfile with one public package that `npm-remote` never fetched: `npm audit` prints the
   `npm-notice` naming 1 withheld name, and the provider does not see that name.
-- `npm audit --registry …/npm-local/` fails with 501 and the error text; `npm install` against the
+- `npm audit --registry …/web/npm-local/` fails with 501 and the error text; `npm install` against the
   same registry succeeds. (The M2 criterion; from M4b it holds with `npm-local` in mode
   `disabled`.)
 - A small gzip body that inflates beyond the limit answers 413.
@@ -2023,7 +2029,7 @@ read-only lookup for per-dependency checksums:
 
 | Method | Path | Response | Permission |
 |---|---|---|---|
-| GET | `/api/v1/npm/{repoKey}/packages/{name}/versions/{version}` | 200 `{"repository": "npm-local", "name": "@acme/ui", "version": "1.2.0", "integrity": "sha512-…", "shasum": "…", "sha256": "…", "size": 48213, "publishedAt": "…", "publishedBy": "alice"}`; for a virtual, `repository` is the member whose entry wins | `read` |
+| GET | `/api/v1/npm/{projectKey}/{repoKey}/packages/{name}/versions/{version}` | 200 `{"repository": "npm-local", "name": "@acme/ui", "version": "1.2.0", "integrity": "sha512-…", "shasum": "…", "sha256": "…", "size": 48213, "publishedAt": "…", "publishedBy": "alice"}`; for a virtual, `repository` is the key of the member whose entry wins, a repository of the same project | `read` |
 
 The snippets of R-NPM-041 are available through the client setup API of
 [api-and-ui.md](../api-and-ui.md). Recording build metadata itself belongs to the build-metadata
@@ -2077,8 +2083,8 @@ below are not templates.
 npm (`.npmrc` in the project, `~/.npmrc`, or `%USERPROFILE%\.npmrc` on Windows):
 
 ```ini
-registry=https://trove.example.com/api/npm/npm-all/
-//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}
+registry=https://trove.example.com/api/npm/web/npm-all/
+//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
 ; only when pin rules or manual namespace claims apply (R-NPM-012):
 min-release-age-exclude[]=@acme/*
 ```
@@ -2086,8 +2092,8 @@ min-release-age-exclude[]=@acme/*
 npm interactive and scoped variant:
 
 ```shell
-npm login --registry=https://trove.example.com/api/npm/npm-all/ --auth-type=web
-npm login --registry=https://trove.example.com/api/npm/npm-acme/ --auth-type=web --scope=@acme
+npm login --registry=https://trove.example.com/api/npm/web/npm-all/ --auth-type=web
+npm login --registry=https://trove.example.com/api/npm/web/npm-acme/ --auth-type=web --scope=@acme
 npm install lodash
 npm publish
 ```
@@ -2104,7 +2110,7 @@ minimumReleaseAgeExclude:
 Yarn 2 and later (`.yarnrc.yml`):
 
 ```yaml
-npmRegistryServer: "https://trove.example.com/api/npm/npm-all/"
+npmRegistryServer: "https://trove.example.com/api/npm/web/npm-all/"
 npmAlwaysAuth: true          # only when the repository is not anonymously readable
 npmAuthToken: "${TROVE_TOKEN}"
 ```
@@ -2114,7 +2120,7 @@ Yarn 2 and later, a scope bound to another repository:
 ```yaml
 npmScopes:
   acme:
-    npmRegistryServer: "https://trove.example.com/api/npm/npm-acme/"
+    npmRegistryServer: "https://trove.example.com/api/npm/web/npm-acme/"
     npmAuthToken: "${TROVE_TOKEN}"
 ```
 
@@ -2124,7 +2130,7 @@ readable.
 Publishing target in `package.json`:
 
 ```json
-{ "publishConfig": { "registry": "https://trove.example.com/api/npm/npm-all/" } }
+{ "publishConfig": { "registry": "https://trove.example.com/api/npm/web/npm-all/" } }
 ```
 
 GitLab CI with trusted publishing (R-NPM-022, P1), for npm 11.5.1 and later (the `node:lts` image
@@ -2138,7 +2144,7 @@ publish:
     NPM_ID_TOKEN:
       aud: "npm:trove.example.com"
   script:
-    - npm config set registry https://trove.example.com/api/npm/npm-all/
+    - npm config set registry https://trove.example.com/api/npm/web/npm-all/
     - npm publish            # or: pnpm publish; Yarn 4: yarn npm publish with npmRegistryServer set
 ```
 
@@ -2161,9 +2167,9 @@ publish:
         https://trove.example.com/api/v1/auth/oidc/token \
         | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).access_token)')"
       unset TROVE_ID_TOKEN
-    - npm config set registry https://trove.example.com/api/npm/npm-all/
+    - npm config set registry https://trove.example.com/api/npm/web/npm-all/
     # npm expands ${TROVE_TOKEN} at run time; the token itself is never written to disk.
-    - npm config set //trove.example.com/api/npm/npm-all/:_authToken '${TROVE_TOKEN}'
+    - npm config set //trove.example.com/api/npm/web/npm-all/:_authToken '${TROVE_TOKEN}'
     - npm publish
     - |
       printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- https://trove.example.com/api/v1/tokens/current
@@ -2284,7 +2290,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: trove-only
 
 Audit events ([operations-and-observability.md](../operations-and-observability.md), INV-16), with
-actor, repository, package, version or tag, outcome and source address:
+actor, project, repository (the qualified name `<projectKey>/<repoKey>`), package, version or tag, outcome and
+source address:
 
 | Event | When |
 |---|---|
@@ -2301,7 +2308,8 @@ Login, logout and token events are R-AUTH-041's; integrity and egress events of 
 the egress and TLS events of an audit forward (R-NPM-038), are repositories-and-proxy.md's. An audit
 forward writes no audit event of its own.
 
-Metrics (prefix `trove_`, INV-16; the label written `repository` below is `repo` in the label list of R-OPS-007, Q-NPM-25): `trove_npm_requests_total{class,operation,status}`,
+Metrics (prefix `trove_`, INV-16; the label written `repository` below is `repo` in the label list of R-OPS-007, Q-NPM-25,
+and its value is the qualified name `<projectKey>/<repoKey>`): `trove_npm_requests_total{class,operation,status}`,
 `trove_npm_request_duration_seconds{class,operation}`,
 `trove_npm_document_render_seconds{class,variant}`,
 `trove_npm_virtual_version_conflicts_total{repository}`,
@@ -2553,7 +2561,7 @@ A backup holds a transactionally consistent snapshot of PostgreSQL and every blo
     R-STOR-022, R-STOR-023);
   - the replay output lists every withheld version. An administrator confirms a withdrawal by
     deleting the version's items through the management item API (R-STOR-018; permanently in the
-    MVP, to the trash can from P1; the tombstone stays), or reverses it with `trove admin npm reinstate <repoKey> <name>@<version>`. The
+    MVP, to the trash can from P1; the tombstone stays), or reverses it with `trove admin npm reinstate <projectKey>/<repoKey> <name>@<version>`. The
     reinstate removes a `journal` tombstone only while the version is stored with the tombstone's
     integrity, so it brings back the same bytes and never admits new ones (Q-NPM-8); it increments
     `rev_seq` and writes `npm.reinstate` (R-NPM-044). A withheld version counts toward the
@@ -2577,9 +2585,9 @@ Acceptance criteria:
 - `@acme/ui@1.4.0` is published, a backup is created, `npm unpublish @acme/ui@1.4.0` runs, and
   `backup.revocation_journal.ship_interval` passes. After the restore of that backup with its
   journal replay, `npm view @acme/ui versions` does not list `1.4.0`, its tarball answers 404 on
-  the npm route, through `npm-all` and on `/files/npm-local/@acme/ui/-/ui-1.4.0.tgz`, publishing
+  the npm route, through `npm-all` and on `/files/web/npm-local/@acme/ui/-/ui-1.4.0.tgz`, publishing
   `1.4.0` again answers 409 `npm_version_unpublished`, and the replay output lists the entry as
-  `applied`. `trove admin npm reinstate npm-local @acme/ui@1.4.0` brings the version back with its
+  `applied`. `trove admin npm reinstate web/npm-local @acme/ui@1.4.0` brings the version back with its
   original integrity.
 - A hand-written `npm.unpublish` journal object for a live version with its correct integrity is
   replayed: the version is withheld, nothing is deleted, and a reinstate restores it.
@@ -4062,7 +4070,7 @@ corpus with the corpus's integrity and the dev profile's `npm-all` address.
 
 **Rationale:**
 - The lockfile has one writer version: the npm of the Node every other tool in the repository uses.
-- The `resolved` addresses are those of the dev profile (`https://localhost:8080/api/npm/npm-all/`),
+- The `resolved` addresses are those of the dev profile (`https://localhost:8080/api/npm/e2e/npm-all/`),
   produced by the stub's `-public-url`, so the e2e suite installs the file unmodified.
 - The Go test makes every `make test` notice a drift between corpus and lockfile; the Docker check
   catches a different npm output and belongs in CI.

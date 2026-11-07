@@ -51,7 +51,7 @@ func TestR_VULN_019_ScopeOfManyRows(t *testing.T) {
 		p := e.list(e.r, e.tokCarol, query)
 		for _, it := range p.Items {
 			got = append(got, it.ID)
-			if it.Repository != "npm-local" || len(it.Package) < 8 || it.Package[:8] != "@team-a/" {
+			if it.Repository != "it/npm-local" || len(it.Package) < 8 || it.Package[:8] != "@team-a/" {
 				t.Fatalf("the list shows %s %s, which the grant does not cover", it.Repository, it.Package)
 			}
 		}

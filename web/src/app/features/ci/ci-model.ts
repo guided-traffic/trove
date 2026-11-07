@@ -248,9 +248,9 @@ export function grantFromInline(r: InlineRow): CiInlineGrant {
   };
 }
 
-export function emptyMappingForm(priority: number, namePrefix = ''): MappingForm {
+export function emptyMappingForm(priority: number): MappingForm {
   return {
-    name: namePrefix,
+    name: '',
     description: '',
     priority: String(priority),
     enabled: true,

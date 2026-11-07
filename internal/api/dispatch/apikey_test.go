@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -23,7 +24,7 @@ func (keyed) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "keyed", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual}, Layout: "keyed",
-			ProtocolBasePath: "/api/keyed/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/api/keyed/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}
@@ -81,10 +82,10 @@ var keyedRoutes = []string{"keyed.package.put", "keyed.version.delete", "keyed.v
 // route and a path outside the format prefixes are no API-key route.
 func TestR_NUGET_012_TheDispatcherNamesTheRoutesThatTakeTheAPIKey(t *testing.T) {
 	var labels []string
-	repos := &fakeRepos{byKey: map[string]repository.Repository{
-		"local":  {ID: "1", Key: "local", Class: repository.Local, Format: "keyed"},
-		"remote": {ID: "2", Key: "remote", Class: repository.Remote, Format: "keyed"},
-		"virt":   {ID: "3", Key: "virt", Class: repository.Virtual, Format: "keyed"},
+	repos := &fakeRepos{byKey: map[qname.Repo]repository.Repository{
+		qr("local"):  {ID: "1", Name: qr("local"), Class: repository.Local, Format: "keyed"},
+		qr("remote"): {ID: "2", Name: qr("remote"), Class: repository.Remote, Format: "keyed"},
+		qr("virt"):   {ID: "3", Name: qr("virt"), Class: repository.Virtual, Format: "keyed"},
 	}}
 	d, err := New(Options{
 		Host: fakeHost{}, Decider: &fakeDecider{}, Repos: repos,
@@ -107,29 +108,29 @@ func TestR_NUGET_012_TheDispatcherNamesTheRoutesThatTakeTheAPIKey(t *testing.T) 
 		method, path string
 		want         bool
 	}{
-		{"PUT", "/api/keyed/local/package", true},
-		{"DELETE", "/api/keyed/local/package/Acme.Widgets/1.0.0", true},
-		{"POST", "/api/keyed/local/package/Acme.Widgets/1.0.0", true},
+		{"PUT", "/api/keyed/it/local/package", true},
+		{"DELETE", "/api/keyed/it/local/package/Acme.Widgets/1.0.0", true},
+		{"POST", "/api/keyed/it/local/package/Acme.Widgets/1.0.0", true},
 		// The route is the format's, whatever the class: a push to a virtual
 		// repository goes to its deploy target (R-NUGET-019) and takes the key there.
-		{"PUT", "/api/keyed/virt/package", true},
-		{"PUT", "/api/keyed/remote~cache/package", true},
+		{"PUT", "/api/keyed/it/virt/package", true},
+		{"PUT", "/api/keyed/it/remote~cache/package", true},
 		// The same path with a method of a route that does not declare it.
-		{"GET", "/api/keyed/local/package/Acme.Widgets/1.0.0", false},
-		{"HEAD", "/api/keyed/local/package/Acme.Widgets/1.0.0", false},
-		{"GET", "/api/keyed/local/index.json", false},
-		{"PUT", "/api/keyed/local/other/x", false},
+		{"GET", "/api/keyed/it/local/package/Acme.Widgets/1.0.0", false},
+		{"HEAD", "/api/keyed/it/local/package/Acme.Widgets/1.0.0", false},
+		{"GET", "/api/keyed/it/local/index.json", false},
+		{"PUT", "/api/keyed/it/local/other/x", false},
 		// Refused by the dispatcher before the match: a key of no valid shape, an empty
 		// segment, a dot segment.
-		{"PUT", "/api/keyed/NOPE/package", false},
-		{"PUT", "/api/keyed/local//package", false},
-		{"PUT", "/api/keyed/local/x/%2e%2e/package", false},
+		{"PUT", "/api/keyed/it/NOPE/package", false},
+		{"PUT", "/api/keyed/it/local//package", false},
+		{"PUT", "/api/keyed/it/local/x/%2e%2e/package", false},
 		// Passed by the dispatcher and refused by the match of the fixture's format: its
 		// routes match a trailing slash strictly, and none takes PATCH (405).
-		{"PUT", "/api/keyed/local/package/", false},
-		{"PATCH", "/api/keyed/local/package", false},
+		{"PUT", "/api/keyed/it/local/package/", false},
+		{"PATCH", "/api/keyed/it/local/package", false},
 		// A format without an API-key route, one without routes, and paths outside the prefixes.
-		{"PUT", "/api/probe/local/left-pad/-/x.tgz", false},
+		{"PUT", "/api/probe/it/local/left-pad/-/x.tgz", false},
 		{"PUT", "/api/nosuch/local/package", false},
 		{"PUT", "/files/local/package", false},
 		{"POST", "/api/v1/tokens", false},
@@ -168,7 +169,7 @@ func TestR_NUGET_012_AnEndpointWithoutThePackageSurfaceHasNoAPIKeyRoute(t *testi
 		httpserver.Chain{Router: router, Endpoint: ep, Authenticate: func(r *http.Request) (httpserver.Principal, error) {
 			got = append(got, d.APIKeyRoute(r))
 			return httpserver.AnonymousPrincipal(), nil
-		}}.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PUT", "/api/keyed/local/package", nil))
+		}}.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PUT", "/api/keyed/it/local/package", nil))
 		if len(got) != 1 || got[0] != want {
 			t.Errorf("surface %s: APIKeyRoute %v, want %v", surface, got, want)
 		}

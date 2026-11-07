@@ -28,7 +28,7 @@ func TestR_BAS_023_A304SharedAgainstThePrivateCopyAnswersTheCallerWithTheCopysBy
 	s.main.doFn = func(f mainclient.Forward) (*mainclient.Response, error) {
 		if f.IfNoneMatch == etag {
 			sub := tokenSubject("part", nil)
-			return resp(http.StatusNotModified, marking(iface.ClassShared, iface.ReadFull, "npm-all", sub), http.Header{"Etag": {etag}, "Content-Type": {"application/json"}}, ""), nil
+			return resp(http.StatusNotModified, marking(iface.ClassShared, iface.ReadFull, "web/npm-all", sub), http.Header{"Etag": {etag}, "Content-Type": {"application/json"}}, ""), nil
 		}
 		return viaSite(f)
 	}

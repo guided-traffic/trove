@@ -124,13 +124,13 @@ func (e *env) events(typ, pkgName, reason string) int64 {
 // get sends a GET of a path below the repository's registry URL.
 func (e *env) get(r *testenv.Replica, repo, path, token string, hdr ...string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "GET", "/api/npm/"+repo+"/"+path, token, nil, hdr...)
+	return e.st.Do(r, "GET", "/api/npm/it/"+repo+"/"+path, token, nil, hdr...)
 }
 
 // send sends a request with a path below the repository's registry URL.
 func (e *env) send(r *testenv.Replica, method, repo, path, token string, body any, hdr ...string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, method, "/api/npm/"+repo+"/"+path, token, body, hdr...)
+	return e.st.Do(r, method, "/api/npm/it/"+repo+"/"+path, token, body, hdr...)
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }

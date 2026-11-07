@@ -183,7 +183,7 @@ func (s *Store) Served(ctx context.Context, e ServedEvent) {
 		raw, _ := json.Marshal(map[string]any{"path": e.Item.Path, "sha256": e.Item.Digest.Hex()})
 		s.rec.Record(ctx, audit.Event{
 			Type: audit.EventArtifactDownloaded, Actor: e.Actor, Outcome: audit.Success, Source: e.Source, Endpoint: e.Endpoint,
-			Subject: audit.Subject{Kind: "repository", Name: e.Item.Repository}, Repository: e.Item.Repository,
+			Subject: audit.Subject{Kind: "repository", Name: e.Item.Repository.String()}, Repository: e.Item.Repository.String(), Project: e.Item.Repository.Project,
 			Path: e.Item.Path, Details: raw,
 		})
 	}

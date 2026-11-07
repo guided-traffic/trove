@@ -88,7 +88,7 @@ func TestR_OPS_004_OverviewStatements(t *testing.T) {
 	before := readOverview(t, qs)
 
 	for _, sql := range []string{
-		"INSERT INTO trove.repositories (key, format, class) VALUES ('ov-local', 'npm', 'local'), ('ov-remote', 'npm', 'remote'), ('ov-virtual', 'npm', 'virtual')",
+		"INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('ov-local', 'npm', 'local', (SELECT id FROM trove.project WHERE key = 'it')), ('ov-remote', 'npm', 'remote', (SELECT id FROM trove.project WHERE key = 'it')), ('ov-virtual', 'npm', 'virtual', (SELECT id FROM trove.project WHERE key = 'it'))",
 		"UPDATE trove.repositories SET lifecycle = 'deleting' WHERE key = 'ov-virtual'",
 		"INSERT INTO trove.packages (repo_id, name, display_name) SELECT id, 'left-pad', 'left-pad' FROM trove.repositories WHERE key = 'ov-local'",
 		"INSERT INTO trove.package_versions (package_id, version, display_version) SELECT id, '1.0.0', '1.0.0' FROM trove.packages WHERE name = 'left-pad'",

@@ -26,10 +26,13 @@ CREATE TABLE principal (
     CHECK (CASE kind
         WHEN 'user'            THEN name ~ '^[a-z0-9][a-z0-9._@+-]{0,127}$' AND name NOT IN ('anonymous', 'authenticated', 'system', 'me')
         WHEN 'group'           THEN name ~ '^[a-z0-9][a-z0-9._-]{0,127}$'
-        WHEN 'service_account' THEN name ~ '^[a-z0-9][a-z0-9-]{1,62}$'
+        -- A project's service account is named <project key>/<name> (Q-AUTHZ-209); the
+        -- prefix is checked against service_account.project_id by a trigger of 00019.
+        WHEN 'service_account' THEN name ~ '^([a-z][a-z0-9-]{1,31}/)?[a-z0-9][a-z0-9-]{1,62}$'
         WHEN 'anonymous'       THEN name = 'anonymous'
         WHEN 'authenticated'   THEN name = 'authenticated'
-        WHEN 'ci_mapping'      THEN name ~ '^[a-z0-9][a-z0-9._-]{1,63}/[a-z0-9][a-z0-9._-]{1,63}$'
+        -- <issuer>/<mapping> or <issuer>/<project key>/<mapping> (Q-AUTHZ-209).
+        WHEN 'ci_mapping'      THEN name ~ '^[a-z0-9][a-z0-9._-]{1,63}/([a-z][a-z0-9-]{1,31}/)?[a-z0-9][a-z0-9._-]{1,63}$'
     END)
 );
 -- The built-in kinds have exactly one row (R-AUTH-037, R-AUTHZ-030).

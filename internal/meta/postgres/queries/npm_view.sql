@@ -26,7 +26,7 @@ SELECT nv.version_id,
  WHERE nv.version_id = ANY(sqlc.arg(ids)::bigint[]);
 
 -- name: NPMViewFind :many
--- Versions of the given repositories whose description contains the text
+-- Versions of the given repositories (qualified names, <project>/<key>) whose description contains the text
 -- (case-insensitively) or whose keywords contain the keyword. One of text and
 -- keyword is set. At most max_rows rows; the caller asks for one more than it
 -- accepts. The caller intersects the ids with what the subject may read.
@@ -35,8 +35,9 @@ SELECT nv.version_id
   JOIN package_versions pv ON pv.id = nv.version_id
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY(sqlc.arg(repos)::text[])
+   AND (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[])
    AND ((sqlc.arg(text)::text <> '' AND position(lower(sqlc.arg(text)::text) in lower(COALESCE(nv.manifest ->> 'description', ''))) > 0)
      OR (sqlc.arg(keyword)::text <> '' AND jsonb_typeof(nv.manifest -> 'keywords') = 'array'
          AND (nv.manifest -> 'keywords') @> to_jsonb(sqlc.arg(keyword)::text)))
@@ -50,9 +51,10 @@ SELECT pv.id
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
   JOIN repositories r ON r.id = p.repo_id
+  JOIN project rp ON rp.id = r.project_id
   JOIN npm_tombstones t ON t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version
  WHERE pv.trashed_at IS NULL
-   AND r.key = ANY(sqlc.arg(repos)::text[]);
+   AND (rp.key || '/' || r.key) = ANY(sqlc.arg(repos)::text[]);
 
 -- name: NPMViewStoredLocal :many
 -- The versions a hosted repository serves of a package: live, not tombstoned, in

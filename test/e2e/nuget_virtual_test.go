@@ -36,7 +36,7 @@ func TestNuGetVirtual(t *testing.T) {
 			}
 		}
 		lower := strings.ToLower(id)
-		fx.adm.get("/files/"+nugetAuthKey+"/"+lower+"/1.0.0/"+lower+".1.0.0.nupkg").want(t, "the stored .nupkg in the deployment target", 200)
+		fx.adm.get(filesAddr(nugetAuthKey)+"/"+lower+"/1.0.0/"+lower+".1.0.0.nupkg").want(t, "the stored .nupkg in the deployment target", 200)
 	})
 
 	t.Run("R-NUGET-019 R-NUGET-027 nuget push through the virtual repository, and the replay of the identical file", func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestNuGetVirtual(t *testing.T) {
 			t.Fatalf("search for the local package through the virtual repository:\n%s", out)
 		}
 		for _, repo := range []string{repos.remote, repos.all} {
-			path := "/api/nuget/" + repo + "/v3/search?take=50&q=" + strings.ToLower(nugetDepLeaf)
+			path := nugetAddr(repo) + "/v3/search?take=50&q=" + strings.ToLower(nugetDepLeaf)
 			waitFor(t, "the search of "+repo+" to list the upstream's package", time.Minute, time.Second, func() bool {
 				r := newAPI(t).withToken(fx.token).get(path)
 				return r.Status == 200 && strings.Contains(strings.ToLower(string(r.Body)), strings.ToLower(nugetDepLeaf))
@@ -106,12 +106,12 @@ func TestNuGetVirtual(t *testing.T) {
 
 	// R-NUGET-019: without a deployment target the service index lists no publish resource and a push is refused with 403.
 	t.Run("R-NUGET-019 without a deployment target the index lists no publish resource and a push answers 403", func(t *testing.T) {
-		repoPath := "/api/v1/repositories/" + repos.all
+		repoPath := reposBase + repos.all
 		g := fx.adm.get(repoPath).want(t, "read the virtual repository", 200)
 		patch := map[string]any{"virtual": map[string]any{"deployTarget": nil}}
 		fx.adm.do(http.MethodPatch, repoPath, patch, "Content-Type", "application/merge-patch+json",
 			"If-Match", g.Header.Get("ETag")).want(t, "remove the deployment target", 200)
-		indexPath := "/api/nuget/" + repos.all + "/v3/index.json"
+		indexPath := nugetAddr(repos.all) + "/v3/index.json"
 		waitFor(t, "every replica to list no publish resource", 30*time.Second, time.Second, func() bool {
 			seen := map[string]bool{}
 			for range 9 {
@@ -128,11 +128,11 @@ func TestNuGetVirtual(t *testing.T) {
 		other := fx.pkgID("VirtualNoTarget")
 		file := c.place(other, "1.0.0", fx.nugetPack(t, other, "1.0.0", "never stored"))
 		// the index lists no publish resource, so dotnet stops at the client; the API key route itself answers the 403
-		fx.adm.do(http.MethodPut, "/api/nuget/"+repos.all+"/v3/package", "x", "X-NuGet-ApiKey", fx.token).want(t, "a push without a deployment target", 403)
+		fx.adm.do(http.MethodPut, nugetAddr(repos.all)+"/v3/package", "x", "X-NuGet-ApiKey", fx.token).want(t, "a push without a deployment target", 403)
 		if out, err := c.dotnetPush(file, all, "az"); err == nil || pushedRE.MatchString(out) {
 			t.Fatalf("dotnet nuget push to a virtual repository without a target succeeded:\n%s", out)
 		}
-		if got := fx.adm.get("/api/nuget/" + nugetAuthKey + "/v3/flatcontainer/" + strings.ToLower(other) + "/index.json"); got.Status != 404 {
+		if got := fx.adm.get(nugetAddr(nugetAuthKey) + "/v3/flatcontainer/" + strings.ToLower(other) + "/index.json"); got.Status != 404 {
 			t.Fatalf("the refused package is visible: %s", got)
 		}
 	})

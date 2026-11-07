@@ -31,9 +31,4 @@ export const VULNERABILITIES_ROUTES: Routes = [
     data: { crumbParam: 'id' },
     loadComponent: () => import('./vulnerability-advisory').then((m) => m.AdvisoryPage),
   },
-  {
-    path: 'sources',
-    title: $localize`:@@route.vulnerabilities.sources.title:Advisory sources`,
-    loadComponent: () => import('./vulnerability-sources').then((m) => m.SourcesPage),
-  },
 ];

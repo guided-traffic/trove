@@ -400,16 +400,14 @@ func TestR_CI_005_AnIssuerIsSelectedByTheExactIssClaim(t *testing.T) {
 	}
 }
 
-func TestQ_CI_26_AProjectAdministratorListsTheIssuersReadOnly(t *testing.T) {
+func TestQ_CI_26_AProjectOwnerListsTheIssuersReadOnly(t *testing.T) {
 	d := startDouble(t, oidcstub.Config{})
 	e := newEnv(t, options{valkey: true})
 	a := e.web("web-a")
 	wantStatus(t, e.do(a, "POST", issuersPath, d.body("gitlab-main")), 201, "")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "web", "displayName": "Web"}), 201, "")
 	wantStatus(t, e.do(a, "POST", "/api/v1/projects", map[string]any{"key": "data", "displayName": "Data"}), 201, "")
-	added := e.do(a, "PUT", "/api/v1/projects/web/admins/user%3Abob", nil)
-	wantStatus(t, added, 201, "")
-	epoch := added.Header.Get("Trove-Authz-Epoch")
+	epoch := e.addOwner("web", e.bobID)
 
 	r := e.as(a, e.bobPAT, "GET", "/api/v1/projects/web/ci/issuers", nil, "Trove-Authz-Min-Epoch", epoch)
 	wantStatus(t, r, 200, "")
@@ -419,18 +417,18 @@ func TestQ_CI_26_AProjectAdministratorListsTheIssuersReadOnly(t *testing.T) {
 	}
 	item := items[0].(map[string]any)
 	if len(item) != 4 || item["name"] != "gitlab-main" || item["kind"] != "gitlab" || item["issuer"] != d.stub.Issuer() || item["publicIssuer"] != false {
-		t.Errorf("a project administrator sees %v: name, kind, issuer and publicIssuer only", item)
+		t.Errorf("a project Owner sees %v: name, kind, issuer and publicIssuer only", item)
 	}
 	if n := e.as(a, e.bobPAT, "GET", "/api/v1/projects/data/ci/issuers", nil); n.Status != 404 {
 		t.Errorf("another project's route answered %d", n.Status)
 	}
 	if n := e.as(a, e.alicePAT, "GET", "/api/v1/projects/web/ci/issuers", nil); n.Status != 404 && n.Status != 403 {
-		t.Errorf("a user who administers nothing got %d", n.Status)
+		t.Errorf("a user who owns nothing got %d", n.Status)
 	}
-	// Read-only: the issuer routes stay closed to the project administrator.
+	// Read-only: the issuer routes stay closed to the project Owner.
 	for _, op := range []struct{ method, path string }{{"POST", issuersPath}, {"PUT", issuersPath + "/gitlab-main"}, {"DELETE", issuersPath + "/gitlab-main"}, {"GET", issuersPath}} {
 		if w := e.as(a, e.bobPAT, op.method, op.path, map[string]any{}, "If-Match", "*"); w.Status != 403 {
-			t.Errorf("%s %s answered %d to a project administrator", op.method, op.path, w.Status)
+			t.Errorf("%s %s answered %d to a project Owner", op.method, op.path, w.Status)
 		}
 	}
 }

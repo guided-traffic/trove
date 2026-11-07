@@ -48,7 +48,7 @@ func TestR_BAS_007_ClientSetupForABastionThroughTheStack(t *testing.T) {
 		Name: "web1",
 		Env:  []string{`TROVE_SERVER_ADDITIONAL_BASE_URLS=["https://packages.example.com"]`},
 	})
-	const path = "/api/v1/repositories/npm-local/client-setup?client=npm&credentials=env"
+	const path = "/api/v1/projects/it/repositories/npm-local/client-setup?client=npm&credentials=env"
 
 	t.Run("the snippets are on the reported address", func(t *testing.T) {
 		a := st.Do(r, "GET", path+"&bastion=partners", tok, nil)
@@ -56,8 +56,8 @@ func TestR_BAS_007_ClientSetupForABastionThroughTheStack(t *testing.T) {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 		v := a.JSON(t)
-		if v["registryUrl"] != "https://packages.example.com/api/npm/npm-local/" ||
-			v["endpointPath"] != "//packages.example.com/api/npm/npm-local/" || v["publishTarget"] != nil {
+		if v["registryUrl"] != "https://packages.example.com/api/npm/it/npm-local/" ||
+			v["endpointPath"] != "//packages.example.com/api/npm/it/npm-local/" || v["publishTarget"] != nil {
 			t.Fatalf("%v", v)
 		}
 		var configure string
@@ -71,7 +71,7 @@ func TestR_BAS_007_ClientSetupForABastionThroughTheStack(t *testing.T) {
 			}
 		}
 		if !strings.Contains(configure, "replace-registry-host=always\n") ||
-			!strings.Contains(configure, "//packages.example.com/api/npm/npm-local/:_authToken=${TROVE_TOKEN}") ||
+			!strings.Contains(configure, "//packages.example.com/api/npm/it/npm-local/:_authToken=${TROVE_TOKEN}") ||
 			strings.Contains(configure, "trove.test") {
 			t.Fatalf("%q", configure)
 		}
@@ -79,7 +79,7 @@ func TestR_BAS_007_ClientSetupForABastionThroughTheStack(t *testing.T) {
 	t.Run("the setup of the installation itself is unchanged", func(t *testing.T) {
 		a := st.Do(r, "GET", path, tok, nil)
 		v := a.JSON(t)
-		if a.Status != 200 || v["registryUrl"] != "http://trove.test/api/npm/npm-local/" || v["publishTarget"] != "npm-local" {
+		if a.Status != 200 || v["registryUrl"] != "http://trove.test/api/npm/it/npm-local/" || v["publishTarget"] != "it/npm-local" {
 			t.Fatalf("%d %v", a.Status, v)
 		}
 	})

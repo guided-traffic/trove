@@ -1,16 +1,17 @@
 import { Routes, UrlMatcher, UrlSegment } from '@angular/router';
 
 /**
- * `/browse/{repo}/{path…}` (R-UI-003): the first segment is the repository, the rest is the item
- * path with its slashes. Inputs `repo` and `path` reach the screen through component input binding.
+ * `/projects/{project}/browse/{key}/{path…}` (R-UI-003, Q-UI-129): the first segment is the repository key, the rest is the
+ * item path with its slashes. The project comes from the componentless parent. The inputs `key` and `path` reach the
+ * screen through component input binding.
  */
 export const browseMatcher: UrlMatcher = (segments) => {
-  const [repo, ...rest] = segments;
-  if (!repo) return null;
+  const [key, ...rest] = segments;
+  if (!key) return null;
   return {
     consumed: segments,
     posParams: {
-      repo,
+      key: new UrlSegment(key.path, {}),
       path: new UrlSegment(rest.map((s) => s.path).join('/'), {}),
     },
   };

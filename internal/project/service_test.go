@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 func fieldsOf(t *testing.T, err error) map[string]string {
@@ -27,19 +28,19 @@ func fieldsOf(t *testing.T, err error) map[string]string {
 
 func TestR_AUTHZ_026_KeyRule(t *testing.T) {
 	for _, key := range []string{"web", "ab", "a-b", "web-app-2", "a" + strings.Repeat("b", 31)} {
-		if !KeyRE.MatchString(key) {
+		if !qname.ValidProjectKey(key) {
 			t.Errorf("%q should be a key", key)
 		}
 	}
 	for _, key := range []string{"", "a", "1web", "-web", "Web", "web_app", "web.app", "a" + strings.Repeat("b", 32), "web app"} {
-		if KeyRE.MatchString(key) {
+		if qname.ValidProjectKey(key) {
 			t.Errorf("%q should not be a key", key)
 		}
 	}
 }
 
 func TestR_AUTHZ_026_ValidationOfTheFields(t *testing.T) {
-	ok := Input{Key: "web", DisplayName: "Web platform", Rights: DefaultRights()}
+	ok := Input{Key: "web", DisplayName: "Web platform"}
 	if err := problems(ok, true); err != nil {
 		t.Fatalf("valid input: %v", err)
 	}
@@ -86,29 +87,46 @@ func TestR_AUTHZ_026_ValidationOfTheFields(t *testing.T) {
 	})
 }
 
-func TestR_AUTHZ_026_AdministratorReferences(t *testing.T) {
-	kind, name, ok, err := parseAdminRef("group:web-leads")
-	if err != nil || !ok || kind != KindGroup || name != "web-leads" {
-		t.Errorf("group: %v %v %v %v", kind, name, ok, err)
+// TestR_AUTHZ_026_MemberReferences: a member is a user or a group (Q-AUTHZ-207); every other kind of principal
+// answers 422 principal_not_allowed (Q-AUTHZ-215), a reference that does not parse 422 validation_failed.
+func TestR_AUTHZ_026_MemberReferences(t *testing.T) {
+	kind, name, err := parseMemberRef("group:web-leads")
+	if err != nil || kind != KindGroup || name != "web-leads" {
+		t.Errorf("group: %v %v %v", kind, name, err)
 	}
-	kind, name, ok, err = parseAdminRef("user:alice")
-	if err != nil || !ok || kind != KindUser || name != "alice" {
-		t.Errorf("user: %v %v %v %v", kind, name, ok, err)
+	kind, name, err = parseMemberRef("user:alice")
+	if err != nil || kind != KindUser || name != "alice" {
+		t.Errorf("user: %v %v %v", kind, name, err)
 	}
-	for _, ref := range []string{"sa:ci-bot", "ci:gitlab/main", "anonymous", "authenticated"} {
-		if _, _, ok, err := parseAdminRef(ref); err != nil || ok {
-			t.Errorf("%s may not administer: ok=%v err=%v", ref, ok, err)
+	for _, ref := range []string{"sa:web/partner", "sa:ci-bot", "ci:gitlab/main", "ci:gitlab/web/release", "anonymous", "authenticated", "bastion:partners"} {
+		_, _, err := parseMemberRef(ref)
+		if got := fieldsOf(t, err); got["/principalRef"] != errs.CodePrincipalNotAllowed {
+			t.Errorf("%s is no member kind: %v", ref, err)
 		}
 	}
 	for _, ref := range []string{"", "alice", "user:", "robot:x"} {
-		if _, _, _, err := parseAdminRef(ref); err == nil {
+		if _, _, err := parseMemberRef(ref); err == nil {
 			t.Errorf("%q is malformed", ref)
 		} else if got := fieldsOf(t, err); got["/principalRef"] != "invalid_principal" {
 			t.Errorf("%q: %v", ref, got)
 		}
 	}
-	if got := fieldsOf(t, notAdministrator("sa:ci-bot")); got["/principalRef"] != "principal_kind_not_allowed" {
-		t.Errorf("%v", got)
+}
+
+// TestR_AUTHZ_026_RolesOfAMember: a role is one of the four; the service refuses every other value before it
+// touches the database.
+func TestR_AUTHZ_026_RolesOfAMember(t *testing.T) {
+	for _, r := range []Role{RoleReader, RoleDeveloper, RoleMaintainer, RoleOwner} {
+		if err := validRole(r); err != nil {
+			t.Errorf("%s: %v", r, err)
+		}
+	}
+	if got := fieldsOf(t, validRole(authz.ProjectRoleNone)); got["/role"] != "invalid_role" {
+		t.Errorf("no role: %v", got)
+	}
+	s := &service{}
+	if _, _, _, err := s.AddMember(context.Background(), authz.Subject{}, "web", "user:dave", authz.ProjectRoleNone, false); err == nil {
+		t.Error("a member without a role was accepted")
 	}
 }
 
@@ -146,22 +164,14 @@ func rawOf(t *testing.T, raw json.RawMessage) map[string]any {
 
 func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 	actor := authz.Subject{Kind: principal.KindUser, ID: "u1", Name: "root"}
-	p := Project{ID: "p1", Key: "web", DisplayName: "Web", Rights: Rights{ManagePolicies: true}, Version: 4}
-	before := stateOf(Project{DisplayName: "Web", Rights: Rights{ManagePolicies: true, ManageRepositories: true}})
+	p := Project{ID: "p1", Key: "web", DisplayName: "Web", Version: 4}
+	before := stateOf(Project{DisplayName: "Web"})
 	after := stateOf(p)
 
-	t.Run("R-AUTHZ-031 an update journals the two switches before and after", func(t *testing.T) {
+	t.Run("R-AUTHZ-031 an update changes nothing access-bearing and journals nothing", func(t *testing.T) {
 		ev := projectEvent(audit.EventProjectUpdated, actor, p, before, after, 9, nil)
-		j := rawOf(t, ev.Journal)
-		if j["projectId"] != "p1" || j["project"] != "web" {
-			t.Errorf("identity: %v", j)
-		}
-		b, a := j["before"].(map[string]any), j["after"].(map[string]any)
-		if b["manageRepositories"] != true || a["manageRepositories"] != false || a["managePolicies"] != true {
-			t.Errorf("switches: %v", j)
-		}
-		if _, leaked := b["displayName"]; leaked {
-			t.Errorf("the journal holds what is not access-bearing: %v", b)
+		if ev.Journal != nil || ev.Project != "web" {
+			t.Errorf("journal %s, project %q", ev.Journal, ev.Project)
 		}
 		if d := rawOf(t, ev.Details); d["epoch"] != float64(9) || d["version"] != float64(4) {
 			t.Errorf("details: %v", d)
@@ -176,24 +186,9 @@ func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 			t.Errorf("%v", d)
 		}
 	})
-	t.Run("R-AUTHZ-031 a removed administrator and an unassigned repository journal IDs", func(t *testing.T) {
-		ev := adminEvent(audit.EventProjectAdminRemoved, actor, p, PrincipalRef{Kind: KindGroup, Name: "web-leads", ID: "g1"}, 11)
-		if j := rawOf(t, ev.Journal); j["principalId"] != "g1" || j["principal"] != "group:web-leads" || j["projectId"] != "p1" {
-			t.Errorf("admin: %v", j)
-		}
-		ev = assignmentEvent(audit.EventProjectRepositoryUnassigned, actor, p, repoMove{ID: "7", Key: "web-npm", Moved: true, Other: "docs"}, 12)
-		if j := rawOf(t, ev.Journal); j["repositoryId"] != "7" || j["repository"] != "web-npm" || j["projectId"] != "p1" {
-			t.Errorf("unassign: %v", j)
-		}
-		if d := rawOf(t, ev.Details); d["otherProject"] != "docs" || d["moved"] != true {
-			t.Errorf("details: %v", d)
-		}
-	})
 	t.Run("R-AUTHZ-031 the events that grant carry no journal entry", func(t *testing.T) {
 		for _, ev := range []audit.Event{
 			projectEvent(audit.EventProjectCreated, actor, p, nil, after, 1, nil),
-			adminEvent(audit.EventProjectAdminAdded, actor, p, PrincipalRef{Kind: KindUser, Name: "alice", ID: "u2"}, 2),
-			assignmentEvent(audit.EventProjectRepositoryAssigned, actor, p, repoMove{ID: "7", Key: "web-npm"}, 3),
 		} {
 			if ev.Journal != nil {
 				t.Errorf("%s has a journal entry", ev.Type)
@@ -202,9 +197,9 @@ func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-031 the flagged types of the registry are the ones that journal", func(t *testing.T) {
 		for name, want := range map[string]bool{
-			audit.EventProjectCreated: false, audit.EventProjectUpdated: true, audit.EventProjectDeleted: true,
-			audit.EventProjectAdminAdded: false, audit.EventProjectAdminRemoved: true,
-			audit.EventProjectRepositoryAssigned: false, audit.EventProjectRepositoryUnassigned: true,
+			audit.EventProjectCreated: false, audit.EventProjectUpdated: false, audit.EventProjectDeleted: true,
+			audit.EventProjectMemberAdded: false, audit.EventProjectMemberChanged: true, audit.EventProjectMemberRemoved: true,
+			audit.EventRepositoryMoved: true,
 		} {
 			et, ok := audit.Lookup(name)
 			if !ok {
@@ -215,6 +210,135 @@ func TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestR_AUTHZ_031_MemberEventsCarryTheirJournalEntries: a removed member and a changed role narrow rights and
+// carry the journal entry of R-AUTHZ-031 (the project and the principal by ID and reference, the roles of a
+// change); an added member grants and carries none. Every event names the project (Q-AUTHZ-209).
+func TestR_AUTHZ_031_MemberEventsCarryTheirJournalEntries(t *testing.T) {
+	actor := authz.Subject{Kind: principal.KindUser, ID: "u1", Name: "root"}
+	dave := PrincipalRef{Kind: KindUser, Name: "dave", ID: "p-dave"}
+	added := memberEvent(audit.EventProjectMemberAdded, actor, "web", "pid", dave, 7, authz.ProjectRoleNone, RoleMaintainer)
+	if added.Journal != nil || added.Project != "web" {
+		t.Errorf("added: journal %s, project %q", added.Journal, added.Project)
+	}
+	if d := rawOf(t, added.Details); d["role"] != "maintainer" || d["principal"] != "user:dave" || d["epoch"] != float64(7) {
+		t.Errorf("added: %v", d)
+	}
+	changed := memberEvent(audit.EventProjectMemberChanged, actor, "web", "pid", dave, 8, RoleMaintainer, RoleReader)
+	if j := rawOf(t, changed.Journal); j["projectId"] != "pid" || j["principalId"] != "p-dave" || j["before"] != "maintainer" || j["after"] != "reader" {
+		t.Errorf("changed: %v", j)
+	}
+	removed := memberEvent(audit.EventProjectMemberRemoved, actor, "web", "pid", dave, 9, RoleReader, authz.ProjectRoleNone)
+	if j := rawOf(t, removed.Journal); j["project"] != "web" || j["principal"] != "user:dave" {
+		t.Errorf("removed: %v", j)
+	}
+	if d := rawOf(t, removed.Details); d["role"] != "reader" {
+		t.Errorf("removed: %v", d)
+	}
+	for _, ev := range []audit.Event{added, changed, removed} {
+		withinSchema(t, ev)
+	}
+}
+
+// withinSchema checks the details of an event against the data schema its type registers: every member is a
+// property of the schema and every required one is there.
+func withinSchema(t *testing.T, ev audit.Event) {
+	t.Helper()
+	et, ok := audit.Lookup(ev.Type)
+	if !ok {
+		t.Fatalf("%s is not registered", ev.Type)
+	}
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	}
+	if err := json.Unmarshal([]byte(et.Schema), &schema); err != nil {
+		t.Fatal(err)
+	}
+	d := rawOf(t, ev.Details)
+	for k := range d {
+		if _, ok := schema.Properties[k]; !ok {
+			t.Errorf("%s: %q is no property of the schema", ev.Type, k)
+		}
+	}
+	for _, k := range schema.Required {
+		if _, ok := d[k]; !ok {
+			t.Errorf("%s: the required %q is missing", ev.Type, k)
+		}
+	}
+}
+
+// TestR_REPO_060_TheMovedEvent: repository.moved names the repository by ID and its former address, both
+// projects by ID and key, and journals them (R-AUTHZ-031); repository.moved_in records the same move in the
+// target project under the new address, without a journal entry (Q-REPO-233).
+func TestR_REPO_060_TheMovedEvent(t *testing.T) {
+	actor := authz.Subject{Kind: principal.KindUser, ID: "u1", Name: "root"}
+	from, to := qname.Repo{Project: "web", Key: "npm-libs"}, qname.Repo{Project: "mobile", Key: "npm-libs"}
+	ev, in := movedEvents(actor, from, to, "42", "pw", "pm", 5, 11)
+	if ev.Type != audit.EventRepositoryMoved || ev.Repository != "web/npm-libs" || ev.Project != "web" || ev.Subject.ID != "42" {
+		t.Errorf("%+v", ev)
+	}
+	d := rawOf(t, ev.Details)
+	if d["from"] != "web" || d["to"] != "mobile" || d["repository"] != "npm-libs" || d["configVersion"] != float64(5) {
+		t.Errorf("details %v", d)
+	}
+	j := rawOf(t, ev.Journal)
+	if j["repositoryId"] != "42" || j["from"].(map[string]any)["id"] != "pw" || j["to"].(map[string]any)["key"] != "mobile" {
+		t.Errorf("journal %v", j)
+	}
+	withinSchema(t, ev)
+	t.Run("Q-REPO-233 the arrival in the target project", func(t *testing.T) {
+		if in.Type != audit.EventRepositoryMovedIn || in.Repository != "mobile/npm-libs" || in.Project != "mobile" ||
+			in.Subject.ID != "42" || in.Subject.Name != "mobile/npm-libs" || in.Journal != nil {
+			t.Errorf("%+v", in)
+		}
+		if string(in.Details) != string(ev.Details) {
+			t.Errorf("details %s, the leaving's %s", in.Details, ev.Details)
+		}
+		withinSchema(t, in)
+	})
+}
+
+// TestR_REPO_060_ACIMappingNamesTheRepositoryByKey: an inline grant of a CI mapping of the source project's
+// tier names the repository by a bare key in the project context and refuses the move; a pattern, a class, a
+// template and a qualified name (which a project context does not take) name it not.
+func TestR_REPO_060_ACIMappingNamesTheRepositoryByKey(t *testing.T) {
+	in := qname.Context{Project: "web"}
+	for _, tc := range []struct {
+		doc  string
+		want bool
+	}{
+		{`{"inline":[{"repositories":["npm-libs"],"actions":["read"]}]}`, true},
+		{`{"inline":[{"repositories":["npm-other","npm-libs"],"actions":["read"]}]}`, true},
+		{`{"inline":[{"repositories":["npm-*"],"actions":["read"]}]}`, false},
+		{`{"inline":[{"repositories":["@any-local"],"actions":["read"]}]}`, false},
+		{`{"inline":[{"repositories":["npm-{{ project }}"],"actions":["read"]}]}`, false},
+		{`{"inline":[{"repositories":["web/npm-libs"],"actions":["read"]}]}`, false},
+		{`{"policies":["npm-read"]}`, false},
+		{`not json`, false},
+	} {
+		if got := specNames(tc.doc, in, "npm-libs"); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.doc, got, tc.want)
+		}
+	}
+}
+
+// TestR_REPO_060_RefusalsOfAMove: 409 repository_in_use lists the references by kind and name in the
+// member `references`; 409 already_exists names the target.
+func TestR_REPO_060_RefusalsOfAMove(t *testing.T) {
+	err := inUse(qname.Repo{Project: "web", Key: "npm-libs"}, []Reference{{Kind: RefVirtualMember, Name: "npm-all"}, {Kind: RefPolicy, Name: "npm-read"}})
+	e, ok := errs.As(err)
+	if !ok || e.Status() != 409 || e.Code != errs.CodeRepositoryInUse {
+		t.Fatalf("%v", err)
+	}
+	refs, _ := e.Extensions["references"].([]Reference)
+	if len(refs) != 2 || refs[0].Name != "npm-all" || !strings.Contains(e.Detail, "virtual_member npm-all") {
+		t.Errorf("%+v", e)
+	}
+	if e, _ := errs.As(keyTaken(qname.Repo{Project: "mobile", Key: "npm-libs"})); e.Status() != 409 || e.Code != errs.CodeAlreadyExists {
+		t.Errorf("%+v", e)
+	}
 }
 
 func TestR_AUTHZ_026_ReferencesOfTheCreator(t *testing.T) {
@@ -248,15 +372,11 @@ func TestR_AUTHZ_026_EmptyProject(t *testing.T) {
 	}
 }
 
-// TestR_BAS_004_ABastionIsNoProjectAdministrator: bastion:<name> as an administrator answers 422
-// principal_not_allowed, as no Bastion registration holds a role, a grant or a membership.
-func TestR_BAS_004_ABastionIsNoProjectAdministrator(t *testing.T) {
-	err := notAdministrator("bastion:partners")
-	e, ok := errs.As(err)
-	if !ok || e.Status() != 422 || e.Code != errs.CodePrincipalNotAllowed {
-		t.Fatalf("notAdministrator = %v, want 422 principal_not_allowed", err)
-	}
-	if other, _ := errs.As(notAdministrator("sa:ci-bot")); other.Code != errs.CodeValidation {
-		t.Fatalf("a service account keeps its code: %v", other.Code)
+// TestR_BAS_004_ABastionIsNoProjectMember: bastion:<name> as a member answers 422 principal_not_allowed, as no
+// Bastion registration holds a role, a grant or a membership.
+func TestR_BAS_004_ABastionIsNoProjectMember(t *testing.T) {
+	_, _, err := parseMemberRef("bastion:partners")
+	if got := fieldsOf(t, err); got["/principalRef"] != errs.CodePrincipalNotAllowed {
+		t.Fatalf("parseMemberRef = %v, want 422 principal_not_allowed", err)
 	}
 }

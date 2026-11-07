@@ -65,7 +65,7 @@ func (f *Format) serveRemote(ctx context.Context, rq *formats.Request, w http.Re
 	}
 	repo := rq.RepoRef()
 	links := rq.Host.Links(rq)
-	serving := rq.Addressed() + servingSuffix(rq)
+	serving := servingName(rq).String()
 	config := strconv.FormatInt(rq.Repo.Version, 10) + "/" + spec.settings
 	settings := config + "/" + src.fingerprint
 	inputs := document.Inputs{
@@ -255,7 +255,7 @@ func (f *Format) remoteRegistration(ctx context.Context, rq *formats.Request, w 
 	paging := f.replicaOf(rq.Host).cfg.Registration
 	pg := registration.Paging{PageSize: paging.PageSize, InlineBelow: paging.InlineBelow}
 	links := rq.Host.Links(rq)
-	feed := registration.Feed(links.Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/")
+	feed := registration.Feed(links.Registry(servingName(rq)) + FeedSegment + "/")
 	keep := exposes(viewOf(rq), lowerID)
 	lower, upper, ver := rq.Params.Get("lower"), rq.Params.Get("upper"), rq.Params.Get("version")
 

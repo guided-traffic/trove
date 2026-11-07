@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -60,7 +62,7 @@ type ExposureServiceOptions struct {
 // StoredRepo names the repository a check lists the stored versions of.
 type StoredRepo struct {
 	ID     int64
-	Key    string
+	Name   qname.Repo
 	Format string
 	// Class is local, remote or virtual.
 	Class string
@@ -421,11 +423,15 @@ func (s *ExposureService) resolve(ctx context.Context, qs *q.Queries, in Exposur
 	ps := validateSyntax(in, prefix)
 	rr := resolvedRule{in: in}
 	if in.Repository != "" {
-		rows, err := qs.EndpointsRepositoryByKey(ctx, in.Repository)
+		rows, err := repositoryByName(ctx, qs, in.Repository)
 		if err != nil {
 			return rr, err
 		}
-		if len(rows) == 0 {
+		if _, ok := repoName(in.Repository); !ok {
+			// A rule names its repository in an instance context: a bare key is refused, never
+			// read as a name that matches nothing (R-AUTHZ-004, Q-AUTHZ-216).
+			ps = append(ps, ProblemField{Pointer: prefix + "/repository", Code: SelectorProblemCode, Detail: fmt.Sprintf("%q is no repository name <project>/<key>", in.Repository)})
+		} else if len(rows) == 0 {
 			ps = append(ps, ProblemField{Pointer: prefix + "/repository", Code: errs.CodeUnknownRepository, Detail: fmt.Sprintf("no repository %q exists", in.Repository)})
 		} else {
 			rr.repoID, rr.format = rows[0].ID, rows[0].Format
@@ -781,7 +787,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		if _, err := s.requireEndpoint(ctx, qs, endpoint); err != nil {
 			return err
 		}
-		repos, err := qs.EndpointsRepositoryByKey(ctx, in.Repository)
+		repos, err := repositoryByName(ctx, qs, in.Repository)
 		if err != nil {
 			return err
 		}
@@ -824,7 +830,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		}
 		rules := stored
 		if in.Draft != nil {
-			if rules, err = s.withDraft(ctx, qs, stored, *in.Draft, repo.Key, names); err != nil {
+			if rules, err = s.withDraft(ctx, qs, stored, *in.Draft, in.Repository, names); err != nil {
 				return err
 			}
 		}
@@ -916,7 +922,7 @@ func tagVisible(held checkHeld, mode, pkg, tag, target string) bool {
 // stored versions: the repository, its format's exposure facts and the compiled
 // rules, with the judge over them.
 type checkHeld struct {
-	repo  q.EndpointsRepositoryByKeyRow
+	repo  q.EndpointsRepositoryByNameRow
 	f     catalog.Exposure
 	names catalog.Names
 	rules []*compiledRule
@@ -944,7 +950,7 @@ type storedWant struct {
 // decided on what it returned before the read filter dropped any, so that a list
 // the filter made short does not look complete. At most MaxCheckStored versions
 // and tags are returned.
-func (s *ExposureService) storedOf(ctx context.Context, repo q.EndpointsRepositoryByKeyRow, pkg string, names catalog.Names, want storedWant, may MayRead) (sp StoredPackage, cut bool, err error) {
+func (s *ExposureService) storedOf(ctx context.Context, repo q.EndpointsRepositoryByNameRow, pkg string, names catalog.Names, want storedWant, may MayRead) (sp StoredPackage, cut bool, err error) {
 	if s.o.Stored == nil {
 		return StoredPackage{}, false, nil
 	}
@@ -955,7 +961,7 @@ func (s *ExposureService) storedOf(ctx context.Context, repo q.EndpointsReposito
 		}
 		pkg = norm
 	}
-	sp, err = s.o.Stored.Stored(ctx, StoredRepo{ID: repo.ID, Key: repo.Key, Format: repo.Format, Class: repo.Class}, pkg, MaxCheckStored+1, want.tags)
+	sp, err = s.o.Stored.Stored(ctx, StoredRepo{ID: repo.ID, Name: qname.Repo{Project: repo.ProjectKey, Key: repo.Key}, Format: repo.Format, Class: repo.Class}, pkg, MaxCheckStored+1, want.tags)
 	if err != nil {
 		return sp, false, err
 	}
@@ -1012,4 +1018,20 @@ func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored [
 		return 0
 	})
 	return out, nil
+}
+
+// repositoryByName resolves the repository of a rule: a rule names it by <project>/<key> (an instance
+// context, Q-AUTHZ-206); a text that is no name resolves to none.
+func repositoryByName(ctx context.Context, qs *q.Queries, text string) ([]q.EndpointsRepositoryByNameRow, error) {
+	name, ok := repoName(text)
+	if !ok {
+		return nil, nil
+	}
+	return qs.EndpointsRepositoryByName(ctx, q.EndpointsRepositoryByNameParams{Project: name.Project, Key: name.Key})
+}
+
+// repoName reads the name of a rule's repository, "<project>/<key>"; ok is false for a text that is no name.
+func repoName(text string) (qname.Repo, bool) {
+	name, err := qname.ParseRepo(text)
+	return name, err == nil
 }

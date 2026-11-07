@@ -66,7 +66,7 @@ func (o *decidedObserver) Decided(*http.Request, bastionmain.RouteDecision) { o.
 func TestR_BAS_013_AFilesReadTellsTheObserverOnlyAnAllowedDecision(t *testing.T) {
 	var sum blob.Digest
 	sum[0] = 1
-	file := items.Item{ID: 3, RepoID: 5, Repository: "generic-local", Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
+	file := items.Item{ID: 3, RepoID: 5, Repository: qr("generic-local"), Path: "a.bin", Kind: items.KindFile, Size: 3, Digest: sum, SHA512: make([]byte, 64)}
 	serve := func(outcome authz.Outcome, st *store, path string) (*httptest.ResponseRecorder, *sequence) {
 		seq := &sequence{}
 		d := &refusingDecider{outcome: outcome, seq: seq}
@@ -82,7 +82,7 @@ func TestR_BAS_013_AFilesReadTellsTheObserverOnlyAnAllowedDecision(t *testing.T)
 		return rec, seq
 	}
 	for _, outcome := range []authz.Outcome{authz.DenyHidden, authz.DenyVisible, authz.DenyUnauthenticated} {
-		rec, seq := serve(outcome, &store{file: file, body: []byte("abc")}, "/files/generic-local/a.bin")
+		rec, seq := serve(outcome, &store{file: file, body: []byte("abc")}, "/files/it/generic-local/a.bin")
 		if rec.Code < 400 {
 			t.Fatalf("outcome %d: status %d", outcome, rec.Code)
 		}
@@ -90,11 +90,11 @@ func TestR_BAS_013_AFilesReadTellsTheObserverOnlyAnAllowedDecision(t *testing.T)
 			t.Errorf("outcome %d: a refused read told the observer a decision %d times (%v)", outcome, n, seq.steps)
 		}
 	}
-	rec, seq := serve(authz.Allow, &store{file: file, body: []byte("abc")}, "/files/generic-local/a.bin")
+	rec, seq := serve(authz.Allow, &store{file: file, body: []byte("abc")}, "/files/it/generic-local/a.bin")
 	if rec.Code != http.StatusOK || seq.count("decided") != 1 || seq.steps[0] != "decide" {
 		t.Fatalf("an allowed read: %d, steps %v", rec.Code, seq.steps)
 	}
-	rec, seq = serve(authz.Allow, &store{}, "/files/generic-local/missing.bin")
+	rec, seq = serve(authz.Allow, &store{}, "/files/it/generic-local/missing.bin")
 	if rec.Code != http.StatusNotFound || seq.count("decided") != 1 {
 		t.Fatalf("an allowed read of a missing item: %d, steps %v", rec.Code, seq.steps)
 	}

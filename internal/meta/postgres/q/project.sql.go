@@ -9,52 +9,31 @@ import (
 	"context"
 )
 
-const projectAddAdmin = `-- name: ProjectAddAdmin :execrows
-INSERT INTO project_admin (project_id, principal_id)
-SELECT pr.id, $1::text::uuid FROM project pr WHERE pr.key = $2::text
-ON CONFLICT DO NOTHING
+const projectCIMappingGrants = `-- name: ProjectCIMappingGrants :many
+SELECT name, grants::text AS grants
+  FROM ci_mappings
+ WHERE project_id = $1::text::uuid
+ ORDER BY name
 `
 
-type ProjectAddAdminParams struct {
-	PrincipalID string
-	Key         string
+type ProjectCIMappingGrantsRow struct {
+	Name   string
+	Grants string
 }
 
-// 0 rows: the principal already administers the project.
-func (q *Queries) ProjectAddAdmin(ctx context.Context, arg ProjectAddAdminParams) (int64, error) {
-	result, err := q.db.Exec(ctx, projectAddAdmin, arg.PrincipalID, arg.Key)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const projectAdmins = `-- name: ProjectAdmins :many
-SELECT p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
-  FROM project_admin a
-  JOIN project pr ON pr.id = a.project_id
-  JOIN principal p ON p.id = a.principal_id
- WHERE pr.key = $1::text
- ORDER BY p.kind, p.name
-`
-
-type ProjectAdminsRow struct {
-	PrincipalID   string
-	PrincipalKind string
-	PrincipalName string
-}
-
-// The administrators of one project.
-func (q *Queries) ProjectAdmins(ctx context.Context, key string) ([]ProjectAdminsRow, error) {
-	rows, err := q.db.Query(ctx, projectAdmins, key)
+// The grant documents of the CI mappings of a project's tier, for the move, which
+// refuses a repository that an inline grant names by key (R-REPO-060). name is the
+// mapping's name as stored.
+func (q *Queries) ProjectCIMappingGrants(ctx context.Context, projectID string) ([]ProjectCIMappingGrantsRow, error) {
+	rows, err := q.db.Query(ctx, projectCIMappingGrants, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProjectAdminsRow{}
+	items := []ProjectCIMappingGrantsRow{}
 	for rows.Next() {
-		var i ProjectAdminsRow
-		if err := rows.Scan(&i.PrincipalID, &i.PrincipalKind, &i.PrincipalName); err != nil {
+		var i ProjectCIMappingGrantsRow
+		if err := rows.Scan(&i.Name, &i.Grants); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -63,122 +42,6 @@ func (q *Queries) ProjectAdmins(ctx context.Context, key string) ([]ProjectAdmin
 		return nil, err
 	}
 	return items, nil
-}
-
-const projectAdminsOfAll = `-- name: ProjectAdminsOfAll :many
-SELECT pr.key AS project_key, p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
-  FROM project_admin a
-  JOIN project pr ON pr.id = a.project_id
-  JOIN principal p ON p.id = a.principal_id
- ORDER BY pr.key, p.kind, p.name
-`
-
-type ProjectAdminsOfAllRow struct {
-	ProjectKey    string
-	PrincipalID   string
-	PrincipalKind string
-	PrincipalName string
-}
-
-// The administrators of every project, for the overview.
-func (q *Queries) ProjectAdminsOfAll(ctx context.Context) ([]ProjectAdminsOfAllRow, error) {
-	rows, err := q.db.Query(ctx, projectAdminsOfAll)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectAdminsOfAllRow{}
-	for rows.Next() {
-		var i ProjectAdminsOfAllRow
-		if err := rows.Scan(
-			&i.ProjectKey,
-			&i.PrincipalID,
-			&i.PrincipalKind,
-			&i.PrincipalName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const projectAssignRepository = `-- name: ProjectAssignRepository :many
-UPDATE repositories
-   SET project_id = NULLIF($1::text, '')::uuid, updated_at = now(),
-       config_version = config_version + 1,
-       updated_by = NULLIF($2::text, '')::uuid
- WHERE key = $3::text
-   AND project_id IS NOT DISTINCT FROM NULLIF($4::text, '')::uuid
-RETURNING id AS repository_id, config_version
-`
-
-type ProjectAssignRepositoryParams struct {
-	ProjectID     string
-	Actor         string
-	RepositoryKey string
-	FromProjectID string
-}
-
-type ProjectAssignRepositoryRow struct {
-	RepositoryID  int64
-	ConfigVersion int64
-}
-
-// Sets the project of a repository. The condition makes the move explicit: the
-// row changes only when it belongs to no project or to the one in `from`
-// (empty: a repository without a project), so two concurrent assignments cannot
-// both win. No row back: the repository is unknown or belongs to another project
-// (409 repository_assigned). project_id empty unassigns. config_version moves on:
-// the project is a member of the repository's document, so a client that holds
-// the old ETag must not write over, or be answered 304 for, the other state.
-func (q *Queries) ProjectAssignRepository(ctx context.Context, arg ProjectAssignRepositoryParams) ([]ProjectAssignRepositoryRow, error) {
-	rows, err := q.db.Query(ctx, projectAssignRepository,
-		arg.ProjectID,
-		arg.Actor,
-		arg.RepositoryKey,
-		arg.FromProjectID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectAssignRepositoryRow{}
-	for rows.Next() {
-		var i ProjectAssignRepositoryRow
-		if err := rows.Scan(&i.RepositoryID, &i.ConfigVersion); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const projectCountMembers = `-- name: ProjectCountMembers :one
-SELECT (SELECT count(*) FROM repositories WHERE project_id = $1::text::uuid)::bigint AS repositories,
-       (SELECT count(*) FROM service_account WHERE project_id = $1::text::uuid)::bigint AS service_accounts,
-       (SELECT count(*) FROM ci_mappings WHERE project_id = $1::text::uuid)::bigint AS ci_mappings
-`
-
-type ProjectCountMembersRow struct {
-	Repositories    int64
-	ServiceAccounts int64
-	CiMappings      int64
-}
-
-// What keeps a project from being deleted: repositories in every lifecycle state, service accounts
-// (Q-AUTHZ-169) and CI mappings of the project's tier (Q-CI-26).
-func (q *Queries) ProjectCountMembers(ctx context.Context, id string) (ProjectCountMembersRow, error) {
-	row := q.db.QueryRow(ctx, projectCountMembers, id)
-	var i ProjectCountMembersRow
-	err := row.Scan(&i.Repositories, &i.ServiceAccounts, &i.CiMappings)
-	return i, err
 }
 
 const projectDelete = `-- name: ProjectDelete :many
@@ -199,7 +62,7 @@ type ProjectDeleteRow struct {
 }
 
 // The foreign keys of repositories and service_account refuse the delete while one
-// is assigned; the caller counts first and answers 409 project_not_empty. The
+// belongs to the project; the caller counts first and answers 409 project_not_empty. The
 // project's policies go with the row, after the caller deleted them one by one
 // through the policy store (Q-AUTHZ-185).
 func (q *Queries) ProjectDelete(ctx context.Context, arg ProjectDeleteParams) ([]ProjectDeleteRow, error) {
@@ -223,7 +86,7 @@ func (q *Queries) ProjectDelete(ctx context.Context, arg ProjectDeleteParams) ([
 }
 
 const projectGet = `-- name: ProjectGet :many
-SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies, p.manage_repositories, p.version,
+SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
@@ -231,7 +94,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
        (SELECT count(*) FROM repositories r WHERE r.project_id = p.id)::bigint AS repositories,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
        (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
-       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings
+       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings,
+       (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::bigint AS members
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
@@ -239,23 +103,22 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
 `
 
 type ProjectGetRow struct {
-	ID                 string
-	Key                string
-	DisplayName        string
-	Description        string
-	ManagePolicies     bool
-	ManageRepositories bool
-	Version            int64
-	CreatedUs          int64
-	UpdatedUs          int64
-	CreatedByKind      string
-	CreatedByName      string
-	UpdatedByKind      string
-	UpdatedByName      string
-	Repositories       int64
-	ServiceAccounts    int64
-	Policies           int64
-	CiMappings         int64
+	ID              string
+	Key             string
+	DisplayName     string
+	Description     string
+	Version         int64
+	CreatedUs       int64
+	UpdatedUs       int64
+	CreatedByKind   string
+	CreatedByName   string
+	UpdatedByKind   string
+	UpdatedByName   string
+	Repositories    int64
+	ServiceAccounts int64
+	Policies        int64
+	CiMappings      int64
+	Members         int64
 }
 
 func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, error) {
@@ -272,8 +135,6 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 			&i.Key,
 			&i.DisplayName,
 			&i.Description,
-			&i.ManagePolicies,
-			&i.ManageRepositories,
 			&i.Version,
 			&i.CreatedUs,
 			&i.UpdatedUs,
@@ -285,6 +146,7 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 			&i.ServiceAccounts,
 			&i.Policies,
 			&i.CiMappings,
+			&i.Members,
 		); err != nil {
 			return nil, err
 		}
@@ -296,30 +158,27 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 	return items, nil
 }
 
-const projectGlobalAccountsWithPrefix = `-- name: ProjectGlobalAccountsWithPrefix :many
-SELECT pr.name
-  FROM principal pr
-  JOIN service_account s ON s.principal_id = pr.id
- WHERE s.project_id IS NULL AND starts_with(pr.name, $1::text || '-')
- ORDER BY pr.name
- LIMIT 20
+const projectGroupAutoJoinShare = `-- name: ProjectGroupAutoJoinShare :many
+SELECT auto_join FROM user_group WHERE principal_id = $1::text::uuid FOR SHARE
 `
 
-// The global service accounts whose name starts with <key>-: a project of that key
-// is refused while one exists (Q-AUTHZ-176).
-func (q *Queries) ProjectGlobalAccountsWithPrefix(ctx context.Context, key string) ([]string, error) {
-	rows, err := q.db.Query(ctx, projectGlobalAccountsWithPrefix, key)
+// The auto-join flag of a group under a shared row lock. Turning the flag on takes the
+// same row FOR UPDATE (IdentityLockGroup) and then looks for project memberships, so
+// the member write and that change run one after the other and the second sees what
+// the first left (R-AUTH-019, R-AUTHZ-026). No row for a principal that is no group.
+func (q *Queries) ProjectGroupAutoJoinShare(ctx context.Context, id string) ([]bool, error) {
+	rows, err := q.db.Query(ctx, projectGroupAutoJoinShare, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []bool{}
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var auto_join bool
+		if err := rows.Scan(&auto_join); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, auto_join)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -328,22 +187,19 @@ func (q *Queries) ProjectGlobalAccountsWithPrefix(ctx context.Context, key strin
 }
 
 const projectInsert = `-- name: ProjectInsert :many
-INSERT INTO project (id, key, display_name, description, manage_policies, manage_repositories, created_by, updated_by)
+INSERT INTO project (id, key, display_name, description, created_by, updated_by)
 VALUES ($1::text::uuid, $2::text, $3::text, $4::text,
-        $5::boolean, $6::boolean,
-        NULLIF($7::text, '')::uuid, NULLIF($7::text, '')::uuid)
+        NULLIF($5::text, '')::uuid, NULLIF($5::text, '')::uuid)
 ON CONFLICT (key) DO NOTHING
 RETURNING id::text AS id, version
 `
 
 type ProjectInsertParams struct {
-	ID                 string
-	Key                string
-	DisplayName        string
-	Description        string
-	ManagePolicies     bool
-	ManageRepositories bool
-	Actor              string
+	ID          string
+	Key         string
+	DisplayName string
+	Description string
+	Actor       string
 }
 
 type ProjectInsertRow struct {
@@ -358,8 +214,6 @@ func (q *Queries) ProjectInsert(ctx context.Context, arg ProjectInsertParams) ([
 		arg.Key,
 		arg.DisplayName,
 		arg.Description,
-		arg.ManagePolicies,
-		arg.ManageRepositories,
 		arg.Actor,
 	)
 	if err != nil {
@@ -380,68 +234,9 @@ func (q *Queries) ProjectInsert(ctx context.Context, arg ProjectInsertParams) ([
 	return items, nil
 }
 
-const projectKeysOverlapping = `-- name: ProjectKeysOverlapping :many
-SELECT key FROM project
- WHERE key <> $1::text
-   AND (starts_with(key, $1::text || '-') OR starts_with($1::text, key || '-'))
- ORDER BY key
-`
-
-// The other project keys that overlap a key: one that is the other's prefix up to
-// a hyphen, either way round (`web` and `web-app`). Such keys would let the
-// administrator of `web` create `web-app-…` names that read as another project's
-// (Q-AUTHZ-176).
-func (q *Queries) ProjectKeysOverlapping(ctx context.Context, key string) ([]string, error) {
-	rows, err := q.db.Query(ctx, projectKeysOverlapping, key)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
-			return nil, err
-		}
-		items = append(items, key)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const projectKeysPrefixing = `-- name: ProjectKeysPrefixing :many
-SELECT key FROM project
- WHERE starts_with($1::text, key || '-')
- ORDER BY key
-`
-
-// The keys of the projects whose key plus a hyphen starts a name: the names a
-// global service account may not take (Q-AUTHZ-176).
-func (q *Queries) ProjectKeysPrefixing(ctx context.Context, name string) ([]string, error) {
-	rows, err := q.db.Query(ctx, projectKeysPrefixing, name)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
-			return nil, err
-		}
-		items = append(items, key)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const projectList = `-- name: ProjectList :many
 
-SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies, p.manage_repositories, p.version,
+SELECT p.id::text AS id, p.key, p.display_name, p.description, p.version,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
@@ -449,7 +244,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
        (SELECT count(*) FROM repositories r WHERE r.project_id = p.id)::bigint AS repositories,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
        (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
-       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings
+       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings,
+       (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::bigint AS members
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
@@ -457,23 +253,22 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
 `
 
 type ProjectListRow struct {
-	ID                 string
-	Key                string
-	DisplayName        string
-	Description        string
-	ManagePolicies     bool
-	ManageRepositories bool
-	Version            int64
-	CreatedUs          int64
-	UpdatedUs          int64
-	CreatedByKind      string
-	CreatedByName      string
-	UpdatedByKind      string
-	UpdatedByName      string
-	Repositories       int64
-	ServiceAccounts    int64
-	Policies           int64
-	CiMappings         int64
+	ID              string
+	Key             string
+	DisplayName     string
+	Description     string
+	Version         int64
+	CreatedUs       int64
+	UpdatedUs       int64
+	CreatedByKind   string
+	CreatedByName   string
+	UpdatedByKind   string
+	UpdatedByName   string
+	Repositories    int64
+	ServiceAccounts int64
+	Policies        int64
+	CiMappings      int64
+	Members         int64
 }
 
 // Queries of projects (R-AUTHZ-026). Identifiers are read as text and written
@@ -497,8 +292,6 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 			&i.Key,
 			&i.DisplayName,
 			&i.Description,
-			&i.ManagePolicies,
-			&i.ManageRepositories,
 			&i.Version,
 			&i.CreatedUs,
 			&i.UpdatedUs,
@@ -510,6 +303,7 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 			&i.ServiceAccounts,
 			&i.Policies,
 			&i.CiMappings,
+			&i.Members,
 		); err != nil {
 			return nil, err
 		}
@@ -521,16 +315,33 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 	return items, nil
 }
 
-const projectLock = `-- name: ProjectLock :exec
-SELECT 1 FROM project WHERE key = $1::text FOR UPDATE
+const projectLock = `-- name: ProjectLock :many
+SELECT id::text AS id FROM project WHERE key = $1::text FOR UPDATE
 `
 
-// Serialises the writers of one project and of its assignments: a delete counts
-// repositories and accounts under this lock, an assignment and a project service
-// account create take it before they write.
-func (q *Queries) ProjectLock(ctx context.Context, key string) error {
-	_, err := q.db.Exec(ctx, projectLock, key)
-	return err
+// Serialises the writers of one project and of its members: a delete counts
+// repositories and accounts under this lock; a move into or out of the project and
+// every change of the members take it before they write (the last-Owner rule counts
+// under it, Q-AUTHZ-217). A repository create takes it FOR SHARE. No row: no
+// project.
+func (q *Queries) ProjectLock(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, projectLock, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projectLookupPrincipals = `-- name: ProjectLookupPrincipals :many
@@ -554,8 +365,8 @@ type ProjectLookupPrincipalsRow struct {
 	Name string
 }
 
-// Users and groups whose name starts with the prefix, for a project administrator
-// who names principals in policies (Q-AUTHZ-182). Active principals only; the
+// Users and groups whose name starts with the prefix, for a project owner
+// who names principals as members and in policies (Q-AUTHZ-182). Active principals only; the
 // answer is the kind and the name, nothing else. kind is empty, 'user' or 'group'.
 func (q *Queries) ProjectLookupPrincipals(ctx context.Context, arg ProjectLookupPrincipalsParams) ([]ProjectLookupPrincipalsRow, error) {
 	rows, err := q.db.Query(ctx, projectLookupPrincipals, arg.Kind, arg.Prefix, arg.MaxRows)
@@ -577,31 +388,135 @@ func (q *Queries) ProjectLookupPrincipals(ctx context.Context, arg ProjectLookup
 	return items, nil
 }
 
-const projectOfRepository = `-- name: ProjectOfRepository :many
-SELECT r.id AS repository_id, COALESCE(p.id::text, '')::text AS project_id, COALESCE(p.key, '')::text AS project_key
-  FROM repositories r
-  LEFT JOIN project p ON p.id = r.project_id
- WHERE r.key = $1::text
+const projectMemberAdd = `-- name: ProjectMemberAdd :execrows
+INSERT INTO project_member (project_id, principal_id, role)
+VALUES ($1::text::uuid, $2::text::uuid, $3::text)
+ON CONFLICT DO NOTHING
 `
 
-type ProjectOfRepositoryRow struct {
-	RepositoryID int64
-	ProjectID    string
-	ProjectKey   string
+type ProjectMemberAddParams struct {
+	ProjectID   string
+	PrincipalID string
+	Role        string
 }
 
-// The project a repository is assigned to; no row for an unknown repository, empty
-// project fields for one that belongs to no project.
-func (q *Queries) ProjectOfRepository(ctx context.Context, repositoryKey string) ([]ProjectOfRepositoryRow, error) {
-	rows, err := q.db.Query(ctx, projectOfRepository, repositoryKey)
+// Adds a user or a group (the trigger of 00019 refuses every other kind) as a
+// member with the role (Q-AUTHZ-207). The caller holds ProjectLock and read
+// ProjectMemberRole before, so 0 rows does not happen.
+func (q *Queries) ProjectMemberAdd(ctx context.Context, arg ProjectMemberAddParams) (int64, error) {
+	result, err := q.db.Exec(ctx, projectMemberAdd, arg.ProjectID, arg.PrincipalID, arg.Role)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const projectMemberRemove = `-- name: ProjectMemberRemove :execrows
+DELETE FROM project_member
+ WHERE project_id = $1::text::uuid
+   AND principal_id = $2::text::uuid
+`
+
+type ProjectMemberRemoveParams struct {
+	ProjectID   string
+	PrincipalID string
+}
+
+// 0 rows: the principal is no member.
+func (q *Queries) ProjectMemberRemove(ctx context.Context, arg ProjectMemberRemoveParams) (int64, error) {
+	result, err := q.db.Exec(ctx, projectMemberRemove, arg.ProjectID, arg.PrincipalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const projectMemberRole = `-- name: ProjectMemberRole :many
+SELECT role
+  FROM project_member
+ WHERE project_id = $1::text::uuid AND principal_id = $2::text::uuid
+`
+
+type ProjectMemberRoleParams struct {
+	ProjectID   string
+	PrincipalID string
+}
+
+// The role of one principal in one project; no row: no member.
+func (q *Queries) ProjectMemberRole(ctx context.Context, arg ProjectMemberRoleParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, projectMemberRole, arg.ProjectID, arg.PrincipalID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ProjectOfRepositoryRow{}
+	items := []string{}
 	for rows.Next() {
-		var i ProjectOfRepositoryRow
-		if err := rows.Scan(&i.RepositoryID, &i.ProjectID, &i.ProjectKey); err != nil {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		items = append(items, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectMemberSetRole = `-- name: ProjectMemberSetRole :execrows
+UPDATE project_member
+   SET role = $1::text
+ WHERE project_id = $2::text::uuid
+   AND principal_id = $3::text::uuid
+`
+
+type ProjectMemberSetRoleParams struct {
+	Role        string
+	ProjectID   string
+	PrincipalID string
+}
+
+// 0 rows: the principal is no member.
+func (q *Queries) ProjectMemberSetRole(ctx context.Context, arg ProjectMemberSetRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, projectMemberSetRole, arg.Role, arg.ProjectID, arg.PrincipalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const projectMembers = `-- name: ProjectMembers :many
+SELECT p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, m.role
+  FROM project_member m
+  JOIN project pr ON pr.id = m.project_id
+  JOIN principal p ON p.id = m.principal_id
+ WHERE pr.key = $1::text
+ ORDER BY p.kind, p.name
+`
+
+type ProjectMembersRow struct {
+	PrincipalID   string
+	PrincipalKind string
+	PrincipalName string
+	Role          string
+}
+
+// The members of one project with their role (Q-AUTHZ-207).
+func (q *Queries) ProjectMembers(ctx context.Context, key string) ([]ProjectMembersRow, error) {
+	rows, err := q.db.Query(ctx, projectMembers, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectMembersRow{}
+	for rows.Next() {
+		var i ProjectMembersRow
+		if err := rows.Scan(
+			&i.PrincipalID,
+			&i.PrincipalKind,
+			&i.PrincipalName,
+			&i.Role,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -610,6 +525,66 @@ func (q *Queries) ProjectOfRepository(ctx context.Context, repositoryKey string)
 		return nil, err
 	}
 	return items, nil
+}
+
+const projectMembersOfAll = `-- name: ProjectMembersOfAll :many
+SELECT pr.key AS project_key, p.id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, m.role
+  FROM project_member m
+  JOIN project pr ON pr.id = m.project_id
+  JOIN principal p ON p.id = m.principal_id
+ ORDER BY pr.key, p.kind, p.name
+`
+
+type ProjectMembersOfAllRow struct {
+	ProjectKey    string
+	PrincipalID   string
+	PrincipalKind string
+	PrincipalName string
+	Role          string
+}
+
+// The members of every project, for the overview.
+func (q *Queries) ProjectMembersOfAll(ctx context.Context) ([]ProjectMembersOfAllRow, error) {
+	rows, err := q.db.Query(ctx, projectMembersOfAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectMembersOfAllRow{}
+	for rows.Next() {
+		var i ProjectMembersOfAllRow
+		if err := rows.Scan(
+			&i.ProjectKey,
+			&i.PrincipalID,
+			&i.PrincipalKind,
+			&i.PrincipalName,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectOwnerCount = `-- name: ProjectOwnerCount :one
+SELECT count(*)::bigint
+  FROM project_member
+ WHERE project_id = $1::text::uuid AND role = 'owner'
+`
+
+// The membership rows of a project with the role owner, a group among them
+// whatever its members (Q-AUTHZ-217): the last one is neither removed nor demoted
+// (409 last_owner) unless the caller holds projects:write. Counted under
+// ProjectLock, so two Owners who remove each other run one after the other.
+func (q *Queries) ProjectOwnerCount(ctx context.Context, projectID string) (int64, error) {
+	row := q.db.QueryRow(ctx, projectOwnerCount, projectID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const projectPolicyNames = `-- name: ProjectPolicyNames :many
@@ -621,10 +596,11 @@ type ProjectPolicyNamesRow struct {
 	Version int64
 }
 
-// The policies of a project, for the delete that removes them through the policy
-// store so that each deletion is audited and journaled.
-// The version comes with the name: the delete passes it as If-Match, so a policy that
-// changed or was replaced under the same name since this read is not removed (Q-AUTHZ-202).
+// The policies of a project by their stored name (<project key>/<name>,
+// Q-AUTHZ-209), for the delete that removes them through the policy store so that
+// each deletion is audited and journaled. The version comes with the name: the
+// delete passes it as If-Match, so a policy that changed since this read is not
+// removed (Q-AUTHZ-204).
 func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]ProjectPolicyNamesRow, error) {
 	rows, err := q.db.Query(ctx, projectPolicyNames, id)
 	if err != nil {
@@ -646,9 +622,10 @@ func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]ProjectP
 }
 
 const projectPrincipalByRef = `-- name: ProjectPrincipalByRef :many
-SELECT id::text AS id, kind, name, status
-  FROM principal
- WHERE kind = $1::text AND name = $2::text
+SELECT p.id::text AS id, p.kind, p.name, p.status, COALESCE(g.auto_join, false)::boolean AS auto_join
+  FROM principal p
+  LEFT JOIN user_group g ON g.principal_id = p.id
+ WHERE p.kind = $1::text AND p.name = $2::text
 `
 
 type ProjectPrincipalByRefParams struct {
@@ -657,14 +634,18 @@ type ProjectPrincipalByRefParams struct {
 }
 
 type ProjectPrincipalByRefRow struct {
-	ID     string
-	Kind   string
-	Name   string
-	Status string
+	ID       string
+	Kind     string
+	Name     string
+	Status   string
+	AutoJoin bool
 }
 
-// The user or group an administrator reference names, read in the writer's
+// The user or group a member reference names, read in the writer's
 // transaction (the cached principal store may lag a user created a moment ago).
+// auto_join is true for an auto-join group, which is never a member: every user is
+// in one, so it would make every user a member (R-AUTHZ-026, 422
+// principal_not_allowed).
 func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipalByRefParams) ([]ProjectPrincipalByRefRow, error) {
 	rows, err := q.db.Query(ctx, projectPrincipalByRef, arg.Kind, arg.Name)
 	if err != nil {
@@ -679,6 +660,7 @@ func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipa
 			&i.Kind,
 			&i.Name,
 			&i.Status,
+			&i.AutoJoin,
 		); err != nil {
 			return nil, err
 		}
@@ -690,77 +672,20 @@ func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipa
 	return items, nil
 }
 
-const projectRemoveAdmin = `-- name: ProjectRemoveAdmin :execrows
-DELETE FROM project_admin
- WHERE project_id = (SELECT id FROM project WHERE key = $1::text)
-   AND principal_id = $2::text::uuid
+const projectRepositoryGlobalPolicies = `-- name: ProjectRepositoryGlobalPolicies :many
+SELECT DISTINCT a.name
+  FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+ WHERE s.repository_id = $1::bigint AND a.project_id IS NULL
+ ORDER BY a.name
 `
 
-type ProjectRemoveAdminParams struct {
-	Key         string
-	PrincipalID string
-}
-
-func (q *Queries) ProjectRemoveAdmin(ctx context.Context, arg ProjectRemoveAdminParams) (int64, error) {
-	result, err := q.db.Exec(ctx, projectRemoveAdmin, arg.Key, arg.PrincipalID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const projectRepositoryKeys = `-- name: ProjectRepositoryKeys :many
-SELECT r.key, r.class, r.format, r.lifecycle
-  FROM repositories r
-  JOIN project p ON p.id = r.project_id
- WHERE p.key = $1::text
- ORDER BY r.key
-`
-
-type ProjectRepositoryKeysRow struct {
-	Key       string
-	Class     string
-	Format    string
-	Lifecycle string
-}
-
-// The repositories of a project, every lifecycle state, by key.
-func (q *Queries) ProjectRepositoryKeys(ctx context.Context, key string) ([]ProjectRepositoryKeysRow, error) {
-	rows, err := q.db.Query(ctx, projectRepositoryKeys, key)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectRepositoryKeysRow{}
-	for rows.Next() {
-		var i ProjectRepositoryKeysRow
-		if err := rows.Scan(
-			&i.Key,
-			&i.Class,
-			&i.Format,
-			&i.Lifecycle,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const projectServiceAccountNames = `-- name: ProjectServiceAccountNames :many
-SELECT pr.name
-  FROM service_account s
-  JOIN principal pr ON pr.id = s.principal_id
-  JOIN project p ON p.id = s.project_id
- WHERE p.key = $1::text
- ORDER BY pr.name
-`
-
-func (q *Queries) ProjectServiceAccountNames(ctx context.Context, key string) ([]string, error) {
-	rows, err := q.db.Query(ctx, projectServiceAccountNames, key)
+// The global policies with a key selector on the repository (Q-REPO-232): their grant
+// is held by the repository's ID and would follow it into the target project, so an
+// Owner who moves it without repositories:write-config is refused while one exists
+// (409 repository_in_use, kind global_policy). A pattern or class selector matches by
+// address and is not stored with the ID.
+func (q *Queries) ProjectRepositoryGlobalPolicies(ctx context.Context, id int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryGlobalPolicies, id)
 	if err != nil {
 		return nil, err
 	}
@@ -779,24 +704,206 @@ func (q *Queries) ProjectServiceAccountNames(ctx context.Context, key string) ([
 	return items, nil
 }
 
+const projectRepositoryKeyTaken = `-- name: ProjectRepositoryKeyTaken :one
+SELECT EXISTS (SELECT 1 FROM repositories WHERE project_id = $1::text::uuid AND key = $2::text)
+`
+
+type ProjectRepositoryKeyTakenParams struct {
+	ProjectID string
+	Key       string
+}
+
+// Whether the project holds a repository with the key in any lifecycle state: a move
+// into it answers 409 already_exists (R-REPO-060). The caller holds ProjectLock of
+// the project, which a create in it takes FOR SHARE, so the answer holds until the
+// move commits.
+func (q *Queries) ProjectRepositoryKeyTaken(ctx context.Context, arg ProjectRepositoryKeyTakenParams) (bool, error) {
+	row := q.db.QueryRow(ctx, projectRepositoryKeyTaken, arg.ProjectID, arg.Key)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const projectRepositoryLock = `-- name: ProjectRepositoryLock :many
+SELECT r.id, r.key, r.class, r.format, r.lifecycle, r.config_version
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = $2::text
+   FOR UPDATE OF r
+`
+
+type ProjectRepositoryLockParams struct {
+	Project string
+	Key     string
+}
+
+type ProjectRepositoryLockRow struct {
+	ID            int64
+	Key           string
+	Class         string
+	Format        string
+	Lifecycle     string
+	ConfigVersion int64
+}
+
+// The repository a move takes (R-REPO-060), by its project and key, under its row
+// lock: the move changes its project_id in the same transaction. Every lifecycle
+// state is returned; the caller answers a repository being deleted as missing.
+func (q *Queries) ProjectRepositoryLock(ctx context.Context, arg ProjectRepositoryLockParams) ([]ProjectRepositoryLockRow, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryLock, arg.Project, arg.Key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectRepositoryLockRow{}
+	for rows.Next() {
+		var i ProjectRepositoryLockRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Class,
+			&i.Format,
+			&i.Lifecycle,
+			&i.ConfigVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectRepositoryMove = `-- name: ProjectRepositoryMove :many
+UPDATE repositories
+   SET project_id = $1::text::uuid,
+       config_version = config_version + 1,
+       updated_at = now(),
+       updated_by = NULLIF($2::text, '')::uuid
+ WHERE id = $3::bigint AND project_id = $4::text::uuid AND lifecycle = 'active'
+RETURNING config_version
+`
+
+type ProjectRepositoryMoveParams struct {
+	ToProjectID   string
+	Actor         string
+	ID            int64
+	FromProjectID string
+}
+
+// Moves a repository to another project (R-REPO-060, Q-REPO-217): its project_id
+// changes, its id and its content do not, and config_version moves on, because the
+// addresses its documents carry change. The condition names the source project and
+// an active repository, so two concurrent moves cannot both win; the callers hold
+// ProjectLock of both projects and ProjectRepositoryLock. A target that holds the
+// key answers SQLSTATE 23505 on repositories_project_key.
+func (q *Queries) ProjectRepositoryMove(ctx context.Context, arg ProjectRepositoryMoveParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryMove,
+		arg.ToProjectID,
+		arg.Actor,
+		arg.ID,
+		arg.FromProjectID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var config_version int64
+		if err := rows.Scan(&config_version); err != nil {
+			return nil, err
+		}
+		items = append(items, config_version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectRepositoryReferences = `-- name: ProjectRepositoryReferences :many
+SELECT 'virtual_member'::text AS kind, v.key::text AS name
+  FROM virtual_members m JOIN repositories v ON v.id = m.virtual_id
+ WHERE m.member_id = $1::bigint
+UNION
+SELECT 'pin_rule', v.key
+  FROM virtual_pin_members m JOIN repositories v ON v.id = m.virtual_id
+ WHERE m.member_id = $1::bigint
+UNION
+SELECT 'virtual_deployment_target', v.key
+  FROM virtual_deploy_targets t JOIN repositories v ON v.id = t.virtual_id
+ WHERE t.target_id = $1::bigint
+UNION
+SELECT 'policy', a.name
+  FROM authz_policy_selector s JOIN authz_policy a ON a.id = s.policy_id
+ WHERE s.repository_id = $1::bigint AND a.project_id = $2::text::uuid
+UNION
+SELECT 'member', r.key
+  FROM virtual_members m JOIN repositories r ON r.id = m.member_id
+ WHERE m.virtual_id = $1::bigint
+UNION
+SELECT 'deployment_target', r.key
+  FROM virtual_deploy_targets t JOIN repositories r ON r.id = t.target_id
+ WHERE t.virtual_id = $1::bigint
+ORDER BY 1, 2
+`
+
+type ProjectRepositoryReferencesParams struct {
+	ID        int64
+	ProjectID string
+}
+
+type ProjectRepositoryReferencesRow struct {
+	Kind string
+	Name string
+}
+
+// What of the repository's own project names it, and keeps it from moving (R-REPO-060,
+// 409 repository_in_use): the virtual repositories that list it as a member, pin a
+// rule to it or deploy into it, and the policies of the project with a key selector
+// on it (by stored name). A virtual repository moves only without members and
+// deployment target, which are repositories of the project: they are listed as
+// `member` and `deployment_target`. Every virtual repository is of the same project
+// (trigger AI006 of 00024). The inline grants of the project's CI mappings are a
+// JSON document; ProjectCIMappingGrants reads them for the caller.
+func (q *Queries) ProjectRepositoryReferences(ctx context.Context, arg ProjectRepositoryReferencesParams) ([]ProjectRepositoryReferencesRow, error) {
+	rows, err := q.db.Query(ctx, projectRepositoryReferences, arg.ID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectRepositoryReferencesRow{}
+	for rows.Next() {
+		var i ProjectRepositoryReferencesRow
+		if err := rows.Scan(&i.Kind, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const projectUpdate = `-- name: ProjectUpdate :many
 UPDATE project
    SET display_name = $1::text, description = $2::text,
-       manage_policies = $3::boolean, manage_repositories = $4::boolean,
-       version = version + 1, updated_at = now(), updated_by = NULLIF($5::text, '')::uuid
- WHERE key = $6::text
-   AND ($7::bigint < 0 OR version = $7::bigint)
+       version = version + 1, updated_at = now(), updated_by = NULLIF($3::text, '')::uuid
+ WHERE key = $4::text
+   AND ($5::bigint < 0 OR version = $5::bigint)
 RETURNING id::text AS id, version
 `
 
 type ProjectUpdateParams struct {
-	DisplayName        string
-	Description        string
-	ManagePolicies     bool
-	ManageRepositories bool
-	Actor              string
-	Key                string
-	Expected           int64
+	DisplayName string
+	Description string
+	Actor       string
+	Key         string
+	Expected    int64
 }
 
 type ProjectUpdateRow struct {
@@ -806,14 +913,12 @@ type ProjectUpdateRow struct {
 
 // The write that carries the optimistic check: a negative expected version is the
 // deliberate blind write (If-Match: *); a version that does not match returns no
-// row. The version covers the fields of the PUT only; administrators and
-// assignments do not move it (Q-AUTHZ-185).
+// row. The version covers the fields of the PUT only; members and
+// repositories do not move it (Q-AUTHZ-185).
 func (q *Queries) ProjectUpdate(ctx context.Context, arg ProjectUpdateParams) ([]ProjectUpdateRow, error) {
 	rows, err := q.db.Query(ctx, projectUpdate,
 		arg.DisplayName,
 		arg.Description,
-		arg.ManagePolicies,
-		arg.ManageRepositories,
 		arg.Actor,
 		arg.Key,
 		arg.Expected,

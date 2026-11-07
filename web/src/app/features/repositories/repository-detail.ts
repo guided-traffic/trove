@@ -13,6 +13,9 @@ import { TabContent, TabGroup, TabPage } from '../../shared/ui/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError, FieldProblem } from '../../api/problem';
+import { collectAll } from '../../api/pagination';
+import { ProjectsApi } from '../../api/projects-api';
+import { SelectField, SelectOption } from '../../shared/access/fields';
 import {
   JobReference,
   RepositoriesApi,
@@ -20,6 +23,7 @@ import {
   RepositoryConsumerView,
   Versioned,
   isConsumerView,
+  repoRef,
   repositoryUrl,
 } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
@@ -73,6 +77,7 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
     ErrorNotice,
     ErrorSummary,
     JobProgress,
+    SelectField,
     FormatSettings,
     RepositoryFields,
     RepositoryGuide,
@@ -85,6 +90,7 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
 })
 export class RepositoryDetail implements HasUnsavedChanges {
   private readonly api = inject(RepositoriesApi);
+  private readonly projectsApi = inject(ProjectsApi);
   private readonly router = inject(Router);
   private readonly session = inject(SessionStore);
   private readonly notifier = inject(Notifier);
@@ -94,13 +100,16 @@ export class RepositoryDetail implements HasUnsavedChanges {
   private readonly recent = inject(RecentRepositories);
   private readonly serverAddress = inject(ServerAddress);
 
-  /** The route parameter `:key`, bound by the router. */
+  /** The route parameters `:project` and `:key`, bound by the router: a repository is addressed inside its project. */
+  readonly project = input.required<string>();
   readonly key = input.required<string>();
+  /** The qualified name `<project>/<key>` every API call of the screen uses. */
+  protected readonly ref = computed(() => repoRef(this.project(), this.key()));
 
   protected readonly formats = resource({ loader: () => this.api.formats() });
   private readonly baseUrl = resource({ loader: () => this.serverAddress.baseUrl() });
   protected readonly loaded = resource({
-    params: () => this.key(),
+    params: () => this.ref(),
     loader: ({ params }) => this.api.get(params),
   });
 
@@ -115,7 +124,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly warnings = signal<readonly string[]>([]);
   protected readonly deletion = signal<JobReference | null>(null);
 
-  /** The capability, or `manageRepositories` of the repository's project while it is on (R-AUTHZ-026). */
+  /** The capability, or the Owner role in the repository's project (R-AUTHZ-026). */
   protected readonly canWrite = computed(() => this.session.canWriteRepositories(this.stored()?.project));
   protected readonly loadFailure = computed(() => {
     const e = this.loaded.error();
@@ -160,7 +169,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly mirrorSection = computed(
     () => this.stored()?.class === 'remote' && this.format()?.mirror === true,
   );
-  /** A project administrator keeps what is stored, pauses and turns the mirror off (Q-REPO-142). */
+  /** An Owner without the capability keeps what is stored, pauses and turns the mirror off (Q-REPO-142). */
   protected readonly mirrorRestricted = computed(
     () => !this.session.has('repositories:write-config'),
   );
@@ -177,14 +186,14 @@ export class RepositoryDetail implements HasUnsavedChanges {
   });
   protected readonly dirty = computed(() => Object.keys(this.patch()).length > 0);
   protected readonly address = computed(() =>
-    clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, this.key()),
+    clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, this.ref()),
   );
   protected readonly documentJson = computed(() => JSON.stringify(this.stored(), null, 2));
   protected readonly patchJson = computed(() => JSON.stringify(this.patch(), null, 2));
   protected readonly curl = computed(() =>
     curlOf(
       'PATCH',
-      apiAddress(valueOf(this.baseUrl), repositoryUrl(this.key())),
+      apiAddress(valueOf(this.baseUrl), repositoryUrl(this.ref())),
       maskSecrets(this.patch()),
       [`If-Match: ${this.etag}`],
     ),
@@ -232,7 +241,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
 
   /** Takes a freshly read representation as the new baseline; a saved draft is restored once. */
   private adopt(value: Versioned<Repository | RepositoryConsumerView>): void {
-    this.recent.add(this.key());
+    this.recent.add(this.ref());
     this.etag = value.etag;
     if (isConsumerView(value.value)) {
       this.consumer.set(value.value);
@@ -265,7 +274,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   }
 
   private async send(patch: JsonObject, etag: string): Promise<void> {
-    const saved = await this.api.patch(this.key(), patch, etag);
+    const saved = await this.api.patch(this.ref(), patch, etag);
     this.etag = saved.etag;
     this.stored.set(saved.value);
     const stored = formOf(saved.value);
@@ -296,7 +305,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
   }
 
   private async sendPause(paused: boolean, etag: string): Promise<void> {
-    const saved = await this.api.patch(this.key(), { remote: { mirror: { paused } } }, etag);
+    const saved = await this.api.patch(this.ref(), { remote: { mirror: { paused } } }, etag);
     this.takeStored(saved.value, saved.etag);
     this.notifier.status(
       paused
@@ -328,7 +337,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     }
     let theirs: Versioned<Repository | RepositoryConsumerView>;
     try {
-      theirs = await this.api.get(this.key());
+      theirs = await this.api.get(this.ref());
     } catch (e) {
       this.failure.set(asApiError(e));
       return;
@@ -365,7 +374,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     // The stored version changed (R-UI-042): read it, then decide.
     let theirs: Versioned<Repository | RepositoryConsumerView>;
     try {
-      theirs = await this.api.get(this.key());
+      theirs = await this.api.get(this.ref());
     } catch (e) {
       this.failure.set(asApiError(e));
       return;
@@ -407,7 +416,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
 
   protected async remove(): Promise<void> {
     const answer = await this.confirm.ask({
-      title: $localize`:@@repo.delete.title:Delete repository ${this.key()}:key:?`,
+      title: $localize`:@@repo.delete.title:Delete repository ${this.ref()}:key:?`,
       lines: [
         $localize`:@@repo.delete.text:The repository and everything in it are deleted for good. Deletion runs as a background job; the key stays taken until it has finished.`,
       ],
@@ -416,7 +425,7 @@ export class RepositoryDetail implements HasUnsavedChanges {
     });
     if (answer === null) return;
     try {
-      const outcome = await this.api.delete(this.key(), newIdempotencyKey());
+      const outcome = await this.api.delete(this.ref(), newIdempotencyKey());
       if (outcome.done) await this.deleted();
       else this.deletion.set(outcome.job);
     } catch (e) {
@@ -424,18 +433,67 @@ export class RepositoryDetail implements HasUnsavedChanges {
     }
   }
 
+  /** The target projects of a move: where the caller is an Owner, every project for an administrator (R-REPO-060). */
+  protected readonly moveTargets = resource({
+    loader: async () => {
+      const own = this.session.projects().filter((p) => p.role === 'owner').map((p) => p.key);
+      if (this.session.has('projects:read')) {
+        return (await collectAll(this.projectsApi.list({}))).map((p) => p.key);
+      }
+      return own;
+    },
+  });
+  protected readonly moveOptions = computed<readonly SelectOption[]>(() => [
+    { value: '', label: $localize`:@@repo.move.choose:Choose a project` },
+    ...(valueOf(this.moveTargets) ?? [])
+      .filter((k) => k !== this.project())
+      .map((k) => ({ value: k, label: k })),
+  ]);
+  /** Moving takes `repositories:write-config`, or the Owner role in both projects (R-REPO-060). */
+  protected readonly canMove = computed(
+    () => this.session.has('repositories:write-config') || this.session.isOwnerOf(this.project()),
+  );
+  protected readonly moveTarget = signal('');
+  protected readonly moving = signal(false);
+
+  /** Moves the repository to another project: its address changes, its key stays (R-REPO-060). */
+  protected async move(): Promise<void> {
+    const target = this.moveTarget();
+    if (!target) return;
+    const answer = await this.confirm.ask({
+      title: $localize`:@@repo.move.title:Move repository ${this.ref()}:key: to project ${target}:project:?`,
+      lines: [
+        $localize`:@@repo.move.text:The repository gets a new address; clients must switch to it. Policies, pins, virtual memberships and CI mappings that name it in this project stop applying, and the move is refused while any of them exists.`,
+      ],
+      confirmLabel: $localize`:@@repo.move.confirm:Move repository`,
+    });
+    if (answer === null) return;
+    this.moving.set(true);
+    this.failure.set(null);
+    try {
+      const moved = await this.api.move(this.ref(), target, newIdempotencyKey());
+      this.notifier.status($localize`:@@repo.move.done:Repository moved to project ${target}:project:.`);
+      this.baseline.set(this.form());
+      await this.router.navigate(['/projects', target, 'repositories', moved.value.key]);
+    } catch (e) {
+      this.failure.set(asApiError(e));
+    } finally {
+      this.moving.set(false);
+    }
+  }
+
   protected async jobEnded(state: string): Promise<void> {
     if (state === 'succeeded') await this.deleted();
     else
       this.notifier.alert(
-        $localize`:@@repo.delete.failed:Deleting repository ${this.key()}:key: failed. Its row is kept; try again.`,
+        $localize`:@@repo.delete.failed:Deleting repository ${this.ref()}:key: failed. Its row is kept; try again.`,
       );
   }
 
   private async deleted(): Promise<void> {
-    this.notifier.status($localize`:@@repo.delete.done:Repository ${this.key()}:key: deleted.`);
+    this.notifier.status($localize`:@@repo.delete.done:Repository ${this.ref()}:key: deleted.`);
     this.baseline.set(this.form());
-    await this.router.navigate(['/admin/repositories']);
+    await this.router.navigate(['/projects', this.project(), 'repositories']);
   }
 
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;

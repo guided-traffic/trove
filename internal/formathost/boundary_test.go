@@ -92,9 +92,9 @@ func TestQ_ARCH_259_APackageTheTransactionRaisedSignalsOnce(t *testing.T) {
 // TestQ_ARCH_260_AWriterWritesToItsOwnRepositoryOnly: a writer bound to the request's or
 // the event's repository refuses EnsureLocked and DeleteItems for any other.
 func TestQ_ARCH_260_AWriterWritesToItsOwnRepositoryOnly(t *testing.T) {
-	own := formats.RepoRef{ID: 7, Key: "npm-local", Class: formats.Local, Format: "npm"}
-	other := formats.RepoRef{ID: 8, Key: "npm-team", Class: formats.Local, Format: "npm"}
-	rq := &formats.Request{Repo: &repository.Repository{Key: "npm-local"}}
+	own := formats.RepoRef{ID: 7, Name: qr("npm-local"), Class: formats.Local, Format: "npm"}
+	other := formats.RepoRef{ID: 8, Name: qr("npm-team"), Class: formats.Local, Format: "npm"}
+	rq := &formats.Request{Repo: &repository.Repository{Name: qr("npm-local")}}
 	rm := &recordRemover{}
 	w := &writer{req: rq, bound: &own, d: writerDeps{remove: rm}}
 
@@ -122,14 +122,14 @@ func TestQ_ARCH_260_TheStoresRefuseARepositoryOutsideTheRequest(t *testing.T) {
 	v.Format = "probe"
 	h := newTestHost(t, &fakeDecider{})
 	ref := func(id int64, key string) formats.RepoRef {
-		return formats.RepoRef{ID: id, Key: key, Class: formats.Local, Format: "probe"}
+		return formats.RepoRef{ID: id, Name: qr(key), Class: formats.Local, Format: "probe"}
 	}
 
 	run := func(t *testing.T, repo repository.Repository, probe func(ctx context.Context) error) error {
 		t.Helper()
 		var got error
 		rq := &formats.Request{
-			Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+repo.Key+"/x", nil),
+			Request: httptest.NewRequest(http.MethodGet, "/api/probe/"+repo.Name.String()+"/x", nil),
 			Repo:    &repo,
 			Route: &formats.Route{Name: "probe.get", Kind: formats.Metadata, Handler: func(ctx context.Context, _ *formats.Request, _ http.ResponseWriter) error {
 				got = probe(ctx)

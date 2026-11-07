@@ -48,7 +48,7 @@ trap cleanup EXIT
 docker network create "$net" >/dev/null
 docker run -d --name "$stub" --network "$net" --network-alias npmstub -v "$work/ca:/ca" "$NPM_STUB_IMAGE" \
   -listen :8443 -self-signed npmstub,localhost -ca-out /ca/ca.crt \
-  -public-url https://localhost:8080/api/npm/npm-all >/dev/null
+  -public-url https://localhost:8080/api/npm/e2e/npm-all >/dev/null
 for _ in $(seq 1 50); do
   [ -s "$work/ca/ca.crt" ] && docker logs "$stub" 2>&1 | grep -q 'npmstub listening' && break
   sleep 0.2

@@ -29,19 +29,19 @@ func mergeFixture() *formattest.MergeFixture {
 			{
 				Name: "a local member and a remote member that share a version", Path: path,
 				Parts: []formats.MemberDocument{
-					{Member: formats.RepoRef{Key: "local"}, Tier: formats.TierLocal, Position: 0, Doc: local("local", "1.0.0")},
+					{Member: formats.RepoRef{Name: qr("local")}, Tier: formats.TierLocal, Position: 0, Doc: local("local", "1.0.0")},
 					remotePart("remote", 1, "", "1.0.0", "2.0.0"),
 				},
-				Sources: []string{"local", "remote"},
+				Sources: []string{"it/local", "it/remote"},
 			},
 			{
 				Name: "a remote member with a cached package before one without, local last", Path: path,
 				Parts: []formats.MemberDocument{
 					remotePart("first", 0, "", "1.0.0", "2.0.0"),
-					{Member: formats.RepoRef{Key: "second"}, Tier: formats.TierRemoteCached, Position: 1, Doc: remotePart("second", 1, "", "1.0.0").Doc},
-					{Member: formats.RepoRef{Key: "third"}, Tier: formats.TierLocal, Position: 2, Doc: local("third", "2.0.0")},
+					{Member: formats.RepoRef{Name: qr("second")}, Tier: formats.TierRemoteCached, Position: 1, Doc: remotePart("second", 1, "", "1.0.0").Doc},
+					{Member: formats.RepoRef{Name: qr("third")}, Tier: formats.TierLocal, Position: 2, Doc: local("third", "2.0.0")},
 				},
-				Sources: []string{"first", "second", "third"},
+				Sources: []string{"it/first", "it/second", "it/third"},
 			},
 		},
 		Versions: func(doc []byte) []string {

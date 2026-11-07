@@ -75,9 +75,9 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 	e, rq := f.e, f.rq
 	rem := rq.Remote
 	if rq.Kind == Artifact && !admitsDigests(rq) {
-		e.m.integrity.WithLabelValues(rem.Repo.Key, "missing").Inc()
+		e.m.integrity.WithLabelValues(rem.Repo.Name.String(), "missing").Inc()
 		return flightResult{err: errs.E(errs.UpstreamFailed, errs.CodeUpstreamDigestMissing,
-			"The upstream announces no SHA-256 or stronger digest for the item, which "+rem.Repo.Key+" requires.")}
+			"The upstream announces no SHA-256 or stronger digest for the item, which "+rem.Repo.Name.String()+" requires.")}
 	}
 	if rq.slot != nil {
 		// The pass's request holds its background slot already (Q-REPO-179): the fetch runs under the slot's fate.
@@ -178,7 +178,7 @@ func (e *Engine) acquireSlot(ctx context.Context, rq Request, fl *flight) (conte
 		return e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, func() bool { return fl.joined.Load() > 0 })
 	}
 	release, wait, err := e.slots.acquire(ctx, rem.id, budget, e.o.Config.QueueTimeout())
-	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
+	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
 	return ctx, release, err
 }
 
@@ -216,7 +216,7 @@ func (f *fetcher) discover(ctx context.Context) error {
 		return err
 	}
 	if doc == nil || doc.Status.Negative || doc.Bytes == nil {
-		return errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rq.Remote.Repo.Key+" has no discovery document, so the addresses of its resources are unknown.")
+		return errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rq.Remote.Repo.Name.String()+" has no discovery document, so the addresses of its resources are unknown.")
 	}
 	b, err := doc.Bytes(ctx)
 	if err != nil {
@@ -287,7 +287,7 @@ func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Respo
 		trace := &httptrace.ClientTrace{WroteHeaderField: func(string, []string) { wrote.Store(true) }}
 		rctx = httptrace.WithClientTrace(rctx, trace)
 		call := outbound.Call{
-			OnBehalfOf: rq.Caller.Principal, Repo: rem.Repo.Key, Attempt: attempt, FlightRole: f.st.role,
+			OnBehalfOf: rq.Caller.Principal, Repo: rem.Repo.Name.String(), Attempt: attempt, FlightRole: f.st.role,
 			CollapsedWaiters: func() int { return int(f.fl.joined.Load()) }, CacheStatus: f.box.get,
 		}
 		if rq.background() {
@@ -298,14 +298,14 @@ func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Respo
 		start := time.Now()
 		resp, err = f.cl.HTTP().Do(req.Clone(rctx))
 		if err == nil {
-			f.e.m.request(rem.Repo.Key, resp.StatusCode)
+			f.e.m.request(rem.Repo.Name.String(), resp.StatusCode)
 			resp.Body = newIdleBody(resp.Body, time.Duration(rem.Settings.ReadTimeoutMs)*time.Millisecond, rcancel, idle, func() {
-				f.e.m.upstreamDur.WithLabelValues(rem.Repo.Key).Observe(time.Since(start).Seconds())
+				f.e.m.upstreamDur.WithLabelValues(rem.Repo.Name.String()).Observe(time.Since(start).Seconds())
 			})
 			return resp, rcancel, idle, nil
 		}
 		rcancel()
-		f.e.m.request(rem.Repo.Key, 0)
+		f.e.m.request(rem.Repo.Name.String(), 0)
 		if attempt >= 2 || wrote.Load() || !retryable(err) || ctx.Err() != nil {
 			return nil, nil, idle, err
 		}
@@ -345,10 +345,10 @@ func (f *fetcher) failed(ctx context.Context, fail failure) flightResult {
 		e.circuitFailure(context.WithoutCancel(ctx), rem, why, fail.retryAfter)
 	}
 	if fail.sourceNetwork {
-		e.m.sourceNet.WithLabelValues(rem.Repo.Key).Inc()
+		e.m.sourceNet.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
 	if fail.egress {
-		e.m.egressDenied.WithLabelValues(rem.Repo.Key).Inc()
+		e.m.egressDenied.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
 	switch fail.event {
 	case "egress":
@@ -398,7 +398,7 @@ func (f *fetcher) notFound(ctx context.Context, resp *http.Response) flightResul
 	e, rq := f.e, f.rq
 	rem := rq.Remote
 	if err := e.neg.record(ctx, rem, rq.Path, rq.Variant, resp.StatusCode, f.sentAt); err != nil {
-		e.log.Warn("recording a negative entry failed", "repo", rem.Repo.Key, "error", err)
+		e.log.Warn("recording a negative entry failed", "repo", rem.Repo.Name, "error", err)
 	}
 	if rq.Kind == Metadata && f.haveStored {
 		if _, err := e.markGone(ctx, rq); err != nil {
@@ -464,7 +464,7 @@ func (f *fetcher) admitBody(ctx context.Context, resp *http.Response) (flightRes
 	}
 	if f.contentTypeBlocked(resp) {
 		return f.failed(ctx, failure{count: true, status: resp.StatusCode, err: errs.E(errs.UpstreamFailed, errs.CodeUpstreamContentTypeBlocked,
-			"The upstream of "+rem.Repo.Key+" answered with a media type that is not expected for the item.")}), false
+			"The upstream of "+rem.Repo.Name.String()+" answered with a media type that is not expected for the item.")}), false
 	}
 	if lim := f.limit(); lim > 0 && resp.ContentLength > lim {
 		return flightResult{err: tooLarge(rem), status: resp.StatusCode}, false
@@ -474,7 +474,7 @@ func (f *fetcher) admitBody(ctx context.Context, resp *http.Response) (flightRes
 
 func tooLarge(rem Remote) error {
 	return errs.E(errs.UpstreamFailed, errs.CodeUpstreamItemTooLarge,
-		"The upstream item is larger than the limit of "+rem.Repo.Key+".")
+		"The upstream item is larger than the limit of "+rem.Repo.Name.String()+".")
 }
 
 // asUpstreamError keeps an *errs.Error and gives any other error of an adapter the

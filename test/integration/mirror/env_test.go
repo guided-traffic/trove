@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/guided-traffic/trove/internal/app"
@@ -37,6 +39,9 @@ import (
 func TestMain(m *testing.M) { os.Exit(testenv.Main(m)) }
 
 const repoKey = "npm-mirror"
+
+// repoName is the qualified name the audit events and the metric labels carry (R-REPO-002).
+const repoName = testenv.DefaultProject + "/" + repoKey
 
 // settings are the members of remote.mirror a test sets; the others keep their defaults.
 type settings map[string]any
@@ -310,7 +315,7 @@ func (e *env) jobResult(state string) map[string]any {
 }
 
 func (e *env) auditCount(typ string) int64 {
-	return e.st.Number(`SELECT count(*) FROM audit_event WHERE action = $1 AND repository = $2`, typ, repoKey)
+	return e.st.Number(`SELECT count(*) FROM audit_event WHERE action = $1 AND repository = $2`, typ, repoName)
 }
 
 // waitAudit waits until the asynchronous writer has written n events of the type (it writes once a second), then lets one more
@@ -318,7 +323,7 @@ func (e *env) auditCount(typ string) int64 {
 func (e *env) waitAudit(typ string, n int64) int64 {
 	e.t.Helper()
 	testenv.WaitFor(e.t, fmt.Sprintf("%d %s events", n, typ), 20*time.Second, func() bool {
-		c, err := e.st.TryNumber(`SELECT count(*) FROM audit_event WHERE action = $1 AND repository = $2`, typ, repoKey)
+		c, err := e.st.TryNumber(`SELECT count(*) FROM audit_event WHERE action = $1 AND repository = $2`, typ, repoName)
 		return err == nil && c >= n
 	})
 	time.Sleep(1500 * time.Millisecond)
@@ -339,7 +344,7 @@ func (e *env) waitMaxBytes(rep *testenv.Replica, want int64) {
 func (e *env) waitMirror(rep *testenv.Replica, what string, cond func(s repository.RemoteSettings) bool) {
 	e.t.Helper()
 	testenv.WaitFor(e.t, "the snapshot to hold "+what, 30*time.Second, func() bool {
-		r, err := rep.App.Repositories().ByKey(context.Background(), repoKey)
+		r, err := rep.App.Repositories().ByName(context.Background(), testenvName(repoKey))
 		if err != nil {
 			return false
 		}
@@ -347,3 +352,6 @@ func (e *env) waitMirror(rep *testenv.Replica, what string, cond func(s reposito
 		return ok && cond(s)
 	})
 }
+
+// testenvName is the name of a repository key in the default project of the stack.
+func testenvName(key string) qname.Repo { return qname.Repo{Project: testenv.DefaultProject, Key: key} }

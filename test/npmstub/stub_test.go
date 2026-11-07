@@ -160,7 +160,7 @@ func TestServesFullAndAbbreviatedDocuments(t *testing.T) {
 }
 
 func TestPublicURLSetsTarballAddresses(t *testing.T) {
-	f := newFixture(t, Config{PublicURL: "https://localhost:8080/api/npm/npm-all/"})
+	f := newFixture(t, Config{PublicURL: "https://localhost:8080/api/npm/e2e/npm-all/"})
 	_, name := names(t)
 	var d struct {
 		Versions map[string]struct{ Dist struct{ Tarball string } }
@@ -169,7 +169,7 @@ func TestPublicURLSetsTarballAddresses(t *testing.T) {
 		t.Fatal(err)
 	}
 	for v, e := range d.Versions {
-		if want := "https://localhost:8080/api/npm/npm-all/" + name + "/-/" + corpus.TarballFile(name, v); e.Dist.Tarball != want {
+		if want := "https://localhost:8080/api/npm/e2e/npm-all/" + name + "/-/" + corpus.TarballFile(name, v); e.Dist.Tarball != want {
 			t.Fatalf("%s: %s", v, e.Dist.Tarball)
 		}
 	}

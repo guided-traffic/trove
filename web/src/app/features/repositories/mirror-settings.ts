@@ -81,7 +81,7 @@ interface NumberMember {
  * The **Mirror** section of a remote repository of a format with `mirror: true` (R-UI-021,
  * R-REPO-050, Q-UI-104): the mode and the members of `remote.mirror`, in the wizard's class-specific
  * step and on the edit form. The members show in mode `mirror` only. A member left empty, or equal
- * to its default, is not written (Q-UI-80). A project administrator (`restricted`) sees the section
+ * to its default, is not written (Q-UI-80). A project Owner (`restricted`) sees the section
  * read-only except **Pause** and **Turn off** (Q-REPO-142). Server field errors (`/remote/mode`,
  * `/remote/mirror/...`) appear at their controls.
  */
@@ -330,7 +330,7 @@ export class MirrorSettings {
    * the format's well-known upstream, which is what a create without a URL takes.
    */
   readonly upstreamUrl = input<string | null>(null);
-  /** A project administrator: read-only except Pause and Turn off (Q-REPO-142). */
+  /** A project Owner: read-only except Pause and Turn off (Q-REPO-142). */
   readonly restricted = input(false);
   /** Server field problems by pointer (`ApiError.fieldErrors`). */
   readonly fieldErrors = input<ReadonlyMap<string, FieldProblem>>(new Map());

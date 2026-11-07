@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -28,8 +30,8 @@ func (s *Service) state(ecosystem string) advisory.DataState {
 
 // view returns the view of a repository by key; false for a repository that does not exist or that the scanning does not
 // apply to.
-func (s *Service) view(ctx context.Context, key string) (repoView, repository.Repository, bool, error) {
-	repo, err := s.o.Repos.ByKey(ctx, key)
+func (s *Service) view(ctx context.Context, name qname.Repo) (repoView, repository.Repository, bool, error) {
+	repo, err := s.o.Repos.ByName(ctx, name)
 	if err != nil {
 		if e, ok := errs.As(err); ok && e.Kind == errs.NotFound {
 			return repoView{}, repository.Repository{}, false, nil
@@ -175,7 +177,7 @@ func (s *Service) EvaluateMiss(ctx context.Context, m vuln.Miss) (vuln.Block, er
 	if !s.o.Enabled {
 		return vuln.Block{}, nil
 	}
-	rv, repo, ok, err := s.view(ctx, m.RepoKey)
+	rv, repo, ok, err := s.view(ctx, m.Repo)
 	if err != nil || !ok || !rv.Settings.Enabled || rv.Class != repository.Remote {
 		return vuln.Block{}, err // only a remote repository has a miss
 	}

@@ -36,7 +36,7 @@ func shadowWorld(t *testing.T) *world {
 
 func (w *world) shadow(sub authz.Subject, name string) (virtual.ShadowOutcome, error) {
 	w.t.Helper()
-	idx, err := w.authz.Begin(w.t.Context(), sub, "npm-local", "npm-all")
+	idx, err := w.authz.Begin(w.t.Context(), sub, qr("npm-local"), qr("npm-all"))
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func (w *world) shadow(sub authz.Subject, name string) (virtual.ShadowOutcome, e
 }
 
 func shadowCount(t *testing.T, w *world, outcome string) float64 {
-	return counter(t, w.reg, "trove_shadow_checks_total", map[string]string{"repo": "npm-local", "outcome": outcome})
+	return counter(t, w.reg, "trove_shadow_checks_total", map[string]string{"repo": "it/npm-local", "outcome": outcome})
 }
 
 func TestR_REPO_048_Outcomes(t *testing.T) {
@@ -98,7 +98,7 @@ func TestR_REPO_048_Outcomes(t *testing.T) {
 		if refusal == nil || refusal.Kind != errs.Forbidden || refusal.Code != errs.CodeShadowsRemotePackage {
 			t.Fatalf("refusal = %v", out.Err("lodash"))
 		}
-		if !slices.Equal(out.Virtuals, []string{"npm-all"}) {
+		if !slices.Equal(out.Virtuals, []string{"it/npm-all"}) {
 			t.Fatalf("virtual repositories named: %v", out.Virtuals)
 		}
 		if refusal.Detail == "" || containsAny(refusal.Detail, "npm-remote") {
@@ -109,7 +109,7 @@ func TestR_REPO_048_Outcomes(t *testing.T) {
 		if err != nil || !out.Proceed || out.Outcome != virtual.OutcomeShadowingApproved || out.Undetermined || out.Err("lodash") != nil {
 			t.Fatalf("lead: out %+v err %v", out, err)
 		}
-		if len(out.Shadowed) != 1 || out.Shadowed[0].Virtual.Key != "npm-all" || out.Shadowed[0].Remote.Key != "npm-remote" {
+		if len(out.Shadowed) != 1 || out.Shadowed[0].Virtual.Name.Key != "npm-all" || out.Shadowed[0].Remote.Name.Key != "npm-remote" {
 			t.Fatalf("the audit event lacks the pairs: %+v", out.Shadowed)
 		}
 	})
@@ -210,7 +210,7 @@ func TestR_REPO_048_Outcomes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		idx, _ := w.authz.Begin(t.Context(), ciBot, "npm-local")
+		idx, _ := w.authz.Begin(t.Context(), ciBot, qr("npm-local"))
 		out, err := r.ShadowCheck(t.Context(), virtual.Caller{Subject: ciBot, Index: idx}, local, "x", "x")
 		if err != nil || out.Proceed || out.Code != errs.CodeShadowCheckUnavailable {
 			t.Fatalf("out %+v err %v", out, err)
@@ -219,7 +219,7 @@ func TestR_REPO_048_Outcomes(t *testing.T) {
 
 	t.Run("R-REPO-048 a repository that is not local is not checked", func(t *testing.T) {
 		w := shadowWorld(t)
-		idx, _ := w.authz.Begin(t.Context(), ciBot, "npm-all")
+		idx, _ := w.authz.Begin(t.Context(), ciBot, qr("npm-all"))
 		out, err := w.r.ShadowCheck(t.Context(), virtual.Caller{Subject: ciBot, Index: idx}, remote, "x", "x")
 		if err != nil || !out.Proceed {
 			t.Fatalf("out %+v err %v", out, err)
@@ -242,7 +242,7 @@ func TestR_REPO_048_OneProbePerPublish(t *testing.T) {
 			t.Fatalf("pairs = %+v", out.Shadowed)
 		}
 		refused, _ := w.shadow(ciBot, "lodash")
-		if !slices.Equal(refused.Virtuals, []string{"npm-all"}) {
+		if !slices.Equal(refused.Virtuals, []string{"it/npm-all"}) {
 			t.Fatalf("ci-bot is told about %v and may only read npm-all", refused.Virtuals)
 		}
 	})
@@ -263,7 +263,7 @@ func TestR_REPO_048_OneProbePerPublish(t *testing.T) {
 		w := shadowWorld(t)
 		var got virtual.RemoteCall
 		w.remote.OnProbe = func(rc virtual.RemoteCall) { got = rc }
-		idx, _ := w.authz.Begin(t.Context(), ciBot, "npm-local")
+		idx, _ := w.authz.Begin(t.Context(), ciBot, qr("npm-local"))
 		_, err := w.r.ShadowCheck(t.Context(), virtual.Caller{Subject: ciBot, Index: idx}, local, "@acme/util", "@acme/util")
 		if err != nil || got.Path != "@acme/util" || got.Package != "@acme/util" || got.MayFill || got.Subject.ID != ciBot.ID {
 			t.Fatalf("probe call %+v err %v", got, err)

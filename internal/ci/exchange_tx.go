@@ -271,7 +271,7 @@ func (s *ExchangeService) mint(ctx context.Context, tx meta.Tx, qs exchangeQueri
 	names := make([]string, 0, len(sel.Contributions))
 	for _, c := range sel.Contributions {
 		f.Add(c.Frozen())
-		names = append(names, c.Mapping.Name)
+		names = append(names, c.Mapping.ShortName())
 	}
 	// Step 8, the scope, before step 9, the lifetime (R-CI-007's order).
 	sc, ee := narrow(f, p.items, s.o.Grants.CIScope(&f))
@@ -393,7 +393,7 @@ func boundedAgent(ua string) string {
 func auditSucceeded(req ExchangeRequest, owner Mapping, tok token.CITIssued, details []byte) audit.Event {
 	return audit.Event{
 		Type: audit.EventCIExchangeSucceeded, Outcome: audit.Success,
-		Actor:   audit.Actor{Kind: string(principal.KindCI), ID: owner.PrincipalID, Name: owner.Issuer + "/" + owner.Name},
+		Actor:   audit.Actor{Kind: string(principal.KindCI), ID: owner.PrincipalID, Name: owner.PrincipalName()},
 		Source:  req.Source,
 		Subject: audit.Subject{Kind: "token", ID: tok.ID, Name: tok.Hint}, Details: details,
 	}

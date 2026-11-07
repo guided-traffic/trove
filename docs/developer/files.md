@@ -1,6 +1,6 @@
 # Files transfer and items
 
-The raw file path of a repository: `PUT`, `GET`, `HEAD` and `DELETE` on `/files/{repoKey}/{path}`, and the items operations
+The raw file path of a repository: `PUT`, `GET`, `HEAD` and `DELETE` on `/files/{projectKey}/{repoKey}/{path}`, and the items operations
 of the management API (`items`, `children`, `stats`). Requirements: [R-STOR-007, R-STOR-012, R-STOR-013, R-STOR-015 to
 R-STOR-018](../spec/storage.md), [R-GENERIC-002 to R-GENERIC-008](../spec/formats/generic.md),
 [R-API-025](../spec/api-and-ui.md), [R-ARCH-007, R-ARCH-011, R-ARCH-014, R-ARCH-024](../spec/architecture.md). The transfer is three
@@ -53,7 +53,7 @@ quotas are P1.
 | [api/edge/links.go](../../internal/api/edge/links.go) | `Links` (the one place that builds content URLs, R-ARCH-007; `ContentPath` is the relative content route and `ItemView.ContentURL` its member), `ItemView`, `DescribeItem` (the JSON description) |
 | [api/edge/json.go](../../internal/api/edge/json.go), [list.go](../../internal/api/edge/list.go) | `WriteJSON`, `WriteJob` (202 with the job and its `Location`); `ParseList`, `ListQuery`, `InvalidCursor` |
 | [rawfiles/handler.go](../../internal/api/rawfiles/handler.go) | routes, path parsing, `caller` (begins the index), `get` / `put` / `delete` |
-| [rawfiles/content.go](../../internal/api/rawfiles/content.go) | `Content`: the UI's content routes `GET`, `HEAD`, `PUT /api/v1/repositories/{repoKey}/content/{path...}` (R-API-025, Q-UI-106): the session check, `splitContentPath`, the upload limit `limitBody`, the hiding of the other methods from a caller who is not the session (Q-ARCH-307); everything else is `Handler.serve` |
+| [rawfiles/content.go](../../internal/api/rawfiles/content.go) | `Content`: the UI's content routes `GET`, `HEAD`, `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}` (R-API-025, Q-UI-106): the session check, `qname.ParseContentAddress` (the one parser of the content path), the upload limit `limitBody`, the hiding of the other methods from a caller who is not the session (Q-ARCH-307); everything else is `Handler.serve` |
 | [rawfiles/index.go](../../internal/api/rawfiles/index.go) | the directory index, HTML and JSON |
 | [httpserver/content.go](../../internal/httpserver/content.go) | `ContentWriter`, `ContentWriterFor`: the content headers of R-ARCH-007, `same-origin` for a request the session cookie authenticated (Q-ARCH-86) |
 | [httpserver/router.go](../../internal/httpserver/router.go) | `Router.HandleUncleaned`: paths `ServeMux` would redirect reach the handler; `Router.HideMethods`: the fallback's 404 instead of a 405 for a caller a route hides itself from |
@@ -82,8 +82,8 @@ test authentication presents a session with the header `X-Test-Session`).
 ## Request path
 
 ```text
-/files/{repoKey}/{path...}   (routes registered by rawfiles.Handler.Register; HandleUncleaned takes "a//b" and "a/../b")
-  splitPath(EscapedPath)  ->  key, rest (still escaped)
+/files/{projectKey}/{repoKey}/{path...}   (routes registered by rawfiles.Handler.Register; HandleUncleaned takes "a//b" and "a/../b")
+  splitPath(EscapedPath)  ->  qname.ParseAddress: project and key, rest (still escaped); one segment or a "%" in a named segment is 404
   repository.CleanPath(rest)            400 invalid_path, before any authorization (R-GENERIC-002)
   Handler.caller(r, key)                 edge.Resolve: the request's index, begun once, with the key made known
                                          (R-ARCH-011 step 2, R-API-052); 503 authz_stale / 412 authz_epoch_unknown
@@ -101,7 +101,7 @@ policy, `Cross-Origin-Resource-Policy` and `Content-Disposition` (the index set 
 applies them again at `WriteHeader` and at the first `Write`, so a handler cannot weaken them. The resource policy is `same-origin`
 when the session cookie authenticated `r` and `same-site` otherwise (Q-ARCH-86); `ContentWriter` without a request is `same-site`.
 
-The path tail is refused with `400 invalid_path` when it starts with a slash (`/files/<key>//x`), before `CleanPath` drops one
+The path tail is refused with `400 invalid_path` when it starts with a slash (`/files/<project>/<key>//x`), before `CleanPath` drops one
 leading slash; the stored media type is the request's `Content-Type` parsed with `mime.ParseMediaType` and written back with
 `mime.FormatMediaType` (a value that does not parse is `400 invalid_header`).
 

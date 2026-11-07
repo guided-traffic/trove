@@ -101,7 +101,7 @@ export interface TokenDraft {
             [required]="true"
             [error]="fieldError('/scope/repositories', 'repositories')"
             i18n-hint="@@token-form.repositories-hint"
-            hint="One repository key or pattern per line, for example npm-internal or npm-team-*."
+            hint="One project/key or pattern per line, for example web/npm-internal or web/npm-team-*; or a class such as @any-local."
           />
           <trove-text-field
             i18n-label="@@token-form.packages"
@@ -196,7 +196,7 @@ export class TokenForm {
   readonly allowNonExpiring = input(false);
   /**
    * The lifetime is capped by the installation's maximum for service-account tokens, as for the tokens a
-   * project administrator issues (R-AUTHZ-026): the form says so and the server refuses a longer one.
+   * project Owner issues (R-AUTHZ-026): the form says so and the server refuses a longer one.
    */
   readonly lifetimeCapped = input(false);
   /** The type of the token this form creates; it decides which endpoints can be offered. */

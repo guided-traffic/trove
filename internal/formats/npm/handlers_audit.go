@@ -83,7 +83,7 @@ type auditForwarder struct {
 // whose mode is forward, whoever asks, and the caller needs read on it (R-AUTHZ-016).
 func (f *Format) forwarder(ctx context.Context, rq *formats.Request) (*auditForwarder, error) {
 	if rq.CacheView || rq.Endpoint.Rules || !rq.Endpoint.CacheFill {
-		return nil, auditUnavailable(rq.Repo.Key)
+		return nil, auditUnavailable(rq.Repo.Name.String())
 	}
 	switch rq.Repo.Class {
 	case formats.Remote:
@@ -112,7 +112,7 @@ func (f *Format) forwarder(ctx context.Context, rq *formats.Request) (*auditForw
 			return &auditForwarder{rq: mrq, set: s, virtualID: rq.RepoRef().ID}, nil
 		}
 	}
-	return nil, auditUnavailable(rq.Repo.Key)
+	return nil, auditUnavailable(rq.Repo.Name.String())
 }
 
 // handleAudit answers POST -/npm/v1/security/advisories/bulk (R-NPM-038, R-VULN-017): from trove's own advisory
@@ -153,7 +153,7 @@ func (f *Format) handleAuditForward(ctx context.Context, rq *formats.Request, w 
 	if err != nil {
 		return err
 	}
-	body, err := readAuditBody(rq.Request, fw.rq.Repo.Key, fw.set.MaxBodySize)
+	body, err := readAuditBody(rq.Request, fw.rq.Repo.Name.String(), fw.set.MaxBodySize)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func (f *Format) handleAuditForward(ctx context.Context, rq *formats.Request, w 
 		return err
 	}
 	rep := f.replicaOf(rq.Host)
-	rep.met.auditWithheld(fw.rq.Repo.Key, withheld)
+	rep.met.auditWithheld(fw.rq.Repo.Name.String(), withheld)
 	notice := ""
 	if n := len(body) - len(forward); n > 0 {
 		notice = fmt.Sprintf(auditPartialNotice, len(forward), len(body), n)
@@ -183,16 +183,16 @@ func (f *Format) handleAuditForward(ctx context.Context, rq *formats.Request, w 
 	})
 	switch {
 	case errors.Is(err, formats.ErrOffline):
-		return auditUnavailable(rq.Repo.Key)
+		return auditUnavailable(rq.Repo.Name.String())
 	case err != nil:
-		return providerFailed(fw.rq.Repo.Key, err)
+		return providerFailed(fw.rq.Repo.Name.String(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return providerStatus(fw.rq.Repo.Key, resp.StatusCode)
+		return providerStatus(fw.rq.Repo.Name.String(), resp.StatusCode)
 	}
 	if resp.ContentLength > MaxDocumentBytes {
-		return errs.E(errs.UpstreamFailed, errs.CodeUpstreamItemTooLarge, "The answer of the advisory provider of "+fw.rq.Repo.Key+" is too large.")
+		return errs.E(errs.UpstreamFailed, errs.CodeUpstreamItemTooLarge, "The answer of the advisory provider of "+fw.rq.Repo.Name.String()+" is too large.")
 	}
 	auditHeaders(w, notice)
 	h := w.Header()

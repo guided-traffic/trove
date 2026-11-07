@@ -3,6 +3,7 @@ package principal
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -215,7 +216,8 @@ type GroupPatch struct {
 // UpdateGroup renames a group or changes its description or auto-join flag
 // (R-AUTH-018, R-AUTH-019). A group with origin scim answers 409
 // managed_by_scim; auto-join on a group with an administration role binding
-// answers 409 auto_join_admin_conflict.
+// answers 409 auto_join_admin_conflict, and on a group that is a member of a
+// project 409 auto_join_member_conflict (R-AUTHZ-026).
 func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p GroupPatch) (Group, error) {
 	final := name
 	err := m.db.InTx(ctx, func(tx meta.Tx) error {
@@ -252,6 +254,14 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 			}
 			if admin {
 				return errs.E(errs.Conflict, errs.CodeAutoJoinAdminConflict, "A group with an administration role binding cannot be an auto-join group.")
+			}
+			projects, err := qs.IdentityGroupProjects(ctx, g.ID)
+			if err != nil {
+				return err
+			}
+			if len(projects) > 0 {
+				return errs.E(errs.Conflict, errs.CodeAutoJoinMemberConflict,
+					"A group that is a member of a project cannot be an auto-join group: "+strings.Join(projects, ", ")+".")
 			}
 		}
 		if p.Description != nil || p.AutoJoin != nil {

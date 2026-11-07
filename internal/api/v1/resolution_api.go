@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -14,7 +16,7 @@ import (
 )
 
 // The resolution explanation of a virtual repository (R-REPO-019): GET
-// /api/v1/repositories/{repoKey}/resolution?path=. The operation declares the gate
+// /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution?path=. The operation declares the gate
 // of step 1, read on the virtual repository, which the shared step decides before
 // the handler runs; the per-member read, the claims and the state of the members are
 // the engine's, for the calling principal.
@@ -27,8 +29,9 @@ type ResolutionExplainer interface {
 
 var _ ResolutionExplainer = (*virtual.Resolver)(nil)
 
-// GetRepositoryResolution implements GET /api/v1/repositories/{repoKey}/resolution.
-func (s *Server) GetRepositoryResolution(w http.ResponseWriter, r *http.Request, repoKey string, params gen.GetRepositoryResolutionParams) {
+// GetRepositoryResolution implements GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution.
+func (s *Server) GetRepositoryResolution(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, params gen.GetRepositoryResolutionParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ex, err := s.explainer()
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -40,11 +43,11 @@ func (s *Server) GetRepositoryResolution(w http.ResponseWriter, r *http.Request,
 	}
 	var v repository.Repository
 	if err == nil {
-		v, err = s.o.Repositories.Reader.ByKey(ctx, repoKey)
+		v, err = s.o.Repositories.Reader.ByName(ctx, repoKey)
 	}
 	if err == nil && v.Class != repository.Virtual {
 		err = errs.E(errs.Invalid, errs.CodeNotApplicable,
-			"Only a virtual repository has a resolution; "+strconv.Quote(repoKey)+" is a "+string(v.Class)+" repository.")
+			"Only a virtual repository has a resolution; "+strconv.Quote(repoKey.String())+" is a "+string(v.Class)+" repository.")
 	}
 	var d virtual.Descriptor
 	if err == nil {

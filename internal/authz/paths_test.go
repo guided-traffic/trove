@@ -23,7 +23,7 @@ func TestPathsAllowed(t *testing.T) {
 	paths := []string{"releases", "releases/1.0/x.bin", "releases/secret/k", "tmp/x.bin", ""}
 
 	t.Run("R-AUTHZ-016 R-STOR-017 a listing keeps the paths the subject may read, by the patterns of its grant", func(t *testing.T) {
-		got, err := e.PathsAllowed(ctx, alice, Coordinate{Repository: "generic-local"}, Read, paths, nil)
+		got, err := e.PathsAllowed(ctx, alice, Coordinate{Repository: qr("generic-local")}, Read, paths, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -34,11 +34,11 @@ func TestPathsAllowed(t *testing.T) {
 	})
 
 	t.Run("R-STOR-018 delete is decided for the action it names", func(t *testing.T) {
-		got, err := e.PathsAllowed(ctx, alice, Coordinate{Repository: "generic-local"}, Delete, []string{"releases/1.0/x.bin"}, nil)
+		got, err := e.PathsAllowed(ctx, alice, Coordinate{Repository: qr("generic-local")}, Delete, []string{"releases/1.0/x.bin"}, nil)
 		if err != nil || !got[0] {
 			t.Fatalf("delete = %v, %v", got, err)
 		}
-		got, _ = e.PathsAllowed(ctx, alice, Coordinate{Repository: "generic-local"}, Deploy, []string{"releases/1.0/x.bin"}, nil)
+		got, _ = e.PathsAllowed(ctx, alice, Coordinate{Repository: qr("generic-local")}, Deploy, []string{"releases/1.0/x.bin"}, nil)
 		if got[0] {
 			t.Fatal("deploy was allowed without a grant")
 		}
@@ -46,7 +46,7 @@ func TestPathsAllowed(t *testing.T) {
 
 	t.Run("R-AUTHZ-016 a repository the subject has no grant on, or that does not exist, allows nothing", func(t *testing.T) {
 		for _, repo := range []string{"other", "missing"} {
-			got, err := e.PathsAllowed(ctx, alice, Coordinate{Repository: repo}, Read, []string{"releases/x"}, nil)
+			got, err := e.PathsAllowed(ctx, alice, Coordinate{Repository: qr(repo)}, Read, []string{"releases/x"}, nil)
 			if err != nil || got[0] {
 				t.Fatalf("%s = %v, %v", repo, got, err)
 			}
@@ -60,7 +60,7 @@ func TestPathsAllowed(t *testing.T) {
 	})
 
 	t.Run("R-AUTHZ-016 an anonymous subject is answered 401 while anonymous access is off", func(t *testing.T) {
-		_, err := e.PathsAllowed(ctx, Subject{Anonymous: true}, Coordinate{Repository: "generic-local"}, Read, paths, nil)
+		_, err := e.PathsAllowed(ctx, Subject{Anonymous: true}, Coordinate{Repository: qr("generic-local")}, Read, paths, nil)
 		var ee *errs.Error
 		if !errors.As(err, &ee) || ee.Kind != errs.Unauthenticated {
 			t.Fatalf("err = %v", err)
@@ -102,7 +102,7 @@ func TestR_EP_014_PathsAllowedClassifies(t *testing.T) {
 		{"R-AUTHZ-005 a grant without patterns reads every path, classified or not", userSub(idBob, "bob"), Read, classify, []bool{true, true, true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := e.PathsAllowed(ctx, tc.sub, Coordinate{Repository: "npm-local"}, tc.a, paths, tc.classify)
+			got, err := e.PathsAllowed(ctx, tc.sub, Coordinate{Repository: qr("npm-local")}, tc.a, paths, tc.classify)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +110,7 @@ func TestR_EP_014_PathsAllowedClassifies(t *testing.T) {
 				t.Fatalf("PathsAllowed = %v, want %v", got, tc.want)
 			}
 			for i, p := range paths {
-				c := Coordinate{Repository: "npm-local", Path: p, Kind: KindMetadata, Actions: []Action{tc.a}}
+				c := Coordinate{Repository: qr("npm-local"), Path: p, Kind: KindMetadata, Actions: []Action{tc.a}}
 				if tc.a != Read {
 					c.Kind = KindWrite
 				}

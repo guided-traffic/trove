@@ -62,6 +62,8 @@ func TestR_VULN_025_TheRefusals(t *testing.T) {
 		{"the ecosystem is spelled as OSV spells it", "vulnerabilities:\n  sources:\n    osv:\n      ecosystems: [nuget]\n", nil, []string{"vulnerabilities.sources.osv.ecosystems"}},
 		{"mode repository without repository", "vulnerabilities:\n  sources:\n    osv:\n      mode: repository\n", nil, []string{"vulnerabilities.sources.osv.repository"}},
 		{"kev mode repository without repository", "vulnerabilities:\n  sources:\n    kev:\n      mode: repository\n", nil, []string{"vulnerabilities.sources.kev.repository"}},
+		{"a bare key as the mirror repository (Q-AUTHZ-206)", "vulnerabilities:\n  sources:\n    osv:\n      mode: repository\n      repository: vuln-mirror\n", nil, []string{"vulnerabilities.sources.osv.repository", "qualified name"}},
+		{"a pattern as the kev repository", "vulnerabilities:\n  sources:\n    kev:\n      mode: off\n      repository: platform/vuln-*\n", nil, []string{"vulnerabilities.sources.kev.repository"}},
 		{"an http base url", "vulnerabilities:\n  sources:\n    osv:\n      base_url: http://osv.example.com/\n", nil, []string{"vulnerabilities.sources.osv.base_url", "https"}},
 		{"an http kev url", "vulnerabilities:\n  sources:\n    kev:\n      url: http://kev.example.com/k.json\n", nil, []string{"vulnerabilities.sources.kev.url"}},
 		{"a base url from the environment", "", []string{"TROVE_VULNERABILITIES_SOURCES_OSV_BASE_URL=ftp://x/"}, []string{"vulnerabilities.sources.osv.base_url"}},
@@ -87,13 +89,13 @@ func TestR_VULN_025_TheRefusals(t *testing.T) {
 
 func TestR_VULN_025_WhatIsAccepted(t *testing.T) {
 	for name, file := range map[string]string{
-		"a narrowed list":                "vulnerabilities:\n  sources:\n    osv:\n      ecosystems: [NuGet]\n",
-		"mode repository with a key":     "vulnerabilities:\n  sources:\n    osv:\n      mode: repository\n      repository: vuln-mirror\n    kev:\n      mode: repository\n      repository: vuln-mirror\n",
-		"mode off":                       "vulnerabilities:\n  sources:\n    osv:\n      mode: off\n    kev:\n      mode: off\n",
-		"report mode":                    "vulnerabilities:\n  enforcement: report\n",
-		"an internal mirror's own https": "vulnerabilities:\n  sources:\n    osv:\n      base_url: https://osv-mirror.corp.example/osv/\n",
-		"max_shrink at the bounds":       "vulnerabilities:\n  sources:\n    osv:\n      max_shrink: 1\n",
-		"another public upstream list":   "vulnerabilities:\n  matching:\n    public_upstreams:\n      npm: [registry.npmjs.org, registry.npmmirror.com]\n",
+		"a narrowed list":                       "vulnerabilities:\n  sources:\n    osv:\n      ecosystems: [NuGet]\n",
+		"mode repository with a qualified name": "vulnerabilities:\n  sources:\n    osv:\n      mode: repository\n      repository: platform/vuln-mirror\n    kev:\n      mode: repository\n      repository: platform/vuln-mirror\n",
+		"mode off":                              "vulnerabilities:\n  sources:\n    osv:\n      mode: off\n    kev:\n      mode: off\n",
+		"report mode":                           "vulnerabilities:\n  enforcement: report\n",
+		"an internal mirror's own https":        "vulnerabilities:\n  sources:\n    osv:\n      base_url: https://osv-mirror.corp.example/osv/\n",
+		"max_shrink at the bounds":              "vulnerabilities:\n  sources:\n    osv:\n      max_shrink: 1\n",
+		"another public upstream list":          "vulnerabilities:\n  matching:\n    public_upstreams:\n      npm: [registry.npmjs.org, registry.npmmirror.com]\n",
 	} {
 		if _, err := loadVuln(t, file); err != nil {
 			t.Errorf("%s: %v", name, err)

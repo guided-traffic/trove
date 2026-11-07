@@ -6,7 +6,9 @@ before using a new term in a German text.
 | English | German |
 |---|---|
 | permission policy | Berechtigungsrichtlinie |
-| project (administrators, switches; project policy, project service account) | Projekt (Administratoren, Schalter; Projekt-Richtlinie, Servicekonto des Projekts) |
+| project (members; project policy, project service account) | Projekt (Mitglieder; Projekt-Richtlinie, Servicekonto des Projekts) |
+| project member, project role (Reader, Developer, Maintainer, Owner) | Projektmitglied, Projektrolle (Leser, Entwickler, Maintainer, Eigentümer) |
+| move (a repository to another project) | verschieben |
 | repository | Repository |
 | status | Status |
 | management API | Management-API |
@@ -76,9 +78,11 @@ before using a new term in a German text.
 | known exploited (CISA list) | bekannt ausgenutzt |
 | resolved (finding) | behoben |
 | advisory source, mirror repository | Advisory-Quelle, Spiegel-Repository |
+| security dashboard (admin area), advisory ID (CVE, GHSA) | Sicherheits-Dashboard, Advisory-Kennung |
 | mirror (mode of a remote repository), pull-through, pass (of a mirror) | Mirror, Pull-through, Durchlauf |
 | mirror state (off, paused, scheduled, running, waiting, bound reached, failing) | Aus, Pausiert, Geplant, Läuft, Wartet, Grenze erreicht, Fehlerhaft |
 | pause, resume (a mirror); run a pass now, run a full pass | pausieren, fortsetzen; Durchlauf jetzt starten, Vollständigen Durchlauf starten |
 | rate-limit wait, bound (of a mirror), discovery (of names) | Rate-Limit-Wartezeit, Grenze, Ermittlung |
 | test connection, upstream URL, negative cache | Verbindung testen, Upstream-URL, negativer Cache |
 | licence (of the software the build bundles, its notices) | Lizenz (der eingebundenen Software, Hinweise) |
+| project switcher, start page of the projects ("Your work"), recently visited (projects) | Projektwechsler, "Ihre Arbeit", Zuletzt besucht |

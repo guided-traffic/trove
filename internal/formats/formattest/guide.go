@@ -153,7 +153,7 @@ func (r *run) guideVariants(class formats.Class, client string) []formats.GuideD
 	for _, key := range []string{"main", ""} {
 		registry := DefaultBaseURL + "/api/" + string(r.d.ID) + "/" + key + "/"
 		if key == "" {
-			registry = DefaultBaseURL + "/api/" + string(r.d.ID) + "/" + formats.GuideRepositoryPlaceholder + "/"
+			registry = DefaultBaseURL + "/api/" + string(r.d.ID) + "/" + formats.GuideProjectPlaceholder + "/" + formats.GuideRepositoryPlaceholder + "/"
 		}
 		targets := []string{""}
 		if key != "" && class != formats.Remote {

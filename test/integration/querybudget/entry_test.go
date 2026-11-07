@@ -15,7 +15,7 @@ import (
 func TestR_ARCH_027_AnEntryWhoseItemIsGoneIsRefusedAndServedAgainWithIt(t *testing.T) {
 	e := newEnv(t)
 	r := e.st.Start(t, testenv.ReplicaOptions{Name: "web-1"})
-	if a := e.do(r, "/api/npm/"+rNPMRem+"/"+e.pkg); a.Status != 200 {
+	if a := e.do(r, "/api/npm/it/"+rNPMRem+"/"+e.pkg); a.Status != 200 {
 		t.Fatalf("npm document: %d %s", a.Status, a.Body)
 	}
 	path := npmTarballPath(rNPMRem, e.pkg, e.ver)

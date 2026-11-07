@@ -83,7 +83,7 @@ func TestEndpoints(t *testing.T) {
 	// origins; a name below .localhost (RFC 6761) is one.
 	custAddr := freeAddr(t)
 	endpoints := fmt.Sprintf(`{"customers":{"listen":%q,"base_url":"https://packages.trove.localhost","hosts":["pkgs.example.org"],`+
-		`"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"docker-hub"},`+
+		`"wildcard_host":"*.registry.example.com","host_roots":{"pkgs.example.org":"it/docker-hub"},`+
 		`"tls":{"certificates":[{"cert_file":%q,"key_file":%q},{"cert_file":%q,"key_file":%q}]}}}`,
 		custAddr, exact, exactKey, wild, wildKey)
 	web := in.start(t, "web", "trove-ep-it", "TROVE_SERVER_ENDPOINTS="+endpoints, "TROVE_SERVER_TLS_RELOAD_INTERVAL=1s")
@@ -126,14 +126,14 @@ func TestEndpoints(t *testing.T) {
 	})
 
 	t.Run("R-EP-003 a request on the second listener with the host of the default endpoint answers 421 and is counted", func(t *testing.T) {
-		code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "trove.test", "/api/npm/npm-all/")
+		code, body := endpointGet(t, ca, custAddr, "packages.trove.localhost", "trove.test", "/api/npm/it/npm-all/")
 		var p map[string]any
 		_ = json.Unmarshal([]byte(body), &p)
 		if code != 421 || p["code"] != "misdirected_request" {
 			t.Fatalf("%d %s", code, body)
 		}
 		for _, host := range []string{"10.0.0.5", "registry.example.com", "a.b.registry.example.com"} {
-			if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", host, "/api/npm/npm-all/"); code != 421 {
+			if code, _ := endpointGet(t, ca, custAddr, "packages.trove.localhost", host, "/api/npm/it/npm-all/"); code != 421 {
 				t.Errorf("Host %s: %d", host, code)
 			}
 		}
@@ -179,8 +179,8 @@ func TestEndpoints(t *testing.T) {
 		_, metrics := opsGet(web.ops, "/metrics")
 		for _, want := range []string{
 			`trove_http_requests_total{code="200",endpoint="default",handler="GET /api/v1/system/ping",listener="client",method="GET"}`,
-			// the 421s of R-EP-003 asked for /api/npm/npm-all/, which the npm format's prefix routes on every endpoint
-			`trove_http_requests_total{code="421",endpoint="customers",handler="/api/npm/{repoKey}/{rest...}",listener="client",method="GET"}`,
+			// the 421s of R-EP-003 asked for /api/npm/it/npm-all/, which the npm format's prefix routes on every endpoint
+			`trove_http_requests_total{code="421",endpoint="customers",handler="/api/npm/{projectKey}/{repoKey}/{rest...}",listener="client",method="GET"}`,
 		} {
 			if !strings.Contains(metrics, want) {
 				t.Errorf("metrics lack %s\n%s", want, grepLines(metrics, "trove_http_requests_total"))
@@ -230,7 +230,7 @@ func TestEndpoints(t *testing.T) {
 			}
 		}
 		// A binding to a host outside the endpoint stops startup and names the key.
-		bad := in.with(`TROVE_SERVER_ENDPOINTS={"customers":{"listen":":0","base_url":"https://packages.trove.localhost","host_roots":{"other.example.com":"docker-hub"}}}`)
+		bad := in.with(`TROVE_SERVER_ENDPOINTS={"customers":{"listen":":0","base_url":"https://packages.trove.localhost","host_roots":{"other.example.com":"it/docker-hub"}}}`)
 		code, _, stderr := bad.run(t, "admin", "config", "validate")
 		if code == 0 || !strings.Contains(stderr+"", "server.endpoints.customers.host_roots") {
 			t.Errorf("exit %d, stderr %s", code, stderr)

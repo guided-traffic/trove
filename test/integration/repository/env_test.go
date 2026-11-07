@@ -139,6 +139,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e := &env{t: t, db: name, cfg: cfg, admin: admin(t, name)}
 	e.exec("SET search_path TO " + schemaName)
+	e.exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'it', 'it')")
 	return e
 }
 

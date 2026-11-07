@@ -48,7 +48,7 @@ func (e *Engine) Probe(ctx context.Context, rem Remote, path string, a Adapter) 
 	}
 	f.cl = cl
 	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
-	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
+	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
 	if err != nil {
 		if ee, ok := errs.As(err); ok && ee.Code == errs.CodeFetchQueueTimeout {
 			return ProbeResult{Outcome: Undetermined, RetryAfter: 5 * time.Second}, nil

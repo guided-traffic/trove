@@ -13,6 +13,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/guided-traffic/trove/internal/mirror/discover"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -157,7 +158,7 @@ func TestR_REPO_055_APreEmptedDiscoveryRequestIsRetriedAndNeverFailsThePass(t *t
 	}
 	mustEqual(t, "outcome", fmt.Sprint(res.get("outcome")), "complete")
 	mustEqual(t, "failures", g.store.state(rigRepoID).ConsecutiveFailures, 0)
-	mustEqual(t, "pre-emptions counted", val(g.met.Preempted.WithLabelValues("npm-mirror")), 3)
+	mustEqual(t, "pre-emptions counted", val(g.met.Preempted.WithLabelValues("it/npm-mirror")), 3)
 	if got := g.clock.slept(); len(got) != 3 || got[0] != PreemptRetry {
 		t.Fatalf("waits %v, want three of %v", got, PreemptRetry)
 	}
@@ -495,7 +496,7 @@ func TestR_REPO_053_ADocumentThatDoesNotLoadIsAPauseNotAModeChange(t *testing.T)
 	if _, err := g.run(); err != nil {
 		t.Fatal(err)
 	}
-	broken, _ := repository.Build(rigRepoID, rigVersion.Add(1), "npm-mirror", repository.Remote, "npm", []byte(`{"remote":"not an object"}`), nil)
+	broken, _ := repository.Build(rigRepoID, rigVersion.Add(1), qr("npm-mirror"), repository.Remote, "npm", []byte(`{"remote":"not an object"}`), nil)
 	if _, ok := broken.Remote(); ok {
 		t.Fatal("the test document loads")
 	}
@@ -516,9 +517,9 @@ func TestR_REPO_053_ADocumentThatDoesNotLoadIsAPauseNotAModeChange(t *testing.T)
 // that is in service, and none for one that its operator paused; the pending names and the last complete pass are exported for
 // both; a repository that is not a mirror has no series.
 func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *testing.T) {
-	repos := &memRepos{repos: map[string]repository.Repository{}}
+	repos := &memRepos{repos: map[qname.Repo]repository.Repository{}}
 	mk := func(key string, id int64, doc string) repository.Repository {
-		r, err := repository.Build(id, 1, key, repository.Remote, "npm", []byte(doc), nil)
+		r, err := repository.Build(id, 1, qr(key), repository.Remote, "npm", []byte(doc), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -529,9 +530,9 @@ func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *te
 	repos.set(mk("pull", 3, `{"remote":{"url":"https://a.example/"}}`))
 	now := time.Unix(1_800_000_000, 0).UTC()
 	rows := []GaugeRow{
-		{Key: "live", Pending: 4, LastComplete: now.Add(-time.Hour), ConsecutiveFailures: 3, NextPass: now},
-		{Key: "paused", Pending: 1, ConsecutiveFailures: 5, NextPass: now.Add(-48 * time.Hour)},
-		{Key: "pull", Pending: 9},
+		{Key: "it/live", Pending: 4, LastComplete: now.Add(-time.Hour), ConsecutiveFailures: 3, NextPass: now},
+		{Key: "it/paused", Pending: 1, ConsecutiveFailures: 5, NextPass: now.Add(-48 * time.Hour)},
+		{Key: "it/pull", Pending: 9},
 	}
 	src := GaugeSource(func(context.Context) ([]GaugeRow, error) { return rows, nil }, repos)
 	ms, err := src.Collect(t.Context())
@@ -550,10 +551,10 @@ func TestR_REPO_057_TheGaugesCarryFailuresAndTheNextPassOfAMirrorInService(t *te
 		}
 	}
 	want := map[string]float64{
-		MetricConsecutiveFailures + "/live": 3, MetricNextPass + "/live": float64(now.Unix()),
-		MetricPending + "/live": 4, MetricPending + "/paused": 1,
-		MetricLastComplete + "/live": float64(now.Add(-time.Hour).Unix()),
-		MetricInterval + "/live":     600, MetricInterval + "/paused": 3600,
+		MetricConsecutiveFailures + "/it/live": 3, MetricNextPass + "/it/live": float64(now.Unix()),
+		MetricPending + "/it/live": 4, MetricPending + "/it/paused": 1,
+		MetricLastComplete + "/it/live": float64(now.Add(-time.Hour).Unix()),
+		MetricInterval + "/it/live":     600, MetricInterval + "/it/paused": 3600,
 	}
 	for k, v := range want {
 		if got[k] != v {

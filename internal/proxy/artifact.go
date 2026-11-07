@@ -50,7 +50,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	if state == hitStored { // step 4: an artifact entry is served
 		served := e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
 		if !items.ContentLost(served) {
-			e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+			e.m.lookup(rem.Repo.Name.String(), Artifact, resultHit)
 			return served
 		}
 		// The read found the object missing or damaged and marked its blob (R-STOR-027); nothing was written. The item is
@@ -61,7 +61,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 			return err
 		}
 		if state == hitStored {
-			e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+			e.m.lookup(rem.Repo.Name.String(), Artifact, resultHit)
 			return e.serveItem(ctx, rq, w, CacheStatus{Hit: true, TTL: -1}, it, true)
 		}
 	}
@@ -69,13 +69,13 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	case hitDamaged:
 		return e.refillArtifact(ctx, rq, w, r, it)
 	case hitEntryOnly:
-		e.m.lookup(rem.Repo.Key, Artifact, resultHit)
+		e.m.lookup(rem.Repo.Name.String(), Artifact, resultHit)
 		return errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist.")
 	}
 	// Step 5.
 	switch rq.Mode {
 	case CacheView, OnlyIfCached:
-		e.m.lookup(rem.Repo.Key, Artifact, resultMiss)
+		e.m.lookup(rem.Repo.Name.String(), Artifact, resultMiss)
 		return notStored(rq.Mode)
 	}
 	// Step 6.
@@ -92,7 +92,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	}
 	// Step 8.
 	if _, hit := e.neg.lookup(ctx, rem, rq.Path, rq.Variant); hit {
-		e.m.lookup(rem.Repo.Key, Artifact, resultNegative)
+		e.m.lookup(rem.Repo.Name.String(), Artifact, resultNegative)
 		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream.", errs.WithAbsent()),
 			CacheStatus{Hit: true, Negative: true, Detail: detailNegative})
 	}
@@ -108,7 +108,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	}); err != nil {
 		return err
 	}
-	e.m.lookup(rem.Repo.Key, Artifact, resultMiss)
+	e.m.lookup(rem.Repo.Name.String(), Artifact, resultMiss)
 	if r.Method == http.MethodHead {
 		return e.head(ctx, rq, w)
 	}
@@ -144,7 +144,7 @@ func (e *Engine) artifactAnswer(ctx context.Context, rq Request, st *reqState, w
 		panic(http.ErrAbortHandler)
 	}
 	if st.collapsed {
-		e.m.collapsed.WithLabelValues(rem.Repo.Key).Inc()
+		e.m.collapsed.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
 	cs := CacheStatus{Hit: true, Collapsed: st.collapsed, TTL: -1}
 	switch {
@@ -312,8 +312,8 @@ func (e *Engine) checkAnnounced(ctx context.Context, rq Request, it items.Item) 
 	if storedMatches(rq.Expected, have) {
 		return
 	}
-	e.m.integrity.WithLabelValues(rq.Remote.Repo.Key, "digest_changed").Inc()
-	key := rq.Remote.Repo.Key + "\x00" + rq.Path + "\x00" + hex.EncodeToString(rq.Expected.SHA512) + hex.EncodeToString(rq.Expected.SHA1)
+	e.m.integrity.WithLabelValues(rq.Remote.Repo.Name.String(), "digest_changed").Inc()
+	key := rq.Remote.Repo.Name.String() + "\x00" + rq.Path + "\x00" + hex.EncodeToString(rq.Expected.SHA512) + hex.EncodeToString(rq.Expected.SHA1)
 	if !e.throttle(key, time.Hour) {
 		return
 	}
@@ -336,7 +336,7 @@ func (e *Engine) head(ctx context.Context, rq Request, w http.ResponseWriter) er
 	}
 	f.cl = cl
 	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
-	e.m.queueWait.WithLabelValues(rem.Repo.Key).Observe(wait.Seconds())
+	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
 	if err != nil {
 		return err
 	}
@@ -458,7 +458,7 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 // answered with something else than was asked) and every request of the flight gets the
 // refusal, 502 unless the hook named another answer (WP3.0a).
 func (f *fetcher) fillRefused(err error, status int) flightResult {
-	f.e.log.Warn("the format refused a fetched artifact", "repo", f.rq.Remote.Repo.Key, "path", f.rq.Path, "error", err)
+	f.e.log.Warn("the format refused a fetched artifact", "repo", f.rq.Remote.Repo.Name, "path", f.rq.Path, "error", err)
 	return flightResult{err: asUpstreamError(err), status: status}
 }
 
@@ -493,7 +493,7 @@ func teeWriter(s *stream) io.Writer {
 // store is unavailable: the verified body goes to the leader's client and nothing is
 // stored; the requests that waited fetch for themselves (R-REPO-025).
 func (f *fetcher) passThrough(tee *stream) flightResult {
-	f.e.log.Warn("the object store is unavailable: an artifact is streamed and not stored", "repo", f.rq.Remote.Repo.Key)
+	f.e.log.Warn("the object store is unavailable: an artifact is streamed and not stored", "repo", f.rq.Remote.Repo.Name)
 	if tee != nil {
 		tee.finish()
 	}
@@ -505,7 +505,7 @@ func (f *fetcher) passThrough(tee *stream) flightResult {
 // the client that streamed has its connection aborted (R-REPO-041).
 func (f *fetcher) integrityMismatch(ctx context.Context, sp *items.Spooled) flightResult {
 	e, rq := f.e, f.rq
-	e.m.integrity.WithLabelValues(rq.Remote.Repo.Key, "mismatch").Inc()
+	e.m.integrity.WithLabelValues(rq.Remote.Repo.Name.String(), "mismatch").Inc()
 	e.o.Audit.Record(ctx, e.event(rq, audit.EventProxyIntegrityMismatch, map[string]any{
 		"path": rq.Path, "announced": announcedJSON(rq.Expected), "computedSha256": hex.EncodeToString(sp.SHA256[:]),
 	}))
@@ -522,8 +522,8 @@ func (f *fetcher) integrityMismatch(ctx context.Context, sp *items.Spooled) flig
 // counts every fetch (Q-REPO-205).
 func (f *fetcher) digestChanged(ctx context.Context, sp *items.Spooled, cached [32]byte) flightResult {
 	e, rq := f.e, f.rq
-	e.m.integrity.WithLabelValues(rq.Remote.Repo.Key, "digest_changed").Inc()
-	key := rq.Remote.Repo.Key + "\x00" + rq.Path + "\x00" + hex.EncodeToString(cached[:]) + hex.EncodeToString(sp.SHA256[:])
+	e.m.integrity.WithLabelValues(rq.Remote.Repo.Name.String(), "digest_changed").Inc()
+	key := rq.Remote.Repo.Name.String() + "\x00" + rq.Path + "\x00" + hex.EncodeToString(cached[:]) + hex.EncodeToString(sp.SHA256[:])
 	if e.throttle(key, time.Hour) {
 		e.o.Audit.Record(ctx, e.event(rq, audit.EventProxyUpstreamDigestChanged, map[string]any{
 			"path": rq.Path, "cachedSha256": hex.EncodeToString(cached[:]), "fetchedSha256": hex.EncodeToString(sp.SHA256[:]),
@@ -566,8 +566,8 @@ func (f *fetcher) artifactEntry(sp *items.Spooled, resp *http.Response, final st
 		}
 		return e.o.Audit.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventArtifactCached, Actor: auditActor(rq.Caller), Outcome: audit.Success, Source: rq.Caller.Source,
-			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Key},
-			Repository: rem.Repo.Key, Path: rq.Path, Endpoint: rq.Caller.Endpoint,
+			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Name.String()},
+			Repository: rem.Repo.Name.String(), Path: rq.Path, Endpoint: rq.Caller.Endpoint,
 			Details: mustJSON(map[string]any{
 				"path": rq.Path, "name": rq.Package, "sha256": hex.EncodeToString(sp.SHA256[:]), "size": sp.Size, "upstreamUrl": final,
 			}),

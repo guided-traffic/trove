@@ -20,7 +20,7 @@ import (
 )
 
 func ownersPath(repo, name string) string {
-	return "/api/v1/repositories/" + repo + "/packages/" + url.PathEscape(name) + "/owners"
+	return "/api/v1/projects/it/repositories/" + repo + "/packages/" + url.PathEscape(name) + "/owners"
 }
 
 // ownerRefs lists the owner references and display values of a GET …/owners answer.
@@ -53,7 +53,7 @@ func TestR_CI_015_APackageIsBoundToTheProjectThatFirstPublishesIt(t *testing.T) 
 	a, b := e.web("web-a"), e.web("web-b")
 	billing := func(projectID, path string) ciToken {
 		return e.issue(a, e.bundle(projectID, path, m.contribution(nil,
-			grant([]string{"npm-internal"}, []string{"@acme-billing/*"}, claims.Read, claims.Deploy))), job{"p" + projectID, "j" + projectID}, 10*time.Minute)
+			grant([]string{"it/npm-internal"}, []string{"@acme-billing/*"}, claims.Read, claims.Deploy))), job{"p" + projectID, "j" + projectID}, 10*time.Minute)
 	}
 	projectA, projectB := billing("101", "acme/billing/client"), billing("202", "acme-billing/client")
 
@@ -145,7 +145,7 @@ func TestR_AUTHZ_014_TheOwnershipDefaultsOfAWritingInlineGrant(t *testing.T) {
 	e := newCIEnv(t, false, "acme-tools", "acme-shared")
 	a := e.web("web-a")
 	tools := func(m ciMapping, projectID string, own claims.Ownership, repo string) ciToken {
-		g := grant([]string{repo}, []string{"@acme/tools"}, claims.Read, claims.Deploy)
+		g := grant([]string{"it/" + repo}, []string{"@acme/tools"}, claims.Read, claims.Deploy)
 		g.Ownership = own
 		return e.issue(a, e.bundle(projectID, "acme/p"+projectID, m.contribution(nil, g)), job{"1", projectID}, 10*time.Minute)
 	}
@@ -155,7 +155,7 @@ func TestR_AUTHZ_014_TheOwnershipDefaultsOfAWritingInlineGrant(t *testing.T) {
 		wantOwned(t, "second", e.publish(a, "npm-internal", second.secret, "@acme/tools", "1.0.1"))
 	})
 	t.Run("R-AUTHZ-018 ownership none: the mapping owns the name and every project it matches publishes", func(t *testing.T) {
-		g := grant([]string{"npm-internal"}, []string{"@acme/shared"}, claims.Read, claims.Deploy)
+		g := grant([]string{"it/npm-internal"}, []string{"@acme/shared"}, claims.Read, claims.Deploy)
 		g.Ownership = claims.OwnershipNone
 		first := e.issue(a, e.bundle("401", "acme/p401", e.maps["acme-shared"].contribution(nil, g)), job{"1", "401"}, 10*time.Minute)
 		second := e.issue(a, e.bundle("402", "acme/p402", e.maps["acme-shared"].contribution(nil, g)), job{"1", "402"}, 10*time.Minute)

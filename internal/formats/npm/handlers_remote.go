@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/npm/document"
@@ -43,7 +45,7 @@ type fullSource struct {
 	// the same package served by different roads never shares a validator.
 	kind string
 	// servingKey is the key the links name: the repository's, or <key>~cache.
-	servingKey string
+	servingKey qname.Repo
 	repoID     int64
 	// content is hex of what the document is a function of: the digest of the stored
 	// document, or the fingerprint of the merge.
@@ -217,11 +219,12 @@ func (f *Format) remoteSource(ctx context.Context, rq *formats.Request, n name.N
 		return fullSource{}, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.", errs.WithHeader("Cache-Status", doc.Status.Header))
 	}
 	src := fullSource{
-		form: fm, ref: ref, kind: "remote", servingKey: rq.Repo.Key, repoID: rq.RepoRef().ID,
+		form: fm, ref: ref, kind: "remote", servingKey: rq.Repo.Name, repoID: rq.RepoRef().ID,
 		content: hex.EncodeToString(doc.Digest[:]), bytes: doc.Bytes, status: doc.Status.Header,
 	}
 	if rq.CacheView {
-		src.kind, src.servingKey = "cache", rq.Repo.Key+"~cache"
+		src.kind, src.servingKey = "cache", rq.Repo.Name
+		src.servingKey.Key += "~cache"
 	}
 	return src, nil
 }

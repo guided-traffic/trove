@@ -43,18 +43,18 @@ func (e *Engine) Exchange(ctx context.Context, rem Remote, req *http.Request, ca
 	// bound a format sets, so a provider that stops answering cannot hold the request for good (Q-NPM-78).
 	ctx, cancel := boundExchange(ctx, upstream.ExchangeHeaderTimeout)
 	// No flight: flight_role stays empty in the upstream log record (Q-REPO-92).
-	rctx := outbound.WithCall(ctx, outbound.Call{OnBehalfOf: caller.Principal, Repo: rem.Repo.Key, Attempt: 1})
+	rctx := outbound.WithCall(ctx, outbound.Call{OnBehalfOf: caller.Principal, Repo: rem.Repo.Name.String(), Attempt: 1})
 	out := req.Clone(rctx)
 	out.Header.Del("Authorization") // the client's hop policy alone adds the credential
 	start := time.Now()
 	resp, err := cl.ExchangeHTTP().Do(out) //nolint:gosec // G704: the URL is the remote's upstream or its providerURL, which only repository configuration sets; the client checks every address against the egress policy (R-REPO-038)
 	if err != nil {
 		cancel()
-		e.m.request(rem.Repo.Key, 0)
+		e.m.request(rem.Repo.Name.String(), 0)
 		return nil, e.exchangeFailure(ctx, rem, out, caller, err)
 	}
-	e.m.request(rem.Repo.Key, resp.StatusCode)
-	e.m.upstreamDur.WithLabelValues(rem.Repo.Key).Observe(time.Since(start).Seconds())
+	e.m.request(rem.Repo.Name.String(), resp.StatusCode)
+	e.m.upstreamDur.WithLabelValues(rem.Repo.Name.String()).Observe(time.Since(start).Seconds())
 	resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel} // the bound runs until the caller has read the body
 	return resp, nil
 }
@@ -83,10 +83,10 @@ func (c *cancelOnClose) Close() error {
 func (e *Engine) exchangeFailure(ctx context.Context, rem Remote, req *http.Request, caller CallerFacts, err error) error {
 	fail := e.classifyError(rem, req.URL, err, false)
 	if fail.sourceNetwork {
-		e.m.sourceNet.WithLabelValues(rem.Repo.Key).Inc()
+		e.m.sourceNet.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
 	if fail.egress {
-		e.m.egressDenied.WithLabelValues(rem.Repo.Key).Inc()
+		e.m.egressDenied.WithLabelValues(rem.Repo.Name.String()).Inc()
 	}
 	rq := Request{Remote: rem, Path: req.URL.Path, Caller: caller}
 	host := req.URL.Hostname()

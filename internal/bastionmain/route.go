@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 )
 
@@ -26,10 +28,10 @@ const FormatFiles = "files"
 // RouteMatch is what the dispatcher tells the observer once the format matched the request to a route and
 // before any decision or handler (R-BAS-013, R-BAS-014).
 type RouteMatch struct {
-	// Format is the format ID of the prefix ("npm") and RepoKey the addressed repository key as the path
+	// Format is the format ID of the prefix ("npm") and Repo the addressed repository as the path
 	// names it, without the "~cache" view suffix.
-	Format  string
-	RepoKey string
+	Format string
+	Repo   qname.Repo
 	// Name is the route's stable label ("npm.tarball.get").
 	Name string
 	// Method is the request method.

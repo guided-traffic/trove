@@ -251,7 +251,7 @@ func (p *s3Prober) probes() []s3Probe {
 
 func (p *s3Prober) probeMetadata() {
 	for _, q := range []struct{ kind, path, token string }{
-		{"document", "/api/npm/" + npmAllKey + "/" + url.PathEscape(p.h.locals[0]), p.h.k6Token()},
+		{"document", npmAddr(npmAllKey) + "/" + url.PathEscape(p.h.locals[0]), p.h.k6Token()},
 		{"api", "/api/v1/repositories?limit=5", ""},
 	} {
 		a := p.h.fx.adm
@@ -286,7 +286,7 @@ func (p *s3Prober) probeUpload(path string) s3Probe {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "curl", "-sS", "--cacert", cfg.caFile, "-T", p.upload, "-H", "Authorization: Bearer "+p.token,
-		"-H", "Expect: 100-continue", "-D", "-", "-o", "/dev/null", "-w", "\n%{http_code} %{size_upload}", cfg.edgeURL+"/files/generic-local/"+path)
+		"-H", "Expect: 100-continue", "-D", "-", "-o", "/dev/null", "-w", "\n%{http_code} %{size_upload}", cfg.edgeURL+filesBase+"generic-local/"+path)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -410,10 +410,10 @@ func objectStoreOutage(t *testing.T, h *npmHAFixture, d time.Duration, deleteRep
 	xfer := h.fx.adm.withToken(transfer)
 	for _, p := range prober.probes() {
 		if p.Kind == "upload" && (p.Status == 200 || p.Status == 201) {
-			_, _ = xfer.send(http.MethodDelete, "/files/generic-local/"+p.Path, nil)
+			_, _ = xfer.send(http.MethodDelete, filesBase+"generic-local/"+p.Path, nil)
 		}
 	}
-	_, _ = xfer.send(http.MethodDelete, "/files/generic-local/e2e-ha-s3/recovery.bin", nil)
+	_, _ = xfer.send(http.MethodDelete, filesBase+"generic-local/e2e-ha-s3/recovery.bin", nil)
 
 	recoveredBy := backAt.Add(bound)
 	t.Logf("outage %s to %s; blobs served again %s and uploads accepted %s after the return (bound open_duration %s + 10 s = %s); replacement %q ready %s after the return, %d samples while down; replica deleted %q",

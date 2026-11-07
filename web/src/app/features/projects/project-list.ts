@@ -3,8 +3,9 @@ import { TroveDialog } from '../../shared/ui/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiError } from '../../api/problem';
-import { Project, ProjectsApi } from '../../api/projects-api';
-import { ProjectFilter } from '../../core/project-filter';
+import { Project, ProjectRole, ProjectsApi } from '../../api/projects-api';
+import { projectRoleLabel } from './project-roles';
+import { ProjectContext } from '../../core/project-context';
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
@@ -15,10 +16,9 @@ import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filte
 import { ProjectDialog } from './project-dialog';
 
 /**
- * Projects (R-UI-041): key, display name, administrators, number of repositories and the two switches.
- * A holder of `projects:read` sees every project; an administrator of a project without that capability
- * sees the projects it administers (Q-AUTHZ-181). Creating, and editing through the row, need
- * `projects:write`; the others read.
+ * Projects (R-UI-041): key, display name, Owners, members, number of repositories and the caller's own role.
+ * A holder of `projects:read` sees every project; a member without that capability sees the projects it is a
+ * member of (Q-AUTHZ-207). Creating needs `projects:write`; editing through the row also the Owner of the project.
  */
 @Component({
   selector: 'trove-project-list',
@@ -38,7 +38,7 @@ import { ProjectDialog } from './project-dialog';
     </header>
     <trove-needs id="needs-projects" capability="projects:write" />
     <p i18n="@@projects.hint">
-      A project gives a team its own administrators: they manage the project's repositories, permission policies and service accounts without a system role.
+      A project holds a team's repositories. Its members have a role in it; its Owners manage the repositories, permission policies and service accounts without a system role.
     </p>
 
     @if (actionError(); as e) {
@@ -68,24 +68,14 @@ import { ProjectDialog } from './project-dialog';
         >
           @for (p of list.items(); track p.key) {
             <tr>
-              <th scope="row"><a [routerLink]="['/admin/projects', p.key]" translate="no">{{ p.key }}</a></th>
+              <th scope="row"><a [routerLink]="['/projects', p.key]" translate="no">{{ p.key }}</a></th>
               <td>{{ p.displayName }}</td>
-              <td class="wrap" translate="no">{{ adminSummary(p) }}</td>
+              <td class="wrap" translate="no">{{ ownerSummary(p) }}</td>
+              <td>{{ p.members }}</td>
               <td>{{ p.repositories }}</td>
-              <td>
-                <span class="switch">
-                  <span class="material-icons" aria-hidden="true">{{ p.managePolicies ? 'check_circle' : 'block' }}</span>
-                  <ng-container i18n="@@projects.switch.policies">Policies</ng-container>
-                  <span class="visually-hidden">: {{ p.managePolicies ? on : off }}</span>
-                </span>
-                <span class="switch">
-                  <span class="material-icons" aria-hidden="true">{{ p.manageRepositories ? 'check_circle' : 'block' }}</span>
-                  <ng-container i18n="@@projects.switch.repositories">Repositories</ng-container>
-                  <span class="visually-hidden">: {{ p.manageRepositories ? on : off }}</span>
-                </span>
-              </td>
+              <td>{{ p.role ? roleLabel(p.role) : '' }}</td>
               <td class="actions">
-                @if (canWrite()) {
+                @if (canEdit(p)) {
                   <button class="btn btn-tertiary" type="button" (click)="edit(p)">
                     <ng-container i18n="@@projects.edit">Edit</ng-container>
                     <span class="visually-hidden"> {{ p.key }}</span>
@@ -113,21 +103,12 @@ import { ProjectDialog } from './project-dialog';
     </div>
   `,
   styleUrl: '../../shared/access/access.scss',
-  styles: `
-    .switch {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--trove-space-1);
-      margin-inline-end: var(--trove-space-3);
-      color: var(--trove-text-muted);
-    }
-  `,
 })
 export class ProjectList {
   private readonly api = inject(ProjectsApi);
   private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
-  private readonly filter = inject(ProjectFilter);
+  private readonly context = inject(ProjectContext);
   protected readonly session = inject(SessionStore);
 
   protected readonly list = new PagedResource<Project>();
@@ -137,19 +118,18 @@ export class ProjectList {
   protected readonly sort = signal<TableSort>({ column: 'key', direction: 'asc' });
   protected readonly actionError = signal<ApiError | null>(null);
   protected readonly canWrite = computed(() => this.session.has('projects:write'));
-  protected readonly on = $localize`:@@projects.switch.on:on`;
-  protected readonly off = $localize`:@@projects.switch.off:off`;
   protected readonly caption = $localize`:@@projects.caption:Projects`;
   protected readonly applyLabel = $localize`:@@projects.apply:Apply filter`;
   protected readonly columns: readonly TableColumn[] = [
     { id: 'key', label: $localize`:@@projects.col.key:Key`, sortable: true },
     { id: 'name', label: $localize`:@@projects.col.name:Display name` },
-    { id: 'admins', label: $localize`:@@projects.col.admins:Administrators` },
+    { id: 'owners', label: $localize`:@@projects.col.owners:Owners` },
+    { id: 'members', label: $localize`:@@projects.col.members:Members` },
     { id: 'repositories', label: $localize`:@@projects.col.repositories:Repositories` },
     {
-      id: 'switches',
-      label: $localize`:@@projects.col.switches:Switches`,
-      help: $localize`:@@projects.help.switches:What the administrators of the project may do. Policies: permission policies, service accounts and their tokens. Repositories: create, change and delete the project's repositories.`,
+      id: 'role',
+      label: $localize`:@@projects.col.role:Your role`,
+      help: $localize`:@@projects.help.role:Your role in the project; empty when you see it through a system role and are no member.`,
     },
     { id: 'actions', label: $localize`:@@projects.col.actions:Actions`, hideLabel: true },
   ];
@@ -158,9 +138,18 @@ export class ProjectList {
     void this.apply();
   }
 
-  /** "group:web-leads, user:alice": the references, as the API orders them. */
-  protected adminSummary(p: Project): string {
-    return p.admins.join(', ');
+  /** "group:web-leads, user:alice": the references of the Owners, as the API orders them. */
+  protected ownerSummary(p: Project): string {
+    return p.owners.join(', ');
+  }
+
+  protected roleLabel(role: ProjectRole): string {
+    return projectRoleLabel(role);
+  }
+
+  /** `projects:write`, or the Owner role of the project (Q-AUTHZ-208). */
+  protected canEdit(p: Project): boolean {
+    return this.canWrite() || this.session.isOwnerOf(p.key);
   }
 
   protected async apply(): Promise<void> {
@@ -185,7 +174,7 @@ export class ProjectList {
       maxWidth: '40rem',
     });
     const created = await firstValueFrom(ref.closed);
-    if (created) await this.router.navigate(['/admin/projects', created.key]);
+    if (created) await this.router.navigate(['/projects', created.key, 'settings']);
   }
 
   protected async edit(p: Project): Promise<void> {
@@ -199,7 +188,7 @@ export class ProjectList {
       const saved = await firstValueFrom(ref.closed);
       if (saved) {
         this.list.replace((x) => x.key === saved.key, saved);
-        void this.filter.refresh();
+        void this.context.refresh();
       }
     } catch (e) {
       this.actionError.set(asApiError(e));

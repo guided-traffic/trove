@@ -107,7 +107,7 @@ func (w *writer) owns(repo formats.RepoRef) error {
 		return nil
 	}
 	return errs.E(errs.Internal, errs.CodeInternal, "A format wrote to a repository other than the one its request or event is bound to.",
-		errs.WithCause(fmt.Errorf("repository %q (id %d) is not %q (id %d)", repo.Key, repo.ID, w.bound.Key, w.bound.ID)))
+		errs.WithCause(fmt.Errorf("repository %q (id %d) is not %q (id %d)", repo.Name, repo.ID, w.bound.Name, w.bound.ID)))
 }
 
 func (w *writer) EnsureLocked(ctx context.Context, repo formats.RepoRef, name, displayName string) (formats.PackageRef, bool, error) {
@@ -222,7 +222,7 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 		return err
 	}
 	return w.d.remove.RemoveIn(ctx, w.tx, items.RemoveSpec{
-		Repo:  items.RepoRef{ID: repo.ID, Key: repo.Key, Class: string(repo.Class), Format: string(repo.Format)},
+		Repo:  items.RepoRef{ID: repo.ID, Name: repo.Name, Class: string(repo.Class), Format: string(repo.Format)},
 		Paths: paths, Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: w.req.Subject.Endpoint,
 	})
 }

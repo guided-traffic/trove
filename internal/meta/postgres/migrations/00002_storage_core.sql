@@ -3,10 +3,14 @@
 -- Storage core (R-STOR-003): repositories, blobs, packages, versions, items,
 -- properties, download statistics, the garbage-collection queue and the
 -- blob reference guard and release triggers.
+--
+-- A repository key is unique within its project, not in the installation
+-- (Q-REPO-212): the project column and UNIQUE (project_id, key) come with the
+-- projects in 00019 to 00025.
 
 CREATE TABLE repositories (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    key         text NOT NULL UNIQUE CHECK (key ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),
+    key         text NOT NULL CHECK (key ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),
     format      text NOT NULL,
     class       text NOT NULL CHECK (class IN ('local', 'remote', 'virtual')),
     config      jsonb NOT NULL DEFAULT '{}',

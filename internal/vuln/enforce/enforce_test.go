@@ -230,7 +230,7 @@ func TestR_VULN_015_ReportModeCountsAndRefusesNothing(t *testing.T) {
 func TestR_VULN_015_TheMissGateAppliesTheEvaluationAndTheMissingDataRule(t *testing.T) {
 	f := newFixture(t, states{"npm": {Complete: true}}, vuln.EnforceBlocks)
 	m := Miss{Package: "trove-test-mal", Version: "1.0.0", Path: "trove-test-mal/-/trove-test-mal-1.0.0.tgz"}
-	m.Repo.Key = "npm-remote"
+	m.Repo.Name = qr("npm-remote")
 	if err := f.e.gate(context.Background(), scanned, m); err != nil {
 		t.Fatalf("nothing blocks: %v", err)
 	}
@@ -241,13 +241,13 @@ func TestR_VULN_015_TheMissGateAppliesTheEvaluationAndTheMissingDataRule(t *test
 		t.Fatalf("gate = %v", err)
 	}
 	if !strings.HasSuffix(e.Detail, "Details: https://trove.example.com/ui/vulnerabilities/advisories/npm/MAL-2026-1234") ||
-		!strings.Contains(e.Detail, "trove-test-mal@1.0.0 in npm-remote: malicious package (MAL-2026-1234)") {
+		!strings.Contains(e.Detail, "trove-test-mal@1.0.0 in it/npm-remote: malicious package (MAL-2026-1234)") {
 		t.Errorf("text = %q", e.Detail)
 	}
 	if _, has := e.Extensions["findingId"]; has {
 		t.Error("a miss without a finding names a finding")
 	}
-	if len(f.ev.calls) != 2 || f.ev.calls[0].RepoKey != "npm-remote" || f.ev.calls[0].Name != "trove-test-mal" || f.ev.calls[0].Version != "1.0.0" {
+	if len(f.ev.calls) != 2 || f.ev.calls[0].Repo.Key != "npm-remote" || f.ev.calls[0].Name != "trove-test-mal" || f.ev.calls[0].Version != "1.0.0" {
 		t.Errorf("EvaluateMiss calls = %+v", f.ev.calls)
 	}
 	// A block the evaluation found and a report-mode installation: counted, not refused.

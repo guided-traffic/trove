@@ -253,11 +253,12 @@ UPDATE package_owner SET display = sqlc.arg(display)::text
 
 -- name: CiOwnershipOwnedByProject :many
 -- The names a CI project owns, in key order after the cursor (R-AUTHZ-019 GET /package-owners?owner=ci:…:project:…).
-SELECT o.domain, o.format, o.package_name, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
+SELECT o.domain, o.format, o.package_name, COALESCE(rp.key, '')::text AS repository_project_key, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
        (extract(epoch FROM o.added_at) * 1000000)::bigint AS added_us
   FROM package_owner o
   JOIN package_ownership s ON s.domain = o.domain AND s.format = o.format AND s.package_name = o.package_name
   LEFT JOIN repositories r ON r.id = (CASE WHEN o.domain ~ '^repo:[0-9]+$' THEN substr(o.domain, 6)::bigint END)
+  LEFT JOIN project rp ON rp.id = r.project_id
  WHERE o.owner_kind = 'ci_project' AND o.ci_issuer_id = sqlc.arg(ci_issuer_id)::text::uuid AND o.ci_project_id = sqlc.arg(ci_project_id)::text
    AND (sqlc.arg(domain)::text = '' OR o.domain = sqlc.arg(domain)::text)
    AND (o.domain, o.format, o.package_name) > (sqlc.arg(after_domain)::text, sqlc.arg(after_format)::text, sqlc.arg(after_name)::text)

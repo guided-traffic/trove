@@ -338,6 +338,8 @@ export class UpstreamSettings {
   /** The form of the repository; the section edits `upstream`. */
   readonly form = model.required<RepositoryForm>();
   readonly format = input.required<FormatDescriptor>();
+  /** The project the upstream is tested in: the test runs inside a project (`POST /projects/{project}/upstream-tests`). */
+  readonly project = input.required<string>();
   /** Server field problems by pointer (`ApiError.fieldErrors`). */
   readonly fieldErrors = input<ReadonlyMap<string, FieldProblem>>(new Map());
 
@@ -434,7 +436,7 @@ export class UpstreamSettings {
     this.result.set(null);
     this.failure.set(null);
     try {
-      this.result.set(await this.api.testUpstream(upstreamTestBody(this.upstream(), this.format())));
+      this.result.set(await this.api.testUpstream(this.project(), upstreamTestBody(this.upstream(), this.format())));
     } catch (e) {
       this.failure.set(asApiError(e));
     } finally {

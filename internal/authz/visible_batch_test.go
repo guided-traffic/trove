@@ -22,7 +22,7 @@ func TestR_VULN_019_ReadScopeSharedStateDecidesLikeTheDecisionPoint(t *testing.T
 		"carol":    onEP(carolSub, "default"),
 		"anon":     onEP(anonSub, "default"),
 		"admin":    onEP(adminSub, "customers"),
-		"scoped":   onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}), "default"),
+		"scoped":   onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}), "default"),
 		"alice-nt": aliceSub,
 	}
 	var rows []Coordinate
@@ -30,17 +30,17 @@ func TestR_VULN_019_ReadScopeSharedStateDecidesLikeTheDecisionPoint(t *testing.T
 		for i := range 60 {
 			pkg := []string{"@a/", "@acme/", "@b/", "plain-"}[i%4] + fmt.Sprint(i)
 			for _, v := range []string{"1.0.0", "2.1.0", "3.0.0-beta"} {
-				rows = append(rows, Coordinate{Repository: k, Package: pkg, Version: v, Kind: KindMetadata, Actions: []Action{Read}})
+				rows = append(rows, Coordinate{Repository: qr(k), Package: pkg, Version: v, Kind: KindMetadata, Actions: []Action{Read}})
 			}
 		}
 	}
 	for name, sub := range subjects {
 		ctx := context.Background()
-		idx, err := e.Begin(ctx, sub, keys...)
+		idx, err := e.Begin(ctx, sub, qrs(keys)...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		rs, err := e.ReadScopeOn(ctx, idx, sub, "", keys)
+		rs, err := e.ReadScopeOn(ctx, idx, sub, qr(""), qrs(keys))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 	ciE, _ := ciEngine(t)
 	versions := []string{"0.1.0", "1.0.0", "1.9.0", "2.1.0", "3.0.0-beta", "10.0.0"}
 	readA := func(inc ...string) scope.Scope {
-		return scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a", "npm-b"}, Packages: scope.Patterns{Include: inc}, Actions: []string{"read"}}}}
+		return scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a", "it/npm-b"}, Packages: scope.Patterns{Include: inc}, Actions: []string{"read"}}}}
 	}
 	names := func(prefixes ...string) []string {
 		var out []string
@@ -115,7 +115,7 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 		{"a user without a grant reads nothing", e, onEP(carolSub, "default"), []string{"npm-a", "npm-b"}, std, true, false},
 		{"an administrator on an endpoint that exposes everything", e, onEP(adminSub, "default"), []string{"npm-a", "npm-b"}, std, true, false},
 		{"a subject without an endpoint", e, aliceSub, []string{"npm-a", "npm-b"}, std, true, true},
-		{"a token scope with a repository list", e, onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"npm-a"}, Actions: []string{"read"}}}}), "default"), []string{"npm-a", "npm-b"}, std, true, true},
+		{"a token scope with a repository list", e, onEP(tokenScop(botSub, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{"it/npm-a"}, Actions: []string{"read"}}}}), "default"), []string{"npm-a", "npm-b"}, std, true, true},
 		{"a token scope with package patterns", e, onEP(tokenScop(botSub, readA("@a/*", "plain-*")), "default"), []string{"npm-a", "npm-b"}, std, true, true},
 		{
 			"a CI identity with an inline grant with package patterns and no policy", ciE, ciInlineOnly(),
@@ -124,7 +124,7 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 		},
 		{"the holder of content:metadata-read under a token scope with package patterns", meta, tokenScop(userSub(idAuditorDirect, "auditor"), scope.Scope{
 			System:       []string{string(ContentMetadataRead)},
-			Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Packages: scope.Patterns{Include: []string{"left-*"}}, Actions: []string{"read"}}},
+			Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Packages: scope.Patterns{Include: []string{"left-*"}}, Actions: []string{"read"}}},
 		}), []string{"npm-internal"}, names("left-", "right-"), true, true},
 		{"anonymous on an endpoint that exposes everything", e, onEP(anonSub, "default"), []string{"npm-a", "npm-b"}, std, true, false},
 		{"a service account on an endpoint with exposure rules", e, onEP(botSub, "customers"), []string{"npm-a", "npm-b"}, std, false, true},
@@ -134,11 +134,11 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("R-VULN-028 Q-VULN-81 "+tc.name, func(t *testing.T) {
-			idx, err := tc.e.Begin(ctx, tc.sub, tc.keys...)
+			idx, err := tc.e.Begin(ctx, tc.sub, qrs(tc.keys)...)
 			if err != nil {
 				t.Fatal(err)
 			}
-			rs, err := tc.e.ReadScopeOn(ctx, idx, tc.sub, "", tc.keys)
+			rs, err := tc.e.ReadScopeOn(ctx, idx, tc.sub, qr(""), qrs(tc.keys))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -149,16 +149,16 @@ func TestR_VULN_028_ReadScopeVersionIndependence(t *testing.T) {
 			allowed, refused, differing := 0, 0, 0
 			for _, k := range tc.keys {
 				for _, pkg := range tc.pkgs {
-					stands := rs.MayRead(k, pkg, "")
+					stands := rs.MayRead(qr(k), pkg, "")
 					if stands {
 						allowed++
 					} else {
 						refused++
 					}
 					for _, v := range versions {
-						want := tc.e.DecideOn(ctx, idx, tc.sub, Coordinate{Repository: k, Package: pkg, Version: v, Kind: KindMetadata, Actions: []Action{Read}}).Outcome == Allow
-						if rs.MayRead(k, pkg, v) != want {
-							t.Fatalf("%s %s@%s: DecideOn %v, MayRead %v", k, pkg, v, want, rs.MayRead(k, pkg, v))
+						want := tc.e.DecideOn(ctx, idx, tc.sub, Coordinate{Repository: qr(k), Package: pkg, Version: v, Kind: KindMetadata, Actions: []Action{Read}}).Outcome == Allow
+						if rs.MayRead(qr(k), pkg, v) != want {
+							t.Fatalf("%s %s@%s: DecideOn %v, MayRead %v", k, pkg, v, want, rs.MayRead(qr(k), pkg, v))
 						}
 						if want != stands {
 							differing++
@@ -186,11 +186,11 @@ func BenchmarkReadScopeMayRead(b *testing.B) {
 	e := newTestEngine(b, readScopeFixture(), func(o *Options) { o.Ceiling = exposureCeiling() })
 	keys := []string{"npm-b"}
 	sub := onEP(aliceSub, "default")
-	idx, err := e.Begin(context.Background(), sub, keys...)
+	idx, err := e.Begin(context.Background(), sub, qrs(keys)...)
 	if err != nil {
 		b.Fatal(err)
 	}
-	rs, err := e.ReadScopeOn(context.Background(), idx, sub, "", keys)
+	rs, err := e.ReadScopeOn(context.Background(), idx, sub, qr(""), qrs(keys))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func BenchmarkReadScopeMayRead(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for i := 0; b.Loop(); i++ {
-		_ = rs.MayRead("npm-b", names[i%len(names)], "1.0.0")
+		_ = rs.MayRead(qr("npm-b"), names[i%len(names)], "1.0.0")
 	}
 }
 
@@ -211,7 +211,7 @@ func BenchmarkReadScopeMayRead(b *testing.B) {
 // names its mapping.
 func ciInlineOnly() Subject {
 	sub := ciSubject(frozenOf("101", systemTier("gitlab-internal/solo", nil,
-		inline([]string{"npm-internal"}, []string{"@acme-billing/*"}, "", claims.Read))))
+		inline([]string{"it/npm-internal"}, []string{"@acme-billing/*"}, "", claims.Read))))
 	sub.ID = "solo-mapping"
 	return sub
 }

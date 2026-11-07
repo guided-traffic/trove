@@ -36,12 +36,15 @@ SELECT p.virtual_id, p.position, p.member_id, r.key AS member_key
 -- name: LockRepositoriesByKeys :many
 -- Resolves the keys a virtual repository names and keeps the rows from being
 -- marked for deletion before the transaction ends: FOR SHARE conflicts with the
--- update that sets lifecycle = 'deleting'. The order by id is the lock order.
-SELECT id, key, class, format, lifecycle, config
-  FROM repositories
- WHERE key = ANY(sqlc.arg(keys)::text[])
- ORDER BY id
-   FOR SHARE;
+-- update that sets lifecycle = 'deleting'. The order by id is the lock order. The
+-- keys are bare keys of one project: a virtual repository holds repositories of its
+-- own project only (Q-AUTHZ-206).
+SELECT r.id, r.key, r.class, r.format, r.lifecycle, r.config
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = ANY(sqlc.arg(keys)::text[])
+ ORDER BY r.id
+   FOR SHARE OF r;
 
 -- name: DeleteVirtualMembers :exec
 DELETE FROM virtual_members WHERE virtual_id = sqlc.arg(virtual_id)::bigint;

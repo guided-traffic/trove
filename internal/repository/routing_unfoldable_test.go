@@ -22,7 +22,7 @@ func foldingFixture(t *testing.T) *routeFixture {
 	f := newRouteFixture(t)
 	f.cat = catalog.NewRegistry()
 	f.cat.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "folding", Classes: []Class{Local, Remote, Virtual}, Layout: "folding", ProtocolBasePath: "/api/folding/{key}/",
+		ID: "folding", Classes: []Class{Local, Remote, Virtual}, Layout: "folding", ProtocolBasePath: "/api/folding/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: foldingNames{}})
 	return f
@@ -49,7 +49,7 @@ func TestR_ARCH_008_AnUnfoldableNameFailsClosedInRouting(t *testing.T) {
 		if r.Admitted || slices.Contains(memberKeys(r), "remote") || r.Decision.Kind != "" {
 			t.Fatalf("route = %+v", r)
 		}
-		if r.Dropped["remote"] != DropNotAdmitted {
+		if r.Dropped[rn("remote")] != DropNotAdmitted {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})

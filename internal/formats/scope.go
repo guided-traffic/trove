@@ -61,5 +61,5 @@ func RepositoryAllowed(ctx context.Context, repo RepoRef) error {
 		return nil
 	}
 	return errs.E(errs.Internal, errs.CodeInternal, "A format named a repository that is not the request's or one of its members.",
-		errs.WithCause(fmt.Errorf("repository %q (id %d) is outside the request's repositories", repo.Key, repo.ID)))
+		errs.WithCause(fmt.Errorf("repository %q (id %d) is outside the request's repositories", repo.Name, repo.ID)))
 }

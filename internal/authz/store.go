@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -39,6 +40,10 @@ const stateAccountOutsideProject = "AI005"
 
 // pgForeignKeyViolation is the SQLSTATE of a row that names a row that is not there.
 const pgForeignKeyViolation = "23503"
+
+// stateNameOfProject is the SQLSTATE of the guard of 00019 that compares the stored name of a project's policy
+// with its project (AI003); the validation matched them, so it meets only a project that is gone.
+const stateNameOfProject = "AI003"
 
 func notFoundPolicy(name string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The permission policy %q does not exist.", name))
@@ -87,7 +92,9 @@ func afterEpoch(tx meta.Tx, epoch *int64, fn func(ctx context.Context, tx meta.T
 }
 
 // Create stores a new policy (R-AUTHZ-021). The answer carries the epoch the
-// write produced, for the header Trove-Authz-Epoch (R-AUTHZ-032).
+// write produced, for the header Trove-Authz-Epoch (R-AUTHZ-032). in.Name is the
+// stored name ([StoredPolicyName]), by which every later call of this service
+// addresses the policy.
 func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput, opts ...WriteOption) (Policy, int64, error) {
 	var out Policy
 	var epoch int64
@@ -114,7 +121,10 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 		return Policy{}, err
 	}
 	// The project lookups run on this transaction, like the insert (Q-AUTHZ-199).
-	rp, problems, err := s.resolve(ctx, in, false, append(opts, s.inTx(qs), func(o *writeOpts) { o.create = true })...)
+	rp, problems, err := s.resolve(ctx, in, append(opts, s.inTx(qs))...)
+	if err == nil && len(problems) == 0 {
+		problems, err = bindKeySelectors(ctx, qs, rp)
+	}
 	if err != nil {
 		return Policy{}, err
 	}
@@ -126,14 +136,19 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, ProjectID: rp.project, Actor: actorID(actor),
 	})
 	if err != nil {
-		if rp.project != "" && postgres.IsState(err, pgForeignKeyViolation) {
-			// The project was deleted between the lookup and the insert.
-			return Policy{}, problemError([]ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists or it is not administered by the caller.", *in.Project))})
+		if rp.project != "" && (postgres.IsState(err, pgForeignKeyViolation) || postgres.IsState(err, stateNameOfProject)) {
+			// The project was deleted between the lookup and the insert: the guard of the stored name
+			// finds no project key (AI003), or the foreign key no project.
+			return Policy{}, problemError([]ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists.", *in.Project))})
 		}
 		return Policy{}, err
 	}
 	if len(rows) == 0 {
-		return Policy{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A permission policy named %q exists.", in.Name))
+		where, name := "instance-wide", in.Name
+		if project, bare := splitPolicyName(in.Name); project != nil {
+			where, name = "in the project "+*project, bare
+		}
+		return Policy{}, errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A permission policy named %q exists %s.", name, where))
 	}
 	if err := writeChildren(ctx, qs, id, rp); err != nil {
 		return Policy{}, err
@@ -152,9 +167,12 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 	return out, nil
 }
 
-// Update replaces a policy as a whole (R-AUTHZ-021: full replacements). expected
-// is the version the client saw (If-Match); errs.AnyRevision is the deliberate blind
-// write. A different version answers 412, a missing policy 404.
+// Update replaces a policy as a whole (R-AUTHZ-021: full replacements). name is
+// the stored name ([StoredPolicyName]); the name and the project are immutable:
+// in.Name is taken from it, and in.Project must be the policy's project
+// (Q-AUTHZ-186). expected is the version the client saw (If-Match);
+// errs.AnyRevision is the deliberate blind write. A different version answers
+// 412, a missing policy 404.
 func (s *Service) Update(ctx context.Context, actor Subject, name string, expected int64, in PolicyInput, opts ...WriteOption) (Policy, int64, error) {
 	in.Name = name // the name is immutable
 	o := collectOptions(opts)
@@ -173,7 +191,7 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 		if err != nil {
 			return err
 		}
-		if err := delegateOwns(o, current); err != nil {
+		if err := ownsPolicy(o, current); err != nil {
 			return err
 		}
 		// Before the rules of the new project: the project is fixed, so a change is
@@ -182,8 +200,13 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 			return problemError([]ProblemField{field("/project", "immutable", "The project of a policy is fixed when it is created.")})
 		}
 		var problems []ProblemField
-		if rp, problems, err = s.resolve(ctx, in, false, append(opts, s.inTx(qs))...); err != nil {
+		if rp, problems, err = s.resolve(ctx, in, append(opts, s.inTx(qs))...); err != nil {
 			return err
+		}
+		if len(problems) == 0 {
+			if problems, err = bindKeySelectors(ctx, qs, rp); err != nil {
+				return err
+			}
 		}
 		if len(problems) > 0 {
 			return problemError(problems)
@@ -233,28 +256,29 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 	return out, epoch, nil
 }
 
-// delegateOwns checks, under the policy lock, that the policy under change is the
-// project's of a project administrator: a handler asked it before, on a state a
-// concurrent write may have changed (a policy deleted and created again under the
-// same name). Another project's policy answers 404 as a missing one does, a global
-// policy 403 (Q-AUTHZ-199).
-func delegateOwns(o writeOpts, current Policy) error {
+// ownsPolicy checks, under the policy lock, that the policy under change belongs
+// to the project the caller writes for: the expected project of [ExpectProject],
+// and the project of an Owner without a policies capability ([AsProjectOwner]).
+// The stored name names the project already, so this holds for every policy the
+// name finds; the check stays as the guard of the lock. Another project's policy
+// answers 404 as a missing one does, a global policy 403 to an Owner (Q-AUTHZ-199).
+func ownsPolicy(o writeOpts, current Policy) error {
 	if o.expectSet && !sameProject(current.Project, o.expectProject) {
 		return notFoundPolicy(current.Name)
 	}
 	switch {
-	case o.delegate == "":
+	case o.owner == "":
 		return nil
 	case current.Project == nil:
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "A global policy needs the capability policies:write.")
-	case *current.Project != o.delegate:
+	case *current.Project != o.owner:
 		return notFoundPolicy(current.Name)
 	}
 	return nil
 }
 
-// Delete removes a policy with its selectors, patterns and entries. expected
-// follows the rules of Update.
+// Delete removes a policy with its selectors, patterns and entries. name is the
+// stored name ([StoredPolicyName]); expected follows the rules of Update.
 func (s *Service) Delete(ctx context.Context, actor Subject, name string, expected int64, opts ...WriteOption) (int64, error) {
 	o := collectOptions(opts)
 	var epoch int64
@@ -270,7 +294,7 @@ func (s *Service) Delete(ctx context.Context, actor Subject, name string, expect
 		if err != nil {
 			return err
 		}
-		if err := delegateOwns(o, current); err != nil {
+		if err := ownsPolicy(o, current); err != nil {
 			return err
 		}
 		before, err := s.snapshotState(ctx, qs, current)
@@ -305,7 +329,8 @@ func (s *Service) Delete(ctx context.Context, actor Subject, name string, expect
 	return epoch, nil
 }
 
-// Get returns a policy with its warnings (R-AUTHZ-021).
+// Get returns a policy with its warnings (R-AUTHZ-021); name is the stored name
+// ([StoredPolicyName]).
 func (s *Service) Get(ctx context.Context, name string) (Policy, error) {
 	var p Policy
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
@@ -319,7 +344,7 @@ func (s *Service) Get(ctx context.Context, name string) (Policy, error) {
 	if err != nil {
 		return Policy{}, err
 	}
-	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput, true); rerr == nil && len(problems) == 0 {
+	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput); rerr == nil && len(problems) == 0 {
 		p.Warnings = nonNilStrings(rp.warnings)
 	}
 	return p, nil
@@ -334,35 +359,8 @@ func sameProject(a, b *string) bool {
 	return *a == *b
 }
 
-// ProjectOf returns the key of the project of the named policy, nil for a global
-// policy, and 404 for a policy that does not exist. A handler that lets a project
-// administrator write a policy asks it before the write, to narrow the caller to
-// the policy's project (R-AUTHZ-026).
-func (s *Service) ProjectOf(ctx context.Context, name string) (*string, error) {
-	var out *string
-	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
-		qs, err := queriesOf(tx)
-		if err != nil {
-			return err
-		}
-		rows, err := qs.AuthzGetPolicy(ctx, name)
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return notFoundPolicy(name)
-		}
-		if rows[0].ProjectKey != "" {
-			k := rows[0].ProjectKey
-			out = &k
-		}
-		return nil
-	})
-	return out, err
-}
-
-// List returns every policy sorted by name, without warnings. The cursor paging
-// and the filters of R-AUTHZ-021 are the handler's.
+// List returns every policy sorted by stored name, without warnings. The cursor
+// paging and the filters of R-AUTHZ-021 are the handler's.
 func (s *Service) List(ctx context.Context) ([]Policy, error) {
 	var out []Policy
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
@@ -415,6 +413,7 @@ func (s *Service) load(ctx context.Context, qs *q.Queries, name string) (Policy,
 	})
 }
 
+// assemble reads the children of a policy row; the name is the stored name (Q-AUTHZ-209).
 func (s *Service) assemble(ctx context.Context, qs *q.Queries, h policyHead) (Policy, error) {
 	p := Policy{ID: h.ID, Version: h.Version, Warnings: []string{}}
 	p.Name, p.Description, p.ResourceType = h.Name, h.Description, h.ResourceType
@@ -432,11 +431,15 @@ func (s *Service) assemble(ctx context.Context, qs *q.Queries, h policyHead) (Po
 		return Policy{}, err
 	}
 	for _, r := range sels {
-		sel, err := selectorOfRow(q.AuthzBuildSelectorsRow{Kind: r.Kind, RepositoryID: r.RepositoryID, KeyPattern: r.KeyPattern, RepoClass: r.RepoClass, Format: r.Format})
+		in := instanceContext
+		if p.Project != nil {
+			in = projectContext(*p.Project)
+		}
+		sel, err := selectorOfRow(q.AuthzBuildSelectorsRow{Kind: r.Kind, RepositoryID: r.RepositoryID, KeyPattern: r.KeyPattern, RepoClass: r.RepoClass, Format: r.Format}, in)
 		if err != nil {
 			return Policy{}, err
 		}
-		sel.key = r.RepositoryKey
+		sel.key, sel.project = r.RepositoryKey, r.RepositoryProjectKey
 		p.Resources.Repositories = append(p.Resources.Repositories, sel.text(nil))
 	}
 	p.Inert = len(sels) == 0
@@ -509,6 +512,34 @@ func (s *Service) snapshotState(ctx context.Context, qs *q.Queries, p Policy) (*
 	return st, nil
 }
 
+// bindKeySelectors binds the key selectors of a policy write to the repositories the database holds, in the write's
+// transaction and under a share lock of each repository row (AuthzBindRepository), after the project's row
+// (AuthzProjectByKey, FOR SHARE): the lock order of a move, which takes the projects and then the repository. The
+// validation resolved them on the repository snapshot, which may be of another moment on this replica, so a selector
+// could otherwise hold a repository that has left the policy's project, or a global key the repository that held the
+// name before (R-AUTHZ-004, R-REPO-060). A key the project does not hold is 422 unknown_repository, as in the
+// validation. It runs only on a write without problems, where rp.selectors are the selectors of the input in order.
+func bindKeySelectors(ctx context.Context, qs *q.Queries, rp *resolvedPolicy) ([]ProblemField, error) {
+	var ps []ProblemField
+	for i := range rp.selectors {
+		sel := &rp.selectors[i]
+		if sel.kind != selKey {
+			continue
+		}
+		rows, err := qs.AuthzBindRepository(ctx, q.AuthzBindRepositoryParams{Project: sel.project, Key: sel.key})
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			ps = append(ps, field("/resources/repositories/"+strconv.Itoa(i), errs.CodeUnknownRepository,
+				fmt.Sprintf("No repository %q exists.", rp.in.Resources.Repositories[i])))
+			continue
+		}
+		sel.repoID, sel.class = rows[0].ID, rows[0].Class
+	}
+	return ps, nil
+}
+
 func writeChildren(ctx context.Context, qs *q.Queries, id string, rp *resolvedPolicy) error {
 	for i, sel := range rp.selectors {
 		p := q.AuthzInsertSelectorParams{PolicyID: id, Ordinal: int16(i), Kind: sel.kind, Format: sel.format} //nolint:gosec // bounded by the selector limit
@@ -574,13 +605,15 @@ func writeChildren(ctx context.Context, qs *q.Queries, id string, rp *resolvedPo
 // access-bearing state before and after.
 func policyEvent(name string, actor Subject, p Policy, before, after *journalState, epoch int64, journal bool) audit.Event {
 	details := map[string]any{"epoch": epoch, "before": before, "after": after, "version": p.Version}
-	if p.Project != nil {
-		details["project"] = *p.Project
-	}
 	ev := audit.Event{
 		Type: name, Actor: actorOf(actor), Outcome: audit.Success,
 		Subject: audit.Subject{Kind: "permission_policy", ID: p.ID, Name: p.Name},
 		Details: mustJSON(details),
+	}
+	if p.Project != nil {
+		// The event names the project with the name (Q-AUTHZ-209).
+		details["project"] = *p.Project
+		ev.Details, ev.Project = mustJSON(details), *p.Project
 	}
 	if journal {
 		j := map[string]any{"policyId": p.ID, "name": p.Name, "before": before, "after": after}

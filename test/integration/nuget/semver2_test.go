@@ -53,7 +53,7 @@ func (e *wenv) semver2Jobs(state, result string) int64 {
 // with the index's validator.
 func (e *wenv) hive(r *testenv.Replica, hive string) ([]string, string) {
 	e.t.Helper()
-	a := e.st.Do(r, "GET", "/api/nuget/nuget-local/v3/"+hive+"/acme.widgets/index.json", e.tokReader, nil)
+	a := e.st.Do(r, "GET", "/api/nuget/it/nuget-local/v3/"+hive+"/acme.widgets/index.json", e.tokReader, nil)
 	if a.Status != 200 {
 		e.t.Fatalf("%s: %d %s", hive, a.Status, a.Body)
 	}
@@ -67,7 +67,7 @@ func (e *wenv) hive(r *testenv.Replica, hive string) ([]string, string) {
 // latest is the version the search shows for acme.widgets with the query's semVerLevel.
 func (e *wenv) latest(r *testenv.Replica, query string) string {
 	e.t.Helper()
-	a := e.st.Do(r, "GET", "/api/nuget/nuget-local/v3/search?q=acme.widgets"+query, e.tokReader, nil)
+	a := e.st.Do(r, "GET", "/api/nuget/it/nuget-local/v3/search?q=acme.widgets"+query, e.tokReader, nil)
 	if a.Status != 200 {
 		e.t.Fatalf("search%s: %d %s", query, a.Status, a.Body)
 	}

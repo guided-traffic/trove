@@ -15,7 +15,7 @@ import (
 func mirrorCatalog() *catalog.Registry {
 	r := remoteCatalog()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "mirrorable", Classes: []Class{Local, Remote, Virtual}, Layout: "mirrorable", ProtocolBasePath: "/api/mirrorable/{key}/",
+		ID: "mirrorable", Classes: []Class{Local, Remote, Virtual}, Layout: "mirrorable", ProtocolBasePath: "/api/mirrorable/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true,
 		DefaultUpstreamURL: "https://registry.example.org/", DefaultMetadataTTLSeconds: intp(7200), DefaultNotFoundTTLSeconds: intp(1800),
 	}, Names: lower{}, Mirror: true})
@@ -169,6 +169,8 @@ func TestMirrorBound(t *testing.T) {
 	}
 }
 
+// R-AUTHZ-026, Q-REPO-142: the mode and the mirror members of a remote repository are the administrator's; an Owner (the
+// restricted caller) keeps them as stored, changes paused, or turns the mode back to pullThrough.
 func TestR_AUTHZ_026_DelegatedMirrorRules(t *testing.T) {
 	const (
 		pull   = `{"url":"https://partner.example.test/"}`
@@ -188,7 +190,7 @@ func TestR_AUTHZ_026_DelegatedMirrorRules(t *testing.T) {
 		if err := v.err(); err != nil {
 			t.Fatalf("next: %v", err)
 		}
-		delegatedRemote(v, Write{Delegate: "web"}, cur, &nd)
+		restrictedRemote(v, Caller{Restricted: true}, cur, &nd)
 		return fieldCodes(v)
 	}
 	for _, tc := range []struct {

@@ -126,7 +126,7 @@ func TestR_BAS_027_AForwardErrorAloneDoesNotBeginUnreachableButARefusedTokenDoes
 	r.connect()
 	guarded := r.l.Guard(r.c)
 	do := func() error {
-		u, _ := url.Parse("/api/npm/npm-all/x")
+		u, _ := url.Parse("/api/npm/web/npm-all/x")
 		resp, err := guarded.Do(context.Background(), mainclient.Forward{
 			Request: &http.Request{Method: http.MethodGet, URL: u, Header: http.Header{}}, Class: mainclient.Authenticated, Kind: mainclient.KindForward,
 		})
@@ -159,7 +159,7 @@ func TestR_BAS_027_AForwardErrorAloneDoesNotBeginUnreachableButARefusedTokenDoes
 	if !r.l.State().Reachable || r.gauge("refused") != 0 {
 		t.Fatalf("a forward's 401 bastion_token_invalid moved the link: reachable %v refused %v", r.l.State().Reachable, r.gauge("refused"))
 	}
-	if _, err := guarded.Check(context.Background(), mainclient.Authenticated, iface.CheckRequest{Repositories: []string{"npm-all"}}); !errors.Is(err, mainclient.ErrTokenRefused) {
+	if _, err := guarded.Check(context.Background(), mainclient.Authenticated, iface.CheckRequest{Repositories: []string{"web/npm-all"}}); !errors.Is(err, mainclient.ErrTokenRefused) {
 		t.Fatalf("check with a revoked token: %v", err)
 	}
 	if r.l.State().Reachable || r.gauge("reachable") != 0 || r.gauge("refused") != 1 {
@@ -545,8 +545,8 @@ func TestR_BAS_026_EveryKindIsAppliedAndMatchesWhatTheRulesSay(t *testing.T) {
 	o := r.clock.Now()
 	tokenAns := answers.Answer{Kind: answers.Credential, ObtainedAt: o, TokenID: "t1", PrincipalID: "p1"}
 	principalAns := answers.Answer{Kind: answers.Credential, ObtainedAt: o, TokenID: "t2", PrincipalID: "p2"}
-	shape := answers.Answer{Kind: answers.Shape, ObtainedAt: o, TokenID: "t3", PrincipalID: "p3", Repository: "npm-all"}
-	url1 := answers.Answer{Kind: answers.URL, ObtainedAt: o, TokenID: "t4", PrincipalID: "p4", Repository: "npm-local"}
+	shape := answers.Answer{Kind: answers.Shape, ObtainedAt: o, TokenID: "t3", PrincipalID: "p3", Repository: "web/npm-all"}
+	url1 := answers.Answer{Kind: answers.URL, ObtainedAt: o, TokenID: "t4", PrincipalID: "p4", Repository: "web/npm-local"}
 	url2 := answers.Answer{Kind: answers.URL, ObtainedAt: o, TokenID: "t5", PrincipalID: "p5", Repository: "npm-other"}
 	all := []answers.Answer{tokenAns, principalAns, shape, url1, url2}
 	for _, a := range all {
@@ -565,7 +565,7 @@ func TestR_BAS_026_EveryKindIsAppliedAndMatchesWhatTheRulesSay(t *testing.T) {
 	if r.check(principalAns) != answers.Revoked || r.check(shape) != answers.Usable {
 		t.Error("the principal entry")
 	}
-	r.main.AddEntry(iface.FeedEntry{Kind: iface.FeedContent, Repositories: []string{"npm-local", "npm-all"}})
+	r.main.AddEntry(iface.FeedEntry{Kind: iface.FeedContent, Repositories: []string{"web/npm-local", "web/npm-all"}})
 	r.tickAfter(time.Second)
 	if r.check(url1) != answers.Revoked || r.check(url2) != answers.Usable || r.check(shape) != answers.Usable {
 		t.Errorf("the content entry: url1 %v url2 %v shape %v", r.check(url1), r.check(url2), r.check(shape))

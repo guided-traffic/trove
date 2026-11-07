@@ -100,9 +100,9 @@
             <option value="" [selected]="!form().repository" i18n="@@ep.field.repository.choose">
               Choose a repository
             </option>
-            @for (r of valueOf(repos) ?? []; track r.key) {
-              <option [value]="r.key" [selected]="form().repository === r.key" translate="no">
-                {{ r.key }} ({{ r.format }})
+            @for (r of valueOf(repos) ?? []; track refOf(r)) {
+              <option [value]="refOf(r)" [selected]="form().repository === refOf(r)" translate="no">
+                {{ refOf(r) }} ({{ r.format }})
               </option>
             }
             @if (form().repository && !repository()) {

@@ -28,9 +28,10 @@ func systemTier() tierRef { return tierRef{tier: TierSystem} }
 
 func projectTier(key string) tierRef { return tierRef{tier: ProjectTier(key), project: key} }
 
-// mappingByName reads one mapping inside a write, with its policies; ok is false when there is none.
-func mappingByName(ctx context.Context, qs *q.Queries, issuer, name string) (Mapping, bool, error) {
-	rows, err := qs.CiMappingByName(ctx, q.CiMappingByNameParams{Issuer: issuer, Name: name})
+// mappingByName reads one mapping of the tier inside a write, with its policies; ok is false when there is none.
+// A name is unique within the issuer's tier, so the tier is part of the address.
+func mappingByName(ctx context.Context, qs *q.Queries, issuer, tier, name string) (Mapping, bool, error) {
+	rows, err := qs.CiMappingByName(ctx, q.CiMappingByNameParams{Issuer: issuer, Tier: tier, Name: name})
 	if err != nil || len(rows) == 0 {
 		return Mapping{}, false, err
 	}
@@ -133,12 +134,6 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 				return projectNotFound(tr.project)
 			}
 			projectID = ids[0]
-			// The project's prefix before the name is looked up (H-413, Q-CI-51): a name outside it is refused whether or
-			// not a mapping of another tier holds it, so the 409 of a taken name never answers for a name the caller may
-			// not take. A project that does not exist is 404 first, as on every project route.
-			if err := claims.CheckProjectName(tr.project, in.Name); err != nil {
-				return mappingViolation(fieldOfCheck(err))
-			}
 		}
 		lock, err := lockIssuer(ctx, qs, issuerName, errs.AnyRevision)
 		if err != nil {
@@ -148,7 +143,7 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 		if err != nil {
 			return err
 		}
-		if _, exists, err := mappingByName(ctx, qs, is.Name, in.Name); err != nil {
+		if _, exists, err := mappingByName(ctx, qs, is.Name, tr.tier, in.Name); err != nil {
 			return err
 		} else if exists {
 			return errs.E(errs.Conflict, errs.CodeAlreadyExists, fmt.Sprintf("A mapping named %q exists on the CI issuer %q.", in.Name, is.Name))
@@ -171,7 +166,7 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 		if err := s.checkPriority(ctx, qs, is.ID, tr.tier, in.Priority, id); err != nil {
 			return err
 		}
-		if _, err := qs.CiMappingPrincipalInsert(ctx, q.CiMappingPrincipalInsertParams{ID: principalID, Name: is.Name + "/" + in.Name, Actor: principal.IDOrEmpty(caller.ID)}); err != nil {
+		if _, err := qs.CiMappingPrincipalInsert(ctx, q.CiMappingPrincipalInsertParams{ID: principalID, Name: principalNameOf(is.Name, tr.project, in.Name), Actor: principal.IDOrEmpty(caller.ID)}); err != nil {
 			return err
 		}
 		rows, err := qs.CiMappingInsert(ctx, q.CiMappingInsertParams{
@@ -191,7 +186,7 @@ func (s *MappingService) create(ctx context.Context, caller Actor, issuerName st
 				return err
 			}
 		}
-		if _, _, err := s.applyBindings(ctx, tx, qs, principalID, sv.grants, in.Grants.Policies); err != nil {
+		if _, _, err := s.applyBindings(ctx, tx, qs, principalID, sv.grants); err != nil {
 			return err
 		}
 		if err := s.bump(ctx, tx, qs, is.ID); err != nil {
@@ -276,10 +271,14 @@ func (s *MappingService) revokeTokens(ctx context.Context, tx meta.Tx, qs *q.Que
 	return err
 }
 
-// lockMapping takes the issuer row FOR UPDATE and reads the mapping under it; the tier check of a
-// project's form is the caller's (`project` non-empty). expected is the version the client saw
+// lockMapping takes the issuer row FOR UPDATE and reads the mapping under it, in the issuer's system tier or,
+// with `project`, in that project's tier: the same name in the other tier is another mapping. expected is the version the client saw
 // (errs.AnyRevision for none).
 func (s *MappingService) lockMapping(ctx context.Context, qs *q.Queries, issuer, name, project string, expected int64) (Issuer, Mapping, error) {
+	tier := systemTier().tier
+	if project != "" {
+		tier = ProjectTier(project)
+	}
 	lock, err := lockIssuer(ctx, qs, issuer, errs.AnyRevision)
 	if err != nil {
 		return Issuer{}, Mapping{}, err
@@ -288,11 +287,11 @@ func (s *MappingService) lockMapping(ctx context.Context, qs *q.Queries, issuer,
 	if err != nil {
 		return Issuer{}, Mapping{}, err
 	}
-	m, ok, err := mappingByName(ctx, qs, issuer, name)
+	m, ok, err := mappingByName(ctx, qs, issuer, tier, name)
 	if err != nil {
 		return Issuer{}, Mapping{}, err
 	}
-	if !ok || (project != "" && m.Tier != ProjectTier(project)) {
+	if !ok {
 		return Issuer{}, Mapping{}, mappingNotFound(issuer, name)
 	}
 	if expected != errs.AnyRevision && expected != m.Version {
@@ -369,7 +368,7 @@ func (s *MappingService) replace(ctx context.Context, caller Actor, issuer, name
 		if len(rows) == 0 {
 			return mappingNotFound(issuer, name)
 		}
-		if _, _, err := s.applyBindings(ctx, tx, qs, before.PrincipalID, sv.grants, in.Grants.Policies); err != nil {
+		if _, _, err := s.applyBindings(ctx, tx, qs, before.PrincipalID, sv.grants); err != nil {
 			return err
 		}
 		if err := s.bump(ctx, tx, qs, is.ID); err != nil {

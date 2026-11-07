@@ -62,10 +62,12 @@ CREATE TABLE ci_issuer_keys (
 CREATE INDEX ci_issuer_keys_due ON ci_issuer_keys (next_refresh_at);
 
 -- Identity mappings (R-CI-009). The principal row of kind 'ci_mapping' (00007) is the mapping's
--- principal, name '<issuer>/<mapping>' (Q-CI-10); the service inserts both in one transaction and
--- deletes the principal with the mapping. A project administrator's mapping is of the tier
--- 'project:<key>' and names its project in project_id, so a project with mappings cannot be deleted
--- (ON DELETE RESTRICT; the project service answers 409 project_not_empty first, Q-CI-26).
+-- principal, name '<issuer>/<mapping>' (Q-CI-10), or '<issuer>/<project key>/<mapping>' for a project's
+-- mapping (Q-AUTHZ-214); the service inserts both in one transaction and deletes the principal with the
+-- mapping. A project Owner's mapping is of the tier 'project:<key>' and names its project in project_id,
+-- so a project with mappings cannot be deleted (ON DELETE RESTRICT; the project service answers 409
+-- project_not_empty first). The name column holds the bare name in every tier and is unique within the
+-- issuer's tier, so one name may be a system mapping and a mapping of each project (R-CI-009).
 -- delegation_id has no foreign key: delegation to a group is P1 (R-CI-023) and adds its table.
 CREATE TABLE ci_mappings (
     id             uuid        PRIMARY KEY,
@@ -88,7 +90,7 @@ CREATE TABLE ci_mappings (
     created_by     text        NOT NULL,
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (issuer_id, name),
+    UNIQUE (issuer_id, tier, name),
     UNIQUE (issuer_id, tier, priority),
     CHECK ((tier LIKE 'project:%') = (project_id IS NOT NULL))
 );

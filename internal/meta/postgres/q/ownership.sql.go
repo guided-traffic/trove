@@ -192,11 +192,12 @@ func (q *Queries) OwnershipLockState(ctx context.Context, arg OwnershipLockState
 }
 
 const ownershipOwnedBy = `-- name: OwnershipOwnedBy :many
-SELECT o.domain, o.format, o.package_name, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
+SELECT o.domain, o.format, o.package_name, COALESCE(rp.key, '')::text AS repository_project_key, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
        (extract(epoch FROM o.added_at) * 1000000)::bigint AS added_us
   FROM package_owner o
   JOIN package_ownership s ON s.domain = o.domain AND s.format = o.format AND s.package_name = o.package_name
   LEFT JOIN repositories r ON r.id = (CASE WHEN o.domain ~ '^repo:[0-9]+$' THEN substr(o.domain, 6)::bigint END)
+  LEFT JOIN project rp ON rp.id = r.project_id
  WHERE o.principal_id = $1::text::uuid
    AND ($2::text = '' OR o.domain = $2::text)
    AND (o.domain, o.format, o.package_name) > ($3::text, $4::text, $5::text)
@@ -214,13 +215,14 @@ type OwnershipOwnedByParams struct {
 }
 
 type OwnershipOwnedByRow struct {
-	Domain        string
-	Format        string
-	PackageName   string
-	RepositoryKey string
-	State         string
-	Reason        string
-	AddedUs       int64
+	Domain               string
+	Format               string
+	PackageName          string
+	RepositoryProjectKey string
+	RepositoryKey        string
+	State                string
+	Reason               string
+	AddedUs              int64
 }
 
 // The names one principal owns, in key order after the cursor (R-AUTHZ-019
@@ -246,6 +248,7 @@ func (q *Queries) OwnershipOwnedBy(ctx context.Context, arg OwnershipOwnedByPara
 			&i.Domain,
 			&i.Format,
 			&i.PackageName,
+			&i.RepositoryProjectKey,
 			&i.RepositoryKey,
 			&i.State,
 			&i.Reason,

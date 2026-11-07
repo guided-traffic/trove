@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/meta"
 )
@@ -28,7 +30,7 @@ func (f *fakeDecider) record(idx *authz.Index, sub authz.Subject) {
 	f.mu.Unlock()
 }
 
-func (f *fakeDecider) Begin(_ context.Context, sub authz.Subject, _ ...string) (*authz.Index, error) {
+func (f *fakeDecider) Begin(_ context.Context, sub authz.Subject, _ ...qname.Repo) (*authz.Index, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.begins++
@@ -38,7 +40,7 @@ func (f *fakeDecider) Begin(_ context.Context, sub authz.Subject, _ ...string) (
 	return f.nextIdx, nil
 }
 
-func (f *fakeDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ string) (*authz.Index, error) {
+func (f *fakeDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ qname.Repo) (*authz.Index, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.nextIdx != nil && f.nextIdx != idx {
@@ -52,12 +54,12 @@ func (f *fakeDecider) DecideOn(_ context.Context, idx *authz.Index, sub authz.Su
 	return authz.Decision{Outcome: authz.Allow}
 }
 
-func (f *fakeDecider) ReadableOn(_ context.Context, idx *authz.Index, sub authz.Subject, keys []string) ([]string, error) {
+func (f *fakeDecider) ReadableOn(_ context.Context, idx *authz.Index, sub authz.Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	f.record(idx, sub)
 	return keys, nil
 }
 
-func (f *fakeDecider) ExposedOn(idx *authz.Index, sub authz.Subject, keys []string) []string {
+func (f *fakeDecider) ExposedOn(idx *authz.Index, sub authz.Subject, keys []qname.Repo) []qname.Repo {
 	f.record(idx, sub)
 	return keys
 }
@@ -98,15 +100,15 @@ func TestR_AUTHZ_015_TheHolderAsksEveryQuestionOnOneIndex(t *testing.T) {
 	idx := newIndex(1)
 	d := &fakeDecider{nextIdx: idx}
 	sub := authz.Subject{Name: "alice", Endpoint: "customers"}
-	a, err := Begin(t.Context(), d, sub, "generic-local")
+	a, err := Begin(t.Context(), d, sub, qr("generic-local"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := t.Context()
-	a.Decide(ctx, authz.Coordinate{Repository: "generic-local"})
-	_, _ = a.Readable(ctx, []string{"generic-local"})
-	a.Exposed([]string{"generic-local"})
-	_, _ = a.PathsAllowed(ctx, authz.Coordinate{Repository: "generic-local"}, authz.Read, []string{"x"}, nil)
+	a.Decide(ctx, authz.Coordinate{Repository: qr("generic-local")})
+	_, _ = a.Readable(ctx, []qname.Repo{qr("generic-local")})
+	a.Exposed([]qname.Repo{qr("generic-local")})
+	_, _ = a.PathsAllowed(ctx, authz.Coordinate{Repository: qr("generic-local")}, authz.Read, []string{"x"}, nil)
 	_ = a.Require(ctx, "policies:read")
 	a.Holds("policies:read")
 	_, _ = a.Check(nil)
@@ -144,14 +146,14 @@ func TestR_AUTHZ_015_KnowMovesTheRequestForwardOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.nextIdx = second
-	if err := a.Know(t.Context(), "learned"); err != nil {
+	if err := a.Know(t.Context(), qr("learned")); err != nil {
 		t.Fatal(err)
 	}
 	if a.Index() != second {
 		t.Fatal("Know did not advance the request to the newer index")
 	}
 	d.nextIdx = first // a Know that answers with an older index must not move the request back
-	if err := a.Know(t.Context(), "learned-too"); err != nil {
+	if err := a.Know(t.Context(), qr("learned-too")); err != nil {
 		t.Fatal(err)
 	}
 	if a.Index() != second {
@@ -176,7 +178,7 @@ func TestR_AUTHZ_015_TheHolderTravelsInTheContext(t *testing.T) {
 		t.Fatal("the stored holder was not returned")
 	}
 	t.Run("Resolve returns the stored holder and begins nothing", func(t *testing.T) {
-		got, err := Resolve(ctx, d, sub, "generic-local")
+		got, err := Resolve(ctx, d, sub, qr("generic-local"))
 		if err != nil || got != a || d.begins != 1 {
 			t.Fatalf("holder %p (%p), begins %d, %v", got, a, d.begins, err)
 		}

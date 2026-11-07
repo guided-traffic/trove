@@ -98,7 +98,7 @@ func (r *run) viewEmpty(a formats.ViewAdapter) {
 			continue
 		}
 		h := r.host(class)
-		ids, err := a.Withheld(ctx, h, []string{h.Ref().Key})
+		ids, err := a.Withheld(ctx, h, []string{h.Ref().Name.String()})
 		if err != nil || len(ids) != 0 {
 			r.failf("Withheld over an empty %s repository = %v, %v, want nothing and no error", class, ids, err)
 		}
@@ -169,7 +169,7 @@ func (r *run) viewStored(a formats.ViewAdapter, v *ViewFixture) {
 			r.failf("Stored with tags lists %v, want %v", withTags.Versions, newest)
 		}
 	}
-	ids, err := a.Withheld(ctx, h, []string{h.Ref().Key})
+	ids, err := a.Withheld(ctx, h, []string{h.Ref().Name.String()})
 	if err != nil || len(ids) != 0 {
 		r.failf("Withheld over a repository whose versions are all served = %v, %v, want nothing and no error", ids, err)
 	}

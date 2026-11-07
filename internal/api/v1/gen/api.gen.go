@@ -964,24 +964,6 @@ func (e EndpointConfigurationSurface) Valid() bool {
 	}
 }
 
-// Defines values for EndpointConfigurationWildcardRoot.
-const (
-	EndpointConfigurationWildcardRootLabel EndpointConfigurationWildcardRoot = "label"
-	EndpointConfigurationWildcardRootNone  EndpointConfigurationWildcardRoot = "none"
-)
-
-// Valid indicates whether the value is a known member of the EndpointConfigurationWildcardRoot enum.
-func (e EndpointConfigurationWildcardRoot) Valid() bool {
-	switch e {
-	case EndpointConfigurationWildcardRootLabel:
-		return true
-	case EndpointConfigurationWildcardRootNone:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for EndpointRateLimitKey.
 const (
 	EndpointRateLimitKeyAddress   EndpointRateLimitKey = "address"
@@ -1339,6 +1321,24 @@ func (e ManualHeadingLevel) Valid() bool {
 	case N2:
 		return true
 	case N3:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MemberKind.
+const (
+	MemberKindGroup MemberKind = "group"
+	MemberKindUser  MemberKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the MemberKind enum.
+func (e MemberKind) Valid() bool {
+	switch e {
+	case MemberKindGroup:
+		return true
+	case MemberKindUser:
 		return true
 	default:
 		return false
@@ -1834,6 +1834,30 @@ func (e ProjectPrincipalKind) Valid() bool {
 	}
 }
 
+// Defines values for ProjectRole.
+const (
+	Developer  ProjectRole = "developer"
+	Maintainer ProjectRole = "maintainer"
+	Owner      ProjectRole = "owner"
+	Reader     ProjectRole = "reader"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRole enum.
+func (e ProjectRole) Valid() bool {
+	switch e {
+	case Developer:
+		return true
+	case Maintainer:
+		return true
+	case Owner:
+		return true
+	case Reader:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RemoteFormatName.
 const (
 	RemoteFormatNameNpm   RemoteFormatName = "npm"
@@ -2152,6 +2176,42 @@ func (e RepositoryConsumerViewClass) Valid() bool {
 	case RepositoryConsumerViewClassRemote:
 		return true
 	case RepositoryConsumerViewClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RepositoryReferenceKind.
+const (
+	RepositoryReferenceKindCiMapping               RepositoryReferenceKind = "ci_mapping"
+	RepositoryReferenceKindDeploymentTarget        RepositoryReferenceKind = "deployment_target"
+	RepositoryReferenceKindGlobalPolicy            RepositoryReferenceKind = "global_policy"
+	RepositoryReferenceKindMember                  RepositoryReferenceKind = "member"
+	RepositoryReferenceKindPinRule                 RepositoryReferenceKind = "pin_rule"
+	RepositoryReferenceKindPolicy                  RepositoryReferenceKind = "policy"
+	RepositoryReferenceKindVirtualDeploymentTarget RepositoryReferenceKind = "virtual_deployment_target"
+	RepositoryReferenceKindVirtualMember           RepositoryReferenceKind = "virtual_member"
+)
+
+// Valid indicates whether the value is a known member of the RepositoryReferenceKind enum.
+func (e RepositoryReferenceKind) Valid() bool {
+	switch e {
+	case RepositoryReferenceKindCiMapping:
+		return true
+	case RepositoryReferenceKindDeploymentTarget:
+		return true
+	case RepositoryReferenceKindGlobalPolicy:
+		return true
+	case RepositoryReferenceKindMember:
+		return true
+	case RepositoryReferenceKindPinRule:
+		return true
+	case RepositoryReferenceKindPolicy:
+		return true
+	case RepositoryReferenceKindVirtualDeploymentTarget:
+		return true
+	case RepositoryReferenceKindVirtualMember:
 		return true
 	default:
 		return false
@@ -3442,6 +3502,24 @@ func (e GetProjectCiSnippetParamsFormat) Valid() bool {
 	}
 }
 
+// Defines values for ListProjectPermissionPoliciesParamsSort.
+const (
+	ListProjectPermissionPoliciesParamsSortMinusName ListProjectPermissionPoliciesParamsSort = "-name"
+	ListProjectPermissionPoliciesParamsSortName      ListProjectPermissionPoliciesParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListProjectPermissionPoliciesParamsSort enum.
+func (e ListProjectPermissionPoliciesParamsSort) Valid() bool {
+	switch e {
+	case ListProjectPermissionPoliciesParamsSortMinusName:
+		return true
+	case ListProjectPermissionPoliciesParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LookupProjectPrincipalsParamsKind.
 const (
 	LookupProjectPrincipalsParamsKindGroup LookupProjectPrincipalsParamsKind = "group"
@@ -3460,54 +3538,54 @@ func (e LookupProjectPrincipalsParamsKind) Valid() bool {
 	}
 }
 
-// Defines values for ListRepositoriesParamsClass.
+// Defines values for ListProjectRepositoriesParamsClass.
 const (
-	ListRepositoriesParamsClassLocal   ListRepositoriesParamsClass = "local"
-	ListRepositoriesParamsClassRemote  ListRepositoriesParamsClass = "remote"
-	ListRepositoriesParamsClassVirtual ListRepositoriesParamsClass = "virtual"
+	ListProjectRepositoriesParamsClassLocal   ListProjectRepositoriesParamsClass = "local"
+	ListProjectRepositoriesParamsClassRemote  ListProjectRepositoriesParamsClass = "remote"
+	ListProjectRepositoriesParamsClassVirtual ListProjectRepositoriesParamsClass = "virtual"
 )
 
-// Valid indicates whether the value is a known member of the ListRepositoriesParamsClass enum.
-func (e ListRepositoriesParamsClass) Valid() bool {
+// Valid indicates whether the value is a known member of the ListProjectRepositoriesParamsClass enum.
+func (e ListProjectRepositoriesParamsClass) Valid() bool {
 	switch e {
-	case ListRepositoriesParamsClassLocal:
+	case ListProjectRepositoriesParamsClassLocal:
 		return true
-	case ListRepositoriesParamsClassRemote:
+	case ListProjectRepositoriesParamsClassRemote:
 		return true
-	case ListRepositoriesParamsClassVirtual:
+	case ListProjectRepositoriesParamsClassVirtual:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for ListRepositoriesParamsState.
+// Defines values for ListProjectRepositoriesParamsState.
 const (
-	Inactive ListRepositoriesParamsState = "inactive"
+	ListProjectRepositoriesParamsStateInactive ListProjectRepositoriesParamsState = "inactive"
 )
 
-// Valid indicates whether the value is a known member of the ListRepositoriesParamsState enum.
-func (e ListRepositoriesParamsState) Valid() bool {
+// Valid indicates whether the value is a known member of the ListProjectRepositoriesParamsState enum.
+func (e ListProjectRepositoriesParamsState) Valid() bool {
 	switch e {
-	case Inactive:
+	case ListProjectRepositoriesParamsStateInactive:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for ListRepositoriesParamsView.
+// Defines values for ListProjectRepositoriesParamsView.
 const (
-	ListRepositoriesParamsViewFull    ListRepositoriesParamsView = "full"
-	ListRepositoriesParamsViewSummary ListRepositoriesParamsView = "summary"
+	ListProjectRepositoriesParamsViewFull    ListProjectRepositoriesParamsView = "full"
+	ListProjectRepositoriesParamsViewSummary ListProjectRepositoriesParamsView = "summary"
 )
 
-// Valid indicates whether the value is a known member of the ListRepositoriesParamsView enum.
-func (e ListRepositoriesParamsView) Valid() bool {
+// Valid indicates whether the value is a known member of the ListProjectRepositoriesParamsView enum.
+func (e ListProjectRepositoriesParamsView) Valid() bool {
 	switch e {
-	case ListRepositoriesParamsViewFull:
+	case ListProjectRepositoriesParamsViewFull:
 		return true
-	case ListRepositoriesParamsViewSummary:
+	case ListProjectRepositoriesParamsViewSummary:
 		return true
 	default:
 		return false
@@ -3547,6 +3625,75 @@ func (e GetClientSetupParamsCredentials) Valid() bool {
 	case GetClientSetupParamsCredentialsNone:
 		return true
 	case GetClientSetupParamsCredentialsPlaceholder:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListProjectServiceAccountsParamsSort.
+const (
+	ListProjectServiceAccountsParamsSortName ListProjectServiceAccountsParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListProjectServiceAccountsParamsSort enum.
+func (e ListProjectServiceAccountsParamsSort) Valid() bool {
+	switch e {
+	case ListProjectServiceAccountsParamsSortName:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListRepositoriesParamsClass.
+const (
+	ListRepositoriesParamsClassLocal   ListRepositoriesParamsClass = "local"
+	ListRepositoriesParamsClassRemote  ListRepositoriesParamsClass = "remote"
+	ListRepositoriesParamsClassVirtual ListRepositoriesParamsClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the ListRepositoriesParamsClass enum.
+func (e ListRepositoriesParamsClass) Valid() bool {
+	switch e {
+	case ListRepositoriesParamsClassLocal:
+		return true
+	case ListRepositoriesParamsClassRemote:
+		return true
+	case ListRepositoriesParamsClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListRepositoriesParamsState.
+const (
+	ListRepositoriesParamsStateInactive ListRepositoriesParamsState = "inactive"
+)
+
+// Valid indicates whether the value is a known member of the ListRepositoriesParamsState enum.
+func (e ListRepositoriesParamsState) Valid() bool {
+	switch e {
+	case ListRepositoriesParamsStateInactive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListRepositoriesParamsView.
+const (
+	ListRepositoriesParamsViewFull    ListRepositoriesParamsView = "full"
+	ListRepositoriesParamsViewSummary ListRepositoriesParamsView = "summary"
+)
+
+// Valid indicates whether the value is a known member of the ListRepositoriesParamsView enum.
+func (e ListRepositoriesParamsView) Valid() bool {
+	switch e {
+	case ListRepositoriesParamsViewFull:
+		return true
+	case ListRepositoriesParamsViewSummary:
 		return true
 	default:
 		return false
@@ -3775,13 +3922,6 @@ func (e ExportVulnerabilityFindingsParamsSort) Valid() bool {
 	}
 }
 
-// AdministeredProject A project the caller administers, with the switches in force on the index that answered (R-AUTHZ-026).
-type AdministeredProject struct {
-	Key                string `json:"key"`
-	ManagePolicies     bool   `json:"managePolicies"`
-	ManageRepositories bool   `json:"manageRepositories"`
-}
-
 // AppliedMigrationStep defines model for AppliedMigrationStep.
 type AppliedMigrationStep struct {
 	AppliedAt  time.Time                 `json:"appliedAt"`
@@ -3956,10 +4096,10 @@ type AuthzMe struct {
 	// Principals The references the caller acts as; it never lists other principals.
 	Principals []string `json:"principals"`
 
-	// Projects The projects the caller administers through this credential, with their switches, ordered by key; empty for a caller that administers none and for a token without `admin` (R-AUTHZ-026, Q-AUTHZ-181). The UI shows the project screens from it.
-	Projects []AdministeredProject `json:"projects"`
-	Roles    []RoleName            `json:"roles"`
-	Scope    *ScopeSummary         `json:"scope"`
+	// Projects The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it.
+	Projects []Membership  `json:"projects"`
+	Roles    []RoleName    `json:"roles"`
+	Scope    *ScopeSummary `json:"scope"`
 }
 
 // BackgroundMigration A background data migration (R-HA-022): a data change too large for the migration Job, run as the job kind
@@ -4396,7 +4536,7 @@ type CiIssuance struct {
 	Environment  *string                `json:"environment,omitempty"`
 	ExpiresAt    time.Time              `json:"expiresAt"`
 
-	// GrantedScope The scope the token was issued with. Empty in a project administrator's view, whose kept contributions show their own inline grants (Q-CI-52).
+	// GrantedScope The scope the token was issued with. Empty in an Owner's view, whose kept contributions show their own inline grants (Q-CI-52).
 	GrantedScope string `json:"grantedScope"`
 
 	// Grants The frozen use-time bundle: rendered inline grants, policy and group names, caps.
@@ -4522,7 +4662,7 @@ type CiIssuerKind string
 // CiIssuerSource `configuration`: declared in `ci.issuers` and read-only here (Q-CI-16).
 type CiIssuerSource string
 
-// CiIssuerChoice What a project administrator sees of an issuer (Q-CI-26).
+// CiIssuerChoice What an Owner of a project sees of an issuer (Q-CI-26).
 type CiIssuerChoice struct {
 	Issuer       string `json:"issuer"`
 	Kind         string `json:"kind"`
@@ -4870,7 +5010,7 @@ type ClientSetup struct {
 	EndpointPath string `json:"endpointPath"`
 	Format       string `json:"format"`
 
-	// PublishTarget The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
+	// PublishTarget The qualified name `<project>/<key>` of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
 	PublishTarget *string `json:"publishTarget"`
 
 	// RegistryUrl The package-manager endpoint URL of INV-6, absolute, with its trailing slash.
@@ -5021,7 +5161,7 @@ type EndpointConfiguration struct {
 	Default  bool                          `json:"default"`
 	Exposure EndpointConfigurationExposure `json:"exposure"`
 
-	// HostRoots Host-root bindings, host to repository key (R-EP-006).
+	// HostRoots Host-root bindings, host to repository, the value being `<projectKey>/<repoKey>` (R-EP-006).
 	HostRoots map[string]string `json:"hostRoots"`
 
 	// Hosts The exact hosts of the host set (R-EP-003).
@@ -5038,7 +5178,6 @@ type EndpointConfiguration struct {
 	ReplicaHeader EndpointConfigurationReplicaHeader `json:"replicaHeader"`
 	Surface       []EndpointConfigurationSurface     `json:"surface"`
 	WildcardHost  *string                            `json:"wildcardHost"`
-	WildcardRoot  EndpointConfigurationWildcardRoot  `json:"wildcardRoot"`
 }
 
 // EndpointConfigurationAuthTokenTypes defines model for EndpointConfiguration.Auth.TokenTypes.
@@ -5052,9 +5191,6 @@ type EndpointConfigurationReplicaHeader string
 
 // EndpointConfigurationSurface defines model for EndpointConfiguration.Surface.
 type EndpointConfigurationSurface string
-
-// EndpointConfigurationWildcardRoot defines model for EndpointConfiguration.WildcardRoot.
-type EndpointConfigurationWildcardRoot string
 
 // EndpointList defines model for EndpointList.
 type EndpointList struct {
@@ -5370,7 +5506,7 @@ type Guide struct {
 	ExposureRules bool   `json:"exposureRules"`
 	Format        string `json:"format"`
 
-	// PublishTarget The repository a publish through this one reaches, when the caller may deploy there; null otherwise.
+	// PublishTarget The qualified name `<project>/<key>` of the repository a publish through this one reaches, when the caller may deploy there; null otherwise.
 	PublishTarget *string `json:"publishTarget"`
 
 	// RegistryUrl The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format.
@@ -5410,7 +5546,7 @@ type GuideSectionTopic string
 type Item struct {
 	ContentStatus *ItemContentStatus `json:"contentStatus,omitempty"`
 
-	// ContentUrl Files only. The relative URL of the content route of the file (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106).
+	// ContentUrl Files only. The relative URL of the content route of the file (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106).
 	ContentUrl       *string  `json:"contentUrl,omitempty"`
 	Created          Stamp    `json:"created"`
 	DeclaredDigests  *Digests `json:"declaredDigests,omitempty"`
@@ -5617,6 +5753,62 @@ type ManualSection struct {
 	Title string              `json:"title"`
 }
 
+// Member A member of a project (Q-AUTHZ-207). Only users and groups are members; a service account reaches a project through its policies.
+type Member struct {
+	Kind MemberKind `json:"kind"`
+	Name string     `json:"name"`
+
+	// Principal `user:<name>` or `group:<name>`.
+	Principal string `json:"principal"`
+
+	// Project The project key.
+	Project string `json:"project"`
+
+	// Role The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+	// repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+	// (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+	// their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+	// with `admin: true`.
+	Role ProjectRole `json:"role"`
+}
+
+// MemberKind defines model for Member.Kind.
+type MemberKind string
+
+// MemberInput The role of a member. The read-only members of `Member` are accepted and ignored.
+type MemberInput struct {
+	Kind      *string `json:"kind,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	Principal *string `json:"principal,omitempty"`
+	Project   *string `json:"project,omitempty"`
+
+	// Role The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+	// repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+	// (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+	// their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+	// with `admin: true`.
+	Role ProjectRole `json:"role"`
+}
+
+// MemberList defines model for MemberList.
+type MemberList struct {
+	Items []Member `json:"items"`
+}
+
+// Membership A project the caller is a member of through this credential (Q-AUTHZ-207). `role` is the role in force for the credential:
+// `owner` only when the credential may administer (a session, or a token with `admin: true`), otherwise `maintainer`, which is
+// what the role Owner holds beyond the administration (D2 of Q-AUTHZ-208).
+type Membership struct {
+	Key string `json:"key"`
+
+	// Role The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+	// repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+	// (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+	// their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+	// with `admin: true`.
+	Role ProjectRole `json:"role"`
+}
+
 // MembershipChange defines model for MembershipChange.
 type MembershipChange struct {
 	Add    *[]string `json:"add,omitempty"`
@@ -5746,14 +5938,14 @@ type MirrorRateLimit struct {
 	Waits int64 `json:"waits"`
 }
 
-// MirrorRunRequest The optional body of `POST /api/v1/repositories/{key}/mirror/run` (R-REPO-056).
+// MirrorRunRequest The optional body of `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` (R-REPO-056).
 type MirrorRunRequest struct {
 	// Full Make the requested pass a full one, which discovers every name again instead of reading the feed from its cursor (R-REPO-051).
 	Full *bool `json:"full,omitempty"`
 }
 
 // MirrorSettings The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
-// request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+// request omitted it; they take effect in `mode: mirror` only. An Owner without `repositories:write-config` keeps them as stored and may
 // change `paused` only (Q-REPO-142, `422 mirror_restricted`).
 type MirrorSettings struct {
 	// Concurrency Ceiling of the pass's concurrent background fetches, held below the background share of the fetch budget (R-REPO-054, R-REPO-055).
@@ -5818,6 +6010,12 @@ type MirrorStatusMode string
 // release, until the next job; `scheduled` otherwise. The first of these that holds is the state, in this order.
 type MirrorStatusState string
 
+// MoveRepositoryRequest defines model for MoveRepositoryRequest.
+type MoveRepositoryRequest struct {
+	// Project The key of the target project. The project of the path itself is allowed, and the answer is `200` with nothing changed.
+	Project string `json:"project"`
+}
+
 // NewBastion defines model for NewBastion.
 type NewBastion struct {
 	Description *string `json:"description,omitempty"`
@@ -5848,11 +6046,8 @@ type NewGroup struct {
 type NewServiceAccount struct {
 	Description *string `json:"description,omitempty"`
 
-	// Name Matches `^[a-z0-9][a-z0-9-]{1,62}$`; `<project>-…` for a project service account.
+	// Name Matches `^[a-z0-9][a-z0-9-]{1,62}$`, unique within the project of the route (or among the instance-wide accounts).
 	Name string `json:"name"`
-
-	// Project The key of a project; makes the account a project service account (R-AUTHZ-026, Q-AUTHZ-169).
-	Project *string `json:"project,omitempty"`
 }
 
 // NewUser defines model for NewUser.
@@ -5986,7 +6181,7 @@ type OwnedPackageList struct {
 
 // PackageFile defines model for PackageFile.
 type PackageFile struct {
-	// ContentUrl The relative URL of the content route of the file item (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
+	// ContentUrl The relative URL of the content route of the file item (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
 	ContentUrl string `json:"contentUrl"`
 
 	// DownloadUrl Absolute, built on the public base URL.
@@ -6220,7 +6415,7 @@ type PermissionCheckResult struct {
 	Allowed bool `json:"allowed"`
 }
 
-// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing`, `anonymous_populates_remote` and, for a project policy, `selector_outside_project` (a key selector whose repository left the project, Q-AUTHZ-179). `version` is the ETag source.
+// PermissionPolicy A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source.
 type PermissionPolicy struct {
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -6231,7 +6426,7 @@ type PermissionPolicy struct {
 	Inert       bool          `json:"inert"`
 	Name        string        `json:"name"`
 
-	// Project The project key, `null` for a global policy.
+	// Project The project key, `null` for an instance-wide policy.
 	Project      *string                      `json:"project"`
 	ResourceType PermissionPolicyResourceType `json:"resourceType"`
 
@@ -6255,7 +6450,7 @@ type PermissionPolicyInput struct {
 	Inert       *bool          `json:"inert,omitempty"`
 	Name        *string        `json:"name,omitempty"`
 
-	// Project The key of the project the policy belongs to, `null` (the default) for a global policy. Fixed at creation. A project policy is named `<project>-…` (`422 project_prefix_required`), selects repositories of its project only (`422 repository_outside_project`) and grants to users, groups, global service accounts, CI mappings and the project's own service accounts (`422 principal_outside_project` for another's).
+	// Project The key of the project the policy belongs to, `null` for an instance-wide policy; the route decides, and a different value in a body answers `422`. A project policy selects repositories of its project only, by bare key (`422 repository_outside_project`), and grants to users, groups, instance-wide service accounts, CI mappings and the project's own service accounts (`422 principal_outside_project` for another's).
 	Project      *string                            `json:"project,omitempty"`
 	ResourceType *PermissionPolicyInputResourceType `json:"resourceType,omitempty"`
 
@@ -6340,9 +6535,8 @@ type Preferences struct {
 	KeyboardShortcuts bool `json:"keyboardShortcuts"`
 
 	// Locale `en`, `de` or `null` (the browser decides).
-	Locale        *string `json:"locale"`
-	ProjectFilter *string `json:"projectFilter"`
-	Revision      int     `json:"revision"`
+	Locale   *string `json:"locale"`
+	Revision int     `json:"revision"`
 
 	// Theme `light`, `dark` or `null` (the system decides).
 	Theme *string `json:"theme"`
@@ -6353,29 +6547,28 @@ type PreferencesPatch struct {
 	KeyboardShortcuts *bool `json:"keyboardShortcuts,omitempty"`
 
 	// Locale `en`, `de` or `null`.
-	Locale        *string `json:"locale,omitempty"`
-	ProjectFilter *string `json:"projectFilter,omitempty"`
+	Locale *string `json:"locale,omitempty"`
 
 	// Theme `light`, `dark` or `null`.
 	Theme *string `json:"theme,omitempty"`
 }
 
-// Problem RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Problem RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Problem struct {
 	// Code Stable snake_case identifier; clients match on it.
 	Code string `json:"code"`
 
 	// CurrentEtag Extension of `precondition_failed`: the current ETag of the resource (R-API-012).
-	CurrentEtag *string `json:"currentEtag,omitempty"`
-
-	// CurrentProject Extension of `project_owner_changed`: the key of the project the repository belongs to now, `null` when it belongs to none (Q-AUTHZ-205).
-	CurrentProject *string       `json:"currentProject,omitempty"`
-	Detail         *string       `json:"detail,omitempty"`
-	Errors         *[]FieldError `json:"errors,omitempty"`
+	CurrentEtag *string       `json:"currentEtag,omitempty"`
+	Detail      *string       `json:"detail,omitempty"`
+	Errors      *[]FieldError `json:"errors,omitempty"`
 
 	// Instance The request path.
 	Instance *string       `json:"instance,omitempty"`
 	Job      *JobReference `json:"job,omitempty"`
+
+	// References Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository, and for an Owner without `repositories:write-config` the global policies that name it by key (R-REPO-060, Q-REPO-232).
+	References *[]RepositoryReference `json:"references,omitempty"`
 
 	// RequestId Equals the `X-Request-Id` response header.
 	RequestId *string `json:"requestId,omitempty"`
@@ -6394,10 +6587,8 @@ type ProblemType struct {
 	Title       string `json:"title"`
 }
 
-// Project A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName`, `description` and the two switches only.
+// Project A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName` and `description` only.
 type Project struct {
-	// Admins References of the administrators, `user:<name>` and `group:<name>`, ordered by kind and name.
-	Admins    []string  `json:"admins"`
 	CreatedAt time.Time `json:"createdAt"`
 
 	// CreatedBy A principal reference; empty when the creator no longer exists.
@@ -6406,50 +6597,50 @@ type Project struct {
 	DisplayName string `json:"displayName"`
 	Key         string `json:"key"`
 
-	// ManagePolicies The administrators create, change and delete project policies, create and enable project service accounts, issue their tokens and look up users and groups.
-	ManagePolicies bool `json:"managePolicies"`
+	// Members The number of members, users and groups.
+	Members int `json:"members"`
 
-	// ManageRepositories The administrators create, change and delete the project's repositories of every class and test the upstream of its remotes.
-	ManageRepositories bool `json:"manageRepositories"`
-	Policies           int  `json:"policies"`
+	// Owners References of the members with the role Owner, `user:<name>` and `group:<name>`, ordered by kind and name.
+	Owners   []string `json:"owners"`
+	Policies int      `json:"policies"`
 
-	// Repositories Repositories assigned to the project, those being deleted included.
-	Repositories    int       `json:"repositories"`
-	ServiceAccounts int       `json:"serviceAccounts"`
-	UpdatedAt       time.Time `json:"updatedAt"`
-	UpdatedBy       string    `json:"updatedBy"`
-	Version         int64     `json:"version"`
+	// Repositories Repositories of the project, those being deleted included.
+	Repositories int `json:"repositories"`
+
+	// Role The caller's own role in the project, absent for a caller that is no member (a holder of `projects:read`).
+	Role            *ProjectRole `json:"role,omitempty"`
+	ServiceAccounts int          `json:"serviceAccounts"`
+	UpdatedAt       time.Time    `json:"updatedAt"`
+	UpdatedBy       string       `json:"updatedBy"`
+	Version         int64        `json:"version"`
 }
 
-// ProjectAdmin defines model for ProjectAdmin.
-type ProjectAdmin struct {
-	// Principal `user:<name>` or `group:<name>`.
-	Principal string `json:"principal"`
-	Project   string `json:"project"`
-}
-
-// ProjectInput What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`, `managePolicies` and `manageRepositories`.
+// ProjectInput What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`.
 type ProjectInput struct {
-	Admins      *[]string  `json:"admins,omitempty"`
 	CreatedAt   *time.Time `json:"createdAt,omitempty"`
 	CreatedBy   *string    `json:"createdBy,omitempty"`
 	Description *string    `json:"description,omitempty"`
 	DisplayName *string    `json:"displayName,omitempty"`
 
 	// Key Required on create; on replace it must equal the key of the path.
-	Key *string `json:"key,omitempty"`
+	Key     *string `json:"key,omitempty"`
+	Members *int    `json:"members,omitempty"`
 
-	// ManagePolicies Default `true` on create; required on replace.
-	ManagePolicies *bool `json:"managePolicies,omitempty"`
+	// Owners On create, the references (`user:<name>`, `group:<name>`) that become the first Owners of the project in the transaction of the create (Q-AUTHZ-229); a reference that is no user or group answers `422 principal_not_allowed`, one that does not exist `404`. Ignored on replace.
+	Owners       *[]string `json:"owners,omitempty"`
+	Policies     *int      `json:"policies,omitempty"`
+	Repositories *int      `json:"repositories,omitempty"`
 
-	// ManageRepositories Default `false` on create; required on replace.
-	ManageRepositories *bool      `json:"manageRepositories,omitempty"`
-	Policies           *int       `json:"policies,omitempty"`
-	Repositories       *int       `json:"repositories,omitempty"`
-	ServiceAccounts    *int       `json:"serviceAccounts,omitempty"`
-	UpdatedAt          *time.Time `json:"updatedAt,omitempty"`
-	UpdatedBy          *string    `json:"updatedBy,omitempty"`
-	Version            *int64     `json:"version,omitempty"`
+	// Role The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+	// repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+	// (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+	// their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+	// with `admin: true`.
+	Role            *ProjectRole `json:"role,omitempty"`
+	ServiceAccounts *int         `json:"serviceAccounts,omitempty"`
+	UpdatedAt       *time.Time   `json:"updatedAt,omitempty"`
+	UpdatedBy       *string      `json:"updatedBy,omitempty"`
+	Version         *int64       `json:"version,omitempty"`
 }
 
 // ProjectList defines model for ProjectList.
@@ -6465,7 +6656,7 @@ type ProjectPrincipal struct {
 	Kind ProjectPrincipalKind `json:"kind"`
 	Name string               `json:"name"`
 
-	// Principal The reference to put in a policy entry.
+	// Principal The reference to put in a policy entry or a member.
 	Principal string `json:"principal"`
 }
 
@@ -6476,6 +6667,13 @@ type ProjectPrincipalKind string
 type ProjectPrincipalList struct {
 	Items []ProjectPrincipal `json:"items"`
 }
+
+// ProjectRole The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+// repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+// (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+// their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+// with `admin: true`.
+type ProjectRole string
 
 // RemoteExtraHost defines model for RemoteExtraHost.
 type RemoteExtraHost struct {
@@ -6547,14 +6745,14 @@ type RemoteSettings struct {
 	} `json:"limits,omitempty"`
 
 	// Mirror The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
-	// request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+	// request omitted it; they take effect in `mode: mirror` only. An Owner without `repositories:write-config` keeps them as stored and may
 	// change `paused` only (Q-REPO-142, `422 mirror_restricted`).
 	Mirror *MirrorSettings `json:"mirror,omitempty"`
 
 	// Mode `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
 	// upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
 	// `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
-	// another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+	// another upstream the warning `mirror_unbounded`; an Owner without `repositories:write-config` `422 mirror_restricted` (Q-REPO-142).
 	Mode *RemoteSettingsMode `json:"mode,omitempty"`
 
 	// OutboundProxy `named` is refused with `not_applicable` until named proxies are built (R-REPO-037, P1).
@@ -6598,7 +6796,7 @@ type RemoteSettingsIntegrityChecksumPolicy string
 // RemoteSettingsMode `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
 // upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
 // `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
-// another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+// another upstream the warning `mirror_unbounded`; an Owner without `repositories:write-config` `422 mirror_restricted` (Q-REPO-142).
 type RemoteSettingsMode string
 
 // RemoteSettingsOutboundProxyMode defines model for RemoteSettings.OutboundProxy.Mode.
@@ -6723,7 +6921,7 @@ type Repository struct {
 	HideExistence   *RepositoryHideExistence `json:"hideExistence,omitempty"`
 	IncludePatterns *[]string                `json:"includePatterns,omitempty"`
 
-	// Key Fixed at creation; reserved names are the sub-paths of `/api/v1/repositories`.
+	// Key Fixed at creation; unique within the project (Q-REPO-212).
 	Key string `json:"key"`
 
 	// LastActivityAt The latest upload or download as the replicas flushed it (at most a minute late).
@@ -6745,10 +6943,9 @@ type Repository struct {
 	Nuget          *NugetSettings `json:"nuget,omitempty"`
 	PriorityMember *bool          `json:"priorityMember,omitempty"`
 
-	// Project The key of the project the repository is assigned to (R-AUTHZ-026), `null` or absent when it belongs to
-	// none. Read on every answer; written on create only, which assigns the repository in the same
-	// transaction. A replace or patch ignores a value equal to the stored one and answers `422` for another:
-	// `PUT /api/v1/projects/{key}/repositories/{repoKey}` moves a repository.
+	// Project The key of the project the repository belongs to (Q-AUTHZ-206). Read on every answer; the path names the
+	// project on a write, and a value that differs from it answers `422`. `POST …/move` moves the repository. The
+	// members, deploy target and pin rules of a virtual repository name repositories of this project by bare key.
 	Project *string `json:"project,omitempty"`
 
 	// Remote The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
@@ -6853,6 +7050,17 @@ type RepositoryRead struct {
 	union json.RawMessage
 }
 
+// RepositoryReference defines model for RepositoryReference.
+type RepositoryReference struct {
+	Kind RepositoryReferenceKind `json:"kind"`
+
+	// Name The name of the object within the source project; for `global_policy` the name of the global policy.
+	Name string `json:"name"`
+}
+
+// RepositoryReferenceKind defines model for RepositoryReference.Kind.
+type RepositoryReferenceKind string
+
 // RepositoryResolution defines model for RepositoryResolution.
 type RepositoryResolution struct {
 	// DecidedBy The claim or the pin rule that narrowed the members; absent when neither did.
@@ -6904,8 +7112,8 @@ type RepositorySummary struct {
 	// Lifecycle Only a holder of `repositories:read-config` sees a repository being deleted.
 	Lifecycle *RepositorySummaryLifecycle `json:"lifecycle,omitempty"`
 
-	// Project The key of the project the repository is assigned to, `null` when it belongs to none (R-AUTHZ-026).
-	Project *string `json:"project"`
+	// Project The key of the project the repository belongs to; the name is `<project>/<key>` (Q-AUTHZ-206).
+	Project string `json:"project"`
 }
 
 // RepositorySummaryClass defines model for RepositorySummary.Class.
@@ -7027,14 +7235,19 @@ type SecretReference struct {
 	File *string `json:"file,omitempty"`
 }
 
-// ServiceAccount A service account (R-AUTH-020).
+// ServiceAccount A service account (R-AUTH-020). `name` is the name within its project, unique among the accounts of that project, or among the instance-wide accounts when `project` is `null` (Q-AUTHZ-209).
 type ServiceAccount struct {
 	CreatedAt   time.Time          `json:"createdAt"`
 	Description string             `json:"description"`
 	Id          openapi_types.UUID `json:"id"`
-	Name        string             `json:"name"`
 
-	// Project The key of the project the account belongs to (R-AUTHZ-026), `null` for a global account. Fixed at creation.
+	// Name The name within the project; the stored name is `<project>/<name>` for a project's account.
+	Name string `json:"name"`
+
+	// Principal The reference, `sa:<name>` or `sa:<project>/<name>`.
+	Principal string `json:"principal"`
+
+	// Project The key of the project the account belongs to (R-AUTHZ-026), `null` for an instance-wide account. Fixed at creation.
 	Project *string              `json:"project"`
 	Status  ServiceAccountStatus `json:"status"`
 }
@@ -7666,13 +7879,18 @@ type VulnerabilityFinding struct {
 	Id              openapi_types.UUID            `json:"id"`
 
 	// Kind `malicious` for the OpenSSF malicious-packages records (identifier prefix `MAL-`), else `vulnerability`.
-	Kind                  VulnerabilityKind            `json:"kind"`
-	KnownExploited        bool                         `json:"knownExploited"`
-	KnownExploitedAddedAt *openapi_types.Date          `json:"knownExploitedAddedAt,omitempty"`
-	Package               string                       `json:"package"`
-	Repository            string                       `json:"repository"`
-	ResolvedAt            *time.Time                   `json:"resolvedAt"`
-	ResolvedReason        *VulnerabilityResolvedReason `json:"resolvedReason,omitempty"`
+	Kind                  VulnerabilityKind   `json:"kind"`
+	KnownExploited        bool                `json:"knownExploited"`
+	KnownExploitedAddedAt *openapi_types.Date `json:"knownExploitedAddedAt,omitempty"`
+	Package               string              `json:"package"`
+
+	// Project The key of the project of the repository.
+	Project string `json:"project"`
+
+	// Repository The qualified name `<project>/<key>`.
+	Repository     string                       `json:"repository"`
+	ResolvedAt     *time.Time                   `json:"resolvedAt"`
+	ResolvedReason *VulnerabilityResolvedReason `json:"resolvedReason,omitempty"`
 
 	// Severity The level of an advisory (R-VULN-007); `unknown` is a level of its own and sorts last.
 	Severity VulnerabilitySeverity `json:"severity"`
@@ -8007,55 +8225,61 @@ type PackageId = string
 // PackageVersionPath defines model for PackageVersionPath.
 type PackageVersionPath = string
 
-// BadGateway RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// ProjectKey defines model for ProjectKey.
+type ProjectKey = string
+
+// RepoKey defines model for RepoKey.
+type RepoKey = string
+
+// BadGateway RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BadGateway = Problem
 
-// BadRequest RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BadRequest RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BadRequest = Problem
 
-// BastionInterfaceMismatch RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BastionInterfaceMismatch RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BastionInterfaceMismatch = Problem
 
-// BastionTokenInvalid RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// BastionTokenInvalid RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type BastionTokenInvalid = Problem
 
-// Conflict RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Conflict RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Conflict = Problem
 
-// Forbidden RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Forbidden RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Forbidden = Problem
 
-// Internal RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Internal RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Internal = Problem
 
-// NotFound RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// NotFound RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type NotFound = Problem
 
-// NotImplemented RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// NotImplemented RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type NotImplemented = Problem
 
-// PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type PayloadTooLarge = Problem
 
-// PreconditionFailed RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// PreconditionFailed RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type PreconditionFailed = Problem
 
-// PreconditionRequired RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// PreconditionRequired RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type PreconditionRequired = Problem
 
-// TooManyRequests RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// TooManyRequests RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type TooManyRequests = Problem
 
-// Unauthenticated RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Unauthenticated RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Unauthenticated = Problem
 
-// Unavailable RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Unavailable RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Unavailable = Problem
 
-// Unprocessable RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// Unprocessable RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type Unprocessable = Problem
 
-// UnsupportedMediaType RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+// UnsupportedMediaType RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
 type UnsupportedMediaType = Problem
 
 // ListAuditEventsParams defines parameters for ListAuditEvents.
@@ -8406,6 +8630,10 @@ type ListPackagesParams struct {
 	// Format Repeat the parameter for several formats (`npm`, `nuget`, …).
 	Format *[]string `form:"format,omitempty" json:"format,omitempty"`
 
+	// Project A project key: only the versions in the physical repositories of that project count (Q-UI-129). It
+	// combines with `repository` by intersection. A project the caller cannot see lists nothing.
+	Project *string `form:"project,omitempty" json:"project,omitempty"`
+
 	// Repository Repeat the parameter for several repository keys.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
@@ -8484,10 +8712,10 @@ type ListPermissionPoliciesParams struct {
 	// ExpandGroups Include the policies of the principal's groups (default `true`); only with `principal`.
 	ExpandGroups *bool `form:"expandGroups,omitempty" json:"expandGroups,omitempty"`
 
-	// Repository A repository key.
+	// Repository A repository name `<project>/<key>`.
 	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
 
-	// Project A project key; keeps the policies of that project. An administrator of a project sees its project's policies and must send this filter (`403` without it, `404` for a project it does not administer).
+	// Project A project key; keeps the policies of that project.
 	Project *string `form:"project,omitempty" json:"project,omitempty"`
 
 	// Sort `name` (default) or `-name`.
@@ -8605,6 +8833,54 @@ type ReplaceProjectCiMappingParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// ListProjectPermissionPoliciesParams defines parameters for ListProjectPermissionPolicies.
+type ListProjectPermissionPoliciesParams struct {
+	// Principal A principal reference.
+	Principal *string `form:"principal,omitempty" json:"principal,omitempty"`
+
+	// ExpandGroups Include the policies of the principal's groups (default `true`); only with `principal`.
+	ExpandGroups *bool `form:"expandGroups,omitempty" json:"expandGroups,omitempty"`
+
+	// Repository A repository key.
+	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Sort `name` (default) or `-name`.
+	Sort *ListProjectPermissionPoliciesParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListProjectPermissionPoliciesParamsSort defines parameters for ListProjectPermissionPolicies.
+type ListProjectPermissionPoliciesParamsSort string
+
+// CreateProjectPermissionPolicyParams defines parameters for CreateProjectPermissionPolicy.
+type CreateProjectPermissionPolicyParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DeleteProjectPermissionPolicyParams defines parameters for DeleteProjectPermissionPolicy.
+type DeleteProjectPermissionPolicyParams struct {
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
+}
+
+// PatchProjectPermissionPolicyParams defines parameters for PatchProjectPermissionPolicy.
+type PatchProjectPermissionPolicyParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ReplaceProjectPermissionPolicyParams defines parameters for ReplaceProjectPermissionPolicy.
+type ReplaceProjectPermissionPolicyParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
 // LookupProjectPrincipalsParams defines parameters for LookupProjectPrincipals.
 type LookupProjectPrincipalsParams struct {
 	// Q The start of the name, 2 to 128 characters.
@@ -8620,28 +8896,16 @@ type LookupProjectPrincipalsParams struct {
 // LookupProjectPrincipalsParamsKind defines parameters for LookupProjectPrincipals.
 type LookupProjectPrincipalsParamsKind string
 
-// AssignProjectRepositoryParams defines parameters for AssignProjectRepository.
-type AssignProjectRepositoryParams struct {
-	// Move Move a repository that belongs to another project.
-	Move *bool `form:"move,omitempty" json:"move,omitempty"`
-
-	// From The key of the project the repository is expected to belong to now; empty: expected to belong to no project. Absent: no expectation.
-	From *string `form:"from,omitempty" json:"from,omitempty"`
-}
-
-// ListRepositoriesParams defines parameters for ListRepositories.
-type ListRepositoriesParams struct {
+// ListProjectRepositoriesParams defines parameters for ListProjectRepositories.
+type ListProjectRepositoriesParams struct {
 	// Class Repeat the parameter, or separate values with commas.
-	Class *[]ListRepositoriesParamsClass `form:"class,omitempty" json:"class,omitempty"`
+	Class *[]ListProjectRepositoriesParamsClass `form:"class,omitempty" json:"class,omitempty"`
 
 	// Format Repeat the parameter, or separate values with commas.
-	Format *[]string                    `form:"format,omitempty" json:"format,omitempty"`
-	Q      *string                      `form:"q,omitempty" json:"q,omitempty"`
-	State  *ListRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
-
-	// Project A project key; keeps the repositories assigned to that project.
-	Project *string                     `form:"project,omitempty" json:"project,omitempty"`
-	View    *ListRepositoriesParamsView `form:"view,omitempty" json:"view,omitempty"`
+	Format *[]string                           `form:"format,omitempty" json:"format,omitempty"`
+	Q      *string                             `form:"q,omitempty" json:"q,omitempty"`
+	State  *ListProjectRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
+	View   *ListProjectRepositoriesParamsView  `form:"view,omitempty" json:"view,omitempty"`
 
 	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -8650,17 +8914,17 @@ type ListRepositoriesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
-// ListRepositoriesParamsClass defines parameters for ListRepositories.
-type ListRepositoriesParamsClass string
+// ListProjectRepositoriesParamsClass defines parameters for ListProjectRepositories.
+type ListProjectRepositoriesParamsClass string
 
-// ListRepositoriesParamsState defines parameters for ListRepositories.
-type ListRepositoriesParamsState string
+// ListProjectRepositoriesParamsState defines parameters for ListProjectRepositories.
+type ListProjectRepositoriesParamsState string
 
-// ListRepositoriesParamsView defines parameters for ListRepositories.
-type ListRepositoriesParamsView string
+// ListProjectRepositoriesParamsView defines parameters for ListProjectRepositories.
+type ListProjectRepositoriesParamsView string
 
-// CreateRepositoryParams defines parameters for CreateRepository.
-type CreateRepositoryParams struct {
+// CreateProjectRepositoryParams defines parameters for CreateProjectRepository.
+type CreateProjectRepositoryParams struct {
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
@@ -8695,18 +8959,6 @@ type UpdateRepositoryParams struct {
 type ReplaceRepositoryParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
 	IfMatch IfMatch `json:"If-Match"`
-}
-
-// RunRepositoryMirrorParams defines parameters for RunRepositoryMirror.
-type RunRepositoryMirrorParams struct {
-	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
-	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
-}
-
-// RescanRepositoryVulnerabilitiesParams defines parameters for RescanRepositoryVulnerabilities.
-type RescanRepositoryVulnerabilitiesParams struct {
-	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
-	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // ListCacheEntriesParams defines parameters for ListCacheEntries.
@@ -8801,6 +9053,12 @@ type GetItemParams struct {
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 }
 
+// RunRepositoryMirrorParams defines parameters for RunRepositoryMirror.
+type RunRepositoryMirrorParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // AddPackageOwnerParams defines parameters for AddPackageOwner.
 type AddPackageOwnerParams struct {
 	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
@@ -8823,6 +9081,84 @@ type GetRepositoryResolutionParams struct {
 type GetItemStatsParams struct {
 	Path string `form:"path" json:"path"`
 }
+
+// RescanRepositoryVulnerabilitiesParams defines parameters for RescanRepositoryVulnerabilities.
+type RescanRepositoryVulnerabilitiesParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListProjectServiceAccountsParams defines parameters for ListProjectServiceAccounts.
+type ListProjectServiceAccountsParams struct {
+	// Q Case-insensitive substring of the name.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort `name` is the default; a leading `-` reverses the order.
+	Sort *ListProjectServiceAccountsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListProjectServiceAccountsParamsSort defines parameters for ListProjectServiceAccounts.
+type ListProjectServiceAccountsParamsSort string
+
+// CreateProjectServiceAccountParams defines parameters for CreateProjectServiceAccount.
+type CreateProjectServiceAccountParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetProjectServiceAccountParams defines parameters for GetProjectServiceAccount.
+type GetProjectServiceAccountParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateProjectServiceAccountParams defines parameters for UpdateProjectServiceAccount.
+type UpdateProjectServiceAccountParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// CreateProjectServiceAccountTokenParams defines parameters for CreateProjectServiceAccountToken.
+type CreateProjectServiceAccountTokenParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListRepositoriesParams defines parameters for ListRepositories.
+type ListRepositoriesParams struct {
+	// Class Repeat the parameter, or separate values with commas.
+	Class *[]ListRepositoriesParamsClass `form:"class,omitempty" json:"class,omitempty"`
+
+	// Format Repeat the parameter, or separate values with commas.
+	Format *[]string                    `form:"format,omitempty" json:"format,omitempty"`
+	Q      *string                      `form:"q,omitempty" json:"q,omitempty"`
+	State  *ListRepositoriesParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Project A project key; keeps the repositories of that project.
+	Project *string                     `form:"project,omitempty" json:"project,omitempty"`
+	View    *ListRepositoriesParamsView `form:"view,omitempty" json:"view,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListRepositoriesParamsClass defines parameters for ListRepositories.
+type ListRepositoriesParamsClass string
+
+// ListRepositoriesParamsState defines parameters for ListRepositories.
+type ListRepositoriesParamsState string
+
+// ListRepositoriesParamsView defines parameters for ListRepositories.
+type ListRepositoriesParamsView string
 
 // ListRoleBindingsParams defines parameters for ListRoleBindings.
 type ListRoleBindingsParams struct {
@@ -9044,7 +9380,10 @@ type ListClaimedNameMatchesParams struct {
 
 // ListVulnerabilityFindingsParams defines parameters for ListVulnerabilityFindings.
 type ListVulnerabilityFindingsParams struct {
-	// Repository A repository key; a virtual repository expands to the members the caller can read. Repeat for several.
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
+	// Repository A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
 	// Format A format ID, for example npm or nuget. Repeat for several.
@@ -9107,7 +9446,10 @@ type ListVulnerabilityFindingsParamsSort string
 
 // ExportVulnerabilityFindingsParams defines parameters for ExportVulnerabilityFindings.
 type ExportVulnerabilityFindingsParams struct {
-	// Repository A repository key; a virtual repository expands to the members the caller can read. Repeat for several.
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
+	// Repository A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
 	// Format A format ID, for example npm or nuget. Repeat for several.
@@ -9182,7 +9524,10 @@ type UpdateVulnerabilityFindingParams struct {
 
 // GetVulnerabilitySummaryParams defines parameters for GetVulnerabilitySummary.
 type GetVulnerabilitySummaryParams struct {
-	// Repository A repository key. Repeat for several.
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
+	// Repository A repository name `<project>/<key>`. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
 	// Format A format ID. Repeat for several.
@@ -9197,7 +9542,10 @@ type GetVulnerabilityTrendParams struct {
 	// To Last day, inclusive (RFC 3339 date); default today.
 	To *openapi_types.Date `form:"to,omitempty" json:"to,omitempty"`
 
-	// Repository A repository key. Repeat for several.
+	// Project A project key: the findings of the project's repositories. Repeat for several.
+	Project *[]string `form:"project,omitempty" json:"project,omitempty"`
+
+	// Repository A repository name `<project>/<key>`. Repeat for several.
 	Repository *[]string `form:"repository,omitempty" json:"repository,omitempty"`
 
 	// Format A format ID. Repeat for several.
@@ -9297,8 +9645,20 @@ type CreateProjectCiMappingJSONRequestBody = CiMappingInput
 // ReplaceProjectCiMappingJSONRequestBody defines body for ReplaceProjectCiMapping for application/json ContentType.
 type ReplaceProjectCiMappingJSONRequestBody = CiMappingInput
 
-// CreateRepositoryJSONRequestBody defines body for CreateRepository for application/json ContentType.
-type CreateRepositoryJSONRequestBody = Repository
+// SetProjectMemberJSONRequestBody defines body for SetProjectMember for application/json ContentType.
+type SetProjectMemberJSONRequestBody = MemberInput
+
+// CreateProjectPermissionPolicyJSONRequestBody defines body for CreateProjectPermissionPolicy for application/json ContentType.
+type CreateProjectPermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// PatchProjectPermissionPolicyApplicationMergePatchPlusJSONRequestBody defines body for PatchProjectPermissionPolicy for application/merge-patch+json ContentType.
+type PatchProjectPermissionPolicyApplicationMergePatchPlusJSONRequestBody = PermissionPolicyInput
+
+// ReplaceProjectPermissionPolicyJSONRequestBody defines body for ReplaceProjectPermissionPolicy for application/json ContentType.
+type ReplaceProjectPermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// CreateProjectRepositoryJSONRequestBody defines body for CreateProjectRepository for application/json ContentType.
+type CreateProjectRepositoryJSONRequestBody = Repository
 
 // UpdateRepositoryApplicationMergePatchPlusJSONRequestBody defines body for UpdateRepository for application/merge-patch+json ContentType.
 type UpdateRepositoryApplicationMergePatchPlusJSONRequestBody UpdateRepositoryApplicationMergePatchPlusJSONBody
@@ -9306,17 +9666,35 @@ type UpdateRepositoryApplicationMergePatchPlusJSONRequestBody UpdateRepositoryAp
 // ReplaceRepositoryJSONRequestBody defines body for ReplaceRepository for application/json ContentType.
 type ReplaceRepositoryJSONRequestBody = Repository
 
-// RunRepositoryMirrorJSONRequestBody defines body for RunRepositoryMirror for application/json ContentType.
-type RunRepositoryMirrorJSONRequestBody = MirrorRunRequest
-
 // InvalidateRepositoryCacheJSONRequestBody defines body for InvalidateRepositoryCache for application/json ContentType.
 type InvalidateRepositoryCacheJSONRequestBody = CacheInvalidateRequest
 
 // PutRepositoryClaimsJSONRequestBody defines body for PutRepositoryClaims for application/json ContentType.
 type PutRepositoryClaimsJSONRequestBody = RepositoryClaimsInput
 
+// RunRepositoryMirrorJSONRequestBody defines body for RunRepositoryMirror for application/json ContentType.
+type RunRepositoryMirrorJSONRequestBody = MirrorRunRequest
+
+// MoveRepositoryJSONRequestBody defines body for MoveRepository for application/json ContentType.
+type MoveRepositoryJSONRequestBody = MoveRepositoryRequest
+
 // AddPackageOwnerJSONRequestBody defines body for AddPackageOwner for application/json ContentType.
 type AddPackageOwnerJSONRequestBody = PackageOwnerInput
+
+// CreateProjectServiceAccountJSONRequestBody defines body for CreateProjectServiceAccount for application/json ContentType.
+type CreateProjectServiceAccountJSONRequestBody = NewServiceAccount
+
+// UpdateProjectServiceAccountApplicationMergePatchPlusJSONRequestBody defines body for UpdateProjectServiceAccount for application/merge-patch+json ContentType.
+type UpdateProjectServiceAccountApplicationMergePatchPlusJSONRequestBody = ServiceAccountPatch
+
+// DisableProjectServiceAccountJSONRequestBody defines body for DisableProjectServiceAccount for application/json ContentType.
+type DisableProjectServiceAccountJSONRequestBody = DisableRequest
+
+// CreateProjectServiceAccountTokenJSONRequestBody defines body for CreateProjectServiceAccountToken for application/json ContentType.
+type CreateProjectServiceAccountTokenJSONRequestBody = CreateTokenRequest
+
+// TestUpstreamJSONRequestBody defines body for TestUpstream for application/json ContentType.
+type TestUpstreamJSONRequestBody = UpstreamTestRequest
 
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = NewServiceAccount
@@ -9347,9 +9725,6 @@ type RevokeTokenByValueJSONRequestBody = RevokeByValueRequest
 
 // RotateTokenJSONRequestBody defines body for RotateToken for application/json ContentType.
 type RotateTokenJSONRequestBody = RotateRequest
-
-// TestUpstreamJSONRequestBody defines body for TestUpstream for application/json ContentType.
-type TestUpstreamJSONRequestBody = UpstreamTestRequest
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = NewUser
@@ -9730,128 +10105,179 @@ type ServerInterface interface {
 	// (POST /api/v1/projects)
 	CreateProject(w http.ResponseWriter, r *http.Request, params CreateProjectParams)
 	// DeleteProject Delete an empty project
-	// (DELETE /api/v1/projects/{key})
-	DeleteProject(w http.ResponseWriter, r *http.Request, key string, params DeleteProjectParams)
+	// (DELETE /api/v1/projects/{projectKey})
+	DeleteProject(w http.ResponseWriter, r *http.Request, projectKey string, params DeleteProjectParams)
 	// GetProject Read a project
-	// (GET /api/v1/projects/{key})
-	GetProject(w http.ResponseWriter, r *http.Request, key string)
-	// ReplaceProject Replace a project's display name, description and switches
-	// (PUT /api/v1/projects/{key})
-	ReplaceProject(w http.ResponseWriter, r *http.Request, key string, params ReplaceProjectParams)
-	// RemoveProjectAdmin Remove a project administrator
-	// (DELETE /api/v1/projects/{key}/admins/{principalRef})
-	RemoveProjectAdmin(w http.ResponseWriter, r *http.Request, key string, principalRef string)
-	// AddProjectAdmin Add a project administrator
-	// (PUT /api/v1/projects/{key}/admins/{principalRef})
-	AddProjectAdmin(w http.ResponseWriter, r *http.Request, key string, principalRef string)
+	// (GET /api/v1/projects/{projectKey})
+	GetProject(w http.ResponseWriter, r *http.Request, projectKey string)
+	// ReplaceProject Replace a project's display name and description
+	// (PUT /api/v1/projects/{projectKey})
+	ReplaceProject(w http.ResponseWriter, r *http.Request, projectKey string, params ReplaceProjectParams)
 	// ListProjectCiIssuances List the CI tokens issued through a project's mappings
-	// (GET /api/v1/projects/{key}/ci/issuances)
-	ListProjectCiIssuances(w http.ResponseWriter, r *http.Request, key string, params ListProjectCiIssuancesParams)
-	// ListProjectCiIssuers List the CI issuers a project administrator can choose from
-	// (GET /api/v1/projects/{key}/ci/issuers)
-	ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, key string)
+	// (GET /api/v1/projects/{projectKey}/ci/issuances)
+	ListProjectCiIssuances(w http.ResponseWriter, r *http.Request, projectKey string, params ListProjectCiIssuancesParams)
+	// ListProjectCiIssuers List the CI issuers an Owner of a project can choose from
+	// (GET /api/v1/projects/{projectKey}/ci/issuers)
+	ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, projectKey string)
 	// EvaluateProjectCiMappings Dry-run the project's mappings against a claim set
-	// (POST /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate)
-	EvaluateProjectCiMappings(w http.ResponseWriter, r *http.Request, key string, issuer string)
+	// (POST /api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate)
+	EvaluateProjectCiMappings(w http.ResponseWriter, r *http.Request, projectKey string, issuer string)
 	// GetProjectCiSnippet Read a ready-to-paste CI snippet for a mapping of a project
-	// (GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind})
-	GetProjectCiSnippet(w http.ResponseWriter, r *http.Request, key string, issuer string, kind string, params GetProjectCiSnippetParams)
+	// (GET /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind})
+	GetProjectCiSnippet(w http.ResponseWriter, r *http.Request, projectKey string, issuer string, kind string, params GetProjectCiSnippetParams)
 	// ListProjectCiMappings List the CI mappings of a project
-	// (GET /api/v1/projects/{key}/ci/mappings)
-	ListProjectCiMappings(w http.ResponseWriter, r *http.Request, key string)
+	// (GET /api/v1/projects/{projectKey}/ci/mappings)
+	ListProjectCiMappings(w http.ResponseWriter, r *http.Request, projectKey string)
 	// CreateProjectCiMapping Create a CI mapping of a project
-	// (POST /api/v1/projects/{key}/ci/mappings)
-	CreateProjectCiMapping(w http.ResponseWriter, r *http.Request, key string)
+	// (POST /api/v1/projects/{projectKey}/ci/mappings)
+	CreateProjectCiMapping(w http.ResponseWriter, r *http.Request, projectKey string)
 	// DeleteProjectCiMapping Delete a CI mapping of a project
-	// (DELETE /api/v1/projects/{key}/ci/mappings/{issuer}/{name})
-	DeleteProjectCiMapping(w http.ResponseWriter, r *http.Request, key string, issuer string, name string, params DeleteProjectCiMappingParams)
+	// (DELETE /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name})
+	DeleteProjectCiMapping(w http.ResponseWriter, r *http.Request, projectKey string, issuer string, name string, params DeleteProjectCiMappingParams)
 	// GetProjectCiMapping Read a CI mapping of a project
-	// (GET /api/v1/projects/{key}/ci/mappings/{issuer}/{name})
-	GetProjectCiMapping(w http.ResponseWriter, r *http.Request, key string, issuer string, name string)
+	// (GET /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name})
+	GetProjectCiMapping(w http.ResponseWriter, r *http.Request, projectKey string, issuer string, name string)
 	// ReplaceProjectCiMapping Replace a CI mapping of a project
-	// (PUT /api/v1/projects/{key}/ci/mappings/{issuer}/{name})
-	ReplaceProjectCiMapping(w http.ResponseWriter, r *http.Request, key string, issuer string, name string, params ReplaceProjectCiMappingParams)
+	// (PUT /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name})
+	ReplaceProjectCiMapping(w http.ResponseWriter, r *http.Request, projectKey string, issuer string, name string, params ReplaceProjectCiMappingParams)
+	// ListProjectMembers List the members of a project
+	// (GET /api/v1/projects/{projectKey}/members)
+	ListProjectMembers(w http.ResponseWriter, r *http.Request, projectKey ProjectKey)
+	// RemoveProjectMember Remove a member from a project
+	// (DELETE /api/v1/projects/{projectKey}/members/{principalRef})
+	RemoveProjectMember(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, principalRef string)
+	// SetProjectMember Add a member to a project, or change its role
+	// (PUT /api/v1/projects/{projectKey}/members/{principalRef})
+	SetProjectMember(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, principalRef string)
+	// ListProjectPermissionPolicies List the permission policies of a project
+	// (GET /api/v1/projects/{projectKey}/policies)
+	ListProjectPermissionPolicies(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params ListProjectPermissionPoliciesParams)
+	// CreateProjectPermissionPolicy Create a permission policy of a project
+	// (POST /api/v1/projects/{projectKey}/policies)
+	CreateProjectPermissionPolicy(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params CreateProjectPermissionPolicyParams)
+	// DeleteProjectPermissionPolicy Delete a permission policy of a project
+	// (DELETE /api/v1/projects/{projectKey}/policies/{name})
+	DeleteProjectPermissionPolicy(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string, params DeleteProjectPermissionPolicyParams)
+	// GetProjectPermissionPolicy Read a permission policy of a project
+	// (GET /api/v1/projects/{projectKey}/policies/{name})
+	GetProjectPermissionPolicy(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string)
+	// PatchProjectPermissionPolicy Change members of a permission policy of a project
+	// (PATCH /api/v1/projects/{projectKey}/policies/{name})
+	PatchProjectPermissionPolicy(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string, params PatchProjectPermissionPolicyParams)
+	// ReplaceProjectPermissionPolicy Replace a permission policy of a project
+	// (PUT /api/v1/projects/{projectKey}/policies/{name})
+	ReplaceProjectPermissionPolicy(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string, params ReplaceProjectPermissionPolicyParams)
 	// LookupProjectPrincipals Look up users and groups to name in a project's policies
-	// (GET /api/v1/projects/{key}/principals)
-	LookupProjectPrincipals(w http.ResponseWriter, r *http.Request, key string, params LookupProjectPrincipalsParams)
-	// UnassignProjectRepository Unassign a repository from a project
-	// (DELETE /api/v1/projects/{key}/repositories/{repoKey})
-	UnassignProjectRepository(w http.ResponseWriter, r *http.Request, key string, repoKey string)
-	// AssignProjectRepository Assign a repository to a project
-	// (PUT /api/v1/projects/{key}/repositories/{repoKey})
-	AssignProjectRepository(w http.ResponseWriter, r *http.Request, key string, repoKey string, params AssignProjectRepositoryParams)
+	// (GET /api/v1/projects/{projectKey}/principals)
+	LookupProjectPrincipals(w http.ResponseWriter, r *http.Request, projectKey string, params LookupProjectPrincipalsParams)
+	// ListProjectRepositories List the repositories of a project
+	// (GET /api/v1/projects/{projectKey}/repositories)
+	ListProjectRepositories(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params ListProjectRepositoriesParams)
+	// CreateProjectRepository Create a repository
+	// (POST /api/v1/projects/{projectKey}/repositories)
+	CreateProjectRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params CreateProjectRepositoryParams)
+	// DeleteRepository Delete a repository
+	// (DELETE /api/v1/projects/{projectKey}/repositories/{repoKey})
+	DeleteRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params DeleteRepositoryParams)
+	// GetRepository Read a repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey})
+	GetRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params GetRepositoryParams)
+	// UpdateRepository Update a repository configuration
+	// (PATCH /api/v1/projects/{projectKey}/repositories/{repoKey})
+	UpdateRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params UpdateRepositoryParams)
+	// ReplaceRepository Replace a repository configuration
+	// (PUT /api/v1/projects/{projectKey}/repositories/{repoKey})
+	ReplaceRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey, params ReplaceRepositoryParams)
+	// ListCacheEntries List the cache entries of a remote repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries)
+	ListCacheEntries(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params ListCacheEntriesParams)
+	// InvalidateRepositoryCache Invalidate the cached metadata or misses of a remote or virtual repository
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate)
+	InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string)
+	// ListChildren List the children of a folder
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/children)
+	ListChildren(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params ListChildrenParams)
+	// GetRepositoryClaims Read the namespace claims of a repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/claims)
+	GetRepositoryClaims(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetRepositoryClaimsParams)
+	// PutRepositoryClaims Replace the manual namespace claims of a repository
+	// (PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/claims)
+	PutRepositoryClaims(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params PutRepositoryClaimsParams)
+	// GetClientSetup Client setup snippets of a repository
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup)
+	GetClientSetup(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetClientSetupParams)
+	// GetRepositoryGuide The guide of a repository for one client
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide)
+	GetRepositoryGuide(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetRepositoryGuideParams)
+	// DeleteItem Delete a file or folder
+	// (DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/items)
+	DeleteItem(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params DeleteItemParams)
+	// GetItem Describe a file or folder
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/items)
+	GetItem(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetItemParams)
+	// GetRepositoryMirror Read the status of a remote repository's mirror
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror)
+	GetRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string)
+	// RunRepositoryMirror Request a pass of a remote repository's mirror now
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run)
+	RunRepositoryMirror(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params RunRepositoryMirrorParams)
+	// MoveRepository Move a repository to another project
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/move)
+	MoveRepository(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey RepoKey)
+	// GetPackageOwners Read the owners of a package name
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners)
+	GetPackageOwners(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, packageName string)
+	// AddPackageOwner Add an owner, or pre-assign a name nobody has published
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners)
+	AddPackageOwner(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, packageName string, params AddPackageOwnerParams)
+	// RemovePackageOwner Remove an owner, or release the name with its last owner
+	// (DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner})
+	RemovePackageOwner(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, packageName string, owner string, params RemovePackageOwnerParams)
+	// GetRepositoryResolution Explain how a virtual repository resolves a client path
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution)
+	GetRepositoryResolution(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetRepositoryResolutionParams)
+	// GetItemStats Read the download statistics of a file
+	// (GET /api/v1/projects/{projectKey}/repositories/{repoKey}/stats)
+	GetItemStats(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params GetItemStatsParams)
+	// TestRepositoryUpstream Test the saved upstream of a remote repository
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test)
+	TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string)
+	// RescanRepositoryVulnerabilities Evaluate every stored version of a repository again
+	// (POST /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan)
+	RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, repoKey string, params RescanRepositoryVulnerabilitiesParams)
+	// ListProjectServiceAccounts List the service accounts of a project
+	// (GET /api/v1/projects/{projectKey}/service-accounts)
+	ListProjectServiceAccounts(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params ListProjectServiceAccountsParams)
+	// CreateProjectServiceAccount Create a service account of a project
+	// (POST /api/v1/projects/{projectKey}/service-accounts)
+	CreateProjectServiceAccount(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, params CreateProjectServiceAccountParams)
+	// DeleteProjectServiceAccount Delete a service account of a project
+	// (DELETE /api/v1/projects/{projectKey}/service-accounts/{name})
+	DeleteProjectServiceAccount(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string)
+	// GetProjectServiceAccount Read a service account of a project
+	// (GET /api/v1/projects/{projectKey}/service-accounts/{name})
+	GetProjectServiceAccount(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string, params GetProjectServiceAccountParams)
+	// UpdateProjectServiceAccount Change a service account of a project
+	// (PATCH /api/v1/projects/{projectKey}/service-accounts/{name})
+	UpdateProjectServiceAccount(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string, params UpdateProjectServiceAccountParams)
+	// DisableProjectServiceAccount Disable a service account of a project
+	// (POST /api/v1/projects/{projectKey}/service-accounts/{name}/disable)
+	DisableProjectServiceAccount(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string)
+	// EnableProjectServiceAccount Enable a service account of a project
+	// (POST /api/v1/projects/{projectKey}/service-accounts/{name}/enable)
+	EnableProjectServiceAccount(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string)
+	// RevokeProjectServiceAccountTokens Revoke all tokens of a project service account
+	// (DELETE /api/v1/projects/{projectKey}/service-accounts/{name}/tokens)
+	RevokeProjectServiceAccountTokens(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string)
+	// CreateProjectServiceAccountToken Create a token of a project service account
+	// (POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens)
+	CreateProjectServiceAccountToken(w http.ResponseWriter, r *http.Request, projectKey ProjectKey, name string, params CreateProjectServiceAccountTokenParams)
+	// TestUpstream Test an upstream configuration that is not saved
+	// (POST /api/v1/projects/{projectKey}/upstream-tests)
+	TestUpstream(w http.ResponseWriter, r *http.Request, projectKey ProjectKey)
 	// ListRepositories List repositories
 	// (GET /api/v1/repositories)
 	ListRepositories(w http.ResponseWriter, r *http.Request, params ListRepositoriesParams)
-	// CreateRepository Create a repository
-	// (POST /api/v1/repositories)
-	CreateRepository(w http.ResponseWriter, r *http.Request, params CreateRepositoryParams)
-	// DeleteRepository Delete a repository
-	// (DELETE /api/v1/repositories/{key})
-	DeleteRepository(w http.ResponseWriter, r *http.Request, key string, params DeleteRepositoryParams)
-	// GetRepository Read a repository
-	// (GET /api/v1/repositories/{key})
-	GetRepository(w http.ResponseWriter, r *http.Request, key string, params GetRepositoryParams)
-	// UpdateRepository Update a repository configuration
-	// (PATCH /api/v1/repositories/{key})
-	UpdateRepository(w http.ResponseWriter, r *http.Request, key string, params UpdateRepositoryParams)
-	// ReplaceRepository Replace a repository configuration
-	// (PUT /api/v1/repositories/{key})
-	ReplaceRepository(w http.ResponseWriter, r *http.Request, key string, params ReplaceRepositoryParams)
-	// GetRepositoryMirror Read the status of a remote repository's mirror
-	// (GET /api/v1/repositories/{key}/mirror)
-	GetRepositoryMirror(w http.ResponseWriter, r *http.Request, key string)
-	// RunRepositoryMirror Request a pass of a remote repository's mirror now
-	// (POST /api/v1/repositories/{key}/mirror/run)
-	RunRepositoryMirror(w http.ResponseWriter, r *http.Request, key string, params RunRepositoryMirrorParams)
-	// TestRepositoryUpstream Test the saved upstream of a remote repository
-	// (POST /api/v1/repositories/{key}/upstream-test)
-	TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, key string)
-	// RescanRepositoryVulnerabilities Evaluate every stored version of a repository again
-	// (POST /api/v1/repositories/{key}/vulnerabilities/rescan)
-	RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request, key string, params RescanRepositoryVulnerabilitiesParams)
-	// ListCacheEntries List the cache entries of a remote repository
-	// (GET /api/v1/repositories/{repoKey}/cache/entries)
-	ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKey string, params ListCacheEntriesParams)
-	// InvalidateRepositoryCache Invalidate the cached metadata or misses of a remote or virtual repository
-	// (POST /api/v1/repositories/{repoKey}/cache/invalidate)
-	InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, repoKey string)
-	// ListChildren List the children of a folder
-	// (GET /api/v1/repositories/{repoKey}/children)
-	ListChildren(w http.ResponseWriter, r *http.Request, repoKey string, params ListChildrenParams)
-	// GetRepositoryClaims Read the namespace claims of a repository
-	// (GET /api/v1/repositories/{repoKey}/claims)
-	GetRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, params GetRepositoryClaimsParams)
-	// PutRepositoryClaims Replace the manual namespace claims of a repository
-	// (PUT /api/v1/repositories/{repoKey}/claims)
-	PutRepositoryClaims(w http.ResponseWriter, r *http.Request, repoKey string, params PutRepositoryClaimsParams)
-	// GetClientSetup Client setup snippets of a repository
-	// (GET /api/v1/repositories/{repoKey}/client-setup)
-	GetClientSetup(w http.ResponseWriter, r *http.Request, repoKey string, params GetClientSetupParams)
-	// GetRepositoryGuide The guide of a repository for one client
-	// (GET /api/v1/repositories/{repoKey}/guide)
-	GetRepositoryGuide(w http.ResponseWriter, r *http.Request, repoKey string, params GetRepositoryGuideParams)
-	// DeleteItem Delete a file or folder
-	// (DELETE /api/v1/repositories/{repoKey}/items)
-	DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params DeleteItemParams)
-	// GetItem Describe a file or folder
-	// (GET /api/v1/repositories/{repoKey}/items)
-	GetItem(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemParams)
-	// GetPackageOwners Read the owners of a package name
-	// (GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners)
-	GetPackageOwners(w http.ResponseWriter, r *http.Request, repoKey string, packageName string)
-	// AddPackageOwner Add an owner, or pre-assign a name nobody has published
-	// (POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners)
-	AddPackageOwner(w http.ResponseWriter, r *http.Request, repoKey string, packageName string, params AddPackageOwnerParams)
-	// RemovePackageOwner Remove an owner, or release the name with its last owner
-	// (DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner})
-	RemovePackageOwner(w http.ResponseWriter, r *http.Request, repoKey string, packageName string, owner string, params RemovePackageOwnerParams)
-	// GetRepositoryResolution Explain how a virtual repository resolves a client path
-	// (GET /api/v1/repositories/{repoKey}/resolution)
-	GetRepositoryResolution(w http.ResponseWriter, r *http.Request, repoKey string, params GetRepositoryResolutionParams)
-	// GetItemStats Read the download statistics of a file
-	// (GET /api/v1/repositories/{repoKey}/stats)
-	GetItemStats(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemStatsParams)
 	// ListRoleBindings List role bindings
 	// (GET /api/v1/role-bindings)
 	ListRoleBindings(w http.ResponseWriter, r *http.Request, params ListRoleBindingsParams)
@@ -9960,9 +10386,6 @@ type ServerInterface interface {
 	// RotateToken Rotate a token
 	// (POST /api/v1/tokens/{id}/rotate)
 	RotateToken(w http.ResponseWriter, r *http.Request, id string, params RotateTokenParams)
-	// TestUpstream Test an upstream configuration that is not saved
-	// (POST /api/v1/upstream-tests)
-	TestUpstream(w http.ResponseWriter, r *http.Request)
 	// ListUsers List users
 	// (GET /api/v1/users)
 	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
@@ -12757,6 +13180,19 @@ func (siw *ServerInterfaceWrapper) ListPackages(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "repository" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
@@ -13756,12 +14192,12 @@ func (siw *ServerInterfaceWrapper) DeleteProject(w http.ResponseWriter, r *http.
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -13790,7 +14226,7 @@ func (siw *ServerInterfaceWrapper) DeleteProject(w http.ResponseWriter, r *http.
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteProject(w, r, key, params)
+		siw.Handler.DeleteProject(w, r, projectKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13806,17 +14242,17 @@ func (siw *ServerInterfaceWrapper) GetProject(w http.ResponseWriter, r *http.Req
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProject(w, r, key)
+		siw.Handler.GetProject(w, r, projectKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13832,12 +14268,12 @@ func (siw *ServerInterfaceWrapper) ReplaceProject(w http.ResponseWriter, r *http
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -13870,77 +14306,7 @@ func (siw *ServerInterfaceWrapper) ReplaceProject(w http.ResponseWriter, r *http
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReplaceProject(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RemoveProjectAdmin operation middleware
-func (siw *ServerInterfaceWrapper) RemoveProjectAdmin(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "principalRef" -------------
-	var principalRef string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "principalRef", r.PathValue("principalRef"), &principalRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principalRef", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RemoveProjectAdmin(w, r, key, principalRef)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// AddProjectAdmin operation middleware
-func (siw *ServerInterfaceWrapper) AddProjectAdmin(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "principalRef" -------------
-	var principalRef string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "principalRef", r.PathValue("principalRef"), &principalRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principalRef", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AddProjectAdmin(w, r, key, principalRef)
+		siw.Handler.ReplaceProject(w, r, projectKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13956,12 +14322,12 @@ func (siw *ServerInterfaceWrapper) ListProjectCiIssuances(w http.ResponseWriter,
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14034,7 +14400,7 @@ func (siw *ServerInterfaceWrapper) ListProjectCiIssuances(w http.ResponseWriter,
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListProjectCiIssuances(w, r, key, params)
+		siw.Handler.ListProjectCiIssuances(w, r, projectKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14050,17 +14416,17 @@ func (siw *ServerInterfaceWrapper) ListProjectCiIssuers(w http.ResponseWriter, r
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListProjectCiIssuers(w, r, key)
+		siw.Handler.ListProjectCiIssuers(w, r, projectKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14076,12 +14442,12 @@ func (siw *ServerInterfaceWrapper) EvaluateProjectCiMappings(w http.ResponseWrit
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14095,7 +14461,7 @@ func (siw *ServerInterfaceWrapper) EvaluateProjectCiMappings(w http.ResponseWrit
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.EvaluateProjectCiMappings(w, r, key, issuer)
+		siw.Handler.EvaluateProjectCiMappings(w, r, projectKey, issuer)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14111,12 +14477,12 @@ func (siw *ServerInterfaceWrapper) GetProjectCiSnippet(w http.ResponseWriter, r 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14168,7 +14534,7 @@ func (siw *ServerInterfaceWrapper) GetProjectCiSnippet(w http.ResponseWriter, r 
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProjectCiSnippet(w, r, key, issuer, kind, params)
+		siw.Handler.GetProjectCiSnippet(w, r, projectKey, issuer, kind, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14184,17 +14550,17 @@ func (siw *ServerInterfaceWrapper) ListProjectCiMappings(w http.ResponseWriter, 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListProjectCiMappings(w, r, key)
+		siw.Handler.ListProjectCiMappings(w, r, projectKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14210,17 +14576,17 @@ func (siw *ServerInterfaceWrapper) CreateProjectCiMapping(w http.ResponseWriter,
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateProjectCiMapping(w, r, key)
+		siw.Handler.CreateProjectCiMapping(w, r, projectKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14236,12 +14602,12 @@ func (siw *ServerInterfaceWrapper) DeleteProjectCiMapping(w http.ResponseWriter,
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14288,7 +14654,7 @@ func (siw *ServerInterfaceWrapper) DeleteProjectCiMapping(w http.ResponseWriter,
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteProjectCiMapping(w, r, key, issuer, name, params)
+		siw.Handler.DeleteProjectCiMapping(w, r, projectKey, issuer, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14304,12 +14670,12 @@ func (siw *ServerInterfaceWrapper) GetProjectCiMapping(w http.ResponseWriter, r 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14332,7 +14698,7 @@ func (siw *ServerInterfaceWrapper) GetProjectCiMapping(w http.ResponseWriter, r 
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProjectCiMapping(w, r, key, issuer, name)
+		siw.Handler.GetProjectCiMapping(w, r, projectKey, issuer, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14348,12 +14714,12 @@ func (siw *ServerInterfaceWrapper) ReplaceProjectCiMapping(w http.ResponseWriter
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14404,7 +14770,480 @@ func (siw *ServerInterfaceWrapper) ReplaceProjectCiMapping(w http.ResponseWriter
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReplaceProjectCiMapping(w, r, key, issuer, name, params)
+		siw.Handler.ReplaceProjectCiMapping(w, r, projectKey, issuer, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectMembers operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectMembers(w, r, projectKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveProjectMember operation middleware
+func (siw *ServerInterfaceWrapper) RemoveProjectMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "principalRef" -------------
+	var principalRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalRef", r.PathValue("principalRef"), &principalRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principalRef", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveProjectMember(w, r, projectKey, principalRef)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetProjectMember operation middleware
+func (siw *ServerInterfaceWrapper) SetProjectMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "principalRef" -------------
+	var principalRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "principalRef", r.PathValue("principalRef"), &principalRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principalRef", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetProjectMember(w, r, projectKey, principalRef)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectPermissionPolicies operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectPermissionPolicies(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectPermissionPoliciesParams
+
+	// ------------- Optional query parameter "principal" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "principal", r.URL.Query(), &params.Principal, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "principal"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "principal", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "expandGroups" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "expandGroups", r.URL.Query(), &params.ExpandGroups, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "expandGroups"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expandGroups", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectPermissionPolicies(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateProjectPermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectPermissionPolicy(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteProjectPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) DeleteProjectPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteProjectPermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchOptional
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteProjectPermissionPolicy(w, r, projectKey, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectPermissionPolicy(w, r, projectKey, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchProjectPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) PatchProjectPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PatchProjectPermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchProjectPermissionPolicy(w, r, projectKey, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceProjectPermissionPolicy operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceProjectPermissionPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceProjectPermissionPolicyParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceProjectPermissionPolicy(w, r, projectKey, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14420,12 +15259,12 @@ func (siw *ServerInterfaceWrapper) LookupProjectPrincipals(w http.ResponseWriter
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey string
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14472,7 +15311,7 @@ func (siw *ServerInterfaceWrapper) LookupProjectPrincipals(w http.ResponseWriter
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.LookupProjectPrincipals(w, r, key, params)
+		siw.Handler.LookupProjectPrincipals(w, r, projectKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14482,23 +15321,193 @@ func (siw *ServerInterfaceWrapper) LookupProjectPrincipals(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
-// UnassignProjectRepository operation middleware
-func (siw *ServerInterfaceWrapper) UnassignProjectRepository(w http.ResponseWriter, r *http.Request) {
+// ListProjectRepositories operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectRepositories(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectRepositoriesParams
+
+	// ------------- Optional query parameter "class" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "class", r.URL.Query(), &params.Class, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "class"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "class", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", r.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "view"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "view", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectRepositories(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectRepository operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateProjectRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectRepository(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteRepository operation middleware
+func (siw *ServerInterfaceWrapper) DeleteRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
 	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
+	var repoKey RepoKey
 
 	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
@@ -14506,8 +15515,64 @@ func (siw *ServerInterfaceWrapper) UnassignProjectRepository(w http.ResponseWrit
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteRepositoryParams
+
+	// ------------- Optional query parameter "detach" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "detach", r.URL.Query(), &params.Detach, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detach"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detach", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchOptional
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UnassignProjectRepository(w, r, key, repoKey)
+		siw.Handler.DeleteRepository(w, r, projectKey, repoKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14517,18 +15582,203 @@ func (siw *ServerInterfaceWrapper) UnassignProjectRepository(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
-// AssignProjectRepository operation middleware
-func (siw *ServerInterfaceWrapper) AssignProjectRepository(w http.ResponseWriter, r *http.Request) {
+// GetRepository operation middleware
+func (siw *ServerInterfaceWrapper) GetRepository(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "key" -------------
-	var key string
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
 
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepository(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateRepository operation middleware
+func (siw *ServerInterfaceWrapper) UpdateRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateRepository(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceRepository operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceRepositoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceRepository(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCacheEntries operation middleware
+func (siw *ServerInterfaceWrapper) ListCacheEntries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
 		return
 	}
 
@@ -14542,36 +15792,1588 @@ func (siw *ServerInterfaceWrapper) AssignProjectRepository(w http.ResponseWriter
 	}
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params AssignProjectRepositoryParams
+	var params ListCacheEntriesParams
 
-	// ------------- Optional query parameter "move" -------------
+	// ------------- Optional query parameter "pathPrefix" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "move", r.URL.Query(), &params.Move, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "pathPrefix", r.URL.Query(), &params.PathPrefix, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "move"})
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pathPrefix"})
 		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "move", Err: err})
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pathPrefix", Err: err})
 		}
 		return
 	}
 
-	// ------------- Optional query parameter "from" -------------
+	// ------------- Optional query parameter "kind" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
 		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
 		}
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AssignProjectRepository(w, r, key, repoKey, params)
+		siw.Handler.ListCacheEntries(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InvalidateRepositoryCache operation middleware
+func (siw *ServerInterfaceWrapper) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InvalidateRepositoryCache(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListChildren operation middleware
+func (siw *ServerInterfaceWrapper) ListChildren(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListChildrenParams
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "recursive" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "recursive", r.URL.Query(), &params.Recursive, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "recursive"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recursive", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "maxDepth" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "maxDepth", r.URL.Query(), &params.MaxDepth, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "maxDepth"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "maxDepth", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "folders" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "folders", r.URL.Query(), &params.Folders, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "folders"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "folders", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListChildren(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRepositoryClaims operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryClaims(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryClaimsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryClaims(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutRepositoryClaims operation middleware
+func (siw *ServerInterfaceWrapper) PutRepositoryClaims(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutRepositoryClaimsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutRepositoryClaims(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetClientSetup operation middleware
+func (siw *ServerInterfaceWrapper) GetClientSetup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetClientSetupParams
+
+	// ------------- Required query parameter "client" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "credentials" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "credentials", r.URL.Query(), &params.Credentials, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "credentials"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "credentials", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "package" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "scope" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope", r.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "bastion" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "bastion", r.URL.Query(), &params.Bastion, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bastion"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bastion", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetClientSetup(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRepositoryGuide operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryGuide(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryGuideParams
+
+	// ------------- Required query parameter "client" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryGuide(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteItemParams
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteItem(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetItem operation middleware
+func (siw *ServerInterfaceWrapper) GetItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetItemParams
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetItem(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRepositoryMirror operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryMirror(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryMirror(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunRepositoryMirror operation middleware
+func (siw *ServerInterfaceWrapper) RunRepositoryMirror(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunRepositoryMirrorParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunRepositoryMirror(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MoveRepository operation middleware
+func (siw *ServerInterfaceWrapper) MoveRepository(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey RepoKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MoveRepository(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageOwners operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageOwners(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "packageName" -------------
+	var packageName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageOwners(w, r, projectKey, repoKey, packageName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddPackageOwner operation middleware
+func (siw *ServerInterfaceWrapper) AddPackageOwner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "packageName" -------------
+	var packageName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddPackageOwnerParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddPackageOwner(w, r, projectKey, repoKey, packageName, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemovePackageOwner operation middleware
+func (siw *ServerInterfaceWrapper) RemovePackageOwner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "packageName" -------------
+	var packageName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "owner" -------------
+	var owner string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "owner", r.PathValue("owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemovePackageOwnerParams
+
+	// ------------- Optional query parameter "release" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "release", r.URL.Query(), &params.Release, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "release"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "release", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemovePackageOwner(w, r, projectKey, repoKey, packageName, owner, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRepositoryResolution operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryResolution(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryResolutionParams
+
+	// ------------- Required query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryResolution(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetItemStats operation middleware
+func (siw *ServerInterfaceWrapper) GetItemStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetItemStatsParams
+
+	// ------------- Required query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetItemStats(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestRepositoryUpstream operation middleware
+func (siw *ServerInterfaceWrapper) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestRepositoryUpstream(w, r, projectKey, repoKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RescanRepositoryVulnerabilities operation middleware
+func (siw *ServerInterfaceWrapper) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RescanRepositoryVulnerabilitiesParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RescanRepositoryVulnerabilities(w, r, projectKey, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectServiceAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectServiceAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectServiceAccountsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectServiceAccounts(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateProjectServiceAccountParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectServiceAccount(w, r, projectKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteProjectServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) DeleteProjectServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteProjectServiceAccount(w, r, projectKey, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectServiceAccountParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectServiceAccount(w, r, projectKey, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateProjectServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) UpdateProjectServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateProjectServiceAccountParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateProjectServiceAccount(w, r, projectKey, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableProjectServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) DisableProjectServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableProjectServiceAccount(w, r, projectKey, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableProjectServiceAccount operation middleware
+func (siw *ServerInterfaceWrapper) EnableProjectServiceAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableProjectServiceAccount(w, r, projectKey, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeProjectServiceAccountTokens operation middleware
+func (siw *ServerInterfaceWrapper) RevokeProjectServiceAccountTokens(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeProjectServiceAccountTokens(w, r, projectKey, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectServiceAccountToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectServiceAccountToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateProjectServiceAccountTokenParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectServiceAccountToken(w, r, projectKey, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestUpstream operation middleware
+func (siw *ServerInterfaceWrapper) TestUpstream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectKey" -------------
+	var projectKey ProjectKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectKey", r.PathValue("projectKey"), &projectKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestUpstream(w, r, projectKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -14696,1228 +17498,6 @@ func (siw *ServerInterfaceWrapper) ListRepositories(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListRepositories(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateRepository operation middleware
-func (siw *ServerInterfaceWrapper) CreateRepository(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params CreateRepositoryParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateRepository(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteRepository operation middleware
-func (siw *ServerInterfaceWrapper) DeleteRepository(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params DeleteRepositoryParams
-
-	// ------------- Optional query parameter "detach" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "detach", r.URL.Query(), &params.Detach, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "detach"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "detach", Err: err})
-		}
-		return
-	}
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatchOptional
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = &IfMatch
-
-	}
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteRepository(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRepository operation middleware
-func (siw *ServerInterfaceWrapper) GetRepository(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetRepositoryParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "If-None-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
-		var IfNoneMatch IfNoneMatch
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
-			return
-		}
-
-		params.IfNoneMatch = &IfNoneMatch
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRepository(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateRepository operation middleware
-func (siw *ServerInterfaceWrapper) UpdateRepository(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params UpdateRepositoryParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatch
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = IfMatch
-
-	} else {
-		err := fmt.Errorf("Header parameter If-Match is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateRepository(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ReplaceRepository operation middleware
-func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ReplaceRepositoryParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatch
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = IfMatch
-
-	} else {
-		err := fmt.Errorf("Header parameter If-Match is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReplaceRepository(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRepositoryMirror operation middleware
-func (siw *ServerInterfaceWrapper) GetRepositoryMirror(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRepositoryMirror(w, r, key)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RunRepositoryMirror operation middleware
-func (siw *ServerInterfaceWrapper) RunRepositoryMirror(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params RunRepositoryMirrorParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RunRepositoryMirror(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// TestRepositoryUpstream operation middleware
-func (siw *ServerInterfaceWrapper) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.TestRepositoryUpstream(w, r, key)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RescanRepositoryVulnerabilities operation middleware
-func (siw *ServerInterfaceWrapper) RescanRepositoryVulnerabilities(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "key" -------------
-	var key string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params RescanRepositoryVulnerabilitiesParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RescanRepositoryVulnerabilities(w, r, key, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListCacheEntries operation middleware
-func (siw *ServerInterfaceWrapper) ListCacheEntries(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListCacheEntriesParams
-
-	// ------------- Optional query parameter "pathPrefix" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "pathPrefix", r.URL.Query(), &params.PathPrefix, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pathPrefix"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pathPrefix", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "kind" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "cursor" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListCacheEntries(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// InvalidateRepositoryCache operation middleware
-func (siw *ServerInterfaceWrapper) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.InvalidateRepositoryCache(w, r, repoKey)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListChildren operation middleware
-func (siw *ServerInterfaceWrapper) ListChildren(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListChildrenParams
-
-	// ------------- Optional query parameter "path" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "recursive" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "recursive", r.URL.Query(), &params.Recursive, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "recursive"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recursive", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "maxDepth" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "maxDepth", r.URL.Query(), &params.MaxDepth, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "maxDepth"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "maxDepth", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "folders" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "folders", r.URL.Query(), &params.Folders, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "folders"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "folders", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "cursor" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListChildren(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRepositoryClaims operation middleware
-func (siw *ServerInterfaceWrapper) GetRepositoryClaims(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetRepositoryClaimsParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "If-None-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
-		var IfNoneMatch IfNoneMatch
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
-			return
-		}
-
-		params.IfNoneMatch = &IfNoneMatch
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRepositoryClaims(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PutRepositoryClaims operation middleware
-func (siw *ServerInterfaceWrapper) PutRepositoryClaims(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params PutRepositoryClaimsParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "If-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
-		var IfMatch IfMatch
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
-			return
-		}
-
-		params.IfMatch = IfMatch
-
-	} else {
-		err := fmt.Errorf("Header parameter If-Match is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PutRepositoryClaims(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetClientSetup operation middleware
-func (siw *ServerInterfaceWrapper) GetClientSetup(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetClientSetupParams
-
-	// ------------- Required query parameter "client" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "credentials" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "credentials", r.URL.Query(), &params.Credentials, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "credentials"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "credentials", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "package" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "package", r.URL.Query(), &params.Package, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "package"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "package", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "version" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "scope" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope", r.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "bastion" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "bastion", r.URL.Query(), &params.Bastion, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bastion"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bastion", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetClientSetup(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRepositoryGuide operation middleware
-func (siw *ServerInterfaceWrapper) GetRepositoryGuide(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetRepositoryGuideParams
-
-	// ------------- Required query parameter "client" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRepositoryGuide(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteItem operation middleware
-func (siw *ServerInterfaceWrapper) DeleteItem(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params DeleteItemParams
-
-	// ------------- Optional query parameter "path" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteItem(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetItem operation middleware
-func (siw *ServerInterfaceWrapper) GetItem(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetItemParams
-
-	// ------------- Optional query parameter "path" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetItem(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetPackageOwners operation middleware
-func (siw *ServerInterfaceWrapper) GetPackageOwners(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "packageName" -------------
-	var packageName string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetPackageOwners(w, r, repoKey, packageName)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// AddPackageOwner operation middleware
-func (siw *ServerInterfaceWrapper) AddPackageOwner(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "packageName" -------------
-	var packageName string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params AddPackageOwnerParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKey
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AddPackageOwner(w, r, repoKey, packageName, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RemovePackageOwner operation middleware
-func (siw *ServerInterfaceWrapper) RemovePackageOwner(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "packageName" -------------
-	var packageName string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "owner" -------------
-	var owner string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "owner", r.PathValue("owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params RemovePackageOwnerParams
-
-	// ------------- Optional query parameter "release" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "release", r.URL.Query(), &params.Release, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "release"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "release", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RemovePackageOwner(w, r, repoKey, packageName, owner, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRepositoryResolution operation middleware
-func (siw *ServerInterfaceWrapper) GetRepositoryResolution(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetRepositoryResolutionParams
-
-	// ------------- Required query parameter "path" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRepositoryResolution(w, r, repoKey, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetItemStats operation middleware
-func (siw *ServerInterfaceWrapper) GetItemStats(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "repoKey" -------------
-	var repoKey string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetItemStatsParams
-
-	// ------------- Required query parameter "path" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetItemStats(w, r, repoKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17207,20 +18787,6 @@ func (siw *ServerInterfaceWrapper) RotateToken(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
-// TestUpstream operation middleware
-func (siw *ServerInterfaceWrapper) TestUpstream(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.TestUpstream(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListUsers operation middleware
 func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -17975,6 +19541,19 @@ func (siw *ServerInterfaceWrapper) ListVulnerabilityFindings(w http.ResponseWrit
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListVulnerabilityFindingsParams
 
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "repository" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
@@ -18241,6 +19820,19 @@ func (siw *ServerInterfaceWrapper) ExportVulnerabilityFindings(w http.ResponseWr
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ExportVulnerabilityFindingsParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
 
 	// ------------- Optional query parameter "repository" -------------
 
@@ -18642,6 +20234,19 @@ func (siw *ServerInterfaceWrapper) GetVulnerabilitySummary(w http.ResponseWriter
 	// Parameter object where we will unmarshal all parameters from the context
 	var params GetVulnerabilitySummaryParams
 
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "repository" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
@@ -18710,6 +20315,19 @@ func (siw *ServerInterfaceWrapper) GetVulnerabilityTrend(w http.ResponseWriter, 
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
 		}
 		return
 	}
@@ -18921,11 +20539,18 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/groups/{name}/members", wrapper.PatchGroupMembers)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/service-accounts", wrapper.ListServiceAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts", wrapper.CreateServiceAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts", wrapper.ListProjectServiceAccounts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts", wrapper.CreateProjectServiceAccount)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/service-accounts/{name}", wrapper.DeleteServiceAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/service-accounts/{name}", wrapper.GetServiceAccount)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/service-accounts/{name}", wrapper.UpdateServiceAccount)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}", wrapper.DeleteProjectServiceAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}", wrapper.GetProjectServiceAccount)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}", wrapper.UpdateProjectServiceAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts/{name}/disable", wrapper.DisableServiceAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}/disable", wrapper.DisableProjectServiceAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts/{name}/enable", wrapper.EnableServiceAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}/enable", wrapper.EnableProjectServiceAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/tokens", wrapper.ListTokens)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/tokens", wrapper.CreateToken)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/tokens/current", wrapper.RevokeCurrentToken)
@@ -18939,6 +20564,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/users/{username}/tokens", wrapper.RevokeUserTokens)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/service-accounts/{name}/tokens", wrapper.RevokeServiceAccountTokens)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/service-accounts/{name}/tokens", wrapper.CreateServiceAccountToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}/tokens", wrapper.RevokeProjectServiceAccountTokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/service-accounts/{name}/tokens", wrapper.CreateProjectServiceAccountToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.GetAuthSettings)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/settings/auth", wrapper.UpdateAuthSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/auth/login-options", wrapper.GetLoginOptions)
@@ -18952,10 +20579,16 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/users/me/preferences", wrapper.UpdatePreferences)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/permission-policies", wrapper.ListPermissionPolicies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/permission-policies", wrapper.CreatePermissionPolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/policies", wrapper.ListProjectPermissionPolicies)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/policies", wrapper.CreateProjectPermissionPolicy)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.DeletePermissionPolicy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.GetPermissionPolicy)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.PatchPermissionPolicy)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/permission-policies/{name}", wrapper.ReplacePermissionPolicy)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/policies/{name}", wrapper.DeleteProjectPermissionPolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/policies/{name}", wrapper.GetProjectPermissionPolicy)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/projects/{projectKey}/policies/{name}", wrapper.PatchProjectPermissionPolicy)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/policies/{name}", wrapper.ReplaceProjectPermissionPolicy)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/authz/validate-policy", wrapper.ValidatePermissionPolicy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/roles", wrapper.ListRoles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/role-bindings", wrapper.ListRoleBindings)
@@ -18966,20 +20599,21 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/formats", wrapper.ListFormats)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{key}", wrapper.DeleteProject)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}", wrapper.GetProject)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{key}", wrapper.ReplaceProject)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{key}/admins/{principalRef}", wrapper.RemoveProjectAdmin)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{key}/admins/{principalRef}", wrapper.AddProjectAdmin)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{key}/repositories/{repoKey}", wrapper.UnassignProjectRepository)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{key}/repositories/{repoKey}", wrapper.AssignProjectRepository)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/principals", wrapper.LookupProjectPrincipals)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}", wrapper.DeleteProject)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}", wrapper.GetProject)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}", wrapper.ReplaceProject)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/members", wrapper.ListProjectMembers)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/members/{principalRef}", wrapper.RemoveProjectMember)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/members/{principalRef}", wrapper.SetProjectMember)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/principals", wrapper.LookupProjectPrincipals)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories", wrapper.ListRepositories)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories", wrapper.CreateRepository)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.DeleteRepository)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.GetRepository)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.UpdateRepository)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.ReplaceRepository)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories", wrapper.ListProjectRepositories)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories", wrapper.CreateProjectRepository)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}", wrapper.DeleteRepository)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}", wrapper.GetRepository)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}", wrapper.UpdateRepository)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}", wrapper.ReplaceRepository)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/move", wrapper.MoveRepository)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers", wrapper.ListCiIssuers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuers", wrapper.CreateCiIssuer)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/ci/issuers/{name}", wrapper.DeleteCiIssuer)
@@ -18998,19 +20632,19 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuances/{tokenId}", wrapper.GetCiIssuance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuances/revoke", wrapper.RevokeCiIssuances)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/oidc/token", wrapper.ExchangeCiToken)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers", wrapper.ListProjectCiIssuers)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings", wrapper.ListProjectCiMappings)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings", wrapper.CreateProjectCiMapping)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.DeleteProjectCiMapping)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.GetProjectCiMapping)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.ReplaceProjectCiMapping)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate", wrapper.EvaluateProjectCiMappings)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}", wrapper.GetProjectCiSnippet)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuances", wrapper.ListProjectCiIssuances)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.DeleteItem)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.GetItem)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/children", wrapper.ListChildren)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/stats", wrapper.GetItemStats)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/issuers", wrapper.ListProjectCiIssuers)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/mappings", wrapper.ListProjectCiMappings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/mappings", wrapper.CreateProjectCiMapping)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}", wrapper.DeleteProjectCiMapping)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}", wrapper.GetProjectCiMapping)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}", wrapper.ReplaceProjectCiMapping)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate", wrapper.EvaluateProjectCiMappings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind}", wrapper.GetProjectCiSnippet)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/ci/issuances", wrapper.ListProjectCiIssuances)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/items", wrapper.DeleteItem)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/items", wrapper.GetItem)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/children", wrapper.ListChildren)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/stats", wrapper.GetItemStats)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints", wrapper.ListEndpoints)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}", wrapper.GetEndpoint)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/exposure-rules", wrapper.ListExposureRules)
@@ -19026,21 +20660,21 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions", wrapper.ListPackageVersions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}", wrapper.GetPackageVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/readme", wrapper.GetPackageVersionReadme)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/client-setup", wrapper.GetClientSetup)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/guide", wrapper.GetRepositoryGuide)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup", wrapper.GetClientSetup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/guide", wrapper.GetRepositoryGuide)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/formats/{format}/guide", wrapper.GetFormatGuide)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/manual", wrapper.GetManualContents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/manual/{section}/{page}", wrapper.GetManualPage)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/upstream-test", wrapper.TestRepositoryUpstream)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/upstream-tests", wrapper.TestUpstream)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.GetRepositoryClaims)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.PutRepositoryClaims)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/resolution", wrapper.GetRepositoryResolution)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.GetPackageOwners)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.AddPackageOwner)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}", wrapper.RemovePackageOwner)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test", wrapper.TestRepositoryUpstream)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/upstream-tests", wrapper.TestUpstream)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/claims", wrapper.GetRepositoryClaims)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/claims", wrapper.PutRepositoryClaims)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/resolution", wrapper.GetRepositoryResolution)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners", wrapper.GetPackageOwners)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners", wrapper.AddPackageOwner)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}", wrapper.RemovePackageOwner)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/package-owners", wrapper.ListOwnedPackages)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bastions", wrapper.ListBastions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastions", wrapper.CreateBastion)
@@ -19065,9 +20699,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/vulnerabilities/claimed-name-matches", wrapper.ListClaimedNameMatches)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/vulnerabilities", wrapper.GetPackageVersionVulnerabilities)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/vulnerabilities", wrapper.GetPackageVulnerabilities)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/vulnerabilities/rescan", wrapper.RescanRepositoryVulnerabilities)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{key}/mirror", wrapper.GetRepositoryMirror)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/mirror/run", wrapper.RunRepositoryMirror)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan", wrapper.RescanRepositoryVulnerabilities)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror", wrapper.GetRepositoryMirror)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run", wrapper.RunRepositoryMirror)
 
 	return m
 }

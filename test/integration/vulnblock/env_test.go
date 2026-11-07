@@ -204,7 +204,7 @@ func (e *env) do(r *testenv.Replica, method, path, token string, hdr ...string) 
 }
 
 func tgzPath(repo, name, version string) string {
-	return "/api/npm/" + repo + "/" + name + "/-/" + name + "-" + version + ".tgz"
+	return "/api/npm/it/" + repo + "/" + name + "/-/" + name + "-" + version + ".tgz"
 }
 
 // tarball builds a package tarball.
@@ -249,7 +249,7 @@ func (e *env) publish(r *testenv.Replica, repo, name, version string) {
 			"content_type": "application/octet-stream", "data": base64.StdEncoding.EncodeToString(tgz), "length": len(tgz),
 		}},
 	}
-	if a := e.st.Do(r, "PUT", "/api/npm/"+repo+"/"+name, e.tokAdmin, doc); a.Status != http.StatusCreated {
+	if a := e.st.Do(r, "PUT", "/api/npm/it/"+repo+"/"+name, e.tokAdmin, doc); a.Status != http.StatusCreated {
 		e.t.Fatalf("publish %s@%s to %s: %d %s", name, version, repo, a.Status, a.Body)
 	}
 }
@@ -288,14 +288,14 @@ func (e *env) push(r *testenv.Replica, repo, id, version string) {
 	}
 	_, _ = part.Write(nupkg(e.t, id, version))
 	_ = mw.Close()
-	if a := e.st.Do(r, "PUT", "/api/nuget/"+repo+"/v3/package", e.tokAdmin, buf.Bytes(), "Content-Type", mw.FormDataContentType()); a.Status != http.StatusCreated {
+	if a := e.st.Do(r, "PUT", "/api/nuget/it/"+repo+"/v3/package", e.tokAdmin, buf.Bytes(), "Content-Type", mw.FormDataContentType()); a.Status != http.StatusCreated {
 		e.t.Fatalf("push %s %s to %s: %d %s", id, version, repo, a.Status, a.Body)
 	}
 }
 
 func nupkgPath(repo, id, version string) string {
 	id = strings.ToLower(id)
-	return "/api/nuget/" + repo + "/v3/flatcontainer/" + id + "/" + version + "/" + id + "." + version + ".nupkg"
+	return "/api/nuget/it/" + repo + "/v3/flatcontainer/" + id + "/" + version + "/" + id + "." + version + ".nupkg"
 }
 
 // finding inserts a finding of a stored version of a repository as the evaluation writes it, and returns its ID.

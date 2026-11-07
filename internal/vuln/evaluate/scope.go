@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
 	"github.com/guided-traffic/trove/internal/vuln/match"
@@ -91,17 +93,29 @@ func (r ClaimRule) Claim(ctx context.Context, format, name string) (claimRepo st
 	holders, _ := r.Claims.(HolderIndex)
 	for _, m := range matches {
 		var h ClaimHolder
+		if m.Repository == "" {
+			// The claim index knows the holder's id and this replica's snapshot does not (a repository created on another
+			// replica a moment ago): the holder is unknown, and an unknown holder withholds.
+			return "", true, nil
+		}
 		if holders != nil {
 			var ok bool
 			if h, ok = holders.Holder(m.Repository); !ok {
 				return m.Repository, true, nil
 			}
 		} else {
-			repo, err := r.Repos.ByKey(ctx, m.Repository)
-			if err != nil {
-				return m.Repository, true, nil //nolint:nilerr // see above: an unreadable holder still withholds
+			name, perr := qname.ParseRepo(m.Repository)
+			if perr != nil {
+				return "", false, perr // a claim naming no valid repository is corrupt data, not a holder to guess about
 			}
-			h = ClaimHolder{Key: repo.Key, Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
+			repo, err := r.Repos.ByName(ctx, name)
+			if err != nil {
+				if errs.KindOf(err) == errs.NotFound {
+					return m.Repository, true, nil // a holder the snapshot does not hold still withholds
+				}
+				return "", false, err
+			}
+			h = ClaimHolder{Key: repo.Name.String(), Format: repo.Format, Class: repo.Class, Settings: repo.VulnerabilitySettings()}
 		}
 		if h.counts(format) {
 			return h.Key, true, nil
@@ -150,7 +164,7 @@ func viewOf(repo repository.Repository) (repoView, bool) {
 	if err != nil {
 		return repoView{}, false
 	}
-	v := repoView{ID: id, Key: repo.Key, Format: repo.Format, Class: repo.Class, Ecosystem: eco, Settings: repo.VulnerabilitySettings()}
+	v := repoView{ID: id, Key: repo.Name.String(), Format: repo.Format, Class: repo.Class, Ecosystem: eco, Settings: repo.VulnerabilitySettings()}
 	if rs, ok := repo.Remote(); ok {
 		v.UpstreamHost = hostOf(rs.URL)
 	}

@@ -37,7 +37,7 @@ func bastionHeaders(client, proto, host, port string) http.Header {
 }
 
 func bastionRequest(peer string, h http.Header) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "http://trove.example.com/api/npm/npm-all/@acme/sdk", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://trove.example.com/api/npm/it/npm-all/@acme/sdk", nil)
 	r.RemoteAddr = peer + ":40000"
 	for k, vs := range h {
 		r.Header[k] = append([]string(nil), vs...)

@@ -17,26 +17,26 @@ func TestR_BAS_032_ASignedEntryVerifiesUnderItsKeyOnly(t *testing.T) {
 	}
 	e := Entry{
 		Kind: EntryArtifact, SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", Size: 12,
-		Header: http.Header{"Etag": {`"9f86"`}}, Repository: "npm-all", Status: 200, ValidatedAt: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
+		Header: http.Header{"Etag": {`"9f86"`}}, Repository: "web/npm-all", Status: 200, ValidatedAt: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
 	}
-	rec, err := s.SignEntry("/api/npm/npm-all/lodash/-/lodash-4.17.21.tgz", e)
+	rec, err := s.SignEntry("/api/npm/web/npm-all/lodash/-/lodash-4.17.21.tgz", e)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.VerifyEntry("/api/npm/npm-all/lodash/-/lodash-4.17.21.tgz", rec)
-	if err != nil || got.SHA256 != e.SHA256 || got.Repository != "npm-all" || !got.ValidatedAt.Equal(e.ValidatedAt) {
+	got, err := s.VerifyEntry("/api/npm/web/npm-all/lodash/-/lodash-4.17.21.tgz", rec)
+	if err != nil || got.SHA256 != e.SHA256 || got.Repository != "web/npm-all" || !got.ValidatedAt.Equal(e.ValidatedAt) {
 		t.Fatalf("round trip: %+v %v", got, err)
 	}
 	// Moved to another cache key, signed by another key, altered by one byte: all refused.
-	if _, err := s.VerifyEntry("/api/npm/npm-all/other", rec); !errors.Is(err, ErrBadSignature) {
+	if _, err := s.VerifyEntry("/api/npm/web/npm-all/other", rec); !errors.Is(err, ErrBadSignature) {
 		t.Errorf("an entry under another cache key: %v", err)
 	}
 	other, _ := NewSigner(bytes.Repeat([]byte{8}, MinKeyBytes))
-	if _, err := other.VerifyEntry("/api/npm/npm-all/lodash/-/lodash-4.17.21.tgz", rec); !errors.Is(err, ErrBadSignature) {
+	if _, err := other.VerifyEntry("/api/npm/web/npm-all/lodash/-/lodash-4.17.21.tgz", rec); !errors.Is(err, ErrBadSignature) {
 		t.Errorf("an entry under another key: %v", err)
 	}
-	tampered := bytes.Replace(rec, []byte("npm-all"), []byte("npm-evi"), 1)
-	if _, err := s.VerifyEntry("/api/npm/npm-all/lodash/-/lodash-4.17.21.tgz", tampered); !errors.Is(err, ErrBadSignature) {
+	tampered := bytes.Replace(rec, []byte("web/npm-all"), []byte("npm-evi"), 1)
+	if _, err := s.VerifyEntry("/api/npm/web/npm-all/lodash/-/lodash-4.17.21.tgz", tampered); !errors.Is(err, ErrBadSignature) {
 		t.Errorf("an altered entry: %v", err)
 	}
 	if _, err := s.Verify(DomainAnswer, "/x", s.Sign(DomainEntry, "/x", []byte("{}"))); !errors.Is(err, ErrBadSignature) {

@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -203,12 +205,18 @@ func (e *env) registration(name string) (id string) {
 	return id
 }
 
-// repository creates a repository of a format; virtual repositories list their members.
-func (e *env) repository(key, class string, members ...string) {
+// repository creates a repository of a format from its qualified name "<project>/<key>", and the project when
+// it does not exist; virtual repositories list their members by qualified name.
+func (e *env) repository(name, class string, members ...string) {
 	e.t.Helper()
-	e.exec("INSERT INTO repositories (key, format, class) VALUES ($1, 'npm', $2)", key, class)
+	project, key, _ := strings.Cut(name, "/")
+	e.exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING", project)
+	e.exec("INSERT INTO repositories (key, format, class, project_id) SELECT $1, 'npm', $2, id FROM project WHERE key = $3", key, class, project)
 	for i, m := range members {
-		e.exec("INSERT INTO virtual_members (virtual_id, position, member_id) SELECT v.id, $3, m.id FROM repositories v, repositories m WHERE v.key = $1 AND m.key = $2", key, m, i)
+		e.exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
+			SELECT v.id, $3, m.id FROM repositories v JOIN project vp ON vp.id = v.project_id,
+			       repositories m JOIN project mp ON mp.id = m.project_id
+			 WHERE vp.key || '/' || v.key = $1 AND mp.key || '/' || m.key = $2`, name, m, i)
 	}
 }
 
@@ -306,7 +314,7 @@ func (f *fakeShapes) set(subject, key string, sh bastionmain.Shape) {
 	f.shapes[subject][key] = sh
 }
 
-func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.Subject, keys []string) (map[string]bastionmain.Shape, error) {
+func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.Subject, keys []qname.Repo) (map[qname.Repo]bastionmain.Shape, error) {
 	if idx == nil {
 		return nil, errors.New("the check asked for shapes without the request's index")
 	}
@@ -317,9 +325,9 @@ func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.S
 	if subject.Anonymous {
 		id = ""
 	}
-	out := map[string]bastionmain.Shape{}
+	out := map[qname.Repo]bastionmain.Shape{}
 	for _, k := range keys {
-		if sh, ok := f.shapes[id][k]; ok {
+		if sh, ok := f.shapes[id][k.String()]; ok {
 			out[k] = sh
 		} else {
 			out[k] = bastionmain.Shape{Read: iface.ReadNone, Status: http.StatusNotFound}

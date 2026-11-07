@@ -3,6 +3,8 @@ package files
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/items"
@@ -12,7 +14,7 @@ import (
 
 // DeleteRequest is a delete of a file or of a folder with its subtree.
 type DeleteRequest struct {
-	Repo string
+	Repo qname.Repo
 	Path string
 	// Strict is the form of /files and of the management API for every caller
 	// without content:bypass: a path outside the repository's patterns is a missing

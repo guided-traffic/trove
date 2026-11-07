@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/virtual"
@@ -40,12 +42,12 @@ func TestR_REPO_019_Explanation(t *testing.T) {
 		if !mapsEqual(got, want) {
 			t.Fatalf("decisions = %v, want %v", got, want)
 		}
-		if ex.Repository != "npm-all" || ex.UnreadableMembers != 0 || ex.Members[0].Class != "local" || ex.Members[1].Class != "remote" {
+		if ex.Repository != "it/npm-all" || ex.UnreadableMembers != 0 || ex.Members[0].Class != "local" || ex.Members[1].Class != "remote" {
 			t.Fatalf("explanation = %+v", ex)
 		}
 		// The spec's shape.
 		b, _ := json.Marshal(ex)
-		for _, want := range []string{`"repository":"npm-all"`, `"descriptor":{"path":"left-pad/-/1.0.0.tgz","kind":"artifact","package":"left-pad"}`, `"unreadableMembers":0`} {
+		for _, want := range []string{`"repository":"it/npm-all"`, `"descriptor":{"path":"left-pad/-/1.0.0.tgz","kind":"artifact","package":"left-pad"}`, `"unreadableMembers":0`} {
 			if !strings.Contains(string(b), want) {
 				t.Errorf("%s lacks %s", b, want)
 			}
@@ -172,13 +174,13 @@ func TestR_REPO_019_Explanation(t *testing.T) {
 
 	t.Run("R-REPO-019 decidedBy names the claim and only the claimants the caller can read", func(t *testing.T) {
 		w := newWorld(t, three)
-		w.router.Decision = repository.RouteDecision{Kind: repository.DecidedByClaim, Pattern: "@acme/*", ClaimedBy: []string{"npm-local", "npm-remote2"}}
+		w.router.Decision = repository.RouteDecision{Kind: repository.DecidedByClaim, Pattern: "@acme/*", ClaimedBy: []qname.Repo{qr("npm-local"), qr("npm-remote2")}}
 		ex, _ := explained(t, w, bob, metadataOf("@acme/util"))
-		if ex.DecidedBy == nil || ex.DecidedBy.Claim != "@acme/*" || !slices.Equal(ex.DecidedBy.ClaimedBy, []string{"npm-local"}) {
+		if ex.DecidedBy == nil || ex.DecidedBy.Claim != "@acme/*" || !slices.Equal(ex.DecidedBy.ClaimedBy, qrs([]string{"npm-local"})) {
 			t.Fatalf("decidedBy = %+v", ex.DecidedBy)
 		}
 		ex, _ = explained(t, w, alice, metadataOf("@acme/util"))
-		if !slices.Equal(ex.DecidedBy.ClaimedBy, []string{"npm-local", "npm-remote2"}) {
+		if !slices.Equal(ex.DecidedBy.ClaimedBy, qrs([]string{"npm-local", "npm-remote2"})) {
 			t.Fatalf("decidedBy = %+v", ex.DecidedBy)
 		}
 		w.router.Decision = repository.RouteDecision{Kind: repository.DecidedByPin, Pattern: "lodash"}

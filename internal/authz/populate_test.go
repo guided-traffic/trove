@@ -136,7 +136,7 @@ func (addressedCeiling) Admits(_ *Index, endpoint string, c Coordinate, a Action
 	if a != Read {
 		return CeilingReadOnly
 	}
-	if firstNonEmpty(c.Addressed, c.Repository) == "npm-all" {
+	if firstNonEmpty(c.Addressed.Key, c.Repository.Key) == "npm-all" {
 		return CeilingHidesRead
 	}
 	return CeilingAdmits
@@ -171,7 +171,7 @@ func TestR_AUTHZ_015_MemberUsable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("R-AUTHZ-015 R-AUTHZ-009 "+tc.name, func(t *testing.T) {
-			r, f := e.MemberUsableOn(t.Context(), idx, tc.sub, tc.member, through)
+			r, f := e.MemberUsableOn(t.Context(), idx, tc.sub, qr(tc.member), through)
 			if r != tc.read || f != tc.fill {
 				t.Fatalf("read %v fill %v, want %v %v", r, f, tc.read, tc.fill)
 			}
@@ -185,10 +185,10 @@ func TestR_AUTHZ_015_MemberUsable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if r, _ := e.MemberUsableOn(t.Context(), idx, bearer(carolSub), "npm-internal", read("npm-all", "@web/button", "")); !r {
+		if r, _ := e.MemberUsableOn(t.Context(), idx, bearer(carolSub), qr("npm-internal"), read("npm-all", "@web/button", "")); !r {
 			t.Fatal("a name inside the grant's patterns is not consulted")
 		}
-		if r, _ := e.MemberUsableOn(t.Context(), idx, bearer(carolSub), "npm-internal", read("npm-all", "left-pad", "")); r {
+		if r, _ := e.MemberUsableOn(t.Context(), idx, bearer(carolSub), qr("npm-internal"), read("npm-all", "left-pad", "")); r {
 			t.Fatal("a name outside the grant's patterns is consulted")
 		}
 	})

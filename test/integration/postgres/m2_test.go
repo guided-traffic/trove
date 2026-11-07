@@ -39,7 +39,7 @@ type m2Fixture struct {
 
 func (f *m2Fixture) repo(key, format, class string) int64 {
 	f.t.Helper()
-	mustExec(f.t, f.admin, "INSERT INTO trove.repositories (key, format, class) VALUES ($1, $2, $3)", key, format, class)
+	mustExec(f.t, f.admin, "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ($1, $2, $3, (SELECT id FROM trove.project WHERE key = 'it'))", key, format, class)
 	return scalar[int64](f.t, f.admin, "SELECT id FROM trove.repositories WHERE key = $1", key)
 }
 

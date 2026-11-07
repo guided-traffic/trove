@@ -41,7 +41,7 @@ func sampleProjects() fakeProjects {
 	mk := func(key, name string) project.Project {
 		return project.Project{
 			ID: "id-" + key, Key: key, DisplayName: name, Version: 3,
-			Rights: project.DefaultRights(), Admins: []project.PrincipalRef{{Kind: project.KindGroup, Name: key + "-leads"}},
+			Members: []project.Member{{Project: key, Principal: project.PrincipalRef{Kind: project.KindGroup, Name: key + "-leads"}, Role: authz.ProjectRoleOwner}},
 		}
 	}
 	return fakeProjects{all: []project.Project{mk("docs", "Documentation"), mk("web", "Web platform"), mk("web2", "Second web")}}
@@ -84,7 +84,7 @@ func keysOf(p projectPage) string {
 
 func TestR_API_047_ListProjectsNarrowsToTheCaller(t *testing.T) {
 	auditor := projectCaller{caps: map[string]bool{"projects:read": true}}
-	web := projectCaller{projects: []authz.AdministeredProject{{Key: "web", ManagePolicies: true}, {Key: "docs"}}}
+	web := projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleOwner, "docs": authz.ProjectRoleReader}}
 
 	t.Run("R-API-047 a holder of projects:read sees every project", func(t *testing.T) {
 		w := projectsSetup(t, auditor).get("/api/v1/projects")
@@ -92,7 +92,7 @@ func TestR_API_047_ListProjectsNarrowsToTheCaller(t *testing.T) {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	})
-	t.Run("R-API-047 an administrator without the capability sees its own projects only", func(t *testing.T) {
+	t.Run("R-API-047 a member without the capability sees its own projects only", func(t *testing.T) {
 		w := projectsSetup(t, web).get("/api/v1/projects")
 		if w.Code != 200 || keysOf(decodePage(t, w.Body.String())) != "docs,web" {
 			t.Fatalf("%d %s", w.Code, w.Body)
@@ -118,7 +118,7 @@ func TestR_API_047_ListProjectsNarrowsToTheCaller(t *testing.T) {
 }
 
 func TestR_AUTHZ_026_GetProjectIsNotFoundForAnotherProject(t *testing.T) {
-	web := projectCaller{projects: []authz.AdministeredProject{{Key: "web"}}}
+	web := projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleOwner}, owns: map[string]bool{"web": true}}
 	s := projectsSetup(t, web)
 	t.Run("R-AUTHZ-026 an administrator reads its project with an ETag, and a conditional read still answers the body (Q-AUTHZ-202)", func(t *testing.T) {
 		w := s.get("/api/v1/projects/web")
@@ -140,7 +140,7 @@ func TestR_AUTHZ_026_GetProjectIsNotFoundForAnotherProject(t *testing.T) {
 }
 
 func TestR_AUTHZ_026_TheLookupBoundsItsInput(t *testing.T) {
-	web := projectCaller{projects: []authz.AdministeredProject{{Key: "web", ManagePolicies: true}}}
+	web := projectCaller{members: map[string]authz.ProjectRole{"web": authz.ProjectRoleOwner}, owns: map[string]bool{"web": true}}
 	s := projectsSetup(t, web)
 	if w := s.get("/api/v1/projects/web/principals?q=al"); w.Code != 200 || !strings.Contains(w.Body.String(), `"principal":"user:al-x"`) {
 		t.Errorf("a valid lookup: %d %s", w.Code, w.Body)

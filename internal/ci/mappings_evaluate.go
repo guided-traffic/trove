@@ -116,7 +116,7 @@ func (s *MappingService) evaluate(ctx context.Context, issuerName, project strin
 	}
 	res.Selected = make([]string, 0, len(sel.Contributions))
 	for _, c := range sel.Contributions {
-		res.Selected = append(res.Selected, c.Mapping.Name)
+		res.Selected = append(res.Selected, c.Mapping.ShortName())
 	}
 	grants := unionRendered(sel.Contributions)
 	grants.Inline = nil

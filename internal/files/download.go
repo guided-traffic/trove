@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/items"
@@ -27,7 +29,7 @@ type Resolved struct {
 // (R-GENERIC-007, R-REPO-005), and a blob whose object is missing or damaged is
 // refused (R-STOR-012). A folder is returned as a folder; the caller renders its
 // index. The root of the repository is a folder.
-func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p repository.Cleaned) (Resolved, error) {
+func (s *Service) Stat(ctx context.Context, c Caller, repoKey qname.Repo, p repository.Cleaned) (Resolved, error) {
 	kind := authz.KindArtifact
 	if p.Folder {
 		kind = authz.KindMetadata
@@ -79,7 +81,7 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 	// The block of the vulnerability scanning comes last: after authorization and the format's own check, so that a
 	// version the caller may not read stays a 404 and a tombstoned one the format's (R-VULN-015).
 	if err := s.enforce.Refuse(ctx, enforce.Download{
-		Addressed: repoKey, Store: repo.Key, RepoID: repo.ID, Format: repo.Format, Path: it.Path, VersionID: it.VersionID, Stored: true,
+		Addressed: repoKey.String(), Store: repo.Name.String(), RepoID: repo.ID, Format: repo.Format, Path: it.Path, VersionID: it.VersionID, Stored: true,
 		Block: s.enforce.Decide(it.Policy, it.Block, it.VersionID), Actor: c.Actor, Source: c.Source, Endpoint: c.Subject.Endpoint,
 		Ecosystem: it.Policy.Ecosystem,
 	}); err != nil {

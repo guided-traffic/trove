@@ -14,7 +14,7 @@ import (
 const (
 	customersHost     = "registry.acme.test"
 	customersEndpoint = `{"customers":{"listen":"127.0.0.1:0","base_url":"https://` + customersHost + `","surface":["packages"]}}`
-	acmeRule          = `{"name":"acme-sdk","repository":"npm-customers","enabled":true,
+	acmeRule          = `{"name":"acme-sdk","repository":"it/npm-customers","enabled":true,
 	"packages":{"include":["@acme/sdk"],"exclude":[]},"versions":{"include":[],"exclude":[],"range":""},"prereleases":false,
 	"distTags":{"include":["latest"],"exclude":[]}}`
 )
@@ -36,7 +36,7 @@ func TestR_VULN_017_AnEndpointWithExposureRulesKeepsThe501(t *testing.T) {
 	if rule.Status != http.StatusCreated {
 		t.Fatalf("create the rule: %d %s", rule.Status, rule.Body)
 	}
-	x := e.st.DoAt(r.Addr("customers"), customersHost, "POST", "/api/npm/"+npmCustomer+"/"+bulk, acmeSAT, []byte(body),
+	x := e.st.DoAt(r.Addr("customers"), customersHost, "POST", "/api/npm/it/"+npmCustomer+"/"+bulk, acmeSAT, []byte(body),
 		"Trove-Authz-Min-Epoch", rule.Header.Get("Trove-Authz-Epoch"))
 	if x.Status != http.StatusNotImplemented || npmCode(t, x) != "npm_audit_unavailable" {
 		t.Errorf("on customers: %d %s", x.Status, x.Body)

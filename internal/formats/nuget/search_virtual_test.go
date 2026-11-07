@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/nugettest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -36,7 +37,7 @@ func memberAt(id int64, key string, tier formats.Tier, position int) formats.Pla
 	if tier != formats.TierLocal {
 		class = formats.Remote
 	}
-	return formats.PlannedMember{Member: formats.RepoRef{ID: id, Key: key, Class: class, Format: ID}, Tier: tier, Position: position}
+	return formats.PlannedMember{Member: formats.RepoRef{ID: id, Name: qr(key), Class: class, Format: ID}, Tier: tier, Position: position}
 }
 
 // virtualSearchHost is a virtual repository over the members given, each with its own list.
@@ -63,7 +64,7 @@ func virtualSearchHost(t *testing.T, window int, members []formats.PlannedMember
 func withMembers(h *formattest.Host, members []formats.PlannedMember) {
 	var repos []repository.Repository
 	for _, m := range members {
-		repos = append(repos, repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Key: m.Member.Key, Class: m.Member.Class, Format: string(ID)})
+		repos = append(repos, repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Name: m.Member.Name, Class: m.Member.Class, Format: string(ID)})
 	}
 	*h.Repo() = repository.Assemble(*h.Repo(), repos, nil, 60)
 }
@@ -198,9 +199,9 @@ type memberScope struct {
 	may    func(repo, pkg, version string) bool
 }
 
-func (s memberScope) Shape(repo string) formats.ReadShape { return s.shapes[repo] }
-func (s memberScope) MayRead(repo, pkg, version string) bool {
-	return s.may == nil || s.may(repo, pkg, version)
+func (s memberScope) Shape(repo qname.Repo) formats.ReadShape { return s.shapes[repo.Key] }
+func (s memberScope) MayRead(repo qname.Repo, pkg, version string) bool {
+	return s.may == nil || s.may(repo.Key, pkg, version)
 }
 
 // TestR_NUGET_018_APlanThatAdmitsNothingIsAnEmptyResult: a plan that admits nothing is an empty

@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -86,7 +88,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		return ShadowOutcome{}, err
 	}
 	if len(set) == 0 {
-		r.m.checked(local.Key, OutcomeNoExposure)
+		r.m.checked(local.Name.String(), OutcomeNoExposure)
 		proceed.Outcome = OutcomeNoExposure
 		return proceed, nil
 	}
@@ -94,8 +96,8 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var remotes []Exposure
 	seen := map[string]bool{}
 	for _, x := range set {
-		if !seen[x.Remote.Key] {
-			seen[x.Remote.Key] = true
+		if !seen[x.Remote.Name.String()] {
+			seen[x.Remote.Name.String()] = true
 			remotes = append(remotes, x)
 		}
 	}
@@ -108,7 +110,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			defer wg.Done()
 			res := r.serves(ctx, c, x, name, docPath)
 			mu.Lock()
-			results[x.Remote.Key] = &res
+			results[x.Remote.Name.String()] = &res
 			mu.Unlock()
 		}()
 	}
@@ -117,7 +119,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	var served, undetermined bool
 	var retry time.Duration
 	for _, x := range remotes {
-		res := results[x.Remote.Key]
+		res := results[x.Remote.Name.String()]
 		if res.err != nil {
 			return ShadowOutcome{}, res.err
 		}
@@ -130,7 +132,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 		}
 	}
 	if !served && !undetermined {
-		r.m.checked(local.Key, OutcomeClear)
+		r.m.checked(local.Name.String(), OutcomeClear)
 		proceed.Outcome = OutcomeClear
 		return proceed, nil
 	}
@@ -140,7 +142,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 	switch {
 	case served:
 		for _, x := range set {
-			if results[x.Remote.Key].outcome == Served {
+			if results[x.Remote.Name.String()].outcome == Served {
 				out.Shadowed = append(out.Shadowed, x)
 			}
 		}
@@ -162,7 +164,7 @@ func (r *Resolver) ShadowCheck(ctx context.Context, c Caller, local repository.R
 			}
 		}
 	}
-	r.m.checked(local.Key, out.Outcome)
+	r.m.checked(local.Name.String(), out.Outcome)
 	return out, nil
 }
 
@@ -201,27 +203,28 @@ func (r *Resolver) serves(ctx context.Context, c Caller, x Exposure, name, docPa
 // holdsManage reports whether the caller holds manage on the name in the local repository, or
 // content:bypass, which the decision point folds into the same question.
 func (r *Resolver) holdsManage(c Caller, local repository.Repository, name string) bool {
-	ok, err := r.o.Decider.CheckOn(c.Index, c.Subject, []authz.CheckItem{{Repository: local.Key, Package: name, Action: authz.Manage}})
+	ok, err := r.o.Decider.CheckOn(c.Index, c.Subject, []authz.CheckItem{{Repository: local.Name, Package: name, Action: authz.Manage}})
 	return err == nil && len(ok) == 1 && ok[0]
 }
 
 // readableVirtuals are the keys of the virtual repositories of the pairs that the caller holds read
 // on (R-REPO-048 "The error body names the package and the virtual repositories").
 func (r *Resolver) readableVirtuals(ctx context.Context, c Caller, pairs []Exposure) []string {
-	var keys []string
-	seen := map[string]bool{}
+	var keys []qname.Repo
+	seen := map[qname.Repo]bool{}
 	for _, x := range pairs {
-		if !seen[x.Virtual.Key] {
-			seen[x.Virtual.Key] = true
-			keys = append(keys, x.Virtual.Key)
+		if !seen[x.Virtual.Name] {
+			seen[x.Virtual.Name] = true
+			keys = append(keys, x.Virtual.Name)
 		}
 	}
 	readable, err := r.o.Decider.ReadableOn(ctx, c.Index, c.Subject, keys)
 	if err != nil {
 		return []string{}
 	}
-	if readable == nil {
-		readable = []string{}
+	out := make([]string, len(readable))
+	for i, n := range readable {
+		out[i] = n.String()
 	}
-	return readable
+	return out
 }

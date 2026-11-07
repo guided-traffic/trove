@@ -1,7 +1,7 @@
 // Package formats is the contract of the package formats and their registry
 // (R-ARCH-008, R-ARCH-010, R-REPO-003).
 //
-// A format is a [Format]: its [Descriptor], its routes below /api/<id>/<repoKey>/,
+// A format is a [Format]: its [Descriptor], its routes below /api/<id>/<projectKey>/<repoKey>/,
 // the classification of its paths, the storage hooks that keep its package rows
 // in step with the items (OnCommit, OnItemsRemoved), the adapters of the remote
 // and the virtual class, the exposure and view adapters, the client setup
@@ -17,8 +17,8 @@
 // conformance kit (internal/formats/formattest) runs every format's routes, errors,
 // hooks and headers through the contract (R-ARCH-010).
 //
-// ContractVersion is 1, and the contract is frozen at it since the end of milestone
-// M3 (E3.3, ADR-141). A change of the exported surface is an ADR of its own: the
+// ContractVersion is 2, and the contract is frozen since the end of milestone M3 (E3.3,
+// ADR-141); version 2 is the project model's (ADR-156). A change of the exported surface is an ADR of its own: the
 // surface file internal/formats/testdata/contract.txt fails the test until the ADR
 // and the regenerated file come in one change. A change adds - an optional interface
 // that CapabilitiesOf finds, a default in Base or RemoteBase, a service of the Host -

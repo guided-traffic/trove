@@ -419,7 +419,8 @@ func (r migrationReport) unfinished() []string {
 // and is read again; the first answer of a replica of version is returned. Any other status fails the test.
 func upMigrations(t testing.TB, version string) migrationReport {
 	t.Helper()
-	a := adminAPI(t)
+	// Not adminAPI: the release before the upgrade has no projects, so the suite's project cannot be created yet.
+	a := newAPI(t).withToken(adminToken(t))
 	deadline := time.Now().Add(90 * time.Second)
 	var others []string
 	for {

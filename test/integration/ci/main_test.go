@@ -59,8 +59,9 @@ type env struct {
 
 	opsPAT   string // a user with the admin role, admin scope
 	alicePAT string // a user without a role
+	aliceID  string
 	bobID    string
-	bobPAT   string // a user who becomes a project administrator (admin scope, no role)
+	bobPAT   string // a user who becomes a project Owner (admin scope, no role)
 }
 
 func newEnv(t *testing.T, o options) *env {
@@ -78,7 +79,7 @@ func newEnv(t *testing.T, o options) *env {
 	ops, alice, bob := s.User("ops"), s.User("alice"), s.User("bob")
 	s.Bind("admin", ops)
 	e.opsPAT = s.Token(ops, scope.Scope{Inherit: true, Admin: true})
-	e.alicePAT = s.Token(alice, scope.Default())
+	e.aliceID, e.alicePAT = alice.ID, s.Token(alice, scope.Default())
 	e.bobID, e.bobPAT = bob.ID, s.Token(bob, scope.Scope{Inherit: true, Admin: true})
 	return e
 }

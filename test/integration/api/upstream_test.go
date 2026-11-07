@@ -77,7 +77,7 @@ func newUpstreamStub(t *testing.T) *upstreamStub {
 func upstreamCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []catalog.Class{catalog.Local, catalog.Remote}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath, ProbePath: "-/ping",
 	}})
 	return r
@@ -142,14 +142,14 @@ func TestUpstreamTestOperations(t *testing.T) {
 	caller := repository.Caller{}
 	create := func(body string) {
 		t.Helper()
-		if _, err := svc.Create(context.Background(), caller, []byte(body)); err != nil {
+		if _, err := svc.Create(context.Background(), caller, "it", []byte(body)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	unsaved := func(remote string) string { return fmt.Sprintf(`{"format":"npmlike","remote":%s}`, remote) }
 
 	t.Run("R-REPO-024 POST /upstream-tests probes an unsaved section and the answer matches the contract", func(t *testing.T) {
-		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(fmt.Sprintf(`{"url":%q,"authMode":"bearer","password":{"value":"probe-token"}}`, stub.srv.URL)), admin...)
+		a := send(t, c, "POST", "/api/v1/projects/it/upstream-tests", unsaved(fmt.Sprintf(`{"url":%q,"authMode":"bearer","password":{"value":"probe-token"}}`, stub.srv.URL)), admin...)
 		if a.Status != 200 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
@@ -172,7 +172,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 	})
 
 	t.Run("R-REPO-038 R-REPO-024 an upstream at the metadata address is egress_denied", func(t *testing.T) {
-		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"http://169.254.169.254/latest/"}`), admin...)
+		a := send(t, c, "POST", "/api/v1/projects/it/upstream-tests", unsaved(`{"url":"http://169.254.169.254/latest/"}`), admin...)
 		res := a.JSON(t)
 		if a.Status != 200 || res["reachable"] != false {
 			t.Fatalf("%d %s", a.Status, a.Body)
@@ -183,7 +183,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 	})
 
 	t.Run("R-REPO-024 an unknown host is a DNS error, in a 200", func(t *testing.T) {
-		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://registry.does-not-exist.invalid/"}`), admin...)
+		a := send(t, c, "POST", "/api/v1/projects/it/upstream-tests", unsaved(`{"url":"https://registry.does-not-exist.invalid/"}`), admin...)
 		res := a.JSON(t)
 		if e, _ := res["error"].(map[string]any); a.Status != 200 || res["reachable"] != false || e == nil || e["code"] != "dns_error" {
 			t.Fatalf("%d %s", a.Status, a.Body)
@@ -191,7 +191,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 	})
 
 	t.Run("R-REPO-008 R-API-009 an invalid section answers 422 with every violation, and 400 for a misspelt member", func(t *testing.T) {
-		a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://u:p@x.example/","connectTimeoutMs":50}`), admin...)
+		a := send(t, c, "POST", "/api/v1/projects/it/upstream-tests", unsaved(`{"url":"https://u:p@x.example/","connectTimeoutMs":50}`), admin...)
 		if a.Status != 422 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
@@ -201,16 +201,16 @@ func TestUpstreamTestOperations(t *testing.T) {
 		if strings.Contains(string(a.Body), "u:p@") {
 			t.Fatalf("the problem repeats the credential: %s", a.Body)
 		}
-		if a := send(t, c, "POST", "/api/v1/upstream-tests", unsaved(`{"url":"https://x.example/","connectTimeout":50}`), admin...); a.Status != 400 {
+		if a := send(t, c, "POST", "/api/v1/projects/it/upstream-tests", unsaved(`{"url":"https://x.example/","connectTimeout":50}`), admin...); a.Status != 400 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
-		if a := send(t, c, "POST", "/api/v1/upstream-tests", `{"format":"npmlike","remote":{}}`, append(admin, "Content-Type", "text/plain")...); a.Status != 415 {
+		if a := send(t, c, "POST", "/api/v1/projects/it/upstream-tests", `{"format":"npmlike","remote":{}}`, append(admin, "Content-Type", "text/plain")...); a.Status != 415 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 
 	t.Run("R-REPO-024 both operations need repositories:write-config", func(t *testing.T) {
-		for _, path := range []string{"/api/v1/upstream-tests", "/api/v1/repositories/npm-up/upstream-test"} {
+		for _, path := range []string{"/api/v1/projects/it/upstream-tests", "/api/v1/projects/it/repositories/npm-up/upstream-test"} {
 			if a := send(t, c, "POST", path, unsaved(`{}`)); a.Status != 401 {
 				t.Errorf("%s anonymous: %d", path, a.Status)
 			}
@@ -222,7 +222,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 
 	t.Run("R-REPO-024 POST /repositories/{key}/upstream-test probes the saved configuration", func(t *testing.T) {
 		create(fmt.Sprintf(`{"key":"npm-up","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"basic","username":"ci","password":{"value":"p4ss"}}}`, stub.srv.URL))
-		a := send(t, c, "POST", "/api/v1/repositories/npm-up/upstream-test", nil, admin...)
+		a := send(t, c, "POST", "/api/v1/projects/it/repositories/npm-up/upstream-test", nil, admin...)
 		if a.Status != 200 || a.JSON(t)["reachable"] != true {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
@@ -231,7 +231,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 		}
 
 		create(`{"key":"npm-nx","class":"remote","format":"npmlike","remote":{"url":"https://registry.does-not-exist.invalid/"}}`)
-		a = send(t, c, "POST", "/api/v1/repositories/npm-nx/upstream-test", nil, admin...)
+		a = send(t, c, "POST", "/api/v1/projects/it/repositories/npm-nx/upstream-test", nil, admin...)
 		if e, _ := a.JSON(t)["error"].(map[string]any); a.Status != 200 || e == nil || e["code"] != "dns_error" {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
@@ -244,7 +244,7 @@ func TestUpstreamTestOperations(t *testing.T) {
 		create(fmt.Sprintf(`{"key":"npm-copy","class":"remote","format":"npmlike","remote":{"url":%q,"authMode":"bearer","password":{"value":"other"}}}`, stub.srv.URL))
 		e.exec(`UPDATE repository_secrets SET sealed = (SELECT s.sealed FROM repository_secrets s JOIN repositories r ON r.id = s.repo_id WHERE r.key = 'npm-up')
 		         WHERE repo_id = (SELECT id FROM repositories WHERE key = 'npm-copy')`)
-		a := send(t, c, "POST", "/api/v1/repositories/npm-copy/upstream-test", nil, admin...)
+		a := send(t, c, "POST", "/api/v1/projects/it/repositories/npm-copy/upstream-test", nil, admin...)
 		if e, _ := a.JSON(t)["error"].(map[string]any); a.Status != 200 || e == nil || e["code"] != "upstream_secret_unavailable" {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
@@ -252,10 +252,10 @@ func TestUpstreamTestOperations(t *testing.T) {
 
 	t.Run("R-REPO-024 a missing repository is 404 and a local one is 400", func(t *testing.T) {
 		create(`{"key":"npm-local","class":"local","format":"npmlike"}`)
-		if a := send(t, c, "POST", "/api/v1/repositories/npm-local/upstream-test", nil, admin...); a.Status != 400 || a.Code(t) != "not_applicable" {
+		if a := send(t, c, "POST", "/api/v1/projects/it/repositories/npm-local/upstream-test", nil, admin...); a.Status != 400 || a.Code(t) != "not_applicable" {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
-		if a := send(t, c, "POST", "/api/v1/repositories/nope-nope/upstream-test", nil, admin...); a.Status != 404 {
+		if a := send(t, c, "POST", "/api/v1/projects/it/repositories/nope-nope/upstream-test", nil, admin...); a.Status != 404 {
 			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})

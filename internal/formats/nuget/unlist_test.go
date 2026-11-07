@@ -145,7 +145,7 @@ func TestR_NUGET_007_TheDeleteOfADeleteModeRepositoryRemovesTheVersionForGood(t 
 	if got := h.RevSeq(idPackage); got <= rev {
 		t.Errorf("rev_seq %d -> %d, want it raised", rev, got)
 	}
-	if len(h.st.Tombstones) != 1 || h.st.Tombstones[0].Audit.RepoKey != "main" {
+	if len(h.st.Tombstones) != 1 || h.st.Tombstones[0].Audit.RepoKey != "it/main" {
 		t.Errorf("tombstone writes = %+v", h.st.Tombstones)
 	}
 	if err := h.served(t, acmePath); err == nil {
@@ -295,7 +295,7 @@ func TestR_NUGET_007_AServeCheckDecidesOnTheNuGetRows(t *testing.T) {
 	if err := h.served(t, "acme.widgets/index.json"); err != nil {
 		t.Errorf("a document path: %v", err)
 	}
-	remote := formats.RepoRef{ID: 9, Key: "r", Class: formats.Remote, Format: ID}
+	remote := formats.RepoRef{ID: 9, Name: qr("r"), Class: formats.Remote, Format: ID}
 	if err := h.f.ServeCheck(context.Background(), h, remote, formats.ItemRef{Repo: remote, Path: acmePath}, formats.ServeStored); err != nil {
 		t.Errorf("a remote repository is not checked yet: %v", err)
 	}

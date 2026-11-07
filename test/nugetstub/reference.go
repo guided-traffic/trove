@@ -7,7 +7,7 @@ import (
 
 // ReferenceFeed is the feed address written into the reference solution's nuget.config: the
 // virtual repository nuget-all of the dev profile. The e2e tests override it with --source.
-const ReferenceFeed = "https://localhost:8080/api/nuget/nuget-all/v3/index.json"
+const ReferenceFeed = "https://localhost:8080/api/nuget/e2e/nuget-all/v3/index.json"
 
 // ReferenceFiles renders the reference solution of criterion E3.2 from the corpus: a solution with
 // one project whose PackageReferences are chosen so that a restore pulls at least min packages

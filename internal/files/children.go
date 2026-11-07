@@ -3,6 +3,8 @@ package files
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -12,7 +14,7 @@ import (
 // the coordinate the format gives the path (R-EP-014). An empty path is the root
 // of the repository. The management API reads a repository that is disabled as
 // well; /files does not (Stat).
-func (s *Service) ItemInfo(ctx context.Context, c Caller, repoKey, path string) (items.Item, error) {
+func (s *Service) ItemInfo(ctx context.Context, c Caller, repoKey qname.Repo, path string) (items.Item, error) {
 	t := s.locate(ctx, repoKey, path, false)
 	if _, err := c.decide(ctx, repoKey, path, t.class, authz.KindMetadata, authz.Read); err != nil {
 		return items.Item{}, err
@@ -36,7 +38,7 @@ func (s *Service) ItemInfo(ctx context.Context, c Caller, repoKey, path string) 
 
 // Stats implements GET /repositories/{repoKey}/stats: the counts of PostgreSQL,
 // never the buffer of a replica (R-ARCH-032). Only a file has statistics.
-func (s *Service) Stats(ctx context.Context, c Caller, repoKey, path string) (items.DownloadStats, error) {
+func (s *Service) Stats(ctx context.Context, c Caller, repoKey qname.Repo, path string) (items.DownloadStats, error) {
 	it, err := s.ItemInfo(ctx, c, repoKey, path)
 	if err != nil {
 		return items.DownloadStats{}, err
@@ -70,7 +72,7 @@ type ChildrenQuery struct {
 // order of their paths, with a cursor, `read` decided per entry on the coordinate
 // the format gives it (R-EP-014) and unreadable entries omitted (R-AUTHZ-016).
 // The folder itself needs `read`, and a missing or hidden folder is the same 404.
-func (s *Service) Children(ctx context.Context, c Caller, repoKey string, cq ChildrenQuery) (items.ChildrenPage, error) {
+func (s *Service) Children(ctx context.Context, c Caller, repoKey qname.Repo, cq ChildrenQuery) (items.ChildrenPage, error) {
 	t := s.locate(ctx, repoKey, cq.Path, true)
 	if _, err := c.decide(ctx, repoKey, cq.Path, t.class, authz.KindMetadata, authz.Read); err != nil {
 		return items.ChildrenPage{}, err
@@ -101,7 +103,7 @@ func (s *Service) Children(ctx context.Context, c Caller, repoKey string, cq Chi
 
 // visibleRows says which entries the caller may read, each on the coordinate its
 // format gives it, and for /files which the repository's patterns admit.
-func (s *Service) visibleRows(ctx context.Context, c Caller, repo repository.Repository, repoKey string, strict bool, rows []items.Child) ([]bool, error) {
+func (s *Service) visibleRows(ctx context.Context, c Caller, repo repository.Repository, repoKey qname.Repo, strict bool, rows []items.Child) ([]bool, error) {
 	paths := make([]string, len(rows))
 	classes := make(map[string]PathClass, len(rows))
 	for i, r := range rows {
@@ -124,7 +126,7 @@ func (s *Service) visibleRows(ctx context.Context, c Caller, repo repository.Rep
 
 // allowedPaths decides one action for many paths of a repository on the
 // request's index, each path on the coordinate classify gives it.
-func (c Caller) allowedPaths(ctx context.Context, repoKey string, a authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
+func (c Caller) allowedPaths(ctx context.Context, repoKey qname.Repo, a authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
 	kind := authz.KindMetadata
 	if a != authz.Read {
 		kind = authz.KindWrite

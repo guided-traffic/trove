@@ -128,7 +128,6 @@ export class FakePreferencesApi extends PreferencesApi {
     locale: null,
     theme: null,
     keyboardShortcuts: false,
-    projectFilter: null,
     revision: 1,
   };
 

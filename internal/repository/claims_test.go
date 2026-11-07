@@ -21,11 +21,11 @@ func (npmNames) Normalize(name string) (string, bool) { return name, name != "" 
 func npmCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "npmlike", Classes: []Class{Local, Remote, Virtual}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{key}/",
+		ID: "npmlike", Classes: []Class{Local, Remote, Virtual}, Layout: "npmlike", ProtocolBasePath: "/api/npmlike/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: npmNames{}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "pathfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pathfmt", ProtocolBasePath: "/files/{key}/",
+		ID: "pathfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pathfmt", ProtocolBasePath: "/files/{project}/{key}/",
 		PatternSubject: SubjectPath,
 	}})
 	return r

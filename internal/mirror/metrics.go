@@ -102,6 +102,21 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 	return m, nil
 }
 
+// Forget deletes every series of the repository name from the counters and the window gauge: the repository left the snapshot
+// (deleted, or renamed by a move; R-OPS-007). A pass that still runs for a renamed repository counts under the name it began
+// with and so brings its series back until it ends.
+func (m *Metrics) Forget(name string) {
+	if m == nil {
+		return
+	}
+	l := prometheus.Labels{"repo": name}
+	for _, c := range []interface{ DeletePartialMatch(prometheus.Labels) int }{
+		m.Passes, m.Items, m.Bytes, m.RateLimited, m.RateLimitWait, m.Concurrency, m.Preempted,
+	} {
+		c.DeletePartialMatch(l)
+	}
+}
+
 // repoMetrics are the collectors of one repository, resolved once per pass.
 type repoMetrics struct {
 	m    *Metrics
@@ -201,10 +216,11 @@ func GaugeSource(read func(ctx context.Context) ([]GaugeRow, error), repos repos
 			if err != nil {
 				return nil, err
 			}
+			// The gauge rows name a repository by its qualified name <project>/<key>.
 			active := map[string]repository.RemoteSettings{}
 			for _, repo := range list {
 				if s, ok := repo.Remote(); ok && s.Mirrored() && repo.Lifecycle != repository.Deleting {
-					active[repo.Key] = s
+					active[repo.Name.String()] = s
 				}
 			}
 			var out []prometheus.Metric
@@ -213,7 +229,7 @@ func GaugeSource(read func(ctx context.Context) ([]GaugeRow, error), repos repos
 			}
 			disabled := map[string]bool{}
 			for _, repo := range list {
-				disabled[repo.Key] = repo.Disabled
+				disabled[repo.Name.String()] = repo.Disabled
 			}
 			for _, r := range rows {
 				s, ok := active[r.Key]

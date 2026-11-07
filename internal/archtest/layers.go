@@ -11,7 +11,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, qname, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/untrusted, servefacts, formats/nuget/{id,version,nupkg,nuspec}, formats/<id>/rows, auth/scope, ci/{reason,claims,subject}, auth/jws, vuln/{advisory,match,osv,metrics}, mirror/discover, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, virtual, formatdata, authz, project, auth, jobs, audit, backup, manual, mirror
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -50,6 +50,10 @@ func layerTable() []layerRule {
 		{"internal/config", layerLeaf},
 		{"internal/errs", layerLeaf},
 		{"internal/buildinfo", layerLeaf},
+		// The identity of a repository and of the objects of a project, and the one parser of protocol and raw-file
+		// paths (Q-REPO-212): standard library only, so that the authorization engine, the formats, the edge and the
+		// Bastion spell one address.
+		{"internal/qname", layerLeaf},
 		{"internal/observability", layerLeaf},
 		{"internal/cache", layerLeaf},
 		{"internal/meta", layerLeaf},

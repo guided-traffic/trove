@@ -22,9 +22,7 @@ SELECT policy_id::text AS policy_id, dimension, mode, pattern
 
 -- name: AuthzBuildEntries :many
 -- The grants of global policies and, from the same statement, those of project
--- policies, which live in their own table so that the binaries of the previous
--- release, which read only authz_policy_entry, see a project policy without
--- entries (Q-AUTHZ-174).
+-- policies, which live in their own table (Q-AUTHZ-174).
 -- principal_project is the ID of the project of a service account, empty for every
 -- other principal: the build refuses a project account in a global policy and in
 -- another project's policy (Q-AUTHZ-198); principal_auto_join is true for an
@@ -46,18 +44,42 @@ SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions, COALE
  ORDER BY 1, 2;
 
 -- name: AuthzBuildProjects :many
-SELECT id::text AS id, key, manage_policies, manage_repositories FROM project ORDER BY key;
+SELECT id::text AS id, key FROM project ORDER BY key;
 
--- name: AuthzBuildProjectAdmins :many
--- The administrators of every project, users and groups (Q-AUTHZ-183).
-SELECT a.project_id::text AS project_id, a.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
-  FROM project_admin a
-  JOIN principal p ON p.id = a.principal_id
- ORDER BY a.project_id, a.principal_id;
+-- name: AuthzBuildProjectMembers :many
+-- The members of every project with their role, users and groups (Q-AUTHZ-207).
+-- A request's subject carries its groups, so a group's role reaches its members
+-- without expanding it here. principal_auto_join is true for an auto-join group,
+-- which the build skips: every user is in it, so it would give every user the
+-- role (R-AUTHZ-026); the member write refuses one, this guards a group that
+-- became auto-join later.
+SELECT m.project_id::text AS project_id, m.principal_id::text AS principal_id, p.kind AS principal_kind,
+       p.name AS principal_name, m.role, COALESCE(ug.auto_join, false)::boolean AS principal_auto_join
+  FROM project_member m
+  JOIN principal p ON p.id = m.principal_id
+  LEFT JOIN user_group ug ON ug.principal_id = m.principal_id
+ ORDER BY m.project_id, m.principal_id;
 
 -- name: AuthzProjectByKey :many
--- The ID of a project by its key; no row when it does not exist (R-AUTHZ-026).
-SELECT id::text AS id FROM project WHERE key = sqlc.arg(key)::text;
+-- The ID of a project by its key; no row when it does not exist (R-AUTHZ-026). The
+-- row is taken FOR SHARE: a policy write of the project holds it until it commits,
+-- so a move into or out of the project (ProjectLock, FOR UPDATE) runs before or
+-- after the write and never between the binding of its key selectors and its
+-- commit, and the lock comes before the repository rows AuthzBindRepository takes,
+-- in the order the move takes them.
+SELECT id::text AS id FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
+
+-- name: AuthzBindRepository :many
+-- The repository a key selector of a policy write names, by project and key, in the
+-- transaction of the write and under a share lock of its row (R-AUTHZ-004,
+-- R-REPO-060): a move of it (ProjectRepositoryLock, FOR UPDATE) waits for the write,
+-- whose selector then keeps it from moving, or the write waits for the move and the
+-- row no longer matches the project. No row when the project holds no such key.
+SELECT r.id, r.class
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = sqlc.arg(project)::text AND r.key = sqlc.arg(key)::text
+   FOR SHARE OF r;
 
 -- name: AuthzServiceAccountProject :many
 -- The key of the project a service account belongs to, empty for a global account;
@@ -67,11 +89,6 @@ SELECT COALESCE(pr.key, '')::text AS project
   LEFT JOIN project pr ON pr.id = s.project_id
  WHERE s.principal_id = sqlc.arg(principal_id)::text::uuid;
 
--- name: AuthzProjectKeyPrefixing :many
--- The key of the project whose key and a hyphen start the name, no row when none does:
--- the names a global policy may not take (Q-AUTHZ-200).
-SELECT key::text AS key FROM project WHERE starts_with(sqlc.arg(name)::text, key || '-') ORDER BY length(key) DESC LIMIT 1;
-
 -- name: AuthzBuildBindings :many
 -- principal_project: see AuthzBuildEntries (Q-AUTHZ-198).
 SELECT b.role, b.principal_id::text AS principal_id, COALESCE(sa.project_id::text, '')::text AS principal_project
@@ -80,9 +97,11 @@ SELECT b.role, b.principal_id::text AS principal_id, COALESCE(sa.project_id::tex
  ORDER BY b.role, b.principal_id;
 
 -- name: AuthzBuildRepositories :many
--- project_id is empty for a repository that belongs to no project.
-SELECT id, key, class, format, config, COALESCE(project_id::text, '')::text AS project_id
-  FROM repositories WHERE lifecycle = 'active' ORDER BY id;
+-- Every repository belongs to a project (Q-AUTHZ-206): the row names it by id and key.
+SELECT r.id, r.key, r.class, r.format, r.config, r.project_id::text AS project_id, p.key AS project_key
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE r.lifecycle = 'active' ORDER BY r.id;
 
 -- name: AuthzGetPolicy :many
 SELECT p.id::text AS id, p.name, p.description, p.resource_type, p.version,
@@ -111,10 +130,12 @@ SELECT p.id::text AS id, p.name, p.description, p.resource_type, p.version,
  ORDER BY p.name;
 
 -- name: AuthzPolicySelectors :many
-SELECT s.ordinal, s.kind, COALESCE(s.repository_id, 0)::bigint AS repository_id, COALESCE(r.key, '')::text AS repository_key,
+SELECT s.ordinal, s.kind, COALESCE(s.repository_id, 0)::bigint AS repository_id, COALESCE(rp.key, '')::text AS repository_project_key,
+       COALESCE(r.key, '')::text AS repository_key,
        COALESCE(s.key_pattern, '')::text AS key_pattern, COALESCE(s.repo_class, '')::text AS repo_class, COALESCE(s.format, '')::text AS format
   FROM authz_policy_selector s
   LEFT JOIN repositories r ON r.id = s.repository_id
+  LEFT JOIN project rp ON rp.id = r.project_id
  WHERE s.policy_id = sqlc.arg(policy_id)::text::uuid
  ORDER BY s.ordinal;
 

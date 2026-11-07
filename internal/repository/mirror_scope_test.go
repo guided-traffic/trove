@@ -25,8 +25,8 @@ func scopeDoc(t *testing.T, include, exclude, remote string) (Document, *validat
 	return d, v
 }
 
-// delegatedScopeFields returns the violations of a project administrator's update from the stored to the next document.
-func delegatedScopeFields(t *testing.T, stored, next [3]string) map[string]string {
+// restrictedScopeFields returns every violation of a Owner's update from the stored to the next document.
+func restrictedScopeFields(t *testing.T, stored, next [3]string) map[string]string {
 	t.Helper()
 	cur, v := scopeDoc(t, stored[0], stored[1], stored[2])
 	if err := v.err(); err != nil {
@@ -36,19 +36,13 @@ func delegatedScopeFields(t *testing.T, stored, next [3]string) map[string]strin
 	if err := v.err(); err != nil {
 		t.Fatalf("next: %v", err)
 	}
-	delegatedRemote(v, Write{Delegate: "web"}, &cur, &nd)
-	out := map[string]string{}
-	for k, c := range fieldCodes(v) {
-		if k == "/includePatterns" || k == "/excludePatterns" || k == "/remote/url" || k == "/remote/extraHosts" {
-			out[k] = c
-		}
-	}
-	return out
+	restrictedRemote(v, Caller{Restricted: true}, &cur, &nd)
+	return fieldCodes(v)
 }
 
-// R-REPO-050, R-REPO-052, Q-REPO-142 (Q-REPO-193): a project administrator keeps what an administrator chose for a mirror
+// R-REPO-050, R-REPO-052, Q-REPO-142 (Q-REPO-193): a Owner keeps what an administrator chose for a mirror
 // that stays a mirror: the patterns, the url and the extra hosts decide what the mirror stores and from where.
-func TestR_REPO_050_DelegatedWriteKeepsTheScopeOfAMirror(t *testing.T) {
+func TestR_REPO_050_RestrictedWriteKeepsTheScopeOfAMirror(t *testing.T) {
 	const (
 		remote = `{"url":"https://registry.example.org/","mode":"mirror"}`
 		hosts  = `{"url":"https://registry.example.org/","mode":"mirror","extraHosts":[{"pattern":"cdn.example.org","sendCredentials":false}]}`
@@ -87,7 +81,7 @@ func TestR_REPO_050_DelegatedWriteKeepsTheScopeOfAMirror(t *testing.T) {
 		{"a stored pullThrough remote keeps its freedom", [3]string{acme, "", pull}, [3]string{widePatterns, "", `{"url":"https://partner.example.test/"}`}, map[string]string{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := delegatedScopeFields(t, tc.stored, tc.next); !reflect.DeepEqual(got, tc.want) {
+			if got := restrictedScopeFields(t, tc.stored, tc.next); !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("violations = %v, want %v", got, tc.want)
 			}
 		})

@@ -1,4 +1,4 @@
-import { expect, expectAccessible, signInLocal, signOut, test } from '../support';
+import { e2eProject, expect, expectAccessible, signInLocal, signOut, test } from '../support';
 
 // R-UI-047 internationalization and accessibility tiers in the browser (R-UI-044, R-UI-045, R-UI-046, E1.11): one
 // journey in German with the dark colour scheme, so `color-contrast` is evaluated for the second locale and the second
@@ -11,7 +11,17 @@ test('R-UI-045 the screens in German, in the dark theme, and the switch back to 
   await expect(page.locator('html')).toHaveAttribute('lang', 'de');
   await expect(page).toHaveURL(/\/ui\/de\//);
 
+  // The project switcher in German and in the dark theme.
+  await page.goto(`/ui/de/projects/${e2eProject}/members`);
+  await page.getByRole('button', { name: /Projekt wechseln/ }).click();
+  await expect(page.getByRole('searchbox', { name: 'Projekt suchen' })).toBeVisible();
+  await expectAccessible(page, 'the project switcher (de, dark)');
+  await page.keyboard.press('Escape');
+
   const screens: { route: string; heading: string }[] = [
+    { route: '/ui/de/projects', heading: 'Projekte' },
+    { route: `/ui/de/projects/${e2eProject}/members`, heading: 'Mitglieder' },
+    { route: `/ui/de/projects/${e2eProject}/settings`, heading: 'Einstellungen' },
     { route: '/ui/de/admin/repositories', heading: 'Repositories' },
     { route: '/ui/de/admin/repositories/new', heading: 'Neues Repository' },
     { route: '/ui/de/admin/groups', heading: 'Gruppen' },

@@ -49,7 +49,7 @@ func (s *repoState) halfOpen(now time.Time) bool { return s.hasOpen && !now.Befo
 // stateOf returns the state of a repository, loading it on a miss under the fill
 // rule of R-ARCH-018.
 func (e *Engine) stateOf(ctx context.Context, rem Remote) (*repoState, error) {
-	e.keys.Store(rem.id, rem.Repo.Key)
+	e.keys.Store(rem.id, rem.Repo.Name.String())
 	st, err := e.state.Load(ctx, rem.id, func(ctx context.Context) (*repoState, error) { return e.loadState(ctx, rem.id) })
 	if err != nil {
 		return nil, err
@@ -86,6 +86,19 @@ func (e *Engine) loadState(ctx context.Context, repoID int64) (*repoState, error
 		st.gone[r.Path] = r.Variant
 	}
 	return st, nil
+}
+
+// Forget deletes the series of a repository name that left the snapshot (deleted, or renamed by a move) and the entry that
+// would publish the gauge of that name again at the next change of the circuit (R-OPS-007). A repository that was only renamed
+// is published under its new name by its next request.
+func (e *Engine) Forget(name string) {
+	e.keys.Range(func(k, v any) bool {
+		if v.(string) == name {
+			e.keys.Delete(k)
+		}
+		return true
+	})
+	e.m.forget(name)
 }
 
 // publishUp sets trove_remote_upstream_up from the state.
@@ -247,7 +260,7 @@ func (e *Engine) circuitSuccess(ctx context.Context, rem Remote) {
 		return nil
 	})
 	if err != nil {
-		e.log.Warn("recording an upstream success failed", "repo", rem.Repo.Key, "error", err)
+		e.log.Warn("recording an upstream success failed", "repo", rem.Repo.Name, "error", err)
 		return
 	}
 	if closed {
@@ -308,7 +321,7 @@ func (e *Engine) circuitFailure(ctx context.Context, rem Remote, why string, ret
 		return nil
 	})
 	if err != nil {
-		e.log.Warn("recording an upstream failure failed", "repo", rem.Repo.Key, "error", err)
+		e.log.Warn("recording an upstream failure failed", "repo", rem.Repo.Name, "error", err)
 		return
 	}
 	e.markEnsured(rem.id)
@@ -326,7 +339,7 @@ func (e *Engine) circuitFailure(ctx context.Context, rem Remote, why string, ret
 		}
 		e.state.Set(rem.id, st)
 		e.publishUp(rem.id, st)
-		e.log.Warn("the upstream of a remote repository is assumed offline", "repo", rem.Repo.Key,
+		e.log.Warn("the upstream of a remote repository is assumed offline", "repo", rem.Repo.Name,
 			"failures", row.ConsecutiveFailures, "open_for", time.Duration(row.OpenRemainingUs)*time.Microsecond)
 	}
 }
@@ -367,8 +380,8 @@ func (e *Engine) markGone(ctx context.Context, rq Request) (bool, error) {
 		}
 		return e.o.Audit.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventProxyUpstreamGone, Actor: auditActor(rq.Caller), Outcome: audit.Success, Source: rq.Caller.Source,
-			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Key},
-			Repository: rem.Repo.Key, Path: rq.Path, Endpoint: rq.Caller.Endpoint,
+			Subject:    audit.Subject{Kind: "repository", ID: rem.Repo.ID, Name: rem.Repo.Name.String()},
+			Repository: rem.Repo.Name.String(), Path: rq.Path, Endpoint: rq.Caller.Endpoint,
 			Details: mustJSON(map[string]string{"path": rq.Path, "variant": rq.Variant}),
 		})
 	})

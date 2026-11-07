@@ -204,6 +204,21 @@ type Mapping struct {
 	UpdatedAt     time.Time
 }
 
+// PrincipalName is the name of the mapping's principal: "<issuer>/<name>" for a mapping of the system
+// tier, "<issuer>/<project>/<name>" for one of a project's tier (R-CI-009, Q-AUTHZ-214).
+func (m Mapping) PrincipalName() string {
+	return principalNameOf(m.Issuer, m.Project, m.Name)
+}
+
+// ShortName is the mapping's name without its issuer, as the exchange response and the issuance filters
+// write it: "<name>", or "<project>/<name>" for a mapping of a project's tier (R-CI-007).
+func (m Mapping) ShortName() string {
+	if m.Project == "" {
+		return m.Name
+	}
+	return m.Project + "/" + m.Name
+}
+
 // MappingOptions are the options of a mapping (R-CI-011, R-CI-012).
 type MappingOptions = claims.Options
 
@@ -231,7 +246,7 @@ type MappingResult struct {
 	Warnings []claims.Warning
 }
 
-// IssuerChoice is what a project administrator sees of an issuer (Q-CI-26): enough to choose one.
+// IssuerChoice is what a project Owner sees of an issuer (Q-CI-26): enough to choose one.
 type IssuerChoice struct {
 	Name         string
 	Kind         string

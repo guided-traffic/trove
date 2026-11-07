@@ -12,6 +12,30 @@ info:
     are generated from it. It is served at `/api/v1/openapi.json` and `/api/v1/openapi.yaml`
     without authentication and holds no instance data except `servers[0].url`, which the server
     replaces with its public base URL.
+
+    Names. Every repository belongs to exactly one project and its key is unique within the project
+    (Q-AUTHZ-206, Q-REPO-212); a repository is addressed `<projectKey>/<repoKey>`, in this document by the two
+    path parameters `{projectKey}` and `{repoKey}` of `/api/v1/projects/{projectKey}/repositories/{repoKey}`, and
+    on the protocol routes as `/api/<format>/<projectKey>/<repoKey>/…` and `/files/<projectKey>/<repoKey>/…`.
+    Wherever a parameter or a member outside such a path holds a repository (`repository`, `repositories`, a
+    `repository` filter, a link), it holds the qualified name `<projectKey>/<repoKey>`; a project's own objects (the
+    members and deploy target of a virtual repository, the selectors of a project policy or a project CI mapping) name
+    repositories of their project by the bare key. A project's service accounts, permission policies and CI mappings
+    are named within the project (Q-AUTHZ-209): `/api/v1/projects/{projectKey}/service-accounts/{name}`, references
+    `sa:<projectKey>/<name>` and `ci:<issuer>/<projectKey>/<name>`; the unprefixed routes
+    `/api/v1/service-accounts…` and `/api/v1/permission-policies…` address instance-wide objects only, and their
+    lists show the project of each object in a `project` member, `null` for an instance-wide one. A selector outside
+    a project (a global policy, a token scope, an exposure rule) is `<projectGlob>/<keyGlob>[:<format>]` or
+    `@any…[:<format>]` for all projects; a bare key there is `422` (R-AUTHZ-004).
+
+    The declaration `x-trove-permission` of an operation is one of: `public: true`; `authenticated: true`; `role`;
+    `permission: <capability>`, which admits the holders of the capability and, with `projectRole`, the members of a
+    project: `projectRole: reader` admits a member of the project named by `project` (a value expression,
+    `path.projectKey` or `query.project`) with at least the role Reader, `owner` one with the role Owner who may
+    administer with this credential (a session, or a token with `admin: true`, Q-AUTHZ-208); without `project` the
+    role is read in any project the caller is a member of, and the handler narrows. The action form
+    `action: <action>, repository: path.repoKey, project: path.projectKey[, path: …]` asks for a repository action on
+    the coordinate the request names, which the role of a project member grants (Q-AUTHZ-208).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -62,7 +86,7 @@ tags:
   #
   # >>> M5a projects
   - name: projects
-    description: Projects, the unit of delegated administration (R-AUTHZ-026).
+    description: Projects, the container of repositories and the unit of delegated administration (R-AUTHZ-026), their members with a role (Q-AUTHZ-207, Q-AUTHZ-208) and the objects a project holds.
   # <<< M5a projects
   #
   # >>> M4 ci
@@ -81,7 +105,7 @@ tags:
   - name: items
     description: Files and folders of a repository, their listing, statistics and deletion.
   - name: files
-    description: Raw file transfer below `/files/` (PUT, GET, HEAD, DELETE), without a format protocol, and the same transfer for the UI below `/api/v1/repositories/{repoKey}/content/` (GET, HEAD, PUT), which the session cookie authenticates.
+    description: Raw file transfer below `/files/<projectKey>/<repoKey>/` (PUT, GET, HEAD, DELETE), without a format protocol, and the same transfer for the UI below `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/` (GET, HEAD, PUT), which the session cookie authenticates.
   # <<< M1 files
   #
   # >>> M1 endpoints
@@ -1561,7 +1585,8 @@ paths:
       description: |
         `description`, `autoJoin` and `name` (a rename). A group owned by the identity provider's SCIM client answers
         `409 managed_by_scim`; auto-join on a group with an administration role binding answers
-        `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019). JSON merge patch; read-only members are ignored.
+        `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019); auto-join on a group that is a member of a project answers
+        `409 auto_join_member_conflict` and names the projects (R-AUTHZ-026). JSON merge patch; read-only members are ignored.
       x-trove-permission:
         permission: identities:write
       x-trove-if-match: required
@@ -1752,14 +1777,13 @@ paths:
       tags: [service-accounts]
       summary: List service accounts
       description: |
-        Service accounts ordered by name (R-AUTH-020). Cursor pagination (R-API-010) over `name`. With
-        `identities:read` the list holds every account, global and project ones (`project` is the key of the
-        account's project, `null` for a global account). An administrator of a project without that
-        capability must send `project=<key>` of a project it administers and sees that project's accounts only
-        (`403` without the parameter, `404` for a project it does not administer; R-AUTHZ-026, Q-AUTHZ-169).
+        The instance-wide service accounts ordered by name, and, with `identities:read`, the project service accounts too
+        (R-AUTH-020, Q-AUTHZ-209). Cursor pagination (R-API-010) over `name`. `project` is the key of the account's project,
+        `null` for an instance-wide account; the same `name` may appear for several projects and once instance-wide. The
+        `project` parameter keeps the accounts of one project. The accounts of one project are managed under
+        `/api/v1/projects/{projectKey}/service-accounts`.
       x-trove-permission:
         permission: identities:read
-        projectAdmin: any
       parameters:
         - name: q
           in: query
@@ -1806,18 +1830,12 @@ paths:
       tags: [service-accounts]
       summary: Create a service account
       description: |
-        A non-human principal for automation (R-AUTH-020). It has no login, session or UI access. Binding the role
-        `admin` to it is an operation of the authorization API. Optional `Idempotency-Key`.
-
-        With `project` the account is a project service account (R-AUTHZ-026, Q-AUTHZ-169): its name starts with
-        `<project>-` (`422 project_prefix_required`), it is no group member and no role holder, and only the
-        project's own policies grant to it. An administrator of the project creates it while `managePolicies` is
-        on (`403 project_switch_off` otherwise); a caller with `identities:write` creates it for any project. A
-        caller that is only a project administrator must send `project`. An account without `project` takes no
-        name that starts with the key of a project and a hyphen (`422 name_reserved_by_project`, Q-AUTHZ-176).
+        A non-human principal for automation (R-AUTH-020), instance-wide: it belongs to no project and its name is unique
+        among the instance-wide accounts. It has no login, session or UI access. Binding the role `admin` to it is an
+        operation of the authorization API. An account of a project is created under
+        `/api/v1/projects/{projectKey}/service-accounts`. Optional `Idempotency-Key`.
       x-trove-permission:
         permission: identities:write
-        projectAdmin: managePolicies
       x-trove-idempotency-key: optional
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1859,6 +1877,117 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/service-accounts:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    get:
+      operationId: listProjectServiceAccounts
+      tags: [service-accounts]
+      summary: List the service accounts of a project
+      description: |
+        The service accounts of the project, ordered by name, with cursor pagination (R-API-010) over `name`
+        (R-AUTH-020, Q-AUTHZ-209). The names are unique within the project, so `name` is the name inside it; the
+        principal reference is `sa:<project>/<name>`. An Owner of the project, or a holder of `identities:read`, may call
+        it; a project the caller cannot see answers `404`.
+      x-trove-permission:
+        permission: identities:read
+        project: path.projectKey
+        projectRole: owner
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring of the name.
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: "`name` is the default; a leading `-` reverses the order."
+          schema:
+            type: string
+            enum: [name]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of service accounts.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createProjectServiceAccount
+      tags: [service-accounts]
+      summary: Create a service account of a project
+      description: |
+        A non-human principal of the project for automation (R-AUTH-020, Q-AUTHZ-169, Q-AUTHZ-209). It has no login,
+        session or UI access, is no group member and no role holder, and only the project's own policies grant to it.
+        Its name is unique within the project: the same name may exist in another project and as an instance-wide
+        account (`409 already_exists` when the project has it). An Owner of the project, or a holder of
+        `identities:write`, creates it. Optional `Idempotency-Key`.
+      x-trove-permission:
+        permission: identities:write
+        project: path.projectKey
+        projectRole: owner
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewServiceAccount"
+      responses:
+        "201":
+          description: The service account.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
 
   /api/v1/service-accounts/{name}:
     get:
@@ -1866,11 +1995,10 @@ paths:
       tags: [service-accounts]
       summary: Read a service account
       description: |
-        One service account (R-AUTH-020). A project administrator reads the accounts of its project; any other
-        account answers `404` to it.
+        One instance-wide service account (R-AUTH-020). The name of a project's account answers `404` here; read it under the
+        project.
       x-trove-permission:
         permission: identities:read
-        projectAdmin: any
       parameters:
         - $ref: "#/components/parameters/IfNoneMatch"
         - name: name
@@ -1910,7 +2038,6 @@ paths:
         Changes the description (R-AUTH-020; owners are P1). JSON merge patch; read-only members are ignored.
       x-trove-permission:
         permission: identities:write
-        projectAdmin: any
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -1967,7 +2094,140 @@ paths:
         Deletes the account with its tokens and memberships (R-AUTH-020).
       x-trove-permission:
         permission: identities:write
-        projectAdmin: any
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The service account is deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/service-accounts/{name}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    get:
+      operationId: getProjectServiceAccount
+      tags: [service-accounts]
+      summary: Read a service account of a project
+      description: |
+        One service account of the project (R-AUTH-020). An account of another project, or an instance-wide one, answers
+        `404` here.
+      x-trove-permission:
+        permission: identities:read
+        project: path.projectKey
+        projectRole: owner
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The service account.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "304":
+          description: The `If-None-Match` tag is the current one.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateProjectServiceAccount
+      tags: [service-accounts]
+      summary: Change a service account of a project
+      description: |
+        Changes the description (R-AUTH-020). JSON merge patch; read-only members are ignored.
+      x-trove-permission:
+        permission: identities:write
+        project: path.projectKey
+        projectRole: owner
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/ServiceAccountPatch"
+      responses:
+        "200":
+          description: The service account after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteProjectServiceAccount
+      tags: [service-accounts]
+      summary: Delete a service account of a project
+      description: |
+        Deletes the account with its tokens (R-AUTH-020).
+      x-trove-permission:
+        permission: identities:write
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - name: name
           in: path
@@ -2000,7 +2260,53 @@ paths:
         also revoked; the default is `false`, so enabling the account again restores its tokens (Q-AUTH-41).
       x-trove-permission:
         permission: identities:write
-        projectAdmin: any
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisableRequest"
+      responses:
+        "204":
+          description: The service account is disabled.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/service-accounts/{name}/disable:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    post:
+      operationId: disableProjectServiceAccount
+      tags: [service-accounts]
+      summary: Disable a service account of a project
+      description: |
+        Every token of the account fails with `401 principal_disabled` (R-AUTH-020). With `revokeTokens: true` they are
+        also revoked; the default is `false`, so enabling the account again restores its tokens (Q-AUTH-41).
+      x-trove-permission:
+        permission: identities:write
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - name: name
           in: path
@@ -2044,7 +2350,40 @@ paths:
         Enables the account (R-AUTH-020).
       x-trove-permission:
         permission: identities:write
-        projectAdmin: managePolicies
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The service account is enabled.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/service-accounts/{name}/enable:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    post:
+      operationId: enableProjectServiceAccount
+      tags: [service-accounts]
+      summary: Enable a service account of a project
+      description: |
+        Enables the account (R-AUTH-020).
+      x-trove-permission:
+        permission: identities:write
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - name: name
           in: path
@@ -2137,8 +2476,8 @@ paths:
       summary: List tokens
       description: |
         Tokens newest first (R-AUTH-028). A caller without `tokens:read` sees its own tokens only and `owner` is forced
-        to `me`, except that an administrator of a project lists the tokens of a service account of its project with
-        `owner=sa:<name>` (R-AUTHZ-026, Q-AUTHZ-177). The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
+        to `me`, except that an Owner of a project lists the tokens of a service account of its project with
+        `owner=sa:<project>/<name>` (R-AUTHZ-026, Q-AUTHZ-177). The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
         (R-API-010) over the token `id`.
       x-trove-permission:
         authenticated: true
@@ -2539,13 +2878,11 @@ paths:
       tags: [tokens]
       summary: Create a service-account token
       description: |
-        Creates a SAT (R-AUTH-027). The caller is an administrator (a session with recent authentication, or a token
-        with `admin: true`), a SAT of the same account under the derivation rule, or, for a project service
-        account (R-AUTHZ-026, Q-AUTHZ-169), an administrator of its project while `managePolicies` is on. A
-        non-expiring token (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`.
-        A token a project administrator creates is never non-expiring, lives at most `auth.tokens.sat` maximum
-        lifetime, names no `system` item and has `admin: false` (`422 invalid_scope`); an `endpoints` binding
-        is allowed (Q-AUTHZ-177). The value is in this answer only and the answer is never cached.
+        Creates a SAT (R-AUTH-027) of an instance-wide service account. The caller is an administrator (a session with recent
+        authentication, or a token with `admin: true`) or a SAT of the same account under the derivation rule. A non-expiring
+        token (`ttlSeconds: 0`) needs the administrator and `auth.tokens.sat.allow_non_expiring`. The value is in this answer
+        only and the answer is never cached. The tokens of a project's account are created under
+        `/api/v1/projects/{projectKey}/service-accounts/{name}/tokens`.
       x-trove-recent-auth: true
       x-trove-permission:
         authenticated: true
@@ -2607,12 +2944,110 @@ paths:
       tags: [tokens]
       summary: Revoke all tokens of a service account
       description: |
-        Revokes every active token of the account with reason `admin` (R-AUTH-029). An administrator of the
-        account's project revokes the tokens of a project service account, whatever the project's switches say
-        (Q-AUTHZ-177); any other account answers `404` to it.
+        Revokes every active token of an instance-wide service account with reason `admin` (R-AUTH-029).
       x-trove-permission:
         permission: tokens:revoke
-        projectAdmin: any
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The tokens are revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/service-accounts/{name}/tokens:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    post:
+      operationId: createProjectServiceAccountToken
+      tags: [tokens]
+      summary: Create a token of a project service account
+      description: |
+        Creates a SAT of a service account of the project (R-AUTH-027, Q-AUTHZ-177). The caller is an Owner of the
+        project acting with a session (with recent authentication) or a token with `admin: true`, or an administrator
+        of trove. A non-expiring token (`ttlSeconds: 0`) needs an administrator of trove and
+        `auth.tokens.sat.allow_non_expiring`. A token an Owner creates is never non-expiring, lives at most
+        `auth.tokens.sat` maximum lifetime, names no `system` item and has `admin: false` (`422 invalid_scope`); an
+        `endpoints` binding is allowed. The value is in this answer only and the answer is never cached.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        authenticated: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: The token with its value.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Cache-Control:
+              description: '`no-store`: the answer holds a secret or must not be reused.'
+              schema:
+                type: string
+                enum: [no-store]
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: revokeProjectServiceAccountTokens
+      tags: [tokens]
+      summary: Revoke all tokens of a project service account
+      description: |
+        Revokes every active token of the account with reason `admin` (R-AUTH-029).
+      x-trove-permission:
+        permission: tokens:revoke
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - name: name
           in: path
@@ -3029,17 +3464,16 @@ paths:
       tags: [permissions]
       summary: List permission policies
       description: |
-        Every permission policy, ordered by name, with cursor pagination (R-API-010). Filters:
-        `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`, `anonymous`, `authenticated`)
-        keeps the policies with an entry for that principal and, while `expandGroups` is `true` (the
-        default), also those with an entry for a group the principal belongs to; `repository=<key>`
-        keeps the policies whose selectors cover that repository. A principal or repository that does
-        not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052). `project=<key>`
-        keeps the policies of a project (R-AUTHZ-026); an administrator of a project without `policies:read`
-        sees the policies of its project and no global policy (Q-AUTHZ-180).
+        Every instance-wide permission policy ordered by name, and, with `policies:read`, the project policies too, with
+        cursor pagination (R-API-010). Filters: `principal=<ref>` (`user:alice`, `group:team-web`, `sa:ci-bot`,
+        `sa:web/deploy`, `anonymous`, `authenticated`) keeps the policies with an entry for that principal and, while
+        `expandGroups` is `true` (the default), also those with an entry for a group the principal belongs to;
+        `repository=<project>/<key>` keeps the policies whose selectors cover that repository. A principal or repository that
+        does not exist answers `422`. The list is read from PostgreSQL on every call (R-API-052). `project=<key>` keeps the
+        policies of a project; every item shows its project in `project`, `null` for an instance-wide policy (Q-AUTHZ-209). The
+        policies of one project are managed under `/api/v1/projects/{projectKey}/policies`.
       x-trove-permission:
         permission: policies:read
-        projectAdmin: any
       parameters:
         - name: principal
           in: query
@@ -3054,12 +3488,12 @@ paths:
             default: true
         - name: repository
           in: query
-          description: A repository key.
+          description: A repository name `<project>/<key>`.
           schema:
             type: string
         - name: project
           in: query
-          description: A project key; keeps the policies of that project. An administrator of a project sees its project's policies and must send this filter (`403` without it, `404` for a project it does not administer).
+          description: A project key; keeps the policies of that project.
           schema:
             type: string
         - name: sort
@@ -3122,21 +3556,18 @@ paths:
       tags: [permissions]
       summary: Create a permission policy
       description: |
-        Validates the policy (R-AUTHZ-021), stores it and notifies the `authz` change area in one
-        transaction with the audit event `authz.policy.created`. The answer carries the epoch the write
-        produced in `Trove-Authz-Epoch` and the policy's `ETag`. Warnings do not block saving. A name
-        that exists answers `409 already_exists`; a rule that fails answers `422` with the code of the
-        first problem and every problem in `errors` (`unknown_principal`, `unknown_repository`,
-        `unknown_format`, `invalid_pattern`, `invalid_action`, `duplicate_principal`,
-        `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
-        `virtual_action_not_applicable`, `action_not_allowed`; for a project policy also
-        `repository_outside_project`, `project_prefix_required`, `principal_outside_project`, `unknown_project`).
-        An administrator of a project creates policies with `"project": "<its key>"` while `managePolicies`
-        is on and `403`s for a global policy (R-AUTHZ-026).
+        Validates the policy (R-AUTHZ-021), stores it as an instance-wide policy and notifies the `authz` change area in one
+        transaction with the audit event `authz.policy.created`. Its selectors are qualified: `<projectGlob>/<keyGlob>`,
+        `@any…` (a bare key is `422 invalid_pattern`). The name is unique among the instance-wide policies: `409
+        already_exists`. The answer carries the epoch the write produced in `Trove-Authz-Epoch` and the policy's `ETag`.
+        Warnings do not block saving; a rule that fails answers `422` with the code of the first problem and every problem in
+        `errors` (`unknown_principal`, `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
+        `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`, `authenticated_write_action`,
+        `virtual_action_not_applicable`, `action_not_allowed`, `principal_outside_project`). A policy of a project is created
+        under `/api/v1/projects/{projectKey}/policies`.
       x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
-        projectAdmin: managePolicies
       x-trove-idempotency-key: optional
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -3198,23 +3629,196 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/permission-policies/{name}:
+  /api/v1/projects/{projectKey}/policies:
     parameters:
-        - name: name
-          in: path
-          required: true
-          description: The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable.
+      - $ref: "#/components/parameters/ProjectKey"
+    get:
+      operationId: listProjectPermissionPolicies
+      tags: [permissions]
+      summary: List the permission policies of a project
+      description: |
+        The policies of the project (Q-AUTHZ-209), ordered by name, with cursor pagination (R-API-010). The names are
+        unique within the project. Filters `principal` and `expandGroups` act as on `GET /api/v1/permission-policies`;
+        `repository` is a bare key of the project. An Owner of the project, or a holder of `policies:read`, may call
+        it; a project the caller cannot see answers `404`.
+      x-trove-permission:
+        permission: policies:read
+        project: path.projectKey
+        projectRole: owner
+      parameters:
+        - name: principal
+          in: query
+          description: A principal reference.
           schema:
             type: string
-            pattern: "^[a-z0-9][a-z0-9._-]{0,127}$"
+        - name: expandGroups
+          in: query
+          description: Include the policies of the principal's groups (default `true`); only with `principal`.
+          schema:
+            type: boolean
+            default: true
+        - name: repository
+          in: query
+          description: A repository key.
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: "`name` (default) or `-name`."
+          schema:
+            type: string
+            enum: [name, "-name"]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of policies.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicyList"
+              example:
+                items:
+                  - name: team-web-publish
+                    description: Team web publishes and tags its own npm scope
+                    resourceType: repository
+                    project: null
+                    resources:
+                      repositories: [npm-internal]
+                      packages: {include: ["@web/*"], exclude: []}
+                      paths: {include: [], exclude: []}
+                    entries:
+                      - {principal: "group:team-web", actions: [annotate, deploy, read]}
+                      - {principal: "user:lead-web", actions: [deploy, manage, read]}
+                    inert: false
+                    warnings: []
+                    version: 4
+                    createdAt: "2026-10-28T09:12:44Z"
+                    createdBy: "user:root"
+                    updatedAt: "2026-10-28T10:01:02Z"
+                    updatedBy: "user:sec-alice"
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createProjectPermissionPolicy
+      tags: [permissions]
+      summary: Create a permission policy of a project
+      description: |
+        Validates the policy (R-AUTHZ-021), stores it in the project and notifies the `authz` change area in one
+        transaction with the audit event `authz.policy.created`. The name is unique within the project: the same
+        name may exist in another project and as a global policy (`409 already_exists` when the project has it).
+        The selectors name repositories of the project by bare key (`422 repository_outside_project` for another
+        project's); the entries grant to users, groups, global service accounts, CI mappings and the project's own
+        service accounts (`422 principal_outside_project` for another's). The answer carries the epoch the write
+        produced in `Trove-Authz-Epoch` and the policy's `ETag`. Warnings do not block saving; a rule that fails
+        answers `422` with the code of the first problem and every problem in `errors`. An Owner of the project,
+        or a holder of `policies:write`, creates it.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: policies:write
+        project: path.projectKey
+        projectRole: owner
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+            example:
+              name: team-web-publish
+              description: Team web publishes and tags its own npm scope
+              resources:
+                repositories: [npm-internal]
+                packages: {include: ["@web/*"], exclude: []}
+              entries:
+                - {principal: "group:team-web", actions: [annotate, deploy, read]}
+      responses:
+        "201":
+          description: The policy was created.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/permission-policies/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{0,127}$"
     get:
       operationId: getPermissionPolicy
       tags: [permissions]
       summary: Read a permission policy
-      description: Answers the policy with its warnings and its `ETag` (the version, R-API-012).
+      description: |
+        Answers the instance-wide policy with its warnings and its `ETag` (the version, R-API-012). The name of a project's
+        policy answers `404` here; read it under the project.
       x-trove-permission:
         permission: policies:read
-        projectAdmin: any
       responses:
         "200":
           description: The policy.
@@ -3257,7 +3861,6 @@ paths:
       x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
-        projectAdmin: managePolicies
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -3321,7 +3924,6 @@ paths:
       x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
-        projectAdmin: managePolicies
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -3386,7 +3988,227 @@ paths:
       x-trove-recent-auth: true
       x-trove-permission:
         permission: policies:write
-        projectAdmin: managePolicies
+      parameters:
+        - $ref: "#/components/parameters/IfMatchOptional"
+      responses:
+        "204":
+          description: The policy was deleted.
+          headers:
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/policies/{name}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+      - name: name
+        in: path
+        required: true
+        description: The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{0,127}$"
+    get:
+      operationId: getProjectPermissionPolicy
+      tags: [permissions]
+      summary: Read a permission policy of a project
+      description: |
+        Answers the policy of the project with its warnings and its `ETag` (the version, R-API-012). A global policy, or
+        one of another project, answers `404` here.
+      x-trove-permission:
+        permission: policies:read
+        project: path.projectKey
+        projectRole: owner
+      responses:
+        "200":
+          description: The policy.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "304":
+          description: The `If-None-Match` tag is the current one.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: replaceProjectPermissionPolicy
+      tags: [permissions]
+      summary: Replace a permission policy of a project
+      description: |
+        Replaces the whole policy (R-AUTHZ-021); the name is immutable. `If-Match` is required: a missing header answers
+        `428`, a version that is not current `412` with `currentEtag`, and `If-Match: *` is the deliberate blind
+        write. The answer carries the new `ETag` and `Trove-Authz-Epoch`. The audit event `authz.policy.updated` is
+        journaled (R-AUTHZ-031).
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: policies:write
+        project: path.projectKey
+        projectRole: owner
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+      responses:
+        "200":
+          description: The policy after the replacement.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: patchProjectPermissionPolicy
+      tags: [permissions]
+      summary: Change members of a permission policy of a project
+      description: |
+        A JSON merge patch (RFC 7396, R-API-013) applied to the current policy; the result is validated and written
+        exactly like a replacement. `name` is immutable.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: policies:write
+        project: path.projectKey
+        projectRole: owner
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/PermissionPolicyInput"
+            example:
+              description: Team web publishes its own npm scope
+      responses:
+        "200":
+          description: The policy after the patch.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Trove-Authz-Epoch:
+              description: >-
+                The authorization epoch this write produced. Send it as `Trove-Authz-Min-Epoch` on the next
+                request to see the change on whichever replica answers (R-AUTHZ-032).
+              schema:
+                type: integer
+                format: int64
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteProjectPermissionPolicy
+      tags: [permissions]
+      summary: Delete a permission policy of a project
+      description: |
+        Removes the policy with its selectors, patterns and entries. `If-Match` is optional; when sent, a version that is
+        not current answers `412`. The audit event `authz.policy.deleted` is journaled (R-AUTHZ-031).
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: policies:write
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - $ref: "#/components/parameters/IfMatchOptional"
       responses:
@@ -3423,12 +4245,14 @@ paths:
       tags: [permissions]
       summary: Validate a permission policy without storing it
       description: |
-        Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the
-        keys of the repositories the selectors currently cover. A policy with problems is still a `200`
-        answer with `valid: false`; the editor shows the list. The name need not be unused.
+        Runs the validation of a create (R-AUTHZ-021) and answers every problem, the warnings, and the names of the
+        repositories the selectors currently cover. A policy with problems is still a `200` answer with `valid: false`; the
+        editor shows the list. The name need not be unused. A policy that names a project in the body (`project`) is
+        validated as a policy of that project (bare keys, the name within the project); the caller holds `policies:read` or is
+        an Owner of the project, and a project the caller cannot see answers `404`. Without `project` the policy is validated
+        as an instance-wide policy (qualified selectors; `policies:read`).
       x-trove-permission:
-        permission: policies:read
-        projectAdmin: managePolicies
+        authenticated: true
       requestBody:
         required: true
         content:
@@ -3684,8 +4508,8 @@ paths:
       summary: What the caller may do
       description: |
         The system roles and capabilities the caller's credential exercises, the principals the caller
-        acts as (the user, its groups, `authenticated`), the projects it administers with their switches
-        (`projects`, R-AUTHZ-026) and a summary of the credential's scope, which
+        acts as (the user, its groups, `authenticated`), the projects it is a member of with the role
+        in force (`memberships`, R-AUTHZ-026, Q-AUTHZ-207) and a summary of the credential's scope, which
         is a ceiling (R-AUTHZ-013). The answer says nothing about other principals. `epoch` is the
         epoch of the index that answered.
       x-trove-permission:
@@ -3701,7 +4525,8 @@ paths:
                 roles: [auditor]
                 capabilities: ["audit:read", "policies:read", "roles:read"]
                 principals: ["user:alice", "group:team-web", authenticated]
-                projects: []
+                projects:
+                  - {key: web, role: developer}
                 scope: null
                 epoch: 1842
         "401":
@@ -3734,8 +4559,8 @@ paths:
               $ref: "#/components/schemas/PermissionCheckRequest"
             example:
               checks:
-                - {repository: npm-internal, package: "@web/button", action: deploy}
-                - {repository: npm-all, action: read}
+                - {repository: web/npm-internal, package: "@web/button", action: deploy}
+                - {repository: web/npm-all, action: read}
       responses:
         "200":
           description: One result per check, in order.
@@ -3795,7 +4620,7 @@ paths:
                     classes: [local]
                     clients: []
                     layout: generic
-                    protocolBasePath: /files/{key}/
+                    protocolBasePath: /files/{project}/{key}/
                     defaultUpstreamUrl: null
                     defaultExtraHosts: []
                     defaultMetadataTtlSeconds: null
@@ -3822,14 +4647,13 @@ paths:
       tags: [projects]
       summary: List projects
       description: |
-        The projects, ordered by key, with cursor pagination (R-API-010). A holder of `projects:read` (the
-        roles `admin`, `security-admin`, `repository-admin` and `auditor`) sees every project; an
-        administrator of a project without that capability sees the projects it administers and no other
-        (R-AUTHZ-026, Q-AUTHZ-180). The answer carries the administrators, the counts and the privilege
-        switches. `q` matches the key and the display name case-insensitively.
+        The projects the caller can see, ordered by key, with cursor pagination (R-API-010). A holder of `projects:read` (the
+        roles `admin`, `security-admin`, `repository-admin` and `auditor`) sees every project; any other caller sees the
+        projects it is a member of (Q-AUTHZ-207) and no other. The answer carries the owners, the counts and, for a member,
+        the caller's own role in `role`. `q` matches the key and the display name case-insensitively.
       x-trove-permission:
         permission: projects:read
-        projectAdmin: any
+        projectRole: reader
       parameters:
         - name: q
           in: query
@@ -3859,12 +4683,12 @@ paths:
                   - key: web
                     displayName: Web platform
                     description: The web team's repositories and partners
-                    managePolicies: true
-                    manageRepositories: false
-                    admins: ["group:web-leads"]
+                    owners: ["group:web-leads"]
+                    members: 4
                     repositories: 2
                     serviceAccounts: 1
                     policies: 2
+                    role: owner
                     version: 3
                     createdAt: "2026-11-02T09:12:44Z"
                     createdBy: "user:root"
@@ -3890,11 +4714,14 @@ paths:
       tags: [projects]
       summary: Create a project
       description: |
-        Creates a project (R-AUTHZ-026). The key is immutable and must not overlap another project's key or
-        the name of a global service account (`409 project_key_overlap`, Q-AUTHZ-176); a key that exists
-        answers `409 already_exists`. `managePolicies` defaults to `true` and `manageRepositories` to
-        `false`. A new project has no administrator and no repository; both are separate operations. The
-        write notifies the `authz` change area and records `authz.project.created`. Optional `Idempotency-Key`.
+        Creates a project (R-AUTHZ-026). The key is immutable; a key that exists answers `409 already_exists`. A new project
+        has no repository; `owners` names the users and groups that become its first Owners in the same transaction, each
+        recorded as `authz.project.member_added` (Q-AUTHZ-229): an unknown principal answers `404`, a reference that is no user or
+        group, or an auto-join group, `422 principal_not_allowed`, and the whole create is refused. Without `owners` the project has no
+        member; members are added by `PUT /api/v1/projects/{projectKey}/members/{principalRef}`. A repository is created in it
+        by `POST /api/v1/projects/{projectKey}/repositories`. Only a holder of
+        `projects:write` creates a project. The write notifies the `authz` change area and records `authz.project.created`.
+        Optional `Idempotency-Key`.
       x-trove-permission:
         permission: projects:write
       x-trove-idempotency-key: optional
@@ -3910,8 +4737,6 @@ paths:
               key: web
               displayName: Web platform
               description: The web team's repositories and partners
-              managePolicies: true
-              manageRepositories: false
       responses:
         "201":
           description: The project was created.
@@ -3934,6 +4759,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "413":
@@ -3948,9 +4775,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}:
+  /api/v1/projects/{projectKey}:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -3962,14 +4789,14 @@ paths:
       tags: [projects]
       summary: Read a project
       description: |
-        The project with its administrators, counts and `ETag` (the version, R-API-012). Readable with
-        `projects:read` and by an administrator of the project; any other caller, also for a project that
-        does not exist, gets `404`. The `ETag` is the version of the fields `PUT` replaces; the body also holds
-        administrators and counts, which do not move it (Q-AUTHZ-185), so the read ignores `If-None-Match` and
-        always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
+        The project with its owners, counts and `ETag` (the version, R-API-012). Readable with `projects:read` and by a member
+        of the project; any other caller, also for a project that does not exist, gets `404`. The `ETag` is the version of the
+        fields `PUT` replaces; the body also holds members and counts, which do not move it (Q-AUTHZ-185), so the read ignores
+        `If-None-Match` and always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
       x-trove-permission:
         permission: projects:read
-        projectAdmin: any
+        project: path.projectKey
+        projectRole: reader
       responses:
         "200":
           description: The project.
@@ -3997,19 +4824,17 @@ paths:
     put:
       operationId: replaceProject
       tags: [projects]
-      summary: Replace a project's display name, description and switches
+      summary: Replace a project's display name and description
       description: |
-        Replaces `displayName`, `description`, `managePolicies` and `manageRepositories` as a whole; the key
-        is immutable (a different value answers `422`). `If-Match` is required: without it `428` and
-        nothing changes, `*` is the deliberate blind write, a stale tag answers `412` with `currentEtag`.
-        The switches are a grant change: a stale `PUT` must not switch `manageRepositories` back on after
-        another administrator turned it off. The version moves with these four fields only, not with
-        administrators or assignments (Q-AUTHZ-185). Turning a switch off takes the right from the
-        project's administrators at once on every replica and records `authz.project.updated`, journaled
-        (R-AUTHZ-031).
+        Replaces `displayName` and `description` as a whole; the key is immutable (a different value answers `422`).
+        `If-Match` is required: without it `428` and nothing changes, `*` is the deliberate blind write, a stale tag answers
+        `412` with `currentEtag`. The version moves with these two fields only, not with members or repositories
+        (Q-AUTHZ-185). An Owner of the project, or a holder of `projects:write`, may call it. Records `authz.project.updated`.
       x-trove-recent-auth: true
       x-trove-permission:
         permission: projects:write
+        project: path.projectKey
+        projectRole: owner
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -4060,10 +4885,10 @@ paths:
       tags: [projects]
       summary: Delete an empty project
       description: |
-        Deletes the project, its project policies (each deleted, audited and journaled like any policy
-        deletion) and its administrator entries. A project with a repository, in any lifecycle state, a
-        service account or a CI mapping of its tier is not empty: `409 project_not_empty`. `If-Match` is optional; a stale one answers
-        `412` (Q-AUTHZ-185).
+        Deletes the project, its project policies (each deleted, audited and journaled like any policy deletion) and its
+        member entries. A project with a repository, in any lifecycle state, a service account or a CI mapping is not empty:
+        `409 project_not_empty`. Only a holder of `projects:write` deletes a project. `If-Match` is optional; a stale one
+        answers `412` (Q-AUTHZ-185).
       x-trove-recent-auth: true
       x-trove-permission:
         permission: projects:write
@@ -4093,51 +4918,32 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/admins/{principalRef}:
+  /api/v1/projects/{projectKey}/members:
     parameters:
-      - name: key
-        in: path
-        required: true
-        description: The project key.
-        schema:
-          type: string
-          pattern: "^[a-z][a-z0-9-]{1,31}$"
-      - name: principalRef
-        in: path
-        required: true
-        description: The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` never administer a project (`422`).
-        schema:
-          type: string
-    put:
-      operationId: addProjectAdmin
+      - $ref: "#/components/parameters/ProjectKey"
+    get:
+      operationId: listProjectMembers
       tags: [projects]
-      summary: Add a project administrator
+      summary: List the members of a project
       description: |
-        Makes a user or a group an administrator of the project (R-AUTHZ-026). Idempotent: `201` when it was
-        added, `200` when it already was one; the pair needs no `If-Match`. A user or group that does not
-        exist answers `404`. The write records `authz.project.admin_added`.
-      x-trove-recent-auth: true
+        The users and groups that are members of the project, each with its role (Q-AUTHZ-207, Q-AUTHZ-208), ordered by
+        kind and name. A member of the project, a holder of `projects:read`, and nobody else may read it; a project the
+        caller cannot see answers `404`.
       x-trove-permission:
-        permission: projects:write
+        permission: projects:read
+        project: path.projectKey
+        projectRole: reader
       responses:
-        "201":
-          description: The administrator was added.
-          headers:
-            Trove-Authz-Epoch:
-              $ref: "#/components/headers/AuthzEpoch"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectAdmin"
         "200":
-          description: The principal already was an administrator.
-          headers:
-            Trove-Authz-Epoch:
-              $ref: "#/components/headers/AuthzEpoch"
+          description: The members.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectAdmin"
+                $ref: "#/components/schemas/MemberList"
+              example:
+                items:
+                  - {project: web, principal: "group:web-leads", kind: group, name: web-leads, role: owner}
+                  - {project: web, principal: "user:alice", kind: user, name: alice, role: developer}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -4146,6 +4952,79 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/members/{principalRef}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+      - name: principalRef
+        in: path
+        required: true
+        description: The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`).
+        schema:
+          type: string
+    put:
+      operationId: setProjectMember
+      tags: [projects]
+      summary: Add a member to a project, or change its role
+      description: |
+        Makes a user or a group a member of the project with the role in the body, or changes the role of a member
+        (Q-AUTHZ-207, Q-AUTHZ-208). Idempotent: `201` when the member was added, `200` when it already was one (also with
+        the same role); the pair needs no `If-Match`. A user or group that does not exist answers `404`. An Owner of the
+        project, or a holder of `projects:write`, may call it. The last Owner of a project cannot be demoted:
+        `409 last_owner`, unless the caller holds `projects:write` (an administrator of trove may). Granting or removing
+        a role is effective on every replica at once. Records `authz.project.member_added` when the member was added and `authz.project.member_changed` when its role
+        changed (journaled, R-AUTHZ-031; a change to a lower role narrows), the latter with the previous and the new role.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: projects:write
+        project: path.projectKey
+        projectRole: owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberInput"
+            example:
+              role: developer
+      responses:
+        "201":
+          description: The member was added.
+          headers:
+            Trove-Authz-Epoch:
+              $ref: "#/components/headers/AuthzEpoch"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "200":
+          description: The principal already was a member; its role is the one of the body now.
+          headers:
+            Trove-Authz-Epoch:
+              $ref: "#/components/headers/AuthzEpoch"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "422":
           $ref: "#/components/responses/Unprocessable"
         "429":
@@ -4155,89 +5034,21 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
     delete:
-      operationId: removeProjectAdmin
+      operationId: removeProjectMember
       tags: [projects]
-      summary: Remove a project administrator
+      summary: Remove a member from a project
       description: |
-        Removes the administrator at once on every replica. A principal that is no administrator of the
-        project answers `404`. The event `authz.project.admin_removed` is journaled (R-AUTHZ-031).
+        Removes the member at once on every replica. A principal that is no member answers `404`. The last Owner of a
+        project cannot be removed: `409 last_owner`, unless the caller holds `projects:write`. An Owner may remove
+        itself while another Owner remains. Records `authz.project.member_removed`, journaled (R-AUTHZ-031).
       x-trove-recent-auth: true
       x-trove-permission:
         permission: projects:write
+        project: path.projectKey
+        projectRole: owner
       responses:
         "204":
-          description: The administrator was removed.
-          headers:
-            Trove-Authz-Epoch:
-              $ref: "#/components/headers/AuthzEpoch"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-        "500":
-          $ref: "#/components/responses/Internal"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/repositories/{repoKey}:
-    parameters:
-      - name: key
-        in: path
-        required: true
-        description: The project key.
-        schema:
-          type: string
-          pattern: "^[a-z][a-z0-9-]{1,31}$"
-      - name: repoKey
-        in: path
-        required: true
-        description: The repository key (R-REPO-002).
-        schema:
-          type: string
-          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
-    put:
-      operationId: assignProjectRepository
-      tags: [projects]
-      summary: Assign a repository to a project
-      description: |
-        A repository belongs to at most one project (R-AUTHZ-026). Assigning one that belongs to another
-        project answers `409 repository_assigned`; `move=true` moves it (an unassignment and an assignment in
-        one transaction). Assigning it to the project it already belongs to answers `204`. Repository keys and
-        URLs do not change. The assignment notifies `authz` and `repo_config` and needs no `If-Match`. Policies
-        of the old project that select the repository by key stop covering it and report
-        `selector_outside_project` (Q-AUTHZ-179).
-
-        `from` names the project the caller expects the repository to belong to now (an empty value: to no
-        project). It is compared under the locks of the write, before anything else, and a different current
-        owner answers `409 project_owner_changed` with the extension `currentProject` (the key, or `null` for
-        none) and writes nothing; this includes an assignment to the project the repository already belongs to.
-        Without `from` the request acts on whichever project holds the repository (Q-AUTHZ-205).
-      x-trove-recent-auth: true
-      x-trove-permission:
-        permission: repositories:write-config
-      parameters:
-        - name: move
-          in: query
-          description: Move a repository that belongs to another project.
-          schema:
-            type: boolean
-            default: false
-        - name: from
-          in: query
-          description: >-
-            The key of the project the repository is expected to belong to now; empty: expected to belong to no
-            project. Absent: no expectation.
-          schema:
-            type: string
-            pattern: "^([a-z][a-z0-9-]{1,31})?$"
-      responses:
-        "204":
-          description: The repository belongs to the project.
+          description: The member was removed.
           headers:
             Trove-Authz-Epoch:
               $ref: "#/components/headers/AuthzEpoch"
@@ -4257,40 +5068,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-    delete:
-      operationId: unassignProjectRepository
-      tags: [projects]
-      summary: Unassign a repository from a project
-      description: |
-        The repository belongs to no project afterwards; its project policies stop covering it at once. A
-        repository that is not assigned to this project answers `404`. The event
-        `authz.project.repository_unassigned` is journaled (R-AUTHZ-031).
-      x-trove-recent-auth: true
-      x-trove-permission:
-        permission: repositories:write-config
-      responses:
-        "204":
-          description: The repository was unassigned.
-          headers:
-            Trove-Authz-Epoch:
-              $ref: "#/components/headers/AuthzEpoch"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-        "500":
-          $ref: "#/components/responses/Internal"
-        "503":
-          $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/principals:
+  /api/v1/projects/{projectKey}/principals:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -4302,14 +5082,14 @@ paths:
       tags: [projects]
       summary: Look up users and groups to name in a project's policies
       description: |
-        How a project administrator without `identities:read` finds the users and groups it names in project
-        policies (Q-AUTHZ-182): the active users and groups whose name starts with `q` (at least 2
-        characters), at most 20, by kind and name. The answer holds the kind and the name and nothing else:
-        no e-mail address, no membership. Needs the capability or administration of the project with
-        `managePolicies`.
+        How an Owner of a project without `identities:read` finds the users and groups it adds as members and names in
+        project policies (Q-AUTHZ-182): the active users and groups whose name starts with `q` (at least 2 characters), at
+        most 20, by kind and name. The answer holds the kind and the name and nothing else: no e-mail address, no
+        membership. Needs the capability, or the role Owner of the project.
       x-trove-permission:
         permission: identities:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - name: q
           in: query
@@ -4367,17 +5147,17 @@ paths:
       tags: [repositories]
       summary: List repositories
       description: |
-        The repositories the caller may see, sorted by key, with cursor pagination (R-REPO-012,
-        R-API-010). A caller without `repositories:read-config` sees the repositories on which it holds
-        `read` (R-AUTHZ-016); a holder of `repositories:read-config` sees every repository, those being
-        deleted included. `view=summary` (default) returns a short description of each; `view=full`
-        returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class`
-        and `format` take the values as spelled in documents, repeated or comma-separated; `q` matches
-        the key and the description case-insensitively; `state=inactive` keeps the disabled
-        repositories. `project` selects the repositories of a project, by its key (`404` is never answered: an
-        unknown key selects none). An administrator of a project sees the repositories of its project with the full
-        document, as a holder of `repositories:read-config` does (R-AUTHZ-026, Q-AUTHZ-184). An anonymous caller sees what anonymous holds `read` on,
-        or gets `401` where anonymous access is off.
+        The repositories the caller may see, across all projects, sorted by project key and key, with cursor pagination
+        (R-REPO-012, R-API-010). Every item names its project in `project`; the cursor is the last (project, key). A caller
+        without `repositories:read-config` sees the repositories on which it holds `read` (R-AUTHZ-016), which includes
+        every repository of a project it is a member of (Q-AUTHZ-208); a holder of `repositories:read-config` sees every
+        repository, those being deleted included. `view=summary` (default) returns a short description of each; `view=full`
+        returns the complete documents and needs `repositories:read-config` (`403` otherwise). `class` and `format` take the
+        values as spelled in documents, repeated or comma-separated; `q` matches the key and the description
+        case-insensitively; `state=inactive` keeps the disabled repositories. `project` selects the repositories of a
+        project, by its key (`404` is never answered: an unknown key selects none). A repository of a project the caller can
+        neither see nor read is not listed. An anonymous caller sees what anonymous holds `read` on, or gets `401` where
+        anonymous access is off.
       x-trove-permission:
         public: true
       parameters:
@@ -4411,7 +5191,7 @@ paths:
             enum: [inactive]
         - name: project
           in: query
-          description: A project key; keeps the repositories assigned to that project.
+          description: A project key; keeps the repositories of that project.
           schema:
             type: string
         - name: view
@@ -4438,10 +5218,10 @@ paths:
                     class: local
                     format: generic
                     description: Installers and build outputs
-                    addresses: [https://trove.example.net/files/generic-local/]
+                    addresses: [https://trove.example.net/files/web/generic-local/]
                     disabled: false
                     lastActivityAt: "2026-10-28T09:14:03.117Z"
-                    project: null
+                    project: web
                 nextCursor: null
         "400":
           $ref: "#/components/responses/BadRequest"
@@ -4455,28 +5235,123 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/repositories:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+    get:
+      operationId: listProjectRepositories
+      tags: [repositories]
+      summary: List the repositories of a project
+      description: |
+        The repositories of the project (Q-REPO-212), sorted by key, with cursor pagination (R-REPO-012,
+        R-API-010). A caller who holds `repositories:read-config`, or is a member of the project with the role
+        Owner, sees every repository of the project with the full document, those being deleted included. Any
+        other caller sees the repositories on which it holds `read`, which includes every repository for a member
+        of the project (Q-AUTHZ-207, Q-AUTHZ-208). `view`, `class`, `format`, `q` and `state` act as on
+        `GET /api/v1/repositories`. A project the caller cannot see answers `404`, exactly as a project that does
+        not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member
+        of it, or reads one of its repositories whatever the filters and the cursor (R-AUTHZ-016). A project it sees
+        answers `200`, an empty page included.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: class
+          in: query
+          description: Repeat the parameter, or separate values with commas.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [local, remote, virtual]
+          style: form
+          explode: true
+        - name: format
+          in: query
+          description: Repeat the parameter, or separate values with commas.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [inactive]
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of repositories.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryList"
+              example:
+                items:
+                  - key: generic-local
+                    class: local
+                    format: generic
+                    description: Installers and build outputs
+                    addresses: [https://trove.example.net/files/web/generic-local/]
+                    disabled: false
+                    lastActivityAt: "2026-10-28T09:14:03.117Z"
+                    project: web
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
     post:
-      operationId: createRepository
+      operationId: createProjectRepository
       tags: [repositories]
       summary: Create a repository
       description: |
         Creates a repository from its configuration document (R-REPO-009). Omitted settings take
         their defaults. The document is validated in one pass and every violation is reported (`422`,
         R-REPO-008); an unknown or duplicate member is `400 malformed_request` with its JSON pointer.
-        Create is never an upsert: a key that is taken, also by a repository being deleted, answers
-        `409 already_exists`. The configuration, the audit event and the change-log row are one
+        Create is never an upsert: a key that is taken in the project, also by a repository being deleted,
+        answers `409 already_exists`. The configuration, the audit event and the change-log row are one
         transaction, so the repository is usable on every replica as soon as this answers
         (R-API-052). The body of the answer is the stored document plus `warnings`.
 
-        With `project` the repository is assigned to that project in the same transaction (R-AUTHZ-026). An
-        administrator of the project with `manageRepositories` creates it: the key starts with `<project>-`
-        (`422 project_prefix_required`), and a virtual repository's members and deploy target are repositories of
-        the project (`422 repository_outside_project`, Q-AUTHZ-178). A caller that is only a project administrator
-        must send `project` (`403 project_switch_off` while the switch is off, `404` for a project it does not
-        administer). A holder of `repositories:write-config` assigns any project and may leave `project` out.
+        The repository is created in the project of the path and stays in it (Q-AUTHZ-206): `project` in the body, if
+        present, must equal it (`422`). The key is unique within the project, not in the installation (Q-REPO-212): a
+        key that is taken in the project answers `409 already_exists`. A caller who holds
+        `repositories:write-config`, or is an Owner of the project, creates it. A virtual repository's members and
+        deploy target are repositories of the same project, named by their bare keys (`422
+        repository_outside_project`, Q-AUTHZ-178). A project the caller cannot see answers `404`.
+        An Owner's create whose member `vulnerabilities` is weaker than the defaults (`enabled: false`,
+        `matchPublicAdvisories: never`, `blockMalicious: false`) answers `403 vulnerability_weakening_refused` unless the
+        caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
       x-trove-permission:
         permission: repositories:write-config
-        projectAdmin: manageRepositories
+        project: path.projectKey
+        projectRole: owner
       x-trove-idempotency-key: optional
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -4528,28 +5403,22 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{key}:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}:
     parameters:
-      - name: key
-        in: path
-        required: true
-        description: The repository key (R-REPO-002).
-        schema:
-          type: string
-          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
-          x-trove-reserved-names: [batch-create, batch-update, batch-get, batch-delete, quick-setup]
+      - $ref: "#/components/parameters/ProjectKey"
+      - $ref: "#/components/parameters/RepoKey"
     get:
       operationId: getRepository
       tags: [repositories]
       summary: Read a repository
       description: |
-        The configuration document of a repository (R-REPO-010). A holder of
-        `repositories:read-config` receives the full document, `ETag: "<config_version>"`; a caller
-        who holds a repository action on it receives the consumer view (`key`, `class`, `format`,
-        `description`, `layout`, `addresses`), `ETag: "<config_version>-consumer"`; a caller who
-        holds nothing on it, and a caller on a repository that does not exist, receive the same `404`
-        (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that
-        committed on another replica shows at once (R-API-052).
+        The configuration document of a repository (R-REPO-010). A holder of `repositories:read-config`, or an Owner of the
+        project, receives the full document, `ETag: "<config_version>"`; a caller who holds a repository action on it (which
+        a member of the project does through the role, Q-AUTHZ-208) receives the consumer view (`key`, `class`, `format`,
+        `description`, `layout`, `addresses`, `project`), `ETag: "<config_version>-consumer"`; a caller who holds nothing on
+        it, a caller on a repository that does not exist, and a caller who cannot see the project receive the same `404`
+        (R-AUTHZ-016). Secrets are never returned. The answer comes from PostgreSQL, so a write that committed on another
+        replica shows at once (R-API-052).
       x-trove-permission:
         public: true
       parameters:
@@ -4566,6 +5435,7 @@ paths:
                 $ref: "#/components/schemas/RepositoryRead"
               example:
                 key: generic-local
+                project: web
                 class: local
                 format: generic
                 layout: generic
@@ -4598,16 +5468,18 @@ paths:
       summary: Replace a repository configuration
       description: |
         Replaces the configuration with a complete document; settings that are omitted revert to their
-        defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). A body
+        defaults, and an omitted `key`, `class` or `format` means "unchanged" (R-REPO-011). `project` is read-only: the
+        path names the project, and a different value in the body answers `422`; `POST …/move` changes it. A body
         obtained by `GET` can be sent back: the read-only members are ignored. `If-Match` is required
         (`428` without it, `412` with `currentEtag` when stale, `*` for a deliberate blind write). Key,
         class and format cannot change (`422 validation_failed`, field code `immutable`). `PUT` never creates a repository.
-        A project administrator's replace that weakens the member `vulnerabilities`, which includes leaving out a member that sets
+        An Owner's replace that weakens the member `vulnerabilities`, which includes leaving out a member that sets
         stricter values than the defaults, answers `403 vulnerability_weakening_refused` unless the caller also holds
         `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
       x-trove-permission:
         permission: repositories:write-config
-        projectAdmin: manageRepositories
+        project: path.projectKey
+        projectRole: owner
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -4662,12 +5534,13 @@ paths:
         (R-REPO-011): arrays are replaced as a whole, `null` removes an optional setting. `If-Match` is
         required. A patch that changes nothing writes nothing: same version, no event. Key, class and
         format cannot change (`422 validation_failed`, field code `immutable`); a value equal to the stored one is ignored.
-        A project administrator's patch that weakens the member `vulnerabilities` (`enabled` to false, fewer public advisories
+        An Owner's patch that weakens the member `vulnerabilities` (`enabled` to false, fewer public advisories
         matched, `blockMalicious` to false, `onMissingData` from `block` to `allow`) answers `403 vulnerability_weakening_refused`
         unless the caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
       x-trove-permission:
         permission: repositories:write-config
-        projectAdmin: manageRepositories
+        project: path.projectKey
+        projectRole: owner
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -4726,13 +5599,15 @@ paths:
         for a repository without content. From the first transaction on the repository is not
         resolvable and not addressable, and it is listed only to holders of
         `repositories:read-config`; its key stays taken until the job removed the row. `If-Match` is
-        honoured when sent. A repository that a virtual repository lists as a member, a deploy target
+        honoured when sent. A repository that a virtual repository of the project lists as a member, a deploy target
         or a pin-rule member answers `409 repository_referenced` naming those repositories; with
-        `detach=true` the references are removed in the same transaction (R-REPO-013).
+        `detach=true` the references are removed in the same transaction (R-REPO-013). The key is free in the
+        project again once the job has removed the row.
       x-trove-recent-auth: true
       x-trove-permission:
         permission: repositories:write-config
-        projectAdmin: manageRepositories
+        project: path.projectKey
+        projectRole: owner
       x-trove-idempotency-key: optional
       parameters:
         - name: detach
@@ -4771,6 +5646,83 @@ paths:
           $ref: "#/components/responses/Conflict"
         "412":
           $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/move:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
+      - $ref: "#/components/parameters/RepoKey"
+    post:
+      operationId: moveRepository
+      tags: [repositories]
+      summary: Move a repository to another project
+      description: |
+        Moves the repository to the project named in the body (Q-AUTHZ-206, Q-REPO-212). Its content, statistics and
+        id stay; its address changes, because the address contains the project: `/api/<format>/<projectKey>/<repoKey>/…`
+        and `/files/<projectKey>/<repoKey>/…` answer `404` for the old project from the moment the move commits, on
+        every replica.
+
+        The move is refused with `409 repository_in_use` while an object of the source project references the
+        repository: a virtual repository lists it as a member or pin-rule member or deploys into it, a project policy
+        selects it by key, or a CI mapping of the project grants on it. The answer carries the extension member `references`, a list of `{kind, name}` (the kinds are
+        `virtual_member`, `pin_rule`, `virtual_deployment_target`, `policy`, `ci_mapping`, `member`,
+        `deployment_target` and `global_policy`; `name` is the name of the object within the source project, of a
+        global policy its name); remove them, then move. A caller without `repositories:write-config`, an Owner of
+        both projects, is refused as well while a key selector of a global policy names the repository (kind
+        `global_policy`, Q-REPO-232): that grant is held by the repository's ID and would follow it into the target
+        project, whose other Owners cannot remove it; an administrator of trove moves it or removes the selector. It is refused with `409 already_exists` when the target project has a repository with the key,
+        also one being deleted. A target equal to the source changes nothing and answers `200` with the repository as it is. The move needs no
+        `If-Match`: the path names the source. It records `repository.moved` in the source project and `repository.moved_in` in the target project (Q-REPO-233), notifies `authz`
+        and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
+        Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
+        below Owner `403`.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: repositories:write-config
+        project: path.projectKey
+        projectRole: owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveRepositoryRequest"
+            example:
+              project: shop
+      responses:
+        "200":
+          description: The repository in its new project.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Location:
+              $ref: "#/components/headers/Location"
+            Trove-Authz-Epoch:
+              $ref: "#/components/headers/AuthzEpoch"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -5639,9 +6591,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CiExchangeError"
-  /api/v1/projects/{key}/ci/issuers:
+  /api/v1/projects/{projectKey}/ci/issuers:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -5651,12 +6603,13 @@ paths:
     get:
       operationId: listProjectCiIssuers
       tags: [ci]
-      summary: List the CI issuers a project administrator can choose from
+      summary: List the CI issuers an Owner of a project can choose from
       description: |
-        Read-only: name, kind, issuer URL and `publicIssuer` of every issuer (Q-CI-26). Issuers are written by system administrators and the Helm values only. A project administrator of this project with `managePolicies` may call it; a project it does not administer answers `404`, a switch that is off `403 project_switch_off`.
+        Read-only: name, kind, issuer URL and `publicIssuer` of every issuer (Q-CI-26). Issuers are written by system administrators and the Helm values only. An Owner of this project may call it; a project the caller cannot see answers `404`.
       x-trove-permission:
         permission: ci:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       responses:
         "200":
           description: The issuers.
@@ -5676,9 +6629,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/ci/mappings:
+  /api/v1/projects/{projectKey}/ci/mappings:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -5690,10 +6643,11 @@ paths:
       tags: [ci]
       summary: List the CI mappings of a project
       description: |
-        The project's mappings of every issuer, tier `project:<key>` (Q-CI-26, R-CI-009). A project administrator sees these and no other tier.
+        The project's mappings of every issuer, tier `project:<key>` (Q-CI-26, R-CI-009). An Owner of the project sees these and no other tier.
       x-trove-permission:
         permission: ci:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       responses:
         "200":
           description: The mappings.
@@ -5718,11 +6672,12 @@ paths:
       tags: [ci]
       summary: Create a CI mapping of a project
       description: |
-        The body names the `issuer`. The mapping takes the tier `project:<key>`; its name starts with `<key>-` (`422 project_prefix_required`); it grants through policies of the project and inline grants over the project's repositories (`@any` means every repository of the project), never `groups` (`422 groups_not_allowed_in_project`) and never `manage`. Every save-time rule of R-CI-010 and R-CI-011 applies. Notifies `ci_mappings` and records `ci.mapping.created` with the project.
+        The body names the `issuer`. The mapping takes the tier `project:<key>`; its name is unique within the project and stored and referenced as `<key>/<name>` (principal `ci:<issuer>/<key>/<name>`, Q-AUTHZ-209); it grants through policies of the project and inline grants over the project's repositories (`@any` means every repository of the project; repositories are named by their bare keys), never `groups` (`422 groups_not_allowed_in_project`) and never `manage`. Every save-time rule of R-CI-010 and R-CI-011 applies. Notifies `ci_mappings` and records `ci.mapping.created` with the project.
       x-trove-recent-auth: true
       x-trove-permission:
         permission: ci:write
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       requestBody:
         required: true
         content:
@@ -5763,9 +6718,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/ci/mappings/{issuer}/{name}:
+  /api/v1/projects/{projectKey}/ci/mappings/{issuer}/{name}:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -5794,7 +6749,8 @@ paths:
         A mapping of another tier answers `404`.
       x-trove-permission:
         permission: ci:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       responses:
         "200":
           description: The mapping.
@@ -5826,7 +6782,8 @@ paths:
       x-trove-recent-auth: true
       x-trove-permission:
         permission: ci:write
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -5881,7 +6838,8 @@ paths:
       x-trove-recent-auth: true
       x-trove-permission:
         permission: ci:write
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - $ref: "#/components/parameters/IfMatchOptional"
       responses:
@@ -5903,9 +6861,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate:
+  /api/v1/projects/{projectKey}/ci/issuers/{issuer}/evaluate:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -5927,7 +6885,8 @@ paths:
         As `evaluateCiMappings`, over the project's tier only: the trace shows nothing of the system tier or of another project (Q-CI-26).
       x-trove-permission:
         permission: ci:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       requestBody:
         required: true
         content:
@@ -5961,9 +6920,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}:
+  /api/v1/projects/{projectKey}/ci/issuers/{issuer}/snippets/{kind}:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -5993,7 +6952,8 @@ paths:
         administrator who writes a mapping needs the pipeline that uses it (R-API-035, R-UI-035, Q-CI-26). It holds no secret.
       x-trove-permission:
         permission: ci:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - name: mapping
           in: query
@@ -6031,9 +6991,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/projects/{key}/ci/issuances:
+  /api/v1/projects/{projectKey}/ci/issuances:
     parameters:
-      - name: key
+      - name: projectKey
         in: path
         required: true
         description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
@@ -6048,7 +7008,8 @@ paths:
         The issuance records of tokens whose mappings include a mapping of this project, newest first, cursor pagination (Q-CI-26). A record names the project's mappings only.
       x-trove-permission:
         permission: tokens:read
-        projectAdmin: managePolicies
+        project: path.projectKey
+        projectRole: owner
       parameters:
         - {name: issuer, in: query, description: The CI issuer name., schema: {type: string}}
         - {name: jobId, in: query, description: The GitLab job ID., schema: {type: string}}
@@ -6078,8 +7039,9 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M4 ci
   # >>> M1 files
-  /api/v1/repositories/{repoKey}/items:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/items:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -6107,6 +7069,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: query.path
       responses:
         "200":
@@ -6133,7 +7096,7 @@ paths:
                 contentStatus: ok
                 package: null
                 upstreamUrl: null
-                downloadUrl: https://trove.example.com/files/generic-local/tools/widget/2.3/widget-2.3.bin
+                downloadUrl: https://trove.example.com/files/web/generic-local/tools/widget/2.3/widget-2.3.bin
                 contentUrl: /api/v1/repositories/generic-local/content/tools/widget/2.3/widget-2.3.bin
                 itemUrl: https://trove.example.com/api/v1/repositories/generic-local/items?path=tools%2Fwidget%2F2.3%2Fwidget-2.3.bin
         "400":
@@ -6169,6 +7132,7 @@ paths:
       x-trove-permission:
         action: delete
         repository: path.repoKey
+        project: path.projectKey
         path: query.path
       responses:
         "202":
@@ -6196,7 +7160,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/children:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/children:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     get:
       operationId: listChildren
       tags: [items]
@@ -6212,6 +7178,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: query.path
       parameters:
         - name: repoKey
@@ -6285,7 +7252,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/stats:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/stats:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     get:
       operationId: getItemStats
       tags: [items]
@@ -6298,6 +7267,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: query.path
       parameters:
         - name: repoKey
@@ -6335,8 +7305,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /files/{repoKey}/{path}:
+  /files/{projectKey}/{repoKey}/{path}:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -6349,7 +7320,7 @@ paths:
           The path in the repository. It contains slashes: every segment is percent-encoded, and the
           path is decoded exactly once (`400 invalid_path` for an empty, `.` or `..` segment, a NUL,
           a backslash or a control character). A trailing slash names a folder. The server route is
-          `/files/{repoKey}/{path...}`.
+          `/files/{projectKey}/{repoKey}/{path...}`.
         schema:
           type: string
     get:
@@ -6373,6 +7344,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       parameters:
         - name: Range
@@ -6465,6 +7437,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       responses:
         "200":
@@ -6523,6 +7496,7 @@ paths:
       x-trove-permission:
         action: deploy
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       parameters:
         - name: Repr-Digest
@@ -6600,13 +7574,14 @@ paths:
       tags: [files]
       summary: Delete a file or folder
       description: |
-        The same operation as `DELETE /api/v1/repositories/{repoKey}/items` on the path (R-STOR-018):
+        The same operation as `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/items` on the path (R-STOR-018):
         `204`, or `202` with the job of a large subtree, the ownership of the packages it removes
         checked as there. A path outside the repository's include and exclude patterns answers `404`
         for every caller.
       x-trove-permission:
         action: delete
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       responses:
         "202":
@@ -6634,8 +7609,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/content/{path}:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -6645,8 +7621,8 @@ paths:
         in: path
         required: true
         description: |
-          The path in the repository, as for `/files/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
-          once. The server route is `/api/v1/repositories/{repoKey}/content/{path...}`.
+          The path in the repository, as for `/files/{projectKey}/{repoKey}/{path}`: every segment percent-encoded, decoded exactly
+          once. The server route is `/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path...}`.
         schema:
           type: string
     get:
@@ -6654,7 +7630,7 @@ paths:
       tags: [files]
       summary: Download a file for the UI
       description: |
-        The transfer of `GET /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+        The transfer of `GET /files/{projectKey}/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
         authenticates, served by the role `api`: path cleaning, the decision of every request, `Range`,
         conditional requests, `Repr-Digest`, the content headers, the blocking of R-VULN-015 and the download
         statistics are those of `/files/`. A request that the session cookie did not authenticate (a token, a CI
@@ -6665,6 +7641,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       parameters:
         - name: Range
@@ -6757,6 +7734,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       responses:
         "200":
@@ -6798,7 +7776,7 @@ paths:
       tags: [files]
       summary: Deploy a file or create a folder for the UI
       description: |
-        The transfer of `PUT /files/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
+        The transfer of `PUT /files/{projectKey}/{repoKey}/{path}` (R-API-025, Q-UI-106) for a request that the session cookie
         authenticates, served by the role `api`: the same decision (`deploy`, and `overwrite` to replace different
         content, both decided before the body is read), the same `Repr-Digest` check, the same answers. The request
         needs the session's CSRF token like every unsafe request of a session. A request that the session cookie did
@@ -6808,6 +7786,7 @@ paths:
       x-trove-permission:
         action: deploy
         repository: path.repoKey
+        project: path.projectKey
         path: path.path
       parameters:
         - name: Repr-Digest
@@ -6921,7 +7900,6 @@ paths:
                       hosts: [trove.example.com]
                       wildcardHost: null
                       hostRoots: {}
-                      wildcardRoot: none
                       pool: null
                       surface: [ui, api, ci_exchange, packages, files]
                       auth: {tokenTypes: [pat, sat, cit], boundTokensOnly: false, anonymous: true}
@@ -6940,7 +7918,6 @@ paths:
                       hosts: [packages.example.com]
                       wildcardHost: null
                       hostRoots: {}
-                      wildcardRoot: none
                       pool: ep-customers
                       surface: [packages]
                       auth: {tokenTypes: [sat], boundTokensOnly: true, anonymous: false}
@@ -7525,6 +8502,13 @@ paths:
               type: string
           style: form
           explode: true
+        - name: project
+          in: query
+          description: |
+            A project key: only the versions in the physical repositories of that project count (Q-UI-129). It
+            combines with `repository` by intersection. A project the caller cannot see lists nothing.
+          schema:
+            type: string
         - name: repository
           in: query
           description: Repeat the parameter for several repository keys.
@@ -7803,7 +8787,7 @@ paths:
                   - path: "@team-a/ui/-/ui-1.4.0.tgz"
                     sizeBytes: 48213
                     sha256: 5be0c1d2e8f3a4b5c6d7e8f90123456789abcdef0123456789abcdef01234567
-                    downloadUrl: https://trove.example.com/api/npm/npm-local/@team-a/ui/-/ui-1.4.0.tgz
+                    downloadUrl: https://trove.example.com/api/npm/web/npm-local/@team-a/ui/-/ui-1.4.0.tgz
                     contentUrl: /api/v1/repositories/npm-local/content/@team-a/ui/-/ui-1.4.0.tgz
         "304":
           $ref: "#/components/responses/NotModified"
@@ -7866,7 +8850,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/client-setup:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/client-setup:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     get:
       operationId: getClientSetup
       tags: [repositories]
@@ -7890,6 +8876,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
       parameters:
         - name: repoKey
           in: path
@@ -7943,21 +8930,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClientSetup"
               example:
-                repository: npm-all
+                repository: web/npm-all
                 format: npm
                 client: npm
                 credentials: placeholder
-                registryUrl: https://trove.example.com/api/npm/npm-all/
-                endpointPath: //trove.example.com/api/npm/npm-all/
+                registryUrl: https://trove.example.com/api/npm/web/npm-all/
+                endpointPath: //trove.example.com/api/npm/web/npm-all/
                 username: alice
-                publishTarget: npm-local
+                publishTarget: web/npm-local
                 tokenTtlSeconds: 2592000
                 snippets:
                   - id: npm.configure.npmrc
                     tab: configure
                     fileName: .npmrc
                     language: ini
-                    content: "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken={{token}}\n"
+                    content: "registry=https://trove.example.com/api/npm/web/npm-all/\n//trove.example.com/api/npm/web/npm-all/:_authToken={{token}}\n"
                   - id: npm.install
                     tab: install
                     fileName: null
@@ -7982,7 +8969,9 @@ paths:
   # <<< M2 packages
   #
   # >>> M2 guides
-  /api/v1/repositories/{repoKey}/guide:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/guide:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     get:
       operationId: getRepositoryGuide
       tags: [repositories]
@@ -8002,6 +8991,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
       parameters:
         - name: repoKey
           in: path
@@ -8027,9 +9017,9 @@ paths:
                 format: npm
                 class: virtual
                 client: npm
-                repository: npm-all
-                registryUrl: https://trove.example.com/api/npm/npm-all/
-                publishTarget: npm-local
+                repository: web/npm-all
+                registryUrl: https://trove.example.com/api/npm/web/npm-all/
+                publishTarget: web/npm-local
                 credentials: env
                 exposureRules: false
                 sections:
@@ -8042,7 +9032,7 @@ paths:
                         tab: configure
                         fileName: .npmrc
                         language: ini
-                        content: "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}\n"
+                        content: "registry=https://trove.example.com/api/npm/web/npm-all/\n//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}\n"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -8064,7 +9054,7 @@ paths:
       summary: The guide of a format for one class and client
       description: |
         The guide of the format for a class and a client without a repository (R-API-053, R-UI-049): the same
-        sections as `GET /api/v1/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
+        sections as `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
         and `<repository>` where the repository key goes, no deployment target, and the snippets of the
         client setup rendered for that address. Any caller; an anonymous caller only where anonymous access is
         on, else `401`. An unknown format answers `404`; a class or client the format does not have `400`;
@@ -8227,7 +9217,9 @@ paths:
   # <<< M2 manual
   #
   # >>> M2 proxy
-  /api/v1/repositories/{repoKey}/cache/invalidate:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/invalidate:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     post:
       operationId: invalidateRepositoryCache
       tags: [repositories]
@@ -8250,6 +9242,7 @@ paths:
       x-trove-permission:
         action: manage
         repository: path.repoKey
+        project: path.projectKey
       parameters:
         - name: repoKey
           in: path
@@ -8294,7 +9287,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/cache/entries:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/cache/entries:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     get:
       operationId: listCacheEntries
       tags: [repositories]
@@ -8365,9 +9360,10 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{key}/upstream-test:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/upstream-test:
     parameters:
-      - name: key
+      - $ref: "#/components/parameters/ProjectKey"
+      - name: repoKey
         in: path
         required: true
         description: The repository key (R-REPO-002).
@@ -8393,7 +9389,8 @@ paths:
         remote answers `400 not_applicable`.
       x-trove-permission:
         permission: repositories:write-config
-        projectAdmin: manageRepositories
+        project: path.projectKey
+        projectRole: owner
       responses:
         "200":
           description: The result of the probe.
@@ -8426,7 +9423,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/upstream-tests:
+  /api/v1/projects/{projectKey}/upstream-tests:
+    parameters:
+      - $ref: "#/components/parameters/ProjectKey"
     post:
       operationId: testUpstream
       tags: [repositories]
@@ -8438,7 +9437,8 @@ paths:
         nothing to refer to here. The result is that of `testRepositoryUpstream`.
       x-trove-permission:
         permission: repositories:write-config
-        projectAdmin: manageRepositories
+        project: path.projectKey
+        projectRole: owner
       requestBody:
         required: true
         content:
@@ -8462,6 +9462,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
@@ -8477,8 +9479,9 @@ paths:
   # <<< M2 proxy
   #
   # >>> M2 virtual
-  /api/v1/repositories/{repoKey}/claims:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/claims:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -8499,6 +9502,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
       parameters:
         - $ref: "#/components/parameters/IfNoneMatch"
       responses:
@@ -8547,6 +9551,7 @@ paths:
       x-trove-permission:
         action: manage
         repository: path.repoKey
+        project: path.projectKey
       x-trove-if-match: required
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -8597,8 +9602,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/resolution:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/resolution:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -8624,6 +9630,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
       parameters:
         - name: path
           in: query
@@ -8641,7 +9648,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/RepositoryResolution"
               example:
-                repository: npm-all
+                repository: web/npm-all
                 descriptor: {path: "@acme/util/-/util-1.4.0.tgz", kind: artifact, package: "@acme/util"}
                 decidedBy: {claim: "@acme/*", claimedBy: [npm-local]}
                 members:
@@ -8666,8 +9673,9 @@ paths:
   # <<< M2 npm
   #
   # >>> M2 ownership
-  /api/v1/repositories/{repoKey}/packages/{packageName}/owners:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -8694,6 +9702,7 @@ paths:
       x-trove-permission:
         action: read
         repository: path.repoKey
+        project: path.projectKey
       responses:
         "200":
           description: The ownership of the name.
@@ -8702,7 +9711,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PackageOwners"
               example:
-                repository: npm-internal
+                repository: web/npm-internal
                 domain: npm-internal
                 format: npm
                 package: "@acme/frontend"
@@ -8793,8 +9802,9 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}:
     parameters:
+      - $ref: "#/components/parameters/ProjectKey"
       - name: repoKey
         in: path
         required: true
@@ -8895,7 +9905,7 @@ paths:
                 $ref: "#/components/schemas/OwnedPackageList"
               example:
                 items:
-                  - repository: npm-internal
+                  - repository: web/npm-internal
                     format: npm
                     package: "@acme/frontend"
                     state: claimed
@@ -9287,7 +10297,9 @@ paths:
         The Bastion interface (R-BAS-011, R-BAS-012). Validates the caller's credential as a direct request would (R-AUTH-023
         including the failed-credential throttle for `clientAddress`, `token.rejected` with that address) and answers the
         subject and, for at most `bastions.check.max_repositories` repository keys, the read shape `full`, `partial` or `none`
-        with the status the caller would receive. It writes no `authz.denied` events.
+        with the status the caller would receive. It writes no `authz.denied` events. A repository name without a project
+        (`npm-all` instead of `web/npm-all`) answers `400 malformed_request`, like a body that does not read; another
+        interface version answers `400 bastion_interface_mismatch`.
       x-trove-bastion-interface: 1
       x-trove-permission:
         bastion: true
@@ -9441,7 +10453,8 @@ paths:
       x-trove-permission:
         authenticated: true
       parameters:
-        - {name: repository, in: query, description: "A repository key; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: repository, in: query, description: "A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID, for example npm or nuget. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: package, in: query, description: "A normalized package name. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: packagePrefix, in: query, description: "Packages whose name starts with this text, for example @team-a/.", schema: {type: string}}
@@ -9500,7 +10513,8 @@ paths:
       x-trove-permission:
         authenticated: true
       parameters:
-        - {name: repository, in: query, description: "A repository key; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: repository, in: query, description: "A repository name `<project>/<key>`; a virtual repository expands to the members the caller can read. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID, for example npm or nuget. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: package, in: query, description: "A normalized package name. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: packagePrefix, in: query, description: "Packages whose name starts with this text, for example @team-a/.", schema: {type: string}}
@@ -9763,7 +10777,8 @@ paths:
       x-trove-permission:
         authenticated: true
       parameters:
-        - {name: repository, in: query, description: "A repository key. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: repository, in: query, description: "A repository name `<project>/<key>`. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID. Repeat for several.", schema: {type: array, items: {type: string}}}
       responses:
         "200":
@@ -9798,7 +10813,8 @@ paths:
       parameters:
         - {name: from, in: query, description: "First day (RFC 3339 date); default 90 days before `to`.", schema: {type: string, format: date}}
         - {name: to, in: query, description: "Last day, inclusive (RFC 3339 date); default today.", schema: {type: string, format: date}}
-        - {name: repository, in: query, description: "A repository key. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: project, in: query, description: "A project key: the findings of the project's repositories. Repeat for several.", schema: {type: array, items: {type: string}}}
+        - {name: repository, in: query, description: "A repository name `<project>/<key>`. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: format, in: query, description: "A format ID. Repeat for several.", schema: {type: array, items: {type: string}}}
         - {name: kind, in: query, description: "vulnerability or malicious.", schema: {$ref: "#/components/schemas/VulnerabilityKind"}}
       responses:
@@ -9941,9 +10957,10 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{key}/vulnerabilities/rescan:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/vulnerabilities/rescan:
     parameters:
-      - name: key
+      - $ref: "#/components/parameters/ProjectKey"
+      - name: repoKey
         in: path
         required: true
         description: The repository key (R-REPO-002).
@@ -9960,7 +10977,8 @@ paths:
         `manage` on the repository.
       x-trove-permission:
         action: manage
-        repository: path.key
+        repository: path.repoKey
+        project: path.projectKey
       x-trove-idempotency-key: optional
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -9997,9 +11015,10 @@ paths:
   # <<< M4b vulnerabilities
   #
   # >>> M6b mirror
-  /api/v1/repositories/{key}/mirror:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror:
     parameters:
-      - name: key
+      - $ref: "#/components/parameters/ProjectKey"
+      - name: repoKey
         in: path
         required: true
         description: The repository key (R-REPO-002).
@@ -10076,9 +11095,10 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-  /api/v1/repositories/{key}/mirror/run:
+  /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run:
     parameters:
-      - name: key
+      - $ref: "#/components/parameters/ProjectKey"
+      - name: repoKey
         in: path
         required: true
         description: The repository key (R-REPO-002).
@@ -10096,8 +11116,8 @@ paths:
         queued or running, `409 mirror_off` for a remote in mode `pullThrough`, `409 mirror_paused` for a paused mirror,
         `409 mirror_rate_limited` (extension `until`) while the upstream's wait lies ahead;
         a local or virtual repository answers `400 not_applicable`. The request writes the audit event
-        `mirror.pass_requested`. Needs `repositories:write-config`, `manage` on the repository, or administration of its
-        project with `manageRepositories`; a repository that is hidden from the caller answers `404`.
+        `mirror.pass_requested`. Needs `repositories:write-config`, `manage` on the repository (which the role Maintainer and Owner
+        grant), or the role Owner of its project; a repository that is hidden from the caller answers `404`.
       x-trove-permission:
         authenticated: true
       x-trove-idempotency-key: optional
@@ -10200,6 +11220,23 @@ components:
         type: string
         enum: ["true"]
   parameters:
+    ProjectKey:
+      name: projectKey
+      in: path
+      required: true
+      description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist.
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9-]{1,31}$"
+    RepoKey:
+      name: repoKey
+      in: path
+      required: true
+      description: The repository key (R-REPO-002), unique within its project (Q-REPO-212).
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        x-trove-reserved-names: [batch-create, batch-update, batch-get, batch-delete, quick-setup]
     # >>> M13 bastion
     BastionInterface:
       name: Trove-Bastion-Interface
@@ -10424,7 +11461,7 @@ components:
     Problem:
       type: object
       description: |
-        RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+        RFC 9457 problem details. The extension members are `code`, `requestId`, `errors`, `currentEtag`, `job` and `references`.
       required: [type, title, status, code]
       properties:
         type:
@@ -10456,11 +11493,24 @@ components:
         currentEtag:
           type: string
           description: "Extension of `precondition_failed`: the current ETag of the resource (R-API-012)."
-        currentProject:
-          type: [string, "null"]
-          description: "Extension of `project_owner_changed`: the key of the project the repository belongs to now, `null` when it belongs to none (Q-AUTHZ-205)."
         job:
           $ref: "#/components/schemas/JobReference"
+        references:
+          type: array
+          description: "Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository, and for an Owner without `repositories:write-config` the global policies that name it by key (R-REPO-060, Q-REPO-232)."
+          items:
+            $ref: "#/components/schemas/RepositoryReference"
+    RepositoryReference:
+      type: object
+      additionalProperties: false
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [virtual_member, pin_rule, virtual_deployment_target, policy, ci_mapping, member, deployment_target, global_policy]
+        name:
+          type: string
+          description: The name of the object within the source project; for `global_policy` the name of the global policy.
     FieldError:
       type: object
       required: [pointer, code, detail]
@@ -11728,9 +12778,9 @@ components:
     # >>> M5a projects
     Project:
       type: object
-      description: A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName`, `description` and the two switches only.
+      description: A project (R-AUTHZ-026). `version` is the ETag source; it moves with `displayName` and `description` only.
       additionalProperties: false
-      required: [key, displayName, description, managePolicies, manageRepositories, admins, repositories, serviceAccounts, policies, version, createdAt, createdBy, updatedAt, updatedBy]
+      required: [key, displayName, description, owners, members, repositories, serviceAccounts, policies, version, createdAt, createdBy, updatedAt, updatedBy]
       properties:
         key:
           type: string
@@ -11742,20 +12792,20 @@ components:
         description:
           type: string
           maxLength: 1024
-        managePolicies:
-          type: boolean
-          description: The administrators create, change and delete project policies, create and enable project service accounts, issue their tokens and look up users and groups.
-        manageRepositories:
-          type: boolean
-          description: The administrators create, change and delete the project's repositories of every class and test the upstream of its remotes.
-        admins:
+        owners:
           type: array
-          description: References of the administrators, `user:<name>` and `group:<name>`, ordered by kind and name.
+          description: References of the members with the role Owner, `user:<name>` and `group:<name>`, ordered by kind and name.
           items:
             type: string
+        members:
+          type: integer
+          description: The number of members, users and groups.
+        role:
+          description: The caller's own role in the project, absent for a caller that is no member (a holder of `projects:read`).
+          $ref: "#/components/schemas/ProjectRole"
         repositories:
           type: integer
-          description: Repositories assigned to the project, those being deleted included.
+          description: Repositories of the project, those being deleted included.
         serviceAccounts:
           type: integer
         policies:
@@ -11776,7 +12826,7 @@ components:
           type: string
     ProjectInput:
       type: object
-      description: What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`, `managePolicies` and `manageRepositories`.
+      description: What a client writes. The read-only members of `Project` are accepted and ignored, so a body obtained by `GET` can be sent back. A create takes the key; a replace needs `displayName`.
       additionalProperties: false
       properties:
         key:
@@ -11791,17 +12841,17 @@ components:
           type: string
           maxLength: 1024
           default: ""
-        managePolicies:
-          type: boolean
-          description: Default `true` on create; required on replace.
-        manageRepositories:
-          type: boolean
-          description: Default `false` on create; required on replace.
-        admins:
+        owners:
           type: array
-          readOnly: true
+          description: On create, the references (`user:<name>`, `group:<name>`) that become the first Owners of the project in the transaction of the create (Q-AUTHZ-229); a reference that is no user or group answers `422 principal_not_allowed`, one that does not exist `404`. Ignored on replace.
           items:
             type: string
+        members:
+          type: integer
+          readOnly: true
+        role:
+          readOnly: true
+          $ref: "#/components/schemas/ProjectRole"
         repositories:
           type: integer
           readOnly: true
@@ -11841,16 +12891,72 @@ components:
         nextCursor:
           type: [string, "null"]
           description: Opaque; `null` on the last page.
-    ProjectAdmin:
+    ProjectRole:
+      type: string
+      description: |
+        The role of a member of a project (Q-AUTHZ-208); each role holds what the role before it holds. `reader`: `read` on every
+        repository of the project. `developer`: also `annotate` and `deploy`. `maintainer`: every repository action
+        (`overwrite`, `delete`, `manage` too). `owner`: every repository action and the administration of the project: its members and
+        their roles, repositories, permission policies, service accounts and settings. The administration needs a session or a token
+        with `admin: true`.
+      enum: [reader, developer, maintainer, owner]
+    Member:
       type: object
+      description: A member of a project (Q-AUTHZ-207). Only users and groups are members; a service account reaches a project through its policies.
       additionalProperties: false
-      required: [project, principal]
+      required: [project, principal, kind, name, role]
       properties:
         project:
           type: string
+          description: The project key.
         principal:
           type: string
           description: "`user:<name>` or `group:<name>`."
+        kind:
+          type: string
+          enum: [user, group]
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    MemberInput:
+      type: object
+      description: The role of a member. The read-only members of `Member` are accepted and ignored.
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        project:
+          type: string
+          readOnly: true
+        principal:
+          type: string
+          readOnly: true
+        kind:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+    MemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+    MoveRepositoryRequest:
+      type: object
+      additionalProperties: false
+      required: [project]
+      properties:
+        project:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+          description: The key of the target project. The project of the path itself is allowed, and the answer is `200` with nothing changed.
     ProjectPrincipal:
       type: object
       additionalProperties: false
@@ -11863,7 +12969,7 @@ components:
           type: string
         principal:
           type: string
-          description: The reference to put in a policy entry.
+          description: The reference to put in a policy entry or a member.
     ProjectPrincipalList:
       type: object
       additionalProperties: false
@@ -11874,18 +12980,19 @@ components:
           maxItems: 20
           items:
             $ref: "#/components/schemas/ProjectPrincipal"
-    AdministeredProject:
+    Membership:
       type: object
-      description: A project the caller administers, with the switches in force on the index that answered (R-AUTHZ-026).
+      description: |
+        A project the caller is a member of through this credential (Q-AUTHZ-207). `role` is the role in force for the credential:
+        `owner` only when the credential may administer (a session, or a token with `admin: true`), otherwise `maintainer`, which is
+        what the role Owner holds beyond the administration (D2 of Q-AUTHZ-208).
       additionalProperties: false
-      required: [key, managePolicies, manageRepositories]
+      required: [key, role]
       properties:
         key:
           type: string
-        managePolicies:
-          type: boolean
-        manageRepositories:
-          type: boolean
+        role:
+          $ref: "#/components/schemas/ProjectRole"
     # <<< M5a projects
     #
     # >>> M4 ci
@@ -12216,7 +13323,7 @@ components:
         claims: {type: object, additionalProperties: true, description: The allowlisted claim snapshot.}
         grants: {type: object, additionalProperties: true, description: "The frozen use-time bundle: rendered inline grants, policy and group names, caps."}
         requestedScope: {type: [string, "null"]}
-        grantedScope: {type: string, description: "The scope the token was issued with. Empty in a project administrator's view, whose kept contributions show their own inline grants (Q-CI-52)."}
+        grantedScope: {type: string, description: "The scope the token was issued with. Empty in an Owner's view, whose kept contributions show their own inline grants (Q-CI-52)."}
         crossProject: {type: boolean}
         issuedAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}
@@ -12313,7 +13420,7 @@ components:
         requestId: {type: string, description: Equals the `X-Request-Id` response header.}
     CiIssuerChoice:
       type: object
-      description: What a project administrator sees of an issuer (Q-CI-26).
+      description: What an Owner of a project sees of an issuer (Q-CI-26).
       additionalProperties: false
       required: [name, kind, issuer, publicIssuer]
       properties:
@@ -12333,14 +13440,18 @@ components:
     # <<< M4 ci
     ServiceAccount:
       type: object
-      description: A service account (R-AUTH-020).
-      required: [id, name, description, status, createdAt, project]
+      description: A service account (R-AUTH-020). `name` is the name within its project, unique among the accounts of that project, or among the instance-wide accounts when `project` is `null` (Q-AUTHZ-209).
+      required: [id, name, principal, description, status, createdAt, project]
       properties:
         id:
           type: string
           format: uuid
         name:
           type: string
+          description: The name within the project; the stored name is `<project>/<name>` for a project's account.
+        principal:
+          type: string
+          description: The reference, `sa:<name>` or `sa:<project>/<name>`.
         description:
           type: string
         status:
@@ -12351,10 +13462,11 @@ components:
           format: date-time
         project:
           type: [string, "null"]
-          description: The key of the project the account belongs to (R-AUTHZ-026), `null` for a global account. Fixed at creation.
+          description: The key of the project the account belongs to (R-AUTHZ-026), `null` for an instance-wide account. Fixed at creation.
       example:
         id: 0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a12
         name: ci-bot
+        principal: "sa:ci-bot"
         description: Deploy jobs
         status: active
         createdAt: "2026-09-01T08:00:00Z"
@@ -12376,12 +13488,9 @@ components:
       properties:
         name:
           type: string
-          description: Matches `^[a-z0-9][a-z0-9-]{1,62}$`; `<project>-…` for a project service account.
+          description: Matches `^[a-z0-9][a-z0-9-]{1,62}$`, unique within the project of the route (or among the instance-wide accounts).
         description:
           type: string
-        project:
-          type: [string, "null"]
-          description: The key of a project; makes the account a project service account (R-AUTHZ-026, Q-AUTHZ-169).
       example:
         name: ci-bot
         description: Deploy jobs
@@ -12912,7 +14021,7 @@ components:
     Preferences:
       type: object
       description: The caller's UI preferences (R-API-021). `revision` is the ETag number.
-      required: [locale, theme, keyboardShortcuts, projectFilter, revision]
+      required: [locale, theme, keyboardShortcuts, revision]
       properties:
         locale:
           type: [string, "null"]
@@ -12922,12 +14031,10 @@ components:
           description: "`light`, `dark` or `null` (the system decides)."
         keyboardShortcuts:
           type: boolean
-        projectFilter:
-          type: [string, "null"]
         revision:
           type: integer
           minimum: 1
-      example: {locale: de, theme: null, keyboardShortcuts: false, projectFilter: null, revision: 2}
+      example: {locale: de, theme: null, keyboardShortcuts: false, revision: 2}
     PreferencesPatch:
       type: object
       description: "`null` resets a member to its default. `revision` is accepted and ignored."
@@ -12940,8 +14047,6 @@ components:
           description: "`light`, `dark` or `null`."
         keyboardShortcuts:
           type: [boolean, "null"]
-        projectFilter:
-          type: [string, "null"]
     # <<< M1 login
     #
     # >>> M1 authz
@@ -13007,7 +14112,8 @@ components:
           default: repository
         project:
           type: [string, "null"]
-          description: The key of the project the policy belongs to, `null` (the default) for a global policy. Fixed at creation. A project policy is named `<project>-…` (`422 project_prefix_required`), selects repositories of its project only (`422 repository_outside_project`) and grants to users, groups, global service accounts, CI mappings and the project's own service accounts (`422 principal_outside_project` for another's).
+          readOnly: true
+          description: The key of the project the policy belongs to, `null` for an instance-wide policy; the route decides, and a different value in a body answers `422`. A project policy selects repositories of its project only, by bare key (`422 repository_outside_project`), and grants to users, groups, instance-wide service accounts, CI mappings and the project's own service accounts (`422 principal_outside_project` for another's).
         resources:
           $ref: "#/components/schemas/PolicyResources"
         entries:
@@ -13043,7 +14149,7 @@ components:
           readOnly: true
     PermissionPolicy:
       type: object
-      description: A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing`, `anonymous_populates_remote` and, for a project policy, `selector_outside_project` (a key selector whose repository left the project, Q-AUTHZ-179). `version` is the ETag source.
+      description: A permission policy (R-AUTHZ-021). `inert` is true when no selector is left (a key selector goes with its repository); the policy stays and grants nothing. `warnings` are `path_patterns_on_package_format`, `selector_matches_nothing` and `anonymous_populates_remote`; a move that would leave a key selector of a project policy behind is refused with `409 repository_in_use`. `version` is the ETag source.
       additionalProperties: false
       required: [name, description, resourceType, project, resources, entries, inert, warnings, version, createdAt, createdBy, updatedAt, updatedBy]
       properties:
@@ -13056,7 +14162,7 @@ components:
           enum: [repository]
         project:
           type: [string, "null"]
-          description: The project key, `null` for a global policy.
+          description: The project key, `null` for an instance-wide policy.
         resources:
           $ref: "#/components/schemas/PolicyResources"
         entries:
@@ -13231,9 +14337,9 @@ components:
             type: string
         projects:
           type: array
-          description: The projects the caller administers through this credential, with their switches, ordered by key; empty for a caller that administers none and for a token without `admin` (R-AUTHZ-026, Q-AUTHZ-181). The UI shows the project screens from it.
+          description: The projects the caller is a member of through this credential, with the role in force, ordered by key (R-AUTHZ-026, Q-AUTHZ-181, Q-AUTHZ-207). A member through a group is listed with the highest role of the user and its groups. The UI shows the project screens from it.
           items:
-            $ref: "#/components/schemas/AdministeredProject"
+            $ref: "#/components/schemas/Membership"
         scope:
           oneOf:
             - $ref: "#/components/schemas/ScopeSummary"
@@ -13426,7 +14532,7 @@ components:
         key:
           type: string
           pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
-          description: Fixed at creation; reserved names are the sub-paths of `/api/v1/repositories`.
+          description: Fixed at creation; unique within the project (Q-REPO-212).
         class:
           type: string
           enum: [local, remote, virtual]
@@ -13438,12 +14544,12 @@ components:
           type: string
           readOnly: true
         project:
-          type: [string, "null"]
+          type: string
+          readOnly: true
           description: |
-            The key of the project the repository is assigned to (R-AUTHZ-026), `null` or absent when it belongs to
-            none. Read on every answer; written on create only, which assigns the repository in the same
-            transaction. A replace or patch ignores a value equal to the stored one and answers `422` for another:
-            `PUT /api/v1/projects/{key}/repositories/{repoKey}` moves a repository.
+            The key of the project the repository belongs to (Q-AUTHZ-206). Read on every answer; the path names the
+            project on a write, and a value that differs from it answers `422`. `POST …/move` moves the repository. The
+            members, deploy target and pin rules of a virtual repository name repositories of this project by bare key.
         description:
           type: string
           maxLength: 2000
@@ -13660,8 +14766,8 @@ components:
           type: [string, "null"]
           format: date-time
         project:
-          type: [string, "null"]
-          description: The key of the project the repository is assigned to, `null` when it belongs to none (R-AUTHZ-026).
+          type: string
+          description: The key of the project the repository belongs to; the name is `<project>/<key>` (Q-AUTHZ-206).
     RepositoryList:
       type: object
       required: [items, nextCursor]
@@ -13751,7 +14857,7 @@ components:
           description: Files only.
         contentUrl:
           type: string
-          description: Files only. The relative URL of the content route of the file (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106).
+          description: Files only. The relative URL of the content route of the file (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, Q-UI-106).
         listingUrl:
           type: string
           description: Folders only.
@@ -13835,7 +14941,7 @@ components:
             - type: "null"
     EndpointConfiguration:
       type: object
-      required: [default, port, baseUrl, hosts, wildcardHost, hostRoots, wildcardRoot, pool, surface, auth, exposure, cacheFill, rateLimit, replicaHeader]
+      required: [default, port, baseUrl, hosts, wildcardHost, hostRoots, pool, surface, auth, exposure, cacheFill, rateLimit, replicaHeader]
       properties:
         default:
           type: boolean
@@ -13854,12 +14960,9 @@ components:
           type: [string, "null"]
         hostRoots:
           type: object
-          description: Host-root bindings, host to repository key (R-EP-006).
+          description: Host-root bindings, host to repository, the value being `<projectKey>/<repoKey>` (R-EP-006).
           additionalProperties:
             type: string
-        wildcardRoot:
-          type: string
-          enum: [none, label]
         pool:
           type: [string, "null"]
           description: The web pool that serves the endpoint; `null` for the main web Deployment.
@@ -14010,7 +15113,7 @@ components:
       example:
         name: acme-sdk
         description: SDK releases for customers
-        repository: npm-customers
+        repository: web/npm-customers
         enabled: true
         packages: {include: ["@acme/sdk", "@acme/sdk-*"], exclude: ["@acme/sdk-internal"]}
         paths: {include: [], exclude: []}
@@ -14253,7 +15356,7 @@ components:
           description: Absolute, built on the public base URL.
         contentUrl:
           type: string
-          description: The relative URL of the content route of the file item (`/api/v1/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
+          description: The relative URL of the content route of the file item (`/api/v1/projects/{projectKey}/repositories/{repoKey}/content/{path}`), which the session cookie authenticates on the role `api`; the UI's downloads use it (R-API-025, R-API-029, Q-UI-106).
     PackageVersion:
       type: object
       required: [packageId, format, name, version, prerelease, publishedAt, licenses, sizeBytes, downloadCount, hasReadme, metadata, repositories, files]
@@ -14364,7 +15467,7 @@ components:
           description: The caller's name; null for an anonymous caller.
         publishTarget:
           type: [string, "null"]
-          description: The key of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
+          description: The qualified name `<project>/<key>` of the repository a publish goes to; null when the caller may not publish or a virtual repository has no default deployment target.
         tokenTtlSeconds:
           type: integer
           format: int64
@@ -14395,7 +15498,7 @@ components:
           description: The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format.
         publishTarget:
           type: [string, "null"]
-          description: The repository a publish through this one reaches, when the caller may deploy there; null otherwise.
+          description: The qualified name `<project>/<key>` of the repository a publish through this one reaches, when the caller may deploy there; null otherwise.
         credentials:
           type: string
           enum: [env, none]
@@ -14757,7 +15860,7 @@ components:
             `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the
             upstream offers within the patterns and bounds (R-REPO-050). A format whose upstream cannot be discovered answers
             `422 not_applicable`; a mirror of the format's well-known upstream without a bound `422 mirror_unbounded`, of
-            another upstream the warning `mirror_unbounded`; a project administrator `422 mirror_restricted` (Q-REPO-142).
+            another upstream the warning `mirror_unbounded`; an Owner without `repositories:write-config` `422 mirror_restricted` (Q-REPO-142).
         mirror:
           $ref: "#/components/schemas/MirrorSettings"
     RemoteExtraHost:
@@ -15555,14 +16658,15 @@ components:
     VulnerabilityFinding:
       type: object
       additionalProperties: false
-      required: [id, repository, format, package, version, advisory, aliases, kind, summary, severity, cvss, knownExploited, fixAvailable, fixedVersions, status, blocked, blockReason, detectedAt, resolvedAt]
+      required: [id, project, repository, format, package, version, advisory, aliases, kind, summary, severity, cvss, knownExploited, fixAvailable, fixedVersions, status, blocked, blockReason, detectedAt, resolvedAt]
       description: |
         One finding: one canonical advisory affects one stored version in one repository (R-VULN-012). `blocked` and
         `blockReason` are computed with the rule of R-VULN-015 and the repository's current policy, so the API, the report and
         the download agree.
       properties:
         id: {type: string, format: uuid}
-        repository: {type: string}
+        project: {type: string, description: The key of the project of the repository.}
+        repository: {type: string, description: The qualified name `<project>/<key>`.}
         format: {type: string}
         package: {type: string}
         version: {type: string}
@@ -15597,7 +16701,8 @@ components:
         resolvedAt: {type: [string, "null"], format: date-time}
       example:
         id: 01933b2a-7c1e-7d10-9a4b-3f0e2c1d0a11
-        repository: npm-remote
+        project: web
+        repository: web/npm-remote
         format: npm
         package: lodash
         version: 4.17.20
@@ -15973,7 +17078,7 @@ components:
       additionalProperties: false
       description: |
         The settings of the mirror mode (`remote.mirror`, R-REPO-050). Every member is returned, with its default where a
-        request omitted it; they take effect in `mode: mirror` only. A project administrator keeps them as stored and may
+        request omitted it; they take effect in `mode: mirror` only. An Owner without `repositories:write-config` keeps them as stored and may
         change `paused` only (Q-REPO-142, `422 mirror_restricted`).
       properties:
         paused:
@@ -16032,7 +17137,7 @@ components:
     MirrorRunRequest:
       type: object
       additionalProperties: false
-      description: The optional body of `POST /api/v1/repositories/{key}/mirror/run` (R-REPO-056).
+      description: The optional body of `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/mirror/run` (R-REPO-056).
       properties:
         full:
           type: boolean

@@ -1,4 +1,4 @@
-import { alicePassword, bobPassword, expect, expectAccessible, signInLocal, signInWithKeycloak, signOut, test, unique, watchCsp } from '../support';
+import { alicePassword, bobPassword, e2eProject, expect, expectAccessible, qualified, repositories, repositoryApi, signInLocal, signInWithKeycloak, signOut, test, unique, watchCsp } from '../support';
 
 // R-UI-047 journeys "policy edit" and the effect of a grant (R-UI-025, R-UI-026, R-AUTH-018, R-API-052, E1.11): the
 // administrator puts bob into a new group and writes a permission policy for it, in the editor with its
@@ -10,16 +10,16 @@ const policyName = unique('ui-readers-read');
 
 test.beforeAll(async ({ admin }) => {
   // Data is prepared through the API (INV-17): a repository with one file that nobody but the administrator may read.
-  const created = await admin.post('/api/v1/repositories', { data: { key: repoKey, class: 'local', format: 'generic' } });
+  const created = await admin.post(repositories(), { data: { key: repoKey, class: 'local', format: 'generic' } });
   expect(created.status(), await created.text()).toBe(201);
-  const put = await admin.put(`/files/${repoKey}/docs/readme.txt`, { data: 'readable once granted\n' });
+  const put = await admin.put(`/files/${e2eProject}/${repoKey}/docs/readme.txt`, { data: 'readable once granted\n' });
   expect(put.ok(), `PUT readme.txt: ${put.status()}`).toBeTruthy();
 });
 
 test.afterAll(async ({ admin }) => {
   await admin.delete(`/api/v1/permission-policies/${policyName}`);
   await admin.delete(`/api/v1/groups/${groupName}`);
-  await admin.delete(`/api/v1/repositories/${repoKey}`);
+  await admin.delete(repositoryApi(repoKey));
 });
 
 test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for bob', async ({ page, browser, replicas }) => {
@@ -34,7 +34,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
   });
   await signInWithKeycloak(bob, 'bob', bobPassword);
   const bobSearch = async () => {
-    await bob.goto('/ui/en/browse');
+    await bob.goto(`/ui/en/projects/${e2eProject}/browse`);
     await bob.getByLabel('Filter repositories').fill(repoKey);
   };
   await bobSearch();
@@ -72,7 +72,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
     const entry = page.getByRole('group', { name: 'Entry 1' });
     await entry.getByLabel('Principal', { exact: true }).fill(`group:${groupName}`);
     await entry.getByRole('checkbox', { name: 'read' }).check();
-    await page.getByLabel('Repository selectors').fill(repoKey);
+    await page.getByLabel('Repository selectors').fill(qualified(repoKey));
     await expect(page.locator('.covers')).toContainText('Repositories covered now: 1');
     await expect(page.getByText('No problems found.')).toBeVisible();
     await expect(page.locator('ul.covered')).toContainText(repoKey);
@@ -80,7 +80,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
     // "Try it" evaluates the draft only.
     const preview = page.getByRole('complementary', { name: 'Preview' });
     await preview.getByLabel('Principal', { exact: true }).fill(`group:${groupName}`);
-    await preview.getByLabel('Repository', { exact: true }).fill(repoKey);
+    await preview.getByLabel('Repository', { exact: true }).fill(qualified(repoKey));
     await preview.getByRole('button', { name: 'Explain' }).click();
     await expect(page.getByText('Allowed by this draft')).toBeVisible();
     await expectAccessible(page, 'policy editor with the preview');
@@ -93,7 +93,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
   await test.step('bob sees the repository now, and its file', async () => {
     await bobSearch();
     await expect(bob.getByRole('treeitem', { name: new RegExp(repoKey) })).toBeVisible();
-    await bob.goto(`/ui/en/browse/${repoKey}`);
+    await bob.goto(`/ui/en/projects/${e2eProject}/browse/${repoKey}`);
     await bob.getByRole('treeitem', { name: /docs/ }).click();
     await expect(bob.getByRole('navigation', { name: 'Location' })).toContainText('docs');
     await expectAccessible(bob, 'the file tree of a consumer');

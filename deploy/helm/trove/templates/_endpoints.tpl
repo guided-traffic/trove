@@ -33,7 +33,6 @@ false.
 {{- $_ := set $out "hosts" (dig "hosts" (list) $e) -}}
 {{- $_ := set $out "wildcardHost" (dig "wildcardHost" "" $e) -}}
 {{- $_ := set $out "hostRoots" (dig "hostRoots" (dict) $e) -}}
-{{- $_ := set $out "wildcardRoot" (dig "wildcardRoot" "none" $e) -}}
 {{- $_ := set $out "surface" (dig "surface" (list "packages") $e) -}}
 {{- $_ := set $out "tokenTypes" (dig "auth" "tokenTypes" (list "sat") $e) -}}
 {{- $_ := set $out "boundTokensOnly" (dig "auth" "boundTokensOnly" true $e) -}}
@@ -135,7 +134,6 @@ Argument: the root context. Returns YAML, "{}" without endpoints.
 {{- end -}}
 {{- with $dflt.wildcardHost -}}{{- $_ := set $d "wildcard_host" . -}}{{- end -}}
 {{- with $dflt.hostRoots -}}{{- $_ := set $d "host_roots" . -}}{{- end -}}
-{{- with $dflt.wildcardRoot -}}{{- $_ := set $d "wildcard_root" . -}}{{- end -}}
 {{- with $dflt.surface -}}{{- $_ := set $d "surface" . -}}{{- end -}}
 {{- if hasKey $dflt "auth" -}}
 {{- $a := dict -}}
@@ -156,7 +154,6 @@ Argument: the root context. Returns YAML, "{}" without endpoints.
 {{- if $e.hosts -}}{{- $_ := set $c "hosts" $e.hosts -}}{{- end -}}
 {{- if $e.wildcardHost -}}{{- $_ := set $c "wildcard_host" $e.wildcardHost -}}{{- end -}}
 {{- if $e.hostRoots -}}{{- $_ := set $c "host_roots" $e.hostRoots -}}{{- end -}}
-{{- $_ := set $c "wildcard_root" $e.wildcardRoot -}}
 {{- if $e.trustedProxies -}}{{- $_ := set $c "trusted_proxies" $e.trustedProxies -}}{{- end -}}
 {{- if $e.pool -}}{{- $_ := set $c "pool" $e.pool -}}{{- end -}}
 {{- $_ := set $c "max_in_flight" (int $e.maxInFlight) -}}

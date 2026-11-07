@@ -52,7 +52,7 @@ choose another endpoint's ceiling and a decision on a detached context keeps it 
   `repositories:read-config`, who needs no read grant to list or read a repository's configuration, is bound by the
   exposure alone (`Decider.ExposedOn` in [ceiling.go](../../internal/authz/ceiling.go), through `edge.Access.Exposed`, used by
   [repositories_api.go](../../internal/api/v1/repositories_api.go) `visibleKeys`): on such an endpoint it lists the exposed
-  repositories only, and `GET /api/v1/repositories/{key}` of another one answers the `404` of a missing one, decided before the
+  repositories only, and `GET /api/v1/projects/{projectKey}/repositories/{repoKey}` of another one answers the `404` of a missing one, decided before the
   lookup (R-EP-014; `TestR_EP_014_ExposedBindsConfigurationReaders`, `TestR_EP_014_ConfigurationReadersAreBoundByTheCeiling`).
 
 ## What a package document reveals

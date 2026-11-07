@@ -40,7 +40,7 @@ func TestR_VULN_015_RepositoryScopeIsDecidedFromTheSettingsAndTheUpstream(t *tes
 
 // A repository the evaluation does not apply to is covered: the answer never withholds less.
 func TestR_VULN_015_RepositoryCoveredDefaultsToCovered(t *testing.T) {
-	if !RepositoryCovered(nil, repository.Repository{Key: "x", Format: "raw"}) {
+	if !RepositoryCovered(nil, repository.Repository{Name: qr("x"), Format: "raw"}) {
 		t.Error("a repository without the scanning is not covered")
 	}
 }

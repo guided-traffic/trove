@@ -60,7 +60,7 @@ export abstract class CiApi {
   abstract deleteIssuer(name: string, cascade: boolean): Promise<void>;
   abstract keys(name: string): Promise<CiKeyStatus>;
   abstract refreshKeys(name: string): Promise<CiKeyStatus>;
-  /** What a project administrator sees of the issuers (Q-CI-26). */
+  /** What a project Owner sees of the issuers (Q-CI-26). */
   abstract projectIssuers(project: string): Promise<readonly CiIssuerChoice[]>;
 
   /** In evaluation order. With a project: the project's mappings of every issuer; without: the system tier's of `issuer`. */

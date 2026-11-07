@@ -71,7 +71,7 @@ func newVirtualEnv(t *testing.T) *venv {
 }
 
 // vfeed is the v3 root of a repository.
-func vfeed(repo string) string { return "/api/nuget/" + repo + "/v3/" }
+func vfeed(repo string) string { return "/api/nuget/it/" + repo + "/v3/" }
 
 func (e *venv) at(r *testenv.Replica, repo, path, token string, hdr ...string) testenv.Answer {
 	e.t.Helper()
@@ -226,7 +226,7 @@ func TestR_NUGET_019_PublishingThroughAVirtualRepositoryGoesToItsDeploymentTarge
 	if e.files(vA, "acme.widgets", "1.4.0") != 2 {
 		t.Errorf("%d files in the target, want the package and the .nuspec", e.files(vA, "acme.widgets", "1.4.0"))
 	}
-	if ans := e.st.Do(a, "GET", "/files/"+vA+"/acme.widgets/1.4.0/acme.widgets.1.4.0.nupkg", e.tokDev, nil); ans.Status != 200 || !bytes.Equal(ans.Body, pkgA) {
+	if ans := e.st.Do(a, "GET", "/files/it/"+vA+"/acme.widgets/1.4.0/acme.widgets.1.4.0.nupkg", e.tokDev, nil); ans.Status != 200 || !bytes.Equal(ans.Body, pkgA) {
 		t.Errorf("/files/ of the target: %d", ans.Status)
 	}
 	// The identical bytes again are a replay, as on the target itself.
@@ -481,7 +481,7 @@ func TestR_NUGET_018_SearchMergesTheLocalMembers(t *testing.T) {
 func TestR_NUGET_001_AVirtualRepositoryOfTheFormatCanBeCreatedThroughTheManagementAPI(t *testing.T) {
 	e := newVirtualEnv(t)
 	a := e.replica("web-a")
-	create := e.st.Do(a, "POST", "/api/v1/repositories", e.tokAdmin, map[string]any{
+	create := e.st.Do(a, "POST", "/api/v1/projects/it/repositories", e.tokAdmin, map[string]any{
 		"key": "nuget-made", "class": "virtual", "format": "nuget",
 		"virtual": map[string]any{"members": []string{vA, vB}, "deployTarget": vA},
 	})
@@ -492,7 +492,7 @@ func TestR_NUGET_001_AVirtualRepositoryOfTheFormatCanBeCreatedThroughTheManageme
 	if idx.Status != 200 || !strings.Contains(string(idx.Body), feedBase+vfeed("nuget-made")+"package") {
 		t.Errorf("index %d %s", idx.Status, idx.Body)
 	}
-	if bad := e.st.Do(a, "POST", "/api/v1/repositories", e.tokAdmin, map[string]any{
+	if bad := e.st.Do(a, "POST", "/api/v1/projects/it/repositories", e.tokAdmin, map[string]any{
 		"key": "nuget-bad", "class": "virtual", "format": "nuget", "nuget": map[string]any{"deleteMode": "delete"},
 		"virtual": map[string]any{"members": []string{vA}},
 	}); bad.Status != 422 {

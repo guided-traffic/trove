@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/remote"
@@ -71,7 +73,7 @@ func (f *Format) runRemoteSearch(ctx context.Context, rq *formats.Request, st St
 // search (R-NUGET-018 step 1) with the patterns the merge applies to the member (admits) and the
 // request's scan budget.
 func (f *Format) searchRemoteMember(ctx context.Context, rq *formats.Request, st Store, m formats.PlannedMember, p search.Params, admits func(string) bool, budget *scanBudget) ([]rows.SearchHit, int, error) {
-	call, err := memberRequest(rq, m.Member.Key)
+	call, err := memberRequest(rq, m.Member.Name)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -82,7 +84,7 @@ func (f *Format) searchRemoteMember(ctx context.Context, rq *formats.Request, st
 // remoteSearch answers a search of one remote: forwarded when it may be, else, and when the
 // upstream cannot be asked, from the remote's cache.
 func (f *Format) remoteSearch(ctx context.Context, s searchSource, st Store, p search.Params) ([]rows.SearchHit, int, error) {
-	scope, err := s.rq.Host.Resolver().ReadScope(ctx, s.rq, []string{s.ref.Key})
+	scope, err := s.rq.Host.Resolver().ReadScope(ctx, s.rq, []qname.Repo{s.ref.Name})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -96,7 +98,7 @@ func (f *Format) remoteSearch(ctx context.Context, s searchSource, st Store, p s
 			return hits, total, err
 		}
 	}
-	return searchRepo(ctx, st, scope, searchTarget{key: s.ref.Key, id: s.ref.ID, admits: s.admits}, p, s.budget)
+	return searchRepo(ctx, st, scope, searchTarget{key: s.ref.Name, id: s.ref.ID, admits: s.admits}, p, s.budget)
 }
 
 // mayForward decides whether a query goes to the upstream (R-NUGET-016, Q-NUGET-79): not when the
@@ -116,7 +118,7 @@ func (f *Format) mayForward(ctx context.Context, s searchSource, p search.Params
 			return false, err
 		}
 		if away {
-			f.replicaOf(s.rq.Host).search.withheldQuery(s.ref.Key)
+			f.replicaOf(s.rq.Host).search.withheldQuery(s.ref.Name.String())
 			return false, nil
 		}
 	}
@@ -180,9 +182,9 @@ func (f *Format) forwardSearch(ctx context.Context, s searchSource, scope format
 	case isInternalFault(err):
 		return nil, 0, false, err
 	}
-	rep.search.forwardFailed(s.ref.Key)
+	rep.search.forwardFailed(s.ref.Name.String())
 	logOf(s.rq).Info("the forwarded search of a NuGet remote failed; the remote answers from its cache",
-		"repo", s.ref.Key, "error", err)
+		"repo", s.ref.Name, "error", err)
 	return nil, 0, false, nil
 }
 
@@ -344,11 +346,11 @@ func (f *Format) forwardedHit(ctx context.Context, s searchSource, scope formats
 			return rows.SearchHit{}, false, err
 		}
 	}
-	switch scope.Shape(s.ref.Key) {
+	switch scope.Shape(s.ref.Name) {
 	case formats.ReadAll:
 		return h, true, nil
 	case formats.ReadRows:
-		kept, ok := readableOnly(h, func(v string) bool { return scope.MayRead(s.ref.Key, h.LowerID, v) })
+		kept, ok := readableOnly(h, func(v string) bool { return scope.MayRead(s.ref.Name, h.LowerID, v) })
 		if !ok || !matchedOnReadable(h, kept, terms) {
 			return rows.SearchHit{}, false, nil
 		}

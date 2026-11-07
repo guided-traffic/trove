@@ -37,6 +37,28 @@ describe('The vulnerability service (R-VULN-020, R-VULN-021)', () => {
     http.verify();
   });
 
+  it('Q-UI-130 the project filter, the advisory search and the package prefix reach the list, the summary and the trend', async () => {
+    const { api, http } = setup();
+    const list = api.findings({ project: ['shop', 'web'], advisory: 'CVE-2021-23337', packagePrefix: 'lod' })(null, 25);
+    const listReq = http.expectOne((r) => r.url === '/api/v1/vulnerabilities/findings');
+    expect(listReq.request.params.getAll('project')).toEqual(['shop', 'web']);
+    expect(listReq.request.params.get('advisory')).toBe('CVE-2021-23337');
+    expect(listReq.request.params.get('packagePrefix')).toBe('lod');
+    listReq.flush({ items: [], nextCursor: null });
+    await list;
+    const summary = api.summary({ project: ['shop'] });
+    const summaryReq = http.expectOne((r) => r.url === '/api/v1/vulnerabilities/summary');
+    expect(summaryReq.request.params.getAll('project')).toEqual(['shop']);
+    summaryReq.flush({});
+    await summary;
+    const trend = api.trend({ project: ['shop'], from: '2026-10-01' });
+    const trendReq = http.expectOne((r) => r.url === '/api/v1/vulnerabilities/trend');
+    expect(trendReq.request.params.getAll('project')).toEqual(['shop']);
+    trendReq.flush({});
+    await trend;
+    http.verify();
+  });
+
   it('R-VULN-013 a triage is a merge patch with the loaded ETag, and the answer carries the new one', async () => {
     const { api, http } = setup();
     const pending = api.triage('f1', { status: 'dismissed', dismissalReason: 'not_exploitable', comment: 'x' }, '"3"');

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 	"github.com/guided-traffic/trove/internal/bastion/metrics"
-	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // TestR_BAS_003_OnlyThePackagePathFamiliesReachTheReadFlow sends every row of INV-6's path table: only
@@ -31,9 +32,9 @@ func TestR_BAS_003_OnlyThePackagePathFamiliesReachTheReadFlow(t *testing.T) {
 		{"/api/", false},
 		{"/api/npm", false},
 		{"/api/npm/", false},
-		{"/api/npm/npm-all/lodash", true},
-		{"/api/nuget/nuget-all/v3/index.json", true},
-		{"/files/raw-all/a/b.txt", true},
+		{"/api/npm/web/npm-all/lodash", true},
+		{"/api/nuget/web/nuget-all/v3/index.json", true},
+		{"/files/web/raw-all/a/b.txt", true},
 		{"/files/", false},
 		{"/files", false},
 		{"/auth/oidc/corp/start", false},
@@ -69,9 +70,9 @@ func TestR_BAS_003_OnlyThePackagePathFamiliesReachTheReadFlow(t *testing.T) {
 
 func TestR_BAS_003_ACookieIsIgnoredAndNeverForwarded(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.site.artifacts["/api/npm/npm-all/lodash"] = []byte("doc")
+	s.site.artifacts["/api/npm/web/npm-all/lodash"] = []byte("doc")
 	// anonymous access is on, so a cookie-only request is an anonymous request
-	w := s.get("/api/npm/npm-all/lodash", "Cookie", "__Host-trv_session=abc")
+	w := s.get("/api/npm/web/npm-all/lodash", "Cookie", "__Host-trv_session=abc")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d %s", w.Code, w.Body)
 	}
@@ -85,7 +86,7 @@ func TestR_BAS_003_ACookieIsIgnoredAndNeverForwarded(t *testing.T) {
 	}
 	// with anonymous access off the cookie authenticates nobody
 	s.setAnonymous(false)
-	w = s.get("/api/npm/npm-all/other", "Cookie", "__Host-trv_session=abc")
+	w = s.get("/api/npm/web/npm-all/other", "Cookie", "__Host-trv_session=abc")
 	if w.Code != http.StatusUnauthorized || problemCode(w) != "credentials_required" {
 		t.Fatalf("cookie only with anonymous off: %d %s", w.Code, w.Body)
 	}
@@ -97,7 +98,7 @@ func TestR_BAS_018_TheHostIsTheHostOfTheBaseURL(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	cases := []struct{ host string }{{"trove.example.com"}, {"203.0.113.9"}, {"[2001:db8::1]"}, {"[2001:db8::1]:8443"}, {""}, {"packages.example.com.evil.net"}}
 	for _, c := range cases {
-		r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/lodash", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/npm/web/npm-all/lodash", nil)
 		r.RemoteAddr = "203.0.113.7:1"
 		r.Host = c.host
 		w := httptest.NewRecorder()
@@ -111,7 +112,7 @@ func TestR_BAS_018_TheHostIsTheHostOfTheBaseURL(t *testing.T) {
 	}
 	// the host of the base URL, with a port and in capitals, is the Bastion's
 	for _, host := range []string{"packages.example.com", "Packages.Example.COM:8443"} {
-		r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/lodash", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/npm/web/npm-all/lodash", nil)
 		r.RemoteAddr = "203.0.113.7:1"
 		r.Host = host
 		w := httptest.NewRecorder()
@@ -125,7 +126,7 @@ func TestR_BAS_018_TheHostIsTheHostOfTheBaseURL(t *testing.T) {
 func TestR_BAS_018_AForwardedHostCountsOnlyFromATrustedProxy(t *testing.T) {
 	s := newSiteHarness(t, options{cfg: []func(*configT){func(c *configT) { c.Server.TrustedProxies = []string{"10.244.0.0/16"} }}})
 	do := func(remote string) int {
-		r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/lodash", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/npm/web/npm-all/lodash", nil)
 		r.Host = "ingress.internal"
 		r.RemoteAddr = remote
 		r.Header.Set("X-Forwarded-Host", "packages.example.com")
@@ -158,13 +159,18 @@ func TestR_BAS_018_TheBlockListAnswersBeforeThePathIsRead(t *testing.T) {
 }
 
 func TestR_BAS_018_TheKeyRuleIsTheOneOfINV5(t *testing.T) {
-	if keyPattern.String() != repository.KeyPattern {
-		t.Fatalf("keyPattern %q differs from repository.KeyPattern %q", keyPattern, repository.KeyPattern)
+	// The Bastion and the main installation read keys through the one grammar of qname; the pattern of INV-5 is the oracle here.
+	kp := regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
+	for _, k := range []string{"a", "ab", "npm-all", "a.b_c-d", "-npm", "NPM", strings.Repeat("a", 64), strings.Repeat("a", 65), "a~cache", "a b"} {
+		if kp.MatchString(k) != qname.ValidKey(k) {
+			t.Fatalf("qname.ValidKey(%q) = %v differs from the key pattern of INV-5", k, qname.ValidKey(k))
+		}
 	}
 	s := newSiteHarness(t, options{})
 	for _, p := range []string{
-		"/api/npm/NPM-ALL/lodash", "/api/npm/-npm/lodash", "/api/npm/n/lodash", "/api/npm/" + strings.Repeat("a", 65) + "/x",
-		"/api/npm/npm%2Dall/lodash", "/files/Raw/x", "/api/npm/npm%20all/x",
+		"/api/npm/web/NPM-ALL/lodash", "/api/npm/web/-npm/lodash", "/api/npm/web/n/lodash", "/api/npm/web/" + strings.Repeat("a", 65) + "/x",
+		"/api/npm/web/npm%2Dall/lodash", "/files/web/Raw/x", "/api/npm/web/npm%20all/x", "/api/npm/Web/npm-all/x", "/api/npm/w/npm-all/x",
+		"/api/npm/web", "/api/npm/web/", "/files/web", "/files/raw-all/x",
 	} {
 		w := s.get(p, "Authorization", bearer(s.full))
 		if w.Code != http.StatusNotFound || problemCode(w) != "bastion_not_served" {
@@ -178,13 +184,13 @@ func TestR_BAS_018_TheKeyRuleIsTheOneOfINV5(t *testing.T) {
 
 func TestR_BAS_018_TheCacheKeyHoldsThePathQueryAndTheVaryHeaders(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.site.docs["/api/npm/npm-all/lodash"] = "doc"
+	s.site.docs["/api/npm/web/npm-all/lodash"] = "doc"
 	get := func(accept string) {
 		hdr := []string{"Authorization", bearer(s.full)}
 		if accept != "" {
 			hdr = append(hdr, "Accept", accept)
 		}
-		if w := s.get("/api/npm/npm-all/lodash", hdr...); w.Code != http.StatusOK {
+		if w := s.get("/api/npm/web/npm-all/lodash", hdr...); w.Code != http.StatusOK {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	}
@@ -198,8 +204,8 @@ func TestR_BAS_018_TheCacheKeyHoldsThePathQueryAndTheVaryHeaders(t *testing.T) {
 		t.Fatalf("%d cache entries, want one per Accept variant (2) and the plain-key entry", n)
 	}
 	// the path and query exactly as received: two spellings are two keys
-	a := s.e.keyFor("/api/npm/npm-all/x?a=%2F", nil)
-	b := s.e.keyFor("/api/npm/npm-all/x?a=/", nil)
+	a := s.e.keyFor("/api/npm/web/npm-all/x?a=%2F", nil)
+	b := s.e.keyFor("/api/npm/web/npm-all/x?a=/", nil)
 	if a == b {
 		t.Fatal("percent-encoding was normalized away from the cache key")
 	}
@@ -207,7 +213,7 @@ func TestR_BAS_018_TheCacheKeyHoldsThePathQueryAndTheVaryHeaders(t *testing.T) {
 
 func TestR_BAS_018_AMethodOtherThanGetAndHeadIsNotTheReadFlow(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	w := s.do(http.MethodOptions, "/api/npm/npm-all/lodash", nil, "Authorization", bearer(s.full))
+	w := s.do(http.MethodOptions, "/api/npm/web/npm-all/lodash", nil, "Authorization", bearer(s.full))
 	if w.Code != http.StatusMethodNotAllowed || problemCode(w) != "method_not_allowed" || w.Header().Get("Allow") != "GET, HEAD" {
 		t.Fatalf("OPTIONS: %d %s %v", w.Code, w.Body, w.Header())
 	}
@@ -220,7 +226,7 @@ func TestR_BAS_018_TheLimitsComeBeforeTheCredentials(t *testing.T) {
 	g := newGuard()
 	g.request = guard.Verdict{Status: 429, Code: iface.CodeRateLimited, RetryAfter: 3 * time.Second, Reason: metrics.RefusedRateLimited}
 	s := newSiteHarness(t, options{guard: g})
-	w := s.get("/api/npm/npm-all/lodash", "Authorization", "Bearer not-a-token")
+	w := s.get("/api/npm/web/npm-all/lodash", "Authorization", "Bearer not-a-token")
 	if w.Code != http.StatusTooManyRequests || problemCode(w) != "rate_limited" || w.Header().Get("Retry-After") != "3" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -247,7 +253,7 @@ func TestR_BAS_019_AMalformedTokenAnswers401WithoutARequest(t *testing.T) {
 		"a broken Basic":      "Basic !!!",
 		"Basic without colon": "Basic " + base64.StdEncoding.EncodeToString([]byte("justaname")),
 	} {
-		w := s.get("/api/npm/npm-all/lodash", "Authorization", auth)
+		w := s.get("/api/npm/web/npm-all/lodash", "Authorization", auth)
 		if w.Code != http.StatusUnauthorized || problemCode(w) != "invalid_token" || w.Header().Get("WWW-Authenticate") != `Basic realm="trove"` {
 			t.Errorf("%s: %d %s %v", name, w.Code, w.Body, w.Header())
 		}
@@ -268,7 +274,7 @@ func TestR_BAS_019_AMalformedTokenAnswers401WithoutARequest(t *testing.T) {
 
 func TestR_BAS_019_ABrowserGetsTheBearerChallenge(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	w := s.get("/api/npm/npm-all/lodash", "Authorization", "Bearer x", "Sec-Fetch-Mode", "navigate")
+	w := s.get("/api/npm/web/npm-all/lodash", "Authorization", "Bearer x", "Sec-Fetch-Mode", "navigate")
 	if w.Header().Get("WWW-Authenticate") != `Bearer realm="trove"` {
 		t.Fatalf("%v", w.Header())
 	}
@@ -279,13 +285,13 @@ func TestR_BAS_019_PatSatAndCitAreAcceptedBstIsNot(t *testing.T) {
 		s := newSiteHarness(t, options{})
 		tok := newToken(t, typ)
 		s.site.addReader(tok, &reader{id: string(typ), read: iface.ReadFull})
-		s.site.artifacts["/api/npm/npm-all/x"] = []byte("x")
-		if w := s.get("/api/npm/npm-all/x", "Authorization", bearer(tok)); w.Code != http.StatusOK {
+		s.site.artifacts["/api/npm/web/npm-all/x"] = []byte("x")
+		if w := s.get("/api/npm/web/npm-all/x", "Authorization", bearer(tok)); w.Code != http.StatusOK {
 			t.Errorf("%s: %d %s", typ, w.Code, w.Body)
 		}
 	}
 	s := newSiteHarness(t, options{})
-	if w := s.get("/api/npm/npm-all/x", "Authorization", bearer(newToken(t, token.TypeBST))); w.Code != http.StatusUnauthorized {
+	if w := s.get("/api/npm/web/npm-all/x", "Authorization", bearer(newToken(t, token.TypeBST))); w.Code != http.StatusUnauthorized {
 		t.Errorf("bst: %d", w.Code)
 	}
 }
@@ -317,9 +323,9 @@ func TestR_BAS_019_TheSyntaxCheckAgreesWithTheMainInstallationsFormat(t *testing
 
 func TestR_BAS_019_BasicWithTheTokenAsPasswordIsAcceptedAndForwardedUnchanged(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.site.artifacts["/api/npm/npm-all/x"] = []byte("x")
+	s.site.artifacts["/api/npm/web/npm-all/x"] = []byte("x")
 	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte("anyone:"+s.full))
-	w := s.get("/api/npm/npm-all/x", "Authorization", auth)
+	w := s.get("/api/npm/web/npm-all/x", "Authorization", auth)
 	if w.Code != http.StatusOK {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -330,14 +336,14 @@ func TestR_BAS_019_BasicWithTheTokenAsPasswordIsAcceptedAndForwardedUnchanged(t 
 
 func TestR_BAS_019_TheNuGetAPIKeyIsNeverAReadCredential(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.site.artifacts["/api/nuget/npm-all/x"] = []byte("x")
+	s.site.artifacts["/api/nuget/web/npm-all/x"] = []byte("x")
 	s.setAnonymous(false)
-	w := s.get("/api/nuget/npm-all/x", "X-NuGet-ApiKey", s.full)
+	w := s.get("/api/nuget/web/npm-all/x", "X-NuGet-ApiKey", s.full)
 	if w.Code != http.StatusUnauthorized || problemCode(w) != "credentials_required" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	s.setAnonymous(true)
-	if w = s.get("/api/nuget/npm-all/x", "X-NuGet-ApiKey", s.full); w.Code != http.StatusOK {
+	if w = s.get("/api/nuget/web/npm-all/x", "X-NuGet-ApiKey", s.full); w.Code != http.StatusOK {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	for _, r := range s.main.requests() {
@@ -349,10 +355,10 @@ func TestR_BAS_019_TheNuGetAPIKeyIsNeverAReadCredential(t *testing.T) {
 
 func TestR_BAS_019_AnonymousExactlyWhenTheMainInstallationAdmitsIt(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.site.artifacts["/api/npm/npm-all/x"] = []byte("x")
+	s.site.artifacts["/api/npm/web/npm-all/x"] = []byte("x")
 	s.setAnonymous(false)
 	for i := 0; i < 1000; i++ {
-		if w := s.get("/api/npm/npm-all/x"); w.Code != http.StatusUnauthorized || problemCode(w) != "credentials_required" || w.Header().Get("WWW-Authenticate") != `Basic realm="trove"` {
+		if w := s.get("/api/npm/web/npm-all/x"); w.Code != http.StatusUnauthorized || problemCode(w) != "credentials_required" || w.Header().Get("WWW-Authenticate") != `Basic realm="trove"` {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	}
@@ -364,11 +370,11 @@ func TestR_BAS_019_AnonymousExactlyWhenTheMainInstallationAdmitsIt(t *testing.T)
 	}
 	// switched on: the next anonymous request is served, under the key anonymous, shared by every anonymous caller
 	s.setAnonymous(true)
-	if w := s.get("/api/npm/npm-all/x"); w.Code != http.StatusOK {
+	if w := s.get("/api/npm/web/npm-all/x"); w.Code != http.StatusOK {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	before := s.main.count()
-	r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/x", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/npm/web/npm-all/x", nil)
 	r.RemoteAddr = "198.51.100.99:1"
 	r.Host = "packages.example.com"
 	w := httptest.NewRecorder()
@@ -381,8 +387,8 @@ func TestR_BAS_019_AnonymousExactlyWhenTheMainInstallationAdmitsIt(t *testing.T)
 func TestR_BAS_019_AnIPv6AddressCountsAsItsSlash64AndTheMainInstallationGetsTheAddress(t *testing.T) {
 	g := newGuard()
 	s := newSiteHarness(t, options{guard: g})
-	s.site.artifacts["/api/npm/npm-all/x"] = []byte("x")
-	r := httptest.NewRequest(http.MethodGet, "/api/npm/npm-all/x", nil)
+	s.site.artifacts["/api/npm/web/npm-all/x"] = []byte("x")
+	r := httptest.NewRequest(http.MethodGet, "/api/npm/web/npm-all/x", nil)
 	r.RemoteAddr = "[2001:db8:1:2:aaaa:bbbb:cccc:dddd]:1"
 	r.Host = "packages.example.com"
 	w := httptest.NewRecorder()
@@ -400,8 +406,8 @@ func TestR_BAS_019_AnIPv6AddressCountsAsItsSlash64AndTheMainInstallationGetsTheA
 
 func TestR_BAS_019_TheCredentialKeyIsTheSHA256AndNoTokenIsKept(t *testing.T) {
 	s := newSiteHarness(t, options{})
-	s.site.artifacts["/api/npm/npm-all/x"] = []byte("x")
-	s.get("/api/npm/npm-all/x", "Authorization", bearer(s.full))
+	s.site.artifacts["/api/npm/web/npm-all/x"] = []byte("x")
+	s.get("/api/npm/web/npm-all/x", "Authorization", bearer(s.full))
 	if s.e.answers.credential(t.Context(), credentialKey(s.full)) == nil {
 		t.Fatal("no credential answer under the SHA-256 of the token")
 	}
@@ -415,17 +421,17 @@ func TestR_BAS_019_TheCredentialKeyIsTheSHA256AndNoTokenIsKept(t *testing.T) {
 func TestR_BAS_019_TheFailedAuthenticationTimeoutRefusesUnverifiedCredentialsOnly(t *testing.T) {
 	g := newGuard()
 	s := newSiteHarness(t, options{guard: g})
-	s.site.artifacts["/api/npm/npm-all/x"] = []byte("x")
+	s.site.artifacts["/api/npm/web/npm-all/x"] = []byte("x")
 	// $FULL is known
-	if w := s.get("/api/npm/npm-all/x", "Authorization", bearer(s.full)); w.Code != http.StatusOK {
+	if w := s.get("/api/npm/web/npm-all/x", "Authorization", bearer(s.full)); w.Code != http.StatusOK {
 		t.Fatal(w.Code)
 	}
 	g.timeout = guard.Verdict{Status: 429, Code: iface.CodeAuthTimeout, RetryAfter: 15 * time.Minute, Reason: metrics.RefusedAuthTimeout}
 	before := s.main.count()
-	if w := s.get("/api/npm/npm-all/x", "Authorization", bearer(s.full)); w.Code != http.StatusOK {
+	if w := s.get("/api/npm/web/npm-all/x", "Authorization", bearer(s.full)); w.Code != http.StatusOK {
 		t.Fatalf("a credential with a usable answer was cut off: %d", w.Code)
 	}
-	w := s.get("/api/npm/npm-all/x", "Authorization", bearer(s.part))
+	w := s.get("/api/npm/web/npm-all/x", "Authorization", bearer(s.part))
 	if w.Code != http.StatusTooManyRequests || problemCode(w) != "auth_timeout" || w.Header().Get("Retry-After") != "900" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -433,7 +439,7 @@ func TestR_BAS_019_TheFailedAuthenticationTimeoutRefusesUnverifiedCredentialsOnl
 		t.Fatal("a request in the timeout reached the main installation")
 	}
 	// anonymous requests stay anonymous requests
-	if w := s.get("/api/npm/npm-all/x"); w.Code != http.StatusOK {
+	if w := s.get("/api/npm/web/npm-all/x"); w.Code != http.StatusOK {
 		t.Fatalf("anonymous during the timeout: %d", w.Code)
 	}
 }

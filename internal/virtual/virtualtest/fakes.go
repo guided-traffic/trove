@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/virtual"
@@ -42,10 +44,10 @@ func (r *Router) Route(_ context.Context, v repository.Repository, _ repository.
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Routes++
-	out := repository.Route{Admitted: !r.NotAdmitted, Dropped: map[string]string{}, Decision: r.Decision}
+	out := repository.Route{Admitted: !r.NotAdmitted, Dropped: map[qname.Repo]string{}, Decision: r.Decision}
 	for _, m := range v.Members() {
-		if why, ok := r.Dropped[m.Key]; ok {
-			out.Dropped[m.Key] = why
+		if why, ok := r.Dropped[m.Name.Key]; ok {
+			out.Dropped[m.Name] = why
 			continue
 		}
 		out.Members = append(out.Members, m)
@@ -57,28 +59,28 @@ func (r *Router) Route(_ context.Context, v repository.Repository, _ repository.
 func (r *Router) RemoteRefused(_ context.Context, remote repository.Repository, _ string, _ *repository.Repository) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.Refused[remote.Key], nil
+	return r.Refused[remote.Name.Key], nil
 }
 
 // CoveredByOwnClaim implements virtual.Router.
 func (r *Router) CoveredByOwnClaim(_ context.Context, local repository.Repository, name string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.Covered[local.Key+"/"+name], nil
+	return r.Covered[local.Name.Key+"/"+name], nil
 }
 
 // KeepsAway implements virtual.Router.
 func (r *Router) KeepsAway(_ context.Context, _ *repository.Repository, member repository.Repository, term string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.Away[member.Key+"/"+term], nil
+	return r.Away[member.Name.Key+"/"+term], nil
 }
 
 // ExposureSet implements virtual.Router.
 func (r *Router) ExposureSet(_ context.Context, local repository.Repository, _ string) ([]repository.Exposure, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.Exposure[local.Key], nil
+	return r.Exposure[local.Name.Key], nil
 }
 
 // Remote is a virtual.Remotes that keeps its documents, caches and states in memory and records
@@ -124,7 +126,7 @@ func (f *Remote) Register(r ...repository.Repository) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, x := range r {
-		f.ids[idOf(x)] = x.Key
+		f.ids[idOf(x)] = x.Name.Key
 	}
 }
 
@@ -196,11 +198,11 @@ func (f *Remote) record(format string, args ...any) {
 func (f *Remote) Cached(_ context.Context, rc virtual.RemoteCall) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.record("cached:%s:%s", rc.Remote.Key, rc.Path)
-	if f.cached[rc.Remote.Key][rc.Path] {
+	f.record("cached:%s:%s", rc.Remote.Name.Key, rc.Path)
+	if f.cached[rc.Remote.Name.Key][rc.Path] {
 		return true, nil
 	}
-	_, ok := f.docs[docKey(rc.Remote.Key, rc.Path)]
+	_, ok := f.docs[docKey(rc.Remote.Name.Key, rc.Path)]
 	return ok, nil
 }
 
@@ -209,11 +211,11 @@ func (f *Remote) Cached(_ context.Context, rc virtual.RemoteCall) (bool, error) 
 func (f *Remote) Metadata(_ context.Context, rc virtual.RemoteCall) (*virtual.RemoteDoc, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.record("metadata:%s:%s:fill=%t", rc.Remote.Key, rc.Path, rc.MayFill)
-	if err := f.MetadataErr[rc.Remote.Key]; err != nil {
+	f.record("metadata:%s:%s:fill=%t", rc.Remote.Name.Key, rc.Path, rc.MayFill)
+	if err := f.MetadataErr[rc.Remote.Name.Key]; err != nil {
 		return nil, err
 	}
-	d := f.docs[docKey(rc.Remote.Key, rc.Path)]
+	d := f.docs[docKey(rc.Remote.Name.Key, rc.Path)]
 	if d == nil {
 		return nil, errs.E(errs.NotFound, errs.CodeNotFound, "no such package upstream")
 	}
@@ -252,10 +254,10 @@ func (f *Remote) Probe(_ context.Context, rc virtual.RemoteCall) (virtual.ProbeR
 		f.OnProbe(rc)
 	}
 	f.mu.Lock()
-	f.record("probe:%s:%s", rc.Remote.Key, rc.Path)
+	f.record("probe:%s:%s", rc.Remote.Name.Key, rc.Path)
 	f.inflight++
 	f.MaxInflight = max(f.MaxInflight, f.inflight)
-	res, delay, perr := f.probes[rc.Remote.Key], f.ProbeDelay, f.ProbeErr[rc.Remote.Key]
+	res, delay, perr := f.probes[rc.Remote.Name.Key], f.ProbeDelay, f.ProbeErr[rc.Remote.Name.Key]
 	f.mu.Unlock()
 	if delay > 0 {
 		time.Sleep(delay)
@@ -335,12 +337,12 @@ func (a *Artifacts) Calls() []string {
 func (a *Artifacts) hit(m map[string]map[string]string, tier string, mem virtual.Member, d virtual.Descriptor) (virtual.Hit, bool, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.calls = append(a.calls, tier+":"+mem.Repo.Key)
-	body, ok := m[mem.Repo.Key][d.Path]
+	a.calls = append(a.calls, tier+":"+mem.Repo.Name.Key)
+	body, ok := m[mem.Repo.Name.Key][d.Path]
 	if !ok {
 		return nil, false, nil
 	}
-	failure := a.HitErr[mem.Repo.Key]
+	failure := a.HitErr[mem.Repo.Name.Key]
 	return func(w http.ResponseWriter) error {
 		if failure != nil {
 			return failure
@@ -358,11 +360,11 @@ func (a *Artifacts) Local(_ context.Context, mem virtual.Member, d virtual.Descr
 // RemoteCached implements virtual.Tiers.
 func (a *Artifacts) RemoteCached(_ context.Context, mem virtual.Member, d virtual.Descriptor) (virtual.Hit, bool, error) {
 	a.mu.Lock()
-	err := a.CachedErr[mem.Repo.Key]
+	err := a.CachedErr[mem.Repo.Name.Key]
 	a.mu.Unlock()
 	if err != nil {
 		a.mu.Lock()
-		a.calls = append(a.calls, "cached:"+mem.Repo.Key)
+		a.calls = append(a.calls, "cached:"+mem.Repo.Name.Key)
 		a.mu.Unlock()
 		return nil, false, err
 	}
@@ -372,9 +374,9 @@ func (a *Artifacts) RemoteCached(_ context.Context, mem virtual.Member, d virtua
 // RemoteFetch implements virtual.Tiers.
 func (a *Artifacts) RemoteFetch(_ context.Context, mem virtual.Member, d virtual.Descriptor, w http.ResponseWriter) (bool, error) {
 	a.mu.Lock()
-	a.calls = append(a.calls, "fetch:"+mem.Repo.Key)
-	err, mid := a.FetchErr[mem.Repo.Key], a.FailAfterBytes[mem.Repo.Key]
-	body, ok := a.UpstreamItems[mem.Repo.Key][d.Path]
+	a.calls = append(a.calls, "fetch:"+mem.Repo.Name.Key)
+	err, mid := a.FetchErr[mem.Repo.Name.Key], a.FailAfterBytes[mem.Repo.Name.Key]
+	body, ok := a.UpstreamItems[mem.Repo.Name.Key][d.Path]
 	a.mu.Unlock()
 	switch {
 	case err != nil:

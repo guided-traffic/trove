@@ -65,7 +65,7 @@ func TestR_NPM_007_PublishStoresTheVersion(t *testing.T) {
 				t.Fatalf("properties %q, want %q", props, want)
 			}
 			// the raw view serves the tarball (R-NPM-006 criterion)
-			raw := e.st.Do(a, "GET", "/files/npm-local/"+path, e.tokA, nil)
+			raw := e.st.Do(a, "GET", "/files/it/npm-local/"+path, e.tokA, nil)
 			if raw.Status != 200 || len(raw.Body) == 0 {
 				t.Fatalf("/files: %d", raw.Status)
 			}

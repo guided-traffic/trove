@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
@@ -21,11 +23,11 @@ func (lower) Normalize(name string) (string, bool) { return strings.ToLower(name
 func testCatalog() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "generic", Classes: []Class{Local}, Layout: "generic", ProtocolBasePath: "/files/{key}/",
+		ID: "generic", Classes: []Class{Local}, Layout: "generic", ProtocolBasePath: "/files/{project}/{key}/",
 		PatternSubject: SubjectPath,
 	}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "pkgfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pkgfmt", ProtocolBasePath: "/api/pkgfmt/{key}/",
+		ID: "pkgfmt", Classes: []Class{Local, Remote, Virtual}, Layout: "pkgfmt", ProtocolBasePath: "/api/pkgfmt/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PriorityMembers: true, PinsAndClaims: true,
 	}, Names: lower{}})
 	return r
@@ -81,11 +83,6 @@ func TestValidateKeys(t *testing.T) {
 	t.Run("R-REPO-002 an update does not look at the key", func(t *testing.T) {
 		if _, _, err := decodeValidate(t, `{"key":"A","class":"local","format":"generic"}`, false); err != nil {
 			t.Fatal(err)
-		}
-	})
-	t.Run("R-REPO-002 the key pattern of the contract is the one of INV-5", func(t *testing.T) {
-		if KeyPattern != `^[a-z0-9][a-z0-9._-]{1,63}$` {
-			t.Fatal(KeyPattern)
 		}
 	})
 }
@@ -288,8 +285,8 @@ func TestConsumerView(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw, _ := json.Marshal(d.ConsumerView("/files/{key}/"))
-		want := `{"key":"files","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/files/"]}`
+		raw, _ := json.Marshal(d.ConsumerView("/files/{project}/{key}/", qname.Repo{Project: "it", Key: "files"}))
+		want := `{"key":"files","project":"it","class":"local","format":"generic","description":"d","layout":"generic","addresses":["/files/it/files/"]}`
 		if string(raw) != want {
 			t.Fatalf("view = %s", raw)
 		}

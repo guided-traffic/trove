@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/packages/view"
+	"github.com/guided-traffic/trove/internal/qname"
+
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
@@ -59,28 +62,28 @@ func (s *Server) vulnRequest(r *http.Request, rep *report.Service) (context.Cont
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	ctx, acc, err := requestHolder(ctx, s.o.Vuln.Decider, sn.Keys()...)
+	ctx, acc, err := requestHolder(ctx, s.o.Vuln.Decider, view.Names(sn.Keys())...)
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
 	if acc == nil {
 		return ctx, nil, report.Caller{}, unavailable("The decision point")
 	}
-	rs, err := s.o.Vuln.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", sn.Topo.Physical())
+	rs, err := s.o.Vuln.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, qname.Repo{}, view.Names(sn.Topo.Physical()))
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	virtuals, err := acc.Readable(ctx, sn.Topo.Virtual())
+	virtuals, err := acc.Readable(ctx, view.Names(sn.Topo.Virtual()))
 	if err != nil {
 		return ctx, nil, report.Caller{}, err
 	}
-	return ctx, sn, report.Caller{Reads: rs, VirtualReadable: virtuals}, nil
+	return ctx, sn, report.Caller{Reads: rs, VirtualReadable: view.Strings(virtuals)}, nil
 }
 
 // findingFilters are the query parameters of the list and of the export (R-VULN-020).
 func findingFilters() []string {
 	return []string{
-		"repository", "format", "package", "packagePrefix", "version", "advisory", "severity", "status", "kind",
+		"project", "repository", "format", "package", "packagePrefix", "version", "advisory", "severity", "status", "kind",
 		"knownExploited", "fixAvailable", "blocked", "blockReason", "detectedFrom", "detectedTo", "q",
 	}
 }
@@ -145,10 +148,10 @@ func findingFilter(lq ListQuery, sn *report.Snapshot, caller report.Caller) (sto
 		Formats: splitValues(lq.Filter["format"]), Packages: splitValues(lq.Filter["package"]), PackagePrefix: lq.First("packagePrefix"),
 		Versions: splitValues(lq.Filter["version"]), Advisory: lq.First("advisory"), Q: lq.First("q"),
 	}
-	if reps, ok := lq.Filter["repository"]; ok {
-		f.Repos, f.HasRepos = sn.ExpandFor(caller, splitValues(reps)), true
-	}
 	var err error
+	if f.Repos, f.HasRepos, err = findingRepos(lq, sn, caller); err != nil {
+		return f, err
+	}
 	if f.Severities, err = queryManyOf(lq, "severity", severityNames()); err != nil {
 		return f, err
 	}
@@ -184,11 +187,49 @@ func findingFilter(lq ListQuery, sn *report.Snapshot, caller report.Caller) (sto
 	return f, nil
 }
 
+// findingRepos resolves the filters repository and project to the physical repositories a statement is
+// narrowed to (R-VULN-020, R-VULN-021): a repository is a qualified name (a bare key is 400), a project stands for
+// its physical repositories, and the two together intersect. A project that does not exist, or that the caller
+// cannot read, gives an empty set, never a 404: the answer is that of a project without findings.
+func findingRepos(lq ListQuery, sn *report.Snapshot, caller report.Caller) (ids []int64, has bool, err error) {
+	names, has, err := findingRepoNames(lq, sn, caller)
+	return sn.IDs(names), has, err
+}
+
+// findingRepoNames is findingRepos by qualified name.
+func findingRepoNames(lq ListQuery, sn *report.Snapshot, caller report.Caller) (repos []string, has bool, err error) {
+	reps, hasRepo := lq.Filter["repository"]
+	projects := splitValues(lq.Filter["project"])
+	for _, key := range splitValues(reps) {
+		if _, perr := qname.ParseRepo(key); perr != nil {
+			return nil, false, badParam("repository", "must be a repository name <project>/<key>")
+		}
+	}
+	for _, key := range projects {
+		if !qname.ValidProjectKey(key) {
+			return nil, false, badParam("project", "must be a project key")
+		}
+	}
+	if hasRepo {
+		repos, has = sn.ExpandFor(caller, splitValues(reps)), true
+	}
+	if len(projects) == 0 {
+		return repos, has, nil
+	}
+	var inProject []string
+	for _, key := range sn.Topo.Physical() {
+		if n, perr := qname.ParseRepo(key); perr == nil && slices.Contains(projects, n.Project) && (!has || slices.Contains(repos, key)) {
+			inProject = append(inProject, key)
+		}
+	}
+	return inProject, true, nil
+}
+
 func findingOrder(lq ListQuery) store.Order { return store.Order{Sort: lq.Sort, Desc: lq.Desc} }
 
 func toFinding(f report.Finding) gen.VulnerabilityFinding {
 	out := gen.VulnerabilityFinding{
-		Id: parseUUID(f.ID), Repository: f.Repository, Format: f.Format, Package: f.Package, Version: f.Version, Advisory: f.Advisory,
+		Id: parseUUID(f.ID), Project: projectOf(f.Repository), Repository: f.Repository, Format: f.Format, Package: f.Package, Version: f.Version, Advisory: f.Advisory,
 		Aliases: orEmpty(f.Aliases), Kind: gen.VulnerabilityKind(f.Kind), Summary: f.Summary, Severity: gen.VulnerabilitySeverity(f.Severity),
 		Cvss: toCvss(f.CVSSVersion, f.CVSSVector, f.CVSSScore), KnownExploited: f.KnownExploited, FixAvailable: f.FixAvailable,
 		FixedVersions: orEmpty(f.FixedVersions), Status: gen.VulnerabilityStatus(f.Status), Blocked: f.Blocked,
@@ -208,6 +249,12 @@ func toFinding(f report.Finding) gen.VulnerabilityFinding {
 		out.BlockReason = &b
 	}
 	return out
+}
+
+// projectOf is the project key of a qualified repository name.
+func projectOf(repository string) string {
+	project, _, _ := strings.Cut(repository, "/")
+	return project
 }
 
 // toCvss is the vector a severity was scored from; a negative score and an empty vector are an advisory without one.
@@ -672,7 +719,7 @@ func (s *Server) GetVulnerabilityAdvisory(w http.ResponseWriter, r *http.Request
 func exportHeader() []string {
 	return []string{
 		"findingId", "status", "severity", "cvssScore", "cvssVersion", "kind", "knownExploited", "advisory", "aliases",
-		"summary", "format", "repository", "package", "version", "fixAvailable", "fixedVersions", "blocked", "blockReason", "detectedAt",
+		"summary", "format", "project", "repository", "package", "version", "fixAvailable", "fixedVersions", "blocked", "blockReason", "detectedAt",
 		"resolvedAt", "dismissalReason",
 	}
 }
@@ -692,7 +739,7 @@ func exportRow(f report.Finding) []string {
 	}
 	row := []string{
 		f.ID, string(f.Status), string(f.Severity), score, f.CVSSVersion, string(f.Kind), strconv.FormatBool(f.KnownExploited),
-		f.Advisory, strings.Join(f.Aliases, " "), f.Summary, f.Format, f.Repository, f.Package, f.Version, strconv.FormatBool(f.FixAvailable),
+		f.Advisory, strings.Join(f.Aliases, " "), f.Summary, f.Format, projectOf(f.Repository), f.Repository, f.Package, f.Version, strconv.FormatBool(f.FixAvailable),
 		strings.Join(f.FixedVersions, " "), strconv.FormatBool(f.Blocked), reason, f.DetectedAt.UTC().Format(time.RFC3339), resolved, f.DismissalReason,
 	}
 	for i, c := range row {

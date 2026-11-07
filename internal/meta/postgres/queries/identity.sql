@@ -270,6 +270,14 @@ SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principa
 -- name: IdentityGroupHasAdminRole :one
 SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = sqlc.arg(id)::text::uuid);
 
+-- name: IdentityGroupProjects :many
+-- The keys of the projects the group is a member of. An auto-join group is never a
+-- project member (every user is in it), so turning the flag on is refused while the
+-- list is not empty (R-AUTH-019, R-AUTHZ-026); the member write reads the flag under
+-- the same row lock (ProjectGroupAutoJoinShare).
+SELECT p.key FROM project_member m JOIN project p ON p.id = m.project_id
+ WHERE m.principal_id = sqlc.arg(id)::text::uuid ORDER BY p.key;
+
 -- name: IdentityLockGroup :many
 -- Locks a group's row, so that binding a role to the group and turning on its
 -- auto-join flag, which each check the other, run one after the other
@@ -312,8 +320,8 @@ SELECT (SELECT count(*) FROM principal p
 INSERT INTO service_account (principal_id, description) VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text);
 
 -- name: IdentityInsertProjectServiceAccount :exec
--- A service account of a project (Q-AUTHZ-169): the row's trigger refuses a name
--- that does not start with the project key and a hyphen.
+-- A service account of a project (Q-AUTHZ-169, Q-AUTHZ-209): its principal's name is
+-- <project key>/<name>; the row's trigger refuses any other name.
 INSERT INTO service_account (principal_id, description, project_id)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text, sqlc.arg(project_id)::text::uuid);
 
@@ -335,6 +343,18 @@ SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.descripti
  WHERE p.kind = 'service_account' AND p.name > sqlc.arg(after)::text
    AND (sqlc.arg(query)::text = '' OR p.name ILIKE '%' || sqlc.arg(query)::text || '%')
    AND (sqlc.arg(project)::text = '' OR pr.key = sqlc.arg(project)::text)
+ ORDER BY p.name
+ LIMIT sqlc.arg(max_rows)::int;
+
+-- name: IdentityListProjectServiceAccounts :many
+-- The accounts of one project by the key of the project, ordered by stored name
+-- (<project>/<name>); the text filter matches the name within the project.
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       pr.key::text AS project
+  FROM principal p JOIN service_account s ON s.principal_id = p.id
+  JOIN project pr ON pr.id = s.project_id
+ WHERE p.kind = 'service_account' AND pr.key = sqlc.arg(project)::text AND p.name > sqlc.arg(after)::text
+   AND (sqlc.arg(query)::text = '' OR substr(p.name, char_length(pr.key) + 2) ILIKE '%' || sqlc.arg(query)::text || '%')
  ORDER BY p.name
  LIMIT sqlc.arg(max_rows)::int;
 
@@ -582,23 +602,22 @@ HAVING (mp.kind, mp.name) > (sqlc.arg(after_kind)::text, sqlc.arg(after_name)::t
 -- User preferences (R-API-021) ----------------------------------------------------
 
 -- name: PreferencesGet :many
-SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts,
-       coalesce(project_filter, '')::text AS project_filter, revision
+SELECT coalesce(locale, '')::text AS locale, coalesce(theme, '')::text AS theme, keyboard_shortcuts, revision
   FROM user_preferences WHERE user_id = sqlc.arg(user_id)::text::uuid;
 
 -- name: PreferencesUpsert :many
 -- A user without a row has the defaults at revision 1; the first write inserts
 -- revision 2. if_revision is 0 for "no condition" (If-Match: *); a row that exists
 -- is updated only when its revision matches, so a concurrent write is a 412.
-INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, project_filter, revision)
+INSERT INTO user_preferences AS p (user_id, locale, theme, keyboard_shortcuts, revision)
 VALUES (sqlc.arg(user_id)::text::uuid, NULLIF(sqlc.arg(locale)::text, ''), NULLIF(sqlc.arg(theme)::text, ''),
-        sqlc.arg(keyboard_shortcuts)::boolean, NULLIF(sqlc.arg(project_filter)::text, ''), 2)
+        sqlc.arg(keyboard_shortcuts)::boolean, 2)
 ON CONFLICT (user_id) DO UPDATE
    SET locale = EXCLUDED.locale, theme = EXCLUDED.theme, keyboard_shortcuts = EXCLUDED.keyboard_shortcuts,
-       project_filter = EXCLUDED.project_filter, revision = p.revision + 1, updated_at = now()
+       revision = p.revision + 1, updated_at = now()
  WHERE sqlc.arg(if_revision)::bigint = 0 OR p.revision = sqlc.arg(if_revision)::bigint
 RETURNING coalesce(p.locale, '')::text AS locale, coalesce(p.theme, '')::text AS theme, p.keyboard_shortcuts,
-          coalesce(p.project_filter, '')::text AS project_filter, p.revision;
+          p.revision;
 
 -- Project service accounts (R-AUTHZ-026, Q-AUTHZ-169) ----------------------------
 

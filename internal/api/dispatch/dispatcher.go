@@ -17,9 +17,10 @@ package dispatch
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -36,8 +37,8 @@ import (
 // format filters its documents with (R-EP-018). *authz.ExposureCeiling implements
 // it.
 type Ceiling interface {
-	ExposureFingerprint(x *authz.Index, endpoint, repoKey string) string
-	View(x *authz.Index, endpoint, repoKey string) *authz.ExposureView
+	ExposureFingerprint(x *authz.Index, endpoint string, repoKey qname.Repo) string
+	View(x *authz.Index, endpoint string, repoKey qname.Repo) *authz.ExposureView
 }
 
 // Options configure [New].
@@ -54,9 +55,6 @@ type Options struct {
 	// label.
 	Label func(ctx context.Context, name string)
 }
-
-// cacheViewSuffix turns a repository key into the address of its cache view (R-REPO-032).
-const cacheViewSuffix = "~cache"
 
 // Dispatcher serves the format prefixes.
 type Dispatcher struct {
@@ -104,16 +102,17 @@ func New(o Options) (*Dispatcher, error) {
 // authentication, as on every route. A format without such a route costs a map
 // lookup.
 func (d *Dispatcher) APIKeyRoute(r *http.Request) bool {
-	id, key, rest, ok := splitPath(r.URL.EscapedPath())
+	id, addr, ok := splitPath(r.URL.EscapedPath())
 	f := d.formats[id]
 	if !ok || f == nil || !d.keyed[id] {
 		return false
 	}
+	rest := addr.Rest
 	if ep := httpserver.EndpointFrom(r.Context()); ep != nil &&
 		(!ep.Serves(config.SurfacePackages) || !ep.Serves(httpserver.FamilyOfPath(r.URL.Path))) {
 		return false
 	}
-	if !repository.ValidKeyShape(strings.TrimSuffix(key, cacheViewSuffix)) || strings.HasPrefix(rest, "/") {
+	if strings.HasPrefix(rest, "/") {
 		return false
 	}
 	if _, err := repository.CleanPath(rest); err != nil {
@@ -140,8 +139,8 @@ func (d *Dispatcher) Prefixes() []string {
 // Allow in its own shape. Each prefix also gets the error shape of its format.
 func (d *Dispatcher) Register(r *httpserver.Router) {
 	for _, id := range d.Prefixes() {
-		r.Handle("/api/"+id+"/{repoKey}", d)
-		r.Handle("/api/"+id+"/{repoKey}/{rest...}", d)
+		r.Handle("/api/"+id+"/{projectKey}/{repoKey}", d)
+		r.Handle("/api/"+id+"/{projectKey}/{repoKey}/{rest...}", d)
 		r.HandleUncleaned("/api/"+id+"/", d)
 		registerShape(r, id, d.formats[id])
 	}
@@ -149,28 +148,27 @@ func (d *Dispatcher) Register(r *httpserver.Router) {
 
 // ServeHTTP is the request path of R-ARCH-011 as far as the dispatcher owns it.
 func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	id, key, rest, ok := splitPath(r.URL.EscapedPath())
+	id, addr, ok := splitPath(r.URL.EscapedPath())
 	f := d.formats[id]
-	if !ok || f == nil {
+	if f == nil {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
+		return
+	}
+	if !ok {
+		// A path with fewer than two segments below the prefix, or with a project or key that is none, names no
+		// repository (a project of one segment is not an address).
+		f.WriteError(w, r, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested name."))
 		return
 	}
 	// <key>~cache addresses the cache view of remote repository <key> (R-REPO-032): the
 	// request is decided and served on the remote repository itself.
-	addressed := key
-	key, cacheView := strings.CutSuffix(key, cacheViewSuffix)
-	if repository.ValidKeyShape(key) {
-		// From here on a refusal can build links: it knows the repository and the base
-		// URL (Q-ARCH-263).
-		r = formats.WithRefusal(r, formats.Refusal{
-			Format: f.Descriptor().ID, Key: addressed, BaseURL: strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/"),
-		})
-	}
+	key, rest, cacheView := addr.Repo, addr.Rest, addr.CacheView
+	// From here on a refusal can build links: it knows the repository and the base
+	// URL (Q-ARCH-263).
+	r = formats.WithRefusal(r, formats.Refusal{
+		Format: f.Descriptor().ID, Name: key, CacheView: cacheView, BaseURL: strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/"),
+	})
 	fail := func(err error) { f.WriteError(w, r, err) }
-	if !repository.ValidKeyShape(key) {
-		fail(errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key."))
-		return
-	}
 	ctx := r.Context()
 	// A path below the prefix that belongs to a family of its own (npm's exchange)
 	// is served only where the endpoint's surface holds that family.
@@ -203,7 +201,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// in the format's shape or answer the request itself, before any decision or body read.
 	obs := bastionmain.ObserverFrom(ctx)
 	match := bastionmain.RouteMatch{
-		Format: id, RepoKey: key, Name: route.Name, Method: r.Method, Kind: route.Kind.String(), Action: route.Action,
+		Format: id, Repo: key, Name: route.Name, Method: r.Method, Kind: route.Kind.String(), Action: route.Action,
 	}
 	if obs != nil {
 		handled, err := obs.Matched(w, r, match)
@@ -263,8 +261,8 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // one, whose message says that the repository is not of this format: the decision
 // allowed the caller a request on the key, so the key is one the caller may name
 // (Q-ARCH-263).
-func (d *Dispatcher) resolve(ctx context.Context, f formats.Format, key string) (repository.Repository, error) {
-	repo, err := d.o.Repos.ByKey(ctx, key)
+func (d *Dispatcher) resolve(ctx context.Context, f formats.Format, key qname.Repo) (repository.Repository, error) {
+	repo, err := d.o.Repos.ByName(ctx, key)
 	if err != nil {
 		return repository.Repository{}, err
 	}
@@ -331,7 +329,7 @@ func routeMatcher(r formats.Route) func(string) (formats.Params, bool) {
 // endpointFacts derives what a format reads of the request's endpoint from the
 // listener's endpoint and the request's index, never from request data (C-17,
 // Q-EP-20 (b)).
-func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key string) formats.EndpointFacts {
+func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key qname.Repo) formats.EndpointFacts {
 	facts := formats.EndpointFacts{Name: acc.Subject.Endpoint, CacheFill: true}
 	if ep := httpserver.EndpointFrom(r.Context()); ep != nil {
 		facts.Rules = ep.ExposureMode() == config.ExposureRules
@@ -353,22 +351,16 @@ func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key string
 	return facts
 }
 
-// splitPath cuts "/api/<id>/<key>[/<rest>]" into the format ID, the decoded
-// repository key and the rest, which stays escaped (R-ARCH-005: the path is
-// decoded exactly once, after it was split).
-func splitPath(escaped string) (id, key, rest string, ok bool) {
-	tail, found := strings.CutPrefix(escaped, "/api/")
-	if !found {
-		return "", "", "", false
+// splitPath cuts "/api/<id>/<project>/<key>[~cache][/<rest>]" into the format ID and the address, parsed by
+// qname.ParseAddress (R-ARCH-005: the path is decoded exactly once, after it was split; the named segments
+// hold no escape). ok is false when the path is no address; id is still the format ID where there is one.
+func splitPath(escaped string) (id string, addr qname.Address, ok bool) {
+	if tail, found := strings.CutPrefix(escaped, "/api/"); found {
+		id, _, _ = strings.Cut(tail, "/")
 	}
-	id, tail, found = strings.Cut(tail, "/")
-	if !found {
-		return "", "", "", false
+	addr, ok = qname.ParseAddress(escaped)
+	if !ok || addr.Family != qname.FamilyAPI {
+		return id, qname.Address{}, false
 	}
-	rawKey, rest, _ := strings.Cut(tail, "/")
-	key, err := url.PathUnescape(rawKey)
-	if err != nil || key == "" {
-		return "", "", "", false
-	}
-	return id, key, rest, true
+	return addr.Format, addr, true
 }

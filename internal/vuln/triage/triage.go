@@ -158,9 +158,10 @@ func (s *Service) Apply(ctx context.Context, tx meta.Tx, a Actor, sc store.Scope
 	if err != nil {
 		return nil, err
 	}
+	// The findings name their repository by its qualified name <project>/<key>.
 	policy := map[string]vuln.Policy{}
 	for _, r := range repos {
-		policy[r.Key] = r.VulnerabilityPolicy(s.o.Enabled, s.o.Enforcement)
+		policy[r.Name.String()] = r.VulnerabilityPolicy(s.o.Enabled, s.o.Enforcement)
 	}
 	out := make([]Result, 0, len(ids))
 	for _, id := range ids {

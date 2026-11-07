@@ -14,15 +14,16 @@ package catalog
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
-// ID is the name of a format: "generic", "npm", "nuget". It matches
-// ^[a-z][a-z0-9-]{1,31}$ and is never ^v[0-9]+$, which is reserved for API
-// versions (R-ARCH-005).
+// ID is the name of a format: "generic", "npm", "nuget". Its shape is qname.ValidFormat:
+// the shape of a project key, and never ^v[0-9]+$, which is reserved for API versions
+// (R-ARCH-005).
 type ID string
 
 // Class is a repository class (R-REPO-001), spelled as it is stored and served.
@@ -79,7 +80,7 @@ type Facts struct {
 	Classes []Class
 	// Layout is the name of the format's one built-in layout (R-REPO-006).
 	Layout string
-	// ProtocolBasePath is the client address template, {key} the repository key.
+	// ProtocolBasePath is the client address template, {project} and {key} the project and repository keys.
 	ProtocolBasePath string
 	// DefaultUpstreamURL is empty for a format without a well-known upstream;
 	// DefaultExtraHosts are the further hosts a remote repository of the format
@@ -208,15 +209,6 @@ type Entry struct {
 	settings *settingsSchema
 }
 
-var (
-	idPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
-	versionLike = regexp.MustCompile(`^v[0-9]+$`)
-)
-
-// ValidID reports whether id is a format name: well formed and not an API
-// version.
-func ValidID(id string) bool { return idPattern.MatchString(id) && !versionLike.MatchString(id) }
-
 // Registry holds the formats of one process or one test. It is safe for
 // concurrent use.
 type Registry struct {
@@ -276,7 +268,7 @@ func (r *Registry) Register(e Entry) {
 
 func check(e Entry) error {
 	switch {
-	case !ValidID(string(e.ID)):
+	case !qname.ValidFormat(string(e.ID)):
 		return fmt.Errorf("invalid or reserved format ID %q", e.ID)
 	case len(e.Classes) == 0:
 		return fmt.Errorf("%q supports no class", e.ID)

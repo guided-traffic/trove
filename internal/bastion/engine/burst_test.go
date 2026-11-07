@@ -31,7 +31,7 @@ func TestR_BAS_026_AFeedPageOfAThousandEntriesIsAppliedAgainstTwoHundredThousand
 	s := newSiteHarness(t, options{})
 	const answersHeld, tokens, revoked = 200000, 2000, 1000
 	for i := 0; i < answersHeld; i++ {
-		a := answers.Answer{Kind: answers.URL, ObtainedAt: s.clock.now(), TokenID: fmt.Sprintf("tok-%d", i%tokens), Repository: "npm-all"}
+		a := answers.Answer{Kind: answers.URL, ObtainedAt: s.clock.now(), TokenID: fmt.Sprintf("tok-%d", i%tokens), Repository: "web/npm-all"}
 		s.e.answers.mem.put(fmt.Sprintf("url|k%d", i), &answerVal{Answer: a, Allowed: true}, 0)
 	}
 	if got := s.e.answers.mem.len(); got != answersHeld {

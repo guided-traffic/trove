@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Vulnerabilities is the vulnerabilities section (R-VULN-025): the advisory sources, matching, findings and export of the
@@ -33,7 +35,7 @@ type VulnerabilityOSV struct {
 	Mode                string        `yaml:"mode" default:"online" validate:"oneof=online|repository|off" doc:"online: the worker role fetches the per-ecosystem archives (R-VULN-004); repository: it reads them from a generic local repository of the installation, for an air-gapped installation (R-VULN-005); off: the stored data stays as it is and ages, and is never deleted by turning the source off."`
 	BaseURL             string        `yaml:"base_url" default:"https://osv-vulnerabilities.storage.googleapis.com/" doc:"The root of the OSV export bucket; https only. The sync requests <ecosystem>/all.zip, <ecosystem>/modified_id.csv and <ecosystem>/<id>.json below it, never the global archive."`
 	Ecosystems          []string      `yaml:"ecosystems" default:"[]" doc:"OSV ecosystems to import. Empty: every ecosystem of a format that has the vulnerability adapter in this release (npm, NuGet). The list may only narrow that set; an ecosystem without an adapter is refused."`
-	Repository          string        `yaml:"repository" default:"" doc:"Mode repository: the key of a generic local repository that holds osv/<ecosystem>/all.zip (R-VULN-005). Whoever holds deploy on it decides the advisory data of the installation."`
+	Repository          string        `yaml:"repository" default:"" doc:"Mode repository: the qualified name <projectKey>/<repoKey> of a generic local repository that holds osv/<ecosystem>/all.zip (R-VULN-005). Whoever holds deploy on it decides the advisory data of the installation."`
 	FullResyncThreshold int           `yaml:"full_resync_threshold" default:"2000" validate:"min=1" doc:"Changed records above which an incremental run turns into a full one."`
 	Overlap             time.Duration `yaml:"overlap" default:"1h" validate:"min=0,max=168h" doc:"Subtracted from the time a download started to set the watermark, because the exporter writes the archive and the change file at different times (Q-VULN-11)."`
 	MaxShrink           float64       `yaml:"max_shrink" default:"0.2" validate:"min=0,max=1" doc:"The share of an ecosystem's stored records a full sync may delete. A larger shrink fails the run with shrink_refused and changes nothing; a manual run with {\"acceptShrink\": true} overrides it once."`
@@ -46,7 +48,7 @@ type VulnerabilityOSV struct {
 type VulnerabilityKEV struct {
 	Mode       string `yaml:"mode" default:"online" validate:"oneof=online|repository|off" doc:"online, repository (kev/known_exploited_vulnerabilities.json in the mirror repository) or off; with off every known-exploited flag stays as it was last computed."`
 	URL        string `yaml:"url" default:"https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" doc:"The catalog; https only."`
-	Repository string `yaml:"repository" default:"" doc:"Mode repository: the key of a generic local repository."`
+	Repository string `yaml:"repository" default:"" doc:"Mode repository: the qualified name <projectKey>/<repoKey> of a generic local repository."`
 }
 
 // VulnerabilityEPSS is the key of the P1 exploit-probability enrichment (R-VULN-030, Q-VULN-21). Only off is accepted in
@@ -54,7 +56,7 @@ type VulnerabilityKEV struct {
 type VulnerabilityEPSS struct {
 	Mode       string `yaml:"mode" default:"off" validate:"oneof=online|repository|off" doc:"Off, and only off is built in this release (P1). The operator who switches EPSS on decides whether the data's terms permit the installation's use: FIRST publishes the EPSS scores without a stated licence, its site reads \"All Rights Reserved\", and it asks for attribution in products that use the scores; trove makes no statement about what that permits."`
 	URL        string `yaml:"url" default:"https://epss.empiricalsecurity.com/epss_scores-current.csv.gz" doc:"The daily EPSS file; https only. Not fetched while mode is off."`
-	Repository string `yaml:"repository" default:"" doc:"Mode repository: the key of a generic local repository."`
+	Repository string `yaml:"repository" default:"" doc:"Mode repository: the qualified name <projectKey>/<repoKey> of a generic local repository."`
 }
 
 // VulnerabilityMatching configures which stored versions public advisories apply to (R-VULN-010).
@@ -108,6 +110,11 @@ func (v *Vulnerabilities) Validate(r *Report) {
 	} {
 		if s.mode == "repository" && strings.TrimSpace(s.repo) == "" {
 			r.Add(s.key, "is required when the source's mode is repository: it names the generic local repository that holds the files (R-VULN-005)")
+		}
+		if s.repo != "" {
+			if _, err := qname.ParseRepo(s.repo); err != nil {
+				r.Add(s.key, "%q is not a repository's qualified name <projectKey>/<repoKey> (%v)", s.repo, err)
+			}
 		}
 	}
 	if v.Sources.EPSS.Mode != "off" {

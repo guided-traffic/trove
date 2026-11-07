@@ -25,7 +25,7 @@ func TestR_AUTHZ_031_BlindWritesJournalTheStateTheyReplace(t *testing.T) {
 	ctx := t.Context()
 	input := func(pkg string) authz.PolicyInput {
 		in := authz.PolicyInput{
-			Name: "p", Resources: authz.Resources{Repositories: []string{"gen"}},
+			Name: "p", Resources: authz.Resources{Repositories: []string{"it/gen"}},
 			Entries: []authz.Entry{{Principal: "user:alice", Actions: []string{"read"}}},
 		}
 		if pkg != "" {

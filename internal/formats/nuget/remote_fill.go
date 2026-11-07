@@ -227,7 +227,7 @@ func (f *Format) commitFill(ctx context.Context, tx formats.Tx, c formats.Commit
 // (InspectFill) and counted where the replica is known (OnCommit).
 func (f *Format) uncounted(c formats.CommitEvent) {
 	if m := f.replicaOfPort(c.Data).remote; m != nil {
-		m.unparseable(c.Repo.Key)
+		m.unparseable(c.Repo.Name.String())
 	}
 }
 

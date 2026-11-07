@@ -19,7 +19,7 @@ func TestR_BAS_004_ABastionRegistrationIsNeverPartOfAuthenticated(t *testing.T) 
 	e := newTestEngine(t, f, nil)
 	bastion := Subject{Kind: principal.KindBastion, ID: idBastion, Name: "partners"}
 
-	idx, err := e.Begin(t.Context(), bastion, "generic-local")
+	idx, err := e.Begin(t.Context(), bastion, qr("generic-local"))
 	if err != nil {
 		t.Fatal(err)
 	}

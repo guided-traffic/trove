@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/ci/reason"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // ScopeItem is one item of the `scope` request parameter of the exchange (R-CI-007, Q-CI-2):
@@ -43,7 +44,8 @@ func scopeMalformed(detail string) *Error { return refuse(reason.ScopeMalformed,
 //
 // The empty string is no scope (nil items). An item holds only the characters of an OAuth scope
 // token (RFC 6749 §3.3: printable ASCII without `"` and `\`), and its selector the syntax of
-// R-AUTHZ-004 (key, key pattern, class, a format filter on a pattern or class).
+// R-AUTHZ-004 as every instance context writes it (`<project>/<key>`, `<project>/<key pattern>`, a class,
+// a format filter on a pattern or class; a bare key is scope_malformed).
 func ParseScope(s string) ([]ScopeItem, error) {
 	if s == "" {
 		return nil, nil
@@ -83,7 +85,7 @@ func parseScopeItem(raw string, i int) (ScopeItem, error) {
 		return ScopeItem{}, scopeMalformed(at + " names the action " + strconv.Quote(action) + "; a CI token holds read, annotate, deploy, overwrite or delete, never manage")
 	}
 	if hasSelector {
-		if _, err := parseSelector(selector); err != nil {
+		if _, err := parseSelector(selector, qname.Context{}); err != nil {
 			return ScopeItem{}, scopeMalformed(at + " has an invalid repository selector: " + err.Error())
 		}
 	}
@@ -238,7 +240,15 @@ func Freeze(ref, id, tier string, project *FrozenProject, r Rendered, caps []Cap
 	capped := ApplyCaps(r, caps)
 	inline := make([]InlineGrant, 0, len(capped.Inline))
 	for _, g := range capped.Inline {
-		inline = append(inline, g.clone())
+		c := g.clone()
+		if project != nil {
+			// A project mapping writes bare keys; the token carries instance selectors, which the
+			// engine and the scope items of the exchange read in one context (R-CI-007, Q-AUTHZ-216).
+			for i, s := range c.Repositories {
+				c.Repositories[i] = instanceForm(project.Key, s)
+			}
+		}
+		inline = append(inline, c)
 	}
 	return FrozenMapping{
 		Ref: ref, ID: id, Tier: tier, Project: project,

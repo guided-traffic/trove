@@ -18,6 +18,13 @@ invalid one is a 401 that never falls through to a lower source or to anonymous:
 | 3 | Session cookie `__Host-trv_session` | Only where the endpoint's surface holds `ui` and the path allows it (`/api/v1/` all methods, `/files/` GET HEAD PUT DELETE, `/api/<format>/` GET HEAD), and never on a route that declares the API key, whatever its method; CSRF is the session validator's. A replica without a session validator ignores the cookie. |
 | 4 | none | Anonymous only if the endpoint, `auth.anonymous.allowed` and the runtime switch `anonymousAccess` allow it, and never an unsafe method on `/api/v1/`; or a route that is always open or declared public. |
 
+The path rules read two forms of the path (`rulePaths` in [stage.go](../../internal/auth/stage.go)). The rules that limit a
+request - the hard limit on an unsafe anonymous request to `/api/v1/`, the cookie's path rule of order 3 and the challenge -
+read the unescaped path, the one `ServeMux` routes by: it unescapes each segment, so `POST /api/v%31/projects` reaches the
+management API and is refused like `POST /api/v1/projects`. The rules that open a route - the always-open routes, the npm login
+start and the exchange routes - read the escaped path as received, so `POST /api/v1/tokens/revok%65` is not open, and a `%` in
+a named segment of a repository address is no address, as the dispatcher reads it.
+
 The stage runs before the dispatcher, so it learns whether a request reaches an API-key route from the dispatcher's own match
 (`EndpointRules.APIKeyRoute`, wired to `Dispatcher.APIKeyRoute` in [wire_identity.go](../../internal/app/wire_identity.go),
 Q-AUTH-186): the endpoint's surface, the prefix, the key shape, the clean path and the format's `Match`. The header is therefore
@@ -123,7 +130,7 @@ principal. Group membership is resolved when a request is authenticated, not whe
 The operations are in [tokens_api.go](../../internal/api/v1/tokens_api.go) and [users_api.go](../../internal/api/v1/users_api.go);
 the declarations are in `api/openapi.yaml` (Q-AUTH-43).
 
-- **A token value leaves the server once.** `POST /api/v1/tokens`, `POST /api/v1/service-accounts/{name}/tokens` and the two rotations
+- **A token value leaves the server once.** `POST /api/v1/tokens`, `POST /api/v1/service-accounts/{name}/tokens`, `POST /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` and the two rotations
   answer `201` with `Cache-Control: no-store`. The outcome of such a create carries `Outcome.SecretID`, so the idempotency row stores the
   status and the token ID but no body, and a retry with the same key answers `409 token_already_issued`. No read operation returns the value
   or its hash. [api_flows_test.go](../../test/integration/identity/api_flows_test.go) scans every table and the audit trail for the value
@@ -201,7 +208,7 @@ setup answer into a token, which is the one place where the UI handles a token v
 
 ## Tokens of project service accounts
 
-An administrator of a project issues, sees and revokes the tokens of the service accounts of its project ([R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration),
+An Owner of a project issues, sees and revokes the tokens of the service accounts of its project, which are addressed `sa:<projectKey>/<name>` (the principal name is stored qualified, so two projects and the instance may each hold a `partner`; [R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration),
 [Q-AUTHZ-177](../spec/authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)).
 The credential it uses is a session or a token with `admin: true`; the token it issues is bounded by the token service itself, so the API,
 the command and a test have the same rule (Q-AUTH-190):
@@ -211,18 +218,18 @@ the command and a test have the same rule (Q-AUTH-190):
 | lifetime | never non-expiring (`Admin` stays false), at most the SAT maximum | `resolveLifetime` |
 | scope | no `system` item and `admin: false`, else 422 `invalid_scope`; repository grants, `inherit` and an `endpoints` binding are allowed | `checkDelegated` in `prepareCreate` |
 | rotation by itself | never: `selfRotatable: true` is 422 at `/selfRotatable`, because each self-rotation gives the successor the original lifetime and the partner would renew the token for good (Q-AUTH-192) | `checkDelegated` |
-| owner | an account of a project the caller administers with `managePolicies`; any other caller gets the plain 403 whether the account exists or not | `delegatedTokenAccount` |
-| visibility | `GET /tokens`, `GET /tokens/{id}`, `DELETE /tokens/{id}` and `DELETE /service-accounts/{name}/tokens` reach the tokens of the project's accounts and no others; a token elsewhere answers 404; a rotation is not delegated | `seesProject`, `visible` |
+| owner | an account of a project the caller owns; a project the caller is no member of answers 404, a member who is no Owner 403, and an account of another project or an instance-wide one the plain 403 whether it exists or not | the project route; `principal.GetProjectServiceAccount` |
+| visibility | `GET /tokens`, `GET /tokens/{id}`, `DELETE /tokens/{id}` and `DELETE /projects/{projectKey}/service-accounts/{name}/tokens` reach the tokens of the project's accounts and no others; a token elsewhere answers 404; a rotation is not delegated | the token handlers; `Manager.ServiceAccountByRef` for the owner filter |
 | audit | `token.created` and `token.revoked` carry `project` | `insertTx`, `recordRevoked` |
 
-**Owner filter of the token list (verified, no leak).** `GET /tokens?owner=sa:<name>` by a caller without `tokens:read` is answered with the
-caller's own tokens, never the named account's, unless the caller administers the account's project (`listOwner`). A user whose list for an
+**Owner filter of the token list (verified, no leak).** `GET /tokens?owner=sa:<name>` or `sa:<projectKey>/<name>` by a caller without `tokens:read` is answered with the
+caller's own tokens, never the named account's, unless the caller owns the account's project (`listOwner`). A user whose list for an
 account it does not administer shows its own personal tokens is the documented behaviour (R-AUTH-028, Q-AUTH-190), not a leak: it was
 reported once because a test expected an empty list. The behaviour is unchanged since before projects (`87b0e2e`: the filter is forced to
 the caller when `tokens:read` is missing). Who sees which tokens: a holder of `tokens:read` (`admin`, `security-admin`) every token, filtered by
-`owner`; an administrator of a project its own tokens and those of the accounts of that project; any other user its own tokens only. The
-pinning test is `TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens` (the list for another account is the caller's own, the administrator's
-list is the account's alone, and another account's token answers 404 to the project administrator).
+`owner`; an Owner of a project its own tokens and those of the accounts of that project; any other user its own tokens only. The
+pinning test is `TestR_AUTHZ_026_OwnerServiceAccountsAndTokens` (the list for another account is the caller's own, the administrator's
+list is the account's alone, and another account's token answers 404 to the project Owner).
 
 A project service account has no group, no role and only its project's policies, so what its token can reach is what the project's policies grant it
 ([Q-AUTHZ-175](../spec/authorization.md#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only)).
@@ -323,20 +330,20 @@ hold, since both credentials are its own; what it loses is the separation it con
 different principals in one client and a damaged API key. An audit query for pushes with method `basic` from a pipeline that is meant
 to push with an API key shows it; one credential per client avoids it.
 
-### H-400 · A project administrator issues tokens up to the installation's limits
+### H-400 · A project Owner issues tokens up to the installation's limits
 
 Component: `createServiceAccountToken` for a project service account. Subject: the active-token limit and the lifetime of the tokens of one
-project. Live whenever a project has `managePolicies` on. A token issued by a project administrator is bounded by the installation's
+project. Live for every project that has an Owner. A token issued by a project Owner is bounded by the installation's
 `auth.tokens.sat` maximum lifetime and `max_active` count for the account, as every service-account token is; there is no limit per
 project, no approval and no notice to an administrator of trove beyond the `token.created` event (which carries `project`). A project
-administrator can therefore keep an account's credentials alive for the full maximum by issuing a new token before the old one ends, as
-long as the switch is on. What makes it real: a project whose administrator is not trusted to renew credentials. Turning `managePolicies`
-off stops the issue and leaves revocation, disabling and deletion with the administrator.
+Owner can therefore keep an account's credentials alive for the full maximum by issuing a new token before the old one ends, as
+long as it is an Owner. What makes it real: a project whose Owner is not trusted to renew credentials. Taking the Owner role away stops the issue; a
+project service account is deleted or disabled by an Owner or by an administrator of trove.
 
 ### H-401 · The repository grants of a delegated token are not checked against the project
 
-Component: `checkDelegated` and the scope of a token a project administrator issues. Subject: the repository part of such a scope. Live for
-every such token. The scope names repositories by key or pattern, and the scope validation does not know the project; a grant that names
+Component: `checkDelegated` and the scope of a token a project Owner issues. Subject: the repository part of such a scope. Live for
+every such token. The scope names repositories as an instance context does (`<project>/<key>`, `<projectGlob>/<keyGlob>`, [R-AUTH-024](../spec/identity-and-authentication.md)), and the scope validation does not know the project; a grant that names
 a repository outside the project is accepted and does nothing, because the service account holds rights only through its project's
 policies, whose selectors never reach outside it ([Q-AUTHZ-179](../spec/authorization.md#q-authz-179--a-repository-that-leaves-a-project-leaves-its-policies-inert)).
 The effect is a scope that reads wider than the rights behind it, in the token list and in the audit event. What makes it real: a reviewer

@@ -121,6 +121,8 @@ const surfaces: Record<string, string | readonly [string, string]> = {
   'default button hover on the frame': ['--trove-btn-default-bg-hover', '--trove-nav-bg'],
   'top bar hover': ['--trove-nav-hover', '--trove-nav-bg'],
   'menu item hover': ['--trove-menu-hover', '--trove-menu-bg'],
+  // The panel of the project switcher (Q-UI-129): the menu's fill.
+  'switcher panel': '--trove-menu-bg',
   // The badges (Q-UI-128): each status's pill.
   'neutral badge': '--trove-badge-neutral-bg',
   'positive badge': '--trove-badge-ok-bg',
@@ -198,6 +200,9 @@ const textPairs: readonly (readonly [string, string])[] = [
   ['--trove-nav-fg', 'side bar'],
   ['--trove-nav-fg', 'top bar hover'],
   ['--trove-control-fg', 'menu item hover'],
+  // The project switcher (Q-UI-129): the projects on the menu fill, and the headings and keys in the muted tone of the frame.
+  ['--trove-control-fg', 'switcher panel'],
+  ['--trove-nav-fg-muted', 'switcher panel'],
   ['--trove-search-fg', 'search'],
   ['--trove-search-muted', 'search'],
   ['--trove-heading', 'card'],

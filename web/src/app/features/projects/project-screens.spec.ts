@@ -23,34 +23,31 @@ type Get = <A>(token: abstract new (...args: never[]) => A) => A;
 
 const overlay = (): HTMLElement => document.querySelector('.cdk-overlay-container') as HTMLElement;
 
-/** A caller without any capability that administers `web` (Q-AUTHZ-181). */
-function projectAdmin(managePolicies = true, manageRepositories = true) {
+/** A caller without any capability that is Owner of `web` (Q-AUTHZ-207, Q-AUTHZ-208). */
+function projectOwner(role: 'owner' | 'maintainer' = 'owner') {
   return (get: Get): void => {
     (get(SessionApi) as FakeSessionApi).meResult = {
       roles: [],
       capabilities: [],
       principals: ['user:alice'],
-      projects: [{ key: 'web', managePolicies, manageRepositories }],
+      projects: [{ key: 'web', role }],
     };
   };
 }
 
 describe('The project policy editor (R-UI-041, R-AUTHZ-026)', () => {
-  it('R-UI-041 a new project policy starts with the name prefix, names its project and finds principals through the lookup', async () => {
+  it('R-UI-041 a new project policy is named within the project, names its project and finds principals through the lookup', async () => {
     const { fixture, root, get } = await renderScreen(PolicyEditor, {
       inputs: { project: 'web' },
       capabilities: [],
-      setup: (g) => {
-        projectAdmin()(g);
-        (g(RepositoriesApi) as FakeRepositoriesApi).repositories[0]!.project = 'web';
-      },
+      setup: projectOwner(),
     });
     expect(text(root)).toContain('Project policy of web');
-    expect(root.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('web-');
-    expect(text(root)).toContain('Starts with web- and cannot be changed later.');
+    expect(root.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('');
+    expect(text(root)).toContain('Unique within the project web and cannot be changed later.');
 
-    typeInto(root, 'Name', 'web-publish');
-    // The repositories of the project are offered as selectors.
+    typeInto(root, 'Name', 'publish');
+    // The repositories of the project are offered as selectors, by bare key.
     buttonByText(root, 'generic-local').click();
     await settle(fixture);
     expect(root.querySelector<HTMLTextAreaElement>('textarea[name="repositories"]')!.value).toBe('generic-local');
@@ -69,42 +66,30 @@ describe('The project policy editor (R-UI-041, R-AUTHZ-026)', () => {
     expect(await seriousViolations(root)).toEqual([]);
     buttonByText(root, 'Create policy').click();
     await sleep(fixture, 100);
-    expect(policies.calls).toEqual(['create web-publish']);
-    expect(policies.policies.find((p) => p.name === 'web-publish')?.project).toBe('web');
+    expect(policies.calls).toEqual(['create publish']);
+    expect(policies.policies.find((p) => p.name === 'publish')?.project).toBe('web');
   });
 
-  it('R-UI-041 the server explains a missing name prefix next to the field', async () => {
-    const { fixture, root } = await renderScreen(PolicyEditor, {
-      inputs: { project: 'web' },
-      capabilities: [],
-      setup: projectAdmin(),
-    });
-    typeInto(root, 'Name', 'publish');
-    buttonByText(root, 'Create policy').click();
-    await settle(fixture);
-    expect(text(root)).toContain('The name must start with the key of the project and a hyphen.');
-  });
-
-  it('R-UI-041 a project policy is read-only for an administrator whose managePolicies switch is off, with the reason', async () => {
+  it('R-UI-041 a project policy is read-only for a member that is no Owner, with the reason', async () => {
     const { root } = await renderScreen(PolicyEditor, {
-      inputs: { name: 'web-publish' },
+      inputs: { name: 'web-publish', project: 'web' },
       capabilities: [],
       setup: (get) => {
-        projectAdmin(false, true)(get);
+        projectOwner('maintainer')(get);
         (get(PolicyApi) as FakePolicyApi).policies = [samplePolicy({ name: 'web-publish', project: 'web' })];
       },
     });
-    expect(text(root)).toContain('Switched off for this project: managePolicies');
+    expect(text(root)).toContain('Read only: changing this needs the permission policies:write');
     expect(root.querySelector('button[type="submit"]')).toBeNull();
     expect(root.querySelector('trove-principal-picker')).toBeNull();
   });
 
   it('R-UI-041 a stored project policy keeps its project through a save', async () => {
     const { fixture, root, get } = await renderScreen(PolicyEditor, {
-      inputs: { name: 'web-publish' },
+      inputs: { name: 'web-publish', project: 'web' },
       capabilities: [],
       setup: (g) => {
-        projectAdmin()(g);
+        projectOwner()(g);
         (g(PolicyApi) as FakePolicyApi).policies = [samplePolicy({ name: 'web-publish', project: 'web' })];
       },
     });
@@ -126,15 +111,24 @@ describe('The project policy editor (R-UI-041, R-AUTHZ-026)', () => {
     expect(root.querySelector('trove-principal-picker')).toBeNull();
     expect((get(PolicyApi) as FakePolicyApi).validated.every((v) => v.project === undefined)).toBe(true);
   });
+
+  it('R-AUTHZ-004 a global policy asks for project/key selectors, a project policy for bare keys', async () => {
+    const global = await renderScreen(PolicyEditor);
+    expect(text(global.root)).toContain('One per line: project/key (web/npm-internal)');
+    TestBed.resetTestingModule();
+    const project = await renderScreen(PolicyEditor, { inputs: { project: 'web' }, capabilities: [], setup: projectOwner() });
+    expect(text(project.root)).toContain('One per line: a key (npm-internal)');
+  });
 });
 
 describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () => {
-  const seed = (managePolicies = true) => (get: Get): void => {
-    projectAdmin(managePolicies)(get);
+  const seed = (get: Get): void => {
+    projectOwner()(get);
     (get(IdentityApi) as FakeIdentityApi).accounts = [
       {
         id: 'sa-web-ci',
-        name: 'web-ci',
+        name: 'ci',
+        principal: 'sa:web/ci',
         description: 'CI of the web team',
         status: 'active',
         project: 'web',
@@ -143,11 +137,11 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
     ];
   };
 
-  it('R-UI-041 a project administrator issues a token that always expires, with the cap said, and passes axe', async () => {
+  it('R-UI-041 an Owner issues a token that always expires, with the cap said, and passes axe', async () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, {
-      inputs: { name: 'web-ci' },
+      inputs: { name: 'ci', project: 'web' },
       capabilities: [],
-      setup: seed(),
+      setup: seed,
     });
     expect(text(root)).toContain('Service account of project web');
     // No role section for a project account, and nothing global is read.
@@ -160,51 +154,60 @@ describe('A project service account (R-UI-041, Q-AUTHZ-175, Q-AUTHZ-177)', () =>
     typeInto(form, 'Description', 'nightly');
     buttonByText(form, 'Create token').click();
     await settle(fixture);
-    expect((get(TokensApi) as FakeTokensApi).calls).toContain('createForServiceAccount web-ci nightly');
+    expect((get(TokensApi) as FakeTokensApi).calls).toContain('createForServiceAccount ci nightly');
     expect(root.querySelector('trove-token-secret')).toBeTruthy();
     expect(await seriousViolations(root)).toEqual([]);
   });
 
-  it('R-UI-041 a project administrator disables, enables, revokes and deletes whatever the switches say, and goes back to the project', async () => {
+  it('R-UI-041 an Owner disables, enables, revokes and deletes, and goes back to the project', async () => {
     const { fixture, root, get } = await renderScreen(ServiceAccountDetail, {
-      inputs: { name: 'web-ci' },
+      inputs: { name: 'ci', project: 'web' },
       capabilities: [],
       setup: (g) => {
-        seed(false)(g);
+        seed(g);
         (g(TokensApi) as FakeTokensApi).tokenList = [];
       },
     });
-    // managePolicies is off: no token can be issued, the existing ones can be revoked.
-    expect(root.textContent).not.toContain('Create token');
     buttonByText(root, 'Disable').click();
     await settle(fixture);
     buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Disable').click();
     await sleep(fixture, 300);
-    expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('disableServiceAccount web-ci revokeTokens=false');
-    // Enabling needs managePolicies: disabled with the reason.
-    expect((buttonByText(root, 'Enable') as HTMLButtonElement).disabled).toBe(true);
-    expect(text(root)).toContain("Enabling needs the project's switch");
-    expect(root.querySelector('a[href="/admin/projects/web"]')).toBeTruthy();
+    expect((get(IdentityApi) as FakeIdentityApi).calls).toContain('disableServiceAccount ci revokeTokens=false');
+    expect((buttonByText(root, 'Enable') as HTMLButtonElement).disabled).toBe(false);
+    expect(root.querySelector('a[href="/projects/web/service-accounts"]')).toBeTruthy();
   });
 
-  it('R-UI-041 the lists of an administrator send the project and nothing else global', async () => {
+  it('R-UI-041 the token list of a project account asks for its qualified principal', async () => {
     const { get } = await renderScreen(ServiceAccountDetail, {
-      inputs: { name: 'web-ci' },
+      inputs: { name: 'ci', project: 'web' },
       capabilities: [],
-      setup: seed(),
+      setup: seed,
     });
     const tokens = get(TokensApi) as FakeTokensApi;
-    expect(tokens.lastFilters?.owner).toBe('sa:web-ci');
+    expect(tokens.lastFilters?.owner).toBe('sa:web/ci');
+  });
+
+  it('R-AUTHZ-026 the same name may exist in two projects: the account is read inside the project of the route', async () => {
+    const { root } = await renderScreen(ServiceAccountDetail, {
+      inputs: { name: 'ci', project: 'data' },
+      capabilities: ['identities:write', 'tokens:read'],
+      setup: (g) => {
+        seed(g);
+        const api = g(IdentityApi) as FakeIdentityApi;
+        api.accounts = [...api.accounts, { ...api.accounts[0]!, id: 'sa-data-ci', principal: 'sa:data/ci', description: 'CI of data', project: 'data' }];
+      },
+    });
+    expect(text(root)).toContain('Service account of project data');
   });
 });
 
-describe('The repository wizard in a project (R-UI-041, R-AUTHZ-026)', () => {
-  it('R-UI-041 prefills the key with the project prefix and creates the repository inside the project', async () => {
+describe('The repository wizard in a project (R-REPO-001, R-AUTHZ-026)', () => {
+  it('R-REPO-001 starts on the project of the link, and creates the repository inside it', async () => {
     const { fixture, root, get } = await renderScreen(RepositoryWizard, {
       inputs: { project: 'web' },
       capabilities: [],
       setup: (g) => {
-        projectAdmin()(g);
+        projectOwner()(g);
         (g(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [PACKAGE_FORMAT];
       },
     });
@@ -221,10 +224,8 @@ describe('The repository wizard in a project (R-UI-041, R-AUTHZ-026)', () => {
     await settle(fixture);
     button(root, 'Next').click();
     await settle(fixture);
-    const key = root.querySelector<HTMLInputElement>('#f-key')!;
-    expect(key.value).toBe('web-');
-    expect(text(root)).toContain('This repository is created in project web');
-    type(key, 'web-libs');
+    expect(root.querySelector<HTMLSelectElement>('select[name="project"]')!.value).toBe('web');
+    type(root.querySelector<HTMLInputElement>('#f-key')!, 'libs');
     await settle(fixture);
     button(root, 'Next').click();
     await settle(fixture);
@@ -232,32 +233,56 @@ describe('The repository wizard in a project (R-UI-041, R-AUTHZ-026)', () => {
     await settle(fixture);
     button(root, /Create repository/).click();
     await sleep(fixture, 100);
-    const created = (get(RepositoriesApi) as FakeRepositoriesApi).repositories.find((r) => r.key === 'web-libs');
-    expect(created?.project).toBe('web');
+    const api = get(RepositoriesApi) as FakeRepositoriesApi;
+    expect(api.createProjects).toEqual(['web']);
+    expect(api.repositories.find((r) => r.key === 'libs')?.project).toBe('web');
   });
 
-  it('R-UI-041 the wizard without a project leaves the key empty and the document without project', async () => {
-    const { root } = await renderScreen(RepositoryWizard);
-    expect(text(root)).not.toContain('This repository is created in project');
+  it('R-REPO-001 the wizard without a project asks for one and does not go on without', async () => {
+    const { fixture, root } = await renderScreen(RepositoryWizard, { setup: (g) => ((g(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [PACKAGE_FORMAT]) });
+    root.querySelector<HTMLElement>('[role="option"]')!.click();
+    await settle(fixture);
+    button(root, 'Next').click();
+    await settle(fixture);
+    const el = root.querySelector<HTMLInputElement>('input[name="class"][value="local"]')!;
+    el.checked = true;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(fixture);
+    button(root, 'Next').click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLSelectElement>('select[name="project"]')!.value).toBe('');
+    type(root.querySelector<HTMLInputElement>('#f-key')!, 'libs');
+    await settle(fixture);
+    button(root, 'Next').click();
+    await settle(fixture);
+    expect(root.querySelector('#f-key')).not.toBeNull();
   });
 });
 
 describe('Session helpers and messages of the project screens (R-UI-041, R-UI-042)', () => {
-  it('R-UI-041 projectRights, canWritePolicies and canWriteRepositories follow authz/me and the capabilities', async () => {
-    const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectAdmin(true, false) });
+  it('R-UI-041 projectRole, canWritePolicies and canWriteRepositories follow authz/me and the capabilities', async () => {
+    const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectOwner() });
     const session = get(SessionStore);
-    expect(session.isProjectAdministrator()).toBe(true);
-    expect(session.hasAdminArea()).toBe(true);
+    // An Owner administers the project inside it; the admin area is for the holders of capabilities (Q-UI-129).
+    expect(session.hasAdminArea()).toBe(false);
     expect(session.isAdministrator()).toBe(false);
-    expect(session.projectRights('web')).toEqual({ key: 'web', managePolicies: true, manageRepositories: false });
-    expect(session.projectRights('data')).toBeNull();
+    expect(session.projectRole('web')).toBe('owner');
+    expect(session.projectRole('data')).toBeNull();
     expect(session.canWritePolicies('web')).toBe(true);
     expect(session.canWritePolicies('data')).toBe(false);
     expect(session.canWritePolicies(null)).toBe(false);
+    expect(session.canWriteRepositories('web')).toBe(true);
+    expect(session.canWriteRepositories('data')).toBe(false);
+  });
+
+  it('R-UI-041 a Maintainer reads and does not administer', async () => {
+    const { get } = await renderScreen(RepositoryWizard, { capabilities: [], setup: projectOwner('maintainer') });
+    const session = get(SessionStore);
+    expect(session.hasAdminArea()).toBe(false);
     expect(session.canWriteRepositories('web')).toBe(false);
   });
 
-  it('R-UI-041 the capabilities decide for any project, switches aside', async () => {
+  it('R-UI-041 the capabilities decide for any project', async () => {
     const { get } = await renderScreen(RepositoryWizard, { capabilities: ['policies:write', 'repositories:write-config'] });
     const session = get(SessionStore);
     expect(session.canWritePolicies('data')).toBe(true);
@@ -265,19 +290,14 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
     expect(session.canWriteRepositories('data')).toBe(true);
   });
 
-  it('R-UI-042 every new problem code of the project areas has a translated message', () => {
+  it('R-UI-042 every problem code of the project areas has a translated message', () => {
     for (const code of [
       'repository_outside_project',
       'unknown_project',
       'principal_outside_project',
-      'project_prefix_required',
-      'name_reserved_by_project',
+      'principal_not_allowed',
       'project_account_not_groupable',
       'project_not_empty',
-      'repository_assigned',
-      'project_owner_changed',
-      'project_key_overlap',
-      'project_switch_off',
       'secret_value_required',
       'outbound_path_restricted',
     ]) {
@@ -289,15 +309,23 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
 
   it('R-UI-050 the project screens open the manual page about projects', () => {
     expect(helpFor('/admin/projects')).toEqual(['/help', 'admin', 'projects']);
-    expect(helpFor('/admin/projects/web')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/settings')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/members')).toEqual(['/help', 'admin', 'projects']);
+    expect(helpFor('/projects/web/packages/npm/left-pad')).toEqual(['/help', 'user', 'packages']);
+    expect(helpFor('/projects/web/browse/npm-local/a')).toEqual(['/help', 'user', 'files']);
+    expect(helpFor('/projects/web/repositories/npm-local')).toEqual(['/help', 'user', 'repositories']);
+    expect(helpFor('/projects/web/vulnerabilities')).toEqual(['/help', 'user', 'vulnerabilities']);
+    expect(helpFor('/projects/web/policies/npm-read')).toEqual(['/help', 'admin', 'permissions']);
+    expect(helpFor('/projects/web/service-accounts')).toEqual(['/help', 'admin', 'sign-in-and-identity']);
+    expect(helpFor('/projects/web/ci/mappings/new?issuer=a')).toEqual(['/help', 'admin', 'gitlab-ci']);
   });
 
-  it('R-UI-041 the fake models a project: the key pattern, the overlap and an occupied repository', async () => {
+  it('Q-AUTHZ-217 the fake models a project: the key pattern, an existing key and the last Owner', async () => {
     TestBed.resetTestingModule();
     const { get } = await renderScreen(RepositoryWizard);
     const api = get(ProjectsApi) as FakeProjectsApi;
-    await expect(api.create({ key: 'web-app', displayName: 'x', description: '' }, 'k')).rejects.toMatchObject({ code: 'project_key_overlap' });
-    await expect(api.assignRepository('web', 'nope', false, null)).rejects.toMatchObject({ status: 404 });
+    await expect(api.create({ key: 'web', displayName: 'x', description: '' }, 'k')).rejects.toMatchObject({ code: 'already_exists' });
+    await expect(api.removeMember('web', 'group:web-leads')).rejects.toMatchObject({ code: 'last_owner' });
     expect(sampleProject().key).toBe('web');
   });
 });

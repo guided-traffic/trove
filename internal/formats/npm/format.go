@@ -1,5 +1,5 @@
 // Package npm is the npm registry format (R-NPM-001 to R-NPM-048): the routes
-// below /api/npm/<repoKey>/, the classification of paths, the storage hooks, the
+// below /api/npm/<projectKey>/<repoKey>/, the classification of paths, the storage hooks, the
 // publish of a version and the native error shape, for the three classes. The local
 // repository's protocol and its publish, the documents, the tarball downloads, the
 // dist-tags, unpublish and the identity endpoints are in the handler files that
@@ -65,7 +65,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 			DisplayName:      "npm",
 			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
-			ProtocolBasePath: "/api/npm/{key}/",
+			ProtocolBasePath: "/api/npm/{project}/{key}/",
 			// The upstream registry the remote class proposes (R-NPM-023); the probe of
 			// the upstream test is its ping endpoint (R-REPO-024).
 			DefaultUpstreamURL:        "https://registry.npmjs.org/",

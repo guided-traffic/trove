@@ -64,9 +64,9 @@ describe('TroveTitleStrategy', () => {
 describe('browseMatcher', () => {
   const seg = (...p: string[]) => p.map((x) => new UrlSegment(x, {}));
 
-  it('R-UI-003 takes the first segment as repository and joins the rest as the path', () => {
+  it('R-UI-003 Q-UI-129 takes the first segment as the repository key (the project is the parent route) and joins the rest as the path', () => {
     const m = browseMatcher(seg('npm-local', '@team-a', 'ui'), null as never, null as never);
-    expect(m?.posParams?.['repo']?.path).toBe('npm-local');
+    expect(m?.posParams?.['key']?.path).toBe('npm-local');
     expect(m?.posParams?.['path']?.path).toBe('@team-a/ui');
   });
 

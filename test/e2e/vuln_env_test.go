@@ -214,8 +214,8 @@ func (e *vulnEnv) buildRepositories(t testing.TB) {
 	e.ensureRepo(t, npmLocalKey, nil, map[string]any{"vulnerabilities": map[string]any{"matchPublicAdvisories": "always"}})
 	// npm-internal is the holder of the claimed scope: its names are internal, public advisories do not apply to them.
 	e.ensureRepo(t, vulnNPMInternal, map[string]any{"key": vulnNPMInternal, "class": "local", "format": "npm", "requireAuthentication": true}, nil)
-	g := e.adm.get("/api/v1/repositories/"+vulnNPMInternal+"/claims").want(t, "read the claims of "+vulnNPMInternal, 200)
-	e.adm.do(http.MethodPut, "/api/v1/repositories/"+vulnNPMInternal+"/claims",
+	g := e.adm.get(reposBase+vulnNPMInternal+"/claims").want(t, "read the claims of "+vulnNPMInternal, 200)
+	e.adm.do(http.MethodPut, reposBase+vulnNPMInternal+"/claims",
 		map[string]any{"claims": []map[string]any{{"pattern": "@acme/*", "scope": "global"}}}, "If-Match", g.Header.Get("ETag")).want(t, "claim @acme/*", 200)
 	ensurePolicy(t, e.adm, "e2e-npm-vuln", []string{vulnNPMInternal}, [2]any{"sa:" + npmPublisher, []string{"read", "deploy", "delete"}})
 
@@ -242,7 +242,7 @@ func (e *vulnEnv) buildRepositories(t testing.TB) {
 func (e *vulnEnv) ensureRepo(t testing.TB, key string, body map[string]any, patch map[string]any) {
 	t.Helper()
 	if body != nil {
-		r, err := e.adm.send(http.MethodPost, "/api/v1/repositories", body)
+		r, err := e.adm.send(http.MethodPost, reposRoute, body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -253,8 +253,8 @@ func (e *vulnEnv) ensureRepo(t testing.TB, key string, body map[string]any, patc
 	if patch == nil {
 		return
 	}
-	g := e.adm.get("/api/v1/repositories/"+key).want(t, "read "+key, 200)
-	e.adm.do(http.MethodPatch, "/api/v1/repositories/"+key, patch, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").
+	g := e.adm.get(reposBase+key).want(t, "read "+key, 200)
+	e.adm.do(http.MethodPatch, reposBase+key, patch, "If-Match", g.Header.Get("ETag"), "Content-Type", "application/merge-patch+json").
 		want(t, "settings of "+key, 200)
 }
 
@@ -477,7 +477,7 @@ func (e *vulnEnv) findingVia(t testing.TB, adm *api, repo, pkg, version string) 
 	t.Helper()
 	var got []vulnFinding
 	waitFor(t, "the finding of "+pkg+"@"+version+" in "+repo, 2*time.Minute, time.Second, func() bool {
-		got = e.findingsVia(t, adm, url.Values{"repository": {repo}, "package": {pkg}, "version": {version}})
+		got = e.findingsVia(t, adm, url.Values{"repository": {qn(repo)}, "package": {pkg}, "version": {version}})
 		return len(got) >= 1
 	})
 	if len(got) != 1 {

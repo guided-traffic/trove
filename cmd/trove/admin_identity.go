@@ -25,7 +25,7 @@ import (
 
 const (
 	serviceAccountUsage = "usage: trove admin service-account create <name> [--description <text>] [--admin] [--config <file>]"
-	tokenUsage          = "usage: trove admin token create --service-account <name> [--ttl 15m] [--scope-file <file>] [--config <file>]\n" +
+	tokenUsage          = "usage: trove admin token create --service-account <name|project/name> [--ttl 15m] [--scope-file <file>] [--config <file>]\n" +
 		"       trove admin token revoke --id <uuid> | --value-stdin [--config <file>]"
 	userUsage = "usage: trove admin user disable <username> [--keep-tokens] [--config <file>]"
 )
@@ -111,7 +111,7 @@ func tokenCmd(args []string, s streams) error {
 // (R-AUTH-015). The secret is never logged.
 func tokenCreate(args []string, s streams) error {
 	c := newFlags("admin token create", s)
-	sa := c.fs.String("service-account", "", "name of the service account that owns the token")
+	sa := c.fs.String("service-account", "", "the service account that owns the token: <name>, or <project>/<name> for a project's account; a leading sa: is accepted")
 	ttl := c.fs.Duration("ttl", 15*time.Minute, "lifetime of the token; at most the SAT maximum")
 	scopeFile := c.fs.String("scope-file", "", "file with the scope document of R-AUTH-024; the default scope when absent")
 	return withIdentity(c, s, args, func(ctx context.Context, id *identityParts) error {
@@ -126,7 +126,7 @@ func tokenCreate(args []string, s streams) error {
 			}
 			scope = b
 		}
-		acct, err := id.manager.GetServiceAccount(ctx, *sa)
+		acct, err := id.manager.ServiceAccountByRef(ctx, strings.TrimPrefix(*sa, "sa:"))
 		if err != nil {
 			return err
 		}

@@ -50,7 +50,7 @@ func (e *env) replica(name string, env ...string) *testenv.Replica {
 // get sends a GET of a path below the repository's registry URL.
 func (e *env) get(r *testenv.Replica, repo, path, token string, hdr ...string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "GET", "/api/nuget/"+repo+"/"+path, token, nil, hdr...)
+	return e.st.Do(r, "GET", "/api/nuget/it/"+repo+"/"+path, token, nil, hdr...)
 }
 
 // line checks that an answer is a NuGet error body, one line of text/plain in the form

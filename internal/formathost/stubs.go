@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -70,7 +72,7 @@ func (unsupportedResolver) KeepsAway(context.Context, *formats.Request, formats.
 	return false, errNoResolver()
 }
 
-func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
 	return nil, errNoResolver()
 }
 

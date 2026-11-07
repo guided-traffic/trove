@@ -170,7 +170,7 @@ func TestClaimsAPI(t *testing.T) {
 	rep := e.newReplica("claims-http", replicaOpts{poll: 300 * time.Millisecond, catalog: pkgCatalog()})
 	rep.mustCreate("npm-local", "local", "pkgfmt", "")
 	srv := e.serveClaims(rep)
-	const path = "/api/v1/repositories/npm-local/claims"
+	const path = "/api/v1/projects/it/repositories/npm-local/claims"
 
 	t.Run("R-REPO-023 GET answers the claims with ETag claims_version", func(t *testing.T) {
 		a := srv.do("reader", "GET", path, "")

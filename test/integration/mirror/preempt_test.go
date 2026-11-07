@@ -30,7 +30,7 @@ type fetchResult struct {
 func (r *rig) startFetch(rep *testenv.Replica, path string, out chan<- fetchResult) {
 	go func() {
 		res := fetchResult{path: path}
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+rep.Addr("default")+"/api/"+r.format+"/"+repoKey+"/"+path, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+rep.Addr("default")+"/api/"+r.format+"/"+testenv.DefaultProject+"/"+repoKey+"/"+path, nil)
 		if err != nil {
 			res.err = err
 			out <- res

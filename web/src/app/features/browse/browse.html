@@ -250,7 +250,7 @@
                 There is no repository you may read yet.
               </p>
               @if (canCreateRepository()) {
-                <a class="btn btn-confirm" routerLink="/admin/repositories/new" i18n="@@repo.list.create">Create repository</a>
+                <a class="btn btn-confirm" [routerLink]="['/projects', project(), 'repositories', 'new']" i18n="@@repo.list.create">Create repository</a>
               } @else {
                 <p class="hint" i18n="@@browse.empty-ask">
                   Ask an administrator for read access to a repository.
@@ -477,7 +477,7 @@
                         </dl>
                         <p class="links">
                           @if (fullRepository()) {
-                            <a [routerLink]="['/admin/repositories', sel.repo]" i18n="@@browse.repo-config"
+                            <a [routerLink]="repositoryCommands(sel.repo)" i18n="@@browse.repo-config"
                               >Repository configuration</a
                             >
                           }
@@ -489,7 +489,7 @@
                               <ol class="members">
                                 @for (m of members(); track m) {
                                   <li>
-                                    <a [routerLink]="['/browse', m]" translate="no">{{ m }}</a>
+                                    <a [routerLink]="commandsOfRepo(m, [])" translate="no">{{ m }}</a>
                                   </li>
                                 }
                               </ol>

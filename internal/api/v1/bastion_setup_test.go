@@ -58,8 +58,8 @@ func setupProblem(t *testing.T, body []byte) errs.Problem {
 // replace-registry-host=always, and there is no publish snippet and no publish target.
 func TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported(t *testing.T) {
 	h := bastionServer(t, reportedURLs{"partners": "https://packages.example.com"}, "https://packages.example.com")
-	out := setupFrom(t, h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion=partners")
-	if out.RegistryUrl != "https://packages.example.com/api/npm/npm-all/" || out.EndpointPath != "//packages.example.com/api/npm/npm-all/" {
+	out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners")
+	if out.RegistryUrl != "https://packages.example.com/api/npm/it/npm-all/" || out.EndpointPath != "//packages.example.com/api/npm/it/npm-all/" {
 		t.Fatalf("%+v", out)
 	}
 	if out.PublishTarget != nil {
@@ -75,8 +75,8 @@ func TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported(t *testing.T
 		}
 	}
 	for _, want := range []string{
-		"registry=https://packages.example.com/api/npm/npm-all/\n",
-		"//packages.example.com/api/npm/npm-all/:_authToken={{token}}\n",
+		"registry=https://packages.example.com/api/npm/it/npm-all/\n",
+		"//packages.example.com/api/npm/it/npm-all/:_authToken={{token}}\n",
 		"replace-registry-host=always\n",
 	} {
 		if !strings.Contains(conf, want) {
@@ -92,7 +92,7 @@ func TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported(t *testing.T
 // still has its publish tab, and the clients that do not read replace-registry-host do not get it.
 func TestR_BAS_007_TheSwitchIsNpmsAndTheBastionsOnly(t *testing.T) {
 	h := bastionServer(t, reportedURLs{"partners": "https://packages.example.com"}, "https://packages.example.com")
-	direct := setupFrom(t, h, "/api/v1/repositories/npm-all/client-setup?client=npm")
+	direct := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm")
 	hasPublish := false
 	for _, sn := range direct.Snippets {
 		hasPublish = hasPublish || sn.Tab == gen.ClientSnippetTabPublish
@@ -100,11 +100,11 @@ func TestR_BAS_007_TheSwitchIsNpmsAndTheBastionsOnly(t *testing.T) {
 			t.Errorf("%s: %s", sn.Id, sn.Content)
 		}
 	}
-	if !hasPublish || direct.RegistryUrl != "https://trove.example.com/api/npm/npm-all/" {
+	if !hasPublish || direct.RegistryUrl != "https://trove.example.com/api/npm/it/npm-all/" {
 		t.Errorf("the direct setup changed: %+v", direct)
 	}
 	for _, client := range []string{"pnpm", "yarn", "yarn-classic"} {
-		out := setupFrom(t, h, "/api/v1/repositories/npm-all/client-setup?client="+client+"&bastion=partners")
+		out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client="+client+"&bastion=partners")
 		for _, sn := range out.Snippets {
 			if strings.Contains(sn.Content, "replace-registry-host") {
 				t.Errorf("%s: %s", client, sn.Content)
@@ -122,7 +122,7 @@ func TestR_BAS_007_AnAddressThatIsNotListedAnswers409(t *testing.T) {
 	reported := reportedURLs{"partners": "https://packages.example.com", "fresh": "", "other": "https://other.example.com"}
 	h := bastionServer(t, reported, "https://elsewhere.example.com", "https://other.example.com/")
 	for name, want := range map[string]int{"partners": 409, "fresh": 409, "other": 200} {
-		w := get(h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion="+name)
+		w := get(h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion="+name)
 		if w.Code != want {
 			t.Errorf("%s: %d %s", name, w.Code, w.Body.String())
 			continue
@@ -135,8 +135,8 @@ func TestR_BAS_007_AnAddressThatIsNotListedAnswers409(t *testing.T) {
 	}
 	// A listed entry with a trailing slash and another case of the host matches.
 	h = bastionServer(t, reportedURLs{"partners": "https://Packages.Example.com"}, "https://packages.example.com/")
-	out := setupFrom(t, h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion=partners")
-	if out.RegistryUrl != "https://packages.example.com/api/npm/npm-all/" {
+	out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners")
+	if out.RegistryUrl != "https://packages.example.com/api/npm/it/npm-all/" {
 		t.Errorf("the registry URL is the listed entry's form: %s", out.RegistryUrl)
 	}
 }
@@ -146,12 +146,12 @@ func TestR_BAS_007_AnAddressThatIsNotListedAnswers409(t *testing.T) {
 func TestR_BAS_007_AnUnknownBastionIsNotFound(t *testing.T) {
 	h := bastionServer(t, reportedURLs{"partners": "https://packages.example.com"}, "https://packages.example.com")
 	for _, name := range []string{"nobody", "Partners", "1partners", "a%20b", "abcdefghijklmnopqrstu"} {
-		if w := get(h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion="+name); w.Code != 404 {
+		if w := get(h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion="+name); w.Code != 404 {
 			t.Errorf("%s: %d %s", name, w.Code, w.Body.String())
 		}
 	}
 	h = bastionServer(t, failingURLs{}, "https://packages.example.com")
-	if w := get(h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion=partners"); w.Code != 500 {
+	if w := get(h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners"); w.Code != 500 {
 		t.Errorf("a failed lookup: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -160,7 +160,7 @@ func TestR_BAS_007_AnUnknownBastionIsNotFound(t *testing.T) {
 // does not fall back to the installation's own address.
 func TestR_BAS_007_WithoutTheLookupTheParameterAnswers503(t *testing.T) {
 	h := bastionServer(t, nil, "https://packages.example.com")
-	if w := get(h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion=partners"); w.Code != 503 {
+	if w := get(h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners"); w.Code != 503 {
 		t.Errorf("%d %s", w.Code, w.Body.String())
 	}
 }
@@ -172,11 +172,11 @@ func TestR_BAS_007_ABastionSetupNeedsNoBaseURLOfTheEndpoint(t *testing.T) {
 		ps.Bastions = reportedURLs{"partners": "https://packages.example.com"}
 		ps.AdditionalBaseURLs = []string{"https://packages.example.com"}
 	})
-	if w := get(h, "/api/v1/repositories/npm-all/client-setup?client=npm"); w.Code != 503 {
+	if w := get(h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm"); w.Code != 503 {
 		t.Fatalf("the direct setup without a base URL: %d", w.Code)
 	}
-	out := setupFrom(t, h, "/api/v1/repositories/npm-all/client-setup?client=npm&bastion=partners")
-	if out.RegistryUrl != "https://packages.example.com/api/npm/npm-all/" {
+	out := setupFrom(t, h, "/api/v1/projects/it/repositories/npm-all/client-setup?client=npm&bastion=partners")
+	if out.RegistryUrl != "https://packages.example.com/api/npm/it/npm-all/" {
 		t.Errorf("%+v", out)
 	}
 }

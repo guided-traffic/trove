@@ -99,7 +99,7 @@ func (a virtualAdapter) Merge(ctx context.Context, rq *formats.Request, p format
 	parts := make([]merge.Part, len(docs))
 	for i, d := range docs {
 		parts[i] = merge.Part{
-			Member: d.Member.Key, Tier: merge.Tier(d.Tier), Position: d.Position, Doc: d.Doc,
+			Member: d.Member.Name.String(), Tier: merge.Tier(d.Tier), Position: d.Position, Doc: d.Doc,
 			CachedVersions: d.CachedVersions, Restricted: d.Restricted,
 		}
 	}
@@ -108,10 +108,10 @@ func (a virtualAdapter) Merge(ctx context.Context, rq *formats.Request, p format
 		return nil, err
 	}
 	if len(res.Conflicts) > 0 {
-		a.f.replicaOf(rq.Host).met.versionConflicts(rq.Repo.Key, len(res.Conflicts))
+		a.f.replicaOf(rq.Host).met.versionConflicts(rq.Repo.Name.String(), len(res.Conflicts))
 		for _, c := range res.Conflicts {
 			slog.WarnContext(ctx, "two members of a virtual repository hold a version with different integrity",
-				"repo", rq.Repo.Key, "package", n.String(), "version", c.Version, "winner", c.Winner, "other", c.Other)
+				"repo", rq.Repo.Name, "package", n.String(), "version", c.Version, "winner", c.Winner, "other", c.Other)
 		}
 	}
 	return res.Doc, nil

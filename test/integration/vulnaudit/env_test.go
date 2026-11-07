@@ -169,13 +169,13 @@ func (e *env) changed(area, payload string, reps ...*testenv.Replica) {
 // post sends a POST of an audit body below the repository's registry URL.
 func (e *env) post(r *testenv.Replica, repo, path, token, body string, hdr ...string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "POST", "/api/npm/"+repo+"/"+path, token, []byte(body), hdr...)
+	return e.st.Do(r, "POST", "/api/npm/it/"+repo+"/"+path, token, []byte(body), hdr...)
 }
 
 // get sends a GET of a path below the repository's NuGet feed.
 func (e *env) get(r *testenv.Replica, repo, path, token string, hdr ...string) testenv.Answer {
 	e.t.Helper()
-	return e.st.Do(r, "GET", "/api/nuget/"+repo+"/"+path, token, nil, hdr...)
+	return e.st.Do(r, "GET", "/api/nuget/it/"+repo+"/"+path, token, nil, hdr...)
 }
 
 // npmCode is the code of an npm error body.

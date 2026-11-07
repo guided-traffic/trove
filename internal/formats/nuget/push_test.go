@@ -71,7 +71,7 @@ func TestR_NUGET_006_APushStoresThePackageItsNuspecAndTheRows(t *testing.T) {
 	if len(v.Files) != 1 || v.Files[0].Path != acmePath || v.Files[0].Size != int64(len(pkg)) {
 		t.Errorf("files = %+v", v.Files)
 	}
-	if v.Audit.RepoKey != "main" || v.Audit.Actor.ID != kitSubject.ID {
+	if v.Audit.RepoKey != "it/main" || v.Audit.Actor.ID != kitSubject.ID {
 		t.Errorf("audit = %+v", v.Audit)
 	}
 	if len(h.st.Journal) != 1 || !strings.Contains(h.st.Journal[0], `"id":"acme.widgets"`) || !strings.Contains(h.st.Journal[0], `"version":"1.2.3"`) {

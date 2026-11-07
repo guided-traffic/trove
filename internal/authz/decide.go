@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -61,7 +63,7 @@ func readType(c Coordinate) bool {
 
 // targetOf is the coordinate as the caller sent it, for the text of a 403.
 func targetOf(c Coordinate) string {
-	t := c.Repository
+	t := c.Repository.String()
 	switch {
 	case c.Package != "":
 		t += "/" + c.Package
@@ -95,8 +97,8 @@ func (e *Engine) Decide(ctx context.Context, sub Subject, c Coordinate) Decision
 // the repositories the request is about: a key the index does not hold yet is
 // looked up and the index brought up to it before the index is taken
 // ([Engine.Know]).
-func (e *Engine) Begin(ctx context.Context, sub Subject, keys ...string) (*Index, error) {
-	idx, refused := e.begin(ctx, sub, keys...)
+func (e *Engine) Begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, error) {
+	idx, refused := e.begin(ctx, sub, names...)
 	if refused != nil {
 		return nil, refused.Err()
 	}
@@ -105,8 +107,8 @@ func (e *Engine) Begin(ctx context.Context, sub Subject, keys ...string) (*Index
 
 // begin is the start of every decision: the repositories the request names are
 // known to the index (R-ARCH-011 step 2, R-API-052), then the index is taken.
-func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index, *Decision) {
-	for _, key := range keys {
+func (e *Engine) begin(ctx context.Context, sub Subject, names ...qname.Repo) (*Index, *Decision) {
+	for _, key := range names {
 		if err := e.know(ctx, key); err != nil {
 			d := Decision{Outcome: DenyStale, Reason: ReasonStale}
 			return nil, &d
@@ -120,7 +122,7 @@ func (e *Engine) begin(ctx context.Context, sub Subject, keys ...string) (*Index
 // brought up to it when the index it decides on does not hold the key, and
 // decides everything after on the index returned. An index that holds the key
 // is returned as it is.
-func (e *Engine) Know(ctx context.Context, idx *Index, sub Subject, key string) (*Index, error) {
+func (e *Engine) Know(ctx context.Context, idx *Index, sub Subject, key qname.Repo) (*Index, error) {
 	if idx != nil && idx.repo(key) != nil {
 		return idx, nil
 	}
@@ -206,10 +208,24 @@ type evalState struct {
 	// contributions with their caps and bounds, never the plain principal set.
 	isCI bool
 	ci   CIGrantSet
+	// member says the subject may hold a project role: it carries roles (Q-AUTHZ-215) and its user or one
+	// of its groups is a member of some project. A subject that is none skips every role lookup.
+	member bool
+}
+
+// roleIn is the subject's role in the project of a repository, the highest over its user and its groups
+// (R-AUTHZ-026), ProjectRoleNone for a credential that carries no role (Q-AUTHZ-215). It is read from the
+// one project a decision asks about, a map lookup per user and group ID, and allocates nothing: neither a
+// decision nor a listing of many repositories derives the subject's other memberships (R-AUTHZ-015).
+func (st *evalState) roleIn(p *projectInfo) ProjectRole {
+	if !st.member {
+		return ProjectRoleNone
+	}
+	return p.roleOf(st.sub)
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
-	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub)}
+	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub), member: idx.isMember(sub)}
 	if kindOf(sub) == kindCI {
 		st.isCI, st.ci = true, idx.CIGrants(sub)
 	}
@@ -290,7 +306,7 @@ func (e *Engine) scopeAdmits(sc *scope.Scope, a Action, r *repoInfo, repoLevel b
 		if len(bad) > 0 || !acts.Has(a) {
 			continue
 		}
-		if !e.compile.selectorsMatch(el.Repositories, r.repoView) {
+		if !e.compile.selectorsMatch(el.Repositories, instanceContext, r.repoView) {
 			continue
 		}
 		pkgs, err := e.compile.set(dimPackage, el.Packages.Include, el.Packages.Exclude, r.Format, e.namesOf(r.Format))
@@ -308,8 +324,12 @@ func (e *Engine) scopeAdmits(sc *scope.Scope, a Action, r *repoInfo, repoLevel b
 	return false
 }
 
-// grantedBy returns the names of the policies whose grants give the action on
-// the coordinate to a principal of the set (R-AUTHZ-015 `granted`).
+// grantedBy returns the sources that give the action on the coordinate to the
+// subject (R-AUTHZ-015 `granted`): the names of the policies whose grants give it to
+// a principal of the set, and the role the subject holds in the repository's project,
+// as "role:<projectKey>:<role>" (R-AUTHZ-026). A role covers every package and path
+// of every repository of its project; on a virtual repository only read and manage
+// have an effect, as for a grant (R-AUTHZ-009).
 func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path string) []string {
 	var out []string
 	for _, p := range st.pset {
@@ -319,16 +339,20 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
-	if a == Manage && st.idx.administersRepo(st.sub, r) {
-		// A project administrator holds manage on every repository of the project,
-		// unrestricted in packages and paths. It is decided from the administration
-		// of the project (a user or a group member, through a session or a token with
-		// admin: true), not from a grant keyed by the principal ID, which a service
-		// account in an administrator group or a token without admin: true would
-		// match as well (R-AUTHZ-026, Q-AUTHZ-183, Q-AUTHZ-196).
-		out = append(out, "project:"+r.project)
+	if role := st.roleIn(r.proj); role != ProjectRoleNone && roleActions(role, r).Has(a) {
+		out = append(out, r.proj.source(role))
 	}
 	return out
+}
+
+// roleActions are the actions a role gives on one repository of its project: the role's
+// actions, narrowed to read and manage on a virtual repository (R-AUTHZ-009).
+func roleActions(role ProjectRole, r *repoInfo) ActionSet {
+	acts := role.Actions()
+	if r.Class == repository.Virtual {
+		acts &= virtualActions
+	}
+	return acts
 }
 
 // allowedAction is `Allowed` of R-AUTHZ-015 after the endpoint ceiling, which
@@ -371,22 +395,24 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 // not open its members to a request that addresses them directly, and the grants of
 // the subject still decide first: this only lifts the ceiling, it grants nothing.
 func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLevel bool, c Coordinate) bool {
-	if a != Read || c.Addressed == "" || c.Addressed == r.Key {
+	if a != Read || c.Addressed.IsZero() || c.Addressed == r.Name {
 		return false
 	}
 	v := st.idx.repo(c.Addressed)
-	if v == nil || v.Class != repository.Virtual || !st.idx.reaches(v, r.Key, 0) {
+	if v == nil || v.Class != repository.Virtual || !st.idx.reaches(v, r.Name, 0) {
 		return false
 	}
 	sc := st.sub.Scope
 	if sc == nil || sc.Inherit {
 		return false
 	}
-	// Only an element that names the virtual repository by its exact key lifts: a class
-	// selector or a key glob that happens to cover it does not (Q-AUTHZ-164).
+	// Only an element that names the virtual repository by its exact name, <project>/<key> in
+	// the instance context of a token scope, lifts: a class selector or a key glob that happens
+	// to cover it does not (Q-AUTHZ-164, Q-AUTHZ-216).
 	exact := &scope.Scope{}
+	name := v.Name.String()
 	for _, el := range sc.Repositories {
-		if slices.Contains(el.Repositories, v.Key) {
+		if slices.Contains(el.Repositories, name) {
 			exact.Repositories = append(exact.Repositories, el)
 		}
 	}
@@ -396,7 +422,7 @@ func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLe
 // reaches reports whether the virtual repository v resolves through the repository
 // key, as a member or through nested virtual repositories (R-AUTHZ-009 rule 2). The
 // deploy target is a member, so it needs no case of its own.
-func (idx *Index) reaches(v *repoInfo, key string, depth int) bool {
+func (idx *Index) reaches(v *repoInfo, key qname.Repo, depth int) bool {
 	if depth > 16 {
 		return false
 	}
@@ -620,7 +646,7 @@ func dedupStrings(in []string) []string {
 // Readable implements [Authorizer]: the keys the subject may read, in the order
 // given (R-AUTHZ-016: a listing contains only what the subject may read), on the
 // installed index. A refusal to decide (503, 412) is returned as an error.
-func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]string, error) {
+func (e *Engine) Readable(ctx context.Context, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	idx, refused := e.forRequest(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
@@ -633,7 +659,7 @@ func (e *Engine) Readable(ctx context.Context, sub Subject, keys []string) ([]st
 // (the subject's endpoint) a repository without an enabled rule is left out as
 // well (R-EP-014). An anonymous subject while anonymous access is off reads
 // nothing; a switch that cannot be read is a refusal to decide (503).
-func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []string) ([]string, error) {
+func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys []qname.Repo) ([]qname.Repo, error) {
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
@@ -641,9 +667,15 @@ func (e *Engine) ReadableOn(ctx context.Context, idx *Index, sub Subject, keys [
 	if sub.Anonymous && sub.anon != anonOn {
 		return nil, nil
 	}
-	out := make([]string, 0, len(keys))
+	out := make([]qname.Repo, 0, len(keys))
+	// One state for every key, as a read scope builds it (readScope.MayRead): it is immutable, so each
+	// answer is the one evaluate gives, and a key more costs one decision, not one derivation of the subject.
+	var st *evalState
+	if len(keys) > 0 {
+		st = e.newEvalState(idx, sub)
+	}
 	for _, k := range keys {
-		d := e.evaluate(idx, sub, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
+		d := e.evaluateWith(idx, sub, st, Coordinate{Repository: k, Kind: KindMetadata, Actions: []Action{Read}})
 		switch {
 		case d.Outcome == Allow:
 			out = append(out, k)
@@ -738,7 +770,7 @@ func (e *Engine) requireOn(idx *Index, sub Subject, permission string) Decision 
 
 // CheckItem is one check of POST /api/v1/authz/check (R-AUTHZ-023).
 type CheckItem struct {
-	Repository string
+	Repository qname.Repo
 	Package    string
 	Path       string
 	Action     Action
@@ -822,7 +854,7 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 		}
 	}
 	me.Capabilities = e.capabilities(idx, sub).list()
-	me.Projects = e.ProjectsOn(idx, sub)
+	me.Memberships = e.MembershipsOn(idx, sub)
 	switch kindOf(sub) {
 	case kindServiceAccount:
 		me.Principals = append(me.Principals, "sa:"+sub.Name)
@@ -842,54 +874,87 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 	return me, nil
 }
 
-// patternCache compiles the patterns and selectors of token scopes, which arrive
-// with every request. It is bounded and lives in the engine, never in package
-// state (R-ARCH-032).
+// patternCache compiles the patterns and selectors of token scopes and CI inline
+// grants, which arrive with every request. It is bounded and lives in the engine,
+// never in package state (R-ARCH-032). A selector is cached per context: the same
+// text is a bare key in a project and an error in the instance (Q-AUTHZ-216).
 type patternCache struct {
 	mu   sync.RWMutex
-	sels map[string]selector
-	bad  map[string]bool
+	sels map[selKeyIn]selector
+	bad  map[selKeyIn]bool
 	res  map[string]*globSet
+}
+
+// selKeyIn is a selector text in its context, the key of patternCache.sels.
+type selKeyIn struct {
+	project string
+	text    string
 }
 
 const patternCacheMax = 4096
 
 func newPatternCache() *patternCache {
-	return &patternCache{sels: map[string]selector{}, bad: map[string]bool{}, res: map[string]*globSet{}}
+	return &patternCache{sels: map[selKeyIn]selector{}, bad: map[selKeyIn]bool{}, res: map[string]*globSet{}}
+}
+
+// reset empties the cache; the caller holds the write lock.
+func (c *patternCache) reset() {
+	c.sels, c.bad, c.res = map[selKeyIn]selector{}, map[selKeyIn]bool{}, map[string]*globSet{}
 }
 
 func (c *patternCache) full() bool { return len(c.sels)+len(c.res) > patternCacheMax }
 
-// selectorsMatch reports whether any selector text covers the repository.
-func (c *patternCache) selectorsMatch(texts []string, r repoView) bool {
+// selectorsMatch reports whether any selector text, read in the context in, covers
+// the repository. A token scope and a CI grant of the system tier are read in the
+// instance context, the inline grants of a project's CI mapping in the context of its
+// project (R-AUTHZ-004). A text that does not parse in its context covers nothing.
+func (c *patternCache) selectorsMatch(texts []string, in qname.Context, r repoView) bool {
 	for _, t := range texts {
-		c.mu.RLock()
-		s, ok := c.sels[t]
-		bad := c.bad[t]
-		c.mu.RUnlock()
-		if bad {
-			continue
-		}
-		if !ok {
-			var err error
-			s, err = parseSelector(t)
-			c.mu.Lock()
-			if c.full() {
-				c.sels, c.bad, c.res = map[string]selector{}, map[string]bool{}, map[string]*globSet{}
-			}
-			if err != nil {
-				c.bad[t] = true
-				c.mu.Unlock()
-				continue
-			}
-			c.sels[t] = s
-			c.mu.Unlock()
-		}
-		if s.matches(r) {
+		if s, ok := c.selector(t, in); ok && s.matches(r) {
 			return true
 		}
 	}
 	return false
+}
+
+// selectorsCoverProject reports whether any selector text of an instance context (a token scope) names the project:
+// a key of a repository of it, a pattern whose project glob matches it, or a class, which covers every project
+// (Q-AUTHZ-215). A text that does not parse covers nothing.
+func (c *patternCache) selectorsCoverProject(texts []string, project string) bool {
+	for _, t := range texts {
+		if s, ok := c.selector(t, instanceContext); ok && s.coversProject(project) {
+			return true
+		}
+	}
+	return false
+}
+
+// selector is the selector text read in the context in, from the cache when seen before; ok is false for a text
+// that does not parse there.
+func (c *patternCache) selector(t string, in qname.Context) (selector, bool) {
+	k := selKeyIn{project: in.Project, text: t}
+	c.mu.RLock()
+	s, ok := c.sels[k]
+	bad := c.bad[k]
+	c.mu.RUnlock()
+	if bad {
+		return selector{}, false
+	}
+	if ok {
+		return s, true
+	}
+	s, err := parseSelector(t, in)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.full() {
+		c.reset()
+	}
+	if err != nil {
+		c.bad[k] = true
+		return selector{}, false
+	}
+	c.sels[k] = s
+	return s, true
 }
 
 // set compiles one dimension's lists, from the cache when seen before. format
@@ -915,7 +980,7 @@ func (c *patternCache) set(dim dimension, include, exclude []string, format stri
 	}
 	c.mu.Lock()
 	if c.full() {
-		c.sels, c.bad, c.res = map[string]selector{}, map[string]bool{}, map[string]*globSet{}
+		c.reset()
 	}
 	c.res[key] = &got
 	c.mu.Unlock()

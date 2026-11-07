@@ -131,7 +131,7 @@ func TestR_BAS_043_AReplicaThatCannotReachTheMainInstallationBecomesReadyAndConn
 	}
 	// The client listener answers: there is no hit to serve, and a miss is a 503 without a request to the main
 	// installation (R-BAS-027).
-	if code, _, _ := get(t, "http://"+srv.ClientAddr().String()+"/api/npm/npm-all/lodash"); code != http.StatusServiceUnavailable {
+	if code, _, _ := get(t, "http://"+srv.ClientAddr().String()+"/api/npm/web/npm-all/lodash"); code != http.StatusServiceUnavailable {
 		t.Errorf("client request = %d", code)
 	}
 
@@ -264,7 +264,7 @@ func TestR_BAS_039_TheDrainSpoolsTheBufferDuringAnOutageAndAnotherReplicaDeliver
 	main.SetDown(true)
 	at := time.Date(2026, 11, 2, 10, 0, 3, 0, time.UTC)
 	for i := 0; i < 3; i++ {
-		srv.deps.Downloads.Add(iface.DownloadEvent{At: at.Add(time.Duration(i) * time.Second), Repository: "npm-all", Path: fmt.Sprintf("/api/npm/npm-all/p%d.tgz", i), ClientAddress: "203.0.113.7", Replica: "replica-a"})
+		srv.deps.Downloads.Add(iface.DownloadEvent{At: at.Add(time.Duration(i) * time.Second), Repository: "web/npm-all", Path: fmt.Sprintf("/api/npm/web/npm-all/p%d.tgz", i), ClientAddress: "203.0.113.7", Replica: "replica-a"})
 	}
 	if v := maintest.Value(srv.bm.AuditBuffer); v != 3 {
 		t.Fatalf("buffer = %v", v)
@@ -311,7 +311,7 @@ func TestR_BAS_039_TheDrainSendsTheBufferWhenTheMainInstallationIsUp(t *testing.
 	run(t, srv, logs)
 	eventually(t, 20*time.Second, "reachable", func() bool { return srv.link.State().Reachable })
 	for i := 0; i < 4; i++ {
-		srv.deps.Downloads.Add(iface.DownloadEvent{At: time.Now(), Repository: "npm-all", Path: "/x", ClientAddress: "203.0.113.7", Replica: "replica-a"})
+		srv.deps.Downloads.Add(iface.DownloadEvent{At: time.Now(), Repository: "web/npm-all", Path: "/x", ClientAddress: "203.0.113.7", Replica: "replica-a"})
 	}
 	if err := srv.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
@@ -396,7 +396,7 @@ func TestR_BAS_042_TheCallersCredentialsAndTheTraceContextAreNotLoggedOrContinue
 	eventually(t, 5*time.Second, "ready", srv.Health().Ready)
 	callerToken := maintest.GenerateToken(t)
 	const trace = "4bf92f3577b34da6a3ce929d0e0e4736"
-	_, header, _ := get(t, "http://"+srv.ClientAddr().String()+"/api/npm/npm-all/lodash",
+	_, header, _ := get(t, "http://"+srv.ClientAddr().String()+"/api/npm/web/npm-all/lodash",
 		"Authorization", "Bearer "+callerToken, iface.HeaderAuthorization, "Bearer "+callerToken,
 		"Traceparent", "00-"+trace+"-00f067aa0ba902b7-01")
 	if strings.Contains(header.Get("X-Request-Id"), trace) {
@@ -457,12 +457,12 @@ func TestR_BAS_037_ARequestFromABlockedAddressIsCountedButNotLoggedOneByOne(t *t
 	run(t, srv, logs)
 	eventually(t, 5*time.Second, "ready", srv.Health().Ready)
 	client := "http://" + srv.ClientAddr().String()
-	if code, _, _ := get(t, client+"/api/npm/npm-all/logged-request"); code == http.StatusTooManyRequests {
+	if code, _, _ := get(t, client+"/api/npm/web/npm-all/logged-request"); code == http.StatusTooManyRequests {
 		t.Fatal("blocked before the guard blocked")
 	}
 	qg.on.Store(true)
 	for i := 0; i < 3; i++ {
-		if code, _, body := get(t, client+"/api/npm/npm-all/quiet-request"); code != http.StatusTooManyRequests || !strings.Contains(body, iface.CodeAddressBlocked) {
+		if code, _, body := get(t, client+"/api/npm/web/npm-all/quiet-request"); code != http.StatusTooManyRequests || !strings.Contains(body, iface.CodeAddressBlocked) {
 			t.Fatalf("blocked request: %d %s", code, body)
 		}
 	}

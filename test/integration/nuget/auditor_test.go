@@ -14,7 +14,7 @@ import (
 // auditorScope is the scope of an auditor's token that carries the metadata read
 // (R-AUTHZ-013: a token exercises a role's capability only through its system items).
 func auditorScope() scope.Scope {
-	return scope.Scope{Inherit: true, System: []string{"content:metadata-read", "repositories:read-config"}}
+	return scope.Scope{Inherit: true, System: []string{"content:metadata-read", "repositories:read-config", "projects:read"}}
 }
 
 // auditorEnv is the write installation with a user bound to auditor directly, a
@@ -40,7 +40,7 @@ func newAuditorEnv(t *testing.T) *auditorEnv {
 	e.tokMemDefault = e.st.Token(mem, scope.Default())
 	e.r = e.replica("web1")
 	e.mustPush(e.r, "nuget-local", e.tokDev, nupkg(t, pkgSpec{id: "Acme.Widgets", version: "1.2.3", tags: "widgets"}))
-	if a := e.st.Do(e.r, "PUT", "/files/gen-local/a/b.bin", e.tokAdmin, []byte("raw")); a.Status != 201 {
+	if a := e.st.Do(e.r, "PUT", "/files/it/gen-local/a/b.bin", e.tokAdmin, []byte("raw")); a.Status != 201 {
 		t.Fatalf("raw upload: %d %s", a.Status, a.Body)
 	}
 	return e
@@ -61,24 +61,24 @@ func TestQ_AUTHZ_172_AuditorReadsNuGetMetadata(t *testing.T) {
 	}
 	for _, who := range []struct{ name, token string }{{"a user bound to auditor", tokAud}, {"a member of a group bound through authz.role_bindings", tokMem}} {
 		t.Run("Q-AUTHZ-172 "+who.name+" reads the metadata", func(t *testing.T) {
-			if s, b := get(who.token, "/api/nuget/nuget-local/v3/flatcontainer/acme.widgets/index.json"); s != 200 || !strings.Contains(b, `"1.2.3"`) {
+			if s, b := get(who.token, "/api/nuget/it/nuget-local/v3/flatcontainer/acme.widgets/index.json"); s != 200 || !strings.Contains(b, `"1.2.3"`) {
 				t.Fatalf("version list: %d %s", s, b)
 			}
-			if s, b := get(who.token, "/api/nuget/nuget-local/v3/registration/acme.widgets/index.json"); s != 200 || !strings.Contains(b, "1.2.3") {
+			if s, b := get(who.token, "/api/nuget/it/nuget-local/v3/registration/acme.widgets/index.json"); s != 200 || !strings.Contains(b, "1.2.3") {
 				t.Fatalf("registration: %d %s", s, b)
 			}
-			if s, b := get(who.token, "/api/nuget/nuget-local/v3/registration/acme.widgets/1.2.3.json"); s != 200 {
+			if s, b := get(who.token, "/api/nuget/it/nuget-local/v3/registration/acme.widgets/1.2.3.json"); s != 200 {
 				t.Fatalf("registration leaf: %d %s", s, b)
 			}
-			if s, b := get(who.token, "/api/v1/repositories/nuget-local"); s != 200 || !strings.Contains(b, `"nuget-local"`) {
+			if s, b := get(who.token, "/api/v1/projects/it/repositories/nuget-local"); s != 200 || !strings.Contains(b, `"nuget-local"`) {
 				t.Fatalf("the repository document: %d %s", s, b)
 			}
 		})
 		t.Run("Q-AUTHZ-172 "+who.name+" downloads and changes nothing", func(t *testing.T) {
 			for _, p := range []string{
-				"/api/nuget/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg",
-				"/api/nuget/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.nuspec",
-				"/files/gen-local/a/b.bin",
+				"/api/nuget/it/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg",
+				"/api/nuget/it/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.nuspec",
+				"/files/it/gen-local/a/b.bin",
 			} {
 				if s, b := get(who.token, p); s != 404 {
 					t.Errorf("GET %s: %d %s", p, s, b)
@@ -93,10 +93,10 @@ func TestQ_AUTHZ_172_AuditorReadsNuGetMetadata(t *testing.T) {
 			if a := e.send(r, "POST", "nuget-local", "acme.widgets/1.2.3", who.token); a.Status != 403 {
 				t.Errorf("relist: %d %s", a.Status, a.Body)
 			}
-			if a := e.st.Do(r, "PUT", "/files/gen-local/c.bin", who.token, []byte("x")); a.Status != 403 {
+			if a := e.st.Do(r, "PUT", "/files/it/gen-local/c.bin", who.token, []byte("x")); a.Status != 403 {
 				t.Errorf("raw upload: %d %s", a.Status, a.Body)
 			}
-			if a := e.st.Do(r, "PATCH", "/api/v1/repositories/nuget-local", who.token, map[string]any{"description": "x"},
+			if a := e.st.Do(r, "PATCH", "/api/v1/projects/it/repositories/nuget-local", who.token, map[string]any{"description": "x"},
 				"Content-Type", "application/merge-patch+json", "If-Match", "*"); a.Status != 403 {
 				t.Errorf("repository change: %d %s", a.Status, a.Body)
 			}
@@ -107,12 +107,12 @@ func TestQ_AUTHZ_172_AuditorReadsNuGetMetadata(t *testing.T) {
 	}
 
 	t.Run("R-AUTHZ-013 a token without the system item reads no metadata", func(t *testing.T) {
-		if s, b := get(tokMemDefault, "/api/nuget/nuget-local/v3/flatcontainer/acme.widgets/index.json"); s != 404 {
+		if s, b := get(tokMemDefault, "/api/nuget/it/nuget-local/v3/flatcontainer/acme.widgets/index.json"); s != 404 {
 			t.Fatalf("%d %s", s, b)
 		}
 	})
 	t.Run("R-AUTHZ-001 a user without a grant or role reads nothing", func(t *testing.T) {
-		if s, b := get(e.tokNobody, "/api/nuget/nuget-local/v3/registration/acme.widgets/index.json"); s != 404 {
+		if s, b := get(e.tokNobody, "/api/nuget/it/nuget-local/v3/registration/acme.widgets/index.json"); s != 404 {
 			t.Fatalf("%d %s", s, b)
 		}
 	})

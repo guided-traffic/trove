@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -146,7 +148,7 @@ type RouteDecision struct {
 	// ClaimedBy lists the keys of the repositories whose claims are the most
 	// specific match, for a claim decision. A repository the virtual repository
 	// does not contain can be among them.
-	ClaimedBy []string
+	ClaimedBy []qname.Repo
 }
 
 // Route is the outcome of R-REPO-019 steps 2, 3 and 5 for one request.
@@ -157,9 +159,9 @@ type Route struct {
 	// Members are the members that take part, in resolution order: priority
 	// members first (R-REPO-022), else the order of the member list.
 	Members []Repository
-	// Dropped maps the key of a member that takes no part to the reason
+	// Dropped maps the name of a member that takes no part to the reason
 	// (the Drop* constants).
-	Dropped map[string]string
+	Dropped map[qname.Repo]string
 	// Decision is the pin rule or claim that narrowed the members.
 	Decision RouteDecision
 }
@@ -179,12 +181,12 @@ func (rt *Routing) Route(ctx context.Context, virtual Repository, req RouteReque
 	if err != nil {
 		return Route{}, err
 	}
-	return routeOf(rt.cat, idx, snap.keyOf, virtual, req), nil
+	return routeOf(rt.cat, idx, snap.nameOf, virtual, req), nil
 }
 
 // routeOf is Route on explicit inputs.
-func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, virtual Repository, req RouteRequest) Route {
-	out := Route{Dropped: map[string]string{}}
+func routeOf(cat *catalog.Registry, idx *claimIndex, nameOf func(int64) qname.Repo, virtual Repository, req RouteRequest) Route {
+	out := Route{Dropped: map[qname.Repo]string{}}
 	info, known := cat.Lookup(virtual.Format)
 	if !known || virtual.virt == nil {
 		return out
@@ -211,7 +213,7 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 		} else if hits := mostSpecific(inEffect(idx.lookup(virtual.Format, name), virtual.virt)); len(hits) > 0 {
 			out.Decision = RouteDecision{Kind: DecidedByClaim, Pattern: hits[0].pattern.String()}
 			for _, h := range hits {
-				out.Decision.ClaimedBy = append(out.Decision.ClaimedBy, keyOf(h.repoID))
+				out.Decision.ClaimedBy = append(out.Decision.ClaimedBy, nameOf(h.repoID))
 			}
 			claimed = hits
 		}
@@ -219,13 +221,13 @@ func routeOf(cat *catalog.Registry, idx *claimIndex, keyOf func(int64) string, v
 	for _, m := range virtual.virt.members {
 		switch {
 		case m.Disabled || m.Lifecycle != Active:
-			out.Dropped[m.Key] = DropDisabled
+			out.Dropped[m.Name] = DropDisabled
 		case !admits(m, info, req), unfoldable && m.Class == Remote:
-			out.Dropped[m.Key] = DropNotAdmitted
-		case pinned && !pin.names(m.Key):
-			out.Dropped[m.Key] = DropPinnedOut
+			out.Dropped[m.Name] = DropNotAdmitted
+		case pinned && !pin.names(m.Name.Key):
+			out.Dropped[m.Name] = DropPinnedOut
 		case claimed != nil && !claimedBy(claimed, m.rid):
-			out.Dropped[m.Key] = DropClaimedElsewhere
+			out.Dropped[m.Name] = DropClaimedElsewhere
 		default:
 			out.Members = append(out.Members, m)
 		}
@@ -312,7 +314,7 @@ func remoteRefused(cat *catalog.Registry, idx *claimIndex, remote Repository, na
 		return false
 	}
 	if via != nil && via.virt != nil {
-		if pin, ok := via.virt.pins.best(name); ok && pin.names(remote.Key) {
+		if pin, ok := via.virt.pins.best(name); ok && pin.names(remote.Name.Key) {
 			return false
 		}
 	}
@@ -346,7 +348,8 @@ func coveredByOwn(cat *catalog.Registry, idx *claimIndex, local Repository, name
 
 // ClaimMatch is a claim that covers a name.
 type ClaimMatch struct {
-	// Repository is the key of the claiming repository.
+	// Repository is the qualified name of the claiming repository, empty when the claim index holds an id the replica's
+	// snapshot lacks (a repository created on another replica a moment ago): the holder is then unknown.
 	Repository string
 	Pattern    string
 	Scope      string
@@ -372,7 +375,7 @@ func (rt *Routing) ClaimsFor(ctx context.Context, format, name string) ([]ClaimM
 	}
 	var out []ClaimMatch
 	for _, h := range idx.lookup(format, name) {
-		out = append(out, ClaimMatch{Repository: snap.keyOf(h.repoID), Pattern: h.pattern.String(), Scope: h.scope, Source: h.source})
+		out = append(out, ClaimMatch{Repository: snap.nameOf(h.repoID).String(), Pattern: h.pattern.String(), Scope: h.scope, Source: h.source})
 	}
 	return out, nil
 }
@@ -428,7 +431,7 @@ func (rt *Routing) ExposureSet(ctx context.Context, local Repository, name strin
 		if v.Disabled || v.Lifecycle != Active {
 			continue
 		}
-		route := routeOf(rt.cat, idx, snap.keyOf, v, RouteRequest{Name: name})
+		route := routeOf(rt.cat, idx, snap.nameOf, v, RouteRequest{Name: name})
 		if !route.Admitted || !slices.ContainsFunc(route.Members, func(m Repository) bool { return m.rid == local.rid }) {
 			continue
 		}

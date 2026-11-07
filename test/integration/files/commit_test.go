@@ -139,7 +139,7 @@ func (f *commitFixture) extraRow(mark string) func(context.Context, meta.Tx, ite
 func (f *commitFixture) commit(t *testing.T, path, body string, mut func(*items.CommitSpec)) (items.CommitResult, error) {
 	t.Helper()
 	ctx := context.Background()
-	repo, err := f.r.reader.ByKey(ctx, "generic-local")
+	repo, err := f.r.reader.ByName(ctx, qr("generic-local"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestR_ARCH_009_ItemStoreRunsTheStorageHooksInItsTransaction(t *testing.T) {
 		if len(ev) != 1 || ev[0].Origin != items.OriginUpload || ev[0].Item.ID != res.Item.ID || ev[0].Item.Path != "pkg/a.txt" {
 			t.Fatalf("event = %+v", ev)
 		}
-		if ev[0].Repo.Key != "generic-local" || ev[0].Repo.Class != "local" || ev[0].Repo.Format != "generic" || ev[0].Replaced {
+		if ev[0].Repo.Name != qr("generic-local") || ev[0].Repo.Class != "local" || ev[0].Repo.Format != "generic" || ev[0].Replaced {
 			t.Errorf("repository of the event = %+v", ev[0].Repo)
 		}
 		if !f.hooks.rowInTx[0] {
@@ -352,15 +352,15 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 	web := e.newReplica("web", replicaOpts{storage: small, hooks: hooks})
 	web.createRepository("bulk", nil)
 	for i := range 9 {
-		if res := web.put("admin", fmt.Sprintf("/files/bulk/tree/d%d/f%d.bin", i%3, i), fmt.Sprint(i)); res.status != 201 {
+		if res := web.put("admin", fmt.Sprintf("/files/it/bulk/tree/d%d/f%d.bin", i%3, i), fmt.Sprint(i)); res.status != 201 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 	}
-	web.put("admin", "/files/bulk/one/x.bin", "x")
+	web.put("admin", "/files/it/bulk/one/x.bin", "x")
 
 	t.Run("R-STOR-018 a delete that fails in the hook leaves the files", func(t *testing.T) {
 		hooks.failRemoved = errors.New("the format refused the removal")
-		res := web.do("admin", "DELETE", "/files/bulk/one/x.bin", nil)
+		res := web.do("admin", "DELETE", "/files/it/bulk/one/x.bin", nil)
 		hooks.failRemoved = nil
 		if res.status < 500 {
 			t.Fatalf("%d %s", res.status, res.body)
@@ -374,7 +374,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 		hooks.mu.Lock()
 		hooks.removed = nil
 		hooks.mu.Unlock()
-		if res := web.do("admin", "DELETE", "/files/bulk/one/x.bin", nil); res.status != 204 {
+		if res := web.do("admin", "DELETE", "/files/it/bulk/one/x.bin", nil); res.status != 204 {
 			t.Fatalf("%d %s", res.status, res.body)
 		}
 		hooks.mu.Lock()
@@ -383,7 +383,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 			t.Fatalf("events = %+v", hooks.removed)
 		}
 		ev := hooks.removed[0]
-		if ev.Items[0].Item.Path != "one/x.bin" || ev.Repo.Key != "bulk" || ev.Repo.Format != "generic" || ev.Reason != "delete" {
+		if ev.Items[0].Item.Path != "one/x.bin" || ev.Repo.Name != qr("bulk") || ev.Repo.Format != "generic" || ev.Reason != "delete" {
 			t.Errorf("event = %+v", ev)
 		}
 	})
@@ -392,7 +392,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 		hooks.mu.Lock()
 		hooks.removed = nil
 		hooks.mu.Unlock()
-		if del := web.do("admin", "DELETE", "/files/bulk/tree", nil); del.status != 202 {
+		if del := web.do("admin", "DELETE", "/files/it/bulk/tree", nil); del.status != 202 {
 			t.Fatalf("%d %s", del.status, del.body)
 		}
 		_ = e.newReplica("worker", replicaOpts{worker: true, storage: small, hooks: hooks})
@@ -410,7 +410,7 @@ func TestR_ARCH_008_DeleteRunsOnItemsRemoved(t *testing.T) {
 			if len(ev.Items) > 2 {
 				t.Errorf("a batch of %d files, storage.delete.batch_size is 2", len(ev.Items))
 			}
-			if ev.Repo.Key != "bulk" || ev.Repo.Class != "local" || ev.Repo.Format != "generic" || ev.Reason != "delete" {
+			if ev.Repo.Name != qr("bulk") || ev.Repo.Class != "local" || ev.Repo.Format != "generic" || ev.Reason != "delete" {
 				t.Errorf("event = %+v", ev)
 			}
 		}

@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { ApiClient } from './client';
 import { PageFetcher } from './pagination';
 import { cleanQuery, seg } from './query';
+import { serviceAccountUrl } from './identity-api';
 import { Schema } from './types';
 
 /*
@@ -31,6 +32,7 @@ export abstract class TokensApi {
   abstract create(request: CreateTokenRequest, idempotencyKey: string): Promise<TokenCreated>;
   abstract createForServiceAccount(
     name: string,
+    project: string | null,
     request: CreateTokenRequest,
     idempotencyKey: string,
   ): Promise<TokenCreated>;
@@ -42,7 +44,7 @@ export abstract class TokensApi {
    */
   abstract revokeByValue(value: string): Promise<RevokedToken | null>;
   abstract revokeAllOfUser(username: string): Promise<void>;
-  abstract revokeAllOfServiceAccount(name: string): Promise<void>;
+  abstract revokeAllOfServiceAccount(name: string, project: string | null): Promise<void>;
   abstract revokeAllOwn(): Promise<void>;
 }
 
@@ -60,11 +62,12 @@ export class HttpTokensApi extends TokensApi {
 
   override async createForServiceAccount(
     name: string,
+    project: string | null,
     request: CreateTokenRequest,
     idempotencyKey: string,
   ): Promise<TokenCreated> {
     return (
-      await this.client.post<TokenCreated>(`/api/v1/service-accounts/${seg(name)}/tokens`, request, {
+      await this.client.post<TokenCreated>(`${serviceAccountUrl(name, project)}/tokens`, request, {
         idempotencyKey,
       })
     ).body;
@@ -91,8 +94,8 @@ export class HttpTokensApi extends TokensApi {
     await this.client.delete(`/api/v1/users/${seg(username)}/tokens`);
   }
 
-  override async revokeAllOfServiceAccount(name: string): Promise<void> {
-    await this.client.delete(`/api/v1/service-accounts/${seg(name)}/tokens`);
+  override async revokeAllOfServiceAccount(name: string, project: string | null): Promise<void> {
+    await this.client.delete(`${serviceAccountUrl(name, project)}/tokens`);
   }
 
   override async revokeAllOwn(): Promise<void> {

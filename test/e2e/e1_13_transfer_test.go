@@ -252,7 +252,7 @@ func TestE1_13Transfers(t *testing.T) {
 	useScatter(t)
 	adm := adminAPI(t)
 	tok := transferToken(t)
-	base := cfg.edgeURL + "/files/generic-local/"
+	base := cfg.edgeURL + filesBase + "generic-local/"
 	auth := "Authorization: Bearer " + tok
 	// A large transfer is not the management API's business: the write class does not apply to /files/ in the
 	// way a loop of small requests would hit it; the token is the one of the transfer account.
@@ -319,14 +319,14 @@ func TestE1_13Transfers(t *testing.T) {
 			_ = os.Remove(out)
 		}
 		for _, u := range ups {
-			adm.do(http.MethodDelete, "/files/generic-local/"+u.path, nil)
+			adm.do(http.MethodDelete, filesBase+"generic-local/"+u.path, nil)
 		}
 	})
 
 	big, bigSum := dataFile(t, "xfer-400mib.bin", 400<<20)
 	upload := func(t *testing.T) {
 		t.Helper()
-		adm.do(http.MethodDelete, "/files/generic-local/e2e-xfer/400MiB.bin", nil)
+		adm.do(http.MethodDelete, filesBase+"generic-local/e2e-xfer/400MiB.bin", nil)
 		c := startCurl(t, "-T", big, "-H", "Authorization: Bearer "+adminToken(t), "-o", "/dev/null", "-w", "%{http_code}", base+"e2e-xfer/400MiB.bin")
 		c.wait(t, 10*time.Minute)
 		if c.exit != 0 || (strings.TrimSpace(c.out.String()) != "201" && strings.TrimSpace(c.out.String()) != "200") {

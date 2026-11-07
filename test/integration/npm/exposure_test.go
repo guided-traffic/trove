@@ -31,7 +31,7 @@ const customersHost = "registry.acme.test"
 const customersEndpoint = `{"customers":{"listen":"127.0.0.1:0","base_url":"https://` + customersHost + `","surface":["packages"]}}`
 
 // acmeRule is the example rule of R-EP-012.
-const acmeRule = `{"name":"acme-sdk","repository":"npm-customers","enabled":true,
+const acmeRule = `{"name":"acme-sdk","repository":"it/npm-customers","enabled":true,
 	"packages":{"include":["@acme/sdk","@acme/sdk-*"],"exclude":["@acme/sdk-internal"]},
 	"versions":{"include":[],"exclude":["2.0.1"],"range":">=2.0.0"},"prereleases":false,
 	"distTags":{"include":["latest","lts"],"exclude":[]}}`
@@ -94,13 +94,13 @@ func (x *exposureEnv) api(method, path string, body any, hdr ...string) testenv.
 func (x *exposureEnv) onCustomers(r *testenv.Replica, method, path string, body any, hdr ...string) testenv.Answer {
 	x.t.Helper()
 	hdr = append(hdr, "Trove-Authz-Min-Epoch", x.epoch)
-	return x.st.DoAt(r.Addr("customers"), customersHost, method, "/api/npm/npm-customers/"+path, x.acmeSAT, body, hdr...)
+	return x.st.DoAt(r.Addr("customers"), customersHost, method, "/api/npm/it/npm-customers/"+path, x.acmeSAT, body, hdr...)
 }
 
 // onDefault sends a request below npm-customers to a replica's default endpoint as alice.
 func (x *exposureEnv) onDefault(r *testenv.Replica, method, path string, body any, hdr ...string) testenv.Answer {
 	x.t.Helper()
-	return x.st.Do(r, method, "/api/npm/npm-customers/"+path, x.tokA, body, hdr...)
+	return x.st.Do(r, method, "/api/npm/it/npm-customers/"+path, x.tokA, body, hdr...)
 }
 
 var urlPattern = regexp.MustCompile(`https?://[^"\s]+`)
@@ -136,7 +136,7 @@ func TestR_NPM_048_DocumentsOnAnEndpointWithRules(t *testing.T) {
 			t.Fatalf("tarball URLs %v", urls)
 		}
 		for _, u := range urls {
-			if !strings.HasPrefix(u, "https://"+customersHost+"/api/npm/npm-customers/@acme/sdk/-/sdk-") {
+			if !strings.HasPrefix(u, "https://"+customersHost+"/api/npm/it/npm-customers/@acme/sdk/-/sdk-") {
 				t.Fatalf("URL %s", u)
 			}
 		}

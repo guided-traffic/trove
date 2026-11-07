@@ -106,8 +106,10 @@ func (p *pass) deferLong(ctx context.Context, until time.Time) {
 // record writes an asynchronous event of the pass: the system is the actor, the repository its subject (R-REPO-057).
 func (p *pass) record(ctx context.Context, typ string, outcome audit.Outcome, reason string, details map[string]any) {
 	d, _ := json.Marshal(details)
+	repo, _ := p.current() // the name as the snapshot holds it now: a move renames the repository under a running pass
+	name := repo.Name
 	p.e.o.Audit.Record(context.WithoutCancel(ctx), audit.Event{
 		Type: typ, Actor: audit.Actor{Kind: "system", Name: "mirror"}, Outcome: outcome, Reason: reason,
-		Subject: audit.Subject{Kind: "repository", Name: p.key}, Repository: p.key, Details: d,
+		Subject: audit.Subject{Kind: "repository", Name: name.String()}, Repository: name.String(), Project: name.Project, Details: d,
 	})
 }

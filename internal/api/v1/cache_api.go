@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -29,10 +31,10 @@ type CacheInvalidations interface {
 	Entries(ctx context.Context, repoID int64, f invalidation.EntryFilter) ([]invalidation.Entry, error)
 }
 
-// CacheRepositories looks a repository up by key; *repository.Service implements
+// CacheRepositories looks a repository up by name; *repository.Service implements
 // it.
 type CacheRepositories interface {
-	Get(ctx context.Context, key string) (repository.Stored, error)
+	Get(ctx context.Context, name qname.Repo) (repository.Stored, error)
 }
 
 // CacheServices are the services of the cache operations. A nil member disables
@@ -62,7 +64,8 @@ type cacheInvalidateRequest struct {
 // InvalidateRepositoryCache implements POST /api/v1/repositories/{repoKey}/cache/invalidate
 // (R-OPS-021). manage on the repository, or the administrator role, was decided by
 // the shared step.
-func (s *Server) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, repoKey string) {
+func (s *Server) InvalidateRepositoryCache(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	svc, err := s.cacheServices()
 	var in cacheInvalidateRequest
@@ -119,7 +122,7 @@ func cacheEntriesSpec() ListSpec { return ListSpec{Filters: []string{"pathPrefix
 // binds like everyone, or a caller with manage on the repository. A caller with
 // neither is answered by the decision on manage: 403, or 404 where the repository
 // is hidden from them (R-AUTHZ-016).
-func (s *Server) requireCacheReader(ctx context.Context, svc CacheServices, key string) error {
+func (s *Server) requireCacheReader(ctx context.Context, svc CacheServices, key qname.Repo) error {
 	ctx, acc, err := requestHolder(ctx, svc.Authz, key)
 	if err != nil {
 		return err
@@ -132,7 +135,7 @@ func (s *Server) requireCacheReader(ctx context.Context, svc CacheServices, key 
 		return err
 	}
 	if cfg {
-		if len(acc.Exposed([]string{key})) == 0 {
+		if len(acc.Exposed([]qname.Repo{key})) == 0 {
 			return authz.NotFound()
 		}
 		return nil
@@ -142,7 +145,8 @@ func (s *Server) requireCacheReader(ctx context.Context, svc CacheServices, key 
 
 // ListCacheEntries implements GET /api/v1/repositories/{repoKey}/cache/entries
 // (R-REPO-032).
-func (s *Server) ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKey string, _ gen.ListCacheEntriesParams) {
+func (s *Server) ListCacheEntries(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText string, _ gen.ListCacheEntriesParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx := r.Context()
 	svc, err := s.cacheServices()
 	var lq ListQuery
@@ -161,7 +165,7 @@ func (s *Server) ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKe
 		st, err = svc.Repositories.Get(ctx, repoKey)
 	}
 	if err == nil && st.Repository.Class != repository.Remote {
-		err = errs.E(errs.Invalid, errs.CodeNotApplicable, "Only a remote repository has cache entries; "+strconv.Quote(repoKey)+" is a "+string(st.Repository.Class)+" repository.")
+		err = errs.E(errs.Invalid, errs.CodeNotApplicable, "Only a remote repository has cache entries; "+strconv.Quote(repoKey.String())+" is a "+string(st.Repository.Class)+" repository.")
 	}
 	var id int64
 	if err == nil {

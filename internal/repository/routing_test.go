@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
@@ -39,7 +41,7 @@ func exclude(p ...string) repoOpt { return func(_ *Repository, a *admLists) { a.
 func (f *routeFixture) repo(key string, class Class, format string, opts ...repoOpt) Repository {
 	f.t.Helper()
 	f.next++
-	r := Repository{ID: key, Key: key, Class: class, Format: format, Lifecycle: Active, rid: f.next, autoClaim: true}
+	r := Repository{ID: key, Name: rn(key), Class: class, Format: format, Lifecycle: Active, rid: f.next, autoClaim: true}
 	var lists admLists
 	for _, o := range opts {
 		o(&r, &lists)
@@ -83,13 +85,13 @@ func (f *routeFixture) virtual(key, format string, memberKeys []string, rules []
 func (f *routeFixture) route(v Repository, name string) Route {
 	f.t.Helper()
 	idx := buildClaimIndex(f.rows, slog.New(slog.DiscardHandler))
-	return routeOf(f.cat, idx, func(id int64) string { return f.keys[id] }, v, RouteRequest{Name: name})
+	return routeOf(f.cat, idx, func(id int64) qname.Repo { return rn(f.keys[id]) }, v, RouteRequest{Name: name})
 }
 
 func memberKeys(r Route) []string {
 	out := make([]string, len(r.Members))
 	for i, m := range r.Members {
-		out[i] = m.Key
+		out[i] = m.Name.Key
 	}
 	return out
 }
@@ -129,7 +131,7 @@ func TestRouteDropsMembers(t *testing.T) {
 	if want := []string{"scoped", "plain"}; !slices.Equal(memberKeys(r), want) {
 		t.Fatalf("members = %v, want %v", memberKeys(r), want)
 	}
-	wantDropped := map[string]string{"off": DropDisabled, "going": DropDisabled, "closed": DropNotAdmitted}
+	wantDropped := map[qname.Repo]string{rn("off"): DropDisabled, rn("going"): DropDisabled, rn("closed"): DropNotAdmitted}
 	if !maps.Equal(r.Dropped, wantDropped) {
 		t.Fatalf("dropped = %v, want %v", r.Dropped, wantDropped)
 	}
@@ -138,7 +140,7 @@ func TestRouteDropsMembers(t *testing.T) {
 		if want := []string{"closed", "plain"}; !slices.Equal(memberKeys(r), want) {
 			t.Fatalf("members = %v, want %v", memberKeys(r), want)
 		}
-		if r.Dropped["scoped"] != DropNotAdmitted {
+		if r.Dropped[rn("scoped")] != DropNotAdmitted {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
@@ -164,7 +166,7 @@ func TestRoutePathSubject(t *testing.T) {
 	v := f.virtual("all", "pathfmt", []string{"releases", "any"}, nil)
 	idx := buildClaimIndex(nil, slog.New(slog.DiscardHandler))
 	route := func(path string) Route {
-		return routeOf(f.cat, idx, func(int64) string { return "" }, v, RouteRequest{Path: path})
+		return routeOf(f.cat, idx, func(int64) qname.Repo { return qname.Repo{} }, v, RouteRequest{Path: path})
 	}
 	if got := memberKeys(route("releases/1.0/app.zip")); !slices.Equal(got, []string{"releases", "any"}) {
 		t.Fatalf("members = %v", got)
@@ -189,10 +191,10 @@ func TestRouteClaims(t *testing.T) {
 	t.Run("R-REPO-023 a members claim of a member decides: only the claiming local member is consulted", func(t *testing.T) {
 		r := f.route(all, "@acme/util")
 		if !slices.Equal(memberKeys(r), []string{"team-a"}) || r.Decision.Kind != DecidedByClaim ||
-			r.Decision.Pattern != "@acme/*" || !slices.Equal(r.Decision.ClaimedBy, []string{"team-a"}) {
+			r.Decision.Pattern != "@acme/*" || !slices.Equal(r.Decision.ClaimedBy, []qname.Repo{rn("team-a")}) {
 			t.Fatalf("route = %+v", r)
 		}
-		if r.Dropped["team-b"] != DropClaimedElsewhere || r.Dropped["remote"] != DropClaimedElsewhere {
+		if r.Dropped[rn("team-b")] != DropClaimedElsewhere || r.Dropped[rn("remote")] != DropClaimedElsewhere {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
@@ -210,11 +212,11 @@ func TestRouteClaims(t *testing.T) {
 	})
 	t.Run("R-REPO-023 a global claim of a repository outside V is in effect: nothing is consulted, the answer is 404", func(t *testing.T) {
 		r := f.route(all, "@sandbox/tool")
-		if len(r.Members) != 0 || r.Decision.Kind != DecidedByClaim || !slices.Equal(r.Decision.ClaimedBy, []string{"sandbox"}) {
+		if len(r.Members) != 0 || r.Decision.Kind != DecidedByClaim || !slices.Equal(r.Decision.ClaimedBy, []qname.Repo{rn("sandbox")}) {
 			t.Fatalf("route = %+v", r)
 		}
 		for _, k := range []string{"team-a", "team-b", "remote"} {
-			if r.Dropped[k] != DropClaimedElsewhere {
+			if r.Dropped[rn(k)] != DropClaimedElsewhere {
 				t.Fatalf("dropped = %v", r.Dropped)
 			}
 		}
@@ -231,7 +233,7 @@ func TestRouteClaims(t *testing.T) {
 		w := g.virtual("all", "npmlike", []string{"internal", "remote"}, nil)
 		g.claim("internal", "left-pad", ScopeMembers)
 		r := g.route(w, "left-pad")
-		if len(r.Members) != 0 || r.Dropped["internal"] != DropDisabled || r.Dropped["remote"] != DropClaimedElsewhere {
+		if len(r.Members) != 0 || r.Dropped[rn("internal")] != DropDisabled || r.Dropped[rn("remote")] != DropClaimedElsewhere {
 			t.Fatalf("route = %+v", r)
 		}
 	})
@@ -281,7 +283,7 @@ func TestRoutePins(t *testing.T) {
 		if !slices.Equal(memberKeys(r), []string{"partner"}) || r.Decision.Kind != DecidedByPin || r.Decision.Pattern != "@partner/*" {
 			t.Fatalf("route = %+v", r)
 		}
-		if r.Dropped["local"] != DropPinnedOut || r.Dropped["remote"] != DropPinnedOut {
+		if r.Dropped[rn("local")] != DropPinnedOut || r.Dropped[rn("remote")] != DropPinnedOut {
 			t.Fatalf("dropped = %v", r.Dropped)
 		}
 	})
@@ -308,7 +310,7 @@ func TestRoutePins(t *testing.T) {
 		g.repo("remote", Remote, "npmlike")
 		w := g.virtual("all", "npmlike", []string{"partner", "remote"}, []PinRule{{Packages: []string{"@p/*"}, Members: []string{"partner"}}})
 		r := g.route(w, "@p/x")
-		if len(r.Members) != 0 || r.Dropped["partner"] != DropDisabled || r.Dropped["remote"] != DropPinnedOut {
+		if len(r.Members) != 0 || r.Dropped[rn("partner")] != DropDisabled || r.Dropped[rn("remote")] != DropPinnedOut {
 			t.Fatalf("route = %+v", r)
 		}
 	})
@@ -341,7 +343,7 @@ func TestRoutePriorityOrder(t *testing.T) {
 func testCatalogNoPriority() *catalog.Registry {
 	r := catalog.NewRegistry()
 	r.Register(catalog.Entry{Facts: catalog.Facts{
-		ID: "plain", Classes: []Class{Local, Remote, Virtual}, Layout: "plain", ProtocolBasePath: "/api/plain/{key}/",
+		ID: "plain", Classes: []Class{Local, Remote, Virtual}, Layout: "plain", ProtocolBasePath: "/api/plain/{project}/{key}/",
 		PatternSubject: SubjectName, PackageNames: true, PinsAndClaims: true,
 	}, Names: npmNames{}})
 	return r
@@ -464,3 +466,6 @@ func TestRemoteRefusedAndOwnClaim(t *testing.T) {
 		}
 	})
 }
+
+// rn is the name of the repository key in the project the routing tests use.
+func rn(key string) qname.Repo { return qname.Repo{Project: "it", Key: key} }

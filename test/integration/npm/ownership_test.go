@@ -150,7 +150,7 @@ func TestR_REPO_023_AutoClaimAtPublish(t *testing.T) {
 	if claims("npm-claims", "@acme/claimed") != 1 {
 		t.Fatal("a later version created another claim")
 	}
-	if got := e.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'repository.claims_changed' AND repository = 'npm-claims'`); got != 1 {
+	if got := e.st.Number(`SELECT count(*) FROM audit_event WHERE action = 'repository.claims_changed' AND repository = 'it/npm-claims'`); got != 1 {
 		t.Fatalf("claims_changed events: %d", got)
 	}
 	details := e.st.Text(`SELECT details::text FROM audit_event WHERE action = 'npm.publish' AND path = '@acme/claimed' ORDER BY occurred_at, id LIMIT 1`)
@@ -188,7 +188,7 @@ func TestR_AUTHZ_018_ANewNPMRepositoryEnforcesOwnership(t *testing.T) {
 	e.st.Bind("admin", root)
 	tok := e.st.Token(root, scope.Scope{Inherit: true, Admin: true})
 	a := e.replica("web-a")
-	ans := e.st.Do(a, "POST", "/api/v1/repositories", tok, map[string]any{"key": "npm-created", "class": "local", "format": "npm"})
+	ans := e.st.Do(a, "POST", "/api/v1/projects/it/repositories", tok, map[string]any{"key": "npm-created", "class": "local", "format": "npm"})
 	if ans.Status != 201 {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}

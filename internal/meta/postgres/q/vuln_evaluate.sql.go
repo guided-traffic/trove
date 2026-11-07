@@ -202,10 +202,11 @@ func (q *Queries) VulnCanonicalOfRecords(ctx context.Context, arg VulnCanonicalO
 }
 
 const vulnClaimHolders = `-- name: VulnClaimHolders :many
-SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+SELECT c.repo_id::bigint AS repo_id, (rp.key || '/' || r.key)::text AS key, r.config::text AS config,
        c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
   FROM namespace_claims c
   JOIN repositories r ON r.id = c.repo_id
+  JOIN project rp ON rp.id = r.project_id
  WHERE r.format = $1::text
    AND r.class = 'local'
    AND (c.pattern = $2::text
@@ -230,7 +231,7 @@ type VulnClaimHoldersRow struct {
 // The namespace claims of the local repositories of a format that can cover a name, with the holder's scanning inputs, read in the
 // transaction of a commit: the claims rule of R-VULN-010 must not take a second connection while the commit holds one. The
 // prefilter only narrows (an exact claim, or a literal prefix of the name); a pattern with an escape is always returned and the
-// caller matches every row with the pattern semantics of the claim index.
+// caller matches every row with the pattern semantics of the claim index. The key is the qualified name <project>/<key>.
 func (q *Queries) VulnClaimHolders(ctx context.Context, arg VulnClaimHoldersParams) ([]VulnClaimHoldersRow, error) {
 	rows, err := q.db.Query(ctx, vulnClaimHolders, arg.Format, arg.Name)
 	if err != nil {
@@ -259,10 +260,11 @@ func (q *Queries) VulnClaimHolders(ctx context.Context, arg VulnClaimHoldersPara
 }
 
 const vulnClaimHoldersForItem = `-- name: VulnClaimHoldersForItem :many
-SELECT c.repo_id::bigint AS repo_id, r.key::text AS key, r.config::text AS config,
+SELECT c.repo_id::bigint AS repo_id, (rp.key || '/' || r.key)::text AS key, r.config::text AS config,
        c.pattern::text AS pattern, c.scope::text AS scope, c.source::text AS source
   FROM namespace_claims c
   JOIN repositories r ON r.id = c.repo_id
+  JOIN project rp ON rp.id = r.project_id
   CROSS JOIN (SELECT p.name AS name FROM items i
                     JOIN package_versions pv ON pv.id = i.version_id
                     JOIN packages p ON p.id = pv.package_id

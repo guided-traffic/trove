@@ -4,6 +4,8 @@ import (
 	"context"
 	"slices"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // Withheld search terms (R-REPO-023, R-NUGET-016): a format that forwards a free-text search to a
@@ -69,8 +71,8 @@ func keepsAway(rt *Routing, idx *claimIndex, via *Repository, member Repository,
 // keptFromMember is the part of KeepsAway that depends on the virtual repository's pin rules and
 // the claims in effect in it.
 func keptFromMember(rt *Routing, idx *claimIndex, via *Repository, member Repository, name string, stems []string) bool {
-	r := routeOf(rt.cat, idx, func(int64) string { return "" }, *via, RouteRequest{Name: name})
-	switch r.Dropped[member.Key] {
+	r := routeOf(rt.cat, idx, func(int64) qname.Repo { return qname.Repo{} }, *via, RouteRequest{Name: name})
+	switch r.Dropped[member.Name] {
 	case DropPinnedOut, DropClaimedElsewhere:
 		return true
 	}
@@ -80,7 +82,7 @@ func keptFromMember(rt *Routing, idx *claimIndex, via *Repository, member Reposi
 		}
 	}
 	for _, rule := range via.virt.pins.rules {
-		if slices.Contains(rule.Members, member.Key) {
+		if slices.Contains(rule.Members, member.Name.Key) {
 			continue
 		}
 		for _, raw := range rule.Packages {

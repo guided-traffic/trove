@@ -28,11 +28,11 @@ func metadataFixture() *fixture {
 }
 
 func search(repo string) Coordinate {
-	return Coordinate{Repository: repo, Kind: KindSearch, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Kind: KindSearch, Actions: []Action{Read}}
 }
 
 func packageMetadata(repo, pkg string) Coordinate {
-	return Coordinate{Repository: repo, Package: pkg, Kind: KindMetadata, Actions: []Action{Read}}
+	return Coordinate{Repository: qr(repo), Package: pkg, Kind: KindMetadata, Actions: []Action{Read}}
 }
 
 func TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts(t *testing.T) {
@@ -49,15 +49,15 @@ func TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts(t *testing.T) {
 		{"Q-AUTHZ-172 an artifact is refused like a missing one", direct, read("npm-internal", "left-pad", "left-pad/-/left-pad-1.0.0.tgz"), DenyHidden, ReasonNoGrant, Read},
 		{"Q-AUTHZ-172 a NuGet package download is refused", member, read("nuget-local", "acme.widgets", "acme.widgets/1.0.0/acme.widgets.1.0.0.nupkg"), DenyHidden, ReasonNoGrant, Read},
 		{"Q-AUTHZ-172 a raw file is refused", direct, read("generic-local", "", "a/b.bin"), DenyHidden, ReasonNoGrant, Read},
-		{"Q-AUTHZ-172 a read the caller did not classify is no metadata read", direct, Coordinate{Repository: "npm-internal", Actions: []Action{Read}}, DenyHidden, ReasonNoGrant, Read},
+		{"Q-AUTHZ-172 a read the caller did not classify is no metadata read", direct, Coordinate{Repository: qr("npm-internal"), Actions: []Action{Read}}, DenyHidden, ReasonNoGrant, Read},
 		{"Q-AUTHZ-172 the auditor publishes nothing", direct, write("npm-internal", "left-pad", "", Deploy), DenyVisible, ReasonNoGrant, Deploy},
 		{"Q-AUTHZ-172 the auditor deletes nothing", member, write("nuget-local", "acme.widgets", "", Delete), DenyVisible, ReasonNoGrant, Delete},
 		{"Q-AUTHZ-172 the auditor tags nothing", direct, write("npm-internal", "left-pad", "", Annotate), DenyVisible, ReasonNoGrant, Annotate},
 		{"Q-AUTHZ-172 the auditor overwrites nothing", direct, write("generic-local", "", "a/b.bin", Overwrite), DenyVisible, ReasonNoGrant, Overwrite},
 		{"Q-AUTHZ-172 the auditor manages nothing", direct, write("npm-internal", "left-pad", "", Manage), DenyVisible, ReasonNoGrant, Manage},
-		{"Q-AUTHZ-172 a metadata coordinate that also asks for a write is refused", direct, Coordinate{Repository: "npm-internal", Kind: KindMetadata, Actions: []Action{Read, Deploy}}, DenyVisible, ReasonNoGrant, Deploy},
+		{"Q-AUTHZ-172 a metadata coordinate that also asks for a write is refused", direct, Coordinate{Repository: qr("npm-internal"), Kind: KindMetadata, Actions: []Action{Read, Deploy}}, DenyVisible, ReasonNoGrant, Deploy},
 		{"R-AUTHZ-009 the auditor passes the gate of a virtual repository for metadata", direct, metadata("npm-all"), Allow, "", ""},
-		{"R-AUTHZ-009 and reads a member's document through it", direct, Coordinate{Repository: "npm-internal", Addressed: "npm-all", Package: "left-pad", Kind: KindMetadata, Actions: []Action{Read}}, Allow, ReasonAllowRole, ""},
+		{"R-AUTHZ-009 and reads a member's document through it", direct, Coordinate{Repository: qr("npm-internal"), Addressed: qr("npm-all"), Package: "left-pad", Kind: KindMetadata, Actions: []Action{Read}}, Allow, ReasonAllowRole, ""},
 		{"Q-AUTHZ-172 an artifact through a virtual repository stops at its gate", direct, read("npm-all", "left-pad", "left-pad/-/left-pad-1.0.0.tgz"), DenyHidden, ReasonVirtualGate, Read},
 		{"Q-AUTHZ-172 a publish through a virtual repository is refused", member, write("npm-all", "left-pad", "", Deploy), DenyVisible, ReasonVirtualGate, Read},
 		{"R-AUTHZ-001 a user without the role reads no metadata", carolSub, metadata("npm-internal"), DenyHidden, ReasonNoGrant, Read},
@@ -69,7 +69,7 @@ func TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts(t *testing.T) {
 		withScope := func(sc scope.Scope) Subject { return tokenScop(direct, sc) }
 		npmOnly := scope.Scope{
 			System:       []string{string(ContentMetadataRead)},
-			Repositories: []scope.Grant{{Repositories: []string{"npm-internal"}, Actions: []string{"read"}}},
+			Repositories: []scope.Grant{{Repositories: []string{"it/npm-internal"}, Actions: []string{"read"}}},
 		}
 		runAuthzCases(t, e, []authzCase{
 			{"Q-AUTHZ-172 the default scope exercises no role", withScope(scope.Scope{Inherit: true}), metadata("npm-internal"), DenyHidden, ReasonNoGrant, Read},
@@ -108,11 +108,11 @@ func TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts(t *testing.T) {
 	t.Run("R-AUTHZ-016 the auditor lists every repository", func(t *testing.T) {
 		n++
 		keys := []string{"generic-local", "npm-all", "npm-internal", "nuget-local"}
-		got, err := e.Readable(t.Context(), direct, keys)
-		if err != nil || !slices.Equal(got, keys) {
+		got, err := e.Readable(t.Context(), direct, qrs(keys))
+		if err != nil || !slices.Equal(qkeys(got), keys) {
 			t.Fatalf("Readable = %v, %v", got, err)
 		}
-		if got, _ := e.Readable(t.Context(), carolSub, keys); len(got) != 0 {
+		if got, _ := e.Readable(t.Context(), carolSub, qrs(keys)); len(got) != 0 {
 			t.Fatalf("a user without the role lists %v", got)
 		}
 	})
@@ -122,7 +122,7 @@ func TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts(t *testing.T) {
 		f.exposure(ruleDef{endpoint: "customers", name: "releases", repo: "generic-local", dims: paths("releases/**")})
 		ce := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling() })
 		meta := func(path string) Coordinate {
-			return Coordinate{Repository: "generic-local", Path: path, Kind: KindMetadata, Actions: []Action{Read}}
+			return Coordinate{Repository: qr("generic-local"), Path: path, Kind: KindMetadata, Actions: []Action{Read}}
 		}
 		runAuthzCases(t, ce, []authzCase{
 			{"R-EP-013 a folder the rule exposes is listed", onEP(direct, "customers"), meta("releases/"), Allow, ReasonAllowRole, ""},

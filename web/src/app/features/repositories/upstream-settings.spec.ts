@@ -193,6 +193,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
 
     async function remoteStep(formats: readonly FormatDescriptor[], format: string): Promise<Wizard> {
       const r = await renderScreen(RepositoryWizard, {
+        inputs: { project: 'web' },
         setup: (get) => {
           (get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = formats;
         },
@@ -441,6 +442,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
     const stored = (remote: Record<string, unknown> = {}): Repository =>
       ({
         key: 'npm-remote',
+        project: 'web',
         class: 'remote',
         format: 'npm',
         remote: {
@@ -458,7 +460,7 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
 
     async function open(repo: Repository = stored()) {
       const r = await renderScreen(RepositoryDetail, {
-        inputs: { key: repo.key },
+        inputs: { project: repo.project ?? 'web', key: repo.key },
         setup: (get) => {
           const fake = get(RepositoriesApi) as FakeRepositoriesApi;
           fake.formatsResult = [GENERIC_FORMAT, NPM];
@@ -486,11 +488,11 @@ describe('The upstream settings of a remote repository (F-54, R-UI-021, R-REPO-0
       await expectAccessible(r.root);
 
       const local = await renderScreen(RepositoryDetail, {
-        inputs: { key: 'npm-local' },
+        inputs: { project: 'web', key: 'npm-local' },
         setup: (get) => {
           const fake = get(RepositoriesApi) as FakeRepositoriesApi;
           fake.formatsResult = [GENERIC_FORMAT, NPM];
-          fake.repositories.push({ key: 'npm-local', class: 'local', format: 'npm' });
+          fake.repositories.push({ key: 'npm-local', project: 'web', class: 'local', format: 'npm' });
         },
       });
       expect([...local.root.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim())).not.toContain('Upstream');

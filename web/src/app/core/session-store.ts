@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiError } from '../api/problem';
-import { AdministeredProject } from '../api/projects-api';
+import { Membership, ProjectRole } from '../api/projects-api';
 import {
   AuthzMe,
   PermissionCheck,
@@ -55,12 +55,10 @@ export class SessionStore {
   readonly capabilities = computed(() => this._me()?.capabilities ?? []);
   /** Any capability at all: the Administration area is shown (R-UI-002). */
   readonly isAdministrator = computed(() => this.capabilities().length > 0);
-  /** The projects the caller administers through this credential (`authz/me` `projects`, Q-AUTHZ-181). */
-  readonly projects = computed<readonly AdministeredProject[]>(() => this._me()?.projects ?? []);
-  /** Administers at least one project: without any capability this still shows the project screens (R-UI-041). */
-  readonly isProjectAdministrator = computed(() => this.projects().length > 0);
-  /** The Administration area is shown: any capability, or administration of a project (Q-AUTHZ-181). */
-  readonly hasAdminArea = computed(() => this.isAdministrator() || this.isProjectAdministrator());
+  /** The projects the caller is a member of through this credential, with the role in force (`authz/me` `projects`, Q-AUTHZ-207). */
+  readonly projects = computed<readonly Membership[]>(() => this._me()?.projects ?? []);
+  /** The admin area is shown: any capability. A project's Owner manages the project inside it (Q-UI-129). */
+  readonly hasAdminArea = computed(() => this.isAdministrator());
 
   constructor() {
     this.channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL);
@@ -76,22 +74,27 @@ export class SessionStore {
     return this.capabilities().includes(capability);
   }
 
-  /** The switches of a project the caller administers, or null for any other project. */
-  projectRights(key: string | null | undefined): AdministeredProject | null {
-    return key ? (this.projects().find((p) => p.key === key) ?? null) : null;
+  /** The caller's role in a project it is a member of, or null for any other project. */
+  projectRole(key: string | null | undefined): ProjectRole | null {
+    return key ? (this.projects().find((p) => p.key === key)?.role ?? null) : null;
+  }
+
+  /** Whether the caller holds the Owner role in `key` (the administration of the project, R-AUTHZ-026). */
+  isOwnerOf(key: string | null | undefined): boolean {
+    return this.projectRole(key) === 'owner';
   }
 
   /**
-   * Whether the caller may change the policies of `project` (`null`: the global ones): the capability,
-   * or administration of the project while `managePolicies` is on (R-AUTHZ-026).
+   * Whether the caller may change the policies of `project` (`null`: the global ones): the capability, or the
+   * Owner role of the project (R-AUTHZ-026).
    */
   canWritePolicies(project: string | null | undefined): boolean {
-    return this.has('policies:write') || (this.projectRights(project)?.managePolicies ?? false);
+    return this.has('policies:write') || this.isOwnerOf(project);
   }
 
-  /** The same for the repositories of `project`: `repositories:write-config`, or `manageRepositories` on. */
+  /** The same for the repositories of `project`: `repositories:write-config`, or the Owner role. */
   canWriteRepositories(project: string | null | undefined): boolean {
-    return this.has('repositories:write-config') || (this.projectRights(project)?.manageRepositories ?? false);
+    return this.has('repositories:write-config') || this.isOwnerOf(project);
   }
 
   /** Whether the caller holds the system role (`authz/me` `roles`), for what the server checks as a role. */

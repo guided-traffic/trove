@@ -45,7 +45,7 @@ import { NamePicker } from './name-picker';
 /**
  * The mapping editor (R-UI-035, R-CI-009 to R-CI-014): a mapping of the system tier of an issuer, or, with
  * a project key, of that project's tier, bounded as the server bounds it (Q-CI-26): the project's repositories
- * and policies are offered, there are no groups, and the name starts with the key and a hyphen. The
+ * and policies are offered, there are no groups, and the name is bare within the project. The
  * condition is built as a tree (all, any, not and conditions on claims) or edited as JSON; the grants
  * are policies, groups (system tier only) and inline grants; the options carry the visible warning
  * for unprotected refs. The checks here only mirror what the server refuses so that the hint comes
@@ -76,8 +76,8 @@ export class MappingEditor implements HasUnsavedChanges {
   readonly issuer = input<string | undefined>();
   /** Route parameter `:mapping`; absent when a new mapping is made. */
   readonly mapping = input<string | undefined>();
-  /** Route parameter `:key`: the project of a project's mapping. */
-  readonly key = input<string | undefined>();
+  /** Route parameter `:project`: the project of a project's mapping. */
+  readonly project = input<string | null>(null);
 
   private readonly api = inject(CiApi);
   private readonly policiesApi = inject(PolicyApi);
@@ -89,7 +89,6 @@ export class MappingEditor implements HasUnsavedChanges {
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
 
-  protected readonly project = computed(() => this.key() ?? null);
   protected readonly issuerChoice = signal('');
   protected readonly issuerName = computed(() => this.issuer() || this.issuerChoice());
   protected readonly isNew = computed(() => this.mapping() === undefined);
@@ -106,6 +105,12 @@ export class MappingEditor implements HasUnsavedChanges {
   protected readonly policyOptions = signal<readonly string[] | null>(null);
   protected readonly groupOptions = signal<readonly string[] | null>(null);
   protected readonly projectRepositories = signal<readonly string[]>([]);
+  /** A project's mapping names bare keys, a system mapping `<project>/<key>` (R-AUTHZ-004). */
+  protected readonly repositoriesHint = computed(() =>
+    this.project()
+      ? $localize`:@@ci.editor.repositories-hint-project:One key or pattern per line. A template needs literal text next to the claim.`
+      : $localize`:@@ci.editor.repositories-hint:One project/key or pattern per line, or a class such as @any-local. A template needs literal text next to the claim.`,
+  );
   protected readonly publicIssuer = signal(false);
 
   protected readonly view = signal<'builder' | 'json'>('builder');
@@ -132,10 +137,10 @@ export class MappingEditor implements HasUnsavedChanges {
     { value: 'read_only', label: $localize`:@@ci.editor.cross.read-only:Read only (such a pipeline can read, never write)` },
   ];
 
-  /** The bounds of the screen: the system administrators', or the project's administrators' with the switch on. */
-  protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'managePolicies', 'ci:write'));
+  /** The bounds of the screen: the system administrators', or the Owners' of the project. */
+  protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'ci:write'));
   protected readonly writable = computed(() => (this.project() ? this.state() === 'enabled' : this.session.has('ci:write')));
-  /** The snippet is read by ci:read or, in a project, by its administrator whose managePolicies switch is on (`getProjectCiSnippet`). */
+  /** The snippet is read by ci:read or, in a project, by its Owner (`getProjectCiSnippet`). */
   protected readonly canSnippet = computed(
     () => !this.isNew() && (this.session.has('ci:read') || (this.project() !== null && this.state() === 'enabled')),
   );
@@ -163,7 +168,7 @@ export class MappingEditor implements HasUnsavedChanges {
     effect(() => {
       this.issuer();
       this.mapping();
-      this.key();
+      this.project();
       untracked(() => void this.load());
     });
   }
@@ -183,7 +188,7 @@ export class MappingEditor implements HasUnsavedChanges {
   protected nameHint(): string {
     const key = this.project();
     return key
-      ? $localize`:@@ci.editor.name-hint-project:Starts with ${key}:project:- and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.`
+      ? $localize`:@@ci.editor.name-hint-project:Unique within the project ${key}:project: and cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.`
       : $localize`:@@ci.editor.name-hint:It cannot be changed later. Lower-case letters, digits, dot, underscore and hyphen.`;
   }
   protected readonly isWrite = (a: string): boolean => a === 'deploy' || a === 'overwrite' || a === 'delete';
@@ -256,7 +261,7 @@ export class MappingEditor implements HasUnsavedChanges {
       } else {
         this.loaded.set(null);
         const existing = issuer || project ? await this.api.listMappings(issuer, project).catch(() => []) : [];
-        this.form.set(emptyMappingForm(nextPriority(existing), project ? `${project}-` : ''));
+        this.form.set(emptyMappingForm(nextPriority(existing)));
       }
       this.baseline = JSON.stringify(inputFromForm(this.form(), project));
       this.jsonText.set(JSON.stringify(conditionFromNode(this.form().match), null, 2));

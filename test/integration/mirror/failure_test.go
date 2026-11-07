@@ -38,7 +38,7 @@ func TestR_REPO_053_AnUpstreamThatFailsEveryDiscoveryRequestBacksOffAndTheNextPa
 	}
 
 	t.Run("R-REPO-056 after three failures the status is failing with a message that names hosts and no URL", func(t *testing.T) {
-		a := r.api(web, http.MethodGet, "/api/v1/repositories/"+repoKey+"/mirror", nil)
+		a := r.api(web, http.MethodGet, "/api/v1/projects/it/repositories/"+repoKey+"/mirror", nil)
 		doc := a.JSON(t)
 		errs, _ := doc["errors"].(map[string]any)
 		msg, _ := errs["lastMessage"].(string)

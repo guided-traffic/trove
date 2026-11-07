@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/meta"
 )
@@ -39,8 +41,8 @@ type Access struct {
 // ([authz.Decider.Begin]): it waits for a confirmed index or for the epoch of
 // Trove-Authz-Min-Epoch, and first makes keys known. The error is the refusal,
 // 503 authz_stale or 412 authz_epoch_unknown.
-func Begin(ctx context.Context, d authz.Decider, sub authz.Subject, keys ...string) (*Access, error) {
-	idx, err := d.Begin(ctx, sub, keys...)
+func Begin(ctx context.Context, d authz.Decider, sub authz.Subject, names ...qname.Repo) (*Access, error) {
+	idx, err := d.Begin(ctx, sub, names...)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +69,7 @@ func AccessFrom(ctx context.Context) (*Access, bool) {
 // the request has learned since, or a new one begun on sub when ctx carries none.
 // A request that reaches a handler without the shared step still decides, on an
 // index of its own.
-func Resolve(ctx context.Context, d authz.Decider, sub authz.Subject, keys ...string) (*Access, error) {
+func Resolve(ctx context.Context, d authz.Decider, sub authz.Subject, keys ...qname.Repo) (*Access, error) {
 	a, ok := AccessFrom(ctx)
 	if !ok {
 		return Begin(ctx, d, sub, keys...)
@@ -90,7 +92,7 @@ func (a *Access) Epoch() int64 { return a.Index().Epoch() }
 // Know advances the request to a newer index when it learns a repository key the
 // index does not hold ([authz.Decider.Know]); every later decision of the request
 // uses it.
-func (a *Access) Know(ctx context.Context, key string) error {
+func (a *Access) Know(ctx context.Context, key qname.Repo) error {
 	cur := a.Index()
 	next, err := a.D.Know(ctx, cur, a.Subject, key)
 	if err != nil {
@@ -112,7 +114,7 @@ func (a *Access) Decide(ctx context.Context, c authz.Coordinate) authz.Decision 
 }
 
 // Readable filters repository keys to those the subject may read.
-func (a *Access) Readable(ctx context.Context, keys []string) ([]string, error) {
+func (a *Access) Readable(ctx context.Context, keys []qname.Repo) ([]qname.Repo, error) {
 	return a.D.ReadableOn(ctx, a.Index(), a.Subject, keys)
 }
 
@@ -120,12 +122,12 @@ func (a *Access) Readable(ctx context.Context, keys []string) ([]string, error) 
 // same endpoint may read, on the request's index: whether a repository needs a
 // credential (R-API-030). The endpoint ceiling and the runtime switch of
 // anonymous access apply as for any anonymous request.
-func (a *Access) ReadableAnonymously(ctx context.Context, keys []string) ([]string, error) {
+func (a *Access) ReadableAnonymously(ctx context.Context, keys []qname.Repo) ([]qname.Repo, error) {
 	return a.D.ReadableOn(ctx, a.Index(), authz.Subject{Anonymous: true, Endpoint: a.Subject.Endpoint}, keys)
 }
 
 // Exposed filters repository keys to those the subject's endpoint exposes.
-func (a *Access) Exposed(keys []string) []string {
+func (a *Access) Exposed(keys []qname.Repo) []qname.Repo {
 	return a.D.ExposedOn(a.Index(), a.Subject, keys)
 }
 
@@ -145,21 +147,16 @@ func (a *Access) Holds(permission string) bool {
 	return a.D.HoldsOn(a.Index(), a.Subject, permission)
 }
 
-// Projects lists the projects the subject administers, with their switches, on the
-// request's index (R-AUTHZ-026).
-func (a *Access) Projects() []authz.AdministeredProject {
-	return a.D.ProjectsOn(a.Index(), a.Subject)
+// Memberships lists the projects the subject is a member of, with its role, on the
+// request's index (Q-AUTHZ-207), as far as the credential's scope reaches them (Q-AUTHZ-215).
+func (a *Access) Memberships() []authz.Membership {
+	return a.D.MembershipsOn(a.Index(), a.Subject)
 }
 
-// Administers reports whether the subject administers the project with the right.
-func (a *Access) Administers(project string, right authz.ProjectRight) bool {
-	return a.D.AdministersOn(a.Index(), a.Subject, project, right)
-}
-
-// AdministersRepository reports whether the subject administers the project of the
-// repository with the right, and names the project.
-func (a *Access) AdministersRepository(repository string, right authz.ProjectRight) (string, bool) {
-	return a.D.AdministersRepositoryOn(a.Index(), a.Subject, repository, right)
+// Owns reports whether the subject may administer the project: an Owner of it through a
+// session or a token with admin: true (Q-AUTHZ-208).
+func (a *Access) Owns(project string) bool {
+	return a.D.OwnsOn(a.Index(), a.Subject, project)
 }
 
 // Check evaluates the subject's own rights for the given coordinates.

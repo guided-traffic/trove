@@ -1,6 +1,6 @@
 # Repositories
 
-Everything trove stores lives in a repository, and every repository has a key, a format and a class. This page explains the local, remote and virtual classes from a user's point of view, how keys become addresses, which formats this version serves, what you see depending on your permissions, and how the repository screen and its How to use guide help you connect a client.
+Everything trove stores lives in a repository, and every repository belongs to a project and has a key, a format and a class. This page explains the local, remote and virtual classes from a user's point of view, how projects and keys become addresses, which formats this version serves, what you see depending on your permissions, and how the repository screen and its How to use guide help you connect a client.
 
 ## Repository classes
 
@@ -24,35 +24,38 @@ For NuGet the default upstream is `https://api.nuget.org/v3/index.json`: trove r
 
 ### Virtual repositories
 
-A virtual repository is one address for several npm repositories, or several NuGet repositories, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
+A virtual repository is one address for several npm repositories, or several NuGet repositories, of its own project, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
 
 - You need the read permission on the members too. A member you may not read is left out without notice.
 - Publishing through a virtual repository goes to its deployment target, a local member. A virtual repository without one refuses every publish.
 - For NuGet, the version list and the package documents of an ID are the union of the versions of its members. A version that two members hold comes from the first one in the order, and so does the package you download; a search lists a package once, with the versions of all members.
 - A name that a local member has claimed is served only from that member, so a public package with the same name and a higher version never replaces an internal one.
 
-## Repository keys
+## Projects and repository keys
 
-The key names a repository in every address and every screen. Keys are set by an administrator when the repository is created and cannot be renamed.
+Every repository belongs to exactly one project, for example the project `web` of a team. The project's key and the repository's key together name the repository: `web/npm-internal`. The key is unique within its project only, so the projects `web` and `mobile` can each have a repository `npm-remote`, and the two are different repositories.
+
+Keys are set when the repository is created and cannot be renamed:
 
 - 2 to 64 characters: lower-case letters, digits, `.`, `_` and `-`
 - it starts with a letter or a digit, does not end with `.` and does not contain `..`
 
-Your client reaches a repository at an address built from the installation's address and the key:
+Your client reaches a repository at an address built from the installation's address, the project key and the repository key:
 
 | Format | Address for your package manager | Address for raw files |
 |---|---|---|
-| npm | `https://trove.example.com/api/npm/<key>/` | `https://trove.example.com/files/<key>/` |
-| Generic | `https://trove.example.com/files/<key>/` | the same |
+| npm | `https://trove.example.com/api/npm/<project>/<key>/` | `https://trove.example.com/files/<project>/<key>/` |
+| NuGet | `https://trove.example.com/api/nuget/<project>/<key>/v3/index.json` | `https://trove.example.com/files/<project>/<key>/` |
+| Generic | `https://trove.example.com/files/<project>/<key>/` | the same |
 
-The repository screen shows these addresses for your installation, so you do not have to build them yourself.
+The repository screen shows these addresses for your installation, so you do not have to build them yourself. A repository that an administrator moves to another project changes its address: the old address answers `404`, and your client configuration needs the new one.
 
 ## Formats in this version
 
 | Format | Classes | Clients the guides and setup cover | Where its content appears in the UI |
 |---|---|---|---|
 | npm | Local, remote, virtual | npm, pnpm, Yarn Berry (2 and later), Yarn Classic (1.x) | **Packages** and **Browse** |
-| NuGet | Local, remote | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
+| NuGet | Local, remote, virtual | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
 | Generic | Local | curl | **Browse** only: generic files have no package names, so they are not listed under **Packages** |
 
 Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. Other formats are not built yet; see [Known limitations](../admin/limitations.md).
@@ -63,19 +66,21 @@ trove shows you only what you may read. A repository you may not read is not lis
 
 | What you hold | What you see and can do |
 |---|---|
-| Read on a repository | It appears in the **Browse** tree and, for npm, under **Packages**; you can open its repository screen, download, and install from it |
+| A role in the repository's project | **Reader** reads every repository of the project, **Developer** also publishes and uploads, **Maintainer** and **Owner** also replace, delete and manage; [Projects](../admin/projects.md#members-and-roles) explains the roles |
+| Read on a repository | It appears in the **Browse** tree and, for npm and NuGet, under **Packages**; you can open its repository screen, download, and install from it |
 | Deploy, overwrite or delete | Upload or publish, replace, and delete, on the paths and packages your permission names |
 | The permission to read repository configuration | Every repository, the full repository screen with all settings, the **Find a repository** search in the top bar, and **Admin area › Repositories** |
 | Nothing, as an anonymous reader | Only the repositories open to anonymous readers, and nothing you can change |
 
-Permissions can be narrower than a whole repository: a permission may cover only some paths or package names, and you then see only those. Ask whoever manages a repository if something you need is missing.
+Permissions can be narrower than a whole repository: a permission may cover only some paths or package names, and you then see only those. Ask an Owner of the repository's project if something you need is missing.
 
 ## The repository screen
 
 Open a repository in one of these ways:
 
 1. In **Browse**, select the repository at the top of the tree, then select **Repository configuration** in the details.
-2. If you may read repository configuration, select it in **Admin area › Repositories** or search for it with **Find a repository**.
+2. Select it in the project's **Repositories**.
+3. If you may read repository configuration, select it in **Admin area › Repositories** (every project, each row naming its project) or search for it with **Find a repository**.
 
 The screen is titled **Repository** and shows the key. **Browse** opens the repository in the file browser.
 
@@ -86,7 +91,7 @@ If you may use the repository but not read its configuration, the screen says **
 | Field | Meaning |
 |---|---|
 | **Class** | Local, remote or virtual |
-| **Format** | npm or generic |
+| **Format** | npm, NuGet or generic |
 | **Description** | What the repository is for, as its administrator wrote it |
 | **Client address** | Every address of the repository on this installation: for npm the address for your package manager and the raw file address |
 
@@ -107,4 +112,4 @@ If you may read repository configuration, the screen also shows the layout, the 
 
 The sections cover what the repository is, pointing the client at it, signing the client in, installing, publishing and maintaining (where the class allows writes), and troubleshooting; the npm guide adds security audits and lockfiles. A guide never contains a token: snippets read it from an environment variable such as `TROVE_TOKEN`, and the guide for an anonymous reader uses no credential at all.
 
-The **Guides** area in the side bar holds the same guides without opening a repository first: choose a **Package type**, a **Client**, and either a **Repository** or **None in particular: the guide of a repository class** together with a **Repository class**. To configure a client step by step, see [Connecting a package client](client-setup.md).
+**Guides** in the start side bar and in the user menu holds the same guides without opening a repository first: choose a **Package type**, a **Client**, and either a **Repository** or **None in particular: the guide of a repository class** together with a **Repository class**. To configure a client step by step, see [Connecting a package client](client-setup.md).

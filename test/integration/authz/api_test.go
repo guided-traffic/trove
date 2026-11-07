@@ -61,7 +61,7 @@ func policyBody(name string, entries ...map[string]any) map[string]any {
 	}
 	return map[string]any{
 		"name": name, "description": "policy " + name,
-		"resources": map[string]any{"repositories": []string{"npm-internal"}, "packages": map[string]any{"include": []string{"@web/*"}, "exclude": []string{}}},
+		"resources": map[string]any{"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"@web/*"}, "exclude": []string{}}},
 		"entries":   es,
 	}
 }
@@ -232,8 +232,8 @@ func TestR_AUTHZ_021_ValidationAndPermissions(t *testing.T) {
 		}
 		wantStatus(t, f.cl.Do(me, "POST", policies, policyBody("dup", entry("user:bob", "read"), entry("user:bob", "deploy"))), 422, "duplicate_principal")
 		wantStatus(t, f.cl.Do(me, "POST", policies, policyBody("anon", entry("anonymous", "deploy"))), 422, "anonymous_write_action")
-		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "x", "resources": map[string]any{"repositories": []string{"ghost"}}}), 422, "unknown_repository")
-		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "x", "resources": map[string]any{"repositories": []string{"npm-internal"}, "packages": map[string]any{"include": []string{"a**b/c\\"}}}}), 422, "invalid_pattern")
+		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "x", "resources": map[string]any{"repositories": []string{"it/ghost"}}}), 422, "unknown_repository")
+		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "x", "resources": map[string]any{"repositories": []string{"it/npm-internal"}, "packages": map[string]any{"include": []string{"a**b/c\\"}}}}), 422, "invalid_pattern")
 		if n := f.e.Number("SELECT count(*) FROM authz_policy"); n != 0 {
 			t.Fatalf("%d policies stored by refused requests", n)
 		}
@@ -250,15 +250,15 @@ func TestR_AUTHZ_021_ValidationAndPermissions(t *testing.T) {
 			t.Fatalf("%v", m)
 		}
 		ok := f.cl.Do(me, "POST", "/api/v1/authz/validate-policy", map[string]any{
-			"name": "v", "resources": map[string]any{"repositories": []string{"npm-*"}},
+			"name": "v", "resources": map[string]any{"repositories": []string{"*/npm-*"}},
 			"entries": []any{entry("group:team-web", "read")},
 		})
 		wantStatus(t, ok, 200, "")
 		m = ok.JSON(t)
-		if m["valid"] != true || fmt.Sprint(m["covers"]) != "[npm-internal npm-team-a]" || fmt.Sprint(m["warnings"]) != "[]" {
+		if m["valid"] != true || fmt.Sprint(m["covers"]) != "[it/npm-internal it/npm-team-a]" || fmt.Sprint(m["warnings"]) != "[]" {
 			t.Fatalf("%v", m)
 		}
-		only := f.cl.Do(me, "POST", "/api/v1/authz/validate-policy", map[string]any{"name": "v", "resources": map[string]any{"repositories": []string{"nothing-*"}}})
+		only := f.cl.Do(me, "POST", "/api/v1/authz/validate-policy", map[string]any{"name": "v", "resources": map[string]any{"repositories": []string{"*/nothing-*"}}})
 		if got := fmt.Sprint(only.JSON(t)["warnings"]); got != "[selector_matches_nothing]" {
 			t.Fatalf("warnings = %s", got)
 		}
@@ -289,7 +289,7 @@ func TestR_AUTHZ_021_ListFilters(t *testing.T) {
 	for _, p := range []map[string]any{
 		policyBody("team-web-publish", entry("group:team-web", "annotate", "deploy", "read")),
 		policyBody("bob-reads", entry("user:bob", "read")),
-		{"name": "teama", "resources": map[string]any{"repositories": []string{"npm-team-*"}}, "entries": []any{entry("authenticated", "read")}},
+		{"name": "teama", "resources": map[string]any{"repositories": []string{"*/npm-team-*"}}, "entries": []any{entry("authenticated", "read")}},
 	} {
 		wantStatus(t, f.cl.Do(me, "POST", policies, p), 201, "")
 	}
@@ -308,10 +308,10 @@ func TestR_AUTHZ_021_ListFilters(t *testing.T) {
 		{"R-AUTHZ-021 expandGroups=false drops the policy of the group", "?principal=user:alice&expandGroups=false", ""},
 		{"a principal with an entry of its own", "?principal=user:bob&expandGroups=false", "bob-reads"},
 		{"the group itself", "?principal=group:team-web", "team-web-publish"},
-		{"R-AUTHZ-021 repository=npm-team-a is covered by the pattern selector", "?repository=npm-team-a", "teama"},
-		{"repository=npm-internal is covered by two policies", "?repository=npm-internal", "bob-reads,team-web-publish"},
+		{"R-AUTHZ-021 repository=it/npm-team-a is covered by the pattern selector", "?repository=it/npm-team-a", "teama"},
+		{"repository=it/npm-internal is covered by two policies", "?repository=it/npm-internal", "bob-reads,team-web-publish"},
 		{"descending", "?sort=-name", "teama,team-web-publish,bob-reads"},
-		{"both filters", "?principal=user:alice&repository=npm-team-a", ""},
+		{"both filters", "?principal=user:alice&repository=it/npm-team-a", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := names(tc.query); got != tc.want {
@@ -320,10 +320,11 @@ func TestR_AUTHZ_021_ListFilters(t *testing.T) {
 		})
 	}
 	wantStatus(t, f.cl.Do(me, "GET", policies+"?principal=user:ghost", nil), 422, "unknown_principal")
-	wantStatus(t, f.cl.Do(me, "GET", policies+"?repository=ghost", nil), 422, "unknown_repository")
+	wantStatus(t, f.cl.Do(me, "GET", policies+"?repository=it/ghost", nil), 422, "unknown_repository")
+	wantStatus(t, f.cl.Do(me, "GET", policies+"?repository=npm-internal", nil), 422, "unknown_repository") // the name of a repository names its project
 	wantStatus(t, f.cl.Do(me, "GET", policies+"?expandGroups=maybe", nil), 400, "")
 	// The list carries the warnings that GET carries.
-	wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "empty", "resources": map[string]any{"repositories": []string{"nothing-*"}}}), 201, "")
+	wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "empty", "resources": map[string]any{"repositories": []string{"*/nothing-*"}}}), 201, "")
 	for _, it := range f.cl.Do(me, "GET", policies+"?sort=name&limit=2", nil).Items(t) {
 		if it["name"] == "empty" && fmt.Sprint(it["warnings"]) != "[selector_matches_nothing]" {
 			t.Errorf("warnings = %v", it["warnings"])
@@ -444,14 +445,21 @@ func TestR_AUTHZ_023_ChecksOverHTTP(t *testing.T) {
 		}
 		return out
 	}
-	item := func(repo, action string) map[string]any { return map[string]any{"repository": repo, "action": action} }
+	// item is one check; the repository is the qualified name <projectKey>/<repoKey> (R-AUTHZ-023), a bare key of the
+	// project "it" here.
+	item := func(repo, action string) map[string]any {
+		if !strings.Contains(repo, "/") {
+			repo = "it/" + repo
+		}
+		return map[string]any{"repository": repo, "action": action}
+	}
 
 	wantStatus(t, f.cl.Do(me, "POST", policies, policyBody("team-web-publish", entry("group:team-web", "annotate", "deploy", "read"))), 201, "")
 	t.Run("R-AUTHZ-023 the example of the requirement: alice true, false, true", func(t *testing.T) {
-		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "all-read", "resources": map[string]any{"repositories": []string{"npm-team-a"}}, "entries": []any{entry("group:team-web", "read")}}), 201, "")
+		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{"name": "all-read", "resources": map[string]any{"repositories": []string{"it/npm-team-a"}}, "entries": []any{entry("group:team-web", "read")}}), 201, "")
 		got := check(f.alice.Name,
-			map[string]any{"repository": "npm-internal", "package": "@web/button", "action": "deploy"},
-			map[string]any{"repository": "npm-internal", "package": "@web/button", "action": "delete"},
+			map[string]any{"repository": "it/npm-internal", "package": "@web/button", "action": "deploy"},
+			map[string]any{"repository": "it/npm-internal", "package": "@web/button", "action": "delete"},
 			item("npm-team-a", "read"))
 		if fmt.Sprint(got) != "[true false true]" {
 			t.Fatalf("alice: %v", got)
@@ -481,12 +489,12 @@ func TestR_AUTHZ_023_ChecksOverHTTP(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-030 E1.3 the built-in principal authenticated through the API", func(t *testing.T) {
 		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{
-			"name": "everyone-reads", "resources": map[string]any{"repositories": []string{"generic-local"}},
+			"name": "everyone-reads", "resources": map[string]any{"repositories": []string{"it/generic-local"}},
 			"entries": []any{entry("authenticated", "read")},
 		}), 201, "")
 		// An entry giving authenticated deploy is refused.
 		wantStatus(t, f.cl.Do(me, "POST", policies, map[string]any{
-			"name": "everyone-writes", "resources": map[string]any{"repositories": []string{"generic-local"}},
+			"name": "everyone-writes", "resources": map[string]any{"repositories": []string{"it/generic-local"}},
 			"entries": []any{entry("authenticated", "deploy")},
 		}), 422, "authenticated_write_action")
 		// A user in no group reads; a service account without a grant of its own does not (404 as for a missing repository).
@@ -525,7 +533,7 @@ func TestR_AUTHZ_032_MinEpochOverHTTP(t *testing.T) {
 	f.e.Join(mobile, f.bob)
 	// The grant is made through A; the index of B and C was built at start and the change
 	// log would tell them in 30 s.
-	deploy := map[string]any{"checks": []any{map[string]any{"repository": "generic-local", "path": "app.zip", "action": "deploy"}}}
+	deploy := map[string]any{"checks": []any{map[string]any{"repository": "it/generic-local", "path": "app.zip", "action": "deploy"}}}
 	parallel := func(epoch int64, want bool) {
 		t.Helper()
 		var wg sync.WaitGroup
@@ -554,7 +562,7 @@ func TestR_AUTHZ_032_MinEpochOverHTTP(t *testing.T) {
 		}
 	}
 	r := f.a.Do(f.admin.Name, "POST", policies, map[string]any{
-		"name": "files-deploy", "resources": map[string]any{"repositories": []string{"generic-local"}},
+		"name": "files-deploy", "resources": map[string]any{"repositories": []string{"it/generic-local"}},
 		"entries": []any{entry("group:team-mobile", "deploy")},
 	})
 	wantStatus(t, r, 201, "")
@@ -607,23 +615,24 @@ func TestR_AUTHZ_032_MinEpochOverHTTP(t *testing.T) {
 func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 	f := newAPI(t, stack.Options{})
 	me := f.admin.Name
-	// A project for the policy operations of R-AUTHZ-026; the project service is another
-	// package's, so the row is written here.
-	f.e.Exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'web', 'Web platform')")
-	f.e.Exec("UPDATE repositories SET project_id = (SELECT id FROM project WHERE key = 'web') WHERE key = 'npm-team-a'")
+	// A project for the policy operations of R-AUTHZ-026, with its repository.
+	f.e.RepoIn("web", "npm-team-b", "local", "npm")
+	const webPolicies = "/api/v1/projects/web/policies"
+	validateWeb := projectPolicyBody("p", []string{"npm-team-b"})
+	validateWeb["project"] = "web"
 	for _, step := range []struct {
 		method, path string
 		body         any
 		want         int
 		hdr          []string
 	}{
-		{"POST", policies, projectPolicyBody("web-p", "web", []string{"npm-team-a"}, entry("group:team-web", "read")), 201, nil},
-		{"GET", policies + "?project=web", nil, 200, nil},
-		{"GET", policies + "/web-p", nil, 200, nil},
-		{"PUT", policies + "/web-p", projectPolicyBody("web-p", "web", []string{"npm-team-a"}, entry("group:team-web", "read", "deploy")), 200, []string{"If-Match", `"1"`}},
-		{"PATCH", policies + "/web-p", map[string]any{"description": "x"}, 200, []string{"If-Match", `"2"`, "Content-Type", "application/merge-patch+json"}},
-		{"POST", "/api/v1/authz/validate-policy", projectPolicyBody("web-p", "web", []string{"npm-team-a"}), 200, nil},
-		{"DELETE", policies + "/web-p", nil, 204, nil},
+		{"POST", webPolicies, projectPolicyBody("p", []string{"npm-team-b"}, entry("group:team-web", "read")), 201, nil},
+		{"GET", webPolicies, nil, 200, nil},
+		{"GET", webPolicies + "/p", nil, 200, nil},
+		{"PUT", webPolicies + "/p", projectPolicyBody("p", []string{"npm-team-b"}, entry("group:team-web", "read", "deploy")), 200, []string{"If-Match", `"1"`}},
+		{"PATCH", webPolicies + "/p", map[string]any{"description": "x"}, 200, []string{"If-Match", `"2"`, "Content-Type", "application/merge-patch+json"}},
+		{"POST", "/api/v1/authz/validate-policy", validateWeb, 200, nil},
+		{"DELETE", webPolicies + "/p", nil, 204, nil},
 		{"POST", policies, policyBody("p", entry("group:team-web", "read")), 201, nil},
 		{"GET", policies, nil, 200, nil},
 		{"GET", policies + "/p", nil, 200, nil},
@@ -635,7 +644,7 @@ func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 		{"GET", "/api/v1/role-bindings", nil, 200, nil},
 		{"DELETE", "/api/v1/role-bindings/auditor/user:carol", nil, 204, nil},
 		{"GET", "/api/v1/authz/me", nil, 200, nil},
-		{"POST", "/api/v1/authz/check", map[string]any{"checks": []any{map[string]any{"repository": "npm-internal", "action": "read"}}}, 200, nil},
+		{"POST", "/api/v1/authz/check", map[string]any{"checks": []any{map[string]any{"repository": "it/npm-internal", "action": "read"}}}, 200, nil},
 		{"DELETE", policies + "/p", nil, 204, nil},
 	} {
 		r := f.cl.Do(me, step.method, step.path, step.body, step.hdr...)
@@ -643,26 +652,53 @@ func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 			t.Fatalf("%s %s: %d, want %d\n%s", step.method, step.path, r.Status, step.want, r.Body)
 		}
 	}
-	// The project operations (docs/developer/projects.md): the shared step decides on the
-	// declaration before any handler runs, so a caller that holds no capability and
-	// administers no project is refused on each, with the documented answer.
-	for _, step := range []struct{ method, path string }{
-		{"GET", "/api/v1/projects"},
-		{"POST", "/api/v1/projects"},
-		{"GET", "/api/v1/projects/web"},
-		{"PUT", "/api/v1/projects/web"},
-		{"DELETE", "/api/v1/projects/web"},
-		{"PUT", "/api/v1/projects/web/admins/user:carol"},
-		{"DELETE", "/api/v1/projects/web/admins/user:carol"},
-		{"PUT", "/api/v1/projects/web/repositories/npm-team-a"},
-		{"DELETE", "/api/v1/projects/web/repositories/npm-team-a"},
-		{"GET", "/api/v1/projects/web/principals?q=ca"},
+	// The project operations (docs/developer/projects.md): the shared step decides on the declaration before any
+	// handler runs. A caller that holds no capability and is no member answers 404 below the project, as for a project
+	// that does not exist, and 403 where no project is named (R-AUTHZ-026).
+	for _, step := range []struct {
+		method, path string
+		want         int
+	}{
+		{"POST", "/api/v1/projects", 403},
+		{"GET", "/api/v1/projects/web", 404},
+		{"PUT", "/api/v1/projects/web", 404},
+		{"DELETE", "/api/v1/projects/web", 403}, // projects:write only: no member is admitted, so nothing is hidden
+		{"GET", "/api/v1/projects/web/members", 404},
+		{"PUT", "/api/v1/projects/web/members/user:carol", 404},
+		{"DELETE", "/api/v1/projects/web/members/user:carol", 404},
+		{"POST", "/api/v1/projects/web/repositories/npm-team-b/move", 404},
+		{"GET", "/api/v1/projects/web/principals?q=ca", 404},
 	} {
 		var body any
-		if step.method == "POST" || step.method == "PUT" && step.path == "/api/v1/projects/web" {
+		switch {
+		case step.method == "POST" && step.path == "/api/v1/projects", step.method == "PUT" && step.path == "/api/v1/projects/web":
 			body = map[string]any{"key": "web", "displayName": "Web"}
+		case strings.HasSuffix(step.path, "/move"):
+			body = map[string]any{"project": "it"}
+		case strings.Contains(step.path, "/members/"):
+			body = map[string]any{"role": "reader"}
 		}
-		wantStatus(t, f.cl.Do(f.bob.Name, step.method, step.path, body, "If-Match", `"1"`), 403, "forbidden")
+		if r := f.cl.Do(f.bob.Name, step.method, step.path, body, "If-Match", `"1"`); r.Status != step.want {
+			t.Errorf("%s %s: %d %q, want %d\n%s", step.method, step.path, r.Status, r.Code(), step.want, r.Body)
+		}
+	}
+	// The member and move operations answer as documented to the administrator of trove (R-AUTHZ-026, R-REPO-060).
+	for _, step := range []struct {
+		method, path string
+		body         any
+		want         int
+	}{
+		{"GET", "/api/v1/projects", nil, 200},
+		{"GET", "/api/v1/projects/web/members", nil, 200},
+		{"PUT", "/api/v1/projects/web/members/user:carol", map[string]any{"role": "owner"}, 201},
+		{"PUT", "/api/v1/projects/web/members/user:carol", map[string]any{"role": "reader"}, 200},
+		{"DELETE", "/api/v1/projects/web/members/user:carol", nil, 204},
+		{"POST", "/api/v1/projects/web/repositories/npm-team-b/move", map[string]any{"project": "it"}, 200},
+	} {
+		r := f.cl.Do(me, step.method, step.path, step.body)
+		if r.Status != step.want {
+			t.Fatalf("%s %s: %d, want %d\n%s", step.method, step.path, r.Status, step.want, r.Body)
+		}
 	}
 	// The audit operations: a page, one event and the export in both formats.
 	list := f.cl.Do(me, "GET", "/api/v1/audit/events?limit=2", nil)
@@ -680,8 +716,10 @@ func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 		"listPermissionPolicies", "createPermissionPolicy", "getPermissionPolicy", "replacePermissionPolicy", "patchPermissionPolicy",
 		"deletePermissionPolicy", "validatePermissionPolicy", "listRoles", "listRoleBindings", "bindRole", "unbindRole",
 		"getAuthzMe", "checkPermissions", "listAuditEvents", "getAuditEvent", "exportAuditEvents",
-		"listProjects", "createProject", "getProject", "replaceProject", "deleteProject", "addProjectAdmin", "removeProjectAdmin",
-		"assignProjectRepository", "unassignProjectRepository", "lookupProjectPrincipals",
+		"listProjects", "createProject", "getProject", "replaceProject", "deleteProject", "listProjectMembers", "setProjectMember",
+		"removeProjectMember", "moveRepository", "lookupProjectPrincipals", "listProjectPermissionPolicies",
+		"createProjectPermissionPolicy", "getProjectPermissionPolicy", "replaceProjectPermissionPolicy",
+		"patchProjectPermissionPolicy", "deleteProjectPermissionPolicy",
 	}
 	if missing := f.val.Uncovered(ops...); len(missing) > 0 {
 		t.Fatalf("operations no answer reached: %v", missing)

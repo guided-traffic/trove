@@ -172,7 +172,7 @@ func TestM1Migrations(t *testing.T) {
 		mustExec(t, admin, "INSERT INTO trove.authz_policy_selector (policy_id, ordinal, kind, repo_class, format) VALUES ('33333333-3333-3333-3333-333333333333', 0, 'class', 'local', 'npm')")
 		wantState(t, admin, "23514", "INSERT INTO trove.authz_policy_selector (policy_id, ordinal, kind, key_pattern) VALUES ('33333333-3333-3333-3333-333333333333', 1, 'class', 'npm-*')")
 		// Deleting a repository removes its key selectors and leaves the policy.
-		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class) VALUES ('npm-old', 'npm', 'local')")
+		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('npm-old', 'npm', 'local', (SELECT id FROM trove.project WHERE key = 'it'))")
 		mustExec(t, admin, "INSERT INTO trove.authz_policy_selector (policy_id, ordinal, kind, repository_id) SELECT '33333333-3333-3333-3333-333333333333', 2, 'key', id FROM trove.repositories WHERE key = 'npm-old'")
 		mustExec(t, admin, "DELETE FROM trove.repositories WHERE key = 'npm-old'")
 		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.authz_policy_selector WHERE kind = 'key'"); n != 0 {
@@ -181,12 +181,12 @@ func TestM1Migrations(t *testing.T) {
 	})
 
 	t.Run("R-REPO-001 repositories gain a lifecycle and a configuration version; keys with dots are refused", func(t *testing.T) {
-		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class) VALUES ('generic-local', 'generic', 'local')")
+		mustExec(t, admin, "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('generic-local', 'generic', 'local', (SELECT id FROM trove.project WHERE key = 'it'))")
 		if got := scalar[string](t, admin, "SELECT lifecycle || ':' || config_version FROM trove.repositories WHERE key = 'generic-local'"); got != "active:1" {
 			t.Errorf("lifecycle and version = %q", got)
 		}
-		wantState(t, admin, "23514", "INSERT INTO trove.repositories (key, format, class) VALUES ('a..b', 'generic', 'local')")
-		wantState(t, admin, "23514", "INSERT INTO trove.repositories (key, format, class) VALUES ('x.', 'generic', 'local')")
+		wantState(t, admin, "23514", "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('a..b', 'generic', 'local', (SELECT id FROM trove.project WHERE key = 'it'))")
+		wantState(t, admin, "23514", "INSERT INTO trove.repositories (key, format, class, project_id) VALUES ('x.', 'generic', 'local', (SELECT id FROM trove.project WHERE key = 'it'))")
 		wantState(t, admin, "23514", "UPDATE trove.repositories SET lifecycle = 'gone' WHERE key = 'generic-local'")
 	})
 

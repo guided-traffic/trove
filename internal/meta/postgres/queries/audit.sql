@@ -14,13 +14,13 @@
 -- failure is harmless.
 INSERT INTO audit_event (id, occurred_at, action, category, outcome, actor_type, actor_id, actor_name,
                          token_id, auth_method, source_ip, user_agent, trace_id, replica, endpoint,
-                         resource_type, resource_id, repository, path, reason, details)
+                         resource_type, resource_id, repository, project, path, reason, details)
 SELECT (e ->> 'id')::uuid, COALESCE(NULLIF(e ->> 'at', '')::timestamptz, now()), e ->> 'action',
        e ->> 'category', e ->> 'outcome', e ->> 'actor_type', NULLIF(e ->> 'actor_id', '')::uuid,
        NULLIF(e ->> 'actor_name', ''), NULLIF(e ->> 'token_id', '')::uuid, NULLIF(e ->> 'auth_method', ''),
        NULLIF(e ->> 'source_ip', '')::inet, NULLIF(e ->> 'user_agent', ''), NULLIF(e ->> 'trace_id', ''),
        NULLIF(e ->> 'replica', ''), NULLIF(e ->> 'endpoint', ''), NULLIF(e ->> 'resource_type', ''),
-       NULLIF(e ->> 'resource_id', ''), NULLIF(e ->> 'repository', ''), NULLIF(e ->> 'path', ''),
+       NULLIF(e ->> 'resource_id', ''), NULLIF(e ->> 'repository', ''), NULLIF(e ->> 'project', ''), NULLIF(e ->> 'path', ''),
        NULLIF(e ->> 'reason', ''), e -> 'details'
   FROM jsonb_array_elements(sqlc.arg(events)::text::jsonb) AS e
 ON CONFLICT (occurred_at, id) DO NOTHING
@@ -33,6 +33,7 @@ INSERT INTO revocation_outbox (id, at, event, entry)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(at)::text::timestamptz, sqlc.arg(event)::text, sqlc.arg(entry)::text::jsonb);
 
 -- name: ListAuditEventsNewest :many
+-- repository is the qualified name <project>/<key> and project the project key (Q-AUTHZ-209).
 -- Newest first, keyset after (cursor_at, cursor_id) when has_cursor. The empty
 -- string is "no filter". actor_id is a UUID or the nil UUID when the actor was
 -- given as a name; the action prefix is matched literally.
@@ -42,7 +43,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
        COALESCE(host(source_ip), '')::text AS source_ip, COALESCE(user_agent, '')::text AS user_agent,
        COALESCE(trace_id, '')::text AS trace_id, COALESCE(replica, '')::text AS replica,
        COALESCE(endpoint, '')::text AS endpoint, COALESCE(resource_type, '')::text AS resource_type,
-       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository,
+       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository, COALESCE(project, '')::text AS project,
        COALESCE(path, '')::text AS path, COALESCE(reason, '')::text AS reason, details
   FROM audit_event
  WHERE occurred_at >= sqlc.arg(from_at)::text::timestamptz
@@ -53,6 +54,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
    AND (sqlc.arg(outcome)::text = '' OR outcome = sqlc.arg(outcome)::text)
    AND (sqlc.arg(actor)::text = '' OR actor_id = sqlc.arg(actor_id)::text::uuid OR actor_name = sqlc.arg(actor)::text)
    AND (sqlc.arg(repository)::text = '' OR repository = sqlc.arg(repository)::text)
+   AND (sqlc.arg(project)::text = '' OR project = sqlc.arg(project)::text)
    AND (sqlc.arg(resource_type)::text = '' OR resource_type = sqlc.arg(resource_type)::text)
    AND (sqlc.arg(resource_id)::text = '' OR resource_id = sqlc.arg(resource_id)::text)
    AND (sqlc.arg(trace_id)::text = '' OR trace_id = sqlc.arg(trace_id)::text)
@@ -69,7 +71,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
        COALESCE(host(source_ip), '')::text AS source_ip, COALESCE(user_agent, '')::text AS user_agent,
        COALESCE(trace_id, '')::text AS trace_id, COALESCE(replica, '')::text AS replica,
        COALESCE(endpoint, '')::text AS endpoint, COALESCE(resource_type, '')::text AS resource_type,
-       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository,
+       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository, COALESCE(project, '')::text AS project,
        COALESCE(path, '')::text AS path, COALESCE(reason, '')::text AS reason, details
   FROM audit_event
  WHERE occurred_at >= sqlc.arg(from_at)::text::timestamptz
@@ -80,6 +82,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
    AND (sqlc.arg(outcome)::text = '' OR outcome = sqlc.arg(outcome)::text)
    AND (sqlc.arg(actor)::text = '' OR actor_id = sqlc.arg(actor_id)::text::uuid OR actor_name = sqlc.arg(actor)::text)
    AND (sqlc.arg(repository)::text = '' OR repository = sqlc.arg(repository)::text)
+   AND (sqlc.arg(project)::text = '' OR project = sqlc.arg(project)::text)
    AND (sqlc.arg(resource_type)::text = '' OR resource_type = sqlc.arg(resource_type)::text)
    AND (sqlc.arg(resource_id)::text = '' OR resource_id = sqlc.arg(resource_id)::text)
    AND (sqlc.arg(trace_id)::text = '' OR trace_id = sqlc.arg(trace_id)::text)
@@ -97,7 +100,7 @@ SELECT id::text AS id, occurred_at, action, category, outcome, actor_type,
        COALESCE(host(source_ip), '')::text AS source_ip, COALESCE(user_agent, '')::text AS user_agent,
        COALESCE(trace_id, '')::text AS trace_id, COALESCE(replica, '')::text AS replica,
        COALESCE(endpoint, '')::text AS endpoint, COALESCE(resource_type, '')::text AS resource_type,
-       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository,
+       COALESCE(resource_id, '')::text AS resource_id, COALESCE(repository, '')::text AS repository, COALESCE(project, '')::text AS project,
        COALESCE(path, '')::text AS path, COALESCE(reason, '')::text AS reason, details
   FROM audit_event
  WHERE id = sqlc.arg(id)::text::uuid

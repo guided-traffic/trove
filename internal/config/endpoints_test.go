@@ -256,28 +256,38 @@ func TestEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("R-EP-006 host-root bindings are validated and reserved", func(t *testing.T) {
-		l, err := loadEndpoints(t, customersYAML+"      hosts: [mirror.example.com]\n      host_roots: {mirror.example.com: docker-hub}\n")
+	t.Run("R-EP-006 Q-EP-76 host-root bindings name a repository by project and key", func(t *testing.T) {
+		l, err := loadEndpoints(t, customersYAML+"      hosts: [mirror.example.com]\n      host_roots: {mirror.example.com: web/docker-hub}\n")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := l.Config.Server.ResolveEndpoints()[1].HostRoots; got["mirror.example.com"] != "docker-hub" {
+		if got := l.Config.Server.ResolveEndpoints()[1].HostRoots; got["mirror.example.com"] != "web/docker-hub" {
 			t.Errorf("host_roots = %v", got)
 		}
-		_, err = loadEndpoints(t, customersYAML+"      host_roots: {other.example.com: docker-hub}\n")
+		_, err = loadEndpoints(t, customersYAML+"      host_roots: {other.example.com: web/docker-hub}\n")
 		if err == nil || !strings.Contains(err.Error(), `server.endpoints.customers.host_roots "other.example.com" is not an exact host`) {
 			t.Errorf("foreign host: %v", err)
 		}
-		_, err = loadEndpoints(t, customersYAML+"      host_roots: {packages.example.com: Bad_Key}\n")
-		if err == nil || !strings.Contains(err.Error(), "not a repository key") {
-			t.Errorf("bad key: %v", err)
+		for name, value := range map[string]string{
+			"a bare key":                   "docker-hub",
+			"a pattern":                    "web/docker-*",
+			"a project outside its syntax": "Web/docker-hub",
+			"a key outside its syntax":     "web/Bad_Key",
+			"three segments":               "web/docker/hub",
+		} {
+			_, err = loadEndpoints(t, customersYAML+"      host_roots: {packages.example.com: "+value+"}\n")
+			if err == nil || !strings.Contains(err.Error(), `host_roots`) || !strings.Contains(err.Error(), "qualified name") {
+				t.Errorf("%s (%q): %v", name, value, err)
+			}
 		}
-		_, err = loadEndpoints(t, customersYAML+"      wildcard_root: label\n")
-		if err == nil || !strings.Contains(err.Error(), "server.endpoints.customers.wildcard_root is label, which needs a wildcard_host") {
-			t.Errorf("label without wildcard: %v", err)
-		}
-		if _, err = loadEndpoints(t, customersYAML+"      wildcard_host: \"*.registry.example.com\"\n      wildcard_root: label\n"); err != nil {
-			t.Errorf("label with wildcard: %v", err)
+	})
+
+	t.Run("R-EP-006 Q-EP-76 wildcard_root is an unknown key", func(t *testing.T) {
+		for _, v := range []string{"label", "none"} {
+			_, err := loadEndpoints(t, customersYAML+"      wildcard_host: \"*.registry.example.com\"\n      wildcard_root: "+v+"\n")
+			if err == nil || !strings.Contains(err.Error(), "wildcard_root") {
+				t.Errorf("wildcard_root: %s was accepted: %v", v, err)
+			}
 		}
 	})
 

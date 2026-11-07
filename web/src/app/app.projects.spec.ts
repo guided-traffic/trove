@@ -4,11 +4,10 @@ import { TestBed } from '@angular/core/testing';
 import { Router, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
-import { PreferencesApi } from './api/preferences-api';
 import { ApiError } from './api/problem';
 import { ProjectsApi } from './api/projects-api';
 import { SessionApi } from './api/session-api';
-import { FakePreferencesApi, FakeSessionApi, provideFakeApis } from './api/testing/fakes';
+import { FakeSessionApi, provideFakeApis } from './api/testing/fakes';
 import { FakeProjectsApi, sampleProject } from './api/testing/fakes-projects';
 import { Layout } from './core/layout';
 import { BrowserStorage } from './core/storage';
@@ -17,8 +16,8 @@ import { seriousViolations } from './testing/axe';
 
 type Me = Exclude<FakeSessionApi['meResult'], ApiError>;
 
-async function render(url: string, me?: Me, setup?: (projects: FakeProjectsApi, prefs: FakePreferencesApi) => void) {
-  new BrowserStorage().clear('local');
+async function render(url: string, me?: Me, setup?: (projects: FakeProjectsApi) => void, keepStorage = false) {
+  if (!keepStorage) new BrowserStorage().clear('local');
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
     imports: [App],
@@ -32,38 +31,159 @@ async function render(url: string, me?: Me, setup?: (projects: FakeProjectsApi, 
     ],
   }).compileComponents();
   if (me) (TestBed.inject(SessionApi) as FakeSessionApi).meResult = me;
-  setup?.(TestBed.inject(ProjectsApi) as FakeProjectsApi, TestBed.inject(PreferencesApi) as FakePreferencesApi);
+  setup?.(TestBed.inject(ProjectsApi) as FakeProjectsApi);
   const fixture = TestBed.createComponent(App);
   await TestBed.inject(Router).navigateByUrl(url);
+  await settleApp(fixture);
+  return { fixture, root: fixture.nativeElement as HTMLElement };
+}
+
+async function settleApp(fixture: { whenStable(): Promise<unknown>; detectChanges(): void }): Promise<void> {
   for (let i = 0; i < 6; i++) {
     await fixture.whenStable();
     fixture.detectChanges();
   }
-  return { fixture, root: fixture.nativeElement as HTMLElement };
 }
 
 const navLabels = (root: HTMLElement): string[] =>
-  [...root.querySelectorAll('nav[aria-label="Main navigation"] .nav-label')].map((l) => l.textContent?.trim() ?? '');
+  [...root.querySelectorAll('nav[aria-label] .nav-label')].map((l) => l.textContent?.trim() ?? '');
 
-const PROJECT_ADMIN: Me = {
+const TWO = (api: FakeProjectsApi): void => {
+  api.projects = [sampleProject(), sampleProject({ key: 'data', displayName: 'Data' })];
+};
+
+const OWNER: Me = {
   roles: [],
   capabilities: [],
   principals: ['user:alice'],
-  projects: [{ key: 'web', managePolicies: true, manageRepositories: false }],
+  projects: [{ key: 'web', role: 'owner' }],
 };
+const READER: Me = { ...OWNER, projects: [{ key: 'web', role: 'reader' }] };
 
-describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-181)', () => {
-  it('R-UI-041 a caller without any capability that administers a project sees the project screens only', async () => {
-    const { root } = await render('/admin', PROJECT_ADMIN);
-    expect(root.querySelector('#nav-admin')?.textContent).toContain('Admin area');
-    expect(navLabels(root)).toEqual(['Projects']);
-    // /admin starts at the projects, because the repository list is not for this caller.
-    expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Projects');
+describe('The project is the context of the content (Q-UI-129)', () => {
+  it('Q-UI-129 a caller with exactly one project starts in it, with the project sidebar', async () => {
+    const { root } = await render('/', OWNER);
+    expect(TestBed.inject(Router).url).toBe('/projects/web/packages');
+    expect(root.querySelector('.project-switcher .switcher-name')?.textContent).toContain('Web platform');
+    expect(navLabels(root)).toEqual([
+      'Packages',
+      'Browse',
+      'Repositories',
+      'Vulnerabilities',
+      'Access',
+      'Members',
+      'Permission policies',
+      'Service accounts',
+      'CI identity',
+      'Settings',
+    ]);
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('Q-UI-129 a caller with several projects starts on the list of them, and an entry opens the project', async () => {
+    const { fixture, root } = await render('/', undefined, TWO);
+    expect(TestBed.inject(Router).url).toBe('/projects');
+    expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Projects');
+    expect([...root.querySelectorAll('main tbody tr th')].map((t) => t.textContent?.trim())).toEqual(['data', 'web']);
+    // Outside a project the sidebar is the start sidebar, without a switcher.
+    expect(root.querySelector('.project-switcher')).toBeNull();
+    expect(navLabels(root)).toEqual(['Projects', 'Guides']);
+    root.querySelector<HTMLAnchorElement>('main tbody a[href="/projects/data"]')!.click();
+    await settleApp(fixture);
+    expect(TestBed.inject(Router).url).toBe('/projects/data/packages');
+    expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('Q-UI-129 a caller without a project is told how to get one', async () => {
+    const { root } = await render('/', { roles: [], capabilities: [], principals: ['user:alice'], projects: [] }, (api) => {
+      api.projects = [];
+    });
+    expect(TestBed.inject(Router).url).toBe('/projects');
+    expect(root.querySelector('main')?.textContent).toContain('You are not a member of a project yet');
+  });
+
+  it('Q-UI-129 R-UI-041 the top bar has no project filter any more', async () => {
+    const { root } = await render('/', undefined, TWO);
+    expect(root.querySelector('button.project-button')).toBeNull();
+    expect(root.querySelector('header')?.textContent).not.toContain('All projects');
+  });
+
+  it('Q-UI-129 a reader sees the project without the screens that need the Owner role or a capability', async () => {
+    const { root } = await render('/projects/web/packages', READER);
+    expect(navLabels(root)).toEqual(['Packages', 'Browse', 'Repositories', 'Vulnerabilities', 'Access', 'Members', 'Settings']);
+  });
+
+  it('Q-UI-129 the switcher is a disclosure: it lists the recent projects and the matches, narrows by typing and closes with Escape', async () => {
+    const { fixture, root } = await render('/projects/web/packages', undefined, TWO);
+    // Visiting a project remembers it.
+    TestBed.inject(Router).navigateByUrl('/projects/data/packages');
+    await settleApp(fixture);
+    await TestBed.inject(Router).navigateByUrl('/projects/web/packages');
+    await settleApp(fixture);
+    const trigger = root.querySelector<HTMLButtonElement>('.switcher-button')!;
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    trigger.click();
+    await settleApp(fixture);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    const panel = root.querySelector('#project-switcher-panel')!;
+    expect(panel.textContent).toContain('Recently visited');
+    expect([...panel.querySelectorAll('a.switcher-item')].map((a) => a.getAttribute('href'))).toEqual([
+      '/projects/data',
+      '/projects/data',
+      '/projects/web',
+    ]);
+    expect(panel.querySelector('a[aria-current="true"]')?.getAttribute('href')).toBe('/projects/web');
+    expect(await seriousViolations(root)).toEqual([]);
+
+    const search = panel.querySelector<HTMLInputElement>('input[type="search"]')!;
+    search.value = 'dat';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    await settleApp(fixture);
+    expect([...panel.querySelectorAll('a.switcher-item')].map((a) => a.getAttribute('href'))).toEqual(['/projects/data']);
+    search.value = 'zzz';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    await settleApp(fixture);
+    expect(panel.textContent).toContain('No project matches.');
+
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settleApp(fixture);
+    expect(root.querySelector('#project-switcher-panel')).toBeNull();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('Q-UI-129 choosing a project in the switcher opens it', async () => {
+    const { fixture, root } = await render('/projects/web/members', undefined, TWO);
+    root.querySelector<HTMLButtonElement>('.switcher-button')!.click();
+    await settleApp(fixture);
+    root.querySelector<HTMLAnchorElement>('#project-switcher-panel a[href="/projects/data"]')!.click();
+    await settleApp(fixture);
+    expect(TestBed.inject(Router).url).toBe('/projects/data/packages');
+    expect(root.querySelector('#project-switcher-panel')).toBeNull();
+    expect(root.querySelector('.switcher-name')?.textContent).toContain('Data');
+  });
+
+  it('Q-UI-129 the recent projects are kept per signed-in principal in browser storage', async () => {
+    await render('/projects/web/packages', undefined, TWO);
+    expect(new BrowserStorage().get('local', 'trove.recent-projects.alice')).toBe('["web"]');
+  });
+
+  it('Q-UI-129 the breadcrumbs of a project screen read projects, the project, the section', async () => {
+    const { root } = await render('/projects/web/repositories', undefined, TWO);
+    const crumbs = [...root.querySelectorAll('nav.breadcrumbs li')].map((li) => li.textContent?.trim());
+    expect(crumbs).toEqual(['Projects', 'web', 'Repositories']);
+    expect([...root.querySelectorAll('nav.breadcrumbs a')].map((a) => a.getAttribute('href'))).toEqual(['/projects', '/projects/web']);
+  });
+});
+
+describe('The administration area (R-UI-041, Q-UI-129)', () => {
+  it('Q-UI-129 an Owner without any capability manages the project inside it and has no admin area', async () => {
+    const { root } = await render('/projects/web/policies', OWNER);
+    expect(root.querySelector('header a.admin-button')).toBeNull();
+    expect(root.querySelector('#nav-admin')).toBeNull();
+  });
+
   it('R-UI-041 a caller that administers no project and holds no capability sees no administration area', async () => {
-    const { root } = await render('/browse', { roles: [], capabilities: [], principals: [], projects: [] });
+    const { root } = await render('/projects', { roles: [], capabilities: [], principals: [], projects: [] });
     expect(root.querySelector('header a.admin-button')).toBeNull();
     expect(root.querySelector('#nav-admin')).toBeNull();
   });
@@ -85,73 +205,17 @@ describe('The administration area for project administrators (R-UI-041, Q-AUTHZ-
     const { root } = await render('/admin/audit', { roles: [], capabilities: ['audit:read'], principals: [], projects: [] });
     expect(navLabels(root)).not.toContain('Projects');
   });
-});
 
-describe('The project filter of the top bar (R-UI-041, R-API-021)', () => {
-  const projects = (api: FakeProjectsApi): void => {
-    api.projects = [sampleProject(), sampleProject({ key: 'data', displayName: 'Data' })];
-  };
-
-  it('R-UI-041 is offered when projects exist and the caller may list them, and stores the choice as projectFilter', async () => {
-    const { fixture, root } = await render('/browse', undefined, projects);
-    const button = root.querySelector<HTMLButtonElement>('button.project-button')!;
-    expect(button.textContent).toContain('All projects');
-    button.click();
-    await fixture.whenStable();
-    const items = [...document.querySelectorAll<HTMLElement>('.cdk-overlay-container [role="menuitemradio"]')];
-    expect(items.map((i) => i.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-      expect.stringContaining('All projects'),
-      expect.stringContaining('Data (data)'),
-      expect.stringContaining('Web platform (web)'),
-    ]);
-    expect(items[0]!.getAttribute('aria-checked')).toBe('true');
-    items[2]!.click();
-    for (let i = 0; i < 4; i++) {
-      await fixture.whenStable();
-      fixture.detectChanges();
-    }
-    expect((TestBed.inject(PreferencesApi) as FakePreferencesApi).stored.projectFilter).toBe('web');
-    expect(root.querySelector('button.project-button')?.textContent).toContain('web');
-    expect(await seriousViolations(root)).toEqual([]);
-  });
-
-  it('R-UI-041 is not offered while no project exists', async () => {
-    const { root } = await render('/browse', undefined, (api) => {
-      api.projects = [];
-    });
-    expect(root.querySelector('button.project-button')).toBeNull();
-  });
-
-  it('R-UI-041 is offered to a project administrator without capabilities', async () => {
-    const { root } = await render('/browse', PROJECT_ADMIN);
-    expect(root.querySelector('button.project-button')).toBeTruthy();
-  });
-
-  it('R-UI-041 a stored key that names no visible project filters nothing', async () => {
-    const { root } = await render('/browse', undefined, (api, prefs) => {
-      api.projects = [sampleProject()];
-      prefs.stored = { ...prefs.stored, projectFilter: 'gone' };
-    });
-    expect(root.querySelector('button.project-button')?.textContent).toContain('All projects');
-  });
-
-  it('R-UI-041 filters the repository list through project=', async () => {
-    const { root } = await render('/admin/repositories', undefined, (api, prefs) => {
-      api.projects = [sampleProject()];
-      prefs.stored = { ...prefs.stored, projectFilter: 'web' };
-    });
-    expect(root.querySelector('.project-note')?.textContent).toContain('Showing the repositories of project');
-    expect(root.querySelector('.project-note strong')?.textContent).toBe('web');
-    // The fake repositories belong to no project: the filtered list is empty.
-    expect(root.textContent).toContain('No repository matches the filters');
-  });
-
-  it('R-UI-041 filters the policy list through project=', async () => {
-    const { root } = await render('/admin/permissions', undefined, (api, prefs) => {
-      api.projects = [sampleProject()];
-      prefs.stored = { ...prefs.stored, projectFilter: 'web' };
-    });
-    expect(root.textContent).toContain('Showing the policies of project');
-    expect(root.textContent).toContain('No policy matches');
+  it('Q-UI-129 the admin lists name the project in a column and link to the project', async () => {
+    const repositories = await render('/admin/repositories');
+    expect([...repositories.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim())).toContain('Project');
+    expect(repositories.root.querySelector('tbody a[href^="/projects/web/repositories/"]')).toBeTruthy();
+    expect(repositories.root.querySelector('tbody a[href="/projects/web"]')).toBeTruthy();
+    const accounts = await render('/admin/service-accounts');
+    expect([...accounts.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim())).toContain('Project');
+    const policies = await render('/admin/permissions');
+    expect([...policies.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim() ?? '')).toContainEqual(expect.stringMatching(/^Project/));
+    const audit = await render('/admin/audit');
+    expect([...audit.root.querySelectorAll('th[scope="col"]')].map((h) => h.textContent?.trim() ?? '')).toContainEqual(expect.stringMatching(/^Project/));
   });
 });

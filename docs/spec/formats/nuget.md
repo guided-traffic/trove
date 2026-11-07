@@ -3,7 +3,7 @@
 Status: specification — in implementation (phase 4): the format skeleton (registration, route table, service index, settings, configuration, error shape) is built; the operations behind the other routes, the data port and the remote and virtual classes are not
 
 This page specifies how trove serves NuGet packages: the NuGet v3 server API for local, remote
-and virtual repositories under `/api/nuget/<repoKey>/`, package ingestion and `.nuspec` parsing,
+and virtual repositories under `/api/nuget/<projectKey>/<repoKey>/`, package ingestion and `.nuspec` parsing,
 version normalization and SemVer 2.0.0 handling, the NuGet additions to the storage schema, push,
 unlist, relist and delete, symbol packages and the symbol server, proxying nuget.org with URL
 rewriting, merging of members in virtual repositories, the NuGet side of client authentication and
@@ -41,13 +41,14 @@ normative wherever this page does not say otherwise.
 | Placeholder | Meaning |
 |---|---|
 | `<base>` | trove's configured public base URL ([architecture.md](../architecture.md)); `https://trove.example.com` in examples (# example) |
-| `<feed>` | `<base>/api/nuget/<repoKey>/v3`, the v3 root of one repository |
+| `<feed>` | `<base>/api/nuget/<projectKey>/<repoKey>/v3`, the v3 root of one repository |
 | `{lower_id}` | package ID lowercased (R-NUGET-003) |
 | `{lower_version}` | normalized version, lowercased, without build metadata (R-NUGET-003) |
 | `$TOKEN` | a trove token (`trv_pat_…`, `trv_sat_…` or `trv_cit_…`, INV-8) |
 
-Repository keys used in examples (# example): `nuget-local` (local), `nuget-org` (remote of
-nuget.org), `nuget-all` (virtual over both, deploy target `nuget-local`).
+Project and repository keys used in examples (# example): the project `web` with `nuget-local` (local),
+`nuget-org` (remote of nuget.org) and `nuget-all` (virtual over both, deploy target `nuget-local`). A repository
+named outside its project is written `<projectKey>/<repoKey>` (`web/nuget-local`).
 
 ## Requirements
 
@@ -58,7 +59,7 @@ trove MUST offer the format `nuget` for all three repository classes of INV-5. E
 repository speaks the NuGet v3 protocol; there is no per-repository protocol switch.
 
 Format registration (R-REPO-003 in [repositories-and-proxy.md](../repositories-and-proxy.md)):
-name `nuget`; classes `local`, `remote`, `virtual`; protocol base path `/api/nuget/{key}/`;
+name `nuget`; classes `local`, `remote`, `virtual`; protocol base path template `/api/nuget/{project}/{key}/`;
 default upstream URL `https://api.nuget.org/v3/index.json`, with the proposed extra host
 `{"pattern": "*.nuget.org", "sendCredentials": false}` for it (R-NUGET-014); default metadata
 period 300 s and not-found period 1800 s (R-NUGET-015); pattern subject `name` (R-REPO-005);
@@ -72,7 +73,7 @@ name in the symbol key.
 The skeleton of the format (phase 4, WP3.1c) registers the class `local` alone; `virtual` joined with its
 adapter (WP3.2c, Q-NUGET-56) and `remote` joins when its adapter exists, each in the change that writes the
 adapter (Q-NUGET-28), and the format enums of the management API follow the registry (Q-API-190). Two kinds of path meet in the format
-and are never mixed: the *protocol path* a client requests below `/api/nuget/<repoKey>/`
+and are never mixed: the *protocol path* a client requests below `/api/nuget/<projectKey>/<repoKey>/`
 (`v3/flatcontainer/acme.widgets/index.json`) and the *canonical path* of an item or a cache entry
 (`acme.widgets/index.json`, R-NUGET-005, R-NUGET-015). The routes match protocol paths; the descriptors
 (`Classify`) and the package-document path speak canonical paths (Q-NUGET-29).
@@ -98,24 +99,29 @@ authenticated URL, send credentials without a 401 round trip per resource
 
 - The service index MUST be answered with an identical body at all three spellings, without a
   redirect: clients are configured both with and without the trailing `index.json`.
-- Any other path under `/api/nuget/<repoKey>/` MUST answer 404 with code `nuget_v2_unsupported`
+- Any other path under `/api/nuget/<projectKey>/<repoKey>/` MUST answer 404 with code `nuget_v2_unsupported`
   and a message naming the repository's v3 service index URL. This covers every NuGet v2 request
   shape (`$metadata`, `FindPackagesById()`, `Packages()`, `Search()`, `api/v2/…`), which a client
   sends when its source URL does not end in `.json` and lacks `protocolVersion="3"`.
-- An unknown repository key answers 404. A key of a repository with another format answers 404
-  with a message saying that the repository is not a NuGet repository.
+- An unknown project or repository key answers 404, and so does a project the caller cannot see, exactly like a
+  missing repository; `/api/nuget/<projectKey>` alone (one segment after the format) answers 404, and a `%` in the
+  project or repository segment is refused ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-002).
+  A key of a repository with another format answers 404 with a message saying that the repository is not a NuGet
+  repository.
 - Every URL trove puts into a NuGet document MUST be absolute, built from `<base>`
   (R-REPO-043), and MUST point at the repository the request addressed. A virtual repository never
   exposes member URLs, a remote repository never exposes upstream URLs for resources clients fetch
   next (R-NUGET-015).
-- Raw file access (`/files/<repoKey>/<path>`, INV-6) uses the storage layout of R-NUGET-005.
+- Raw file access (`/files/<projectKey>/<repoKey>/<path>`, INV-6) uses the storage layout of R-NUGET-005.
 
 Acceptance criteria:
 
 - `curl -sf -u x:$TOKEN <feed>/index.json`, `<feed>/` and `<feed>` return byte-identical bodies
   with status 200.
-- `curl -i "<base>/api/nuget/nuget-local/FindPackagesById()?id='Acme.Widgets'"` returns 404 whose
-  body contains `<base>/api/nuget/nuget-local/v3/index.json`.
+- `curl -i "<base>/api/nuget/web/nuget-local/FindPackagesById()?id='Acme.Widgets'"` returns 404 whose
+  body contains `<base>/api/nuget/web/nuget-local/v3/index.json`.
+- `curl -i <base>/api/nuget/web/nope/v3/index.json`, the same for a project that does not exist
+  (`<base>/api/nuget/nope/nuget-local/v3/index.json`) and `curl -i <base>/api/nuget/web` each return 404.
 - Every `@id` in the service index of `nuget-local`, `nuget-org` and `nuget-all` starts with that
   repository's own `<feed>/`.
 - `curl -s <base>/api/v1/formats` lists `nuget` with the default upstream URL above.
@@ -222,18 +228,18 @@ HTTP conventions for every NuGet endpoint:
 {
   "version": "3.0.0",
   "resources": [
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/flatcontainer/", "@type": "PackageBaseAddress/3.0.0" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/package", "@type": "PackagePublish/2.0.0" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/symbolpackage", "@type": "SymbolPackagePublish/4.9.0" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration/", "@type": "RegistrationsBaseUrl" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration/", "@type": "RegistrationsBaseUrl/3.0.0-beta" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration/", "@type": "RegistrationsBaseUrl/3.0.0-rc" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration-gz/", "@type": "RegistrationsBaseUrl/3.4.0" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/", "@type": "RegistrationsBaseUrl/3.6.0" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/search", "@type": "SearchQueryService" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/search", "@type": "SearchQueryService/3.0.0-beta" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/search", "@type": "SearchQueryService/3.0.0-rc" },
-    { "@id": "https://trove.example.com/api/nuget/nuget-local/v3/search", "@type": "SearchQueryService/3.5.0" }
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/flatcontainer/", "@type": "PackageBaseAddress/3.0.0" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/package", "@type": "PackagePublish/2.0.0" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/symbolpackage", "@type": "SymbolPackagePublish/4.9.0" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration/", "@type": "RegistrationsBaseUrl" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration/", "@type": "RegistrationsBaseUrl/3.0.0-beta" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration/", "@type": "RegistrationsBaseUrl/3.0.0-rc" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-gz/", "@type": "RegistrationsBaseUrl/3.4.0" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/", "@type": "RegistrationsBaseUrl/3.6.0" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/search", "@type": "SearchQueryService" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/search", "@type": "SearchQueryService/3.0.0-beta" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/search", "@type": "SearchQueryService/3.0.0-rc" },
+    { "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/search", "@type": "SearchQueryService/3.5.0" }
   ]
 }
 ```
@@ -385,7 +391,7 @@ Acceptance criteria:
   `["0.9.0","1.0.0-alpha","1.0.0-rc.2","1.0.0-rc.10","1.0.0","1.0.0.1"]`.
 - `curl <feed>/flatcontainer/ACME.Widgets/1.2.3.0/acme.widgets.1.2.3.nupkg` returns the same bytes
   as the lowercase canonical URL.
-- After pushing `Acme.Widgets` `2.6.1.0+sha.9f2c`, `/files/nuget-local/acme.widgets/2.6.1/acme.widgets.2.6.1.nupkg`
+- After pushing `Acme.Widgets` `2.6.1.0+sha.9f2c`, `/files/web/nuget-local/acme.widgets/2.6.1/acme.widgets.2.6.1.nupkg`
   exists and the SemVer 2 registration leaf shows `"version": "2.6.1+sha.9f2c"`.
 - Pushing a package with ID `Müller.Logging` or `Acme..Widgets` answers 400. A stub upstream
   serving `Müller.Logging` 1.0.0 lets `dotnet restore` through `nuget-org` restore it, and its
@@ -505,9 +511,9 @@ cache fills. A raw deploy is not an ingestion path of NuGet (Q-NUGET-13). The Nu
   ETags of R-NUGET-002. NuGet keeps no counter of its own: the core reads `rev_seq` without format
   code, also for the merged-metadata check of virtual repositories (R-ARCH-015).
 - Raw deploy (R-STOR-007) into a NuGet repository answers 409 before the body is read, for every
-  path and file type: `PUT /files/<repoKey>/...` is accepted only by a format whose protocol base path
-  is `/files/{key}/` (generic, Q-ARCH-223), and the answer names the protocol path of the repository,
-  `/api/nuget/<key>/` (Q-NUGET-13). A package enters through the protocol push, the upload of the management API and the
+  path and file type: `PUT /files/<projectKey>/<repoKey>/...` is accepted only by a format whose protocol base path
+  is `/files/{project}/{key}/` (generic, Q-ARCH-223), and the answer names the protocol path of the repository,
+  `/api/nuget/<projectKey>/<repoKey>/` (Q-NUGET-13). A package enters through the protocol push, the upload of the management API and the
   UI, copy and move. The derived files, which only the plug-in writes, are never a raw deploy's.
 - Upload through the management API without a target path (the UI deploy dialog,
   [api-and-ui.md](../api-and-ui.md)): the plug-in derives the canonical path from the `.nuspec`.
@@ -542,7 +548,7 @@ Metadata extracted from the `.nuspec` into `nuget_version.metadata`:
 | `dependencyGroups` | `dependencies/group` with `targetFramework` (verbatim) and each `dependency` `id` and `version` (verbatim range); a flat `dependencies` list becomes one group without `targetFramework` | registration |
 | `packageTypes` | `packageTypes/packageType` `name` and `version`; none declared means `Dependency` | search filter, symbol checks |
 
-Storage layout. Canonical paths inside a NuGet repository, as seen through `/files/<repoKey>/`;
+Storage layout. Canonical paths inside a NuGet repository, as seen through `/files/<projectKey>/<repoKey>/`;
 the bytes live once in the blob store under their content address (INV-4).
 
 | Canonical path | Item | Written by |
@@ -633,10 +639,10 @@ Acceptance criteria:
 - Fixture packages answer 400 as well: root entries `Acme.Widgets.nuspec` and
   `acme.widgets.NUSPEC`; one `.nuspec` name present twice with different content; an entry
   `..\evil.dll`; a central-directory name that differs from its local header name.
-- `curl -T Acme.Widgets.1.2.3.nupkg -u x:$TOKEN <base>/files/nuget-local/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg`
+- `curl -T Acme.Widgets.1.2.3.nupkg -u x:$TOKEN <base>/files/web/nuget-local/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg`
   answers 201 and the version appears in the flat container; the same file PUT to
   `…/acme.widgets/9.9.9/acme.widgets.9.9.9.nupkg` answers 400; `curl -T notes.txt
-  <base>/files/nuget-local/notes.txt` answers 409.
+  <base>/files/web/nuget-local/notes.txt` answers 409.
 
 ### R-NUGET-006 · Push through the package publish resource
 Priority: **MVP** · Covers: PKG-NUGET-018, PKG-NUGET-020, PKG-NUGET-049
@@ -740,7 +746,7 @@ Acceptance criteria:
   across two replicas, all answer 201 and leave one version row and one `package.published`
   event. Ten parallel pushes of ten different builds of `Acme.Widgets` 2.0.0 yield one 201 and nine
   409.
-- `curl -X PUT … <base>/api/nuget/nuget-org/v3/package` answers 405.
+- `curl -X PUT … <base>/api/nuget/web/nuget-org/v3/package` answers 405.
 - After a hard delete of `Acme.Widgets` 1.2.3 (R-NUGET-007), pushing a rebuilt 1.2.3 answers 409
   `nuget_version_deleted`, also for a token holding `overwrite` and also after the trash can was
   purged; pushing 1.2.5 succeeds. With the trash can enabled, restoring the deleted version brings
@@ -928,25 +934,25 @@ nuget:
   "count": 1,
   "items": [
     {
-      "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/acme.widgets/index.json#page/1.2.3/1.2.3",
+      "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/acme.widgets/index.json#page/1.2.3/1.2.3",
       "count": 1,
       "lower": "1.2.3",
       "upper": "1.2.3",
-      "parent": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/acme.widgets/index.json",
+      "parent": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/acme.widgets/index.json",
       "items": [
         {
-          "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/acme.widgets/1.2.3.json",
-          "packageContent": "https://trove.example.com/api/nuget/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg",
-          "registration": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/acme.widgets/index.json",
+          "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/acme.widgets/1.2.3.json",
+          "packageContent": "https://trove.example.com/api/nuget/web/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg",
+          "registration": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/acme.widgets/index.json",
           "catalogEntry": {
-            "@id": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/acme.widgets/1.2.3.json",
+            "@id": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/acme.widgets/1.2.3.json",
             "id": "Acme.Widgets",
             "version": "1.2.3",
             "authors": "Acme Platform Team",
             "description": "Widget primitives.",
             "listed": true,
             "published": "2026-10-28T09:14:03Z",
-            "packageContent": "https://trove.example.com/api/nuget/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg",
+            "packageContent": "https://trove.example.com/api/nuget/web/nuget-local/v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg",
             "dependencyGroups": [
               {
                 "targetFramework": "net8.0",
@@ -954,7 +960,7 @@ nuget:
                   {
                     "id": "Acme.Core",
                     "range": "[2.0.0, )",
-                    "registration": "https://trove.example.com/api/nuget/nuget-local/v3/registration-semver2/acme.core/index.json"
+                    "registration": "https://trove.example.com/api/nuget/web/nuget-local/v3/registration-semver2/acme.core/index.json"
                   }
                 ]
               }
@@ -1211,10 +1217,11 @@ operations that table does not list:
   the caller cannot read are skipped silently in every merge (R-AUTHZ-009, R-NUGET-017,
   R-NUGET-018). Publishing through a virtual repository is checked on its deploy target
   (R-NUGET-019).
-- Example for GitLab CI (# example): an identity mapping of
-  [gitlab-ci-oidc.md](../gitlab-ci-oidc.md) grants `read` on `nuget-all` and `deploy` on
-  `nuget-local` for package names matching `acme.payments.*`, derived from the job's
-  `project_path`.
+- Example for GitLab CI (# example): an identity mapping in the tier of project `web`
+  ([gitlab-ci-oidc.md](../gitlab-ci-oidc.md)) grants `read` on `nuget-all` and `deploy` on
+  `nuget-local`, bare keys of the project, for package names matching `acme.payments.*`, derived from the job's
+  `project_path`; a mapping of the system tier names the same repositories `web/nuget-all` and
+  `web/nuget-local`.
 
 Acceptance criteria:
 
@@ -1393,14 +1400,14 @@ Acceptance criteria (against a stub v3 upstream in CI and, in the full run of Te
 
 - `dotnet restore` of a project referencing `Newtonsoft.Json 13.0.3` through `nuget-org` succeeds;
   the `.nupkg` is cached; a second restore with the upstream unreachable succeeds.
-- Every URL in `curl <base>/api/nuget/nuget-org/v3/registration-semver2/newtonsoft.json/index.json`
+- Every URL in `curl <base>/api/nuget/web/nuget-org/v3/registration-semver2/newtonsoft.json/index.json`
   except `projectUrl`, `licenseUrl`, `iconUrl` and `advisoryUrl` starts with
-  `<base>/api/nuget/nuget-org/v3/` (Q-NUGET-85); the `deprecation` and `vulnerabilities` of a version
+  `<base>/api/nuget/web/nuget-org/v3/` (Q-NUGET-85); the `deprecation` and `vulnerabilities` of a version
   that has them are in the document.
 - For a stub upstream with 200 versions of one ID in non-inlined pages, the remote's index uses
   trove's paging and contains all 200 leaves.
 - With `excludePatterns: ["Acme.*"]`,
-  `curl <base>/api/nuget/nuget-org/v3/flatcontainer/acme.widgets/index.json` answers 404 and the
+  `curl <base>/api/nuget/web/nuget-org/v3/flatcontainer/acme.widgets/index.json` answers 404 and the
   stub upstream records no request. With `includePatterns: ["Newtonsoft.*"]` instead, restoring
   `Newtonsoft.Json 13.0.3` through `nuget-org` succeeds, which needs the upstream service index.
 - With default settings, a version the stub upstream adds to an already cached version list is
@@ -1708,7 +1715,7 @@ Priority: **MVP** · Covers: PKG-NUGET-027, REPO-038
 Acceptance criteria:
 
 - `dotnet nuget push Acme.Widgets.1.4.0.nupkg --source trove-all --api-key "$TOKEN"` stores the
-  package in `nuget-local`; `/files/nuget-local/acme.widgets/1.4.0/acme.widgets.1.4.0.nupkg`
+  package in `nuget-local`; `/files/web/nuget-local/acme.widgets/1.4.0/acme.widgets.1.4.0.nupkg`
   exists.
 - After removing the deploy target, the same push is refused with 403 and the service index of
   `nuget-all` lists no `PackagePublish/2.0.0`.
@@ -1977,7 +1984,7 @@ Acceptance criteria:
 ### R-NUGET-025 · Metadata reindex
 Priority: **P1** · Covers: PKG-NUGET-007, API-040, FMT-012
 
-The operation `POST /api/v1/repositories/{key}/reindex` is owned by
+The operation `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/reindex` is owned by
 [repositories-and-proxy.md](../repositories-and-proxy.md) (R-REPO-016: 202 with a job reference,
 one run per repository, 409 `reindex_running`, permission system administrator or `manage`). For
 NuGet repositories the plug-in:
@@ -2024,14 +2031,14 @@ always use the `index.json` URL, never a v2 address, and show per repository:
 
 ```shell
 # .NET CLI; on Linux and macOS the password must be stored in clear text
-dotnet nuget add source https://trove.example.com/api/nuget/nuget-all/v3/index.json \
+dotnet nuget add source https://trove.example.com/api/nuget/web/nuget-all/v3/index.json \
   --name trove --username trove --password "$TROVE_TOKEN" --store-password-in-clear-text
 dotnet restore
-dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source https://trove.example.com/api/nuget/nuget-local/v3/index.json --api-key "$TROVE_TOKEN"
+dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source https://trove.example.com/api/nuget/web/nuget-local/v3/index.json --api-key "$TROVE_TOKEN"
 
 # nuget.exe
-nuget sources add -Name trove -Source https://trove.example.com/api/nuget/nuget-all/v3/index.json -Username trove -Password %TROVE_TOKEN%
-nuget push Acme.Widgets.1.2.3.nupkg -Source https://trove.example.com/api/nuget/nuget-local/v3/index.json -ApiKey %TROVE_TOKEN%
+nuget sources add -Name trove -Source https://trove.example.com/api/nuget/web/nuget-all/v3/index.json -Username trove -Password %TROVE_TOKEN%
+nuget push Acme.Widgets.1.2.3.nupkg -Source https://trove.example.com/api/nuget/web/nuget-local/v3/index.json -ApiKey %TROVE_TOKEN%
 ```
 
 Which snippets exist, as built (Q-NUGET-49): per client a configure, an install and, for the two command line clients, a
@@ -2055,7 +2062,7 @@ environment on every platform):
 <configuration>
   <packageSources>
     <clear />
-    <add key="trove" value="https://trove.example.com/api/nuget/nuget-all/v3/index.json" protocolVersion="3" />
+    <add key="trove" value="https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" protocolVersion="3" />
   </packageSources>
   <packageSourceCredentials>
     <trove>
@@ -2172,7 +2179,8 @@ Event catalog, schema and metric conventions are owned by
   `nuget.flatcontainer.nupkg`, `nuget.flatcontainer.nuspec`, `nuget.flatcontainer.embedded`,
   `nuget.registration.index`, `nuget.registration.page`, `nuget.registration.leaf`. The route name
   is the handler label of the request log and of `trove_http_requests_total` (Q-NUGET-30).
-- Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repo,reason}`,
+- Format metrics (# example names; a repository label's value is the qualified name `<projectKey>/<repoKey>`):
+  `trove_nuget_virtual_member_skipped_total{repo,reason}`,
   `trove_nuget_remote_unparseable_packages_total{repo}` (the label is `repo`, as for the replay counter),
   `trove_nuget_search_forward_failures_total{repository}`,
   `trove_nuget_search_withheld_total{repository}` (R-NUGET-016),

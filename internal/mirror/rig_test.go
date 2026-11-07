@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/internal/qname"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -438,14 +441,25 @@ func (s *memStore) Usage(_ context.Context, id int64) (Usage, error) {
 // memRepos is a repository reader the test changes.
 type memRepos struct {
 	mu    sync.Mutex
-	repos map[string]repository.Repository
+	repos map[qname.Repo]repository.Repository
 }
 
-func (r *memRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
+func (r *memRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if repo, ok := r.repos[key]; ok {
+	if repo, ok := r.repos[name]; ok {
 		return repo, nil
+	}
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
+}
+
+func (r *memRepos) ByID(_ context.Context, id int64) (repository.Repository, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, repo := range r.repos {
+		if repo.ID == strconv.FormatInt(id, 10) {
+			return repo, nil
+		}
 	}
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
@@ -457,20 +471,47 @@ func (r *memRepos) List(context.Context) ([]repository.Repository, error) {
 	for _, repo := range r.repos {
 		out = append(out, repo)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	sort.Slice(out, func(i, j int) bool { return out[i].Name.String() < out[j].Name.String() })
+	return out, nil
+}
+
+func (r *memRepos) ListProject(ctx context.Context, project string) ([]repository.Repository, error) {
+	all, _ := r.List(ctx)
+	var out []repository.Repository
+	for _, repo := range all {
+		if repo.Name.Project == project {
+			out = append(out, repo)
+		}
+	}
 	return out, nil
 }
 
 func (r *memRepos) set(repo repository.Repository) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.repos[repo.Key] = repo
+	r.repos[repo.Name] = repo
 }
 
-func (r *memRepos) remove(key string) {
+func (r *memRepos) remove(name qname.Repo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.repos, key)
+	delete(r.repos, name)
+}
+
+// move gives the repository of the id a new name, as a move to another project does: the id stays.
+func (r *memRepos) move(id int64, to qname.Repo, doc []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for name, repo := range r.repos {
+		if repo.ID == strconv.FormatInt(id, 10) {
+			delete(r.repos, name)
+		}
+	}
+	moved, err := repository.Build(id, rigVersion.Add(1), to, repository.Remote, "npm", doc, nil)
+	if err != nil {
+		panic(err)
+	}
+	r.repos[to] = moved
 }
 
 // memQueue is a job queue with the exclusive dedup key.
@@ -785,7 +826,7 @@ func mirrorDoc(t *testing.T, include []string, mirrorSettings string) []byte {
 
 func buildRepo(t *testing.T, key string, id int64, doc []byte) repository.Repository {
 	t.Helper()
-	r, err := repository.Build(id, rigVersion.Add(1), key, repository.Remote, "npm", doc, nil)
+	r, err := repository.Build(id, rigVersion.Add(1), qr(key), repository.Remote, "npm", doc, nil)
 	if err != nil {
 		t.Fatalf("repository: %v", err)
 	}
@@ -801,7 +842,7 @@ func newRig(t *testing.T, include []string, mirrorSettings string) *rig {
 	}
 	clock := newClock()
 	g := &rig{
-		t: t, clock: clock, store: newMemStore(clock), repos: &memRepos{repos: map[string]repository.Repository{}}, queue: &memQueue{},
+		t: t, clock: clock, store: newMemStore(clock), repos: &memRepos{repos: map[qname.Repo]repository.Repository{}}, queue: &memQueue{},
 		lister: &fakeLister{methods: []discover.Method{discover.MethodFeed}}, rec: &recorder{},
 	}
 	g.host = &fakeHost{lister: g.lister}
@@ -847,7 +888,7 @@ func (g *rig) run(args ...PassArgs) (*result, error) {
 func (g *rig) runAs(e *Engine, args ...PassArgs) (*result, error) {
 	g.t.Helper()
 	g.jobs++
-	a := PassArgs{Repository: "npm-mirror", RepositoryID: rigRepoID}
+	a := PassArgs{Repository: qr("npm-mirror"), RepositoryID: rigRepoID}
 	if len(args) > 0 {
 		a.Full = args[0].Full
 	}

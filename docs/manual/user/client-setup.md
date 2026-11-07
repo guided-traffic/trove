@@ -26,15 +26,15 @@ Each page links to the other with the same package type, client and repository. 
 
 ## Repository addresses
 
-Every repository has one client address, built from the configured address of the endpoint you use:
+Every repository belongs to a project, and has one client address, built from the configured address of the endpoint you use, the key of its project and its own key:
 
 | Package type | Address | Example |
 |---|---|---|
-| npm | `<base URL>/api/npm/<repository key>/` | `https://trove.example.com/api/npm/npm-all/` |
-| NuGet | `<base URL>/api/nuget/<repository key>/v3/index.json` (the service index) | `https://trove.example.com/api/nuget/nuget-all/v3/index.json` |
-| Generic | `<base URL>/files/<repository key>/` | `https://trove.example.com/files/generic-local/` |
+| npm | `<base URL>/api/npm/<project key>/<repository key>/` | `https://trove.example.com/api/npm/web/npm-all/` |
+| NuGet | `<base URL>/api/nuget/<project key>/<repository key>/v3/index.json` (the service index) | `https://trove.example.com/api/nuget/web/nuget-all/v3/index.json` |
+| Generic | `<base URL>/files/<project key>/<repository key>/` | `https://trove.example.com/files/web/generic-local/` |
 
-The trailing slash belongs to the address of npm and generic repositories; a NuGet address ends in `index.json`. Which class of repository to use:
+The trailing slash belongs to the address of npm and generic repositories; a NuGet address ends in `index.json`. Two projects can each have a repository of the same key, so the project key is always part of the address; a repository that an administrator moves to another project gets a new address, and the old one answers `404`. Which class of repository to use:
 
 - **Virtual** repositories are the recommended address: internal and public packages through one address and one credential. A publish through a virtual repository goes to its deployment target, a local member.
 - **Local** repositories hold what your teams publish and serve nothing else.
@@ -70,7 +70,7 @@ A pasted token is checked in the browser for its prefix, its length of 57 charac
 
 | Client | File | Credential setting |
 |---|---|---|
-| npm | `.npmrc` in the project, or `~/.npmrc` for every project | `//<host>/api/npm/<key>/:_authToken=${TROVE_TOKEN}` |
+| npm | `.npmrc` in the project, or `~/.npmrc` for every project | `//<host>/api/npm/<project>/<key>/:_authToken=${TROVE_TOKEN}` |
 | pnpm | `~/.npmrc` (pnpm 11 and 12 ignore a credential that names a variable in a project file) | as npm |
 | Yarn Berry | `.yarnrc.yml` in the project (Yarn Berry does not read `.npmrc`) | `npmAuthToken: "${TROVE_TOKEN}"` |
 | Yarn Classic | `.npmrc` in the project | as npm |
@@ -78,15 +78,15 @@ A pasted token is checked in the browser for its prefix, its length of 57 charac
 The npm credential line names the registry address without its scheme, so the client sends the token to this repository and to no other URL. When the repository is not open to anonymous readers, Yarn Berry needs `npmAlwaysAuth: true` and Yarn Classic `always-auth=true`, or they send the token for scoped packages only; the snippets add the switch when it is needed. An `.npmrc` for npm looks like this:
 
 ```ini
-# example: the virtual repository npm-all
-registry=https://trove.example.com/api/npm/npm-all/
-//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}
+# example: the virtual repository npm-all of the project web
+registry=https://trove.example.com/api/npm/web/npm-all/
+//trove.example.com/api/npm/web/npm-all/:_authToken=${TROVE_TOKEN}
 ```
 
 and a `.yarnrc.yml` for Yarn Berry:
 
 ```yaml
-npmRegistryServer: "https://trove.example.com/api/npm/npm-all/"   # example
+npmRegistryServer: "https://trove.example.com/api/npm/web/npm-all/"   # example
 npmAlwaysAuth: true            # only when the repository is not open to anonymous readers
 npmAuthToken: "${TROVE_TOKEN}"
 ```
@@ -102,7 +102,7 @@ read -rs TROVE_TOKEN && export TROVE_TOKEN
 npm whoami
 ```
 
-`npm whoami`, `pnpm whoami` and `yarn npm whoami` print your trove user name (`sa:<name>` for a service-account token); Yarn Classic has no such command. In CI, store a service-account token with only the permissions the job needs as a masked, protected variable named `TROVE_TOKEN`; for GitLab CI without a stored token, see [GitLab CI pipelines](gitlab-ci-pipelines.md). The variable has this name unless an administrator configured another; the snippets always show the name in use. `npm login` and its pnpm and Yarn equivalents do not work with trove: put the token into the configuration instead.
+`npm whoami`, `pnpm whoami` and `yarn npm whoami` print your trove user name (`sa:<name>` for a service-account token, `sa:<project>/<name>` for one of a project); Yarn Classic has no such command. In CI, store a service-account token with only the permissions the job needs as a masked, protected variable named `TROVE_TOKEN`; for GitLab CI without a stored token, see [GitLab CI pipelines](gitlab-ci-pipelines.md). The variable has this name unless an administrator configured another; the snippets always show the name in use. `npm login` and its pnpm and Yarn equivalents do not work with trove: put the token into the configuration instead.
 
 ## Configure a NuGet client
 
@@ -121,7 +121,7 @@ The credential parts appear when the repository is not open to anonymous readers
 <configuration>
   <packageSources>
     <clear />
-    <add key="trove" value="https://trove.example.com/api/nuget/nuget-all/v3/index.json" protocolVersion="3" />
+    <add key="trove" value="https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" protocolVersion="3" />
   </packageSources>
   <packageSourceCredentials>   <!-- only when the repository is not open to anonymous readers -->
     <trove>
@@ -200,17 +200,17 @@ trove_curl() {
 header = "Authorization: Bearer ${TROVE_TOKEN}"
 EOF
 }
-trove_curl --fail --remote-name "https://trove.example.com/files/generic-local/tools/app-1.2.0.tar.gz"
-trove_curl --fail --upload-file app-1.2.0.tar.gz "https://trove.example.com/files/generic-local/tools/app-1.2.0.tar.gz"
+trove_curl --fail --remote-name "https://trove.example.com/files/web/generic-local/tools/app-1.2.0.tar.gz"
+trove_curl --fail --upload-file app-1.2.0.tar.gz "https://trove.example.com/files/web/generic-local/tools/app-1.2.0.tar.gz"
 ```
 
 Downloading needs read, uploading to a free path deploy, replacing a file with other bytes overwrite as well, deleting delete. Add `--header "If-None-Match: *"` to an upload that must never replace a file: it then answers `412` when the path exists. [Browsing and transferring files](files.md) describes paths, digests and folders; the curl guide shows resuming, conditional downloads and uploads with a digest.
 
 ## Install through a Bastion
 
-An administrator may run a Bastion for you: a read-only cache of this installation at its own address, for clients outside the network ([The trove Bastion](../admin/bastion.md) explains what it is). You sign in to it with the same personal, service-account or CI token, and you install the same packages from the same repository keys; only the address differs.
+An administrator may run a Bastion for you: a read-only cache of this installation at its own address, for clients outside the network ([The trove Bastion](../admin/bastion.md) explains what it is). You sign in to it with the same personal, service-account or CI token, and you install the same packages from the same repositories, named by the same project and repository keys; only the address differs.
 
-When an administrator has registered a Bastion and it has reported its address, the Client setup page and the Guides area offer it under **Install from**, next to **This installation**. Choose it and the snippets use the Bastion's address, for example `https://packages.example.com/api/npm/npm-all/`. Without that permission the choice is not shown; an administrator can send you a link that already names the Bastion (`/setup?repository=npm-all&bastion=partners`, an example).
+When an administrator has registered a Bastion and it has reported its address, the Client setup page and the Guides area offer it under **Install from**, next to **This installation**. Choose it and the snippets use the Bastion's address, for example `https://packages.example.com/api/npm/web/npm-all/`. Without that permission the choice is not shown; an administrator can send you a link to the Client setup page that already names the Bastion.
 
 - **Read only.** The **Publish** tab says that you cannot publish through a Bastion. Publish, change dist-tags and unpublish on this installation.
 - **npm** gets one more line in the configure snippet, `replace-registry-host=always`. It makes npm fetch every package from the address in `registry=`, also when a lockfile written against another host names that host, so one lockfile works through this installation and through the Bastion.
@@ -223,7 +223,7 @@ A Bastion decides what you may read by asking this installation with your token,
 
 This page explains the concepts; the guide of your installation gives the exact text for your choice:
 
-- the addresses of the endpoint you are using, and for a chosen repository its key and its deployment target;
+- the addresses of the endpoint you are using, and for a chosen repository its project, its key and its deployment target;
 - sections that depend on the class and the client, and only the steps that apply to you: an anonymous reader gets no sign-in steps, a repository you cannot publish to says so;
 - the section **On this endpoint**, shown only on an endpoint with exposure rules, which says what such an endpoint hides and refuses;
 - a **Troubleshooting** table with the error codes of the protocol and what to do about each.

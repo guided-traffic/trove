@@ -6,12 +6,13 @@ This page explains how administrators create, configure, edit and delete reposit
 
 | Format | Classes | Client address |
 |---|---|---|
-| Generic | local | `https://trove.example.com/files/<key>/` |
-| npm | local, remote, virtual | `https://trove.example.com/api/npm/<key>/` |
+| Generic | local | `https://trove.example.com/files/<projectKey>/<key>/` |
+| npm | local, remote, virtual | `https://trove.example.com/api/npm/<projectKey>/<key>/` |
+| NuGet | local, remote, virtual | `https://trove.example.com/api/nuget/<projectKey>/<key>/v3/index.json` |
 
 A **local** repository holds what is uploaded or published to it. A **remote** repository fetches from an upstream registry and caches what it fetched. A **virtual** repository combines local and remote repositories behind one address. How users see the classes is described in [Repositories](../user/repositories.md).
 
-Viewing configurations needs the capability `repositories:read-config`; creating, changing and deleting needs `repositories:write-config`. Both come with the roles `admin` and `repository-admin`; see [Permissions](permissions.md).
+Every repository belongs to exactly one [project](projects.md), and its key is unique within that project. Viewing configurations needs the capability `repositories:read-config`; creating, changing, deleting and moving needs `repositories:write-config`. Both come with the roles `admin` and `repository-admin` and act in every project; see [Permissions](permissions.md). The Owner of a project does the same for the project's repositories without a system role ([Projects](projects.md#what-an-owner-may-do)).
 
 ## The Repositories screen
 
@@ -19,7 +20,7 @@ Viewing configurations needs the capability `repositories:read-config`; creating
 
 Each row offers **Edit**, **Browse** and, with `repositories:write-config`, **Delete**. **Create repository** opens the wizard.
 
-A repository can belong to a [project](projects.md). The page of such a repository shows its **Project**, and the **Project filter** in the top bar, or the link **Open in the repository list** on a project's page, limits the list to the repositories of one project. Administrators of trove assign repositories in the project's dialog. The administrators of a project create, change and delete the project's repositories without a system role while the project's switch **Manage repositories** is on: the wizard they open from the project page fills in the project and starts the key with the project key and a hyphen, for example `web-libs` in project `web`, and the key is fixed from then on.
+The page of a repository shows its **Project**. A repository is created in its project (`POST /api/v1/projects/<projectKey>/repositories`), and it changes project only through a move, which changes every address of it ([Move a repository to another project](projects.md#move-a-repository-to-another-project)). The list in the admin area names the project of each repository in a **Project** column, its filter panel limits the list to one project, and the project's own **Repositories** screen (`/projects/<key>/repositories`) lists the repositories of that project.
 
 ## Create a repository
 
@@ -35,7 +36,7 @@ The key rules:
 
 - 2 to 64 characters: lower-case letters, digits, `.`, `_` and `-`, starting with a letter or digit; no `..` and no trailing `.`.
 - `batch-create`, `batch-update`, `batch-get`, `batch-delete` and `quick-setup` are reserved.
-- A key is unique and stays taken until a deleted repository is completely removed.
+- A key is unique within its project and stays taken there until a deleted repository is completely removed; another project can have a repository of the same key.
 - Key, class and format cannot be changed after creation.
 
 The wizard creates an npm remote repository with the upstream `https://registry.npmjs.org/` and a virtual repository without members. Configure a different upstream, the members and the deployment target afterwards as described in [Settings that are set through the API](#settings-that-are-set-through-the-api).
@@ -91,7 +92,7 @@ A member left empty or at its default is not written. The other members of `remo
 
 **The password is write-only.** It is sealed when you save and never shown again, anywhere: the field is empty when you open the page, a read of the repository shows `{"set": true}`, and the request that **Show as API request** and the **API** tab display carries `<the password>` in its place. When one is stored, the page says so; leave the field empty to keep it, type one to replace it, or tick **Remove the stored password**. A reference to a secret file or variable that was set through the API shows as such and stays until you type a password. The password is not kept in the browser's storage either: a sign-in that interrupts the form restores everything but the password.
 
-**Test connection** sends the section as it stands in the form, saved or not, to `POST /api/v1/upstream-tests` and shows the answer under the button, in words: **The upstream answered.**, **The upstream answered and refused the credentials.**, **The upstream answered with an error.** or **The upstream could not be reached.**, then the HTTP status, whether the credentials were **accepted** or **refused**, the duration, the certificate (subject and expiry) and, when the upstream could not be reached, the reason with its code (`dns_error`, `tls_untrusted`, `egress_denied`, `offline`, ...). The result goes when you change a setting. The test uses a password you typed; it does not use the stored one, and the page says so. With **Offline** on the answer is `offline`, because the upstream is not contacted. The permission is the one of saving the repository.
+**Test connection** sends the section as it stands in the form, saved or not, to `POST /api/v1/projects/<projectKey>/upstream-tests` and shows the answer under the button, in words: **The upstream answered.**, **The upstream answered and refused the credentials.**, **The upstream answered with an error.** or **The upstream could not be reached.**, then the HTTP status, whether the credentials were **accepted** or **refused**, the duration, the certificate (subject and expiry) and, when the upstream could not be reached, the reason with its code (`dns_error`, `tls_untrusted`, `egress_denied`, `offline`, ...). The result goes when you change a setting. The test uses a password you typed; it does not use the stored one, and the page says so. With **Offline** on the answer is `offline`, because the upstream is not contacted. The permission is the one of saving the repository.
 
 ## Mirror
 
@@ -112,11 +113,11 @@ A remote repository of a format whose upstream trove can list, for example npm, 
 
 A member left empty or at its default is not written. Under the mode, a notice says when the mirror has no bound; it follows the **Upstream URL** you entered: for the format's well-known upstream (`https://registry.npmjs.org/` for npm, which an empty URL also means) the server refuses to save the mirror unless the include patterns each start with a literal part (such as `@types/*`; not `*`, `**` or `@*/*`) or a storage limit is set; for any other upstream it saves the mirror with a warning. The server decides, and its answer appears at the mode or at the member it names.
 
-Only a holder of `repositories:write-config` sets the mode and the members. An administrator of a project sees the section read-only, can switch **Paused** and select **Turn off** (back to pull-through), and cannot turn a remote repository into a mirror. **Not built in this release yet**: the server still answers `not_applicable` at the mode for a save with **Mirror** until the background passes exist, so the form shows the settings and a repository stays a pull-through cache.
+Only a holder of `repositories:write-config` sets the mode and the members. An Owner of the repository's project without that capability can switch **Paused** and turn the mode back to pull-through, and cannot turn a remote repository into a mirror or change its settings (`mirror_restricted`). A format that cannot list its upstream answers `not_applicable` at the mode for a save with **Mirror**.
 
 ### The status of a mirror
 
-On the page of a remote repository that is stored in mode **Mirror**, the tab **Mirror** starts with **Mirror status**, above the settings. It shows what the server records (`GET /api/v1/repositories/<key>/mirror`), for everyone who can see the repository's configuration:
+On the page of a remote repository that is stored in mode **Mirror**, the tab **Mirror** starts with **Mirror status**, above the settings. It shows what the server records (`GET /api/v1/projects/<projectKey>/repositories/<key>/mirror`), for everyone who can see the repository's configuration:
 
 | State | Meaning |
 |---|---|
@@ -137,10 +138,10 @@ The state is a word with an icon; the colour only adds to it. Under it:
 - **Rate-limit waits**: how many times the passes waited for the upstream, for how many seconds, the status and time of the last answer and, while it waits, until when.
 - **Bound**: the storage limit, the bytes stored, and which bound was reached.
 
-With `repositories:write-config`, or as an administrator of the repository's project with **Manage repositories**, the status has buttons; a caller who may only read the configuration sees the status without them:
+With `repositories:write-config`, or with `manage` on the repository (the roles Maintainer and Owner of its project hold it), the status has buttons; a caller who may only read the configuration sees the status without them:
 
 - **Pause** and **Resume** change **Paused** at once, with the version of the repository you loaded; they do not save the other edits in the form, which stay as they are. If someone else changed the repository since you opened it, the conflict dialog opens (**Overwrite** pauses anyway, **Reload** takes the stored version); if they already paused it, nothing more happens.
-- **Run a pass now** asks for a pass (`POST /api/v1/repositories/<key>/mirror/run`) and shows its job: **A pass is queued.** with the job's id, its state and a link **Open the mirror jobs**, which opens the Jobs screen ([System status, Jobs and Audit log](operations.md)) filtered by the kind `mirror-pass`. The arrow next to the button opens **Run a full pass**, which discovers every name again instead of reading the feed from its cursor.
+- **Run a pass now** asks for a pass (`POST /api/v1/projects/<projectKey>/repositories/<key>/mirror/run`) and shows its job: **A pass is queued.** with the job's id, its state and a link **Open the mirror jobs**, which opens the Jobs screen ([System status, Jobs and Audit log](operations.md)) filtered by the kind `mirror-pass`. The arrow next to the button opens **Run a full pass**, which discovers every name again instead of reading the feed from its cursor.
 - While a pass is already queued or running the answer is **A pass is already queued or running.** with that job. A paused mirror answers **The mirror is paused. Resume it to run a pass.**, and a repository in pull-through mode says that there is no mirror to run.
 
 ## Settings that are set through the API
@@ -150,8 +151,8 @@ The UI edits the shared settings, the format settings, the [upstream](#the-upstr
 Read the repository to get its `ETag`, then send a merge patch with `If-Match`:
 
 ```bash
-# example values: the key, the ETag and the token variable
-curl -X PATCH https://trove.example.com/api/v1/repositories/npm-all \
+# example values: the project, the key, the ETag and the token variable
+curl -X PATCH https://trove.example.com/api/v1/projects/web/repositories/npm-all \
   -H "Authorization: Bearer $TROVE_TOKEN" \
   -H 'Content-Type: application/merge-patch+json' \
   -H 'If-Match: "3"' \
@@ -190,7 +191,7 @@ The `remote` section of an npm remote repository:
 | `integrity.blockUnexpectedContentTypes`, `allowedContentTypes` | `true`, `[]` | Refuse upstream answers of unexpected content types |
 | `limits.maxArtifactBytes`, `maxMetadataBytes` | system value | Largest upstream answer |
 | `limits.maxConcurrentFetches` | `64` | Parallel upstream fetches |
-| `mode` | `pullThrough` | `pullThrough` or `mirror`: a mirror also stores, in background passes, what the upstream offers within the include patterns and the bounds below. A mirror of `https://registry.npmjs.org/` needs include patterns that each start with a literal part (such as `@types/*`) or `mirror.maxBytes`; only a holder of `repositories:write-config` sets the mode, a project administrator may pause a mirror or turn it back to `pullThrough`. **Not built in this release yet**: the background passes do not run, so a remote repository stays a pull-through cache in either mode; npm accepts `mode: mirror`, a save of NuGet with it is refused with `not_applicable` until its discovery is built |
+| `mode` | `pullThrough` | `pullThrough` or `mirror`: a mirror also stores, in background passes, what the upstream offers within the include patterns and the bounds below. A mirror of `https://registry.npmjs.org/` needs include patterns that each start with a literal part (such as `@types/*`) or `mirror.maxBytes`; only a holder of `repositories:write-config` sets the mode, an Owner of the project without it may pause a mirror or turn it back to `pullThrough` |
 | `mirror.paused` | `false` | Pause or resume the mirror |
 | `mirror.intervalSeconds`, `fullPassIntervalSeconds` | `3600`, `604800` | Time between passes; age of the last full pass after which a pass reads everything again |
 | `mirror.discovery` | `auto` | `auto`, `feed`, `listing` or `names` |
@@ -204,31 +205,31 @@ The `remote` section of an npm remote repository:
 - **When the upstream fails.** trove retries once only when the connection failed before anything was sent. Expired metadata that is stored is served within `maxStaleSeconds`; otherwise clients get 502 or 504, and 503 `upstream_assumed_offline` while the upstream is treated as down. In offline mode cached content is served whatever its age and uncached content answers 404 `not_cached_offline`.
 - **Versions removed upstream.** A version the upstream no longer lists, and every version of a package the upstream withdrew, answer 404 even when cached, unless **serveRemovedVersions** is on. Each case is recorded as `npm.remote.version_removed`.
 - **Changing the upstream.** A change of the URL, the hosts or the credentials discards all cached metadata and remembered misses at once; cached tarballs stay.
-- **Testing the connection.** `POST /api/v1/repositories/<key>/upstream-test` checks the saved settings.
-- **The mirror's status and a pass now.** `GET /api/v1/repositories/<key>/mirror` shows the state of the mirror (`off`, `paused`, `scheduled`, `running`, `waiting`, `bound_reached` or `failing`), the pass in progress with its counts and job, the last complete pass, the next pass, the last error, the rate-limit waits and the byte bound; it needs `repositories:read-config`, `manage` on the repository or the administration of its project. `POST /api/v1/repositories/<key>/mirror/run` asks for a pass now (`{"full": true}` for a full one) and answers `202` with its job; it answers `409` while a pass is queued or running (`mirror_pass_running`, naming the job), for a remote in mode `pullThrough` (`mirror_off`) and for a paused mirror (`mirror_paused`). Pause and resume are `remote.mirror.paused`, set with `PATCH` and `If-Match`.
-- **Invalidating the cache.** `POST /api/v1/repositories/<key>/cache/invalidate` with a path prefix and `scope` (`metadata`, `negative` or `all`) discards cached metadata or remembered misses, never tarballs. It needs `manage` on the repository and is recorded as `repository.cache_invalidated`. `GET /api/v1/repositories/<key>/cache/entries` lists the cache.
+- **Testing the connection.** `POST /api/v1/projects/<projectKey>/repositories/<key>/upstream-test` checks the saved settings; `POST /api/v1/projects/<projectKey>/upstream-tests` checks settings that are not saved.
+- **The mirror's status and a pass now.** `GET /api/v1/projects/<projectKey>/repositories/<key>/mirror` shows the state of the mirror (`off`, `paused`, `scheduled`, `running`, `waiting`, `bound_reached` or `failing`), the pass in progress with its counts and job, the last complete pass, the next pass, the last error, the rate-limit waits and the byte bound; it needs `repositories:read-config`, `manage` on the repository or the role Owner of its project. `POST /api/v1/projects/<projectKey>/repositories/<key>/mirror/run` asks for a pass now (`{"full": true}` for a full one) and answers `202` with its job; it answers `409` while a pass is queued or running (`mirror_pass_running`, naming the job), for a remote in mode `pullThrough` (`mirror_off`) and for a paused mirror (`mirror_paused`). Pause and resume are `remote.mirror.paused`, set with `PATCH` and `If-Match`.
+- **Invalidating the cache.** `POST /api/v1/projects/<projectKey>/repositories/<key>/cache/invalidate` with a path prefix and `scope` (`metadata`, `negative` or `all`) discards cached metadata or remembered misses, never tarballs. It needs `manage` on the repository and is recorded as `repository.cache_invalidated`. `GET /api/v1/projects/<projectKey>/repositories/<key>/cache/entries` lists the cache.
 
 ### npm virtual: members and the deployment target
 
 | Key | Default | Meaning |
 |---|---|---|
-| `virtual.members` | `[]` | Keys of local and remote npm repositories, in resolution order, at most 100; a virtual repository cannot be a member |
-| `virtual.deployTarget` | `null` | The local member that receives publishes; `null` makes the repository read-only |
+| `virtual.members` | `[]` | Bare keys of local and remote npm repositories of the same project, in resolution order, at most 100; a virtual repository cannot be a member, a repository of another project neither (`invalid_member`) |
+| `virtual.deployTarget` | `null` | The bare key of the local member that receives publishes; `null` makes the repository read-only |
 | `virtual.mergedMetadataTtlSeconds` | `7200` | How long merged package documents are cached, at most 86400; 0 caches nothing |
 | `virtual.pinning.rules` | `[]` | Rules that say from which members a set of package names may come |
 | `priorityMember` (in the member's own document) | `false` | Members marked so are consulted first; the others keep their order |
 
-A tarball is looked for in the local members in order, then in the caches of the remote members, then at the upstreams of the remote members the caller may fill. A publish to the virtual repository goes to the deployment target and is decided there; without a target, clients get 405 `no_deploy_target`. A publish to a local member shows in the virtual repository at once. `POST /api/v1/repositories/<key>/cache/invalidate` on a virtual repository drops its merged documents on every replica.
+A tarball is looked for in the local members in order, then in the caches of the remote members, then at the upstreams of the remote members the caller may fill. A publish to the virtual repository goes to the deployment target and is decided there; without a target, clients get 405 `no_deploy_target`. A publish to a local member shows in the virtual repository at once. `POST /api/v1/projects/<projectKey>/repositories/<key>/cache/invalidate` on a virtual repository drops its merged documents on every replica.
 
 ### npm local: package ownership
 
-`local.packageOwnership` is `enforce` by default for npm. The first publish of a name makes the principals of the granting policy entries its owners; after that, only owners, holders of `manage` and administrators may publish, change or delete it (403 `package_owned_by_other_owner`). `off` turns this off. Owners are managed with `GET`, `POST` and `DELETE` on `/api/v1/repositories/<key>/packages/<name>/owners`, which need a recent sign-in; see [Permissions](permissions.md).
+`local.packageOwnership` is `enforce` by default for npm. The first publish of a name makes the principals of the granting policy entries its owners; after that, only owners, holders of `manage` and administrators may publish, change or delete it (403 `package_owned_by_other_owner`). `off` turns this off. Owners are managed with `GET`, `POST` and `DELETE` on `/api/v1/projects/<projectKey>/repositories/<key>/packages/<name>/owners`, which need a recent sign-in; see [Permissions](permissions.md).
 
 ## Protection against dependency confusion
 
 When a virtual repository combines a local repository with a remote one, a public package of the same name as an internal one could be resolved instead. trove offers three defences:
 
-- **Namespace claims** of a local repository. A claimed name resolves only from the claimant; the remote members are never asked. Scope `members` applies in the virtual repositories that contain the local repository, scope `global` in every npm virtual repository and, by default, refuses the name at every npm remote repository. Manage claims with `GET` and `PUT /api/v1/repositories/<key>/claims`; `PUT` needs `manage`, and a `global` claim needs `repositories:write-config` as well. With `local.autoClaim` (on by default for npm) the first publish of a name claims it.
+- **Namespace claims** of a local repository. A claimed name resolves only from the claimant; the remote members are never asked. Scope `members` applies in the virtual repositories that contain the local repository, scope `global` in every npm virtual repository and, by default, refuses the name at every npm remote repository. Manage claims with `GET` and `PUT /api/v1/projects/<projectKey>/repositories/<key>/claims`; `PUT` needs `manage`, and a `global` claim needs `repositories:write-config` as well. With `local.autoClaim` (on by default for npm) the first publish of a name claims it.
 - **The shadowing check.** The first version of a name in a local repository is refused with 403 `shadows_remote_package` when a remote member of a virtual repository containing it already serves that name, unless the repository claims the name. A holder of `manage` may publish anyway; this is recorded as `repository.remote_package_shadowed`. If the upstream cannot be asked, the publish answers 503 `shadow_check_unavailable` and should be retried.
 - **Pin rules** of a virtual repository restrict package names to listed members.
 
@@ -248,7 +249,7 @@ Saving sends only your changes with the version you loaded. If someone saved in 
 2. Confirm **Delete repository** by typing the key.
 3. If the repository is a member, deployment target or pin-rule member of a virtual repository, the deletion is refused with **Other repositories still include this one.** In the list, tick **Also remove it from the virtual repositories that include it** to detach it in the same step.
 
-Deleting needs a recent sign-in. A local or remote repository is marked **being deleted** and a background job removes its content and then the repository; the key is free again only when the job has finished. A virtual repository is removed at once. Content is deleted permanently; there is no trash. Exposure rules that name the repository are removed with it.
+Deleting needs a recent sign-in. A local or remote repository is marked **being deleted** and a background job removes its content and then the repository; the key is free again in its project only when the job has finished. A virtual repository is removed at once. Content is deleted permanently; there is no trash. Exposure rules that name the repository are removed with it.
 
 ## The How to use tab
 
@@ -260,9 +261,9 @@ Administrators hold every repository action, so the browser and the file-transfe
 
 | Operation | Where | Action needed |
 |---|---|---|
-| Upload a file | **Browse** › **Upload files**, `PUT /files/<key>/<path>` | `deploy`; `overwrite` to replace different bytes |
+| Upload a file | **Browse** › **Upload files**, `PUT /files/<projectKey>/<key>/<path>` | `deploy`; `overwrite` to replace different bytes |
 | Create a folder | **Browse** › **New folder** | `deploy` |
-| Download | **Browse** › **Download**, `GET /files/<key>/<path>` | `read` |
-| Delete a file or folder | **Browse** › **Delete**, `DELETE /files/<key>/<path>` | `delete` on every item |
+| Download | **Browse** › **Download**, `GET /files/<projectKey>/<key>/<path>` | `read` |
+| Delete a file or folder | **Browse** › **Delete**, `DELETE /files/<projectKey>/<key>/<path>` | `delete` on every item |
 
-Uploads go to generic local repositories only; npm content is published with the npm client. Deleting npm tarballs this way respects package ownership. A folder with many items is deleted by a background job. Only an administrator can remove, through `DELETE /api/v1/repositories/<key>/items`, items that lie outside the include patterns or in a disabled repository. Copy, move, item properties and a trash are not available in this version.
+Uploads go to generic local repositories only; npm content is published with the npm client. Deleting npm tarballs this way respects package ownership. A folder with many items is deleted by a background job. Only an administrator can remove, through `DELETE /api/v1/projects/<projectKey>/repositories/<key>/items`, items that lie outside the include patterns or in a disabled repository. Copy, move, item properties and a trash are not available in this version.

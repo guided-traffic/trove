@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -23,7 +25,7 @@ import (
 
 // ownership returns the service ([AuthzServices.Owners]) and the holder of the
 // request's index, made to know the repository keys the request names.
-func (s *Server) ownership(ctx context.Context, keys ...string) (context.Context, *authz.Ownership, *edge.Access, error) {
+func (s *Server) ownership(ctx context.Context, keys ...qname.Repo) (context.Context, *authz.Ownership, *edge.Access, error) {
 	svc, eng := s.o.Authz.Owners, s.o.Authz.Engine
 	if svc == nil || eng == nil {
 		return ctx, nil, nil, unavailable("The ownership service")
@@ -41,8 +43,8 @@ func (s *Server) ownership(ctx context.Context, keys ...string) (context.Context
 // ownersHref is the owners view of a name, the Location of an added owner: the
 // URL on which a GET shows it (R-API-004), since R-AUTHZ-019 has no read of one
 // owner. The name is one path segment, its "/" encoded.
-func ownersHref(base, repoKey, name string) string {
-	return base + "/api/v1/repositories/" + url.PathEscape(repoKey) + "/packages/" + url.PathEscape(name) + "/owners"
+func ownersHref(base string, repo qname.Repo, name string) string {
+	return base + "/api/v1/projects/" + url.PathEscape(repo.Project) + "/repositories/" + url.PathEscape(repo.Key) + "/packages/" + url.PathEscape(name) + "/owners"
 }
 
 func packageOwnerOf(o authz.Owner) gen.PackageOwner {
@@ -54,8 +56,9 @@ func packageOwnerOf(o authz.Owner) gen.PackageOwner {
 	return out
 }
 
-// GetPackageOwners implements GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners.
-func (s *Server) GetPackageOwners(w http.ResponseWriter, r *http.Request, repoKey, packageName string) {
+// GetPackageOwners implements GET /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners.
+func (s *Server) GetPackageOwners(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText, packageName string) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx, svc, acc, err := s.ownership(r.Context(), repoKey)
 	var po authz.PackageOwners
 	if err == nil {
@@ -75,10 +78,11 @@ func (s *Server) GetPackageOwners(w http.ResponseWriter, r *http.Request, repoKe
 	writeJSON(w, r, http.StatusOK, out)
 }
 
-// AddPackageOwner implements POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners:
+// AddPackageOwner implements POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners:
 // the owner and its audit event in the transaction of an Idempotency-Key
 // (R-API-014), so a replay answers the stored outcome.
-func (s *Server) AddPackageOwner(w http.ResponseWriter, r *http.Request, repoKey, packageName string, _ gen.AddPackageOwnerParams) {
+func (s *Server) AddPackageOwner(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText, packageName string, _ gen.AddPackageOwnerParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx, svc, acc, err := s.ownership(r.Context(), repoKey)
 	if err == nil && s.idem == nil {
 		err = unavailable("The idempotency store")
@@ -111,8 +115,9 @@ func (s *Server) AddPackageOwner(w http.ResponseWriter, r *http.Request, repoKey
 	}
 }
 
-// RemovePackageOwner implements DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}.
-func (s *Server) RemovePackageOwner(w http.ResponseWriter, r *http.Request, repoKey, packageName, owner string, params gen.RemovePackageOwnerParams) {
+// RemovePackageOwner implements DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}.
+func (s *Server) RemovePackageOwner(w http.ResponseWriter, r *http.Request, projectKey, repoKeyText, packageName, owner string, params gen.RemovePackageOwnerParams) {
+	repoKey := qname.Repo{Project: projectKey, Key: repoKeyText}
 	ctx, svc, acc, err := s.ownership(r.Context(), repoKey)
 	if err == nil {
 		release := params.Release != nil && *params.Release
@@ -143,11 +148,15 @@ func (s *Server) ListOwnedPackages(w http.ResponseWriter, r *http.Request, param
 		httpserver.Problem(w, r, err)
 		return
 	}
-	repoKey := ""
-	var keys []string
+	var repoKey qname.Repo
+	var keys []qname.Repo
 	if params.Repository != nil && *params.Repository != "" {
-		repoKey = *params.Repository
-		keys = []string{repoKey}
+		var perr error
+		if repoKey, perr = qname.ParseRepo(*params.Repository); perr != nil {
+			httpserver.Problem(w, r, badParam("repository", "is not a repository name <project>/<key>"))
+			return
+		}
+		keys = []qname.Repo{repoKey}
 	}
 	ctx, svc, acc, err := s.ownership(r.Context(), keys...)
 	var rows []authz.OwnedPackage
@@ -162,7 +171,7 @@ func (s *Server) ListOwnedPackages(w http.ResponseWriter, r *http.Request, param
 	page := Page[gen.OwnedPackage]{Items: make([]gen.OwnedPackage, 0, len(rows))}
 	for _, p := range rows {
 		page.Items = append(page.Items, gen.OwnedPackage{
-			Repository: p.Repository, Format: p.Format, Package: p.Package,
+			Repository: p.Repository.String(), Format: p.Format, Package: p.Package,
 			State: gen.OwnedPackageState(p.State), Reason: gen.OwnedPackageReason(p.Reason), AddedAt: p.AddedAt,
 		})
 	}

@@ -120,7 +120,7 @@ func TestR_ARCH_013_QueryThroughTheHost(t *testing.T) {
 	if s.queryCount("q=acme") != 1 {
 		t.Fatalf("the adapter's request did not reach the upstream: %v", s.queries)
 	}
-	if c, ok := dec.got.Load().(authz.Coordinate); !ok || c.Kind != authz.KindSearch || c.Repository != "q-host" || c.Path != "search" {
+	if c, ok := dec.got.Load().(authz.Coordinate); !ok || c.Kind != authz.KindSearch || c.Repository != qr("q-host") || c.Path != "search" {
 		t.Fatalf("the populate check was asked for %+v", dec.got.Load())
 	}
 	if got, err = host.Remote().Query(t.Context(), rq, q); err != nil || !got.Cached || s.count() != 1 {

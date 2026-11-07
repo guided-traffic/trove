@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { expect, expectAccessible, signInLocal, signOut, test, unique } from '../support';
+import { e2eProject, expect, expectAccessible, repositories, repositoryApi, signInLocal, signOut, test, unique } from '../support';
 
 // R-UI-047 journey "repository wizard" with the file tree (R-UI-010, R-UI-011, R-UI-012, R-UI-020, E1.11): the
 // administrator creates a repository with the wizard, uploads a file in the browser, browses to it and
@@ -9,16 +9,17 @@ const repoKey = unique('ui-files');
 const content = `trove browser journey ${repoKey}\n`;
 
 test.afterAll(async ({ admin }) => {
-  await admin.delete(`/api/v1/repositories/${repoKey}`);
+  await admin.delete(repositoryApi(repoKey));
 });
 
 test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ page, replicas }) => {
   await signInLocal(page);
 
   await test.step('the wizard creates a local generic repository', async () => {
-    await page.goto('/ui/en/admin/repositories');
+    await page.goto(`/ui/en/projects/${e2eProject}/repositories`);
     await expect(page.getByRole('heading', { name: 'Repositories', level: 1 })).toBeVisible();
-    await expectAccessible(page, 'repository list');
+    await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(e2eProject);
+    await expectAccessible(page, 'repository list of the project');
     await page.getByRole('link', { name: 'Create repository' }).click();
     await expect(page.getByRole('heading', { name: 'New repository', level: 1 })).toBeVisible();
     // The format is the first step (R-UI-021, Q-UI-112): a grid of tiles under a search field.
@@ -37,6 +38,10 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
     await expectAccessible(page, 'repository wizard, step class');
     await page.getByRole('radio', { name: /^Local/ }).check();
     await page.getByRole('button', { name: 'Next' }).click();
+    // Inside a project the project is given, not chosen (Q-UI-129).
+    await expect(page.getByLabel('Project', { exact: true })).toHaveCount(0);
+    // The breadcrumb and the switcher name the project as well: the sentence of the step is what is asserted.
+    await expect(page.locator('p.subject')).toHaveText(`In the project ${e2eProject}`);
     await page.locator('#f-key').fill(repoKey);
     await expect(page.getByText('The key is available.')).toBeVisible();
     await expectAccessible(page, 'repository wizard, step basic settings');
@@ -45,12 +50,12 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
     await expect(page.getByRole('heading', { name: 'Review', level: 2 })).toBeVisible();
     await expectAccessible(page, 'repository wizard, review');
     await page.getByRole('button', { name: 'Create repository' }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/repositories/${repoKey}$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/repositories/${repoKey}$`));
     await expectAccessible(page, 'repository detail');
   });
 
   await test.step('the file tree shows it; a file is uploaded in the browser', async () => {
-    await page.goto('/ui/en/browse');
+    await page.goto(`/ui/en/projects/${e2eProject}/browse`);
     await expectAccessible(page, 'file tree');
     await page.getByLabel('Filter repositories').fill(repoKey);
     await page.getByRole('treeitem', { name: new RegExp(repoKey) }).click();
@@ -70,15 +75,15 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
   });
 
   await test.step('the folder view of the repository lists the file in the right pane', async () => {
-    await page.goto(`/ui/en/browse/${repoKey}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/browse/${repoKey}`);
     await expect(page.getByRole('table')).toContainText('hello.txt');
     await expectAccessible(page, 'repository contents');
     await page.getByRole('link', { name: 'hello.txt' }).click();
-    await expect(page).toHaveURL(new RegExp(`/browse/${repoKey}/hello\\.txt$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${e2eProject}/browse/${repoKey}/hello\\.txt$`));
   });
 
   await test.step('it is found by browsing and downloaded with the original bytes', async () => {
-    await page.goto(`/ui/en/browse/${repoKey}`);
+    await page.goto(`/ui/en/projects/${e2eProject}/browse/${repoKey}`);
     await page.getByRole('treeitem', { name: /hello\.txt/ }).click();
     await expect(page.getByRole('navigation', { name: 'Location' })).toContainText('hello.txt');
     await expect(page.getByText('SHA-256')).toBeVisible();

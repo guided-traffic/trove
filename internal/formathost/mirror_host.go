@@ -205,7 +205,7 @@ func (b *backgroundFacts) apply(preq *proxy.Request, rq *formats.Request, info f
 	preq.Priority, preq.Ceiling, preq.JobID, preq.Mode = proxy.PriorityBackground, b.ceiling, b.jobID, proxy.Normal
 	preq.Caller = proxy.CallerFacts{Actor: mirrorActor}
 	preq.Populate = &mirrorPopulate{h: b.h, coord: authz.Coordinate{
-		Repository: rq.Repo.Key, Class: rq.Repo.Class, Format: rq.Repo.Format, Kind: authz.KindWrite,
+		Repository: rq.Repo.Name, Class: rq.Repo.Class, Format: rq.Repo.Format, Kind: authz.KindWrite,
 		Path: p.Path, Package: info.Package, Version: info.Version, Actions: []formats.Action{formats.ActionRead},
 		Addressed: rq.Addressed(),
 	}}

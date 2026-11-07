@@ -60,6 +60,7 @@ async function next(rendered: Awaited<ReturnType<typeof renderScreen<RepositoryW
 describe('Repository creation wizard', () => {
   it('R-UI-021 Q-UI-112 the first step is the format, as a grid of tiles with icon and name, for the installed formats only', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
           GENERIC_FORMAT,
@@ -80,6 +81,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 Q-UI-115 the search field filters the tiles by name, case-insensitively, and says what is left', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
           GENERIC_FORMAT,
@@ -110,6 +112,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 Q-UI-114 the tiles are one listbox of @angular/aria: a single tab stop, the chosen tile is selected, a click on it again keeps it', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
@@ -126,6 +129,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 R-UI-044 the tiles are operable by keyboard alone: arrows move, Enter chooses, and a visible focus style exists', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
@@ -143,6 +147,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 Q-UI-113 the class step offers the classes of the chosen format and shows the others disabled with the reason', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
           GENERIC_FORMAT,
@@ -167,6 +172,7 @@ describe('Repository creation wizard', () => {
     await expectAccessible(r.root);
 
     const generic = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
@@ -181,6 +187,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 Q-UI-112 going back and choosing a format that lacks the chosen class clears the class; one that has it keeps it', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [
           GENERIC_FORMAT,
@@ -208,7 +215,7 @@ describe('Repository creation wizard', () => {
   });
 
   it('R-UI-021 walks all five steps, shows the review with the API request, and a double click creates one repository with the key generated when the wizard opened (R-UI-042)', async () => {
-    const r = await renderScreen(RepositoryWizard);
+    const r = await renderScreen(RepositoryWizard, { inputs: { project: 'web' } });
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
@@ -243,11 +250,12 @@ describe('Repository creation wizard', () => {
       'releases/**',
       'snapshots/**',
     ]);
-    expect(navigate).toHaveBeenCalledWith(['/admin/repositories', 'build-output']);
+    expect(navigate).toHaveBeenCalledWith(['/projects', 'web', 'repositories', 'build-output']);
   });
 
   it('R-REPO-002 R-UI-021 the review shows the client address and the curl command on the configured base URL, not on the origin of the page', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
@@ -263,15 +271,16 @@ describe('Repository creation wizard', () => {
     await next(r);
 
     const t = text(r.root);
-    expect(t).toContain('https://trove.example.net/api/npm/web-libs/');
+    expect(t).toContain('https://trove.example.net/api/npm/web/web-libs/');
     expect(r.root.querySelector('details pre:last-of-type')?.textContent).toContain(
-      "curl -X POST 'https://trove.example.net/api/v1/repositories'",
+      "curl -X POST 'https://trove.example.net/api/v1/projects/web/repositories'",
     );
     expect(t).not.toContain(location.origin);
   });
 
   it('R-REPO-002 R-UI-021 a caller with repositories:write-config but without settings:read and without a readable repository still sees the client address (Q-UI-75)', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       capabilities: ['repositories:write-config'],
       setup: (get) => {
         const fake = get(RepositoriesApi) as FakeRepositoriesApi;
@@ -291,11 +300,12 @@ describe('Repository creation wizard', () => {
     await settle(r.fixture);
     await next(r);
     await next(r);
-    expect(text(r.root)).toContain('https://trove.example.net/api/npm/web-libs/');
+    expect(text(r.root)).toContain('https://trove.example.net/api/npm/web/web-libs/');
   });
 
   it('R-UI-021 R-ARCH-004 the settings step renders the members of the format schema that apply to the class, and the create writes only what differs from the default', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
@@ -339,6 +349,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 another format starts the format settings afresh, the generic format has none, and npm left at its defaults is created without an npm member', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
     });
@@ -380,6 +391,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 a server error at a format setting returns to the settings step and is shown at its control and in the summary', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) => {
         const fake = get(RepositoriesApi) as FakeRepositoriesApi;
         fake.formatsResult = [GENERIC_FORMAT, FAKE_NPM];
@@ -421,7 +433,7 @@ describe('Repository creation wizard', () => {
   it('R-UI-021 the key is checked live: shape at once, availability after a pause (a 404 means free)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      const r = await renderScreen(RepositoryWizard);
+      const r = await renderScreen(RepositoryWizard, { inputs: { project: 'web' } });
       await pickFormat(r, 'generic');
       await next(r);
       await pick(r, 'class', 'local');
@@ -430,7 +442,7 @@ describe('Repository creation wizard', () => {
       await settle(r.fixture);
       vi.advanceTimersByTime(500);
       await settle(r.fixture);
-      expect(text(r.root)).toContain('A repository with this key already exists.');
+      expect(text(r.root)).toContain('A repository with this key already exists in the project.');
       button(r.root, 'Next').click();
       await settle(r.fixture);
       expect(text(r.root)).toContain('Basic settings');
@@ -446,7 +458,7 @@ describe('Repository creation wizard', () => {
   });
 
   it('R-UI-021 server field errors appear at their field and in the summary, and the wizard returns to the step of the field (R-UI-044)', async () => {
-    const r = await renderScreen(RepositoryWizard);
+    const r = await renderScreen(RepositoryWizard, { inputs: { project: 'web' } });
     const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
     fake.create = async () => {
       throw new ApiError(
@@ -482,6 +494,7 @@ describe('Repository creation wizard', () => {
 
   it('R-UI-021 a failing format catalog shows the error and passes the accessibility check', async () => {
     const r = await renderScreen(RepositoryWizard, {
+      inputs: { project: 'web' },
       setup: (get) =>
         ((get(RepositoriesApi) as FakeRepositoriesApi).formatsError = new ApiError(
           503,
@@ -494,7 +507,7 @@ describe('Repository creation wizard', () => {
   });
 
   it('R-UI-021 leaving with entered data counts as unsaved changes, a pristine wizard does not', async () => {
-    const r = await renderScreen(RepositoryWizard);
+    const r = await renderScreen(RepositoryWizard, { inputs: { project: 'web' } });
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
     await pickFormat(r, 'Generic');
     expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(true);

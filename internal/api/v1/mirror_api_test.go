@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/mirror"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -54,10 +55,10 @@ type fakeMirror struct {
 	requests []mirrorRequest
 }
 
-func (f *fakeMirror) Target(_ context.Context, key string) (MirrorTarget, error) {
-	t, ok := f.targets[key]
+func (f *fakeMirror) Target(_ context.Context, key qname.Repo) (MirrorTarget, error) {
+	t, ok := f.targets[key.Key]
 	if !ok {
-		return MirrorTarget{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+key)
+		return MirrorTarget{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository has the key "+key.String())
 	}
 	return t, nil
 }
@@ -111,11 +112,11 @@ type mirrorEnv struct {
 func newMirrorEnv(t *testing.T, val *apitest.Validator, access Access, dec authz.Decider, mutate func(*fakeMirror)) mirrorEnv {
 	t.Helper()
 	fm := &fakeMirror{targets: map[string]MirrorTarget{
-		"npm-mirror":  {ID: 7, Key: "npm-mirror", Class: repository.Remote, Settings: mirrorSettings(repository.ModeMirror, nil)},
-		"npm-pull":    {ID: 8, Key: "npm-pull", Class: repository.Remote, Settings: mirrorSettings(repository.ModePullThrough, nil)},
-		"npm-paused":  {ID: 9, Key: "npm-paused", Class: repository.Remote, Settings: mirrorSettings(repository.ModeMirror, func(r *repository.RemoteSettings) { r.Mirror.Paused = true })},
-		"npm-local":   {ID: 10, Key: "npm-local", Class: repository.Local},
-		"npm-virtual": {ID: 11, Key: "npm-virtual", Class: repository.Virtual},
+		"npm-mirror":  {ID: 7, Key: qr("npm-mirror"), Class: repository.Remote, Settings: mirrorSettings(repository.ModeMirror, nil)},
+		"npm-pull":    {ID: 8, Key: qr("npm-pull"), Class: repository.Remote, Settings: mirrorSettings(repository.ModePullThrough, nil)},
+		"npm-paused":  {ID: 9, Key: qr("npm-paused"), Class: repository.Remote, Settings: mirrorSettings(repository.ModeMirror, func(r *repository.RemoteSettings) { r.Mirror.Paused = true })},
+		"npm-local":   {ID: 10, Key: qr("npm-local"), Class: repository.Local},
+		"npm-virtual": {ID: 11, Key: qr("npm-virtual"), Class: repository.Virtual},
 	}}
 	if mutate != nil {
 		mutate(fm)
@@ -142,15 +143,15 @@ type mirrorDecider struct {
 	manage, read, unexposed bool
 }
 
-func (d mirrorDecider) Begin(context.Context, authz.Subject, ...string) (*authz.Index, error) {
+func (d mirrorDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
 	return nil, nil
 }
 
-func (d mirrorDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ string) (*authz.Index, error) {
+func (d mirrorDecider) Know(_ context.Context, idx *authz.Index, _ authz.Subject, _ qname.Repo) (*authz.Index, error) {
 	return idx, nil
 }
 
-func (d mirrorDecider) ExposedOn(_ *authz.Index, _ authz.Subject, keys []string) []string {
+func (d mirrorDecider) ExposedOn(_ *authz.Index, _ authz.Subject, keys []qname.Repo) []qname.Repo {
 	if d.unexposed {
 		return nil
 	}
@@ -166,7 +167,7 @@ func (d mirrorDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subje
 		if d.manage {
 			return authz.Decision{Outcome: authz.Allow}
 		}
-		return authz.Decision{Outcome: authz.DenyVisible, Reason: authz.ReasonNoGrant, Missing: authz.Manage, Target: c.Repository}
+		return authz.Decision{Outcome: authz.DenyVisible, Reason: authz.ReasonNoGrant, Missing: authz.Manage, Target: c.Repository.Key}
 	case authz.Read:
 		if d.read {
 			return authz.Decision{Outcome: authz.Allow}
@@ -177,8 +178,8 @@ func (d mirrorDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subje
 }
 
 const (
-	mirrorPath = "/api/v1/repositories/npm-mirror/mirror"
-	runPath    = "/api/v1/repositories/npm-mirror/mirror/run"
+	mirrorPath = "/api/v1/projects/it/repositories/npm-mirror/mirror"
+	runPath    = "/api/v1/projects/it/repositories/npm-mirror/mirror/run"
 )
 
 // The callers, one right each. cacheDecider answers the decision on manage.
@@ -186,17 +187,11 @@ var (
 	readOnlyCaller   = projectCaller{}
 	readConfigCaller = projectCaller{caps: map[string]bool{capabilityReadConfig: true}}
 	writeConfigCall  = projectCaller{caps: map[string]bool{capabilityWriteConfig: true}}
-	webAdmin         = projectCaller{
-		projects:     []authz.AdministeredProject{{Key: "web", ManagePolicies: true, ManageRepositories: true}},
-		repositories: map[string]string{"npm-mirror": "web", "npm-pull": "web"},
+	webAdmin         = projectCaller{ // an Owner of the project of the repository
+		members: map[string]authz.ProjectRole{"it": authz.ProjectRoleOwner}, owns: map[string]bool{"it": true},
 	}
-	labAdmin = projectCaller{ // administers the project of the repository, with manageRepositories off
-		projects:     []authz.AdministeredProject{{Key: "lab", ManagePolicies: true}},
-		repositories: map[string]string{"npm-mirror": "lab"},
-	}
-	shopAdmin = projectCaller{ // administers a project that does not hold the repository
-		projects:     []authz.AdministeredProject{{Key: "shop", ManagePolicies: true, ManageRepositories: true}},
-		repositories: map[string]string{"npm-mirror": "web"},
+	shopAdmin = projectCaller{ // an Owner of a project that does not hold the repository
+		members: map[string]authz.ProjectRole{"shop": authz.ProjectRoleOwner}, owns: map[string]bool{"shop": true},
 	}
 )
 
@@ -227,11 +222,9 @@ func TestR_REPO_056_MirrorStatusPermissions(t *testing.T) {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	})
-	t.Run("R-REPO-056 R-AUTHZ-026 an administrator of the repository's project gets 200, whatever the switch", func(t *testing.T) {
-		for name, c := range map[string]projectCaller{"manageRepositories on": webAdmin, "manageRepositories off": labAdmin} {
-			if w := get(c, mirrorDecider{}).do("GET", mirrorPath, "", nil); w.Code != 200 {
-				t.Errorf("%s: %d %s", name, w.Code, w.Body)
-			}
+	t.Run("R-REPO-056 R-AUTHZ-026 an Owner of the repository's project gets 200", func(t *testing.T) {
+		if w := get(webAdmin, mirrorDecider{}).do("GET", mirrorPath, "", nil); w.Code != 200 {
+			t.Errorf("%d %s", w.Code, w.Body)
 		}
 	})
 	t.Run("R-REPO-056 an administrator of another project is a caller with nothing", func(t *testing.T) {
@@ -259,9 +252,9 @@ func TestR_REPO_056_MirrorStatusPermissions(t *testing.T) {
 	})
 	t.Run("R-REPO-056 a local and a virtual repository answer 400 not_applicable, an unknown one 404", func(t *testing.T) {
 		e := get(readConfigCaller, mirrorDecider{})
-		problem(t, e.do("GET", "/api/v1/repositories/npm-local/mirror", "", nil), 400, "not_applicable")
-		problem(t, e.do("GET", "/api/v1/repositories/npm-virtual/mirror", "", nil), 400, "not_applicable")
-		problem(t, e.do("GET", "/api/v1/repositories/nothing-here/mirror", "", nil), 404, "repository_not_found")
+		problem(t, e.do("GET", "/api/v1/projects/it/repositories/npm-local/mirror", "", nil), 400, "not_applicable")
+		problem(t, e.do("GET", "/api/v1/projects/it/repositories/npm-virtual/mirror", "", nil), 400, "not_applicable")
+		problem(t, e.do("GET", "/api/v1/projects/it/repositories/nothing-here/mirror", "", nil), 404, "repository_not_found")
 	})
 	t.Run("an unwired database is 503", func(t *testing.T) {
 		s := newSetup(t, func(o *Options) {
@@ -286,7 +279,7 @@ func TestR_REPO_056_MirrorStatusDocument(t *testing.T) {
 	status := func(t *testing.T, key string, mutate func(*fakeMirror)) map[string]any {
 		t.Helper()
 		e := newMirrorEnv(t, val, readConfigCaller, mirrorDecider{}, mutate)
-		w := e.do("GET", "/api/v1/repositories/"+key+"/mirror", "", nil)
+		w := e.do("GET", "/api/v1/projects/it/repositories/"+key+"/mirror", "", nil)
 		if w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
@@ -447,14 +440,14 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		e := newMirrorEnv(t, val, access, dec, mutate)
 		return e, e.do("POST", path, body, nil)
 	}
-	t.Run("R-REPO-056 write-config, manage and a project administrator with manageRepositories each get 202 with the job", func(t *testing.T) {
+	t.Run("R-REPO-056 write-config, manage and a project Owner each get 202 with the job", func(t *testing.T) {
 		for name, c := range map[string]struct {
 			access Access
 			dec    authz.Decider
 		}{
 			"repositories:write-config": {writeConfigCall, mirrorDecider{}},
 			"manage":                    {readOnlyCaller, mirrorDecider{manage: true}},
-			"project administrator":     {webAdmin, mirrorDecider{}},
+			"project Owner":             {webAdmin, mirrorDecider{}},
 		} {
 			e, w := run(t, c.access, c.dec, runPath, "", nil)
 			if w.Code != 202 {
@@ -498,12 +491,6 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-REPO-056 Q-API-199 an administrator whose manageRepositories is off holds manage on the project's repositories and may run", func(t *testing.T) {
-		e, w := run(t, labAdmin, mirrorDecider{manage: true}, runPath, "", nil)
-		if w.Code != 202 || len(e.queue.specs) != 1 {
-			t.Fatalf("%d %s", w.Code, w.Body)
-		}
-	})
 	t.Run("R-REPO-056 the pass is enqueued exclusive under its key with the arguments of the engine", func(t *testing.T) {
 		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, runPath, "", nil)
 		if w.Code != 202 || len(e.queue.specs) != 1 {
@@ -511,10 +498,10 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		}
 		spec := e.queue.specs[0]
 		if spec.Kind != mirror.KindPass || spec.DedupKey != mirror.PassKey(7) || spec.DedupKey != "mirror-pass:7" ||
-			spec.TargetKind != "repository" || spec.TargetKey != "npm-mirror" || spec.CreatedBy != callerUUID {
+			spec.TargetKind != "repository" || spec.TargetKey != "it/npm-mirror" || spec.CreatedBy != callerUUID {
 			t.Errorf("spec = %+v", spec)
 		}
-		if args, ok := spec.Args.(mirror.PassArgs); !ok || args != (mirror.PassArgs{Repository: "npm-mirror", RepositoryID: 7}) {
+		if args, ok := spec.Args.(mirror.PassArgs); !ok || args != (mirror.PassArgs{Repository: qr("npm-mirror"), RepositoryID: 7}) {
 			t.Errorf("args = %#v", spec.Args)
 		}
 		if want := []mirrorRequest{{repoID: 7, by: callerUUID}}; !reflect.DeepEqual(e.fm.requests, want) {
@@ -545,7 +532,7 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		}
 		ev := e.audit.events[0]
 		if ev.Type != "mirror.pass_requested" || ev.Outcome != audit.Success ||
-			ev.Repository != "npm-mirror" || ev.Subject.Kind != "repository" || ev.Subject.ID != "7" || ev.Subject.Name != "npm-mirror" {
+			ev.Repository != "it/npm-mirror" || ev.Subject.Kind != "repository" || ev.Subject.ID != "7" || ev.Subject.Name != "it/npm-mirror" {
 			t.Errorf("event = %+v", ev)
 		}
 		if ev.Actor.ID != callerUUID {
@@ -581,14 +568,14 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 		}
 	})
 	t.Run("R-REPO-056 a remote in mode pullThrough answers 409 mirror_off", func(t *testing.T) {
-		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/npm-pull/mirror/run", "", nil)
+		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/npm-pull/mirror/run", "", nil)
 		problem(t, w, 409, "mirror_off")
 		if len(e.queue.specs) != 0 {
 			t.Errorf("enqueued %+v", e.queue.specs)
 		}
 	})
 	t.Run("R-REPO-056 a paused mirror answers 409 mirror_paused", func(t *testing.T) {
-		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/npm-paused/mirror/run", "", nil)
+		e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/npm-paused/mirror/run", "", nil)
 		problem(t, w, 409, "mirror_paused")
 		if len(e.queue.specs) != 0 {
 			t.Errorf("enqueued %+v", e.queue.specs)
@@ -596,13 +583,13 @@ func TestR_REPO_056_MirrorRun(t *testing.T) {
 	})
 	t.Run("R-REPO-056 a local and a virtual repository answer 400 not_applicable, an unknown one 404", func(t *testing.T) {
 		for _, key := range []string{"npm-local", "npm-virtual"} {
-			e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/"+key+"/mirror/run", "", nil)
+			e, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/"+key+"/mirror/run", "", nil)
 			problem(t, w, 400, "not_applicable")
 			if len(e.queue.specs) != 0 {
 				t.Errorf("%s: enqueued", key)
 			}
 		}
-		_, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/repositories/nothing-here/mirror/run", "", nil)
+		_, w := run(t, writeConfigCall, mirrorDecider{read: true}, "/api/v1/projects/it/repositories/nothing-here/mirror/run", "", nil)
 		problem(t, w, 404, "repository_not_found")
 	})
 	t.Run("R-API-003 a body that is not the request is refused before anything is enqueued", func(t *testing.T) {

@@ -31,7 +31,7 @@ type heldOnly struct{ noIndex }
 func TestQ_CI_51_AnUnknownScopeKeyAnswersAsANotGrantedOne(t *testing.T) {
 	f := claims.Frozen{Version: claims.FrozenVersion, Issuer: "gitlab-test", IssuerID: "i-1", ProjectID: "7"}
 	f.Add(claims.Freeze("ci:gitlab-test/read", "m-1", TierSystem, nil,
-		claims.Rendered{Inline: []claims.InlineGrant{{Repositories: []string{"npm-internal"}, Actions: []claims.Action{claims.Read}}}}, nil))
+		claims.Rendered{Inline: []claims.InlineGrant{{Repositories: []string{"web/npm-internal"}, Actions: []claims.Action{claims.Read}}}}, nil))
 	answer := func(item string) (Reason, string) {
 		items, err := claims.ParseScope(item)
 		if err != nil {
@@ -43,8 +43,8 @@ func TestQ_CI_51_AnUnknownScopeKeyAnswersAsANotGrantedOne(t *testing.T) {
 		}
 		return ee.Reason, strings.ReplaceAll(ee.Description, item, "<item>")
 	}
-	unknownReason, unknownDetail := answer("read:npm-nowhere")
-	hiddenReason, hiddenDetail := answer("read:npm-hidden")
+	unknownReason, unknownDetail := answer("read:web/npm-nowhere")
+	hiddenReason, hiddenDetail := answer("read:web/npm-hidden")
 	if unknownReason != reason.ScopeNotGranted || unknownReason != hiddenReason || unknownDetail != hiddenDetail {
 		t.Fatalf("an unknown key answers %s %q, an existing one %s %q", unknownReason, unknownDetail, hiddenReason, hiddenDetail)
 	}

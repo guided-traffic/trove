@@ -17,7 +17,7 @@ import (
 func TestR_VULN_015_AVersionBlockedDuringARevalidationIsRefused(t *testing.T) {
 	e := newEnv(t, options{})
 	r := e.replica("web-1")
-	if a := e.do(r, "GET", "/api/npm/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
+	if a := e.do(r, "GET", "/api/npm/it/"+rRemote+"/"+e.pkg, e.tokReader); a.Status != 200 {
 		t.Fatalf("document: %d %s", a.Status, a.Body)
 	}
 	if a := e.do(r, "GET", tgzPath(rRemote, e.pkg, e.ver), e.tokReader); a.Status != 200 {

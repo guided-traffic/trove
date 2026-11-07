@@ -78,7 +78,7 @@ func NewRemote(repo repository.Repository) (Remote, error) {
 	}
 	s, ok := repo.Remote()
 	if !ok {
-		return Remote{}, fmt.Errorf("proxy: repository %q is not a remote repository", repo.Key)
+		return Remote{}, fmt.Errorf("proxy: repository %q is not a remote repository", repo.Name)
 	}
 	return Remote{Repo: repo, Settings: s, id: id}, nil
 }

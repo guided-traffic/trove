@@ -53,7 +53,7 @@ func (f *Format) serveRegistration(ctx context.Context, rq *formats.Request, w h
 	pg := registration.Paging{PageSize: paging.PageSize, InlineBelow: paging.InlineBelow}
 	links := rq.Host.Links(rq)
 	doc := registration.Doc{
-		Feed:    registration.Feed(links.Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"),
+		Feed:    registration.Feed(links.Registry(servingName(rq)) + FeedSegment + "/"),
 		Hive:    hive,
 		LowerID: lowerID,
 		Paging:  pg,

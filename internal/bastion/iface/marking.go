@@ -64,7 +64,8 @@ func (r Read) Valid() bool { return r == ReadFull || r == ReadPartial || r == Re
 // Marking is the set of response headers the main installation adds to the
 // response of a recognized Bastion request (R-BAS-013).
 type Marking struct {
-	Class      Class
+	Class Class
+	// Repository is the qualified name "<projectKey>/<repoKey>".
 	Repository string
 	Read       Read
 	Subject    Subject

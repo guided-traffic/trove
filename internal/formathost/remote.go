@@ -266,7 +266,7 @@ func (r *remote) request(ctx context.Context, rq *formats.Request, p formats.Pat
 	info := f.Classify(p)
 	pr := principalOf(ctx)
 	preq := proxy.Request{
-		Remote: rem, Path: p.Path, Variant: variant, Kind: kind, Package: info.Package, Version: info.Version, Mode: modeOf(rq), Addressed: rq.Addressed(),
+		Remote: rem, Path: p.Path, Variant: variant, Kind: kind, Package: info.Package, Version: info.Version, Mode: modeOf(rq), Addressed: rq.Addressed().String(),
 		Facts:        serveKeyOf(rq.RepoRef(), p),
 		Adapter:      newAdapter(f, rq.Repo, rq.RepoRef(), r.h.o.Deps),
 		AlwaysVerify: f.Descriptor().VerifyAnnouncedDigests,
@@ -541,7 +541,7 @@ var _ proxy.Populate = (*populate)(nil)
 
 func populateCoordinate(rq *formats.Request, info formats.PathInfo, p formats.Path) authz.Coordinate {
 	return authz.Coordinate{
-		Repository: rq.Repo.Key, Class: rq.Repo.Class, Format: rq.Repo.Format, Kind: rq.Route.Kind.RequestKind(),
+		Repository: rq.Repo.Name, Class: rq.Repo.Class, Format: rq.Repo.Format, Kind: rq.Route.Kind.RequestKind(),
 		Path: p.Path, Package: info.Package, Version: info.Version, Actions: []formats.Action{formats.ActionRead},
 		Addressed: rq.Addressed(),
 	}

@@ -28,6 +28,9 @@ import {
   RepositoryConsumerView,
   RepositorySummary,
   isConsumerView,
+  refOf,
+  repoRef,
+  splitRef,
 } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
@@ -116,9 +119,17 @@ export class Browse {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly title = inject(ActivatedRoute).snapshot.title ?? '';
 
-  /** Route parameters of the matcher and the query parameters, bound by the router. */
-  readonly repo = input<string | undefined>();
+  /**
+   * Route parameters, bound by the router: the project of `/projects/:project/browse`, the key of the repository and the
+   * path inside it (the matcher). The repository the screen speaks of is the qualified name `<project>/<key>`.
+   */
+  readonly project = input.required<string>();
+  readonly key = input<string | undefined>();
   readonly path = input<string | undefined>();
+  protected readonly repo = computed(() => {
+    const key = this.key();
+    return key ? repoRef(this.project(), key) : undefined;
+  });
   readonly q = input<string | undefined>();
   readonly class = input<string | undefined>();
   readonly format = input<string | undefined>();
@@ -237,7 +248,12 @@ export class Browse {
     if (sel.path === '') return 'repository';
     return this.item()?.kind ?? null;
   });
-  protected readonly members = computed(() => this.fullRepository()?.virtual?.members ?? []);
+  /** The members of a virtual repository as qualified names: they are bare keys of its own project. */
+  protected readonly members = computed(() => {
+    const project = splitRef(this.selected()?.repo ?? '').project;
+    return (this.fullRepository()?.virtual?.members ?? []).map((m) => repoRef(project, m));
+  });
+  protected readonly parts = (ref: string): string[] => ref.split('/');
 
   /** What the caller may do at the selection (R-UI-005): one batched check, cached for 60 seconds. */
   protected readonly allowed = resource({
@@ -313,10 +329,10 @@ export class Browse {
     if (!sel) return [];
     const parts = sel.path.split('/').filter((p) => p !== '');
     return [
-      { label: sel.repo, commands: ['/browse', sel.repo] },
+      { label: sel.repo, commands: this.commandsOfRepo(sel.repo, []) },
       ...parts.map((p, i) => ({
         label: p,
-        commands: ['/browse', sel.repo, ...parts.slice(0, i + 1)],
+        commands: this.commandsOfRepo(sel.repo, parts.slice(0, i + 1)),
       })),
     ];
   });
@@ -354,7 +370,7 @@ export class Browse {
   constructor() {
     this.destroyRef.onDestroy(() => clearTimeout(this.filterTimer));
     effect(() => {
-      const filters = { q: this.q(), class: this.class(), format: this.format() };
+      const filters = { q: this.q(), class: this.class(), format: this.format(), project: this.project() };
       untracked(() => {
         // The field keeps what the user typed, unless the address changed under it.
         if ((filters.q ?? '') !== this.search().trim()) this.search.set(filters.q ?? '');
@@ -384,7 +400,7 @@ export class Browse {
     effect(() => {
       // A node made by a deep link before the list arrived learns its class and format from the list.
       for (const r of this.list.items()) {
-        const node = untracked(() => this.nodes.get(r.key));
+        const node = untracked(() => this.nodes.get(refOf(r)));
         if (node && node.meta().cls === undefined) {
           node.meta.set({ cls: r.class, format: r.format, disabled: r.disabled });
         }
@@ -393,8 +409,9 @@ export class Browse {
     effect(() => {
       // A repository the list did not show (a deep link) learns its class and format from the read.
       const doc = this.repositoryDoc();
-      if (!doc) return;
-      const node = untracked(() => this.nodes.get(doc.key));
+      const repo = this.selected()?.repo;
+      if (!doc || !repo) return;
+      const node = untracked(() => this.nodes.get(repo));
       if (node && node.meta().cls === undefined) {
         node.meta.set({ cls: doc.class, format: doc.format, disabled: 'disabled' in doc && !!doc.disabled });
       }
@@ -404,7 +421,7 @@ export class Browse {
   // --- tree ---------------------------------------------------------------------------------
 
   private rootOf(r: RepositorySummary): TreeNode {
-    return this.nodeFor(r.key, '', 'repository', r.key, {
+    return this.nodeFor(refOf(r), '', 'repository', refOf(r), {
       cls: r.class,
       format: r.format,
       disabled: r.disabled,
@@ -509,9 +526,11 @@ export class Browse {
   /** A virtual repository's children are its members in resolution order (R-UI-010). */
   private async loadMembers(node: TreeNode): Promise<void> {
     const read = (await this.repositories.get(node.repository)).value;
-    const keys = isConsumerView(read) ? [] : (read.virtual?.members ?? []);
+    // The members of a virtual repository are bare keys of its own project (R-REPO-017).
+    const project = splitRef(node.repository).project;
+    const keys = isConsumerView(read) ? [] : (read.virtual?.members ?? []).map((m) => repoRef(project, m));
     node.membersHidden.set(isConsumerView(read));
-    const known = new Map(this.list.items().map((r) => [r.key, r]));
+    const known = new Map(this.list.items().map((r) => [refOf(r), r]));
     this.setChildren(
       node,
       keys.map((key, i) => {
@@ -612,14 +631,14 @@ export class Browse {
   }
 
   protected go(repo: string, path: string): void {
-    void this.router.navigate(['/browse', repo, ...path.split('/').filter((s) => s !== '')], {
+    void this.router.navigate(this.commandsOfRepo(repo, path.split('/').filter((s) => s !== '')), {
       queryParams: { tab: null },
       queryParamsHandling: 'merge',
     });
   }
 
   protected goRoot(): void {
-    void this.router.navigate(['/browse'], { queryParamsHandling: 'preserve' });
+    void this.router.navigate(['/projects', this.project(), 'browse'], { queryParamsHandling: 'preserve' });
   }
 
   protected moreId(node: TreeNode): string {
@@ -725,7 +744,19 @@ export class Browse {
   }
 
   protected commandsOf(node: TreeNode): string[] {
-    return ['/browse', node.repository, ...node.path.split('/').filter((s) => s !== '')];
+    return this.commandsOfRepo(node.repository, node.path.split('/').filter((s) => s !== ''));
+  }
+
+  /** The address of an item: inside the project of its repository (a member of a virtual repository may be in another). */
+  protected commandsOfRepo(repo: string, path: readonly string[]): string[] {
+    const { project, key } = splitRef(repo);
+    return ['/projects', project, 'browse', key, ...path];
+  }
+
+  /** The repository's own screen in its project. */
+  protected repositoryCommands(repo: string): string[] {
+    const { project, key } = splitRef(repo);
+    return ['/projects', project, 'repositories', key];
   }
 
   // --- actions ------------------------------------------------------------------------------

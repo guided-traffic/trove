@@ -25,7 +25,7 @@ func TestMemoryAdmission(t *testing.T) {
 		"TROVE_CACHE_RENDITION_BYTES=0", "TROVE_PROXY_METADATA_CACHE_BYTES=0", "TROVE_PROXY_MERGED_METADATA_CACHE_BYTES=0",
 		"TROVE_PROXY_QUERY_CACHE_BYTES=0")
 	big := in.deploy(t, r, "big.bin", 1<<20)
-	const path = "/files/" + repo + "/big.bin"
+	const path = filesRoot + "big.bin"
 	slots := r.metric(t, "trove_http_memory_slots")
 
 	t.Run("R-HA-036 the Go memory limit is runtime.memory_limit_ratio of the container limit", func(t *testing.T) {

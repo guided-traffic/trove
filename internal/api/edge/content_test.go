@@ -26,7 +26,7 @@ func stored() (items.Item, []byte) {
 	var d blob.Digest
 	d[0], d[31] = 0x5b, 0xef
 	return items.Item{
-		ID: 7, Repository: "generic-local", Path: "tools/widget 2.3.html", Kind: items.KindFile, Size: int64(len(body)),
+		ID: 7, Repository: qr("generic-local"), Path: "tools/widget 2.3.html", Kind: items.KindFile, Size: int64(len(body)),
 		MediaType: "text/html", Digest: d, SHA512: make([]byte, 64),
 		ModifiedAt: time.Date(2026, 10, 28, 9, 14, 3, 0, time.UTC),
 	}, body

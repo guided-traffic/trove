@@ -43,7 +43,7 @@ func TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRe
 	e.mixedVirtual(mixed, `{}`, rLocal, rRemote)
 	a := e.start(1)[0]
 	get := func(repo, path string, hdr ...string) testenv.Answer {
-		return e.st.Do(a, "GET", "/api/nuget/"+repo+"/"+path, e.tokAdmin, nil, hdr...)
+		return e.st.Do(a, "GET", "/api/nuget/it/"+repo+"/"+path, e.tokAdmin, nil, hdr...)
 	}
 
 	t.Run("R-NUGET-017 a package only the remote member serves comes through the virtual repository", func(t *testing.T) {
@@ -93,7 +93,7 @@ func TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRe
 		if len(d.Items) != 4 || total != nugetstub.ManyVersions {
 			t.Fatalf("%d pages holding %d versions, want 4 holding %d", len(d.Items), total, nugetstub.ManyVersions)
 		}
-		page := get(mixed, strings.TrimPrefix(d.Items[2].ID, feedBase+"/api/nuget/"+mixed+"/"))
+		page := get(mixed, strings.TrimPrefix(d.Items[2].ID, feedBase+"/api/nuget/it/"+mixed+"/"))
 		if pd := registrationOf(t, page); page.Status != 200 || len(pd.Items) != 64 {
 			t.Errorf("page: %d, %d leaves", page.Status, len(pd.Items))
 		}
@@ -118,7 +118,7 @@ func TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRe
 
 	t.Run("R-NUGET-019 a push through the virtual repository lands in its deployment target", func(t *testing.T) {
 		body, ct := form(t, nupkg(t, pkgSpec{id: "Acme.Local", version: "1.0.0"}))
-		ans := e.st.Do(a, "PUT", "/api/nuget/"+mixed+"/v3/package", e.tokAdmin, body, "Content-Type", ct)
+		ans := e.st.Do(a, "PUT", "/api/nuget/it/"+mixed+"/v3/package", e.tokAdmin, body, "Content-Type", ct)
 		if ans.Status != 201 {
 			t.Fatalf("push: %d %s", ans.Status, ans.Body)
 		}
@@ -154,7 +154,7 @@ func TestR_AUTHZ_008_AVersionWhoseOnlyCachedFileIsItsNuspecIsNotListedToACallerW
 	tokViewer := e.st.Token(viewer, scope.Default())
 	a := e.start(1)[0]
 	as := func(tok, repo, path string) testenv.Answer {
-		return e.st.Do(a, "GET", "/api/nuget/"+repo+"/"+path, tok, nil)
+		return e.st.Do(a, "GET", "/api/nuget/it/"+repo+"/"+path, tok, nil)
 	}
 
 	// The administrator, who may fill, brings the version list (through the virtual repository,
@@ -196,7 +196,7 @@ func TestR_NUGET_015_TheFirstAnswerOfACacheMissCarriesTheHeadersOfAStoredAnswer(
 		if id == "contoso.util" {
 			v = "2.1.0"
 		}
-		path := "/api/nuget/" + repo + "/v3/flatcontainer/" + id + "/" + v + "/" + id + ".nuspec"
+		path := "/api/nuget/it/" + repo + "/v3/flatcontainer/" + id + "/" + v + "/" + id + ".nuspec"
 		first, second := e.st.Do(rep, "GET", path, e.tokAdmin, nil), e.st.Do(rep, "GET", path, e.tokAdmin, nil)
 		if first.Status != 200 || second.Status != 200 {
 			t.Fatalf("%s: %d %d", repo, first.Status, second.Status)

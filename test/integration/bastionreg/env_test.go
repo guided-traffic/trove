@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -249,10 +251,18 @@ func (d *countingDB) calls() int64 {
 // use selectors that name none.
 type noRepositories struct{}
 
-func (noRepositories) ByKey(context.Context, string) (repository.Repository, error) {
+func (noRepositories) ByName(context.Context, qname.Repo) (repository.Repository, error) {
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
 }
+
+func (noRepositories) ByID(context.Context, int64) (repository.Repository, error) {
+	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
+}
+
 func (noRepositories) List(context.Context) ([]repository.Repository, error) { return nil, nil }
+func (noRepositories) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
+}
 
 func tokenConfig() config.AuthTokens {
 	return config.AuthTokens{

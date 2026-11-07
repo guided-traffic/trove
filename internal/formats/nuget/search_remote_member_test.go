@@ -24,7 +24,7 @@ import (
 func withCacheOnlyRemote(h *formattest.Host, members []formats.PlannedMember) {
 	var repos []repository.Repository
 	for _, m := range members {
-		r := repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Key: m.Member.Key, Class: m.Member.Class, Format: string(ID)}
+		r := repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Name: m.Member.Name, Class: m.Member.Class, Format: string(ID)}
 		if m.Member.Class == formats.Remote {
 			r.Config = []byte(`{"nuget":{"forwardSearch":false}}`)
 		}

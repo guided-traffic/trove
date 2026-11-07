@@ -35,6 +35,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -237,10 +239,33 @@ func (e *Env) Admin(p Person) {
 	e.Exec("INSERT INTO authz_role_binding (role, principal_id) VALUES ('admin', $1::uuid)", p.ID)
 }
 
-// Repo inserts a repository; do it before the replicas start.
+// Repo inserts a repository into the project "it" (testenv.DefaultProject); do it before the replicas start.
+// Every repository belongs to a project (Q-AUTHZ-206).
 func (e *Env) Repo(key, class, format string) {
 	e.T.Helper()
-	e.Exec("INSERT INTO repositories (key, class, format, config) VALUES ($1, $2, $3, '{}'::jsonb)", key, class, format)
+	e.RepoIn(testenv.DefaultProject, key, class, format)
+}
+
+// RepoIn inserts a repository into the project with the key, which it creates when it does not exist yet.
+func (e *Env) RepoIn(project, key, class, format string) {
+	e.T.Helper()
+	e.Project(project)
+	e.Exec(`INSERT INTO repositories (key, class, format, config, project_id)
+	        SELECT $1, $2, $3, '{}'::jsonb, id FROM project WHERE key = $4`, key, class, format, project)
+}
+
+// Project creates the project with the key and returns its ID; a project that exists is returned as it is.
+func (e *Env) Project(key string) string {
+	e.T.Helper()
+	e.Exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), $1, $1) ON CONFLICT (key) DO NOTHING", key)
+	return e.Text("SELECT id::text FROM project WHERE key = $1", key)
+}
+
+// Member makes a person (a user or a group) a member of the project with the role, straight in the table.
+func (e *Env) Member(project string, p Person, role string) {
+	e.T.Helper()
+	e.Exec(`INSERT INTO project_member (project_id, principal_id, role) SELECT id, $2::uuid, $3 FROM project WHERE key = $1
+	        ON CONFLICT (project_id, principal_id) DO UPDATE SET role = EXCLUDED.role`, project, p.ID, role)
 }
 
 // AuthzEpoch is the authorization epoch in the database.
@@ -312,7 +337,7 @@ type repositories struct{ e *Env }
 func (s repositories) list(ctx context.Context, where string, args ...any) ([]repository.Repository, error) {
 	s.e.mu.Lock()
 	defer s.e.mu.Unlock()
-	rows, err := s.e.admin.Query(ctx, "SELECT id, key, class, format, config, COALESCE(project_id::text, '') FROM repositories "+where+" ORDER BY key", args...)
+	rows, err := s.e.admin.Query(ctx, "SELECT r.id, p.key, r.key, r.class, r.format, r.config, r.project_id::text FROM repositories r JOIN project p ON p.id = r.project_id "+where+" ORDER BY p.key, r.key", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +347,7 @@ func (s repositories) list(ctx context.Context, where string, args ...any) ([]re
 		var r repository.Repository
 		var id int64
 		var class string
-		if err := rows.Scan(&id, &r.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
+		if err := rows.Scan(&id, &r.Name.Project, &r.Name.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
 			return nil, err
 		}
 		r.ID, r.Class = strconv.FormatInt(id, 10), repository.Class(class)
@@ -331,8 +356,19 @@ func (s repositories) list(ctx context.Context, where string, args ...any) ([]re
 	return out, rows.Err()
 }
 
-func (s repositories) ByKey(ctx context.Context, key string) (repository.Repository, error) {
-	rs, err := s.list(ctx, "WHERE key = $1", key)
+func (s repositories) ByName(ctx context.Context, name qname.Repo) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE p.key = $1 AND r.key = $2", name.Project, name.Key)
+	if err != nil {
+		return repository.Repository{}, err
+	}
+	if len(rs) == 0 {
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no such repository")
+	}
+	return rs[0], nil
+}
+
+func (s repositories) ByID(ctx context.Context, id int64) (repository.Repository, error) {
+	rs, err := s.list(ctx, "WHERE r.id = $1", id)
 	if err != nil {
 		return repository.Repository{}, err
 	}
@@ -346,6 +382,10 @@ func (s repositories) List(ctx context.Context) ([]repository.Repository, error)
 	return s.list(ctx, "")
 }
 
+func (s repositories) ListProject(ctx context.Context, project string) ([]repository.Repository, error) {
+	return s.list(ctx, "WHERE p.key = $1", project)
+}
+
 // Options describe one in-process replica.
 type Options struct {
 	// Poll is cluster.epoch_poll_interval (default 500 ms); Staleness is
@@ -357,6 +397,9 @@ type Options struct {
 	Reads string
 	// Validator, when set, checks every answer against the document.
 	Validator *apitest.Validator
+	// Remote is the sealing ring and the upstream prober of the repository service; the zero value has neither, so
+	// a secret value and the upstream test answer 503.
+	Remote repository.RemoteDeps
 }
 
 // LogSink collects the records of the audit log stream of a replica.
@@ -491,7 +534,7 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Policies: r.Service, Recorder: rec,
 	})
 	if r.Repos, err = repository.NewService(repository.Options{
-		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(),
+		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(), Remote: o.Remote,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +582,7 @@ func (r *Replica) serve(o Options, rec audit.Recorder) {
 	t := r.E.T
 	cfg := config.API{
 		PageSizeDefault: 50, PageSizeMax: 500, IdempotencyRetention: time.Hour,
-		MaxRequestBodyBytes: config.ByteSize(1 << 20),
+		MaxRequestBodyBytes: config.ByteSize(1 << 20), MaxConfigurationBodyBytes: 4 * config.MiB,
 	}
 	// The handler is the one the identity and login tests use (test/integration/idapi),
 	// with the stand-in authentication and the engine and services of this replica.
@@ -550,6 +593,7 @@ func (r *Replica) serve(o Options, rec audit.Recorder) {
 			o.AuditStore = r.Store
 			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine, Projects: r.Projects}
 			o.API = v1.Services{Config: cfg, Store: r.DB, Audit: rec}
+			o.Repositories = v1.RepositoryServices{Service: r.Repos, Authz: r.Engine, Reader: repositories{r.E}}
 		},
 	})
 	r.Server = httptest.NewServer(h)

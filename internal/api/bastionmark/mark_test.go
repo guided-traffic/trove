@@ -24,6 +24,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/npm"
 	"github.com/guided-traffic/trove/internal/formats/nuget"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -39,7 +40,7 @@ func (mk) Descriptor() formats.Descriptor {
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID: "mk", Classes: []formats.Class{formats.Local, formats.Remote, formats.Virtual}, Layout: "mk",
-			ProtocolBasePath: "/api/mk/{key}/", PatternSubject: formats.SubjectPath,
+			ProtocolBasePath: "/api/mk/{project}/{key}/", PatternSubject: formats.SubjectPath,
 		},
 		ContractVersion: formats.ContractVersion,
 	}
@@ -85,7 +86,7 @@ type fakeDecider struct {
 	outcome authz.Outcome
 }
 
-func (*fakeDecider) Begin(context.Context, authz.Subject, ...string) (*authz.Index, error) {
+func (*fakeDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
 	return &authz.Index{}, nil
 }
 
@@ -98,8 +99,8 @@ type fakeRepos struct {
 	byKey map[string]repository.Repository
 }
 
-func (r *fakeRepos) ByKey(_ context.Context, key string) (repository.Repository, error) {
-	if repo, ok := r.byKey[key]; ok {
+func (r *fakeRepos) ByName(_ context.Context, name qname.Repo) (repository.Repository, error) {
+	if repo, ok := r.byKey[name.String()]; ok {
 		return repo, nil
 	}
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no")
@@ -118,15 +119,17 @@ type shapes struct {
 	subs  []authz.Subject
 }
 
-func (s *shapes) Shapes(_ context.Context, _ *authz.Index, sub authz.Subject, keys []string) (map[string]bastionmain.Shape, error) {
+func (s *shapes) Shapes(_ context.Context, _ *authz.Index, sub authz.Subject, keys []qname.Repo) (map[qname.Repo]bastionmain.Shape, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.asked = append(s.asked, keys...)
+	for _, k := range keys {
+		s.asked = append(s.asked, k.String())
+	}
 	s.subs = append(s.subs, sub)
 	if s.err != nil {
 		return nil, s.err
 	}
-	out := map[string]bastionmain.Shape{}
+	out := map[qname.Repo]bastionmain.Shape{}
 	for _, k := range keys {
 		out[k] = bastionmain.Shape{Read: s.read}
 	}
@@ -175,9 +178,10 @@ func newRig(t *testing.T, fs ...formats.Format) *rig {
 	d, err := dispatch.New(dispatch.Options{
 		Host: fakeHost{}, Decider: r.decider, Formats: func() []formats.Format { return fs },
 		Repos: &fakeRepos{byKey: map[string]repository.Repository{
-			"mk-local": {ID: "1", Key: "mk-local", Class: repository.Local, Format: "mk"},
-			"npm-all":  {ID: "2", Key: "npm-all", Class: repository.Virtual, Format: "npm"},
-			"nuget-v3": {ID: "3", Key: "nuget-v3", Class: repository.Local, Format: "nuget"},
+			"web/mk-local":  {ID: "1", Name: qr("mk-local"), Class: repository.Local, Format: "mk"},
+			"web/npm-all":   {ID: "2", Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
+			"web/nuget-v3":  {ID: "3", Name: qr("nuget-v3"), Class: repository.Local, Format: "nuget"},
+			"data/mk-local": {ID: "4", Name: qname.Repo{Project: "data", Key: "mk-local"}, Class: repository.Local, Format: "mk"},
 		}},
 	})
 	if err != nil {
@@ -281,38 +285,38 @@ func TestR_BAS_013_ClassOfTheResponse(t *testing.T) {
 		notes  func(context.Context)
 		want   iface.Class
 	}{
-		{"a download served is an artifact for a full reader", "/api/mk/mk-local/f/x.bin", "GET", 200, iface.ReadFull, nil, iface.ClassArtifact},
-		{"a download served is an artifact for a partial reader", "/api/mk/mk-local/f/x.bin", "GET", 200, iface.ReadPartial, nil, iface.ClassArtifact},
-		{"a download validated is an artifact", "/api/mk/mk-local/f/x.bin", "GET", 304, iface.ReadFull, nil, iface.ClassArtifact},
-		{"a HEAD of a download is an artifact", "/api/mk/mk-local/f/x.bin", "HEAD", 200, iface.ReadFull, nil, iface.ClassArtifact},
-		{"a range of a download is pass", "/api/mk/mk-local/f/x.bin", "GET", 206, iface.ReadFull, nil, iface.ClassPass},
-		{"a redirect is pass", "/api/mk/mk-local/f/x.bin", "GET", 302, iface.ReadFull, nil, iface.ClassPass},
-		{"a document for a full reader is shared", "/api/mk/mk-local/d/left-pad", "GET", 200, iface.ReadFull, nil, iface.ClassShared},
-		{"a document validated for a full reader is shared", "/api/mk/mk-local/d/left-pad", "GET", 304, iface.ReadFull, nil, iface.ClassShared},
-		{"a document for a partial reader is private", "/api/mk/mk-local/d/left-pad", "GET", 200, iface.ReadPartial, nil, iface.ClassPrivate},
-		{"a computed route follows the document rule", "/api/mk/mk-local/c/left-pad", "GET", 200, iface.ReadFull, nil, iface.ClassShared},
-		{"a volatile route is pass", "/api/mk/mk-local/s/left-pad", "GET", 200, iface.ReadFull, nil, iface.ClassPass},
-		{"a server error is pass", "/api/mk/mk-local/d/left-pad", "GET", 502, iface.ReadFull, nil, iface.ClassPass},
-		{"a document without a shape is pass", "/api/mk/mk-local/d/left-pad", "GET", 200, "", nil, iface.ClassPass},
+		{"a download served is an artifact for a full reader", "/api/mk/web/mk-local/f/x.bin", "GET", 200, iface.ReadFull, nil, iface.ClassArtifact},
+		{"a download served is an artifact for a partial reader", "/api/mk/web/mk-local/f/x.bin", "GET", 200, iface.ReadPartial, nil, iface.ClassArtifact},
+		{"a download validated is an artifact", "/api/mk/web/mk-local/f/x.bin", "GET", 304, iface.ReadFull, nil, iface.ClassArtifact},
+		{"a HEAD of a download is an artifact", "/api/mk/web/mk-local/f/x.bin", "HEAD", 200, iface.ReadFull, nil, iface.ClassArtifact},
+		{"a range of a download is pass", "/api/mk/web/mk-local/f/x.bin", "GET", 206, iface.ReadFull, nil, iface.ClassPass},
+		{"a redirect is pass", "/api/mk/web/mk-local/f/x.bin", "GET", 302, iface.ReadFull, nil, iface.ClassPass},
+		{"a document for a full reader is shared", "/api/mk/web/mk-local/d/left-pad", "GET", 200, iface.ReadFull, nil, iface.ClassShared},
+		{"a document validated for a full reader is shared", "/api/mk/web/mk-local/d/left-pad", "GET", 304, iface.ReadFull, nil, iface.ClassShared},
+		{"a document for a partial reader is private", "/api/mk/web/mk-local/d/left-pad", "GET", 200, iface.ReadPartial, nil, iface.ClassPrivate},
+		{"a computed route follows the document rule", "/api/mk/web/mk-local/c/left-pad", "GET", 200, iface.ReadFull, nil, iface.ClassShared},
+		{"a volatile route is pass", "/api/mk/web/mk-local/s/left-pad", "GET", 200, iface.ReadFull, nil, iface.ClassPass},
+		{"a server error is pass", "/api/mk/web/mk-local/d/left-pad", "GET", 502, iface.ReadFull, nil, iface.ClassPass},
+		{"a document without a shape is pass", "/api/mk/web/mk-local/d/left-pad", "GET", 200, "", nil, iface.ClassPass},
 		{
-			"a 404 of a missing item for a full reader is absent", "/api/mk/mk-local/d/left-pad", "GET", 404, iface.ReadFull,
+			"a 404 of a missing item for a full reader is absent", "/api/mk/web/mk-local/d/left-pad", "GET", 404, iface.ReadFull,
 			func(ctx context.Context) { bastionmain.NoteMissing(ctx) }, iface.ClassAbsent,
 		},
 		{
-			"a 404 of a missing download for a full reader is absent", "/api/mk/mk-local/f/x.bin", "GET", 404, iface.ReadFull,
+			"a 404 of a missing download for a full reader is absent", "/api/mk/web/mk-local/f/x.bin", "GET", 404, iface.ReadFull,
 			func(ctx context.Context) { bastionmain.NoteMissing(ctx) }, iface.ClassAbsent,
 		},
-		{"a 404 that no lookup found missing is pass", "/api/mk/mk-local/d/left-pad", "GET", 404, iface.ReadFull, nil, iface.ClassPass},
+		{"a 404 that no lookup found missing is pass", "/api/mk/web/mk-local/d/left-pad", "GET", 404, iface.ReadFull, nil, iface.ClassPass},
 		{
-			"a 404 of a missing item for a partial reader is pass", "/api/mk/mk-local/d/left-pad", "GET", 404, iface.ReadPartial,
+			"a 404 of a missing item for a partial reader is pass", "/api/mk/web/mk-local/d/left-pad", "GET", 404, iface.ReadPartial,
 			func(ctx context.Context) { bastionmain.NoteMissing(ctx) }, iface.ClassPass,
 		},
 		{
-			"a 404 after a refusal or a serve-time check is pass", "/api/mk/mk-local/d/left-pad", "GET", 404, iface.ReadFull,
+			"a 404 after a refusal or a serve-time check is pass", "/api/mk/web/mk-local/d/left-pad", "GET", 404, iface.ReadFull,
 			func(ctx context.Context) { bastionmain.NoteMissing(ctx); bastionmain.NoteUnknown(ctx) }, iface.ClassPass,
 		},
 		{
-			"a 404 of a volatile route is pass", "/api/mk/mk-local/s/left-pad", "GET", 404, iface.ReadFull,
+			"a 404 of a volatile route is pass", "/api/mk/web/mk-local/s/left-pad", "GET", 404, iface.ReadFull,
 			func(ctx context.Context) { bastionmain.NoteMissing(ctx) }, iface.ClassPass,
 		},
 	}
@@ -328,7 +332,7 @@ func TestR_BAS_013_ClassOfTheResponse(t *testing.T) {
 			if mark.Class != tc.want {
 				t.Fatalf("class %s, want %s (%v)", mark.Class, tc.want, rec.Header())
 			}
-			if mark.Repository != "mk-local" || mark.Read != tc.read || mark.Interface != iface.InterfaceVersion {
+			if mark.Repository != "web/mk-local" || mark.Read != tc.read || mark.Interface != iface.InterfaceVersion {
 				t.Fatalf("marking %+v", mark)
 			}
 		})
@@ -336,18 +340,39 @@ func TestR_BAS_013_ClassOfTheResponse(t *testing.T) {
 	t.Run("a shape that cannot be computed leaves the response pass without a Read header", func(t *testing.T) {
 		r := newRig(t)
 		r.shapes.err = errors.New("stale")
-		rec := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, forward, hCred, "token")
+		rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, forward, hCred, "token")
 		if mark := markingOf(t, rec); mark.Class != iface.ClassPass || rec.Header().Get(iface.HeaderRead) != "" {
 			t.Fatalf("%v", rec.Header())
 		}
 	})
 	t.Run("the shape is asked for the subject and the repository of the decision, once", func(t *testing.T) {
 		r := newRig(t)
-		r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, forward, hCred, "token")
-		if len(r.shapes.asked) != 1 || r.shapes.asked[0] != "mk-local" {
+		r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, forward, hCred, "token")
+		if len(r.shapes.asked) != 1 || r.shapes.asked[0] != "web/mk-local" {
 			t.Fatalf("asked %v", r.shapes.asked)
 		}
 	})
+}
+
+// TestR_BAS_013_TheSameKeyInTwoProjectsIsMarkedWithItsProject: the marking and the shape question name the qualified
+// name of the addressed repository, so a Bastion keeps the answers of web/mk-local and data/mk-local apart
+// (Q-REPO-212).
+func TestR_BAS_013_TheSameKeyInTwoProjectsIsMarkedWithItsProject(t *testing.T) {
+	r := newRig(t)
+	for _, name := range []string{"web/mk-local", "data/mk-local"} {
+		rec := r.do("GET", "/api/mk/"+name+"/d/left-pad", hRecognize, "forward", hCred, "token")
+		if mark := markingOf(t, rec); mark.Repository != name {
+			t.Errorf("%s: marking names %q", name, mark.Repository)
+		}
+	}
+	if len(r.shapes.asked) != 2 || r.shapes.asked[0] != "web/mk-local" || r.shapes.asked[1] != "data/mk-local" {
+		t.Fatalf("asked %v", r.shapes.asked)
+	}
+	// A project that does not hold the key is a missing repository, marked with the name that was addressed.
+	rec := r.do("GET", "/api/mk/other/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
+	if rec.Code != 404 {
+		t.Fatalf("a repository of a project that holds none: %d", rec.Code)
+	}
 }
 
 // TestR_BAS_013_Refusals: a refusal, a hidden item and a serve-time refusal are never absent.
@@ -355,18 +380,18 @@ func TestR_BAS_013_Refusals(t *testing.T) {
 	t.Run("a refusal of the decision point is pass, with the repository and no shape", func(t *testing.T) {
 		r := newRig(t)
 		r.decider.outcome = authz.DenyHidden
-		rec := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
+		rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
 		mark := markingOf(t, rec)
-		if rec.Code != 404 || mark.Class != iface.ClassPass || mark.Repository != "mk-local" || rec.Header().Get(iface.HeaderRead) != "" {
+		if rec.Code != 404 || mark.Class != iface.ClassPass || mark.Repository != "web/mk-local" || rec.Header().Get(iface.HeaderRead) != "" {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
 	})
 	t.Run("a hidden item and a missing one have the same 404 and only the second can be absent", func(t *testing.T) {
 		r := newRig(t)
 		r.status = 404
-		hidden := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
+		hidden := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
 		r.notes = bastionmain.NoteMissing
-		missing := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
+		missing := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
 		if hidden.Code != missing.Code || hidden.Body.String() != missing.Body.String() {
 			t.Fatal("the bodies differ")
 		}
@@ -376,7 +401,7 @@ func TestR_BAS_013_Refusals(t *testing.T) {
 	})
 	t.Run("no route is the format's 404, pass, with no repository shape", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("GET", "/api/mk/mk-local/nothing/here", hRecognize, "forward", hCred, "token")
+		rec := r.do("GET", "/api/mk/web/mk-local/nothing/here", hRecognize, "forward", hCred, "token")
 		if rec.Code != 404 || rec.Header().Get("X-Mk-Error") != "not_found" || markingOf(t, rec).Class != iface.ClassPass {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
@@ -400,7 +425,7 @@ func TestR_BAS_013_SubjectHeader(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
-			rec := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "forward", hCred, tc.cred)
+			rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "forward", hCred, tc.cred)
 			if rec.Code != tc.code || rec.Header().Get(iface.HeaderSubject) != tc.want {
 				t.Fatalf("%d, subject %q, want %d %q", rec.Code, rec.Header().Get(iface.HeaderSubject), tc.code, tc.want)
 			}
@@ -414,7 +439,7 @@ func TestR_BAS_013_SubjectHeader(t *testing.T) {
 	t.Run("an anonymous caller refused is invalid on the 401", func(t *testing.T) {
 		r := newRig(t)
 		r.status = 401
-		rec := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "forward")
+		rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "forward")
 		if rec.Header().Get(iface.HeaderSubject) != "invalid" {
 			t.Fatalf("%v", rec.Header())
 		}
@@ -436,7 +461,7 @@ func TestR_BAS_013_HeadersOnlyOnBastionRequests(t *testing.T) {
 			for _, rt := range f.Routes() {
 				for _, ex := range rt.Examples {
 					// Every request carries the headers a Bastion would send and a token that no stage recognized.
-					rec := r.doBody(rt.Method, "/api/"+id+"/"+key+"/"+ex, strings.NewReader(""),
+					rec := r.doBody(rt.Method, "/api/"+id+"/web/"+key+"/"+ex, strings.NewReader(""),
 						iface.HeaderAuthorization, "Bearer trv_bst_nothing", iface.HeaderInterface, "1", iface.HeaderProbe, "1", hCred, "token")
 					if got := hasMarking(rec.Header()); len(got) > 0 {
 						t.Fatalf("%s %s %s (decision %d): %d carries %v", rt.Method, id, ex, outcome, rec.Code, got)
@@ -456,7 +481,7 @@ func TestR_BAS_013_HeadersOnlyOnBastionRequests(t *testing.T) {
 			w.Header().Set(iface.HeaderRead, "full")
 			w.Header().Set("trove-bastion-subject", "anonymous")
 		}
-		rec := r.do("GET", "/api/mk/mk-local/d/left-pad", hCred, "token")
+		rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hCred, "token")
 		if got := hasMarking(rec.Header()); len(got) > 0 || rec.Code != 200 {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
@@ -485,7 +510,7 @@ func TestR_BAS_013_HeadersOnlyOnBastionRequests(t *testing.T) {
 // TestR_BAS_013_InterfaceRoutes: an interface route has no addressed repository and no caller but the Bastion.
 func TestR_BAS_013_InterfaceRoutes(t *testing.T) {
 	r := newRig(t)
-	rec := r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "route", hCred, "token")
+	rec := r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "route", hCred, "token")
 	if got := hasMarking(rec.Header()); len(got) != 2 || rec.Header().Get(iface.HeaderClass) != "pass" || rec.Header().Get(iface.HeaderInterface) != "1" {
 		t.Fatalf("%v", rec.Header())
 	}
@@ -494,11 +519,11 @@ func TestR_BAS_013_InterfaceRoutes(t *testing.T) {
 // TestR_BAS_013_ForwardedRequestsAreCountedByClass: trove_bastion_forwarded_requests_total.
 func TestR_BAS_013_ForwardedRequestsAreCountedByClass(t *testing.T) {
 	r := newRig(t)
-	r.do("GET", "/api/mk/mk-local/f/x.bin", hRecognize, "forward", hCred, "token")
-	r.do("GET", "/api/mk/mk-local/f/x.bin", hRecognize, "forward", hCred, "token")
-	r.do("GET", "/api/mk/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
-	r.do("PUT", "/api/mk/mk-local/f/x.bin", hRecognize, "probe")
-	r.do("GET", "/api/mk/mk-local/f/x.bin", hCred, "token") // an ordinary caller is not counted
+	r.do("GET", "/api/mk/web/mk-local/f/x.bin", hRecognize, "forward", hCred, "token")
+	r.do("GET", "/api/mk/web/mk-local/f/x.bin", hRecognize, "forward", hCred, "token")
+	r.do("GET", "/api/mk/web/mk-local/d/left-pad", hRecognize, "forward", hCred, "token")
+	r.do("PUT", "/api/mk/web/mk-local/f/x.bin", hRecognize, "probe")
+	r.do("GET", "/api/mk/web/mk-local/f/x.bin", hCred, "token") // an ordinary caller is not counted
 	for class, want := range map[string]float64{"artifact": 2, "shared": 1, "probe": 1} {
 		if got := counter(t, r.metrics, class); got != want {
 			t.Errorf("%s: %v, want %v", class, got, want)
@@ -512,10 +537,10 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	t.Run("every write route of the fake format is refused with bastion_read_only and the URL of the repository", func(t *testing.T) {
 		r := newRig(t)
 		for _, tc := range []struct{ method, path, target string }{
-			{"PUT", "/api/mk/mk-local/f/x.bin", mainURL + "/api/mk/mk-local/"},
-			{"PUT", "/api/mk/mk-local/t/left-pad", mainURL + "/api/mk/mk-local/"},
-			{"DELETE", "/api/mk/mk-local/d/left-pad", mainURL + "/api/mk/mk-local/"},
-			{"PUT", "/api/mk/mk-local/a/left-pad", mainURL + "/api/mk/mk-local/"}, // an Admin route, whatever its action
+			{"PUT", "/api/mk/web/mk-local/f/x.bin", mainURL + "/api/mk/web/mk-local/"},
+			{"PUT", "/api/mk/web/mk-local/t/left-pad", mainURL + "/api/mk/web/mk-local/"},
+			{"DELETE", "/api/mk/web/mk-local/d/left-pad", mainURL + "/api/mk/web/mk-local/"},
+			{"PUT", "/api/mk/web/mk-local/a/left-pad", mainURL + "/api/mk/web/mk-local/"}, // an Admin route, whatever its action
 		} {
 			rec := r.do(tc.method, tc.path, hRecognize, "probe")
 			want := "This is a read-only Bastion of " + mainURL + "; publish to " + tc.target
@@ -532,7 +557,7 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	})
 	t.Run("a read route that takes a body answers 204 with the route header and the handler does not run", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("POST", "/api/mk/mk-local/audit/left-pad", hRecognize, "probe")
+		rec := r.do("POST", "/api/mk/web/mk-local/audit/left-pad", hRecognize, "probe")
 		if rec.Code != 204 || rec.Header().Get(iface.HeaderRoute) != iface.RouteReadWithBody || len(r.reached) != 0 {
 			t.Fatalf("%d %v reached %v", rec.Code, rec.Header(), r.reached)
 		}
@@ -542,7 +567,7 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	})
 	t.Run("no route is the format's own 404", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("PUT", "/api/mk/mk-local/no/such/route", hRecognize, "probe")
+		rec := r.do("PUT", "/api/mk/web/mk-local/no/such/route", hRecognize, "probe")
 		if rec.Code != 404 || rec.Header().Get("X-Mk-Error") != "not_found" {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
@@ -550,13 +575,13 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	t.Run("the probe is answered before the decision point is asked", func(t *testing.T) {
 		r := newRig(t)
 		r.decider.outcome = authz.DenyVisible
-		if rec := r.do("PUT", "/api/mk/mk-local/f/x.bin", hRecognize, "probe"); rec.Header().Get("X-Mk-Error") != iface.CodeReadOnly {
+		if rec := r.do("PUT", "/api/mk/web/mk-local/f/x.bin", hRecognize, "probe"); rec.Header().Get("X-Mk-Error") != iface.CodeReadOnly {
 			t.Fatalf("%v", rec.Header())
 		}
 	})
 	t.Run("a write that reaches the main installation without the probe header is refused the same way", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("PUT", "/api/mk/mk-local/f/x.bin", hRecognize, "forward", hCred, "token")
+		rec := r.do("PUT", "/api/mk/web/mk-local/f/x.bin", hRecognize, "forward", hCred, "token")
 		if rec.Code != 403 || rec.Header().Get("X-Mk-Error") != iface.CodeReadOnly || len(r.reached) != 0 {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
@@ -564,7 +589,7 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	t.Run("the real request of a read route that takes a body is served", func(t *testing.T) {
 		r := newRig(t)
 		r.status = 200
-		rec := r.do("POST", "/api/mk/mk-local/audit/left-pad", hRecognize, "forward", hCred, "token")
+		rec := r.do("POST", "/api/mk/web/mk-local/audit/left-pad", hRecognize, "forward", hCred, "token")
 		if rec.Code != 200 || len(r.reached) != 1 || rec.Header().Get(iface.HeaderRoute) != "" {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
@@ -574,21 +599,21 @@ func TestR_BAS_014_ProbeIsRefusedInTheShapeOfTheFormat(t *testing.T) {
 	})
 	t.Run("an ordinary caller's write is not touched", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.do("PUT", "/api/mk/mk-local/f/x.bin", hCred, "token")
+		rec := r.do("PUT", "/api/mk/web/mk-local/f/x.bin", hCred, "token")
 		if rec.Code != 200 || len(r.reached) != 1 {
 			t.Fatalf("%d %v", rec.Code, rec.Header())
 		}
 	})
 	t.Run("the body of the request is not read", func(t *testing.T) {
 		r := newRig(t)
-		rec := r.doBody("PUT", "/api/mk/mk-local/f/x.bin", failingReader{t}, hRecognize, "probe")
+		rec := r.doBody("PUT", "/api/mk/web/mk-local/f/x.bin", failingReader{t}, hRecognize, "probe")
 		if rec.Code != 403 {
 			t.Fatalf("%d", rec.Code)
 		}
 	})
 	t.Run("without a main URL the detail still says where to publish", func(t *testing.T) {
 		m := New(Options{})
-		err := m.readOnly(bastionmain.RouteMatch{Format: "npm", RepoKey: "npm-all"})
+		err := m.readOnly(bastionmain.RouteMatch{Format: "npm", Repo: qr("npm-all")})
 		if e, ok := errs.As(err); !ok || e.Code != iface.CodeReadOnly || e.Status() != 403 || !strings.Contains(e.Detail, "main installation") {
 			t.Fatalf("%v", err)
 		}
@@ -609,17 +634,17 @@ func TestR_BAS_014_RealFormats(t *testing.T) {
 	keys := map[string]string{"npm": "npm-all", "nuget": "nuget-v3"}
 	t.Run("npm publish prints the error in npm's shape with the URL to publish to", func(t *testing.T) {
 		r := newRig(t, fs...)
-		rec := r.do("PUT", "/api/npm/npm-all/lodash", hRecognize, "probe")
+		rec := r.do("PUT", "/api/npm/web/npm-all/lodash", hRecognize, "probe")
 		body := rec.Body.String()
 		if rec.Code != 403 || rec.Header().Get("Content-Type") != "application/json" ||
-			!strings.Contains(body, `"code":"bastion_read_only"`) || !strings.Contains(body, "publish to "+mainURL+"/api/npm/npm-all/") {
+			!strings.Contains(body, `"code":"bastion_read_only"`) || !strings.Contains(body, "publish to "+mainURL+"/api/npm/web/npm-all/") {
 			t.Fatalf("%d %v\n%s", rec.Code, rec.Header(), body)
 		}
 	})
 	t.Run("npm audit is a read route that takes a body", func(t *testing.T) {
 		r := newRig(t, fs...)
 		for _, p := range []string{"/-/npm/v1/security/advisories/bulk", "/-/npm/v1/security/audits", "/-/npm/v1/security/audits/quick"} {
-			rec := r.do("POST", "/api/npm/npm-all"+p, hRecognize, "probe")
+			rec := r.do("POST", "/api/npm/web/npm-all"+p, hRecognize, "probe")
 			if rec.Code != 204 || rec.Header().Get(iface.HeaderRoute) != iface.RouteReadWithBody {
 				t.Errorf("%s: %d %v", p, rec.Code, rec.Header())
 			}
@@ -627,7 +652,7 @@ func TestR_BAS_014_RealFormats(t *testing.T) {
 	})
 	t.Run("dotnet nuget push is refused without a credential", func(t *testing.T) {
 		r := newRig(t, fs...)
-		rec := r.do("PUT", "/api/nuget/nuget-v3/v3/package", hRecognize, "probe")
+		rec := r.do("PUT", "/api/nuget/web/nuget-v3/v3/package", hRecognize, "probe")
 		if rec.Code != 403 || !strings.Contains(rec.Body.String(), "bastion_read_only") {
 			t.Fatalf("%d %v\n%s", rec.Code, rec.Header(), rec.Body.String())
 		}
@@ -643,7 +668,7 @@ func TestR_BAS_014_RealFormats(t *testing.T) {
 					continue
 				}
 				for _, ex := range rt.Examples {
-					rec := r.do(rt.Method, "/api/"+id+"/"+keys[id]+"/"+ex, hRecognize, "probe")
+					rec := r.do(rt.Method, "/api/"+id+"/web/"+keys[id]+"/"+ex, hRecognize, "probe")
 					switch {
 					case writes && rec.Code == 403 && strings.Contains(rec.Body.String(), "bastion_read_only"):
 						refused++
@@ -668,4 +693,8 @@ func counter(t *testing.T, m *bastionmain.Metrics, class string) float64 {
 		t.Fatal(err)
 	}
 	return out.GetCounter().GetValue()
+}
+
+func (r *fakeRepos) ListProject(context.Context, string) ([]repository.Repository, error) {
+	return nil, nil
 }

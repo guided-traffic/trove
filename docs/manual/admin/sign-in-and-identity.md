@@ -277,13 +277,15 @@ Nobody can disable or delete their own account here. Disabling or deleting the l
 | **Description** | Optional |
 | **Every user joins this group automatically** | Auto-join: users created afterwards become members with source **Auto-join**; existing users are not added |
 
-A group's page lets you rename it, change the description and auto-join flag (**Save group**), **Delete group**, add members with **Add a member** (a username, or `sa:<name>` for a service account), and **Remove** manual memberships. It also lists the group's **System roles** and the **Permission policies naming this group**. A group that holds a system role cannot be auto-join (`auto_join_admin_conflict`).
+A group's page lets you rename it, change the description and auto-join flag (**Save group**), **Delete group**, add members with **Add a member** (a username, or `sa:<name>` for a service account of no project; a service account of a project never joins a group, `project_account_not_groupable`), and **Remove** manual memberships. It also lists the group's **System roles** and the **Permission policies naming this group**. A group that holds a system role cannot be auto-join (`auto_join_admin_conflict`), and an auto-join group cannot be made a member of a project (`principal_not_allowed`): every user is in it.
 
 ## The Service accounts screen
 
-A service account is a non-human principal for CI systems and automation. Its tokens act as the account, not as a person, and it is never part of `authenticated`.
+A service account is a non-human principal for CI systems and automation. Its tokens act as the account, not as a person, and it is never part of `authenticated` and never a member of a project. A service account belongs to no project, `sa:<name>`, or to one project for good, `sa:<projectKey>/<name>`; the name is unique among the accounts of its project, and among those of no project, so `sa:partner` and `sa:web/partner` are two accounts.
 
 **Admin area › Identity › Service accounts** lists **Name**, **Description** and **Status**. Select **New service account** and enter a **Name** (lower-case letters, digits and `-`, two to 63 characters) and a **Description**. On the account's page you can **Save description**, **Disable** (with **Also revoke all tokens of this account**, unchecked by default), **Enable**, **Delete** the account with its tokens, see its system roles and manage its **Tokens**; see [Managing tokens](tokens.md). Grant it rights with a permission policy entry `sa:<name>`, or add it to a group.
+
+A service account of a project is created and managed by the Owners of the project, and by holders of `identities:write`, under `/api/v1/projects/<projectKey>/service-accounts/<name>`; it is granted only by its project's policies and holds no system role. `GET /api/v1/service-accounts` lists the accounts of every project too, each with its `project`, and filters by `project=`; the operations on `/api/v1/service-accounts/<name>` address the accounts of no project only. See [Service accounts of a project](projects.md#service-accounts-of-a-project).
 
 ## Commands for bootstrap and recovery
 
@@ -294,7 +296,7 @@ The `trove admin` commands run against the database with the replica's configura
 | `trove admin break-glass status`, `unlock`, `end-sessions` | Inspect, unlock or sign out the break-glass account |
 | `trove admin sessions end --user <username>` or `--all` | End sessions |
 | `trove admin service-account create <name> [--description <text>] [--admin]` | Create a service account, optionally with the `admin` role |
-| `trove admin token create --service-account <name> [--ttl 15m] [--scope-file <file>]` | Print a token of a service account |
+| `trove admin token create --service-account <name\|project/name> [--ttl 15m] [--scope-file <file>]` | Print a token of a service account; `<project>/<name>` names the account of a project |
 | `trove admin user disable <username> [--keep-tokens]` | Disable a user |
 
 <details><summary>Reasons on the "Sign-in failed" page</summary>

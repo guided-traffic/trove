@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -105,7 +107,7 @@ func (h *Host) recheck(ctx context.Context, rq *formats.Request) error {
 	if len(allowed) == 0 {
 		return nil
 	}
-	var keys []string
+	var keys []qname.Repo
 	for _, a := range allowed {
 		if !slices.Contains(keys, a.c.Repository) {
 			keys = append(keys, a.c.Repository)

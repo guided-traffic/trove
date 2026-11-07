@@ -72,8 +72,8 @@ func TestR_EP_013_EndpointStageLeavesTheEndpointToTheSubject(t *testing.T) {
 		path, _ = r.Context().Value(requestPathKey{}).(string)
 		endpoint = edge.SubjectFrom(r).Endpoint
 	}))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/files/generic-local/x", nil))
-	if path != "/files/generic-local/x" {
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/files/it/generic-local/x", nil))
+	if path != "/files/it/generic-local/x" {
 		t.Fatalf("the bridge would see the path %q", path)
 	}
 	if endpoint != "" {

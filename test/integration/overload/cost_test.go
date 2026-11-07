@@ -42,7 +42,7 @@ func TestHeldDownloadCost(t *testing.T) {
 				kb, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 				return m["go_memstats_heap_inuse_bytes"], m["go_memstats_stack_inuse_bytes"], kb * 1024
 			}
-			path := "/files/" + repo + "/" + name
+			path := filesRoot + name
 			time.Sleep(500 * time.Millisecond)
 			h0, s0, r0 := cost()
 			downloads := make([]*slow, n)
