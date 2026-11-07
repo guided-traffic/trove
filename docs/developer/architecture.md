@@ -151,8 +151,8 @@ in-flight limit and no memory guard, so a probe is never refused because the req
    warning.
 2. `requestMemory` is what a download of a large object holds, the request bytes: `blob.DownloadBufferBytes` (the verified
    download's buffer, rounded to its pool class) + `storage.s3.http.receive_window` + `requestOverhead` (128 KiB; 100 downloads of
-   1, 2 and 5 MiB held open measured 636 to 659 KiB each on macOS, `TestHeldDownloadCost`, which measures 2, 5 and 8 MiB because
-   a Linux loopback send buffer takes a whole 1 MiB file). The guard counts bytes
+   1, 2 and 5 MiB held open measured 636 to 659 KiB each on macOS, `TestHeldDownloadCost`, which measures 5 and 8 MiB because
+   a Linux loopback send buffer autotunes up to 4 MiB and then takes a whole 1 or 2 MiB file). The guard counts bytes
    ([Q-ARCH-328](../spec/architecture.md#q-arch-328--admission-charges-the-bytes-a-request-holds-and-the-caches-hold-now-not-a-worst-case-per-request-and-the-caches-budgets)):
    `Admit` adds the request bytes to `used` in a compare-and-swap loop and refuses with `memory_slots` when `used` would pass
    0.8 × limit less the caches' bytes (`App.cacheBytes`, the sum of `cache.Registry.Stats()` read with every heap sample), unless
@@ -415,7 +415,7 @@ listeners, rotating the certificate under load (E0.15 at process level, [tls.md]
 (`Stack.Environ`) with `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` of 256 MiB: 1,000 downloads whose clients read nothing, the memory
 guard's slots and `503`s, and the memory the runtime holds, sampled from `/metrics` ([Stage 4 and the memory guard](#stage-4-and-the-memory-guard)).
 `TestBurstBesideEmptyCaches` offers 300 held downloads to a 1 GiB replica with the default caches (none is shed, where the
-budgets would have left 77 slots), and `TestHeldDownloadCost` measures what a held download of 2, 5 and 8 MiB costs (heap in use,
+budgets would have left 77 slots), and `TestHeldDownloadCost` measures what a held download of 5 and 8 MiB costs (heap in use,
 stacks, resident set per download, logged with `-v`): the basis of the request bytes in Q-ARCH-328.
 A memory limit is per process, which is why this suite cannot use the in-process harness.
 

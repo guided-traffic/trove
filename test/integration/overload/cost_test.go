@@ -24,8 +24,9 @@ func TestHeldDownloadCost(t *testing.T) {
 	const n = 100
 	// A download is held only while the replica's write waits for the client. The client reads through a 4 KiB receive
 	// buffer, but the replica's send buffer on a loopback connection takes a whole 1 MiB file on Linux (autotuned up to
-	// tcp_wmem's 4 MiB; Test and Release run 42146436982 held 0 of 100), so the sizes start above that.
-	for _, size := range []int{2 << 20, 5 << 20, 8 << 20} {
+	// tcp_wmem's 4 MiB; Test and Release run 42146436982 held 0 of 100 at 1 MiB, run 42387599073 0 of 100 at 2 MiB), so
+	// every size is above that maximum.
+	for _, size := range []int{5 << 20, 8 << 20} {
 		name := fmt.Sprintf("f%d.bin", size)
 		t.Run(fmt.Sprintf("Q-ARCH-328 R-ARCH-005 %d KiB held downloads", size>>10), func(t *testing.T) {
 			// A replica of its own per size, so the pooled buffers of another size are not counted.
