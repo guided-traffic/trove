@@ -112,7 +112,7 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `getProblemType` | `GET /api/v1/problems/{code}` | public; resolves the `type` URI of a problem |
 | `listJobs` | `GET /api/v1/system/jobs` | authenticated; `settings:read` sees every job, any other caller the jobs it started (R-API-015) |
 | `getJob` | `GET /api/v1/system/jobs/{id}` | authenticated; as above, a job the caller may not see answers `404`; `Retry-After: 2` while it has not ended |
-| `cancelJob` | `POST /api/v1/system/jobs/{id}/cancel` | authenticated; `settings:write` or the caller who started the job (`403` for a reader who did not), `409` for a finished job |
+| `cancelJob` | `POST /api/v1/system/jobs/{id}/cancel` | authenticated; `settings:write` or the caller who started the job through a session or an inheriting token (`403` for a reader who did not, and for the starter's narrowed token, Q-API-215), `409` for a finished job |
 | `listTasks` | `GET /api/v1/system/tasks` | `settings:read` |
 | `runTask` | `POST /api/v1/system/tasks/{name}/run` | `settings:write`; optional `Idempotency-Key`; `202` with the job, `409` with the running job |
 | `getEncryptionStatus` | `GET /api/v1/system/encryption` | `settings:read` |
@@ -225,6 +225,26 @@ allowed the caller, so a caller who may not act gets 403 and not an invitation t
 operations that declare it are listed in `recentAuthOperations` in
 [recent_auth_test.go](../../internal/api/v1/recent_auth_test.go); adding a declaration without extending that list fails the test.
 
+### Operations on the caller's own account (R-API-021, Q-API-214)
+
+`x-trove-owner-rights: required` on an operation is read into `Operation.OwnerRights` (`parseOwnerRights`; any other value, or the
+attribute on a declaration other than `authenticated: true`, stops start-up). `Server.authorize` calls `ownerRightsGate` once `decide`
+admitted the caller, before the recent-authentication check: a token whose scope does not inherit its owner's rights
+(`Credential.Scope != nil && !Scope.Inherit`, `narrowedToken`) gets 403 `forbidden` and the handler does not run; a session, the
+break-glass session and an inheriting token pass, and an anonymous caller still gets 401. The handlers keep the check of the principal
+kind (a service account and a CI token have no profile) and never look at the scope. In
+[owner_rights_test.go](../../internal/api/v1/owner_rights_test.go), `ownerRightsOperations` lists the operations that declare it, and
+`TestR_API_021_EveryAuthenticatedWriteDeclaresItsTokenRule` walks the document: an operation with an unsafe method and
+`authenticated: true` must declare the attribute or be in `ownerRightsExempt` with the rule that bounds a narrowed token there (the
+decision point, the derivation rule, the line of the token operations (Q-AUTH-199), the scope's `manage` for an owner change
+(Q-AUTHZ-240), a session or an inheriting token for the starter of a job (Q-API-215), or the presenting token itself). A new such
+operation therefore fails the test until it is classified. The reads are closed the same way: `TestR_API_021_EveryAuthenticatedReadIsClassified`
+walks every authenticated `GET`, which declares the attribute (`listOwnSessions`) or is in `ownerRightsReads` with the reason it may answer
+a narrowed token. The attribute on an operation of `/files/` or of the content routes stops start-up: the files handler decides those, and
+the shared step never wraps them. A rule that needs the record of the target cannot be a route attribute;
+it lives in the handler or the domain service and uses `narrowedToken` (or `Subject.Scope` in `internal/authz`), and its entry in
+the exempt list names it.
+
 ### Authorization epoch of a write
 
 `authz.HeaderEpoch` is the header name. A plain answer sets it with `setEpoch`; an idempotent create gives its outcome
@@ -285,6 +305,9 @@ they call `pre.Require()` themselves, where a resource behind the generated wrap
      handler runs; `TestR_API_012_OneMechanismForAMissingIfMatch` checks the declaration); `DELETE` references `IfMatchOptional`;
      the `GET` and the write answer the `ETag` header (`#/components/headers/ETag`); `PATCH` takes `application/merge-patch+json`;
    - an operation that mints a credential or widens permissions adds `x-trove-recent-auth: true` (the shared step enforces it);
+   - an `authenticated: true` operation that changes the caller's own account (profile, preferences, sessions) adds
+     `x-trove-owner-rights: required`; any other unsafe `authenticated: true` operation goes into `ownerRightsExempt` of
+     [owner_rights_test.go](../../internal/api/v1/owner_rights_test.go) with the rule that bounds a narrowed token there;
    - creating `POST` and `DELETE` with 202: `x-trove-idempotency-key: optional`, parameter `IdempotencyKey`, response header
      `Idempotency-Replayed`, and `Location` on 201/202;
    - a collection whose key sits next to a literal route (`/users/me`): list the literals as `x-trove-reserved-names` in the

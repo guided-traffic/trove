@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -28,12 +29,14 @@ type ownAPI struct {
 	val    *apitest.Validator
 	a, b   *httptest.Server
 	people map[string]authz.Subject
+	// scopes are the token scopes of the people who present a narrowed token; the others have none.
+	scopes map[string]*scope.Scope
 }
 
 func newOwnAPI(t *testing.T) *ownAPI {
 	t.Helper()
 	w := newOwnWorld(t)
-	api := &ownAPI{w: w, val: apitest.New(t, v1.EmbeddedYAML()), people: map[string]authz.Subject{}}
+	api := &ownAPI{w: w, val: apitest.New(t, v1.EmbeddedYAML()), people: map[string]authz.Subject{}, scopes: map[string]*scope.Scope{}}
 	for _, s := range []authz.Subject{w.alice, w.dave, w.mallory, w.lead, w.root, w.carol, w.bot} {
 		api.people[s.Name] = s
 	}
@@ -54,7 +57,7 @@ func newOwnAPI(t *testing.T) *ownAPI {
 }
 
 // authenticate turns the X-Test-Person header into the principal the stage would
-// hand over: a bearer token of that person, with its groups and CI mappings.
+// hand over: a bearer token of that person, with its groups, CI mappings and scope.
 func (api *ownAPI) authenticate(req *http.Request) (httpserver.Principal, error) {
 	name := req.Header.Get("X-Test-Person")
 	if name == "" {
@@ -66,7 +69,7 @@ func (api *ownAPI) authenticate(req *http.Request) (httpserver.Principal, error)
 	}
 	p := httpserver.Principal{
 		Kind: httpserver.PrincipalKind(s.Kind), ID: s.ID, Name: s.Name, Mappings: s.Mappings,
-		Credential: httpserver.Credential{Method: httpserver.MethodBearer, TokenID: "00000000-0000-4000-8000-000000000001"},
+		Credential: httpserver.Credential{Method: httpserver.MethodBearer, TokenID: "00000000-0000-4000-8000-000000000001", Scope: api.scopes[name]},
 	}
 	for _, g := range s.Groups {
 		p.Groups = append(p.Groups, httpserver.GroupRef{ID: g.ID, Name: g.Name})
@@ -254,5 +257,59 @@ func TestR_AUTHZ_019_OwnershipOperationsOverHTTP(t *testing.T) {
 		if missing := api.val.Uncovered("getPackageOwners", "addPackageOwner", "removePackageOwner", "listOwnedPackages"); len(missing) > 0 {
 			t.Fatalf("not reached: %v", missing)
 		}
+	})
+}
+
+// TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage: dave is an owner of a name through the group
+// team-web and holds no manage. Through a token whose scope does not inherit his rights he counts as an owner only where
+// the scope lists manage on the repository and the name; a refusal is the 403 of any refused owner change and changes
+// nothing. An inheriting token keeps the owner path (Q-AUTHZ-240).
+func TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage(t *testing.T) {
+	api := newOwnAPI(t)
+	name := ownersOf + "@acme%2Fscoped/owners"
+	grant := func(pkg string, actions ...string) scope.Grant {
+		return scope.Grant{Repositories: []string{"it/npm-internal"}, Packages: scope.Patterns{Include: []string{pkg}}, Actions: actions}
+	}
+	as := func(person string, sc scope.Scope) string {
+		key := "dave/" + person
+		api.people[key], api.scopes[key] = api.w.dave, &sc
+		return key
+	}
+	inherit := as("inherit", scope.Scope{Inherit: true})
+	refused := map[string]string{
+		"deploy on the name":          as("deploy", scope.Scope{Repositories: []scope.Grant{grant("@acme/*", "read", "deploy")}}),
+		"manage on other names":       as("other", scope.Scope{Repositories: []scope.Grant{grant("@web/*", "manage")}}),
+		"one system capability":       as("capability", scope.Scope{System: []string{"settings:read"}}),
+		"admin: true without inherit": as("admin", scope.Scope{Admin: true}),
+	}
+	manage := as("manage", scope.Scope{Repositories: []scope.Grant{grant("@acme/scoped", "manage")}})
+	owners := func() string {
+		got := api.do(t, api.b, "lead", "GET", name, "")
+		want(t, got, 200, "")
+		return string(got.body)
+	}
+	want(t, api.do(t, api.a, "lead", "POST", name, `{"owner":"group:team-web"}`), 201, "")
+
+	t.Run("R-AUTHZ-019 a narrowed token of an owner without manage in its scope neither adds nor removes owners", func(t *testing.T) {
+		before := owners()
+		for what, person := range refused {
+			if got := api.do(t, api.a, person, "POST", name, `{"owner":"group:team-mobile"}`); got.status != 403 || got.code() != errs.CodeForbidden {
+				t.Errorf("%s adds: %d %s", what, got.status, got.body)
+			}
+			if got := api.do(t, api.a, person, "DELETE", name+"/group:team-web", ""); got.status != 403 || got.code() != errs.CodeForbidden {
+				t.Errorf("%s removes: %d %s", what, got.status, got.body)
+			}
+		}
+		if after := owners(); after != before {
+			t.Fatalf("the owners changed: %s -> %s", before, after)
+		}
+	})
+	t.Run("R-AUTHZ-019 a narrowed token whose scope lists manage on the name adds and removes owners", func(t *testing.T) {
+		want(t, api.do(t, api.a, manage, "POST", name, `{"owner":"group:team-mobile"}`), 201, "")
+		want(t, api.do(t, api.b, manage, "DELETE", name+"/group:team-mobile", ""), 204, "")
+	})
+	t.Run("R-AUTHZ-019 an inheriting token of an owner keeps the owner path", func(t *testing.T) {
+		want(t, api.do(t, api.a, inherit, "POST", name, `{"owner":"user:carol"}`), 201, "")
+		want(t, api.do(t, api.b, inherit, "DELETE", name+"/user:carol", ""), 204, "")
 	})
 }

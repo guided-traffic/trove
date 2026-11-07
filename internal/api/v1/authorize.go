@@ -248,6 +248,9 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 		if err == nil {
 			err = s.decide(r, op.Requirement)
 		}
+		if err == nil {
+			err = ownerRightsGate(r, op)
+		}
 		if err != nil {
 			httpserver.Problem(w, r, err)
 			return
@@ -281,6 +284,29 @@ func ciGate(r *http.Request, op Operation) error {
 	}
 	return errs.E(errs.Forbidden, errs.CodeCITokenRestricted, "A CI token cannot call this operation.")
 }
+
+// narrowedToken reports whether the caller presents a token whose scope does not inherit its owner's rights
+// (R-AUTH-024): a token made for some repositories, some system capabilities or the owner's roles
+// (admin: true) without inherit. A session and the break-glass session carry no scope.
+func narrowedToken(p httpserver.Principal) bool {
+	return p.Credential.Scope != nil && !p.Credential.Scope.Inherit
+}
+
+// ownerRightsGate is the rule of x-trove-owner-rights (R-API-021, Q-API-214): an operation on the caller's
+// own account (profile, preferences, sessions, the revocation of all own tokens) is refused with 403
+// forbidden to a token whose scope does not inherit its owner's rights, because a scope names repository
+// and system rights and no right over the owner's profile. A session, the break-glass session and an
+// inheriting token pass. It runs after the declaration was decided, so an anonymous caller is still asked
+// to authenticate, and before the handler: no handler repeats it.
+func ownerRightsGate(r *http.Request, op Operation) error {
+	if !op.OwnerRights || !narrowedToken(httpserver.PrincipalFrom(r.Context())) {
+		return nil
+	}
+	return errs.E(errs.Forbidden, errs.CodeForbidden, ownerRightsRefusal)
+}
+
+// ownerRightsRefusal is the detail of the refusal of ownerRightsGate.
+const ownerRightsRefusal = "A token limited to part of its owner's rights cannot act on the owner's account; sign in or use a token that inherits the owner's rights."
 
 // ActionAccess is implemented by an [Access] that also decides the action form
 // of x-trove-permission: a repository action on the coordinate a request names.

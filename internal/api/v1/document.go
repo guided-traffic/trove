@@ -37,6 +37,11 @@ type Operation struct {
 	// auth.sessions.recent_auth_window, otherwise the shared step answers 401
 	// reauthentication_required (R-API-007, R-AUTH-011). A token is not asked.
 	RecentAuth bool
+	// OwnerRights is x-trove-owner-rights: required. The operation acts on the caller's own account
+	// (profile, preferences, sessions, the revocation of all own tokens), which no token scope names: a
+	// token whose scope does not inherit its owner's rights is refused with 403 forbidden by the shared
+	// step, a session and an inheriting token pass (R-API-021, R-AUTH-024, Q-API-214).
+	OwnerRights bool
 	// IfMatchRequired is x-trove-if-match: required (R-API-012). The operation
 	// declares the shared IfMatch parameter, the generated wrapper refuses a
 	// request without the header, and bindError answers it with 428
@@ -118,6 +123,10 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-recent-auth: %w", pattern, id, err))
 			}
+			ownerRights, err := parseOwnerRights(op, req, pattern)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-owner-rights: %w", pattern, id, err))
+			}
 			if v, has := op["x-trove-if-match"]; has && v != "required" {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-if-match must be required, not %v", pattern, id, v))
 			}
@@ -129,7 +138,10 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-bastion-interface: %w", pattern, id, err))
 			}
-			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, BastionInterface: bastionVersion}
+			o := Operation{
+				ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, OwnerRights: ownerRights,
+				IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, BastionInterface: bastionVersion,
+			}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
 			} else if isContentPattern(pattern) {
@@ -156,6 +168,28 @@ func parseRecentAuth(op map[string]any) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("must be true (leave it out instead of %v)", raw)
+}
+
+// parseOwnerRights reads x-trove-owner-rights of an operation: absent is false, and the only other accepted
+// value is "required". It belongs to the form {authenticated: true} of the management API: an operation that
+// declares a permission, a role or a repository action is decided by the decision point, which applies the
+// token's scope already, and the operations of /files/ and of the content routes are decided by the files
+// handler, which the shared step that enforces the attribute never wraps.
+func parseOwnerRights(op map[string]any, req Requirement, pattern string) (bool, error) {
+	raw, has := op["x-trove-owner-rights"]
+	if !has {
+		return false, nil
+	}
+	if v, ok := raw.(string); !ok || v != "required" {
+		return false, fmt.Errorf("must be required (leave the member out on an operation that is not about the caller's own account), not %v", raw)
+	}
+	if isFilesPattern(pattern) || isContentPattern(pattern) {
+		return false, fmt.Errorf("the files handler decides %s, and the shared step that enforces the attribute does not run there", pattern)
+	}
+	if !req.Authenticated {
+		return false, fmt.Errorf("only an operation declared {authenticated: true} needs it; the decision point applies the token scope to %s", req)
+	}
+	return true, nil
 }
 
 // parseCIAdmitted reads x-trove-ci of an operation: absent is false, and the only other accepted

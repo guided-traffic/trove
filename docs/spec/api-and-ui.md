@@ -127,6 +127,7 @@ Every operation MUST declare:
 | `x-trove-permission` | The repository action or role that admits the caller, machine-readable, e.g. `{"action": "deploy", "repository": "query.repository", "path": "query.path"}` or `{"role": "admin"}`; R-API-008 enforces from it |
 | `x-trove-system-scope` | The token system scope item that admits the caller instead of a role, where one exists (R-AUTH-025) |
 | `x-trove-recent-auth` | `true` for operations that require recent authentication through a session (R-API-007) |
+| `x-trove-owner-rights` | `required` on every `authenticated: true` operation that changes the caller's own account, or exposes it beyond the user record (profile, preferences, sessions, the revocation of all own tokens): a token must inherit its owner's rights, a session may (R-API-021, Q-API-214) |
 | `x-trove-idempotency-key` | `optional` on creating and job-starting POSTs and on DELETEs that answer 202 with a job (R-API-014) |
 | `x-trove-if-match` | `required` on PUT and PATCH of a resource that carries a revision ETag (R-API-012) |
 | Responses | Success schema with an example; every possible 4xx and 5xx as a reference to the shared problem schema (R-API-009) |
@@ -148,7 +149,7 @@ document spec-first (Q-API-1):
   in `web/src/app/api/` build `HttpClient` calls and `httpResource()` request descriptors with them
   (R-UI-046). No generated Angular service layer is used.
 - **Authorization declarations.** At start-up the server reads `x-trove-permission`,
-  `x-trove-system-scope`, `x-trove-recent-auth` and `x-trove-if-match` from the embedded document
+  `x-trove-system-scope`, `x-trove-recent-auth`, `x-trove-owner-rights` and `x-trove-if-match` from the embedded document
   into a table keyed by route pattern. The shared step of R-API-008 looks up the matched pattern
   (`http.Request.Pattern`) there. A registered `/api/v1/` route without an entry stops start-up, so
   no operation can run without a declared permission.
@@ -789,7 +790,10 @@ Rules this page adds:
 - A 202 answer always carries `Location` pointing at a resource the caller may poll; while the
   work runs, polling answers carry `Retry-After` with a suggested interval.
 - Callers who are not administrators may read and cancel the jobs they started (in addition to the
-  administrator access of R-OPS-019).
+  administrator access of R-OPS-019). A job records the principal that started it, not the credential:
+  the principal cancels it through a session or a token that inherits its rights; a token whose scope
+  does not inherit them answers 403 and cancels only as a holder of `settings:write` (Q-API-215). Reading
+  the job stays open to such a token, so a pipeline polls the job it started.
 - Partial failures appear in the job result as a list of at most 100 entries plus the true failure
   count.
 
@@ -800,6 +804,9 @@ Acceptance criteria:
 - Deleting the `worker` pod that runs the job, gracefully or with `--grace-period=0 --force`, lets
   another `worker` replica finish it. Deleting the `web` pod that answered 202 right after the
   answer changes nothing: the job still ends in `succeeded`.
+- A job `alice` started through a session is cancelled by a token of hers with `inherit: true` (202);
+  her token with the scope `{"system": ["settings:read"]}` reads it (200) and gets 403 on
+  `POST /api/v1/system/jobs/{id}/cancel`, and the job stays queued.
 
 ### R-API-016 · Rate limits
 Priority: **MVP** · Covers: BEYOND-030
@@ -1241,10 +1248,22 @@ Priority: **MVP** · Covers: trove-only
 | GET | `/api/v1/auth/whoami` | Principal and credential of the caller | authenticated | R-AUTH in [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/auth/login-options` | Providers, auto-redirect, break-glass visibility, anonymous access; the sign-in screen renders only from it | anonymous | [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/users/me` | Own user record | authenticated user | [identity-and-authentication.md](identity-and-authentication.md) |
-| GET | `/api/v1/users/me/sessions`, DELETE `/api/v1/users/me/sessions…` | Own sessions; end one or all | `self` | R-AUTH-010 in [identity-and-authentication.md](identity-and-authentication.md) |
+| GET | `/api/v1/users/me/sessions`, DELETE `/api/v1/users/me/sessions…` | Own sessions; end one or all | `self`, `x-trove-owner-rights` | R-AUTH-010 in [identity-and-authentication.md](identity-and-authentication.md) |
 | GET | `/api/v1/authz/me` | Effective capabilities, scope summary, principal set and the caller's project memberships with their roles (`projects`: `{key, role}`); drives navigation | authenticated | R-AUTHZ-022, R-AUTHZ-026 in [authorization.md](authorization.md) |
 | POST | `/api/v1/authz/check` | Up to 100 permission checks for the caller's own credential; drives per-control rendering | authenticated | R-AUTHZ-023 in [authorization.md](authorization.md) |
-| GET, PATCH | `/api/v1/users/me/preferences` | UI preferences | `self` | this page |
+| GET, PATCH | `/api/v1/users/me/preferences` | UI preferences | `self`; PATCH with `x-trove-owner-rights` | this page |
+
+**Own-account operations and token scopes.** A token's scope is a ceiling on its owner's rights (R-AUTH-024), and
+a profile resource is no repository right a scope can name. The operations that change, or expose beyond the
+user record, the caller's own account therefore declare `x-trove-owner-rights: required` and the shared
+authorization step refuses a token whose scope does not inherit the owner's rights (`scope.inherit` false) with
+`403 forbidden`, before the handler runs; a session, the break-glass session and a token with `inherit: true` pass
+(Q-API-214). The set is: `setAvatar`, `removeAvatar`, `updatePreferences`, `listOwnSessions`, `endOwnSession`,
+`endOwnSessions` and `revokeOwnTokens`. The reads `getCurrentUser`, `getPreferences`, `getWhoami` and `getAuthzMe`
+are not in it: they return what the credential itself is allowed to know about its principal, and the UI of a restricted
+token needs them. `403` also answers a service account and a CI token (they have no profile). A new unsafe operation
+that declares `authenticated: true` must either declare `x-trove-owner-rights` or be named, with the reason, in the
+list `ownerRightsExempt` of `TestR_API_021_EveryAuthenticatedWriteDeclaresItsTokenRule`.
 
 Preferences are owned here:
 
@@ -1827,7 +1846,7 @@ Q-STOR-166, Q-STOR-167.
 - **Audit.** `user.avatar.set` (`details.source` `self`, `sha256`, `size`) and `user.avatar.removed` (`source` `self` or
   `admin`, `sha256`), transactional with the change (Q-AUTH-197). An upload of the image the user already has records nothing.
 - **Who.** A user changes only their own avatar. A service account and a CI token have no avatar and answer `403` on the two
-  `me` routes, and so does a token whose scope is narrower than its owner's rights (`scope.Inherit` false, Q-API-213); a session
+  `me` routes, and so does a token whose scope is narrower than its owner's rights (`x-trove-owner-rights`, R-API-021, Q-API-213, Q-API-214); a session
   and a token that inherits the owner's rights may. An administrator removes, never sets, another user's avatar (Q-AUTH-196). Any authenticated caller reads an
   image (Q-AUTH-195).
 - **Writes from the browser** are session writes: `X-CSRF-Token` is required (R-API-006), `If-Match` is not (the image is
@@ -8941,9 +8960,58 @@ Context: the two `me` routes declared `authenticated: true` and the handler chec
 
 **Choice:** (a). The administrator's removal of another user's avatar is a permission route and follows the token scope through the decision point as every `identities:write` operation does.
 
-**Rationale:** the scope is the owner's promise that a token does only what it was made for; an `authenticated` route that changes the owner's data has to keep it. The same pattern exists on the routes of the UI preferences (`preferences_api.go`, `preferencesUser`), which check the principal kind only; that is recorded as a finding of its own and not changed with this decision.
+**Rationale:** the scope is the owner's promise that a token does only what it was made for; an `authenticated` route that changes the owner's data has to keep it. The same pattern existed on the routes of the UI preferences and of the own sessions; Q-API-214 lifts this check into a route attribute that covers all of them.
 
-**Applied:** R-API-055 (Who), [user-avatars.md](../security/user-avatars.md); `internal/api/v1/avatar_api.go` (`avatarOwner`). Tests: `TestR_API_055_ATokenLimitedToPartOfItsOwnersRightsDoesNotChangeTheAvatar`, `TestR_API_055_AvatarRefusals`.
+**Applied:** R-API-055 (Who), [user-avatars.md](../security/user-avatars.md); `internal/api/v1/avatar_api.go` (`avatarOwner`; the scope check moved to the shared step by Q-API-214). Tests: `TestR_API_055_AvatarRefusals`.
+
+### Q-API-214 · The operations on the caller's own account declare that a token must inherit its owner's rights
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-API-213 closed the gap for the avatar in the handler. The routes of the UI preferences (`updatePreferences`), the own sessions (`endOwnSession`, `endOwnSessions`, `listOwnSessions`) and `revokeOwnTokens` declare `authenticated: true` and check at most the kind of the principal, so a token narrowed by R-AUTH-024 to one repository or one capability could change its owner's preferences, end the owner's sessions (including the browser session) and revoke all the owner's tokens. A scope is a ceiling that holds only where a handler remembers to apply it, and a new `users/me` write could forget it again.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A helper per handler | `avatarOwner`'s check becomes `requireOwnerRights(r)`, called by each handler | No change to the document or the shared step | The class stays open: a handler that does not call it is open, and nothing finds it |
+| (b) A route attribute `x-trove-owner-rights: required`, read at load and enforced by the shared step, plus a test that classifies every unsafe `authenticated` operation (chosen) | `Operation.OwnerRights`; `authorize` refuses a token whose `Credential.Scope` is set and not `Inherit` with `403 forbidden` after the permission decision, like `RecentAuth`; any value but `required`, the attribute on a declaration other than `authenticated: true`, and the attribute on an operation of `/files/` or of the content routes (decided by the files handler, which the shared step never wraps) stops start-up | The document is what runs (as for Q-API-40 and the CI gate); the handlers lose their copies; the classification test makes a new `authenticated` write a deliberate decision | One more extension; a new operation needs a line in the test or in the document |
+| (c) The refusal as the default for every unsafe `authenticated` operation, with an `admitted` opt-out in the document | As the CI gate (Q-CI-18) | Closed by construction | About a dozen operations that decide through the decision point or the token rules (package owners, mirror run, job cancel, token creation, rotation, `authz/check`) would each need a declaration that says nothing; the runtime step cannot tell them from an own-account write |
+| (d) Sessions only | Tokens refused on the own-account operations | The strictest | A script with a full personal token loses what Q-API-213 kept for the avatar; the API would have browser-only writes |
+
+**Choice:** (b). The attribute is on `setAvatar`, `removeAvatar`, `updatePreferences`, `listOwnSessions`, `endOwnSession`, `endOwnSessions` and `revokeOwnTokens`. `TestR_API_021_EveryAuthenticatedWriteDeclaresItsTokenRule` walks the document: every operation with an unsafe method and `authenticated: true` either declares `x-trove-owner-rights` or is in `ownerRightsExempt` with the reason (it decides through the decision point, which applies the scope; or its own rule applies: derivation R-AUTH-027, the line of revocation and rotation R-AUTH-029 and R-AUTH-030 (Q-AUTH-199), the presenting token itself, the scope's `manage` for an owner change (Q-AUTHZ-240), a session or an inheriting token for the starter of a job (Q-API-215)), and the set that declares it is compared with the list above. Reads of the own profile (`getCurrentUser`, `getPreferences`, `getWhoami`, `getAuthzMe`) stay open to every token: they return what the credential may know about itself and the UI needs them. The session list is in the set because it shows the addresses and user agents of the owner's other logins, which no scope names. The reads are classified the same way: `TestR_API_021_EveryAuthenticatedReadIsClassified` walks every authenticated `GET`, which either declares the attribute or is in `ownerRightsReads` with the reason it may answer a narrowed token (the credential's own data, a filter with the token's scope, or nothing of the account). The one read that shows the owner's activity beyond the credential, the job list and a job, stays open by Q-API-215 so a pipeline polls the run it started. A token with `admin: true` and `inherit: false` is a narrowed token here: the flag is about the owner's personal rights, not about administration. The attribute takes away no capability the scope names: an administrator's token with `admin: true`, or a scope naming `identities:read`, `identities:write` or `tokens:revoke` with an owner whose roles grant it, still lists and ends the owner's sessions, removes the owner's avatar and revokes the owner's tokens through `/api/v1/users/{username}/…` with the owner's own name, as it does for every user; that is the capability, not an escalation past the rule.
+
+**Rationale:** the avatar decision (Q-API-213) chose "inherit or session" and the same reasoning holds for every operation on the owner's own account, so the mechanism, not the list, is the decision. The attribute follows the shape of `x-trove-recent-auth` (Q-API-40), which solved the same problem of a rule the document states but a handler may forget. The development agent would revisit (c) if the exempt list grows beyond what a reviewer can hold. Three more operations admitted a narrowed token by its owner's identity, and their rules need the record of the target, so they cannot be a route attribute; each is decided on the page of its rule and named in the exempt list: the token operations (`listTokens`, `getToken`, `revokeToken`, `rotateToken`) reach only the token's line, itself and the tokens derived from it ([Q-AUTH-199](identity-and-authentication.md#q-auth-199--a-token-whose-scope-does-not-inherit-sees-revokes-and-rotates-only-itself-and-the-tokens-derived-from-it)); an owner of a package name changes its owners through such a token only where the scope lists `manage` on the name ([Q-AUTHZ-240](authorization.md#q-authz-240--an-owner-changes-the-owners-of-a-name-through-a-narrowed-token-only-where-its-scope-lists-manage-on-the-name)); the one who started a job cancels it through such a token only with `settings:write` (Q-API-215).
+
+**Applied:** R-API-002 (table of declarations), R-API-021, R-API-055; R-AUTH-024 and R-AUTH-010 in [identity-and-authentication.md](identity-and-authentication.md); `api/openapi.yaml` (the attribute on seven operations), `internal/api/v1/document.go` (`Operation.OwnerRights`, `parseOwnerRights`), `internal/api/v1/authorize.go` (`ownerRightsGate`), `internal/api/v1/avatar_api.go` (the handler's own check removed). Tests: `TestR_API_021_DocumentDeclaresOwnerRights`, `TestR_API_021_EveryAuthenticatedWriteDeclaresItsTokenRule`, `TestR_API_021_EveryAuthenticatedReadIsClassified`, `TestR_API_021_TheAttributeIsRefusedOnTheOperationsOfTheFilesHandler`, `TestR_API_021_ANarrowedTokenIsRefusedOnTheOperationsOfTheOwnAccount`, `TestR_API_021_TheRegisteredRoutesCarryTheGate`, `TestR_API_021_TheReadsOfTheOwnProfileAdmitANarrowedToken` (unit), `TestR_API_021_ANarrowedTokenDoesNotChangeItsOwnersAccount` (integration), `TestR_API_055_AvatarRefusals`.
+
+### Q-API-215 · The one who started a job cancels it through a session or a token that inherits its rights
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `POST /api/v1/system/jobs/{id}/cancel` admits a holder of `settings:write` and the caller who started the job
+(R-API-015). The second way in compares the principal ID with `job.created_by`, so a token whose scope does not inherit its
+owner's rights cancelled every job its owner started through a session or another token: a mirror run, a vulnerability
+rescan, a task the owner ran as an administrator. It is the class of Q-API-214 on a rule of this page. The job row records
+the principal, not the token (`created_by`, no token column), so the line of Q-AUTH-199 cannot be applied as it is.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The starter's way in admits a session and an inheriting token; a narrowed token cancels only through `settings:write` (chosen) | One condition in `mayCancel`; reading the job stays open | No schema change; the same "inherit or session" rule as the own-account operations; `settings:write` named by the scope still works | A pipeline whose narrowed token started a mirror run cannot cancel it; it waits for the run to end, or the owner cancels it |
+| (b) Record the starting token on the job and let a token cancel the jobs its line started | A column `created_by_token` and the lineage read of Q-AUTH-199 | A narrowed token cancels what it started | A column and a migration for a convenience; every job-starting path has to pass the token; the jobs of a session would need a marker of their own |
+| (c) Refuse the starter's way to every token | Sessions only | The strictest | A script with a full token loses the cancel it has today |
+| (d) Leave it | The principal decides | No change | A leaked narrowed token stops its owner's long-running work |
+
+**Choice:** (a). A token is narrowed when its scope does not inherit the owner's rights (`inherit: false`, also with
+`admin: true`). The refusal is 403 with a detail that names the rule; a job the caller may not see at all stays 404
+(Q-API-23). Reading the job and the job list keep the starter's way for every credential: a token that started a job polls
+it through the `Location` of its 202, and the read changes nothing.
+
+**Rationale:** the scope is a promise that a token does only what it was made for; stopping the owner's other work is not
+that, and recording the token on every job would cost a schema change for the narrow case of a narrowed token cancelling
+its own run. The development agent would revisit (b) if pipelines need to cancel the runs their tokens start.
+
+**Applied:** R-API-015 (rule, acceptance); `internal/api/v1/jobs_api.go` (`mayCancel`), `api/openapi.yaml` (`cancelJob`),
+[tokens-and-credentials.md](../security/tokens-and-credentials.md). Tests: `TestR_API_015_TheStarterCancelsThroughASessionOrAnInheritingToken`
+(unit), `TestR_API_015_ANarrowedTokenCancelsItsOwnersJobsOnlyWithSettingsWrite` (integration).
 
 ## What this does not cover
 

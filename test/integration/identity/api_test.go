@@ -543,11 +543,18 @@ func TestAPIOperations(t *testing.T) {
 				want(t, next().call(get, "/api/v1/auth/whoami", sec, nil), 200, "")
 			}
 			want(t, next().call(post, "/api/v1/tokens/"+own.Record.ID+"/rotate", alicePAT, map[string]any{"overlapSeconds": 100000}), 422, "validation_failed")
-			// The scope of a presenting token bounds a rotation.
+			// The scope of a presenting token bounds a rotation: an inheriting token without admin does not rotate one with it.
+			withAdmin := a.pat(alice, func(r *token.CreateRequest) {
+				r.Scope = []byte(`{"inherit":true,"admin":true}`)
+				r.TTL = token.TTLRequest{Seconds: &one}
+			})
+			want(t, next().call(post, "/api/v1/tokens/"+withAdmin.Record.ID+"/rotate", alicePAT, nil), 403, "derivation_exceeds_parent")
+			// A token whose scope does not inherit sees and rotates only itself and its derived tokens: another one is a 404
+			// to it (Q-AUTH-199).
 			narrow := a.pat(alice, func(r *token.CreateRequest) {
 				r.Scope = []byte(`{"inherit":false,"repositories":[{"repositories":["it/npm-local"],"actions":["read"]}]}`)
 			})
-			want(t, next().call(post, "/api/v1/tokens/"+rot["id"].(string)+"/rotate", narrow.Secret, nil), 403, "derivation_exceeds_parent")
+			want(t, next().call(post, "/api/v1/tokens/"+rot["id"].(string)+"/rotate", narrow.Secret, nil), 404, "not_found")
 			// A token rotates itself only when it was created with selfRotatable.
 			want(t, next().call(post, "/api/v1/tokens/current/rotate", alicePAT, nil), 403, "forbidden")
 			selfy := a.pat(alice, func(r *token.CreateRequest) { r.SelfRotatable = true })

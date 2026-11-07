@@ -259,7 +259,12 @@ caller cannot change them in a race, and two removals of the last two owners can
 `TestR_AUTHZ_019_OwnerOperations`). The declarations admit an authenticated caller (or a repository-level `read` for the
 owners view) and the handler decides the rest; an anonymous caller is 401 and a CI token 403 `ci_token_restricted` before
 anything is looked up. Adding and removing owners need recent authentication through a session (R-API-007), because an added
-owner may publish the name. `GET /api/v1/package-owners` shows a caller without `policies:read` only names of repositories it
+owner may publish the name. Being an owner is a fact about the principal, so the owner path does not by itself respect a token's
+scope: an owner that presents a token whose scope does not inherit its rights counts as an owner only where an element of the scope
+lists `manage` on the repository and the name (`scopeReachesName` in [ownership.go](../../internal/authz/ownership.go), Q-AUTHZ-240);
+a publish token, a token for another repository or for one system capability gets the 403 of any refused change and cannot hand
+the owner's names to another principal. A session and an inheriting token keep the owner path
+(`TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage`). `GET /api/v1/package-owners` shows a caller without `policies:read` only names of repositories it
 may read. The package name and an owner reference are single path segments with an encoded `/`; the router matches escaped
 segments, so `@acme%2F..%2Fx` is one name and never a path (`TestR_AUTHZ_019_OwnershipOperationsOverHTTP`).
 

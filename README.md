@@ -1750,7 +1750,8 @@ transaction; `blockMalicious` and `onMissingData` act from the repository snapsh
 The operations below are the paths of [api/openapi.yaml](api/openapi.yaml), grouped by family, as the document declares them. The
 document is the source: `GET /api/v1/openapi.json` serves it, and the operations declare their capability in an
 `x-trove-permission` block; `Document.CheckRoutes` checks the routes against the document at start-up. The table lists every operation with its
-`x-trove-permission` and whether it requires a recent sign-in (`x-trove-recent-auth`, R-API-007).
+`x-trove-permission`, whether it requires a recent sign-in (`x-trove-recent-auth`, R-API-007), and whether a token must inherit its owner's
+rights because the operation acts on the caller's own account (`x-trove-owner-rights`, R-API-021).
 
 "or Owner of the project" and "or a member of the project" are the second way in of a declaration with `project: path.projectKey` and `projectRole: owner` or `reader` (R-AUTHZ-026, Q-AUTHZ-207): the shared step admits the holder of the capability, or a member of the project the path names whose role is at least the declared one; the Owner's administration needs a session or a token with `admin: true`, through any other token an Owner counts as a Maintainer. A project the caller is no member of answers `404` like a missing one, a role below the declared one `403`. The repository-content operations declare their action on `path.projectKey`/`path.repoKey` and are decided with the roles, the policies and the token scope.
 
@@ -1794,7 +1795,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 |---|---|---|
 | `GET /api/v1/system/jobs` | `listJobs` | authenticated |
 | `GET /api/v1/system/jobs/{id}` | `getJob` | authenticated |
-| `POST /api/v1/system/jobs/{id}/cancel` | `cancelJob` | authenticated |
+| `POST /api/v1/system/jobs/{id}/cancel` | `cancelJob` | authenticated; `settings:write`, or the starter through a session or an inheriting token, decided in the handler |
 | `GET /api/v1/system/tasks` | `listTasks` | `settings:read` |
 | `POST /api/v1/system/tasks/{name}/run` | `runTask` | `settings:write`; the body `{"acceptShrink": true}` overrides the shrink guard of `vuln-sync-osv` and `vuln-sync-osv-full` once |
 
@@ -1805,8 +1806,8 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/users` | `listUsers` | `identities:read` |
 | `POST /api/v1/users` | `createUser` | `identities:write` |
 | `GET /api/v1/users/me` | `getCurrentUser` | authenticated |
-| `PUT /api/v1/users/me/avatar` | `setAvatar` | authenticated; the body is a PNG, JPEG or WebP of at most 1 MiB, stored as a new 256 x 256 PNG ([security](docs/security/user-avatars.md)) |
-| `DELETE /api/v1/users/me/avatar` | `removeAvatar` | authenticated |
+| `PUT /api/v1/users/me/avatar` | `setAvatar` | authenticated; the body is a PNG, JPEG or WebP of at most 1 MiB, stored as a new 256 x 256 PNG ([security](docs/security/user-avatars.md)) · a session or an inheriting token (`x-trove-owner-rights`) |
+| `DELETE /api/v1/users/me/avatar` | `removeAvatar` | authenticated · a session or an inheriting token (`x-trove-owner-rights`) |
 | `DELETE /api/v1/users/{username}/avatar` | `removeUserAvatar` | `identities:write` |
 | `GET /api/v1/avatars/{digest}` | `getAvatar` | authenticated; `image/png`, immutable private cache |
 | `GET /api/v1/users/{username}` | `getUser` | `identities:read` |
@@ -1852,16 +1853,16 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/tokens` | `listTokens` | authenticated |
+| `GET /api/v1/tokens` | `listTokens` | authenticated; a token that does not inherit its owner's rights lists only itself and its derived tokens |
 | `POST /api/v1/tokens` | `createToken` | authenticated · recent sign-in |
 | `GET /api/v1/tokens/current` | `getCurrentToken` | authenticated |
 | `DELETE /api/v1/tokens/current` | `revokeCurrentToken` | authenticated |
 | `POST /api/v1/tokens/current/rotate` | `rotateCurrentToken` | authenticated |
 | `POST /api/v1/tokens/revoke` | `revokeTokenByValue` | public |
-| `GET /api/v1/tokens/{id}` | `getToken` | authenticated |
-| `DELETE /api/v1/tokens/{id}` | `revokeToken` | authenticated |
-| `POST /api/v1/tokens/{id}/rotate` | `rotateToken` | authenticated · recent sign-in |
-| `DELETE /api/v1/users/me/tokens` | `revokeOwnTokens` | authenticated |
+| `GET /api/v1/tokens/{id}` | `getToken` | authenticated; a token that does not inherit its owner's rights sees only itself and its derived tokens (404 otherwise) |
+| `DELETE /api/v1/tokens/{id}` | `revokeToken` | authenticated; the owner, a holder of `tokens:revoke` or an Owner of the account's project, decided in the handler; a token that does not inherit its owner's rights revokes only itself and its derived tokens (404 otherwise) |
+| `POST /api/v1/tokens/{id}/rotate` | `rotateToken` | authenticated; a token that does not inherit its owner's rights rotates only itself and its derived tokens · recent sign-in |
+| `DELETE /api/v1/users/me/tokens` | `revokeOwnTokens` | authenticated · a session or an inheriting token (`x-trove-owner-rights`) |
 | `DELETE /api/v1/users/{username}/tokens` | `revokeUserTokens` | `tokens:revoke` |
 | `POST /api/v1/service-accounts/{name}/tokens` | `createServiceAccountToken` | authenticated; an administrator, or a token of the account itself, decided in the handler · recent sign-in |
 | `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` |
@@ -1886,9 +1887,9 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/users/me/sessions` | `listOwnSessions` | authenticated |
-| `DELETE /api/v1/users/me/sessions` | `endOwnSessions` | authenticated |
-| `DELETE /api/v1/users/me/sessions/{id}` | `endOwnSession` | authenticated |
+| `GET /api/v1/users/me/sessions` | `listOwnSessions` | authenticated · a session or an inheriting token (`x-trove-owner-rights`) |
+| `DELETE /api/v1/users/me/sessions` | `endOwnSessions` | authenticated · a session or an inheriting token (`x-trove-owner-rights`) |
+| `DELETE /api/v1/users/me/sessions/{id}` | `endOwnSession` | authenticated · a session or an inheriting token (`x-trove-owner-rights`) |
 | `GET /api/v1/users/{username}/sessions` | `listUserSessions` | `identities:read` |
 | `DELETE /api/v1/users/{username}/sessions` | `endUserSessions` | `identities:write` |
 
@@ -1897,7 +1898,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | Method and path | Operation | Permission |
 |---|---|---|
 | `GET /api/v1/users/me/preferences` | `getPreferences` | authenticated |
-| `PATCH /api/v1/users/me/preferences` | `updatePreferences` | authenticated |
+| `PATCH /api/v1/users/me/preferences` | `updatePreferences` | authenticated · a session or an inheriting token (`x-trove-owner-rights`) |
 
 **permissions**
 
@@ -2048,7 +2049,7 @@ The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/develop
 | Method and path | Operation | Permission |
 |---|---|---|
 | `GET /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | `getPackageOwners` | action `read` on `path.projectKey`/`path.repoKey`; `read` on the package in the handler |
-| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | `addPackageOwner` | authenticated; an owner, `manage` or `content:bypass` in the handler · recent sign-in |
+| `POST /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners` | `addPackageOwner` | authenticated; an owner (through a token that does not inherit, only where its scope lists `manage` on the name), `manage` or `content:bypass` in the handler · recent sign-in |
 | `DELETE /api/v1/projects/{projectKey}/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | `removePackageOwner` | authenticated; as adding, `release=true` needs `manage` · recent sign-in |
 | `GET /api/v1/package-owners` | `listOwnedPackages` | authenticated; `policies:read`, or the caller's own identity or group |
 

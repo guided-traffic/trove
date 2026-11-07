@@ -324,7 +324,9 @@ export interface paths {
          * Cancel a job
          * @description A queued job ends `cancelled` at once; a running job turns `cancelling` and stops at its next
          *     checkpoint. Allowed for a caller with `settings:write` and for the caller who started the job
-         *     (R-API-015); for anyone else the job does not exist. A finished job answers `409`.
+         *     (R-API-015); for anyone else the job does not exist. The one who started it cancels through a session or a
+         *     token that inherits its rights; a token whose scope does not inherit them answers `403` unless the scope
+         *     holds `settings:write` (Q-API-215). A finished job answers `409`.
          */
         post: operations["cancelJob"];
         delete?: never;
@@ -469,13 +471,15 @@ export interface paths {
          *     server decodes the image, takes the centre square, scales it to 256 x 256 pixels and stores a new PNG made from the
          *     pixels alone, so metadata and anything appended are gone (R-API-055). The answer is the user record, whose
          *     `avatarUrl` names the new image. A request with a session cookie needs the CSRF header (R-API-006). Service accounts
-         *     and CI tokens have no avatar and answer `403`.
+         *     and CI tokens have no avatar and answer `403`, and so does a token whose scope does not inherit its owner's rights
+         *     (`x-trove-owner-rights`, R-API-021).
          */
         put: operations["setAvatar"];
         post?: never;
         /**
          * Remove the caller's avatar
          * @description The user shows the generated fallback image again. A user without an avatar answers `204` as well (R-API-055).
+         *     A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
          */
         delete: operations["removeAvatar"];
         options?: never;
@@ -956,7 +960,8 @@ export interface paths {
          * List tokens
          * @description Tokens newest first (R-AUTH-028). A caller without `tokens:read` sees its own tokens only and `owner` is forced
          *     to `me`, except that an Owner of a project lists the tokens of a service account of its project with
-         *     `owner=sa:<project>/<name>` (R-AUTHZ-026, Q-AUTHZ-177). The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
+         *     `owner=sa:<project>/<name>` (R-AUTHZ-026, Q-AUTHZ-177). Through a token whose scope does not inherit its
+         *     owner's rights, the own tokens are that token and the tokens derived from it (Q-AUTH-199). The state defaults to `active`. Neither the value nor its hash is ever returned. Cursor pagination
          *     (R-API-010) over the token `id`.
          */
         get: operations["listTokens"];
@@ -1060,7 +1065,8 @@ export interface paths {
         /**
          * Read a token
          * @description One token (R-AUTH-028). A token the caller may not see answers `404`, like a missing one; an administrator
-         *     of a project sees the tokens of its project's service accounts (Q-AUTHZ-177).
+         *     of a project sees the tokens of its project's service accounts (Q-AUTHZ-177). A token whose scope does not
+         *     inherit its owner's rights sees of its owner's tokens only itself and the tokens derived from it (Q-AUTH-199).
          */
         get: operations["getToken"];
         put?: never;
@@ -1069,7 +1075,10 @@ export interface paths {
          * Revoke a token
          * @description The owner, an administrator, a holder of `tokens:revoke`, an administrator of the project of a project service
          *     account (Q-AUTHZ-177) and (P1) an owner of the service account may revoke (R-AUTH-029). Revoking an ended token answers `204` too. A token the caller may not revoke answers `404`.
-         *     Derived tokens are revoked with it (reason `parent_revoked`).
+         *     Derived tokens are revoked with it (reason `parent_revoked`). A token whose scope does not inherit its owner's
+         *     rights reaches only itself and the tokens derived from it; another token of its owner answers `404` like any
+         *     token it may not see, unless the scope holds `tokens:revoke` (Q-AUTH-199). A CI token answers `403
+         *     ci_token_restricted`.
          */
         delete: operations["revokeToken"];
         options?: never;
@@ -1090,8 +1099,11 @@ export interface paths {
          * Rotate a token
          * @description Replaces the secret and keeps description, scope and owner (R-AUTH-030). A PAT only by its owner; a SAT by an
          *     administrator or under the derivation rule. Another user's PAT answers `403 forbidden`, even for an
-         *     administrator. `overlapSeconds` keeps the old value valid for that long (0 revokes it with reason `rotated`).
-         *     The answer holds the new value and is never cached.
+         *     administrator. A token whose scope does not inherit its owner's rights rotates only itself and the tokens
+         *     derived from it: another token of its owner answers `404` like any token it may not see, and `403 forbidden`
+         *     when the scope's `tokens:read` lets it see it (Q-AUTH-199). `overlapSeconds` keeps the
+         *     old value valid for that long (0 revokes it with reason `rotated`). The answer holds the new value and is never
+         *     cached.
          */
         post: operations["rotateToken"];
         delete?: never;
@@ -1112,7 +1124,8 @@ export interface paths {
         post?: never;
         /**
          * Revoke all own tokens
-         * @description Revokes every active token of the caller with reason `owner` (R-AUTH-029).
+         * @description Revokes every active token of the caller with reason `owner` (R-AUTH-029). A session or a token that inherits the
+         *     owner's rights may; a token whose scope does not answers `403` (`x-trove-owner-rights`, R-API-021).
          */
         delete: operations["revokeOwnTokens"];
         options?: never;
@@ -1287,7 +1300,8 @@ export interface paths {
          * List the caller's active sessions
          * @description The live UI sessions of the caller, newest first, `current` marking the one that made this request
          *     (R-AUTH-010). At most `auth.sessions.max_per_user` exist, so the list is one page. A service account or CI
-         *     token answers `403`.
+         *     token answers `403`, and so does a token whose scope does not inherit its owner's rights (`x-trove-owner-rights`,
+         *     R-API-021).
          */
         get: operations["listOwnSessions"];
         put?: never;
@@ -1295,6 +1309,7 @@ export interface paths {
         /**
          * End all of the caller's sessions
          * @description Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010).
+         *     A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
          */
         delete: operations["endOwnSessions"];
         options?: never;
@@ -1315,6 +1330,7 @@ export interface paths {
         /**
          * End one of the caller's sessions
          * @description Ends a session of the caller; another user's session, an ended one and an unknown ID answer `404` (R-AUTH-010).
+         *     A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
          */
         delete: operations["endOwnSession"];
         options?: never;
@@ -1366,7 +1382,9 @@ export interface paths {
         head?: never;
         /**
          * Change the caller's UI preferences
-         * @description JSON merge patch with `If-Match` (R-API-012, R-API-013); `null` resets a member to its default.
+         * @description JSON merge patch with `If-Match` (R-API-012, R-API-013); `null` resets a member to its default. A token whose scope
+         *     does not inherit its owner's rights answers `403`, before `If-Match` is looked at (`x-trove-owner-rights`,
+         *     R-API-021).
          */
         patch: operations["updatePreferences"];
         trace?: never;
@@ -3483,7 +3501,8 @@ export interface paths {
          * Add an owner, or pre-assign a name nobody has published
          * @description Adds an owner identity (`user:`, `group:`, `sa:`, `ci:<issuer>/<mapping>`) to the name
          *     (R-AUTHZ-019). Allowed to an owner, a holder of `manage` on the package and `content:bypass`;
-         *     a name without an owner to ask (unclaimed, released, or claimed after its last owner was
+         *     an owner that presents a token whose scope does not inherit its rights counts as an owner only where
+         *     the scope lists `manage` on the repository and the name (Q-AUTHZ-240); a name without an owner to ask (unclaimed, released, or claimed after its last owner was
          *     deleted) takes an owner only from `manage` or `content:bypass`, and on an unclaimed name without
          *     versions this pre-assigns it. A caller who may not is refused with `403`, whether or not the
          *     repository or the name exists; a CI token always gets `403 ci_token_restricted`. An owner
@@ -10765,6 +10784,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];

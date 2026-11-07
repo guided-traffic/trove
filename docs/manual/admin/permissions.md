@@ -63,7 +63,7 @@ For every request trove checks, in this order:
 4. **Virtual gate.** For a virtual repository, the caller needs `read` on the virtual repository itself. Content is then decided on the member that serves it, and a write on the deployment target.
 5. **Grants.** The union of the caller's role in the repository's project and of all policy entries, global and of the project, for the caller's principals that cover the repository, package or path and hold the action. The `admin` role passes this step for every action.
 6. **Token scope.** A token's scope is intersected with the result; it never grants anything. See [Managing tokens](tokens.md).
-7. **Checks that never grant.** Filling a remote cache needs `read` plus the repository's cache-fill action and is never done through a browser session. On a local npm repository with package ownership, a name is changed only by its owners, `manage` holders and administrators. A first version that a remote member of a virtual repository already serves needs `manage`. See [Managing repositories](repositories.md).
+7. **Checks that never grant.** Filling a remote cache needs `read` plus the repository's cache-fill action and is never done through a browser session. On a local npm repository with package ownership, a name is changed only by its owners, `manage` holders and administrators; an owner changes the owners through a token with a restricted scope only where that scope lists `manage` on the repository and the name. A first version that a remote member of a virtual repository already serves needs `manage`. See [Managing repositories](repositories.md).
 
 The answer depends on what was refused:
 

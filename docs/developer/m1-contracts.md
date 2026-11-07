@@ -130,7 +130,7 @@ Changes of the leftover items of the backend (wave 3, [http-api.md](http-api.md)
 | Contract | Change |
 |---|---|
 | `errs` | `AnyRevision`, `StaleRevision`, `Stale(what, current)`, `CurrentRevision` ([revision.go](../../internal/errs/revision.go)): the one 412 with `currentEtag` and the one value of a blind write. `authz.AnyVersion`, `authz.StaleRevision`, `authz.IsStale`, `repository.StaleVersion` and `token.SettingsChangedError` are gone; `v1.Failed(current)` lost its `view` parameter |
-| `v1.Operation` | `RecentAuth` (from `x-trove-recent-auth: true`) and `IfMatchRequired`; `Server.authorize` enforces the first after the permission |
+| `v1.Operation` | `RecentAuth` (from `x-trove-recent-auth: true`), `OwnerRights` (from `x-trove-owner-rights: required`, Q-API-214) and `IfMatchRequired`; `Server.authorize` enforces the first two after the permission |
 | `repository.Hooks` | `OnDelete(ctx, tx, caller, repo)` joins `OnUpdated`; `repository.MultiHooks`; `authz.ExposureHook` records the rules a deletion takes with it |
 | `principal` | `User`, `Group`, `ServiceAccount` carry `Revision`; `UserPatch.Expected`, `GroupPatch.Expected`, `UpdateServiceAccount(…, expected)`; `token.SettingsPatch.IfRevision` became `Expected` (zero matches no revision; `errs.AnyRevision` is the blind write) |
 | `v1.AuthServices` | `EndpointConfigured func(string) bool` for `unknownEndpoints` |

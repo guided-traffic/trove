@@ -94,7 +94,8 @@ holds the rejections and the content events, not every successful use. The filte
 the columns.
 
 **Personal data.** `last_used_addr` is the client address of the latest recorded use of a token and is tied to the token's owner, so it is
-personal data about that principal. It is read by the owner (their own tokens) and by the holders of `tokens:read` (`admin`, `security-admin`,
+personal data about that principal. It is read by the owner (their own tokens; through a token whose scope does not inherit, only that
+token's line, Q-AUTH-199) and by the holders of `tokens:read` (`admin`, `security-admin`,
 `auditor`; [tokens_api.go](../../internal/api/v1/tokens_api.go)), in the token lists and on a token, and by nobody else; it is not part of an
 audit event. It is kept as long as the token row: the next recorded use overwrites it (at most once per `auth.tokens.last_used_granularity`),
 and the row is deleted by the `token-cleanup` task `auth.tokens.retention_after_end` after the token expired or was revoked
@@ -142,6 +143,43 @@ the declarations are in `api/openapi.yaml` (Q-AUTH-43).
   authentication settings declare `x-trove-recent-auth: true`; the shared authorization step answers `401 reauthentication_required` when
   `authenticated_at` is older than `auth.sessions.recent_auth_window`, after the permission was decided (R-AUTH-011, R-API-007,
   Q-API-40). A token caller is not asked: its limits are the derivation rule's.
+- **A narrowed token does not act on its owner's account.** A scope is a ceiling on the owner's rights (R-AUTH-024) and names no right
+  over the owner's profile. The operations on the caller's own account declare `x-trove-owner-rights: required` (`setAvatar`,
+  `removeAvatar`, `updatePreferences`, `listOwnSessions`, `endOwnSession`, `endOwnSessions`, `revokeOwnTokens`); the shared authorization
+  step answers `403 forbidden` for a token whose scope has `inherit: false` (also with `admin: true`) before the handler runs, and a session
+  and a token with `inherit: true` pass (Q-API-214, [authorize.go](../../internal/api/v1/authorize.go)). A test walks the document, so an
+  unsafe `authenticated: true` operation that declares neither this nor a reason in the exempt list fails it
+  ([owner_rights_test.go](../../internal/api/v1/owner_rights_test.go)), and so does an authenticated read that is neither flagged nor
+  classified. The reads of the own profile (`getCurrentUser`, `getPreferences`, `getWhoami`, `getAuthzMe`) are open to every token on
+  purpose. The rule takes away no capability a scope names: a token with `admin: true` of an administrator, or a scope that names
+  `identities:read`, `identities:write` or `tokens:revoke` with an owner whose roles grant it, still lists and ends the owner's sessions,
+  removes the owner's avatar and revokes all the owner's tokens through `/api/v1/users/{its own username}/…`, as it does for every user:
+  by the capability, not by an escalation.
+- **A narrowed token sees and acts on only its own line of tokens.** The token list, `GET /api/v1/tokens/{id}`,
+  `DELETE /api/v1/tokens/{id}` and `POST /api/v1/tokens/{id}/rotate` admit the owner of a token. When the caller presents a token whose
+  scope does not inherit the owner's rights, the owner path reaches only that token and its line, the tokens whose `derived_from`
+  chain leads to it or to one of its rotation predecessors: what it, and the token it replaced, created (`inLine` in `visible` of
+  [tokens_api.go](../../internal/api/v1/tokens_api.go), the query `IdentityTokenDescendsFrom`, and the `line_root` filter of the list).
+  A token of the line rotated through an inheriting token leaves it (the successor is derived from the rotating token); rotated
+  through a session it stays (there is no presenting token, so the successor keeps the predecessor's `derived_from`). When an
+  inheriting token rotates a token of the line and the successor goes to another holder, the predecessor's children are reachable
+  by both, through the line and through the successor's predecessor: they keep their scope, so this widens who holds them, not what
+  they can do. A chain the retention task cut ends there. Any other token of the owner, a sibling, the parent or an
+  inheriting token, is not listed and answers `404` on the read, the revocation and the rotation, like a token that does not exist, for
+  a PAT and for a SAT alike (R-AUTH-028 to R-AUTH-030, Q-AUTH-199): the description, scope and last-use address of the owner's other
+  credentials stay hidden. A narrowed token whose scope holds `tokens:read` sees, and one whose scope holds `tokens:revoke` revokes, as
+  any holder of the capability does, so the answers differ by capability: with `tokens:revoke` and without `tokens:read`, another token
+  of the owner answers `404` on `GET` and `204` on `DELETE`; with `tokens:read` and without `tokens:revoke`, `200` on `GET`, `404` on
+  `DELETE` and `403 forbidden` on a rotation outside the line; with neither, `404` on all three. A session and an inheriting token reach every token of the owner. So a leaked token made
+  for one repository without these capabilities can end itself and what it or its rotation predecessors minted, never read or end
+  the owner's other credentials.
+  One signal remains in the time, not in the answer: the ID of a token of the owner outside the line costs one lineage query
+  (`DescendsFrom`) before its `404`, an unknown ID only the row lookup; both answer the same `404`.
+- **A narrowed token does not stop its owner's jobs.** A job records the principal that started it, not the credential.
+  `POST /api/v1/system/jobs/{id}/cancel` admits the starter through a session or an inheriting token; a token whose scope does not
+  inherit cancels only as a holder of `settings:write`, which the decision point decides with its scope (`mayCancel` in
+  [jobs_api.go](../../internal/api/v1/jobs_api.go), R-API-015, Q-API-215). Reading the job stays open to it, so a pipeline polls the
+  run it started.
 - **Two administrators do not overwrite each other.** A user, a group, a service account and the authentication settings carry a
   revision, the `ETag`; their `PATCH` requires `If-Match` (`428` without it, `412` with the current tag for a stale one), compared
   under the row lock of the principal or in the conditional update of the settings row (Q-AUTH-50). A restore raises the revision
@@ -149,7 +187,7 @@ the declarations are in `api/openapi.yaml` (Q-AUTH-43).
 - **A token shows where it is bound.** A token bound to endpoints that the configuration no longer holds lists the names under
   `unknownEndpoints`; it is valid on none of them (R-EP-011, Q-EP-24).
 - **Hidden existence.** A token the caller may neither see nor revoke answers `404`, so token IDs cannot be enumerated; a list shows the
-  caller's own tokens unless it holds `tokens:read`.
+  caller's own tokens (through a token whose scope does not inherit, only its line) unless it holds `tokens:read`.
 - **Revocation by value is open.** `POST /api/v1/tokens/revoke` takes no credential (Q-AUTH-6). It answers `202` for a live token, a dead one and
   an unknown well-formed value alike; only an administrator learns the owner (`200`). Each call counts in the limiter `auth.flow_starts`
   of the client address (an IPv6 address as its `/64`, Q-AUTH-90), cluster-wide.
@@ -227,7 +265,8 @@ caller's own tokens, never the named account's, unless the caller owns the accou
 account it does not administer shows its own personal tokens is the documented behaviour (R-AUTH-028, Q-AUTH-190), not a leak: it was
 reported once because a test expected an empty list. The behaviour is unchanged since before projects (`87b0e2e`: the filter is forced to
 the caller when `tokens:read` is missing). Who sees which tokens: a holder of `tokens:read` (`admin`, `security-admin`) every token, filtered by
-`owner`; an Owner of a project its own tokens and those of the accounts of that project; any other user its own tokens only. The
+`owner`; an Owner of a project its own tokens and those of the accounts of that project; any other user its own tokens only; and a
+caller through a token whose scope does not inherit only that token's line among its own tokens (Q-AUTH-199). The
 pinning test is `TestR_AUTHZ_026_OwnerServiceAccountsAndTokens` (the list for another account is the caller's own, the administrator's
 list is the account's alone, and another account's token answers 404 to the project Owner).
 

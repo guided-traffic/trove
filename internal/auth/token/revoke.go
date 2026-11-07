@@ -101,6 +101,25 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 	return out, nil
 }
 
+// DescendsFrom reports whether the token id is in the line of the token ancestor: whether its derived_from chain
+// leads to ancestor or to one of ancestor's rotation predecessors (the rotated_from chain; a successor carries its
+// predecessor's scope unchanged), so a rotated token keeps the tokens it created before. A token whose scope does not
+// inherit its owner's rights sees, revokes and rotates, by ownership, only itself and the tokens for which this is true
+// (R-AUTH-028 to R-AUTH-030, Q-AUTH-199). A token is not its own descendant, a predecessor is not in the line, and a chain
+// the retention task cut ends there: the answer fails closed.
+func (s *Service) DescendsFrom(ctx context.Context, id, ancestor string) (bool, error) {
+	if !principal.IsID(id) || !principal.IsID(ancestor) {
+		return false, nil
+	}
+	var out bool
+	err := s.o.DB.Read(ctx, func(db q.DBTX) error {
+		var err error
+		out, err = q.New(db).IdentityTokenDescendsFrom(ctx, q.IdentityTokenDescendsFromParams{ID: id, Ancestor: ancestor})
+		return err
+	})
+	return out, principal.DBErr("token.lineage", err)
+}
+
 // ByValue is the result of RevokeByValue.
 type ByValue struct {
 	// Found is true when a row with this secret exists, whether or not it was

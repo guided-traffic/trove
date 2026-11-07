@@ -635,7 +635,12 @@ type ListFilter struct {
 	// OwnerID restricts the list to one principal; a non-administrator's list is
 	// forced to the caller by the caller of List.
 	OwnerID string
-	Type    Type
+	// Line restricts the list to one token and its line, the tokens whose
+	// derived_from chain leads to it or to one of its rotation predecessors
+	// ([Service.DescendsFrom]): the list of a token whose scope does not inherit
+	// its owner's rights (R-AUTH-028, Q-AUTH-199). Empty lists every token of the filter.
+	Line string
+	Type Type
 	// State is active (default), expired, revoked or all.
 	State          string
 	ExpiresBefore  time.Time
@@ -667,7 +672,7 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Record, error) {
 	var out []Record
 	err := s.o.DB.Read(ctx, func(db q.DBTX) error {
 		rows, err := q.New(db).IdentityListTokens(ctx, q.IdentityListTokensParams{
-			After: f.After, OwnerID: f.OwnerID, Type: string(f.Type), State: state,
+			After: f.After, OwnerID: f.OwnerID, LineRoot: f.Line, Type: string(f.Type), State: state,
 			ExpiresBeforeUnix: unix(f.ExpiresBefore), ExpiresAfterUnix: unix(f.ExpiresAfter), LastUsedBeforeUnix: unix(f.LastUsedBefore),
 			MaxRows: int32(limit), //nolint:gosec // bounded above
 		})

@@ -49,16 +49,13 @@ func (s *Server) avatars() (AvatarService, error) {
 	return s.o.Avatars, nil
 }
 
-// avatarOwner answers 403 for a caller that is not a user: a service account or a CI token has no avatar.
+// avatarOwner answers 403 for a caller that is not a user: a service account or a CI token has no avatar. A token limited to
+// part of its owner's rights never gets here: the two operations declare x-trove-owner-rights, and the shared authorization
+// step refuses it (Q-API-213, Q-API-214).
 func avatarOwner(r *http.Request) (avatar.User, error) {
 	p := httpserver.PrincipalFrom(r.Context())
 	if p.Kind != httpserver.KindUser && p.Kind != httpserver.KindBreakGlass {
 		return avatar.User{}, errs.E(errs.Forbidden, errs.CodeForbidden, "Service accounts and CI tokens have no avatar.")
-	}
-	// A token whose scope is narrower than its owner's rights (a token made for one repository or one capability) does not
-	// change the owner's profile picture; a session and a token that inherits the owner's rights do (Q-API-211).
-	if sc := p.Credential.Scope; sc != nil && !sc.Inherit {
-		return avatar.User{}, errs.E(errs.Forbidden, errs.CodeForbidden, "A token limited to part of its owner's rights cannot change the avatar; sign in or use a token that inherits the owner's rights.")
 	}
 	return avatar.User{ID: p.ID, Name: p.Name}, nil
 }

@@ -66,8 +66,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `format.go` | Generate, `Check` (syntax step), `Hash`, `Hint` (R-AUTH-022) |
 | `scope.go` | aliases of the scope type (`Scope`, `ScopeGrant`, `Patterns`, `ScopeOptions`) and forwards (`ParseScope`, `DefaultScope`, `ParseStoredScope`); the type, `Parse` (validation, limits), `Marshal` and `Within` (the derivation rule) live in the leaf [internal/auth/scope](../../internal/auth/scope/scope.go), which the stage, `httpserver.Credential` and `authz.Subject` use as well. `scope.Options` (`ScopeOptions`) carries the cross-area checks (actions, system items, endpoints and the three pattern dimensions); `app.TokenScopeOptions` fills them from `authz.Actions()`, `authz.Capabilities()` and the authz validators (Q-AUTH-151). The `repositories` dimension is `authz.ValidateSelector`, which reads a selector in the instance context (`<projectGlob>/<keyGlob>[:<format>]` or `@any…`): a bare key is `400 invalid_scope` (R-AUTH-024, Q-AUTHZ-216) |
 | `lifetime.go` | `resolveLifetime` (R-AUTH-026) |
-| `service.go` | `Service`: `Create`, `Get`, `List`, the record types; `CreateRequest.Delegated` (an Owner of the project, without an administrator capability, issues the token of a project service account: no `system` item, `admin: false`, 422 `invalid_scope`; not self-rotatable, 422 `validation_failed` at `/selfRotatable`, Q-AUTH-192; both in `checkDelegated`; never non-expiring, capped at the SAT maximum, Q-AUTH-190); `token.created` and `token.revoked` carry the owner's `project`; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
-| `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade |
+| `service.go` | `Service`: `Create`, `Get`, `List` (`ListFilter.Line` narrows it to one token and its line: the tokens derived from it or from its rotation predecessors), the record types; `CreateRequest.Delegated` (an Owner of the project, without an administrator capability, issues the token of a project service account: no `system` item, `admin: false`, 422 `invalid_scope`; not self-rotatable, 422 `validation_failed` at `/selfRotatable`, Q-AUTH-192; both in `checkDelegated`; never non-expiring, capped at the SAT maximum, Q-AUTH-190); `token.created` and `token.revoked` carry the owner's `project`; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
+| `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade; `DescendsFrom` (whether a token's `derived_from` chain leads to another or to one of its rotation predecessors, the line of a narrowed token in the token API, Q-AUTH-199) |
 | `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected`; the type `bst` is refused here as unknown before the cache and the table (R-BAS-005) |
 | `bastion.go` | The Bastion token (type `bst`, R-BAS-004): `CreateBastion`/`CreateBastionTx` (the lifetime rule of `auth.tokens.bst`, the limit per registration under the owner lock), `RevokeBastionToken`, `RevokeAllOfBastionTx` (deleting a registration), `AuthenticateBastion` (the validation of the interface, through the cache `auth_tokens` and `BastionTokenBySecret`) |
 | `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040) |
@@ -270,13 +270,13 @@ The handlers pass `qname.Object{Project, Name}` to the `…Project…` methods o
 | `listTokens` with `owner=sa:<project>/<name>` | `Manager.ServiceAccountByRef` for the owner filter |
 
 | `createToken` | `POST /api/v1/tokens` | authenticated (handler: a user with a recent session, or a PAT under the derivation rule), idempotent |
-| `listTokens` | `GET /api/v1/tokens` | authenticated (own tokens; all with `tokens:read`) |
-| `getToken` | `GET /api/v1/tokens/{id}` | authenticated (404 for a token the caller may not see) |
+| `listTokens` | `GET /api/v1/tokens` | authenticated (own tokens, through a narrowed token only its line, `ListFilter.Line`; all with `tokens:read`) |
+| `getToken` | `GET /api/v1/tokens/{id}` | authenticated (404 for a token the caller may not see; a narrowed token sees only its line, `inLine` in `visible`) |
 | `getCurrentToken`, `revokeCurrentToken`, `rotateCurrentToken` | `GET`, `DELETE /api/v1/tokens/current`, `POST /api/v1/tokens/current/rotate` | authenticated (404 `not_a_token` for a session) |
-| `revokeToken` | `DELETE /api/v1/tokens/{id}` | authenticated (owner, or `tokens:revoke`) |
-| `rotateToken` | `POST /api/v1/tokens/{id}/rotate` | authenticated (owner of a PAT; administrator or the account itself for a SAT), idempotent |
+| `revokeToken` | `DELETE /api/v1/tokens/{id}` | authenticated (owner, through a narrowed token only its line, 404 otherwise; `tokens:revoke`; an Owner of the account's project) |
+| `rotateToken` | `POST /api/v1/tokens/{id}/rotate` | authenticated (owner of a PAT; administrator or the account itself for a SAT; a narrowed token only its line, 404 for a token it does not see and 403 for one it sees through `tokens:read`), idempotent |
 | `revokeTokenByValue` | `POST /api/v1/tokens/revoke` | public, counted in `auth.flow_starts` |
-| `revokeOwnTokens` | `DELETE /api/v1/users/me/tokens` | authenticated (a user) |
+| `revokeOwnTokens` | `DELETE /api/v1/users/me/tokens` | authenticated (a user), `x-trove-owner-rights` (a session or an inheriting token) |
 | `revokeUserTokens`, `revokeServiceAccountTokens` | `DELETE /api/v1/users/{username}/tokens`, `/service-accounts/{name}/tokens` | `tokens:revoke` |
 | `createServiceAccountToken` | `POST /api/v1/service-accounts/{name}/tokens` | authenticated (an administrator, or a token of the account), idempotent |
 | `getAuthSettings`, `updateAuthSettings` | `GET`, `PATCH /api/v1/settings/auth` | `settings:read`, `settings:write` |
@@ -294,7 +294,12 @@ How the pieces fit:
   handlers add the rules of the specification that need the record: the owner of a token, the derivation rule (`presenting` builds the
   parent `token.Info` from the token row), no impersonation, and `404` for what the caller may not see. A capability check is never
   repeated here, and neither is the recent sign-in of a session: the operations that mint a credential declare
-  `x-trove-recent-auth: true` and the shared step enforces it (R-AUTH-011, [http-api.md](http-api.md), Q-API-40).
+  `x-trove-recent-auth: true` and the shared step enforces it (R-AUTH-011, [http-api.md](http-api.md), Q-API-40). Nor is the scope of the
+  presenting token on the operations of the caller's own account: they declare `x-trove-owner-rights: required` and the shared step refuses
+  a token whose scope does not inherit (Q-API-214). The token operations keep one rule of that kind in the handler, because it needs the
+  record: a narrowed token sees, revokes and rotates by ownership only itself and the tokens derived from it (`inLine` in `visible`, so
+  any other token of the owner is a 404; `ListFilter.Line` for the list; `token.Service.DescendsFrom`; a rotation outside the line of a
+  token seen through `tokens:read` is 403 in `rotationParent`, Q-AUTH-199).
 - **Every management `GET` reads PostgreSQL.** The handlers call `Manager.Get*`, `Tokens.Get`, `Settings.Read` and the preference query,
   which read the database, never the replica's cache of the authentication stage (R-API-052).
 - **Merge patches** of users, groups and service accounts are decoded into structs of `json.RawMessage` members (`userPatchBody` and the
@@ -348,7 +353,9 @@ A user uploads a picture for their own record; the server keeps a new image made
   a stream the header does not bound.
 - **Tests.** Unit: `go test ./internal/avatar/` (fixtures in `testdata/`, made with a WebP encoder outside the repository; the
   animated ones are two-frame files). Integration, against the stack with the role `api`:
-  [test/integration/api/avatar_test.go](../../test/integration/api/avatar_test.go).
+  [test/integration/api/avatar_test.go](../../test/integration/api/avatar_test.go). The refusal of a token limited to part of its
+  owner's rights is the shared step's (`x-trove-owner-rights`, Q-API-214), not `avatarOwner`'s; its unit tests are in
+  [owner_rights_test.go](../../internal/api/v1/owner_rights_test.go).
 
 ## Bastion registrations and tokens (R-BAS-004, R-BAS-005)
 

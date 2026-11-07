@@ -90,7 +90,7 @@ deleted with its user.
 
 | Operation | Who | Why |
 |---|---|---|
-| `PUT /api/v1/users/me/avatar` | the user, or the break-glass account, by a session or by a token that inherits the owner's rights | the caller's own record; a service account or a CI token has no user record and answers `403`, and so does a token whose scope is narrower than its owner's rights (Q-API-213) |
+| `PUT /api/v1/users/me/avatar` | the user, or the break-glass account, by a session or by a token that inherits the owner's rights | the caller's own record; a service account or a CI token has no user record and answers `403`, and so does a token whose scope is narrower than its owner's rights: the two operations declare `x-trove-owner-rights` and the shared authorization step refuses such a token before the handler runs (Q-API-213, Q-API-214, [authorize.go](../../internal/api/v1/authorize.go)) |
 | `DELETE /api/v1/users/me/avatar` | the same | the same |
 | `DELETE /api/v1/users/{username}/avatar` | the holder of `identities:write` (the role `admin`) | moderation: an unwelcome picture can be taken down by someone other than its owner |
 | setting another user's avatar | nobody | an administrator cannot put a picture into another person's profile |

@@ -292,13 +292,20 @@ func (s *Server) CancelJob(w http.ResponseWriter, r *http.Request, id openapi_ty
 }
 
 // mayCancel is the rule of R-API-015: a caller with settings:write, or the one
-// who started the job. A reader who may see the job but not stop it gets 403.
+// who started the job. A reader who may see the job but not stop it gets 403. The
+// job records the principal that started it, not the credential, so the starter's
+// path admits a session and a token that inherits the principal's rights; a token
+// whose scope does not inherit cancels only through settings:write, which the
+// decision point decides with its scope (Q-API-215).
 func (s *Server) mayCancel(ctx context.Context, createdBy string) error {
 	admin, err := s.holds(ctx, string(authz.SettingsWrite))
 	if err != nil || admin {
 		return err
 	}
 	if createdBy != "" && createdBy == callerID(ctx) {
+		if narrowedToken(httpserver.PrincipalFrom(ctx)) {
+			return errs.E(errs.Forbidden, errs.CodeForbidden, "A token limited to part of its owner's rights cancels a job only with settings:write; sign in or use a token that inherits the owner's rights.")
+		}
 		return nil
 	}
 	return errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator or the caller who started the job may cancel it.")

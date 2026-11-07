@@ -1337,6 +1337,15 @@ func (q *Queries) IdentityListServiceAccounts(ctx context.Context, arg IdentityL
 }
 
 const identityListTokens = `-- name: IdentityListTokens :many
+WITH RECURSIVE roots(id) AS (
+    SELECT NULLIF($3::text, '')::uuid WHERE $3::text <> ''
+    UNION
+    SELECT t.rotated_from FROM api_token t JOIN roots ON t.id = roots.id WHERE t.rotated_from IS NOT NULL
+), line(id) AS (
+    SELECT c.id FROM api_token c JOIN roots ON c.derived_from = roots.id
+    UNION
+    SELECT c.id FROM api_token c JOIN line ON c.derived_from = line.id
+)
 SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kind AS owner_kind, p.name AS owner_name,
        t.description, t.scope, t.self_rotatable, t.created_at, coalesce(t.created_by::text, '')::text AS created_by,
        t.created_via, t.expires_at, t.revoked_at, coalesce(t.revoked_by::text, '')::text AS revoked_by,
@@ -1347,22 +1356,24 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
  WHERE t.type <> 'bst'
    AND ($1::text = '' OR t.id < $1::text::uuid)
    AND ($2::text = '' OR t.principal_id = $2::text::uuid)
-   AND ($3::text = '' OR t.type = $3::text)
-   AND (CASE $4::text
+   AND ($3::text = '' OR t.id = NULLIF($3::text, '')::uuid OR t.id IN (SELECT line.id FROM line))
+   AND ($4::text = '' OR t.type = $4::text)
+   AND (CASE $5::text
           WHEN 'active'  THEN t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())
           WHEN 'expired' THEN t.revoked_at IS NULL AND t.expires_at IS NOT NULL AND t.expires_at <= now()
           WHEN 'revoked' THEN t.revoked_at IS NOT NULL
           ELSE true END)
-   AND ($5::bigint = 0 OR t.expires_at < to_timestamp($5::bigint))
-   AND ($6::bigint = 0 OR t.expires_at > to_timestamp($6::bigint))
-   AND ($7::bigint = 0 OR t.last_used_at IS NULL OR t.last_used_at < to_timestamp($7::bigint))
+   AND ($6::bigint = 0 OR t.expires_at < to_timestamp($6::bigint))
+   AND ($7::bigint = 0 OR t.expires_at > to_timestamp($7::bigint))
+   AND ($8::bigint = 0 OR t.last_used_at IS NULL OR t.last_used_at < to_timestamp($8::bigint))
  ORDER BY t.id DESC
- LIMIT $8::int
+ LIMIT $9::int
 `
 
 type IdentityListTokensParams struct {
 	After              string
 	OwnerID            string
+	LineRoot           string
 	Type               string
 	State              string
 	ExpiresBeforeUnix  int64
@@ -1397,11 +1408,14 @@ type IdentityListTokensRow struct {
 }
 
 // Keyset order by id descending (a UUIDv7 sorts by creation time). Bastion tokens (type bst) are not listed: they
-// belong to a registration and are shown with it (R-BAS-004).
+// belong to a registration and are shown with it (R-BAS-004). A line root narrows the list to that token and the
+// tokens whose derived_from chain leads to it or to one of its rotation predecessors: what a token whose scope does
+// not inherit sees of its owner's tokens, the rule of IdentityTokenDescendsFrom (R-AUTH-028, Q-AUTH-199).
 func (q *Queries) IdentityListTokens(ctx context.Context, arg IdentityListTokensParams) ([]IdentityListTokensRow, error) {
 	rows, err := q.db.Query(ctx, identityListTokens,
 		arg.After,
 		arg.OwnerID,
+		arg.LineRoot,
 		arg.Type,
 		arg.State,
 		arg.ExpiresBeforeUnix,
@@ -2379,6 +2393,36 @@ func (q *Queries) IdentityTokenBySecretForRevoke(ctx context.Context, secretSha2
 		return nil, err
 	}
 	return items, nil
+}
+
+const identityTokenDescendsFrom = `-- name: IdentityTokenDescendsFrom :one
+WITH RECURSIVE roots(id) AS (
+    SELECT $1::text::uuid
+    UNION
+    SELECT t.rotated_from FROM api_token t JOIN roots ON t.id = roots.id WHERE t.rotated_from IS NOT NULL
+), up(id) AS (
+    SELECT t.derived_from FROM api_token t WHERE t.id = $2::text::uuid AND t.derived_from IS NOT NULL
+    UNION
+    SELECT t.derived_from FROM api_token t JOIN up ON t.id = up.id WHERE t.derived_from IS NOT NULL
+)
+SELECT EXISTS (SELECT 1 FROM up JOIN roots ON roots.id = up.id)::boolean AS descends
+`
+
+type IdentityTokenDescendsFromParams struct {
+	Ancestor string
+	ID       string
+}
+
+// Whether a token is in the line of another (R-AUTH-028 to R-AUTH-030, Q-AUTH-199): whether its derived_from chain
+// leads to that token or to one of that token's rotation predecessors (its rotated_from chain), whose successors carry
+// the identical scope. These are what a token whose scope does not inherit its owner's rights sees and acts on by
+// ownership besides itself. A token is not in its own line through this query, and a predecessor itself is not in it;
+// a chain whose next row the retention task has deleted ends there, so the answer fails closed (Q-AUTH-15).
+func (q *Queries) IdentityTokenDescendsFrom(ctx context.Context, arg IdentityTokenDescendsFromParams) (bool, error) {
+	row := q.db.QueryRow(ctx, identityTokenDescendsFrom, arg.Ancestor, arg.ID)
+	var descends bool
+	err := row.Scan(&descends)
+	return descends, err
 }
 
 const identityTokenLineageFacts = `-- name: IdentityTokenLineageFacts :many

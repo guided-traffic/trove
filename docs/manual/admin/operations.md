@@ -121,7 +121,7 @@ The screen cannot see disruption budgets or free capacity on other nodes, becaus
 
 ### Jobs
 
-**Jobs** lists background jobs newest first, filtered by **Kind (comma separated)** and **State** (queued, running, cancelling, succeeded, failed, cancelled). A holder of `settings:read` sees every job, anyone else only the jobs they started. **Cancel** is offered for queued and running jobs to holders of `settings:write` and to whoever started the job; a running job shows cancelling until it reaches its next checkpoint.
+**Jobs** lists background jobs newest first, filtered by **Kind (comma separated)** and **State** (queued, running, cancelling, succeeded, failed, cancelled). A holder of `settings:read` sees every job, anyone else only the jobs they started. **Cancel** is offered for queued and running jobs to holders of `settings:write` and to whoever started the job; a running job shows cancelling until it reaches its next checkpoint. Through the API, whoever started the job cancels it with a browser session or a token with all permissions of the owner; a token with a restricted scope needs `settings:write` in its scope (`403` otherwise).
 
 ### Backups
 

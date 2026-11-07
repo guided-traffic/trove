@@ -126,10 +126,12 @@ Useful calls with a token:
 |---|---|
 | `GET /api/v1/tokens/current` | Describes the token that authenticates the request |
 | `DELETE /api/v1/tokens/current` | Revokes that token, for example as the last step of a job |
-| `GET /api/v1/tokens` | Lists your tokens |
+| `GET /api/v1/tokens` | Lists your tokens; a token with a restricted scope lists itself and the tokens created with it |
 | `POST /api/v1/tokens` | Creates a token from the presenting personal token: same owner, a scope no broader, an expiry no later (`403` `derivation_exceeds_parent` otherwise) |
 
 A token created from another one is revoked when its parent is revoked.
+
+A token with a restricted scope (not **All permissions of the owner**) acts on your repositories as its scope allows, and on nothing else of your account. It cannot change your profile picture or your preferences, list or end your sessions, or revoke all your tokens (`403` `forbidden`); it reads your user record and preferences. Of your tokens it lists, reads, revokes and rotates only itself and the tokens created with it, also those its predecessor created before you rotated it; your other tokens answer `404` to it, so a leaked token made for one repository can neither see nor end them. If you are an administrator and give such a token the administrator scope (`admin: true`) or a capability such as revoking tokens, it can still reach your sessions and tokens through the administration routes (`/api/v1/users/<your username>/…`), as it can every user's. It does not cancel a job you started (`403`) and does not change the owners of your packages unless its scope lists `manage` on them. Sign in, or use a token with **All permissions of the owner**, for the rest.
 
 ## When a token expires
 

@@ -86,13 +86,13 @@ operations of [identity.md](identity.md#management-api) apply to the signed-in u
 |---|---|---|
 | `getLoginOptions` | `GET /api/v1/auth/login-options` | public, the session cookie ignored (Q-AUTH-177); `oidc.Service.LoginOptions` plus `anonymousAccess` from the cached settings |
 | `getWhoami` | `GET /api/v1/auth/whoami` | authenticated; the principal, its groups and the credential (a token's scope and expiry come from its row, a session shows `type: session`) |
-| `listOwnSessions` | `GET /api/v1/users/me/sessions` | authenticated (a user or the break-glass account); `current` is the session of the request |
-| `endOwnSession` | `DELETE /api/v1/users/me/sessions/{id}` | authenticated; `404` for a session of another user |
-| `endOwnSessions` | `DELETE /api/v1/users/me/sessions?keepCurrent=` | authenticated |
+| `listOwnSessions` | `GET /api/v1/users/me/sessions` | authenticated (a user or the break-glass account), `x-trove-owner-rights` (a session or an inheriting token); `current` is the session of the request |
+| `endOwnSession` | `DELETE /api/v1/users/me/sessions/{id}` | authenticated, `x-trove-owner-rights`; `404` for a session of another user |
+| `endOwnSessions` | `DELETE /api/v1/users/me/sessions?keepCurrent=` | authenticated, `x-trove-owner-rights` |
 | `listUserSessions` | `GET /api/v1/users/{username}/sessions` | `identities:read` |
 | `endUserSessions` | `DELETE /api/v1/users/{username}/sessions` | `identities:write` (`Store.EndPrincipalSessions`) |
 | `unlockBreakGlass` | `POST /api/v1/users/{username}/unlock` | role `admin` (`oidc.Unlock`, shared with `trove admin break-glass unlock`) |
-| `getPreferences`, `updatePreferences` | `GET`, `PATCH /api/v1/users/me/preferences` | authenticated (a user); `ETag` is `user_preferences.revision`, a user without a row has revision 1 |
+| `getPreferences`, `updatePreferences` | `GET`, `PATCH /api/v1/users/me/preferences` | authenticated (a user), the `PATCH` with `x-trove-owner-rights` (a session or an inheriting token); `ETag` is `user_preferences.revision`, a user without a row has revision 1 |
 
 `session.Store` gained `EndOne` and `EndExcept` (queries `EndSessionOfPrincipal` and `EndSessionsOfPrincipalExcept` in
 [login.sql](../../internal/meta/postgres/queries/login.sql)); each ends in one transaction with the change message of the area `auth`

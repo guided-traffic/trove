@@ -1561,6 +1561,12 @@ an encoded `/` in that segment.
   for a CI token, also when its project identity is an owner. A pipeline runs the install scripts
   of its dependencies, so a CI token must not be able to hand a package to another project; a
   transfer needs a person or a service account.
+- **An owner's narrowed token.** Being an owner is a fact about the principal, so a caller that
+  changes owners as an owner through a token whose scope does not inherit its rights (`inherit:
+  false`, also with `admin: true`) counts as an owner only where an element of the scope lists
+  `manage`, the action of package ownership (R-AUTHZ-006), on the repository and the name; elsewhere
+  it gets the 403 of any refused owner change. A session and an inheriting token keep the owner path.
+  `manage` and `content:bypass` are decided by the decision point with the scope as before (Q-AUTHZ-240).
 - npm's maintainer commands (PKG-NPM-022, P2) may later map onto these operations.
 
 Acceptance criteria:
@@ -1577,6 +1583,10 @@ curl -sS -X POST -H "Authorization: Bearer $LEAD_TOKEN" -H 'Content-Type: applic
 ```
 
 - Removing the only owner without `release=true` answers 409 `last_owner`.
+- A member of `team-web`, an owner of `@acme/scoped`, adds an owner through a token with the scope
+  `{"repositories": [{"repositories": ["web/npm-internal"], "packages": {"include": ["@acme/scoped"]},
+  "actions": ["manage"]}]}` (201); through a token whose scope lists only `deploy` there it gets 403
+  and the owners stay unchanged; through a session or a token with `inherit: true` it adds one (201).
 - A CI token of project 4711, owner of `@acme/frontend`, gets 403 `ci_token_restricted` on
   `POST …/packages/@acme%2Ffrontend/owners` with `{"owner":"ci:gitlab-internal:project:4712"}`, and
   the owners stay unchanged.
@@ -5419,6 +5429,38 @@ grants of its policies and its project.
 keeps a repository's deletion in the manifest itself.
 **Applied:** R-AUTHZ-031 table, R-HA-054 table and replay rules, R-BAS-015 table; `internal/audit/events_repository.go`,
 `internal/repository/service.go` (`recordAndNotify`), `internal/project/journal_replay.go`.
+
+### Q-AUTHZ-240 · An owner changes the owners of a name through a narrowed token only where its scope lists manage on the name
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an owner change (R-AUTHZ-019) is admitted to `manage` on the coordinate, to `content:bypass`, and to an owner of
+the name. The first two are decided by the decision point and so under the token's scope; the owner test compares the
+principal IDs of the subject with the owners and never looked at the scope. A token made for another repository, or for one
+system capability, could therefore add and remove the owners of every name its principal owns, and an added owner may
+publish the name where it holds `deploy` (R-AUTHZ-018). This is the class of Q-API-214 (a narrowed token acting on its
+owner's standing by identity), on a rule of this page.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The owner path of a narrowed token needs an element of its scope that lists `manage` on the repository and the name (chosen) | `scopeReachesName` in `changeAllowed` asks `scopeAdmits` for `manage` on the name, the scope part of the decision point without the grants | `manage` is the action R-AUTHZ-006 names for package ownership, so the scope of a token says in its own terms that it may administer the owners of these names; a publish token (`deploy`) cannot hand its owner's names over | An owner who scripts owner changes needs a token that lists `manage` on the names, or an inheriting one |
+| (b) The scope must list `deploy` on the name | A token that may publish the name may change its owners | Release pipelines that publish could also transfer | A leaked publish token, the most common token, could hand the name to another principal; ownership exists to stop exactly that |
+| (c) The scope must reach the repository with any action | The weakest reading of "reaches" | Fewest refusals | A read-only token of the repository could transfer every name its owner owns there |
+| (d) Owner changes need a session or an inheriting token | The rule of Q-API-214 | One rule | A narrowed token with `manage` on the name could not use it, although the scope names exactly that right |
+
+**Choice:** (a). The owner path is unchanged for a session and an inheriting token; `manage` held through the grants and
+`content:bypass` are decided as before; a name with no owner to ask still needs `manage` or `content:bypass`. A refusal is
+the 403 of any refused owner change, before the owner reference is looked up, and counted and audited as every refused
+owner change is (`refuseChange`). The rule applies to the owner path of the change operations only: a publish already needs
+`deploy` through the decision point with the scope, and reading the owners stays a read.
+
+**Rationale:** the scope is a promise that a token does only what it was made for; handing a name to another principal is
+the ownership administration that `manage` names, and an owner's standing does not widen what a token may do. The
+development agent would revisit (b) if publishing pipelines turn out to need to transfer names as part of a release.
+
+**Applied:** R-AUTHZ-019 (the narrowed token, acceptance); `internal/authz/ownership.go` (`changeAllowed`, `scopeReachesName`),
+`api/openapi.yaml` (`addPackageOwner`), [permissions.md](../security/permissions.md). Tests:
+`TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage` (unit and integration).
 
 ## What this does not cover
 

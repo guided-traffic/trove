@@ -379,6 +379,11 @@ func (s *Server) ListTokens(w http.ResponseWriter, r *http.Request, _ gen.ListTo
 	if err == nil {
 		f.OwnerID, empty, err = s.listOwner(ctx, p, all, lq.First("owner"))
 	}
+	if err == nil && !all && f.OwnerID == p.ID && narrowedToken(p) {
+		// A token whose scope does not inherit lists of its owner's tokens only itself and the
+		// tokens derived from it, the ones it may see (Q-AUTH-199).
+		f.Line = p.Credential.TokenID
+	}
 	if err != nil {
 		failIdentity(w, r, err)
 		return
@@ -452,10 +457,14 @@ func ignoreNotFound(err error) error {
 }
 
 // visible reports whether the caller may see a token: its owner, or a holder of tokens:read. A token it
-// may not see is a 404, so that IDs cannot be enumerated (R-AUTH-028).
+// may not see is a 404, so that IDs cannot be enumerated (R-AUTH-028). The owner sees it through a session
+// or an inheriting token; through a token whose scope does not inherit, only that token and the tokens
+// derived from it (inLine, Q-AUTH-199), and any other token of the owner only as a holder of the capability.
 func (s *Server) visible(ctx context.Context, p httpserver.Principal, rec token.Record, capability string, ownerSees bool) (bool, error) {
 	if rec.Owner.ID == p.ID && p.ID != "" {
-		return true, nil
+		if in, err := s.inLine(ctx, p, rec); err != nil || in {
+			return in, err
+		}
 	}
 	if held, err := s.holdsCapability(ctx, capability); err != nil || held {
 		return held, err
@@ -528,8 +537,28 @@ func noContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// inLine reports whether a token of the caller's own principal is within the caller's reach by ownership
+// (R-AUTH-028 to R-AUTH-030, Q-AUTH-199): every token of the owner for a session and an inheriting token; for a
+// token whose scope does not inherit its owner's rights, only that token and the tokens whose derived_from chain
+// leads to it or to one of its rotation predecessors (token.Service.DescendsFrom): what it and the token it replaced
+// created.
+func (s *Server) inLine(ctx context.Context, p httpserver.Principal, rec token.Record) (bool, error) {
+	if !narrowedToken(p) || rec.ID == p.Credential.TokenID {
+		return true, nil
+	}
+	return s.o.Auth.Tokens.DescendsFrom(ctx, rec.ID, p.Credential.TokenID)
+}
+
+// lineageRefusal is the refusal of a rotation through a token whose scope does not inherit, of a token of its
+// owner outside its line that it sees through tokens:read; one it does not see is a 404 (Q-AUTH-199).
+func lineageRefusal() error {
+	return errs.E(errs.Forbidden, errs.CodeForbidden, "A token limited to part of its owner's rights rotates only itself and the tokens derived from it; sign in or use a token that inherits the owner's rights.")
+}
+
 // RevokeToken implements DELETE /api/v1/tokens/{id} (R-AUTH-029): the owner, an
-// administrator or a holder of tokens:revoke.
+// administrator or a holder of tokens:revoke. A token of the owner whose scope does
+// not inherit the owner's rights reaches only itself and its derived tokens; any
+// other token of the owner is a 404 to it unless it holds tokens:revoke (visible).
 func (s *Server) RevokeToken(w http.ResponseWriter, r *http.Request, id string) {
 	if !s.identityReady(w, r) {
 		return
@@ -713,7 +742,9 @@ func (s *Server) RotateToken(w http.ResponseWriter, r *http.Request, id string, 
 
 // rotationParent decides who may rotate a token and returns the presenting token
 // whose limits then apply (R-AUTH-030). Nobody rotates a token for another user:
-// the new value would act as that user (Q-AUTH-7).
+// the new value would act as that user (Q-AUTH-7). A token of the owner whose scope
+// does not inherit the owner's rights rotates only itself and its derived tokens
+// (inLine, Q-AUTH-199); tokens:read lets it see the others, not rotate them.
 func (s *Server) rotationParent(ctx context.Context, p httpserver.Principal, rec token.Record) (*token.Info, error) {
 	forbidden := errs.E(errs.Forbidden, errs.CodeForbidden, "Only the owner rotates a personal token; an administrator can revoke it.")
 	switch rec.Type {
@@ -723,20 +754,33 @@ func (s *Server) rotationParent(ctx context.Context, p httpserver.Principal, rec
 		if rec.Owner.ID != p.ID {
 			return nil, forbidden
 		}
+		if in, err := s.inLine(ctx, p, rec); err != nil || !in {
+			return nil, firstErr(err, lineageRefusal())
+		}
 		return s.presenting(ctx, p)
 	}
-	// A service-account token: its own token under the derivation rule, or an administrator.
-	if p.Kind == httpserver.KindServiceAccount && p.ID == rec.Owner.ID && tokenAuthenticated(p) {
-		return s.presenting(ctx, p)
+	// A service-account token: its own token under the derivation rule (a narrowed one only itself and its
+	// derived tokens), or an administrator.
+	own := p.Kind == httpserver.KindServiceAccount && p.ID == rec.Owner.ID && tokenAuthenticated(p)
+	if own {
+		in, err := s.inLine(ctx, p, rec)
+		if err != nil {
+			return nil, err
+		}
+		if in {
+			return s.presenting(ctx, p)
+		}
 	}
 	admin, err := s.holds(ctx, "role:admin")
-	if err != nil {
+	switch {
+	case err != nil:
 		return nil, err
+	case admin:
+		return nil, nil
+	case own:
+		return nil, lineageRefusal()
 	}
-	if !admin {
-		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, or a token of the account itself, rotates a service-account token.")
-	}
-	return nil, nil
+	return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "Only an administrator, or a token of the account itself, rotates a service-account token.")
 }
 
 // RotateCurrentToken implements POST /api/v1/tokens/current/rotate (R-AUTH-030):

@@ -134,7 +134,9 @@ decoder. The tests `TestR_AUTH_014_LocalLoginEdge` pin the order.
 
 [sessions_api.go](../../internal/api/v1/sessions_api.go), [test/integration/login/api_test.go](../../test/integration/login/api_test.go).
 
-- A user lists and ends its own sessions (`/users/me/sessions`), also with a personal token; a service account and a CI token answer `403`.
+- A user lists and ends its own sessions (`/users/me/sessions`) through a session or a personal token that inherits the owner's rights; a
+  token whose scope does not (`inherit: false`) answers `403` from the shared authorization step (`x-trove-owner-rights`, Q-API-214), and
+  so do a service account and a CI token. The list names the addresses and user agents of the other logins, which no scope names.
   A session of another user, an ended one and an unknown ID answer `404`, so session IDs are not probed.
   `current` marks the session that made the request.
 - An administrator reads the sessions of a user with `identities:read` and ends them with `identities:write`

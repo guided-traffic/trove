@@ -823,12 +823,23 @@ func refuseForeignAccount(ctx context.Context, qs *q.Queries, r Ref, id, repoPro
 // transaction read under the row lock: an owner, manage on the coordinate or
 // content:bypass; with no owner left to ask (unclaimed, released, or claimed
 // after the last owner was deleted) manage or content:bypass, and so for a
-// release.
+// release. An owner that presents a token whose scope does not inherit passes as
+// an owner only where that scope admits manage on the name (scopeReachesName).
 func (o *Ownership) changeAllowed(ctx context.Context, idx *Index, sub Subject, k ownKey, owners []Owner, needManage bool) error {
-	if o.manages(idx, sub, k.repo.Name, k.name) || (!needManage && owns(idx, sub, owners)) {
+	if o.manages(idx, sub, k.repo.Name, k.name) || (!needManage && owns(idx, sub, owners) && o.scopeReachesName(sub, k)) {
 		return nil
 	}
 	return o.refuseChange(ctx, idx, sub, k.repo.Name, k.name)
+}
+
+// scopeReachesName is the token scope's part in the owner path of an owner change
+// (R-AUTHZ-019, Q-AUTHZ-240): the owner test compares principals, so a token whose
+// scope does not inherit its owner's rights counts as an owner of a name only where
+// an element of its scope lists manage, the action of package ownership
+// (R-AUTHZ-006), on the repository and the name. A session and an inheriting token
+// carry no such limit.
+func (o *Ownership) scopeReachesName(sub Subject, k ownKey) bool {
+	return o.e.scopeAdmits(sub.Scope, Manage, k.repo, false, k.name, "")
 }
 
 // AddOwner adds an owner to a name (POST …/owners) in a transaction of its own;

@@ -874,9 +874,9 @@ API:
 
 | Method and path | Purpose | Permission | Status codes |
 |---|---|---|---|
-| `GET /api/v1/users/me/sessions` | List own active sessions: `id`, `createdAt`, `lastSeenAt`, `createdAddr`, `userAgent`, `authMethod`, `providerId`, `current` | session or token of the user | 200 |
-| `DELETE /api/v1/users/me/sessions/{id}` | End one own session | same | 204, 404 |
-| `DELETE /api/v1/users/me/sessions?keepCurrent=true` | End all own sessions, optionally except the current one | same | 204 |
+| `GET /api/v1/users/me/sessions` | List own active sessions: `id`, `createdAt`, `lastSeenAt`, `createdAddr`, `userAgent`, `authMethod`, `providerId`, `current` | session, or token of the user that inherits the owner's rights (R-AUTH-024) | 200, 403 |
+| `DELETE /api/v1/users/me/sessions/{id}` | End one own session | same | 204, 403, 404 |
+| `DELETE /api/v1/users/me/sessions?keepCurrent=true` | End all own sessions, optionally except the current one | same | 204, 403 |
 | `GET /api/v1/users/{username}/sessions` | List a user's sessions | administrator | 200, 404 |
 | `DELETE /api/v1/users/{username}/sessions` | End all of a user's sessions | administrator | 204, 404 |
 
@@ -1968,6 +1968,17 @@ the membership. There
 is no per-repository configuration type either: repository configuration rights are system capabilities, which apply in
 every project, or come from the Owner role of a project ([authorization.md](authorization.md) R-AUTHZ-026).
 
+**Operations on the owner's own account.** A scope names repository, system and build rights; it names no right
+over the owner's own profile. A token whose scope does not inherit (`inherit: false`, also with `admin: true` or a
+`system` list) therefore cannot change the owner's avatar, preferences or sessions, list the sessions, or revoke
+all the owner's tokens; the operations answer `403 forbidden`. A session and a token with `inherit: true` can. The
+rule is the `x-trove-owner-rights` declaration of the OpenAPI document, enforced by the shared step before the
+handler ([api-and-ui.md](api-and-ui.md) R-API-021, Q-API-214). Creating a token follows the derivation rule of
+R-AUTH-027 instead. Listing, reading, revoking and rotating the owner's tokens follow the line of R-AUTH-028 to
+R-AUTH-030: a token whose scope does not inherit sees and acts on, by ownership, only itself and the tokens derived
+from it (Q-AUTH-199). The package owner changes and the cancellation of a job have rules of their own for such a token
+([authorization.md](authorization.md) R-AUTHZ-019, Q-AUTHZ-240; [api-and-ui.md](api-and-ui.md) R-API-015, Q-API-215).
+
 **Validation and defaults:**
 
 - At most 50 grants (elements of `repositories` and `builds` together), and at most 16 KiB of
@@ -2268,6 +2279,12 @@ Priority: **MVP** · Covers: TOK-026, TOK-027, TOK-028, ADMAPI-043, ADMAPI-044
 
 - Non-administrators see only their own tokens. Their `owner` is forced to `me`; from P1, owned
   service accounts are added.
+- **The line of a narrowed token.** Through a token whose scope does not inherit the owner's rights
+  (`inherit: false`, also with `admin: true`), the own tokens are that token and its line: the
+  tokens whose `derived_from` chain leads to it or to one of its rotation predecessors, so a rotated
+  token keeps what it created before. The list shows only those, and `GET /api/v1/tokens/{id}` of any
+  other token of the owner answers 404 like a token that does not exist (Q-AUTH-199). A session and
+  an inheriting token see every token of the owner.
 - Administrators, and tokens with `tokens:read`, see all tokens.
 
 **Inspect:**
@@ -2294,6 +2311,10 @@ Acceptance criteria:
   PAT answers 404.
 - `curl -H "Authorization: Bearer $PAT" https://trove.test/api/v1/tokens/current` returns that
   token's `expiresAt` and scope.
+- `alice`'s PAT with scope `{"repositories": [{"repositories": ["web/npm-local"], "actions": ["read"]}]}`
+  derives a child. `GET /api/v1/tokens` with that PAT lists the PAT and its child only, and
+  `GET /api/v1/tokens/{id}` of another PAT of `alice` answers 404; through a session of `alice` both
+  list and read show every token of hers.
 
 ### R-AUTH-029 · Token revocation
 Priority: **MVP** · Covers: TOK-030, TOK-031, TOK-032, ADMAPI-045, ADMAPI-046
@@ -2302,9 +2323,9 @@ Priority: **MVP** · Covers: TOK-030, TOK-031, TOK-032, ADMAPI-045, ADMAPI-046
 
 | Method and path | Effect | Caller | Status codes |
 |---|---|---|---|
-| `DELETE /api/v1/tokens/{id}` | Revoke one token | owner, owner of the service account (P1), administrator, `tokens:revoke` | 204, 404 |
+| `DELETE /api/v1/tokens/{id}` | Revoke one token | owner (through a token whose scope does not inherit, only that token and the tokens derived from it), owner of the service account (P1), administrator, `tokens:revoke` | 204, 403 (a CI token), 404 |
 | `DELETE /api/v1/tokens/current` | Revoke the presenting token, reason `owner` | any token: PAT, SAT or CIT | 204 |
-| `DELETE /api/v1/users/me/tokens` | Revoke all own tokens | user | 204 |
+| `DELETE /api/v1/users/me/tokens` | Revoke all own tokens | user: a session, or a token that inherits the owner's rights (R-AUTH-024) | 204, 403 |
 | `DELETE /api/v1/users/{username}/tokens`, `DELETE /api/v1/service-accounts/{name}/tokens` | Revoke all tokens of a principal | administrator | 204, 404 |
 | `DELETE /api/v1/projects/{projectKey}/service-accounts/{name}/tokens` | Revoke all tokens of a project's service account | administrator, `tokens:revoke`, an Owner of the project | 204, 404 |
 | `POST /api/v1/tokens/revoke` | Revoke by value: `{"token": "trv_…"}` | anyone; no authentication needed | 202; 200 with `{"id", "owner"}` for administrators; 400 if the syntax check fails |
@@ -2345,6 +2366,12 @@ already rotated value revoke the live successor; that is deliberate. Its rules:
   type, CI tokens included, with revocation reason `owner`; `revoked_by` is the token's owner
   principal. [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-028 asserts this reason for the
   self-revocation that ends each job's `script` (Q-CI-7).
+- **The line of a narrowed token.** A caller that revokes a token as its owner through a token whose scope does not
+  inherit the owner's rights (`inherit: false`, also with `admin: true`) reaches only the presenting token and its
+  line of R-AUTH-028: the tokens whose `derived_from` chain leads to it or to one of its rotation predecessors. Any other token of
+  the same owner, a sibling, the parent or an inheriting token, is not visible to it and answers 404 (R-AUTH-028),
+  unless the scope holds `tokens:revoke`, which admits the caller for every owner's token. A session and an
+  inheriting token revoke every token of the owner. The rule holds for PATs and SATs alike (Q-AUTH-199).
 - CITs are revoked by administrators, by themselves through `current` (above), or by disabling or
   deleting their identity mapping or CI issuer ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-017).
 - Creating a token never revokes another one.
@@ -2365,6 +2392,9 @@ Acceptance criteria:
 - A SAT is rotated with `overlapSeconds: 0`, so the predecessor is already revoked with reason
   `rotated`. Posting the predecessor's value to `POST /api/v1/tokens/revoke` answers 202, and the
   successor fails with 401 within the revocation bound.
+- `alice`'s PAT with scope `{"repositories": [{"repositories": ["web/npm-local"], "actions": ["read"]}]}`
+  derives a child and revokes it (204). `DELETE /api/v1/tokens/{id}` of another PAT of `alice` with the same
+  PAT answers 404 and the other PAT keeps working; through a session of `alice` it answers 204.
 
 ### R-AUTH-030 · Token rotation
 Priority: **P1** · Covers: TOK-024
@@ -2383,8 +2413,8 @@ R-AUTH-027, not the revocation rules of R-AUTH-029:
 
 | Endpoint | Token | Callers |
 |---|---|---|
-| `POST /api/v1/tokens/{id}/rotate` | PAT | Only its owner: through a session with recent authentication (R-AUTH-011), or through another token of the owner under the derivation rule (R-AUTH-027), so the rotated token's scope and new expiry must not exceed the presenting token's (403 `derivation_exceeds_parent`) |
-| `POST /api/v1/tokens/{id}/rotate` | SAT | Administrators (session with recent authentication, or token with `admin: true`), owners of the service account (P1), or a SAT of that account under the derivation rule |
+| `POST /api/v1/tokens/{id}/rotate` | PAT | Only its owner: through a session with recent authentication (R-AUTH-011), or through a token of the owner under the derivation rule (R-AUTH-027), so the rotated token's scope and new expiry must not exceed the presenting token's (403 `derivation_exceeds_parent`). A presenting token whose scope does not inherit the owner's rights rotates only itself and its line (R-AUTH-028): any other token of the owner answers 404 as a token it does not see, or 403 `forbidden` when its scope's `tokens:read` lets it see the token (Q-AUTH-199) |
+| `POST /api/v1/tokens/{id}/rotate` | SAT | Administrators (session with recent authentication, or token with `admin: true`), owners of the service account (P1), or a SAT of that account under the derivation rule; a SAT whose scope does not inherit the account's rights only on itself and its line, with the answers of the PAT row (Q-AUTH-199). Outside its line it still rotates as an administrator when it is one (the account holds the administrator role and the scope has `admin: true`); that rotation has no presenting parent, so the successor keeps the predecessor's lineage and no derivation limits apply, as for an administrator's session |
 | `POST /api/v1/tokens/current/rotate` | PAT or SAT | The token itself, only if it was created with `selfRotatable: true`. This is the one case in which a token extends its own lifetime; the holder opted in at creation. |
 
 Nobody else may rotate. Administrators and holders of the system item `tokens:revoke` can revoke
@@ -2426,9 +2456,16 @@ Acceptance criteria:
 - An administrator's session with recent authentication gets 403 `forbidden` from
   `POST /api/v1/tokens/{id of alice's PAT}/rotate`; `DELETE /api/v1/tokens/{same id}` succeeds.
   A token whose scope is `{"system": ["tokens:revoke"]}` behaves the same way.
+- `alice`'s PAT with scope `{"inherit": true}` gets 403 `derivation_exceeds_parent` when it rotates
+  her PAT with `{"inherit": true, "admin": true}`.
 - `alice`'s PAT with scope `{"repositories": [{"repositories": ["web/npm-local"], "actions":
-  ["read"]}]}` gets 403 `derivation_exceeds_parent` when it rotates her PAT with
-  `{"inherit": true}`.
+  ["read"]}]}` gets 404 when it rotates any token of hers that is not derived from it, also one with
+  the same scope and a shorter lifetime, and 403 `forbidden` when its scope adds `tokens:read` and her
+  roles grant it; it rotates a child derived from it (201), and the successor is derived from the
+  presenting PAT.
+- Such a PAT, created through a session with `selfRotatable: true`, derives a child and rotates itself
+  with `overlapSeconds: 3600`; its successor reads, rotates and revokes the child, and answers 404 for
+  the predecessor itself.
 
 ### R-AUTH-031 · Last-used tracking
 Priority: **P1** · Covers: TOK-029
@@ -5494,6 +5531,68 @@ growth from mass revocations becomes a retention problem.
 `internal/audit/recorder.go`, `queries/audit.sql` (`InsertRevocationOutbox` takes a batch), `internal/api/v1/audit_source.go`,
 `internal/auth/principal/token_events.go`, `manager.go`, `serviceaccounts.go`, `groups.go`, `journal_replay.go`,
 `internal/auth/token/revoke.go`, `bastion.go`, `internal/bastionmain/feed.go` (`group.updated` yields no feed entry).
+
+### Q-AUTH-199 · A token whose scope does not inherit sees, revokes and rotates only itself and the tokens derived from it
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the token operations admitted the owner of a token by ownership alone. `DELETE /api/v1/tokens/{id}` revoked any
+token of the caller's principal, `POST /api/v1/tokens/{id}/rotate` rotated any PAT of the owner (and a SAT of the same
+account) whose scope was within the presenting token's, and `GET /api/v1/tokens` and `GET /api/v1/tokens/{id}` showed
+every token of the owner with its description, scope and `lastUsedAddr`. None asked whether the presenting token's scope
+inherits, so a token made for one repository could end its owner's other credentials, replace one of them with a value
+only its holder knows (a rotation ends the old value after the overlap), and learn from which addresses the others are
+used, which Q-API-214 closes for the session list. Q-API-214 closed the operations on the owner's account with a route
+attribute; these four need the record of the target (whose token, derived from which), so a route attribute cannot
+express their rule. The rule belongs to R-AUTH-028 to R-AUTH-030, so it is recorded on this page.
+
+Which tokens a narrowed token reaches:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Its line: itself and the tokens whose `derived_from` chain leads to it or to one of its rotation predecessors (its `rotated_from` chain); another token of the owner needs a session, an inheriting token, or the capability that admits any owner's token (chosen) | One read of the chains (`IdentityTokenDescendsFrom`, `token.Service.DescendsFrom`) where the owner path admits the caller; the list filtered by the same chains in SQL (`ListFilter.Line`) | Without the predecessors it is the set the token's own revocation ends with it (the cascade of R-AUTH-029); the predecessors add what the token it replaced minted, which a successor may reach because a rotation keeps the scope unchanged, so a self-rotating token does not lose the children it made for a job; a token that minted a child still sees, ends or renews it | A narrowed token cannot clean up a sibling it did not mint; the owner signs in for that. The line is wider than the revocation cascade by the predecessors' children: revoking the successor does not end them, revoking the predecessor does |
+| (b) Itself only | No lineage read | The smallest reach | A script that derives a short-lived child for a job cannot revoke it after the job, although revoking itself would end the child anyway |
+| (c) The owner-rights rule of Q-API-214: a narrowed token is refused on every token but the presenting one | The same rule as the profile operations | One rule | As (b); and the rotation of a child, which the derivation rule already bounds, would be lost |
+| (d) Bound only the rotation | Rotation is the path that hands out a new value | Smallest change | A leaked narrowed token still ends and reads every other credential of its owner |
+
+How a token outside the line answers:
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (e) 404, as a token the caller may not see, on the list, the read, the revocation and the rotation (chosen) | The line is part of `visible`; the list leaves the others out | R-AUTH-028 already answers 404 for a token the caller may not see, so token IDs cannot be enumerated; one answer for all four operations, so a revocation does not tell what a read hides | A client cannot tell "not yours to touch" from "does not exist" |
+| (f) 403 `forbidden` on the revocation and the rotation, the token readable | The first build of this decision | A precise refusal | Contradicts R-AUTH-028 once the read is narrowed: a 403 on `DELETE` would reveal a token that `GET` answers 404 for |
+
+**Choice:** (a) with (e). A token is narrowed when its scope does not inherit the owner's rights (`inherit: false`, also
+with `admin: true`); the rule applies where the owner path admits the caller, so a target owned by another principal is
+decided as before (`tokens:read` or `tokens:revoke` through the decision point, an Owner of the account's project). A
+narrowed token whose scope holds `tokens:read` sees, and one whose scope holds `tokens:revoke` revokes, its owner's tokens
+as it does anyone's: the capability is named by its scope, and `DELETE /api/v1/users/{username}/tokens` would reach them
+anyway. A rotation has no such way in: a token outside the line that the caller sees through `tokens:read` answers 403
+`forbidden`, which reveals nothing the read did not; a narrowed SAT of an account with the administrator role whose scope
+has `admin: true` rotates a sibling as an administrator, without the derivation limits, as an administrator's session
+would. The line follows `derived_from` downwards from the presenting token and from each of its rotation predecessors:
+a token keeps what it created across its own rotations (a successor carries the identical scope), a predecessor itself is
+not part of the line (it ends with its overlap), and a token of the line rotated through an inheriting token leaves it,
+because the successor is derived from the rotating token (Q-AUTH-89); rotated through a session it stays, because there is
+no presenting token and the successor keeps the predecessor's `derived_from`. When an inheriting token rotates a token of
+the line and the successor goes to another holder, the predecessor's children are reachable by both, through the line and
+through the successor's predecessor; they keep their scope, so this widens who holds them, not what they can do. A chain the retention task cut ends at the
+missing row, so the answer fails closed. `GET /api/v1/tokens/current` and `GET /api/v1/auth/whoami` show the presenting
+token itself and are not affected.
+
+**Rationale:** the scope is a promise that a token does only what it was made for; reading, ending or replacing the
+owner's other credentials is not that, and what belongs to a token is what it minted, the set the revocation cascade
+already defines, together with what its rotation predecessors minted, which it holds with the identical scope. The development agent
+would revisit (b) if a derived token turns out to be handed to parties the parent's holder should not be able to stop.
+
+**Applied:** R-AUTH-024 (operations on the owner's account), R-AUTH-028 (visibility, acceptance), R-AUTH-029 (table,
+the line, acceptance), R-AUTH-030 (table, acceptance); `queries/identity.sql` (`IdentityTokenDescendsFrom`, the `line_root`
+filter of `IdentityListTokens`), `internal/auth/token/revoke.go` (`Service.DescendsFrom`), `internal/auth/token/service.go`
+(`ListFilter.Line`), `internal/api/v1/tokens_api.go` (`inLine` in `visible`, `ListTokens` and `rotationParent`),
+`api/openapi.yaml` (`listTokens`, `getToken`, `revokeToken`, `rotateToken`), [tokens-and-credentials.md](../security/tokens-and-credentials.md).
+Tests: `TestR_AUTH_028_ANarrowedTokenSeesItselfAndItsDerivedTokensOnly` (a token that leaves the line, a cut chain),
+`TestR_AUTH_029_ANarrowedTokenRevokesItselfAndItsDerivedTokensOnly`, `TestR_AUTH_030_ANarrowedTokenRotatesItselfAndItsDerivedTokensOnly`
+(the line across a self-rotation, a narrowed SAT with `tokens:read`, an administrator account's `admin: true` SAT).
 
 ## What this does not cover
 

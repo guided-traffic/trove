@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
 )
 
@@ -213,4 +214,53 @@ func TestR_AUTHZ_019_OwnIdentity(t *testing.T) {
 			t.Errorf("R-AUTHZ-019 %s as %s: %v, want %v", tc.ref, tc.sub.Name, got, tc.want)
 		}
 	}
+}
+
+// TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage: the owner path of an owner change compares
+// principals, so a token whose scope does not inherit its owner's rights counts as an owner only where its scope lists
+// manage on the repository and the name; a session and an inheriting token keep the owner path (Q-AUTHZ-240).
+func TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage(t *testing.T) {
+	o, idx := newOwnershipEngine(t)
+	k, _, _ := o.keyOf(idx, publish("npm-internal", "@web/new-lib"))
+	webOwner := []Owner{{Owner: "group:team-web", principalID: idWeb}}
+	grant := func(repo, pkg string, actions ...string) scope.Grant {
+		g := scope.Grant{Repositories: []string{repo}, Actions: actions}
+		if pkg != "" {
+			g.Packages = scope.Patterns{Include: []string{pkg}}
+		}
+		return g
+	}
+	cases := []struct {
+		name    string
+		sub     Subject
+		allowed bool
+	}{
+		{"a session of an owner", aliceSub, true},
+		{"an inheriting token of an owner", tokenScop(aliceSub, scope.Scope{Inherit: true}), true},
+		{"a token whose scope lists manage on the repository", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-internal", "", "manage")}}), true},
+		{"a token whose scope lists manage on the name", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-internal", "@web/*", "read", "manage")}}), true},
+		{"a token whose scope lists deploy only", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-internal", "", "read", "deploy")}}), false},
+		{"a token whose scope lists manage on other names", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-internal", "@mobile/*", "manage")}}), false},
+		{"a token whose scope lists manage on another repository", tokenScop(aliceSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-loose", "", "manage")}}), false},
+		{"a token limited to one capability", tokenScop(aliceSub, scope.Scope{System: []string{"settings:read"}}), false},
+		{"a token with admin: true and inherit: false", tokenScop(aliceSub, scope.Scope{Admin: true}), false},
+		{"a manage holder's narrowed token that lists manage", tokenScop(carolSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-internal", "", "manage")}}), true},
+		{"a manage holder's narrowed token that lists deploy only", tokenScop(carolSub, scope.Scope{Repositories: []scope.Grant{grant("it/npm-internal", "", "deploy")}}), false},
+	}
+	for _, tc := range cases {
+		t.Run("R-AUTHZ-019 "+tc.name, func(t *testing.T) {
+			err := o.changeAllowed(t.Context(), idx, tc.sub, k, webOwner, false)
+			if (err == nil) != tc.allowed {
+				t.Fatalf("err = %v, want allowed %v", err, tc.allowed)
+			}
+			if e, ok := errs.As(err); err != nil && (!ok || e.Status() != 403) {
+				t.Fatalf("the refusal is %v, want 403", err)
+			}
+		})
+	}
+	t.Run("R-AUTHZ-019 a name without an owner to ask still needs manage, also from an owner's inheriting token", func(t *testing.T) {
+		if err := o.changeAllowed(t.Context(), idx, tokenScop(aliceSub, scope.Scope{Inherit: true}), k, nil, true); err == nil {
+			t.Fatal("admitted")
+		}
+	})
 }
