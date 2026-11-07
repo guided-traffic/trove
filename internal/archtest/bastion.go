@@ -67,6 +67,7 @@ func bastionTransitive() map[string]transitiveEntry {
 		"internal/ci/claims":       {httpserver, viaHTTP + "the frozen CI claims of the request's Principal (principal.go)"},
 		"internal/ci/reason":       {httpserver, viaHTTP + "the reasons of the claims package, which the Principal's type reaches"},
 		"internal/backup/target":   {[]string{"internal/blob/s3"}, "internal/blob/s3 implements the backup target port (target.go, target_writer.go, target_copy.go) in the package that owns the AWS SDK; the Bastion's cache uses the S3 client only, never the target"},
+		"internal/backup/format":   {[]string{"internal/blob/s3"}, "internal/blob/s3 names the digest type of the restore's blob sink (blobsink.go) in the package that owns the AWS SDK; the Bastion's cache uses the S3 client only, never the sink"},
 		"internal/blob":            {[]string{"internal/blob/s3"}, "internal/blob/s3 implements the blob store interface of the main installation; the Bastion's cache uses the S3 client only, never the interface"},
 	}
 }

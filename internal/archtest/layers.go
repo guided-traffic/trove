@@ -61,6 +61,9 @@ func layerTable() []layerRule {
 		// The port of the backup target and its in-memory fake: standard library only, so that the S3 client of internal/blob/s3
 		// implements it without importing a domain package (R-BAK-002, Q-BAK-15).
 		{"internal/backup/target", layerLeaf},
+		// The on-target format of backups (IDs, layout, manifest, blob lists): standard library and zstd only, a leaf so that the
+		// S3 sink of a restore (internal/blob/s3) can name its digest type without importing a domain package (R-BAK-021).
+		{"internal/backup/format", layerLeaf},
 		{"internal/tlsfiles", layerLeaf},
 		{"internal/formats/catalog", layerLeaf},
 		// The rows a serve-time check decides on, read by the item lookup (R-ARCH-027): plain types, no imports. A leaf so that

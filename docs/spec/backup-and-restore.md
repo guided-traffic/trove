@@ -418,8 +418,8 @@ The export MUST read every table from one snapshot taken after the run's hold is
 - Connections per run: one control connection (run row, heartbeat, pins), one snapshot connection
   and `backup.database.parallel` export connections, `application_name` `trove:<pod>:backup`.
   With defaults that is 4, once per cluster, because only one run is active (R-BAK-010); the
-  number does not depend on the replica count. A restore uses 2 (the migration runner's session
-  and the load connection). Both belong in the connection budget of
+  number does not depend on the replica count. A restore uses 1: the session connection that holds the
+  migration lock and runs the migration runner, the load and the fix-ups (Q-BAK-31). Both belong in the connection budget of
   [ha-and-helm.md](ha-and-helm.md) R-HA-016 (cross-page).
 
 Acceptance criteria:
@@ -1284,7 +1284,7 @@ but check 7's probe object, MUST check, and exit `6` naming the first failed che
    canary row of the backup's `secret_key_canary` file (read and decrypted before any load). The
    message is `key ring does not match backup: missing key <id>`, as R-ARCH-021's start-up check
    words it.
-4. The database is empty: schema `database.schema` exists (R-HA-014) and contains no relation.
+4. The database is empty: schema `database.schema` exists (R-HA-014; a missing schema fails this check) and contains no relation.
    **Resumption:** a schema that carries the restore anchor of the same backup ID (R-BAK-021
    step 2) is accepted whatever it contains. An anchor of another backup ID refuses and names both
    IDs.
@@ -1292,15 +1292,16 @@ but check 7's probe object, MUST check, and exit `6` naming the first failed che
    `_probe/`. When check 4 accepted an anchor, objects under `sha256/` are accepted too.
 6. The database server's version is supported ([ha-and-helm.md](ha-and-helm.md) R-HA-013), and the
    credential owns the schema (owner credential).
-7. The target and the blob store are reachable with the configured credentials (one `HeadObject`
-   and one `PutObject` plus `DeleteObject` of `<prefix>/_probe/<pod>`).
+7. The target and the blob store are reachable with the configured credentials: one `HeadObject`
+   on the target, and one `PutObject` plus `DeleteObject` of `<prefix>/_probe/<pod>` on the blob
+   store. A restore writes nothing to the target (Q-BAK-33).
 8. **Revocation journal.** If `manifest.source.revocationJournal` is true, the journal under
    `<manifest.source.storage.prefix>/_journal/revocations/` in the source's blob bucket can be
    listed, with the blob-store credentials or those of `--journal-credentials-file` (journal
    reader, R-BAK-015). Otherwise the restore refuses unless `--skip-revocation-journal` is given
    (R-BAK-024).
 
-`--check` runs these checks and exits `0` or `6`, without changes.
+`--check` runs these checks (it takes the lock too) and exits `0` or `6`, without changes.
 
 Acceptance criteria:
 
@@ -2215,12 +2216,21 @@ A conditional create sends `If-None-Match: *` (PutObject, CompleteMultipartUploa
 
 **Applied:** R-BAK-002, R-BAK-015, R-BAK-026; `internal/blob/s3/target*.go`, `internal/backup/target/targettest/conformance.go`, `test/integration/backup/target_adapter_test.go`, `docs/developer/backup.md`, `docs/security/backup-and-restore.md`.
 
+### Q-BAK-31 · The restore uses one database connection
 ### Q-BAK-28 · `trove backup list --json` is flat: `schemaStep` and `keyIds` stand at the top of each entry
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
+| (a) Two: the migration runner's session and a load connection | The text of R-BAK-005 | The load transaction is on a connection that never held a lock | Two sessions to drain on `SIGTERM`; the migration lock and the load would be two sessions of one process, so a kill between them could leave one of them alive for a moment |
+| (b) One session connection for the lock, the runner, the load, the fix-ups and the finish (chosen) | `postgres.RestoreSession` | The lock lives exactly as long as the one connection, so a killed process releases it with its socket; the budget of R-HA-016 is met with room | Every phase of the restore is serialised on one connection, which they are anyway |
+
+**Choice:** (b). `COPY FROM`, the temporary tables and the advisory lock are all session state; a pooled second connection would add nothing.
+**Rationale:** The restore never runs two statements at once, so a second connection can only add a way to leak the lock. Revisit when the load is parallelised per table.
+**Applied:** R-BAK-005 (connection count), R-BAK-021 step 1; `internal/meta/postgres/migrate_restore.go`.
+
+### Q-BAK-32 · The load stages the audit table and the tables with a CycleBreak column in temporary tables
 | (a) Mirror the manifest | `schema.step`, `secrets.keyIds` nested as in `manifest.json` | The acceptance criteria of R-BAK-018 and R-BAK-028 already say `schema.step` and `secrets.keyIds` | A listing line is a summary, not a manifest; `backup.Listing` (the contract every consumer built against) is already flat; the incomplete entries would carry empty objects |
 | (b) Flat summary: `schemaStep`, `keyIds`, `incarnation`, `options`, `encryption` beside `backupId` and `complete` (chosen) | `backup.Listing` as it is | One shape for the CLI and the Go callers; fields that do not exist for an incomplete directory are omitted | The two acceptance criteria are reworded |
 
@@ -2236,6 +2246,14 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
+| (a) Read the file twice | A first pass over `audit_event` finds the time range, the second copies | No temporary storage | Two downloads and two decompressions of the largest table; the timestamp text depends on the exporting session's settings |
+| (b) Copy into a temporary table, let PostgreSQL read the range, insert from it (chosen) | `COPY` into `_restore_stage_<table>`, `audit_create_partitions(min, max)`, `INSERT ... OVERRIDING SYSTEM VALUE SELECT`; a CycleBreak table keeps its stage until every table is loaded, then `UPDATE ... FROM` matched on the primary key | PostgreSQL parses the timestamps; one download; the same path serves both cases | Temporary disk space of the size of the staged table for the length of the transaction |
+
+**Choice:** (b). Only `audit_event` and the tables with a registered CycleBreak (`package_versions.lead_item_id`, `principal.created_by`) take this path; the others are copied directly.
+**Rationale:** The cycle partner of a table may load before or after it, so the column can only be filled once every table exists. Revisit when a staged table is too large for the temporary tablespace.
+**Applied:** R-BAK-004, R-BAK-021 step 4; `internal/meta/postgres/backup_load.go`, `internal/archtest/sqlrules.go` (the restore files may create temporary tables and assemble statements from catalog names).
+
+### Q-BAK-33 · A restore writes nothing to the target; a missing schema fails check 4
 | (a) Give verify phases | Map checking onto `copying` and `finalizing` | The UI shows movement | The states are the phases of a create run (R-BAK-009); a verify showing `copying` would make a reader think blobs move |
 | (b) One state, progress by lease renewal (chosen) | The row is `operation = 'verify'`, state `starting` until it ends `completed` (also with findings) or `failed`; its `result` is the report (`verified`, `findings`), so `trove_backup_last_verify_findings` is the number of findings | No new states; the index ignores verify | A long deep verify reads "starting" in the run list |
 
@@ -2255,6 +2273,14 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
+| (a) Probe the target with a `PutObject` and `DeleteObject` as the text says | The restore credential needs write access to the target | Matches the wording | A restore Job whose target credential is read-only (the better practice, R-BAK-015) fails check 7 |
+| (b) `HeadObject` on the target, `PutObject` and `DeleteObject` of `_probe/<pod>` on the blob store only (chosen) | The target is only read; the probe object is where the restore writes | The restore needs no write privilege on the backups | A target whose reads work and whose writes would not is not detected, and the restore does not need them |
+
+**Choice:** (b). A schema that does not exist fails check 4 with the statement that creates it (R-HA-014), because creating it is a write before step 2.
+**Rationale:** The restore is the one command that must work when little else does, so it asks the target for the least. Revisit if a restore ever writes to the target.
+**Applied:** R-BAK-020 checks 4 and 7.
+
+### Q-BAK-34 · The journal and the blob store enter the restore as ports; the verification merges two sorted streams
 | (a) Trust the lists | Merge the lists as they are and delete what they lack | One download per list | A list that is truncated at a line boundary or replaced would delete live pool objects of a retained backup; the damage is found by the next restore |
 | (b) Prove the lists first (chosen) | Before the first delete request every retained backup's list is downloaded and hashed against `blobs.sha256`, and the entry count at the end of the merge must equal `blobs.referenced` | Silent truncation cannot reach the delete request; the cost is a second read of lists that are about 40 bytes per blob compressed | Two reads of every list per sweep |
 
@@ -2270,6 +2296,12 @@ Status: **Decided by the development agent** — selected from the options below
 
 | Option | What it means | For | Against |
 |---|---|---|---|
+| (a) Concrete clients in the restore package | The restore imports the journal reader and the S3 client | Fewer types | The AWS SDK may be imported in `internal/blob/s3` only (R-ARCH-002), and the replay work package would have to edit the restore |
+| (b) `Session`, `BlobStore` and a `Journal` factory in `internal/backup/restore`; the verification of step 8 merges the live blob rows (digest order) with the blob list without the damaged digests (chosen) | cmd/trove joins the implementations; tests use fakes | Every phase is unit-tested without a database; the journal work package fills one function; the verification needs no temporary table and memory stays bounded | A port per collaborator |
+
+**Choice:** (b). `restoreJournal` in `cmd/trove/backup_restore.go` is the one place the journal work package replaces.
+**Rationale:** The checks and the resumption rules are the part of a restore that must not regress, and they are testable only against fakes. Revisit when a second implementation of a port appears.
+**Applied:** R-BAK-020 check 8, R-BAK-021 step 8, R-BAK-024; `internal/backup/restore`, `cmd/trove/backup_restore.go`.
 | (a) The screen's own faster interval while a run is active | 2 to 5 s polling of the summary and the active run | The blob count moves visibly | A second interval and pause rule beside the status screen's (R-UI-038); a running create changes its progress at the heartbeat, which is seconds apart anyway |
 | (b) The status screen's interval and pause control; the summary and the active run are fetched together, and the first page of the list is reloaded unless the user has loaded further pages (chosen) | One `load` returns the summary and, when `active` is set, `GET /system/backups/{runId}` for its `progress`; "Refresh now" does the same | One rule for every status screen (R-UI-048 names it); the status and the progress of the active run never disagree; a list the user has paged into is not thrown away | A run is up to one interval behind; a user who wants it faster presses "Refresh now" |
 | (c) Server-sent events | The API pushes progress | No polling | A streaming endpoint for a screen an administrator opens rarely; every replica would need the run's progress (R-API-050 reads PostgreSQL only) |
@@ -2378,6 +2410,16 @@ the database. Live in the MVP; dormant once R-BAK-027 (P1) is configured, after 
 needs the escrowed age identity. Mitigation in the MVP: a target in a separate account or project,
 readers limited to the backup and restore identities, and SSE-KMS with a key policy that names
 only those identities.
+
+### H-558 · A server-side copy into the blob store is checked by size, not by content
+
+Component: `trove backup restore` step 3 (R-BAK-021, Q-STOR-164). Subject: the content of every restored blob. A pool object that was
+altered in place keeps its key, and when the blob store copies it server-side the restore confirms only that an object of the listed
+size exists at the new key; the SHA-256 of the bytes is compared when the restore streams, not when the store copies. The tampered
+bytes would be served until the blob is checked (R-STOR-027) or `trove backup verify --deep` hashes the pool. Live in the MVP for
+every restore that finds the server-side copy available, whenever someone can write to the pool (H-46); the clients' own digest checks
+(npm integrity, NuGet package hash) catch most of it. Mitigation: Object Lock on the target, and `trove backup verify --deep` before
+a restore whose source is not trusted.
 
 ### H-553 · A journal object can be overwritten with the runtime credential
 

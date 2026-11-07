@@ -94,7 +94,33 @@ func (db *DB) CheckSchema(ctx context.Context, version string) error {
 	if err != nil {
 		return err
 	}
-	return Gate(st, RequiredSchema(), version)
+	if err := Gate(st, RequiredSchema(), version); err != nil {
+		return err
+	}
+	// After the schema state, never before: a restore commits the marker with the step that makes the schema servable, so a
+	// state read first cannot be followed by a missing marker (R-BAK-021 step 2).
+	return checkRestoreMarker(ctx, db.control)
+}
+
+// ErrRestoreInProgress means system_state holds restore_in_progress: a restore has not finished, and the replica waits, not
+// ready and claiming no job (R-ARCH-024 start-up step 3, R-OPS-001).
+var ErrRestoreInProgress = errors.New("a restore is in progress")
+
+// checkRestoreMarker returns ErrRestoreInProgress, naming the backup, while the marker exists.
+func checkRestoreMarker(ctx context.Context, conn q.DBTX) error {
+	qs := q.New(conn)
+	found, err := qs.TableExists(ctx, "system_state")
+	if err != nil || !found {
+		return err
+	}
+	row, err := qs.GetSystemState(ctx, "restore_in_progress")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: backup %s", ErrRestoreInProgress, backupIDOf(row.Value))
 }
 
 // ReplicasUpTo lists the live replicas that run release or an older one, and those whose

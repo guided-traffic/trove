@@ -9244,6 +9244,18 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-ARCH-002, R-ARCH-032; `internal/archtest/layers.go` (`journal` in the domain layer, `backup/target` a leaf), `internal/archtest/state.go`.
 
+### Q-ARCH-344 · The runner's restore mode is a method of the restore session, not a flag of `trove migrate`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A hidden flag or option of `Migrate` | `Migrate` learns "up to step N" and "caller statements" | One entry point | `trove migrate` would carry code that only the restore may reach, and the half-restored refusal, the contract guard and the declared state would need switches |
+| (b) `RestoreSession.MigrateTo` over the shared step functions (chosen) | It parses and verifies the steps, plans, and applies each with the runner's `applyStep` (checksums, lock timeouts, retries); the caller's marker is inserted in the transaction of the last step it applies | The runner's code for a step is one function; nothing of the restore is reachable from the command line | The restore mode skips by construction what `Migrate` does around the steps |
+
+**Choice:** (b). `MigrateTo` skips the half-restored refusal, the contract guard, the audit policy, the backup role grant and the declared state; the migration Job of the final upgrade applies the last three. The marker is inserted with `ON CONFLICT DO NOTHING`, so a resumed restore keeps its phase.
+**Rationale:** The restore must not run `finish` of the runner: the declared role bindings would be written into a database the load is about to truncate. Revisit if a step ever needs the declared state.
+**Applied:** R-ARCH-026 "Restore mode", R-BAK-021 step 2, R-BAK-023; `internal/meta/postgres/migrate.go` (`applyStep` takes the hook), `migrate_restore.go`.
 ### Q-ARCH-345 · Where the outbox implementation and the post-restore live
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.

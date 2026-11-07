@@ -131,6 +131,28 @@ ring before it writes ([format](../../internal/backup/format) refuses a manifest
 consistent forgery by a writer to the target passes. The target marker ties a target to one installation and incarnation, so a second
 installation cannot write into it (`Marker.Check`, exit 4).
 
+## What a restore does to the database
+
+A restore runs as the schema owner (check 6 refuses any other credential) on one session connection that holds the migration lock
+exclusively until it ends ([migrate_restore.go](../../internal/meta/postgres/migrate_restore.go)). Its first write is the anchor, a
+schema comment `trove-restore <backup-id>`; from then on `trove migrate` refuses the database and a replica stays unready while
+`system_state` holds `restore_in_progress` ([gate.go](../../internal/meta/postgres/gate.go), `CheckSchema`: the marker is read after the
+schema state, because the restore commits it with the step that makes the schema servable). The load disables the user triggers and
+truncates every table in one transaction ([backup_load.go](../../internal/meta/postgres/backup_load.go)), which is the reason for three
+guards:
+
+- The tables, columns and sequences of the load come from the manifest only after they were compared with the schema the embedded
+  migrations built; a name that is not in the catalog never reaches a statement, and each identifier is quoted (`pgx.Identifier`).
+  A forged manifest can therefore choose rows, not objects (H-46 covers the rows).
+- A table file is hashed while it streams and compared with the manifest's size and SHA-256 before the load commits
+  ([source.go](../../internal/backup/restore/source.go)); a damaged file aborts the transaction.
+- The target is only read. The blob store gets one probe object under `_probe/` and the objects of the backup; an object that is
+  already there with the right size is kept, a streamed one is hashed before it becomes visible, and one copied server-side is
+  checked by size only (H-558).
+
+The restore holds no Valkey credential, and the fix-ups give the installation a new keyspace and incarnation, so entries of the old
+installation are never read ([system_state.go](../../internal/backup/fixup/system_state.go)).
+
 ## What this does not cover
 
 The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--backup-integrity-is-not-authenticated),
@@ -141,3 +163,4 @@ The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--bac
 - [H-554](../spec/backup-and-restore.md#h-554--a-compromised-backup-pod-can-hold-garbage-collection): a compromised backup pod can hold garbage collection.
 - [H-557](../spec/backup-and-restore.md#h-557--the-post-restore-does-not-verify-the-blobs-and-a-replay-writes-no-audit-event-per-changed-object): post-restore does not verify the blobs, and a replay writes no audit event per changed object.
 - [H-555](../spec/backup-and-restore.md#h-555--the-run-history-is-only-as-trustworthy-as-the-backup-role): the run history is only as trustworthy as the backup role.
+- [H-558](../spec/backup-and-restore.md#h-558--a-server-side-copy-into-the-blob-store-is-checked-by-size-not-by-content): a server-side copy into the blob store is checked by size, not by content.

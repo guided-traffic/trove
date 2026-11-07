@@ -30,7 +30,14 @@ func sqlSkipped(rel string) bool {
 // sessionClass reports whether a source runs on a session-class connection, where
 // session-level statements are legal: migrations run on the migrate class (R-ARCH-026).
 func sessionClass(rel string) bool {
-	return strings.Contains(rel, "/migrations/") || rel == "internal/meta/postgres/migrate.go"
+	return strings.Contains(rel, "/migrations/") || rel == "internal/meta/postgres/migrate.go" || restoreFile(rel)
+}
+
+// restoreFile are the files of `trove backup restore` that run on its session connection under the migration lock: the load
+// copies into temporary tables and names tables by catalog and registry values (R-BAK-021 step 4).
+func restoreFile(rel string) bool {
+	return rel == "internal/meta/postgres/backup_load.go" || rel == "internal/meta/postgres/backup_restore_state.go" ||
+		rel == "internal/meta/postgres/migrate_restore.go"
 }
 
 // isolationExempt are the trees R-ARCH-019 lets run at REPEATABLE READ READ ONLY:
@@ -44,7 +51,7 @@ func isolationExempt(rel string) bool {
 // referencing columns from the catalog (R-STOR-024 rule 3). A file is listed by
 // exact path; the builder by its tree.
 func sqlBuilders() (trees, files []string) {
-	return []string{"internal/meta/postgres/listq"}, []string{"internal/meta/postgres/blobrefs.go"}
+	return []string{"internal/meta/postgres/listq"}, []string{"internal/meta/postgres/blobrefs.go", "internal/meta/postgres/backup_load.go", "internal/meta/postgres/backup_restore_state.go"}
 }
 
 // sqlStatementStart matches the start of a statement in a literal: the start of

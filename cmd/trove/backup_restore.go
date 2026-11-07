@@ -1,10 +1,26 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/backup"
+	"github.com/guided-traffic/trove/internal/backup/fixup"
 	"github.com/guided-traffic/trove/internal/backup/format"
+	"github.com/guided-traffic/trove/internal/backup/restore"
+	"github.com/guided-traffic/trove/internal/blob/s3"
+	"github.com/guided-traffic/trove/internal/buildinfo"
+	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/journal"
+	"github.com/guided-traffic/trove/internal/journal/replay"
+	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/secrets"
 )
 
 // backupRestoreCmd is trove backup restore <id> (R-BAK-020, R-BAK-021). Owned by the restore work package: it replaces
@@ -54,7 +70,78 @@ func backupRestoreCmd(args []string, s streams) error {
 	return err
 }
 
-// newRestorer builds the Restorer. The restore work package replaces the body.
-func newRestorer(*backupEnv) (backup.Restorer, error) {
-	return backup.NotBuilt{Operation: "restore"}, nil
+// newRestorer builds the Restorer of R-BAK-021: the database session (it takes the migration lock when the restore starts and
+// holds it until the command ends), the backup target with its own credential, the new installation's blob store with the
+// runtime credential, and the key ring.
+func newRestorer(env *backupEnv) (backup.Restorer, error) {
+	cfg := env.cfg
+	ctx := context.Background()
+	out := outbound.New(cfg.Proxy.Outbound)
+	if err := out.Err(); err != nil {
+		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, fmt.Errorf("outbound configuration: %w", err))
+	}
+	tgt, err := s3.NewTarget(ctx, cfg.Backup, out)
+	if err != nil {
+		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, err)
+	}
+	client, err := s3.NewFromFactory(ctx, cfg.Storage.S3, out)
+	if err != nil {
+		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, fmt.Errorf("storage.s3: %w", err))
+	}
+	ring, err := secrets.Load(cfg.Secrets)
+	if err != nil {
+		return nil, backup.Fail(backup.ExitUsage, backup.CodeConfig, err)
+	}
+	session, err := postgres.OpenRestoreSession(ctx, cfg.Database, postgres.MigrateOptions{
+		Instance: env.instance, Migrate: cfg.Migrate, Version: buildinfo.Get().Version, Log: env.log,
+	})
+	if err != nil {
+		if postgres.IsUnavailable(err) {
+			return nil, backup.Fail(backup.ExitTemporary, backup.CodeTemporary, err)
+		}
+		return nil, err
+	}
+	return restore.New(restore.Deps{
+		Session: session, Target: tgt, Layout: format.Layout{Prefix: cfg.Backup.Target.Prefix},
+		TargetEndpoint: tgt.Endpoint(), TargetBucket: tgt.Bucket(),
+		Blobs: s3.NewBlobSink(client, cfg.Storage.S3, int64(cfg.Backup.Copy.PartSize)), Keys: ring,
+		Items: restoreItems, Journal: restoreJournal(cfg, out, env.log), Config: cfg.Backup, Log: env.log, Out: env.stdout, Pod: env.instance,
+	}), nil
+}
+
+// restoreJournal builds the revocation journal of a source for the restore (R-BAK-020 check 8, R-BAK-024): the reader of the
+// source's bucket and prefix, with the blob-store credentials or those of --journal-credentials-file, and the replayer over the
+// restore's session.
+func restoreJournal(cfg *config.Config, out *outbound.Factory, log *slog.Logger) func(context.Context, restore.JournalEnv) (restore.Journal, error) {
+	return func(ctx context.Context, e restore.JournalEnv) (restore.Journal, error) {
+		s3cfg := cfg.Storage.S3
+		s3cfg.Bucket, s3cfg.Prefix = e.SourceBucket, e.SourcePrefix
+		if e.SourceEndpoint != "" {
+			s3cfg.Endpoint = e.SourceEndpoint
+		}
+		reader, err := replay.OpenJournal(ctx, s3cfg, out, e.CredentialsFile)
+		if err != nil {
+			return nil, err
+		}
+		return journalSource{reader: reader, Replayer: replay.New(replay.Options{DB: e.Runner, Reader: reader, Recorder: e.Recorder, AdminBinding: authz.HasAdminBinding, Log: log})}, nil
+	}
+}
+
+// journalSource is the journal of the source: the check lists it, the replay applies it.
+type journalSource struct {
+	reader *replay.Reader
+	journal.Replayer
+}
+
+// Reachable lists the journal prefix for the entries of today and later, which needs the same permission as a replay.
+func (j journalSource) Reachable(ctx context.Context) error {
+	_, _, err := j.reader.Entries(ctx, time.Now())
+	return err
+}
+
+// restoreItems is the storage delete path the remote-cache purgers need when the backup left the remote caches out (R-BAK-008).
+// The item store is composed with the hooks of every format in internal/app, which the restore command does not start: the
+// step fails with this message until a headless composition exists.
+func restoreItems(context.Context, meta.Runner) (fixup.CacheEraser, error) {
+	return nil, errors.New("the item store is not composed in the restore command yet (it is part of internal/app's files area)")
 }

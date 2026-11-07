@@ -8391,6 +8391,18 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-HA-054 "Replay run"; `internal/journal/object.go` (`DayPrefixes`), `internal/journal/ports.go` (`Reader`).
 
+### Q-HA-145 · The schema check reads the restore marker after the schema state
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The marker first | A restore that commits between the two reads is missed | Simple | A replica can find the final schema step and no marker, and serve a half-restored database |
+| (b) The schema state first, then the marker, in `CheckSchema` and in the report of `trove migrate status` (chosen) | The marker is committed with the step that makes the schema servable (R-BAK-021 step 2), so a state read first cannot be followed by a missing marker | No window; one extra read on the control connection every check | Two statements instead of one |
+
+**Choice:** (b). `postgres.ErrRestoreInProgress` is a plain failure of the `schema` check (R-OPS-001), not an outage: the replica stays not ready.
+**Rationale:** The order is the whole proof; a single statement would not need it but would cost every readiness check a join. Revisit if the check moves into one query.
+**Applied:** R-OPS-001 `schema` check, R-ARCH-024 step 3; `internal/meta/postgres/gate.go`, `migrate.go` (`Report`).
 ### Q-HA-144 · How the shipper is triggered, and what `--credentials-file` holds
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.

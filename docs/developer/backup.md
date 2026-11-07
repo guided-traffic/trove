@@ -155,6 +155,40 @@ test fails otherwise (R-BAK-004).
   store, the hold check and `storage_usage_recount()` against the shared PostgreSQL (`make test-integration`).
 - Command wiring: `TestBackupCommands` in [cmd/trove/main_test.go](../../cmd/trove/main_test.go).
 
+## Restore
+
+`trove backup restore` is [internal/backup/restore](../../internal/backup/restore) over four ports; `cmd/trove/backup_restore.go` joins them.
+
+| File | Responsibility |
+|---|---|
+| [restore/restore.go](../../internal/backup/restore/restore.go) | `Restorer`: the lock, the checks, the nine steps, the stall watchdog, the exit mapping, the summary |
+| [restore/checks.go](../../internal/backup/restore/checks.go) | checks 1 to 8 of R-BAK-020, each an exit 6 that names its number |
+| [restore/blobs.go](../../internal/backup/restore/blobs.go) | step 3: workers, server-side copy with the fall-back to streaming, the blob list's SHA-256 |
+| [restore/source.go](../../internal/backup/restore/source.go) | a table file as a reader that verifies size and SHA-256 on `Close`; the canary rows of check 3 |
+| [restore/ports.go](../../internal/backup/restore/ports.go) | `Session` (implemented by `postgres.RestoreSession`), `BlobStore` (`s3.BlobSink`), `Journal` |
+| [meta/postgres/migrate_restore.go](../../internal/meta/postgres/migrate_restore.go) | `RestoreSession`: the lock, `MigrateTo` (the runner's restore mode, R-BAK-023), the marker |
+| [meta/postgres/backup_load.go](../../internal/meta/postgres/backup_load.go) | the load transaction: order from the foreign keys, stage tables, `COPY`, sequences, damaged blobs |
+| [meta/postgres/backup_restore_state.go](../../internal/meta/postgres/backup_restore_state.go) | inspection of check 4, anchor, phases, `Fix`, `Finish`, the statements of the revision and blob fix-ups |
+| [fixup/](../../internal/backup/fixup) `jobs.go system_state.go revisions.go storage_usage.go mirror_state.go` | the core fix-ups of R-BAK-022 |
+| [blob/s3/blobsink.go](../../internal/blob/s3/blobsink.go) | the blob sink: server-side copy from the target, streaming with hashing, the prefix listing and the probe |
+
+**Phases and resumption.** The marker `restore_in_progress` carries the phase: `blobs` (set with the last schema step), `loaded` (set by
+the load transaction), `fixed` (set with the fix-ups). A step is skipped when the phase is past it, and steps 5, 7 and 8 are idempotent.
+`Deps.Hook` names the points (`step2:anchored`, `step2:migrated:<n>`, `step3:copied:<n>`, `load:<table>`, `step5` to `step9`); the tests
+stop the restore there, and the kill tests run the binary.
+
+**The journal.** `restoreJournal` in `cmd/trove/backup_restore.go` opens the reader of the source's bucket and prefix with
+`replay.OpenJournal` and builds the replayer over the restore's session; `Reachable` (check 8) lists today's day prefix.
+
+**The remote-cache purge (step 7).** The purgers need `fixup.Env.Items`, the item store composed with the format hooks, which lives in
+`internal/app`'s files area. `Deps.Items` builds it on the restore's session; `restoreItems` in `cmd/trove/backup_restore.go` returns an error
+until a headless composition exists, so a restore of a backup made with `exclude.remote_caches` stops at step 7 (exit 1) with that message.
+Every other restore never reaches it.
+
+**Tests.** Unit: `go test ./internal/backup/restore/ ./internal/meta/postgres/ -run 'R_BAK'` (the checks table, the phases, the load order).
+Integration, against the shared stack: `restore_full_test.go` (the end-to-end criteria and the derived state), `restore_checks_test.go`
+(every check, the edited migration, the lock), `restore_kill_test.go` (`kill -9` at steps 2, 3 and 4 with the `trove` binary built into
+`.out/restore-it`, and the exit codes of the command). A backup is built by hand from the `format` package (`restore_fixture_test.go`).
 ## The backups screen
 
 `/admin/system/backups` (R-UI-048) renders the three operations of R-API-050 and sends nothing but `GET`. It lives with the other

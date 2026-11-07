@@ -282,7 +282,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 
 	// 5. Apply.
 	for _, s := range pending {
-		sr, err := applyStep(ctx, conn, s, &st, opts, log)
+		sr, err := applyStep(ctx, conn, s, &st, opts, log, nil)
 		if err != nil {
 			return res, fmt.Errorf("migration %s.sql: %w", s.Name, err)
 		}
@@ -359,12 +359,23 @@ func acquireLock(ctx context.Context, conn *pgx.Conn, wait time.Duration, log *s
 			log.Info("waiting for the migration lock", "held_by", holders, "max_wait", wait.String())
 		}
 		if time.Since(start) >= wait {
-			return waited, time.Since(start), fmt.Errorf("gave up after %s waiting for the migration lock (migrate.advisory_lock_wait), held by %s", wait, holders)
+			return waited, time.Since(start), &LockWaitError{Wait: wait, Holders: holders}
 		}
 		if err := sleepCtx(ctx, 200*time.Millisecond); err != nil {
 			return waited, time.Since(start), err
 		}
 	}
+}
+
+// LockWaitError is a wait for the migration lock that ran out. The migrator names migrate.advisory_lock_wait for it, the
+// restore backup.database.migration_wait (R-HA-019, R-BAK-021 step 1).
+type LockWaitError struct {
+	Wait    time.Duration
+	Holders string
+}
+
+func (e *LockWaitError) Error() string {
+	return fmt.Sprintf("gave up after %s waiting for the migration lock (migrate.advisory_lock_wait), held by %s", e.Wait, e.Holders)
 }
 
 func lockHolders(ctx context.Context, conn *pgx.Conn) string {
@@ -553,7 +564,11 @@ func contractGuard(ctx context.Context, db q.DBTX, pending []Step, stale time.Du
 var createIndexConcurrently = regexp.MustCompile(`(?i)create\s+(?:unique\s+)?index\s+concurrently\s+(?:if\s+not\s+exists\s+)?("?[a-z0-9_]+"?)`)
 
 // applyStep applies one step, retrying lock timeouts, and updates st.
-func applyStep(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts MigrateOptions, log *slog.Logger) (StepResult, error) {
+//
+// final, when not nil, runs in the transaction of the step after its schema_migration and schema_state rows and before the
+// commit; the restore mode uses it to commit restore_in_progress with the step that makes the schema servable (R-BAK-021
+// step 2).
+func applyStep(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts MigrateOptions, log *slog.Logger, final stepHook) (StepResult, error) {
 	log.Info("applying step", "version", s.Version, "name", s.Name, "class", s.Phase, "transactional", !s.NoTx)
 	res := StepResult{Version: s.Version, Name: s.Name, Phase: s.Phase}
 	backoff := 200 * time.Millisecond
@@ -562,9 +577,9 @@ func applyStep(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts Migr
 		start := time.Now()
 		var err error
 		if s.NoTx {
-			err = applyNoTx(ctx, conn, s, st, opts)
+			err = applyNoTx(ctx, conn, s, st, opts, final)
 		} else {
-			err = applyTx(ctx, conn, s, st, opts, start)
+			err = applyTx(ctx, conn, s, st, opts, start, final)
 		}
 		if err == nil {
 			res.DurationMs = time.Since(start).Milliseconds()
@@ -613,7 +628,7 @@ func recordStep(ctx context.Context, tx pgx.Tx, s Step, st *state, release strin
 // applyTx runs a transactional step: BEGIN, SET LOCAL lock_timeout, the whole
 // file as one argument-less Exec (simple protocol, so the server splits the
 // statements), the step's rows, COMMIT. A failure rolls everything back.
-func applyTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts MigrateOptions, start time.Time) error {
+func applyTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts MigrateOptions, start time.Time, final stepHook) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
@@ -629,6 +644,11 @@ func applyTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts Migrat
 	if err != nil {
 		return err
 	}
+	if final != nil {
+		if err := final(ctx, tx); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
@@ -636,10 +656,13 @@ func applyTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts Migrat
 	return nil
 }
 
+// stepHook adds statements to the transaction of a step (see applyStep).
+type stepHook func(ctx context.Context, tx pgx.Tx) error
+
 // applyNoTx runs a step that cannot run in a transaction block (CREATE INDEX
 // CONCURRENTLY): its single statement under the session's lock_timeout, then its
 // rows. An INVALID index that a failed earlier attempt left is dropped first.
-func applyNoTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts MigrateOptions) error {
+func applyNoTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts MigrateOptions, final stepHook) error {
 	start := time.Now()
 	if _, err := conn.Exec(ctx, fmt.Sprintf("SET lock_timeout = %d", opts.Migrate.DDLLockTimeout.Milliseconds())); err != nil {
 		return err
@@ -669,6 +692,11 @@ func applyNoTx(ctx context.Context, conn *pgx.Conn, s Step, st *state, opts Migr
 	applied, floor, err := recordStep(ctx, tx, s, st, opts.Version, time.Since(start))
 	if err != nil {
 		return err
+	}
+	if final != nil {
+		if err := final(ctx, tx); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
@@ -728,6 +756,9 @@ func Report(ctx context.Context, db q.DBTX, opts MigrateOptions) (StatusReport, 
 		return rep, err
 	}
 	verdict := Gate(SchemaState{Applied: st.schemaApplied, CompatFloor: st.compatFloor}, rep.Binary.RequiredSchema, opts.Version)
+	if verdict == nil {
+		verdict = checkRestoreMarker(ctx, db)
+	}
 	rep.Servable = verdict == nil
 	if verdict != nil {
 		rep.Verdict = verdict.Error()

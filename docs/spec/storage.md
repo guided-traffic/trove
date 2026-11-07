@@ -4695,6 +4695,19 @@ The runtime credential is never read: the target's credential comes from `backup
 
 **Applied:** R-STOR-030, R-STOR-031, R-STOR-033, R-BAK-015; `internal/blob/s3/target.go` (`targetStorage`), `internal/blob/s3/client.go` (`factoryClient`).
 
+### Q-STOR-164 · The blob sink of a restore verifies by hash when it streams and by size when the store copies
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Re-read every written object and hash it | A full read of the blob store after the copy | Catches a tampered pool object | Doubles the transfer of a restore that is bounded by transfer |
+| (b) Hash while streaming, check the size after a server-side copy (chosen) | `s3.BlobSink.Put` hashes the stream and never completes a multipart upload or sends a single request whose SHA-256 differs from the digest; `CopyFrom` confirms the size with `HeadObject` | A restore costs one pass; a streamed object is never made visible with wrong bytes | A pool object altered in place keeps its size and passes a server-side copy (H-558); `trove backup verify --deep` is the check |
+
+**Choice:** (b). A part is buffered in memory (`storage.s3.multipart.part_size`), an object up to `multipart.threshold` is buffered whole; no spool file is used.
+**Rationale:** A restore must finish at the speed of the store. Revisit if the store reports the full-object SHA-256 of a copy: the sink would compare it, as R-BAK-006 requires of the create run.
+**Applied:** R-BAK-006, R-BAK-021 step 3, R-STOR-047 (the recount after the load); `internal/blob/s3/blobsink.go`.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

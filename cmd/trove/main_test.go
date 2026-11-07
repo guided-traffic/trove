@@ -154,7 +154,6 @@ func TestBackupCommands(t *testing.T) {
 		args []string
 	}{
 		{"create", []string{"create", "--trigger", "schedule", "--no-prune"}},
-		{"restore", []string{"restore", id, "--check", "--skip-revocation-journal"}},
 	}
 	for _, c := range cases {
 		t.Run("R-BAK-013 "+c.name+" is wired and, until its work package lands, fails with exit 1 saying so", func(t *testing.T) {
@@ -164,6 +163,12 @@ func TestBackupCommands(t *testing.T) {
 			}
 		})
 	}
+	t.Run("R-BAK-020 restore builds its collaborators first: a key ring that does not load is exit 2 naming the file", func(t *testing.T) {
+		code, _, stderr := runCmd(t, env, "backup", "restore", id, "--check", "--skip-revocation-journal")
+		if code != 2 || !strings.Contains(stderr, "2026-10.key") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
 	t.Run("R-BAK-016 delete without --yes and without a terminal answer is exit 2 and deletes nothing", func(t *testing.T) {
 		code, _, stderr := runCmd(t, env, "backup", "delete", id)
 		if code != 2 || !strings.Contains(stderr, "--yes") {
