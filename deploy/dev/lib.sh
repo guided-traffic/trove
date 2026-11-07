@@ -135,6 +135,26 @@ release_values() {
   return 0
 }
 
+# published_pull_secret creates or replaces the Secret dockerhub-pull in $NS (published mode of up.sh) and returns 0, or returns
+# 1 when the Docker config holds no Docker Hub login. The Secret carries the Docker Hub entry of the config only (the host
+# matched whole: docker.io, index.docker.io, with or without https:// and a path), never the rest of the file, whatever
+# other registries it holds. The namespace must exist. The credential is written to a private temporary file, not to an argument.
+published_pull_secret() {
+  local cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json" tmp rc=0
+  [ -s "$cfg" ] || return 1
+  tmp="$(mktemp)"; chmod 600 "$tmp"
+  # shellcheck disable=SC2016 # a jq program
+  jq -c '{auths: ((.auths // {}) | with_entries(select((.key | test("^(https://)?(index\\.)?docker\\.io(/|$)")) and ((.value.auth // "") != ""))))}' "$cfg" > "$tmp" 2>/dev/null || rc=1
+  if [ "$rc" = 0 ] && [ "$(jq '.auths | length' "$tmp")" -gt 0 ]; then
+    kn create secret generic dockerhub-pull --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$tmp" \
+      --dry-run=client -o yaml | kn apply -f - >/dev/null || rc=1
+  else
+    rc=1
+  fi
+  rm -f "$tmp"
+  return "$rc"
+}
+
 # require_cluster fails with a hint when the kind cluster is not there.
 require_cluster() {
   kind get clusters 2>/dev/null | grep -qx "$CLUSTER" \

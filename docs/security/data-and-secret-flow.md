@@ -205,9 +205,19 @@ what that job holds:
 
 | Credential | What it can do | Jobs that hold it | Third-party actions in those jobs |
 |---|---|---|---|
-| `DOCKERHUB_PAT`, the access token of the Docker Hub user `guidedtraffic` | push `docker.io/guidedtraffic/trove` under any tag | `Build Docker Image` ([build.yml](../../.github/workflows/build.yml)); in [release.yml](../../.github/workflows/release.yml) `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm`, which log in for base-image pulls, on pull requests from this repository's branches too ([H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)) | `Build Docker Image`: the `docker/*` actions, `anchore/sbom-action@v0`, `softprops/action-gh-release@v3`, `docker/scout-action@v1` (the token as an input); `container-scan`: `aquasecurity/trivy-action@v0.36.0`, after `docker/login-action` has stored the login on the runner; the other jobs: `docker/*`, `azure/setup-helm@v5`, `azure/setup-kubectl@v5` |
+| `DOCKERHUB_PAT`, the access token of the Docker Hub user `guidedtraffic` | push `docker.io/guidedtraffic/trove` under any tag | `Build Docker Image` and `Smoke the published release` ([build.yml](../../.github/workflows/build.yml); the second logs in for the dev profile's images and keeps the login as the pull secret below, and it also runs on a dispatch of any ref the dispatcher can push to, [H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)); in [release.yml](../../.github/workflows/release.yml) `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm`, which log in for base-image pulls, on pull requests from this repository's branches too ([H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)) | `Build Docker Image`: the `docker/*` actions, `anchore/sbom-action@v0`, `softprops/action-gh-release@v3`, `docker/scout-action@v1` (the token as an input), and the throwaway registry container (the image `SBOM_GENERATOR_REGISTRY_IMAGE`, by digest) that holds no credential; `Smoke the published release`: `docker/*`, `azure/*` (the job `sbom-generator` of release.yml pulls anonymously and holds no secret); `container-scan`: `aquasecurity/trivy-action@v0.36.0`, after `docker/login-action` has stored the login on the runner; the other jobs: `docker/*`, `azure/setup-helm@v5`, `azure/setup-kubectl@v5` |
 | `APP_CLIENT_ID`, `APP_PRIVATE_KEY`, the organisation's GitHub App | an installation token for this repository: tags, releases (a release starts build.yml), commits | `Semantic Release` (release.yml, token with `contents: write`), `renovate` ([renovate.yml](../../.github/workflows/renovate.yml), token with every permission of the App) | `Semantic Release`: none, only `actions/*`; `renovate`: `renovatebot/github-action@v46.3.10` |
-| `GITHUB_TOKEN` of build.yml (`contents: write`, `pages: write`, `attestations: write`) | the release's assets and the `gh-pages` branch that serves the chart repository | both jobs of build.yml | as for `DOCKERHUB_PAT`, and `azure/setup-helm@v5` |
+| `GITHUB_TOKEN` of build.yml (the workflow default is `contents: read`) | `Build Docker Image`: `contents: write`, for the release's assets; `Release Helm Chart to GitHub Pages`: `contents: write`, for the release's assets and the push of the `gh-pages` branch that serves the chart repository (GitHub Pages builds the site from the push; no `pages` permission is used); `Smoke the published release`: `contents: read`. No job holds `id-token`, `attestations`, `actions` or `pages` | all three jobs of build.yml | as for `DOCKERHUB_PAT`, and `azure/setup-helm@v5` in the chart job |
+
+**The pull secret of the post-release check.** `Smoke the published release` installs the image by digest into a kind cluster of its own. The job copies the Docker
+Hub entry of `~/.docker/config.json` (the one `docker/login-action` wrote, which holds `DOCKERHUB_PAT`) into the Secret `dockerhub-pull` of the namespace `trove`
+([published_pull_secret](../../deploy/dev/lib.sh)). The host is matched whole (`docker.io`, `index.docker.io`, with or without `https://` and a path), and no other
+registry's entry and no other key of the file is copied. The Secret lives from the install step to `make dev-down`, which runs even after a failure: at most the job's
+120 minutes; a lost runner discards the cluster with the pod. It can be read by whoever holds the job's kubeconfig (the steps of the job, and so a third-party action that
+runs in it), by the kubelets that pull with it, and by any controller of the cluster whose ClusterRole allows reading Secrets in `trove`. The controllers that run there are
+HAProxy Ingress, cert-manager, the CloudNativePG operator, the Valkey operator and the internal-secrets-operator; whether the ClusterRole of each reads Secrets cluster-wide
+is not verified here, so the safe reading is that any of them can. The trove pods and the test client pods do not mount it. A
+read-only token for this pull would not close the read; it would limit what a leak of it does ([H-577](#h-577--the-post-release-check-pulls-with-the-token-that-can-push)).
 
 No job runs in a GitHub environment with protection rules, so the secrets are bound to nothing but the job that names them.
 
@@ -323,7 +333,7 @@ Stage: the actions of [release.yml](../../.github/workflows/release.yml), [build
 ([the release pipeline's credentials](#the-release-pipelines-credentials)).
 
 Live wherever the workflows run: Test and Release on every push and on every pull request from a branch of this repository,
-Renovate every day, Release Docker & Helm on every published release. Semantic Release has cut `v0.2.0` to `v0.4.0` (tags of
+Renovate every day, Release Docker & Helm on every published release and on every dispatch of any ref the dispatcher can push to (the check job runs that ref's workflow file with `DOCKERHUB_PAT` and a read-only `GITHUB_TOKEN`; the publish jobs do not run on a dispatch). Semantic Release has cut `v0.2.0` to `v0.4.0` (tags of
 this repository), so Test and Release has run on GitHub; whether Release Docker & Helm has published from them is not verified
 here. A tag is a movable reference: whoever controls an action's repository, or a maintainer's account, can point it at another
 commit, and the next run of a job that names the tag runs that commit with the job's secrets. Renovate does not notice: it
@@ -342,8 +352,8 @@ Subject, per credential:
   pulls by tag runs it.
 - The GitHub App: a moved `renovatebot/github-action` tag runs in Renovate's daily job with an installation token that holds
   every permission of the App: it can push commits and tags and publish a release, which starts Release Docker & Helm.
-- The `GITHUB_TOKEN` of build.yml: a moved tag in its jobs can change the release's assets and the chart repository on
-  `gh-pages`.
+- The `GITHUB_TOKEN` of build.yml: a moved tag in the two publish jobs, which hold `contents: write`, can change the release's assets and the chart
+  repository on `gh-pages`; in `Smoke the published release` the token only reads.
 
 What makes it real: a compromised repository or maintainer account of one of the third-party actions above, before the moved
 tag is noticed and restored.
@@ -360,3 +370,28 @@ Hardening that would mitigate it (none is in place):
   reviewed pull requests;
 - an allow list of actions at the organisation level (the allowed actions of the organisation's Actions settings), so that a
   workflow change cannot bring in an action nobody approved.
+
+### H-577 · The post-release check pulls with the token that can push
+
+Stage: the job `Smoke the published release` of [build.yml](../../.github/workflows/build.yml), which logs in with `DOCKERHUB_PAT` and copies that login into a pull
+secret of its throwaway cluster ([the release pipeline's credentials](#the-release-pipelines-credentials)).
+
+Live on every release and every dispatch of the job. The job only pulls: the dev profile's images and the trove image by its digest. `DOCKERHUB_PAT` can push
+`docker.io/guidedtraffic/trove` under any tag, and it is held in two places during the job: the login that `docker/login-action` writes to `~/.docker/config.json` of the runner,
+which any third-party action of the job can read, and the copy in the Secret `dockerhub-pull` of the throwaway cluster, which a controller that reads Secrets in the namespace can
+read. Either read is a leak of the push right. The copy is limited to the Docker Hub entry and lives for the job; the login on the runner lives for the job too and is the larger exposure of the two.
+
+What would close it: a read-only Docker Hub access token of the user `guidedtraffic` as a repository secret, used by this job and by the jobs of release.yml that log in
+for base-image pulls only. A leak of either place would then give a pull right, not a push right. It needs a new secret of the organisation, which the development agent does not create; the decision is the owner's.
+
+### H-578 · Renovate merges digest updates of digest-pinned images on green CI
+
+Stage: [renovate.json](../../renovate.json): the preset `:automergeDigest`, and the package rule that automerges `minor`, `patch` and `digest` updates of the Docker images in
+`tools/versions.env` (the runtime base image `RUNTIME_BASE_IMAGE`, `SYFT_IMAGE`, `SBOM_GENERATOR_SHELL_IMAGE`, `SBOM_GENERATOR_REGISTRY_IMAGE`, the integration and dev-profile images).
+
+Live for every digest-pinned image: when the registry's tag is moved to another image, Renovate raises a digest-only update, and it merges when CI is green, without a review. A moved
+upstream tag (a compromised publisher, a rebuilt tag) reaches the pin that way, and from there the release image's base (`RUNTIME_BASE_IMAGE`), the syft that writes both SBOMs (`SYFT_IMAGE`), or the
+containers of the test and release jobs. The pin makes the change visible in the history; it does not stop it. What makes it real is a moved tag of one of these images that passes the tests.
+
+What would close it: excluding digest-only updates from automerge for the images that enter the release (`RUNTIME_BASE_IMAGE`, `SYFT_IMAGE`) and keeping it for the test images. Whether to do that is
+the owner's policy; the automerge policy is unchanged.

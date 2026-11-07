@@ -1248,7 +1248,9 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   M5 ([ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)): the image to
   `docker.io/guidedtraffic/trove` and the chart to the chart repository `https://guided-traffic.github.io/trove/`,
   the publishing locations of Q-HA-11 as the owner decided them on 2026-10-29. `helm install` by digest from there
-  passes E2.1's smoke scenarios. The image carries provenance and SBOM attestations from the release; no signature
+  passes E2.1's smoke scenarios, which are the matrix and the client smoke test ([Q-HA-165](../spec/ha-and-helm.md#q-ha-165--the-smoke-scenarios-of-e58-are-the-e21-matrix-and-the-client-smoke-test)),
+  run by the job `smoke-published` after each release ([Q-HA-164](../spec/ha-and-helm.md#q-ha-164--the-post-release-check-is-a-job-of-release-docker--helm-and-a-dispatch-runs-only-that-job)).
+  The image carries provenance and SBOM attestations from the release; no signature
   is part of the pipeline (R-HA-047).
 - **E5.9** Node drain with zero failed requests. R-HA-059's acceptance test passes with variants A
   to E in a full run of Test and Release on the commit that closes the phase, under its full load: eight `npm ci` loops, four

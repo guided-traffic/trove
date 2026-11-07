@@ -4,7 +4,8 @@ Every push to `main` and every pull request runs the checks ([CI](#ci)). Once ev
 run on `main` passed, Semantic Release publishes a GitHub release ([release flow](#release-flow)),
 and [`build.yml`](../../.github/workflows/build.yml) builds the product from that tag: the image
 `guidedtraffic/trove` on Docker Hub, and the Helm charts `trove` and `trove-bastion` in the chart repository on GitHub Pages
-([the release pipeline](#the-release-pipeline)). What the release contains and how the image is
+([the release pipeline](#the-release-pipeline)); a last job installs those artifacts into a kind cluster and runs the matrix against them
+([the post-release check](#the-post-release-check)). What the release contains and how the image is
 built: [`Containerfile`](../../Containerfile).
 
 ## CI
@@ -20,7 +21,7 @@ share the pod's budget, without `make` or a C compiler.
 | Class | Label | Pods | CPU request / limit | RAM request / limit (runner and dind together) | Disk: `_work` / Docker | Jobs |
 |---|---|---|---|---|---|---|
 | wds18-small | `runs-on: self-hosted` | 0–24 | 1 / 6 | 4 GiB / 10 GiB | 10 GiB / 15 GiB | every job of Test and Release except the kind legs, Release Docker & Helm, Renovate |
-| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `e2e-mirror` (the sets mirror-long and mirror, [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
+| wds18-large | `runs-on: large` | 0–6 | 2 / 16 | 8 GiB / 20 GiB | 20 GiB / 30 GiB | the kind legs `e2e` (push, access-long) and `e2e-npm` of Test and Release; `e2e` (failover, drain-roles), `e2e-npm` (npm-ha, ha-suite), `npm-ha-soak`, `e2e-nuget` (nuget-ha, [Q-HA-102](../spec/ha-and-helm.md#q-ha-102--the-cpu-of-the-nuget-drain-and-where-its-leg-runs)), `smoke-published` of Release Docker & Helm ([the post-release check](#the-post-release-check)), `e2e-mirror` (the sets mirror-long and mirror, [Q-REPO-211](../spec/repositories-and-proxy.md#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class)) and, after all of them, `latency` and `vuln-perf` ([Q-ARCH-325](../spec/architecture.md#q-arch-325--where-do-the-perf-jobs-run-relative-to-the-kind-legs)) of HA and Performance |
 | GitHub-hosted | `runs-on: ubuntu-24.04` | GitHub's | 4 vCPU | 16 GB | 108 GB free on `/` after the job deletes the preinstalled SDKs | the kind legs that load the NuGet clients image: `e2e-nuget` of Test and Release, `e2e-ci`, `e2e-bastion`, `e2e-vuln`, in both workflows, and the set `mirror` of `e2e-mirror` in Test and Release; `e2e-upgrade` (HA and Performance only, set `upgrade`, which loads both clients images) |
 
 The measured basis of the nightly assignment ([Q-ARCH-326](../spec/architecture.md#q-arch-326--which-runner-class-runs-which-leg-the-runner-review-of-the-nightly-run)):
@@ -80,6 +81,7 @@ at its pin (`make promtool`, below).
 | Malware Scan (source code) | `make malware-scan` | ClamAV (`clamscan --recursive --infected`) over the tree, without `.git`, `node_modules` and the build outputs; any infected file fails; uploads `clamav-report` |
 | chart (E0.7) | `make chart-lint`, `make chart-test` | `helm lint` and `helm template` over every value set of both charts (`deploy/helm/trove/ci`, `deploy/helm/trove-bastion/ci`, the dev profile), the render assertions of [test/chart](../../test/chart) for both charts, and the `promtool check rules` / `promtool test rules` run over the Bastion's PrometheusRule ([rules_test.yaml](../../deploy/helm/trove-bastion/tests/rules_test.yaml)); `make chart-test` fetches promtool into `.bin` at `PROMTOOL_VERSION` of [tools/versions.env](../../tools/versions.env), checked against the SHA-256 of the platform; uploads `.out/test-chart.json` (`test-chart`) |
 | image | `make image IMAGE=trove:ci` | the [Containerfile](../../Containerfile) for the runner's architecture, loaded into Docker; the image must run as `65532:65532` (R-HA-033) |
+| SBOM generator (pinned syft, test image) | `make sbom-generator-check` | builds the SBOM generator of the release image and a two-platform test image with it, and asserts that both attestations name the pinned syft; needed by Semantic Release ([below](#sbom-generator)) |
 | Container Scan (Trivy, built image) | `make image IMAGE=trove:scan`, `make trivy`, then Trivy | Trivy (pinned `TRIVY_VERSION`) on the built image: fixed OS and library vulnerabilities of CRITICAL or HIGH, secrets and misconfigurations; SARIF uploaded as `trivy-container-report` |
 | integration (Valkey 9.1, shard a, b) | `make integration-up`, `make test-integration SHARD=<a\|b>`, `make integration-down` | the integration tier against the compose stack on TLS, on Valkey 9.1 only (no older line is guaranteed while trove is in development); two legs with a stack each, shard `a` the packages `ci`, `coordination`, `mirror`, `npm`, `nuget`, `repository` and `proxy` (about half the time), shard `b` every other one; uploads `test-integration-<shard>` and `profile-integration-<shard>` |
 | S3 conformance (MinIO) | `make minio-up`, `make s3-conformance`, `make minio-down` | the conformance tests of R-STOR-035 against MinIO, built from source at `MINIO_COMMIT` and served over TLS only; the server log is uploaded on failure |
@@ -146,6 +148,14 @@ ClamAV scans the source tree (`make malware-scan`). The job installs the `clamav
 the database with `freshclam` first. The scan excludes `.git`, `node_modules` and the build outputs
 `.out`, `.bin`, `.dev` and `bin`. The report is `.out/clamav-report.txt`; the job fails when it does
 not end with `Infected files: 0`, so a scan that did not finish is a failure too.
+
+### SBOM generator
+
+The job `sbom-generator` runs `make sbom-generator-check` ([check.sh](../../tools/sbom-generator/check.sh)) on every push and pull request, and Semantic Release needs it. It builds the
+generator of the release image from `SYFT_IMAGE`, builds a two-platform test image with it as the BuildKit SBOM generator, writes the image to a file (nothing is pushed) and
+asserts that both SBOM attestations name `syft-${SYFT_VERSION#v}`. It uses a docker network, a registry container and a builder of its own and removes them at the end. A syft bump
+that breaks the generator therefore breaks a pull request or push run, never a release ([Q-HA-166](../spec/ha-and-helm.md#q-ha-166--the-sbom-attestation-of-the-image-comes-from-a-generator-that-runs-the-pinned-syft)).
+Locally: `make sbom-generator-check` (Docker with buildx and `jq`).
 
 ### Lint and GoSec
 
@@ -459,9 +469,10 @@ job checks out the tag.
 
 | Job | Runner | What it does |
 |---|---|---|
-| Build Docker Image | `self-hosted` ([CI](#ci)) | [docker/build-push-action](https://github.com/docker/build-push-action) builds [Containerfile](../../Containerfile) for `linux/amd64,linux/arm64` and pushes `guidedtraffic/trove` to Docker Hub with the tags of [docker/metadata-action](https://github.com/docker/metadata-action); provenance and SBOM attestations; the build arguments are the pins (`NODE_VERSION` from [web/.nvmrc](../../web/.nvmrc), `GO_VERSION` from [go.mod](../../go.mod), `RUNTIME_BASE_IMAGE` from [tools/versions.env](../../tools/versions.env)) and the version, the commit and the commit's date for the binary's version line |
+| Build Docker Image | `self-hosted` ([CI](#ci)) | [docker/build-push-action](https://github.com/docker/build-push-action) builds [Containerfile](../../Containerfile) for `linux/amd64,linux/arm64` and pushes `guidedtraffic/trove` to Docker Hub with the tags of [docker/metadata-action](https://github.com/docker/metadata-action); provenance and SBOM attestations (the SBOM from the generator image of [tools/sbom-generator](../../tools/sbom-generator), built in this job from `SYFT_IMAGE` and served by digest from a throwaway registry container on a docker network of the run, on which the buildx builder runs too, [Q-HA-166](../spec/ha-and-helm.md#q-ha-166--the-sbom-attestation-of-the-image-comes-from-a-generator-that-runs-the-pinned-syft); the image is pushed by digest without a tag, a step asserts that both platforms' attestations name the pinned syft, and only then `docker buildx imagetools create` adds the tags); the build arguments are the pins (`NODE_VERSION` from [web/.nvmrc](../../web/.nvmrc), `GO_VERSION` from [go.mod](../../go.mod), `RUNTIME_BASE_IMAGE` from [tools/versions.env](../../tools/versions.env)) and the version, the commit and the commit's date for the binary's version line |
 | Scan and attach the SBOM | same | the SPDX SBOM by anchore/sbom-action with `SYFT_VERSION`, uploaded to the release; a Docker Scout CVE report |
 | Release Helm Chart to GitHub Pages | same | `deploy/helm/trove` and `deploy/helm/trove-bastion` with `version` and `appVersion` set to the release (and the image tag in the `values.yaml` of `trove`), packaged together with one `helm package`, added to the chart repository's `index.yaml` on the `gh-pages` branch in one push, and `trove-<version>.tgz`, `trove-bastion-<version>.tgz` and `index.yaml` attached to the release |
+| Smoke the published release (E5.8) | `large` ([CI](#ci)) | after both jobs above; [below](#the-post-release-check) |
 
 **The Containerfile** has three stages. `web` runs `npm ci` and `npm run build:embed` on the Node.js of
 `web/.nvmrc`; `build` cross-compiles the binary for the target platform on the build platform
@@ -479,13 +490,65 @@ docker.io`, `image.repository: guidedtraffic/trove` ([values.yaml](../../deploy/
 checked by [test/chart/image_test.go](../../test/chart/image_test.go). The release job rewrites the line
 `  tag:` of the `values.yaml` of the chart `trove`; the test fails when a second line of that shape appears.
 
+**One syft.** `SYFT_VERSION` in [tools/versions.env](../../tools/versions.env) writes both SBOMs of the image: the SPDX file of the release
+(anchore/sbom-action) and the attestation in the image index (the generator of `tools/sbom-generator`, whose
+[Containerfile](../../tools/sbom-generator/Containerfile) takes the syft binary from `SYFT_IMAGE`, the same version by digest, and has no version of its own). The scanner that
+BuildKit bundles, `docker/buildkit-syft-scanner`, ships an older syft (v1.51.0 in its newest release, 1.12.1, checked on 2026-11-07), which is why it is not used.
+`make versions-check` runs [check-pins.sh](../../tools/sbom-generator/check-pins.sh) and fails on a `SYFT_IMAGE` that is not `SYFT_VERSION` by digest, on a default or a
+syft image of its own anywhere else in the repository, on a build.yml that reads another version or sets `sbom` to anything but the generator, and on a `syft` on `PATH` that
+is not the pin. The generator is served from a registry container on a docker network of the run (`trove-sbom-<run id>-<attempt>`); the buildx builder is a container on that network
+(`driver-opts: network=…`, plain HTTP allowed for the registry's name only), so no build step of the image shares the runner's network namespace. The image is pushed by digest without a tag, and a step runs
+[creators.sh](../../tools/sbom-generator/creators.sh) on that digest before `imagetools create` adds the tags (version, major.minor, major, sha, and `latest` on main; the attestations are part of the index and stay); a failure moves no tag, publishes no chart and
+attaches no SPDX file, and leaves an untagged image by digest in the repository ([Q-HA-166](../spec/ha-and-helm.md#q-ha-166--the-sbom-attestation-of-the-image-comes-from-a-generator-that-runs-the-pinned-syft)). What keeps that from
+happening on a release is the job `sbom-generator` of Test and Release ([below](#sbom-generator)). The `build` job itself first runs on the next release: if its generator step
+fails, the release stops before the chart is published, and `gh run rerun <id> --failed` runs it again once the cause is fixed.
+
 Not in the pipeline: a chart SBOM, a chart attestation, and any signature. Only the image carries
 attestations: a provenance and an SBOM attestation in its image index.
+
+## The post-release check
+
+The job `smoke-published` of `build.yml` (E5.8, R-HA-047) takes the artifacts as an installer gets them and runs the scenarios of
+[Q-HA-165](../spec/ha-and-helm.md#q-ha-165--the-smoke-scenarios-of-e58-are-the-e21-matrix-and-the-client-smoke-test) against them. It runs after `build` and
+`release-helm-gh` succeeded, on `large` (a kind leg), up to 120 minutes. Its steps are named by the case they decide:
+
+| Step | Cases that make it red |
+|---|---|
+| Name the release to check | the version is not `x.y.z` (a dispatch input) |
+| Verify the published artifacts | `release not found` (no GitHub release for the version); `chart not published` (the chart index does not list the version after 20 minutes: the release job or GitHub Pages did not publish it); `chart package differs from the index`; `image not published`; `attestation missing` (no provenance or no SPDX SBOM for `linux/amd64` or `linux/arm64`); `release asset missing` (no `guidedtraffic-trove_<version>.spdx.json`) |
+| Install the published release | the published chart and digest do not install into the dev profile (a defect of that version, or a Docker Hub fault) |
+| Run the scenarios | a red `TestNPMClients` or `TestNPMMatrix` (a defect of that version, or the environment) |
+| Check that every pod runs the published digest | `wrong image in the cluster`: a container does not report `@<digest>`, or `helm get values` carries another digest ([the published mode](e2e.md#the-published-mode)) |
+
+The check reads the attestations; it verifies no signature, and no cluster verifies them (H-79). It pushes nothing and touches no branch; it builds only the images the harness always builds for a run (the e2e driver, the counting test upstream and the client images), never the product.
+The chart package it installs is the file it verified, and the image is pulled by the digest the tag resolved to, so the install and the checks cannot see different artifacts.
+The evidence is the job summary (the tag's commit, digests, the SBOM creator tools of each platform, the matrix per gate row, the wall time of each step) and, for 90 days, the artifacts
+`release-smoke-report` (`.out/test-e2e.json`) and `release-smoke-artifacts` (`.out/e2e/`, with `npm-matrix.json`, and `.out/release-smoke/`, with `evidence.json` and `times.tsv`). The edge listens on host port 8101. The GitHub API is called with the job's read-only token; a 404 reads "release not found", an answer of 401, 403 or 429 "refused (authentication or rate limit)", and no answer "cannot be reached".
+
+**A red check leaves the release published** ([Q-HA-163](../spec/ha-and-helm.md#q-ha-163--a-red-post-release-check-leaves-the-release-published-and-is-a-finding-not-a-withdrawal)):
+it is a finding about that version, and the fix is a commit that Semantic Release releases under the next version. Infrastructure faults (a Docker Hub rate limit, a kind
+cluster that does not start, a lost runner) are re-run with `gh run rerun <id> --failed`, which runs the failed job again and keeps the results of the publish jobs.
+
+**Running it on a published release** (`workflow_dispatch`, input `version`): only this job runs. The publish jobs have `if: github.event_name == 'release'`, so a dispatch
+builds no image and pushes no tag, `latest` and `gh-pages` included ([test/chart/release_workflow_test.go](../../test/chart/release_workflow_test.go) fails when a gate goes).
+The harness and the dev profile come from the dispatched ref, the chart and image from the release.
+
+```sh
+gh workflow run "Release Docker & Helm" --ref main -f version=0.25.0   # example
+gh run list --workflow "Release Docker & Helm" --limit 3
+gh run view <id> --json jobs --jq '.jobs[] | [.name, .conclusion] | @tsv'   # build and release-helm-gh: skipped
+```
+
+Locally, without a cluster: `make release-smoke VERSION=0.25.0` (needs `curl`, `helm`, `jq`, Docker with buildx). Dispatching a workflow file that exists only on a branch is
+not verified here; if GitHub refuses it, the change goes to `main` first, which is safe because its commits are `ci:`, `test:` and `docs:` and release nothing.
+
+Open until the first release runs the job: the wait for GitHub Pages (the cap is a plan value, not measured), the matrix's wall time against the 120 minutes, and the image ID that
+containerd reports for `guidedtraffic/trove` (the guard assumes the index digest, which it reports for the pinned cert-manager images).
 
 ## Secrets and settings
 
 The pipeline uses three secrets of the organisation, which reach this repository without a setting here:
-`DOCKERHUB_PAT` (the Docker Hub access token of the user `guidedtraffic`) for the image, and
+`DOCKERHUB_PAT` (the Docker Hub access token of the user `guidedtraffic`) for the image and for the pulls of the post-release check, and
 `APP_CLIENT_ID` and `APP_PRIVATE_KEY` for the GitHub App that Semantic Release and Renovate act as.
 
 One setting is the owner's to make: the `gh-pages` branch that holds the chart repository, which GitHub
@@ -495,6 +558,8 @@ Pages serves at `https://guided-traffic.github.io/trove/`.
 
 - **No signatures.** The image carries a provenance and an SBOM attestation, not a keyless signature. The
   chart carries neither a signature nor an attestation.
+- **The post-release check has not run on a real release.** E5.8 is closed by the owner's walkthrough from the evidence of the first green run after a release and of the
+  dispatch runs; until then the job is built and its parts are checked locally, not proven in CI ([the post-release check](#the-post-release-check)).
 - **Docker Buildx of the local machine** is the one of Docker Desktop, not the pinned version, until it
   is replaced ([make versions-check](../../Makefile) reports it).
 - **Dependency updates are patch releases.** Each automerged update is a `fix` commit.

@@ -73,6 +73,8 @@
 #                       upgrade and rollback from the latest release, and the rolling upgrade of the working tree from its second UI
 #                       bundle (make image-marked) to the image under test, each under npm, NuGet and browser loops; it replaces the
 #                       installation and returns the cluster to the current dev release (nightly, dispatch, locally)
+#   e2e.sh release-smoke the scenarios of the post-release check (E5.8, Q-HA-165): the client smoke test and the matrix of E2.1 against the
+#                       published chart and image (TROVE_RELEASE_VERSION and TROVE_RELEASE_DIGEST set, see deploy/dev/up.sh); CI: job smoke-published
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -111,6 +113,13 @@ case "$set_name" in
   # The additions of the run that closes the phase: the matrix again with Valkey stopped, the read-only subset against
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
+  # The post-release check (E5.8, docs/developer/releasing.md#the-post-release-check): the client smoke test and the E2.1 matrix, nothing
+  # else of the npm set (Q-HA-165). The installation is the published chart and image; the profile switches the matrix makes run up.sh
+  # with the same TROVE_RELEASE_* variables, so they do not replace it with a local build.
+  release-smoke)
+    # Without both variables the switches would install the working tree, and the matrix would pass against the wrong artifact.
+    [ -n "${TROVE_RELEASE_VERSION:-}" ] && [ -n "${TROVE_RELEASE_DIGEST:-}" ] || die "the set release-smoke needs TROVE_RELEASE_VERSION and TROVE_RELEASE_DIGEST (the published mode of deploy/dev/up.sh)"
+    run='^TestNPM(Clients|Matrix)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # <<< M2 npm-clients
   # >>> M3 nuget-clients
   # The NuGet client pods (R-NUGET-027, docs/developer/e2e.md#the-nuget-clients): the smoke test of the clients alone, and

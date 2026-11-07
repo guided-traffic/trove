@@ -140,6 +140,7 @@ make e2e SET='^TestE06'      # any go test -run expression
 make e2e SET=clients         # build the npm clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=clients-down    # remove the client pods
 make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 but E2.11, and TestNPMProjectPartner (CI job e2e-npm, every change); three client pods
+make e2e SET=release-smoke  # E5.8: TestNPMClients and TestNPMMatrix against the published chart and image (CI job smoke-published of build.yml, after each release; needs TROVE_RELEASE_VERSION and TROVE_RELEASE_DIGEST, below)
 make e2e SET=npm-closing     # the additions of the closing run (below); fails unless TROVE_E2E_NPM_CLOSING=1, which the set exports
 make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load (CI leg npm-ha: nightly and on dispatch, since 2026-11-01)
 make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (no CI leg since 2026-11-01; run by hand)
@@ -1036,6 +1037,31 @@ restore the edge target with a `defer`.
 
 `SET=npm-closing` exports `TROVE_E2E_NPM_CLOSING=1` and runs `TestNPMClosing`; without the variable the test fails, so it cannot be absent from the closing run. The
 workflow adds this leg, and the three 30-minute fuzz legs of `make fuzz-npm`, when it is dispatched with `closing=true`.
+
+### The published mode
+
+`make e2e SET=release-smoke` is the scenario half of the post-release check of E5.8 (R-HA-047, [Q-HA-165](../spec/ha-and-helm.md#q-ha-165--the-smoke-scenarios-of-e58-are-the-e21-matrix-and-the-client-smoke-test)):
+`TestNPMClients` and `TestNPMMatrix`, nothing else of the npm set, with the counting upstream and three client pods. What differs from `SET=npm` is the
+installation under test, not the tests. The release is installed by `deploy/dev/up.sh` in its published mode, which `TROVE_RELEASE_VERSION` (`0.25.0`, example)
+and `TROVE_RELEASE_DIGEST` (`sha256:...`, example) switch on together: the chart package of that version from `https://guided-traffic.github.io/trove/`,
+`image.digest` set, no `make image`, no `kind load`, no chart of the working tree ([local-profile.md](local-profile.md#environment)).
+
+The matrix needs the scatter profile, and `useScatter` in [m1_env_test.go](../../test/e2e/m1_env_test.go) (and `restoreProfile`, and
+`restoreCurrentRelease` of the upgrade tests) switch to it by running `up.sh` again with the process environment. The variables are part of that environment,
+so every switch installs the published chart and digest again and never the working tree; set in the shell that starts `make e2e`, they reach it. A harness that lost
+them would not fail a scenario: the switch would roll the pods to a local image (or fail on its absence), and the matrix would pass against the wrong
+artifact. Two checks keep that from passing silently. `up.sh` refuses the variables together with `TROVE_IMAGE` or `TROVE_SKIP_RELEASE=1`, `e2e.sh` refuses the set `release-smoke` without both variables, and
+`make release-smoke-guard` (`deploy/dev/release-smoke.sh guard`) runs after the scenarios and fails unless every container of the release's pods (the
+e2e driver pod excluded: it is built from the working tree by design) reports an image ID that ends in `@<digest>` and `helm get values` carries the
+same `image.digest`. The image ID of a container pulled by an index digest is that digest; the guard relies on it, and it was checked on the dev cluster for the pinned
+cert-manager images, not yet for `guidedtraffic/trove` (the first run of the job shows it).
+
+`make release-smoke VERSION=<x.y.z>` is the half that needs no cluster: it checks that the release exists (the GitHub API, `curl` and `jq`), waits until the chart repository lists the version and serves the package (cap 20 minutes), compares the package's SHA-256 with the
+index, resolves `guidedtraffic/trove:<x.y.z>` to its digest, reads the provenance and the SPDX SBOM of both platforms and checks the release's SPDX asset. It writes
+`.out/release-smoke/evidence.json`, appends to the job summary in CI, and prints the digest the install uses. Each failure names its case ([Q-HA-163](../spec/ha-and-helm.md#q-ha-163--a-red-post-release-check-leaves-the-release-published-and-is-a-finding-not-a-withdrawal)).
+Locally (read-only network access, `curl`, `jq`, `helm` and Docker with buildx, no cluster): `make release-smoke VERSION=0.25.0`.
+
+Not covered: a cryptographic check of the attestations (no signature is part of the pipeline, H-79), the Valkey-stopped variant of the matrix, and any criterion of E2.2 to E2.12.
 
 ### Findings of the npm tests
 

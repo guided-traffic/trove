@@ -5292,8 +5292,12 @@ Priority: **P1** · Covers: HA-056
   (Q-HA-11, option (d)). Mirrors are the operator's (air-gapped, below).
 - **Attestations, no signatures (owner decision of 2026-10-29).** The image index of each release
   carries a BuildKit SLSA provenance attestation and an SBOM attestation (`provenance: true` and
-  `sbom: true` in build.yml). The release also carries the image's SPDX SBOM as an asset,
-  `guidedtraffic-trove_*.spdx.json`. Docker Scout scans the image; its report goes to the job summary
+  `sbom: generator=…` in build.yml). The release also carries the image's SPDX SBOM as an asset,
+  `guidedtraffic-trove_*.spdx.json`. Both SBOMs come from the one syft version `SYFT_VERSION` of
+  [versions.env](../../tools/versions.env): the attestation from the generator image of
+  [tools/sbom-generator](../../tools/sbom-generator) (built from `SYFT_IMAGE`, the same version by digest), the asset from
+  anchore/sbom-action; the `build` job pushes the image by digest, asserts the creators of both platforms and only then tags it, and the job `sbom-generator` of Test
+  and Release proves the generator before any release (Q-HA-166). Docker Scout scans the image; its report goes to the job summary
   and to `scout-report.sarif`. The workflow sets no `exit-code` input; the action's default for it is not
   verified here.
   The chart has neither a signature nor an attestation: `helm package` runs without `--sign`, and the
@@ -5311,12 +5315,22 @@ Priority: **P1** · Covers: HA-056
   The chart pulls no other image. No init container image, no bundled database or Valkey, no proxy
   image. Copy the image index as a whole, so that its attestation manifests come along. Whether a
   given mirror keeps them is not verified here.
+- **Post-release check (Q-HA-163, Q-HA-164, Q-HA-165; roadmap E5.8).** After both publish jobs of a release,
+  the job `smoke-published` of [build.yml](../../.github/workflows/build.yml) takes the artifacts as an installer
+  gets them: the chart package from the chart repository by its version, the image by the digest that its tag
+  resolves to. It installs the chart with `image.digest` into a kind cluster with the dev profile's dependencies
+  and runs the scenarios of Q-HA-165 against it. It also checks that the package's SHA-256 is the digest the index
+  lists, that the image index carries a provenance and an SBOM attestation for `linux/amd64` and `linux/arm64`, and
+  that the release has its SPDX file attached. The check runs in the pipeline and reads the attestations; no cluster
+  verifies them (H-79). A red check leaves the release published (Q-HA-163).
 
 Acceptance criteria:
 
 - `helm template … | grep -E 'image:' | sort -u` lists exactly one image.
 - The image index of a release carries a provenance and an SBOM attestation, and the release has its
   SPDX file `guidedtraffic-trove_*.spdx.json` attached.
+- The job `smoke-published` of the release is green: the chart installed by `image.digest` passes the scenarios of
+  Q-HA-165, and the pods of the installation run that digest.
 - An installation from a mirror with `global.imageRegistry: registry.internal.example` pulls
   nothing from the public registry (verified with a deny-all egress policy on the nodes' public
   registry access in the test).
@@ -8710,6 +8724,97 @@ Status: Decided by the development agent — selected from the options below; th
 **Rationale:** Handlers are fail-closed: a removal only removes and an update is applied only when the comparator proves it narrows, so replaying more copies cannot grant. Revisit when the journal objects are signed.
 **Applied:** R-HA-054 "Replay run"; `internal/journal/replay/reader.go`, `replayer.go`, `internal/blob/s3/journalstore.go` (`GetAll`), `internal/journal/ship`.
 
+### Q-HA-163 · A red post-release check leaves the release published and is a finding, not a withdrawal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The release and its artifacts stay as published; the run of `Release Docker & Helm` goes red; the finding is recorded; the fix is a commit that Semantic Release releases under the next version (chosen) | No step changes a published artifact; `gh run rerun <id> --failed` runs the check again once its cause is gone | Publication cannot be undone in the pipeline: Semantic Release has released the commits, and a re-run publishes nothing for them ([releasing.md](../developer/releasing.md#when-no-release-comes)), so a fix needs a new commit anyway | Until the fix release, the chart index lists the broken version as its newest entry, which `helm install` without `--version` takes; an image without its attestation stays under its tag |
+| (b) Withdraw a red release: delete the GitHub release and the tag, remove the image tags on Docker Hub, rewrite `gh-pages` without the version | The pipeline reverts what it published | Installers no longer see the broken version | The commits have no release until a new commit lands; a deleted tag breaks anyone who pulled by tag; a rewrite of `gh-pages` is a force-push, and the job would then undo a release because of an infrastructure fault |
+| (c) Run the check before the release is public (a draft release, or the check before Semantic Release) | No broken release is ever public | The strongest guarantee | The check reads the published artifacts (the chart's index on Pages, the image by its tag), so they must exist first; a draft changes the release flow that [ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard) fixes |
+
+**Choice:** (a).
+
+**Rationale:** The check tests what an installer gets, so a red result is a defect of a published version, and it is handled like any other defect: a fix commit and a new version. Per case, what a red means:
+
+- An attestation or the SPDX asset missing: a provenance gap. Installs by tag are unaffected, because the chart pulls by tag unless `image.digest` is set. The finding is recorded and the release job is re-run.
+- The chart missing from the index after the wait cap: the release job or GitHub Pages did not publish it. `helm install --version <v>` fails for everyone until it is published. The job's wait step names this case.
+- The installation or a scenario fails with the artifacts intact: a defect of that version. Fix forward.
+- Infrastructure (a Docker Hub rate limit, the kind cluster does not start, a lost runner): `gh run rerun <id> --failed`; no product change.
+
+Each step of the job has its own name, so the reader sees the case without opening the matrix report. The owner's rule for the long legs (a red leg is a finding, not a blocker, 2026-11-01) gives the same answer for a check that runs after the release is public.
+
+The development agent would revisit this at the first stable release, from which reliability and compatibility come first, and whenever a red check shows that a broken version reached users before its fix. Then option (b) for the index alone (a re-index without the version) is a decision of its own.
+
+**Applied:** R-HA-047 (post-release check). The job `smoke-published`, its scripts and the case table of [releasing.md](../developer/releasing.md#the-post-release-check) carry it.
+
+### Q-HA-164 · The post-release check is a job of `Release Docker & Helm`, and a dispatch runs only that job
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A job `smoke-published` in [build.yml](../../.github/workflows/build.yml) with `needs: [build, release-helm-gh]`; a `workflow_dispatch` input `version`; the publish jobs run on `release` events only, and the check runs after both succeed on a release and alone on a dispatch (chosen) | One run per release holds the publish jobs and the check; GitHub enforces the order | The release procedure already reaches a failed job of this workflow (`gh run rerun <id> --failed`) | The publish jobs need an `if:` gate; without it a dispatch on a branch would rebuild `latest` from that branch and force-push `gh-pages` |
+| (b) A separate workflow file on `workflow_run` of `Release Docker & Helm` (completed, successful) and its own `workflow_dispatch` | The check cannot change a publish job, by construction | No gate to keep correct | The check is a second run; the query of the release flow (`gh run list --workflow "Release Docker & Helm"`) does not show its red |
+| (c) A step in `release-helm-gh` before its push | Runs in the same job as the publish | None that the others lack | The artifacts it would check do not exist yet, so it would test the candidate, not what is published |
+
+**Choice:** (a). The gate is the condition on each publish job, `if: github.event_name == 'release'`, and the check's condition is `!cancelled() && (github.event_name == 'workflow_dispatch' || (needs.build.result == 'success' && needs.release-helm-gh.result == 'success'))`. `!cancelled()` and not `always()`: a cancelled run stops the check, while the skipped publish jobs of a dispatch still let it run.
+
+**Rationale:** Option (a) keeps the order and the evidence of a release in one run, and it gives the dispatch the one thing the release lacks: a way to run the check on a published version without cutting a release. The dispatch can reach any branch that the user can push to, and the workflow file of that branch runs with `DOCKERHUB_PAT`; that is the exposure [H-80](#h-80--self-hosted-runners-build-the-code-of-every-pull-request) already records for pushes, and a dispatch adds no reader beyond it. The `version` input is checked against `^v?[0-9]+\.[0-9]+\.[0-9]+$` in the job's first step, and against an existing release (`gh release view`) before anything is pulled. A test parses build.yml and fails when a publish job lacks its gate (R-HA-047), because the gate is what keeps a dispatch from publishing. The development agent would revisit this when the publish jobs need a rebuild on demand, which would move the check to (b) or give the publish jobs a gated input of their own.
+
+A dispatch checks out the ref it was started on, and a release checks out its tag: the harness and the dev profile come from that checkout, the chart and the image from the release the input names. A dispatch on `main` for an older release therefore runs today's harness and dev values against that release's chart; an older chart that rejects a value of today's dev profile fails the install, which is a finding about the skew, not about the release.
+
+Token permissions follow the same split. The workflow default is `contents: read`; `build` and `release-helm-gh` hold `contents: write` and nothing else (the release assets and the push of `gh-pages`; the workflow used to grant `id-token`, `actions` and `attestations` too, none of which a step uses), `release-helm-gh` also keeps `pages: write`: `contents: write` already pushes `gh-pages`, so dropping `pages` gains no least privilege, and whether GitHub's Pages build runs for a push with a `GITHUB_TOKEN` without it is not verified here. `smoke-published` holds `contents: read`. The release tag is checked against `^v[0-9]+\.[0-9]+\.[0-9]+$` in both publish jobs before it reaches `sed`, and the dispatch input is never echoed. The edge of the check listens on host port 8101.
+
+**Applied:** R-HA-047 (post-release check bullet). [build.yml](../../.github/workflows/build.yml) carries the gates, the permissions and the job; `deploy/dev/release-smoke.sh`, `deploy/dev/up.sh`, `deploy/dev/e2e.sh` (which refuses the set `release-smoke` without both `TROVE_RELEASE_*` variables) and the Makefile carry the rest; `TestR_HA_047_ADispatchRunsOnlyThePostReleaseCheck` and `TestR_HA_047_TheTokensHoldWhatTheJobsUse` guard the gates and the permissions (the test pins `pages: write` on `release-helm-gh`).
+
+### Q-HA-165 · The smoke scenarios of E5.8 are the E2.1 matrix and the client smoke test
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The whole `npm` set, `TestNPM(Clients\|Matrix\|Replicas\|Collapse\|Upstream\|Endpoint\|Project)`, which the job `e2e-npm` runs for each change (E2.1 to E2.12) | Every npm criterion on the published artifacts | The widest evidence for the artifact | Repeats E2.2 to E2.12 on code that the change's run has already passed, once per release; the wall time of the set on a large runner is not measured here |
+| (b) `TestNPMMatrix` (every scenario of R-NPM-045 for the eight gate rows of E2.1) and `TestNPMClients` (every row runs its client's `--version`, and the base URL reaches the cluster with a verified certificate) (chosen) | The criterion the roadmap names, and the client smoke test that precedes it | The matrix is the only test that installs and uses packages with every gate row, which is what an installer does; both tests exist | The matrix's wall time is not measured here; it is the first thing the first runs of the job show |
+| (c) `TestNPMClients` alone | The smallest run | It exists | It shows that the clients start and reach the cluster, not that a package can be published and installed |
+| (d) A new short scenario for the check: `helm install`, `/-/ping`, one `npm ci` per row | A small, fast check | Short | A criterion nobody has specified; it would need its own requirement |
+
+**Choice:** (b). The Valkey-stopped variant (`TestNPMClosing`, the closing run of Q-NPM-46) is not in the check, because the check does not stop Valkey.
+
+**Rationale:** E2.1 is the matrix, so the roadmap's words "E2.1's smoke scenarios" name it without a new definition. The check reruns no criterion of E2.2 to E2.12, whose code and cluster the change's run has already covered; the artifact is what differs, and the matrix is the test of an artifact's use. The development agent would revisit this when the first runs show that the matrix does not fit the job's time budget (120 minutes), or when a published-only failure appears in a criterion outside E2.1, which would justify option (a) for that criterion.
+
+**Applied:** R-HA-047 (post-release check bullet and acceptance criterion); the set `release-smoke` of `deploy/dev/e2e.sh` (`TestNPM(Clients|Matrix)`).
+
+### Q-HA-166 · The SBOM attestation of the image comes from a generator that runs the pinned syft
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The release carried two syft versions: BuildKit's bundled scanner wrote the SBOM attestation of the image index with syft v1.51.0 (the SPDX creators of the `0.25.0` attestation name `Tool: syft-v1.51.0` and `Tool: buildkit-v0.34.2`), and anchore/sbom-action wrote the SPDX file of the release with `SYFT_VERSION`, v1.55.0. Evidence for the options:
+
+- The scanner image of BuildKit, `docker/buildkit-syft-scanner`, has tags up to `1.12.1` (and `1`, `1.12`, `latest`, `stable-1`, `edge`). The `go.mod` of its tags `v1.10.0`, `v1.11.0`, `v1.12.0` and `v1.12.1` and of its `master` branch require syft v1.40.0, v1.42.3, v1.51.0, v1.51.0 and v1.51.0 (read with the GitHub API on 2026-11-07). The newest syft release is v1.57.0, and `SYFT_VERSION` is v1.55.0, so no scanner image carries the pinned version.
+- BuildKit accepts any image that follows its scanner protocol as the generator (`sbom: generator=<image>`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) BuildKit's bundled scanner (`sbom: true`) and the version of the SPDX file follows it | The pin `SYFT_VERSION` moves to the scanner's syft | No new image | The version comes from the BuildKit version that buildx selects, not from a pin; the repository's rule is the newer version everywhere, and v1.51.0 is the older one |
+| (b) `docker/buildkit-syft-scanner` at its newest tag, `SYFT_VERSION` lowered to v1.51.0 | One version, explicit | No new image | The older version everywhere; Renovate's bump of `SYFT_VERSION` would then need a scanner release first |
+| (c) A generator image built from `SYFT_IMAGE` (`anchore/syft:$SYFT_VERSION` by digest) and a shell, built in the `build` job and served from a throwaway registry container on a docker network of the run (chosen) | The attestation is written by the binary of the pin; the version appears once, in [versions.env](../../tools/versions.env) | One version; the generator is never published | A small scanner script of the repository ([scan.sh](../../tools/sbom-generator/scan.sh)) that follows BuildKit's protocol, and a registry container per release build |
+| (d) The same generator pushed to Docker Hub as a published image | The same as (c), without the registry container | No registry step | A second published artifact of the organisation, which needs an owner decision on its repository, retention and who may pull it |
+| (e) Option (c) with the registry on the runner's loopback and the builder in the host's network namespace (`network=host`) | No docker network | Fewer moving parts | Every `RUN` step of the image build, `npm ci` install scripts included, would share the runner pod's network namespace with whatever listens on its loopback |
+
+**Choice:** (c). The Containerfile takes `SYFT_IMAGE` and the shell image as build arguments without a default. `tools/sbom-generator/registry.sh` creates the docker network `trove-sbom-<run id>-<attempt>`, and the buildx builder (`docker/setup-buildx-action` with `driver-opts: network=<network>` and a `buildkitd-config-inline` that allows plain HTTP for that one host) runs on it. `registry.sh up` starts the registry container `trove-sbom-registry-<run>` there, publishes no port, builds the generator for `linux/amd64` and `linux/arm64`, pushes it and prints the reference by digest (`--metadata-file`, `containerimage.digest`); the build step passes `sbom: generator=<registry>:5000/sbom-generator@sha256:…`. A failed `up` removes the registry; the job removes the builder, the registry and the network afterwards. The pin of the syft image is a digest, `SYFT_IMAGE=docker.io/anchore/syft:v1.55.0@sha256:…`. The version therefore appears twice in versions.env (`SYFT_VERSION` and the tag of `SYFT_IMAGE`); `check-pins.sh` holds the two equal, and a Renovate group rule (`syft`, like the k6 group) moves both in one pull request.
+
+**Rationale:** The rule of the repository is one version of a tool; the newer one is the pin, and the scanner images lag it by several releases. The scanner protocol is the supported extension point, so the change adds no patch to BuildKit and no second SBOM tool: the generator is `syft scan dir:<rootfs>` plus the in-toto wrapper that BuildKit expects. The network of the run keeps option (e)'s exposure out of the build: the containers on it are the registry, whose content is pinned by digest, the builder, and the `RUN` steps of the image's own build, which can reach the registry by name but find nothing there to replace (the generator is referenced by digest) and nothing of the runner's loopback; the reference by digest means that what the builder runs is the image the step just built, not a tag that something else on the network could have replaced. Checked on 2026-11-08 with `make sbom-generator-check` on Docker Desktop: the generator builds on a dedicated network, the builder reaches the registry by its name over plain HTTP, a two-platform test image written with `--output type=oci` carries two SPDX attestations that name `Tool: syft-1.55.0`, and the network, the registry and the builder are gone afterwards.
+
+Three checks keep the version in one place. `make versions-check` runs [check-pins.sh](../../tools/sbom-generator/check-pins.sh): it fails when `SYFT_IMAGE` is not the digest form of `SYFT_VERSION`, when the Containerfile declares a default or names a syft image of its own, when any file of the repository outside versions.env names one (`anchore/syft:` or `anchore/syft@sha256:`), when build.yml reads a syft version other than `env.SYFT_VERSION` or sets `sbom` to anything but the generator, and when a `syft` on `PATH` is not the pin. The job `sbom-generator` of Test and Release runs the check above on every push and pull request and is a need of Semantic Release, so a syft bump that breaks the generator breaks that run and never a release. And the `build` job asserts, after the push, that both platforms' SBOM attestations name `syft-${SYFT_VERSION#v}` ([creators.sh](../../tools/sbom-generator/creators.sh)).
+
+That last assertion can run only after the push, because BuildKit writes the attestations with the image. So the image is pushed by digest without a tag (`outputs: type=image,push-by-digest=true,name-canonical=true,push=true`), the assertion reads the digest, and only then does `docker buildx imagetools create -t … <repo>@<digest>` add the tags of docker/metadata-action (version, major.minor, major, sha, and `latest` on main). The attestation manifests are part of the pushed index, and the tags resolve to the same digest; checked on 2026-11-08 on a two-platform test image (the digest of the tag equals the pushed digest, the index keeps its four manifests, the SBOM creators and the provenance read through the tag). A failed assertion therefore moves no tag, publishes no chart and attaches no SPDX file: an untagged image by digest remains in the repository, which nothing resolves. The pre-release job still exists so that a release does not fail there. Not verified: a run of the `build` job itself, which needs a release (the first one after this change runs it), and that the runner's Docker daemon supports user-defined networks with container-name resolution for the buildx builder (it holds on Docker Desktop). The post-release check records the SBOM creators of the release it checks and does not assert them, because it also checks releases from before the change.
+
+The development agent would revisit this when `docker/buildkit-syft-scanner` ships the pinned version (then (a) with `generator=docker/buildkit-syft-scanner:<tag>@sha256:…` drops the repository's script), or when the organisation wants the generator published (option (d)).
+
+**Applied:** R-HA-047 (attestations bullet); [build.yml](../../.github/workflows/build.yml) (job `build`), [release.yml](../../.github/workflows/release.yml) (job `sbom-generator`), `tools/sbom-generator/`, [versions.env](../../tools/versions.env) (`SYFT_IMAGE`, `SBOM_GENERATOR_SHELL_IMAGE`, `SBOM_GENERATOR_REGISTRY_IMAGE`), the Makefile targets `versions-check` and `sbom-generator-check`, [releasing.md](../developer/releasing.md#the-release-pipeline); `TestR_HA_047_TheImageAttestationUsesThePinnedSyft` guards the build step and `TestR_HA_047_TheTokensHoldWhatTheJobsUse` the absence of `network=host`.
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
@@ -8785,6 +8890,7 @@ design.
   on the repository's Actions settings, which are not in the repository and are not verified here. For the jobs on
   GitHub-hosted runners the host-and-network part is dormant (a fresh virtual machine per job that GitHub discards
   afterwards); their secret part stays live.
+  The job `sbom-generator` pulls public images anonymously and holds no secret.
 - **What makes it real:** a pull request can change the workflow file or the Makefile of its own branch, and the
   changed file runs with the secrets. Whoever can push a branch to this repository can therefore read
   `DOCKERHUB_PAT` from a job. The runners are ephemeral pods ([releasing.md](../developer/releasing.md#ci)), which

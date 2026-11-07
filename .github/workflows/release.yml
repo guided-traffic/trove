@@ -582,6 +582,36 @@ jobs:
           echo "user: $user"
           test "$user" = "65532:65532"
 
+  # The SBOM generator of the release image (Q-HA-166, tools/sbom-generator): builds it at the syft pin, builds a two-platform
+  # test image with it as the BuildKit SBOM generator (written to a file, nothing pushed to a public registry) and asserts that
+  # both attestations name the pinned syft. A syft bump that breaks the generator fails here, before any release; the job is
+  # a need of semantic-release below. It pulls public images anonymously and holds no secret.
+  sbom-generator:
+    name: SBOM generator (pinned syft, test image)
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: make sbom-generator-check
+        run: make sbom-generator-check
+
   # Trivy on the built image, as valkey-operator's container job runs it: vulnerabilities of the OS
   # and the libraries (fixed ones only), secrets and misconfigurations. A finding of CRITICAL or HIGH
   # fails the job.
@@ -2423,7 +2453,7 @@ jobs:
   semantic-release:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, sbom-generator, container-scan, integration, s3-conformance, e2e, e2e-npm, e2e-nuget, e2e-ci, e2e-bastion, e2e-vuln, e2e-mirror, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
     runs-on: self-hosted
     timeout-minutes: 30
     steps:

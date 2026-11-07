@@ -23,6 +23,7 @@ golangci-lint is built from source with `go install` into
 or of the Go toolchain builds a new binary and a stale one is never reused. `.bin/` is ignored by git.
 `make versions-check` also compares the installed kind, kubectl, Helm and k6 (when present on `PATH`)
 with their pins and fails on a difference; a tool that is not installed is not an error there.
+It also runs [check-pins.sh](../../tools/sbom-generator/check-pins.sh), which keeps one syft version for the release image's two SBOMs (a `syft` on `PATH` must be `SYFT_VERSION`; the generator's Containerfile and build.yml must not carry a version of their own, [Q-HA-166](../spec/ha-and-helm.md#q-ha-166--the-sbom-attestation-of-the-image-comes-from-a-generator-that-runs-the-pinned-syft)).
 
 ## Targets
 

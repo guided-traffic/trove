@@ -1,0 +1,23 @@
+# check=skip=InvalidDefaultArgInFrom
+# The SBOM generator of the release image (build.yml, step "Build and push"): a BuildKit SBOM scanner
+# (https://github.com/moby/buildkit/blob/master/docs/attestations/sbom-protocol.md) that runs the pinned syft.
+# The published docker/buildkit-syft-scanner carries the syft of its own build (v1.51.0 in its newest release), not
+# SYFT_VERSION, which writes the SPDX file of the release; this image takes the syft binary of SYFT_IMAGE (SYFT_VERSION
+# by digest), so the attestation and the release asset come from one version (Q-HA-166).
+#
+# Both arguments come from tools/versions.env and have no default: a build without them fails at FROM, so no version
+# can live in this file (make versions-check also refuses a default). The check line above silences the linter's
+# warning about exactly that.
+ARG SYFT_IMAGE
+ARG SBOM_GENERATOR_SHELL_IMAGE
+
+FROM ${SYFT_IMAGE} AS syft
+FROM ${SBOM_GENERATOR_SHELL_IMAGE} AS shell
+
+FROM scratch
+COPY --from=syft /syft /syft
+COPY --from=shell /bin/busybox /bin/busybox
+COPY scan.sh /scan.sh
+# No update check and no network: the scan reads the mounted root file system only.
+ENV SYFT_CHECK_FOR_APP_UPDATE=false SYFT_CACHE_DIR=/tmp/syft-cache LOG_LEVEL=warn
+ENTRYPOINT ["/bin/busybox", "sh", "/scan.sh"]

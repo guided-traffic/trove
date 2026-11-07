@@ -273,6 +273,15 @@
       "groupSlug": "k6"
     },
     {
+      "description": "syft: SYFT_VERSION and SYFT_IMAGE are one version twice in tools/versions.env; make versions-check (tools/sbom-generator/check-pins.sh) fails when their tags differ, so one pull request carries both",
+      "matchDepNames": [
+        "anchore/syft",
+        "docker.io/anchore/syft"
+      ],
+      "groupName": "syft",
+      "groupSlug": "syft"
+    },
+    {
       "description": ".NET SDK of the NuGet tests: NUGETVECTORS_SDK_IMAGE (the golden vectors) and E2E_NUGETCLIENTS_SDK_IMAGE (the clients image) are one SDK in tools/versions.env; make versions-check (test/e2e/nugetclients/check-pins.mjs) fails when they differ, so one pull request moves both",
       "matchFileNames": [
         "tools/versions.env"
