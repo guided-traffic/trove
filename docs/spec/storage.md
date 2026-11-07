@@ -4723,6 +4723,21 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-STOR-024 step 2b; `internal/blob/gc.go`.
 
+### Q-STOR-168 · The requests whose answer comes when the store has finished the work have no response-header timeout and no byte-idle watchdog, and the idle watchdog of a download measures the network only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One HTTP client and one watchdog rule for every request | The 30 s response-header timeout and the byte-idle watchdog apply to copies and completions as to uploads | One rule | A completion or a copy has no body to feed the watchdog and sends no header until it is done; the rule cancels the longest legitimate requests |
+| (b) A second HTTP client for these requests and a deadline derived from the size (chosen) | `Client` built by `NewFromFactory` holds `copyAPI`, the same settings with `response_header_timeout` 0; `CopyObject`, `UploadPartCopy` and `CompleteMultipartUpload` use it under a deadline of 2 minutes plus the size at a conservative rate; the download watchdog is armed only while a read waits for the network | A slow assembly or copy completes; a stuck store is still cut off; a consumer that is busy elsewhere (R-BAK-021 step 3 with all workers busy) does not fail its source download | A client built from a bare HTTP client (`New`) keeps one client; tests only |
+
+**Choice:** (b).
+
+**Rationale:** R-STOR-033 asks that transfers fail when they stall, not when they are long; for a request without a body, "stalled" is only decidable against the size. The development agent would revisit this if the store is found to send keep-alive bytes during a completion, which would allow the byte-idle rule back for it.
+
+**Applied:** R-STOR-033, R-BAK-006; `internal/blob/s3/client.go` (`copyAPI`, `CompleteMultipart`), `internal/blob/s3/idle.go` (`body.Read`), `internal/blob/s3/target_copy.go`.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

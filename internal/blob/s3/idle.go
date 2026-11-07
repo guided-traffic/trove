@@ -96,15 +96,17 @@ type body struct {
 	key    string
 }
 
+// Read arms the watch only while it waits for the network: a consumer that stops reading (a restore worker busy elsewhere, a
+// streaming copy whose upload retries) is not a stalled store, so the timer is off between two reads.
 func (b *body) Read(p []byte) (int, error) {
+	b.w.touch()
 	n, err := b.ReadCloser.Read(p)
+	b.w.stop()
 	if err != nil && !errors.Is(err, io.EOF) {
 		if serr := b.w.stalled(b.op, b.key); serr != nil {
 			return n, serr
 		}
-		return n, err
 	}
-	b.w.touch()
 	return n, err
 }
 

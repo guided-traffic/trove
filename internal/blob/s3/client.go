@@ -30,6 +30,19 @@ type Client struct {
 	bucket  string
 	cfg     config.StorageS3
 	idle    time.Duration
+	// copyAPI is the client of the requests that have no body and whose answer comes when the store has finished the work:
+	// CopyObject, UploadPartCopy and the completion of a multipart upload. Its HTTP client has no response-header timeout,
+	// because the store answers a server-side copy only when it is done; the callers bound these requests by a deadline
+	// derived from the object size instead. Nil when the client was built from a bare HTTP client; api is used then.
+	copyAPI *awss3.Client
+}
+
+// long is the client of the body-less, long-running requests.
+func (c *Client) long() *awss3.Client {
+	if c.copyAPI != nil {
+		return c.copyAPI
+	}
+	return c.api
 }
 
 var _ blob.ObjectStore = (*Client)(nil)
@@ -54,7 +67,27 @@ func NewFromFactory(ctx context.Context, cfg config.StorageS3, f *outbound.Facto
 	if err != nil {
 		return nil, err
 	}
-	return New(ctx, cfg, hc)
+	c, err := New(ctx, cfg, hc)
+	if err != nil {
+		return nil, err
+	}
+	noHeaderWait := cfg
+	noHeaderWait.HTTP.ResponseHeaderTimeout = 0
+	hc2, err := factoryClient(noHeaderWait, f)
+	if err != nil {
+		return nil, err
+	}
+	awsCfg, err := awsConfig(ctx, c.cfg, hc2)
+	if err != nil {
+		return nil, err
+	}
+	c.copyAPI = awss3.NewFromConfig(awsCfg, func(o *awss3.Options) {
+		o.UsePathStyle = c.cfg.ForcePathStyle
+		if c.cfg.Endpoint != "" {
+			o.BaseEndpoint = aws.String(c.cfg.Endpoint)
+		}
+	})
+	return c, nil
 }
 
 // factoryClient builds the HTTP client of an object-store section through the factory.
@@ -261,7 +294,15 @@ func (c *Client) CompleteMultipart(ctx context.Context, key, uploadID string, pa
 			cp[i].ChecksumSHA256 = b64(p.Checksum.Value)
 		}
 	}
-	_, err := c.api.CompleteMultipartUpload(ctx, &awss3.CompleteMultipartUploadInput{
+	// The store answers when it has assembled the object, which takes longer the larger the object is, so the request has no
+	// response-header timeout; a deadline derived from the size bounds it instead.
+	var total int64
+	for _, p := range parts {
+		total += p.Size
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute+time.Duration(total/(64<<20))*time.Second)
+	defer cancel()
+	_, err := c.long().CompleteMultipartUpload(ctx, &awss3.CompleteMultipartUploadInput{
 		Bucket: &c.bucket, Key: &key, UploadId: &uploadID,
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: cp},
 	})
@@ -323,7 +364,6 @@ func (c *Client) Get(ctx context.Context, key string, rng *blob.ByteRange) (io.R
 		}
 	}
 	w := newIdle(c.idle, cancel)
-	w.touch()
 	return &body{ReadCloser: out.Body, w: w, cancel: cancel, op: "GetObject", key: key}, info, nil
 }
 

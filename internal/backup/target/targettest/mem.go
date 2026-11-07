@@ -211,6 +211,9 @@ func (m *Mem) Copy(_ context.Context, src target.ObjectRef, dstKey string) error
 		return target.ErrNotFound
 	}
 	m.objs[dstKey] = entry{data: append([]byte(nil), data...), at: m.now(), sse: m.SSE}
+	if src.Progress != nil {
+		src.Progress(int64(len(data)))
+	}
 	return nil
 }
 

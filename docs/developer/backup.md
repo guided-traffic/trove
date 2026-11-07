@@ -118,6 +118,11 @@ the same-bucket check of R-BAK-002 what it compares against the source.
   with the target's encryption headers. A source on another endpoint, `AccessDenied` or `NotImplemented` return
   `target.ErrServerCopyUnavailable`; the caller decides by `backup.copy.server_side` whether to stream. Tests lower the limit and the
   parts with `s3.WithSingleCopyLimit` and `s3.WithCopyPartSize`, and the writer's part with `s3.WithWritePartSize`.
+- **Liveness** (Q-BAK-51, Q-STOR-168). A copy request has no body, so the byte-idle watchdog cannot judge it: each request is
+  bounded by `2 min + size / 8 MiB/s` (`WithCopyBound`), runs on a client without a response-header timeout, and a bound that
+  expires returns `ErrServerCopyUnavailable` after aborting the multipart upload within 10 s. `ObjectRef.Progress(copied)` is called
+  after each part and every 10 s meanwhile (from an adapter goroutine; wire it to `Handle.Tick`). `PutOptions.SizeHint` sizes the
+  parts of `Writer`; pass the blob's size from a streaming copy. A download's idle watchdog runs only during a read.
 - **Probe** writes, reads back, heads and deletes one object and returns the Head result. `CheckSSE(o)` compares it with
   `backup.target.sse` and names `backup.target.sse.mode` on a mismatch; a store that rejects the encryption headers fails the probe
   with the same hint (R-BAK-026). The stack's SeaweedFS has no KMS and answers an SSE-S3 write with a 500, so the integration tests

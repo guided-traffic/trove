@@ -2493,6 +2493,23 @@ R-BAK-010 let a starting pod treat a run with a heartbeat younger than 3 × `hea
 
 **Applied:** R-BAK-010 (text and acceptance criterion); migration `00049_backup_run_job.sql`, `queries/backup.sql`, `internal/backup/slot.go`, `internal/backup/create`, `cmd/trove/backup_create.go`; chart `templates/_backup.tpl` (`TROVE_JOB_NAME`), `test/chart/backup_test.go`.
 
+### Q-BAK-51 · A server-side copy is bounded by a deadline derived from the object's size, ticks the run through a callback on the object reference, and a copy that outlasts its bound makes the caller stream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The byte-idle watchdog judges a copy | The request is cancelled after `idle_transfer_timeout` without a body byte | Nothing new to configure | `CopyObject`, `UploadPartCopy` and the completion of a multipart upload have no body whose bytes could show progress; the store answers when the work is done, so every copy longer than 60 s was cancelled with a bare cancellation that `auto` did not read as "stream instead" |
+| (b) A deadline of 2 minutes plus the size at 8 MiB/s per request; progress by callback; an expired bound is `ErrServerCopyUnavailable` (chosen) | `CopyObject` is bounded by the whole object, each `UploadPartCopy` by its part, the completion by an eighth of the object; the HTTP client of these requests has no response-header timeout; `ObjectRef.Progress(copied)` is called after each part and every 10 s while a request is outstanding; a bound that expires aborts the multipart upload within 10 s and returns `ErrServerCopyUnavailable` | The run's lease stays alive for as long as the copy is allowed to take; `auto` streams after a copy that cannot finish, `always` fails it; a stuck store cannot hold a run forever | The rate is an assumption: a store slower than 8 MiB/s inside itself falls back to streaming, which is slower still; `WithCopyBound` changes it in tests only |
+
+Streaming uploads of unknown size take their part size from `PutOptions.SizeHint` (at least `ceil(size / 9,000)` rounded up to 1 MiB, an error up front above 5 TiB); without a hint the part size grows by the configured size every 1,000 parts, which reaches about 850 GiB instead of 156 GiB. A download's idle watchdog runs only while a read waits for the network, so a consumer that pauses cannot fail it. An abort of a multipart upload runs detached from a cancelled context but under a 10 s deadline.
+
+**Choice:** (b).
+
+**Rationale:** A copy is the one request the lane makes whose duration is the store's, not the network's; the only honest limit is a function of the size. The development agent would revisit the rate when a store is measured below it, and could then make it a key of `backup.copy`.
+
+**Applied:** R-BAK-006, R-BAK-013, R-BAK-005; `internal/backup/target/store.go` (`ObjectRef.Progress`, `PutOptions.SizeHint`), `internal/blob/s3/target_copy.go`, `target_writer.go`, `idle.go`, `blobsink.go`, `client.go`.
+
 ### Q-BAK-52 · The pruning phase reports a listing page as progress, bounds every delete by `finalize_timeout`, and keeps blob-list decoders small
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

@@ -27,6 +27,14 @@ import (
 // maxCopySingle is the largest object CopyObject moves in one request (R-BAK-006).
 const maxCopySingle int64 = 5 << 30
 
+// The defaults of the bound and the keep-alive of a server-side copy.
+const (
+	defaultCopyBase      = 2 * time.Minute
+	defaultCopyRate      = 8 << 20
+	defaultProgressEvery = 10 * time.Second
+	defaultAbortGrace    = 10 * time.Second
+)
+
 // deleteBatch is the number of keys of one DeleteObjects request.
 const deleteBatch = 1000
 
@@ -45,6 +53,14 @@ type Target struct {
 	partSize int64
 	copyPart int64
 	copyMax  int64
+	// copyBase and copyRate bound a server-side copy: base plus size at rate (bytes per second). A copy that has not finished
+	// by then is given up and reported as ErrServerCopyUnavailable, so that the caller streams instead.
+	copyBase time.Duration
+	copyRate int64
+	// progressEvery is how often ObjectRef.Progress is called while a request of a copy is outstanding.
+	progressEvery time.Duration
+	// abortGrace bounds the abort of an unfinished multipart upload, which runs after the caller's context is gone.
+	abortGrace time.Duration
 	// noCond is set once the store rejected a conditional write; IfAbsent then checks with a HEAD first.
 	noCond atomic.Bool
 }
@@ -59,6 +75,21 @@ func WithWritePartSize(n int64) TargetOption { return func(t *Target) { t.partSi
 
 // WithCopyPartSize overrides backup.copy.part_size, the part size of UploadPartCopy.
 func WithCopyPartSize(n int64) TargetOption { return func(t *Target) { t.copyPart = n } }
+
+// WithCopyBound sets the time a server-side copy may take: base plus size divided by rate (bytes per second). The defaults are
+// 2 minutes and 8 MiB/s.
+func WithCopyBound(base time.Duration, rate int64) TargetOption {
+	return func(t *Target) { t.copyBase, t.copyRate = base, rate }
+}
+
+// WithProgressInterval sets how often ObjectRef.Progress is called while a copy request is outstanding (default 10 s).
+func WithProgressInterval(d time.Duration) TargetOption {
+	return func(t *Target) { t.progressEvery = d }
+}
+
+// WithIdleTimeout overrides the time without a moved byte after which an upload or download is cancelled (default one
+// minute).
+func WithIdleTimeout(d time.Duration) TargetOption { return func(t *Target) { t.c.idle = d } }
 
 // WithSingleCopyLimit overrides the 5 GiB above which Copy switches from CopyObject to UploadPartCopy.
 func WithSingleCopyLimit(n int64) TargetOption { return func(t *Target) { t.copyMax = n } }
@@ -84,16 +115,22 @@ func targetStorage(b config.Backup) config.StorageS3 {
 }
 
 // NewTarget builds the backup target from backup.target through the outbound factory, so that backup.target.ca_file is its
-// own trust store. It is how cmd/trove gets a target.Store from the configuration.
+// own trust store. It is how cmd/trove gets a target.Store from the configuration. The server-side copy requests go through a
+// second HTTP client without a response-header timeout (see Client.copyAPI).
 func NewTarget(ctx context.Context, cfg config.Backup, f *outbound.Factory, opts ...TargetOption) (*Target, error) {
-	hc, err := factoryClient(targetStorage(cfg), f)
+	s := targetStorage(cfg)
+	if s.Bucket == "" {
+		return nil, errors.New("backup.target.bucket is required")
+	}
+	c, err := NewFromFactory(ctx, s, f)
 	if err != nil {
 		return nil, fmt.Errorf("backup.target: %w", err)
 	}
-	return NewTargetWithClient(ctx, cfg, hc, opts...)
+	return newTarget(c, cfg, opts), nil
 }
 
-// NewTargetWithClient is NewTarget for a caller that has its HTTP client from internal/outbound already.
+// NewTargetWithClient is NewTarget for a caller that has its HTTP client from internal/outbound already. A copy request is
+// then subject to that client's response-header timeout.
 func NewTargetWithClient(ctx context.Context, cfg config.Backup, hc *http.Client, opts ...TargetOption) (*Target, error) {
 	s := targetStorage(cfg)
 	if s.Bucket == "" {
@@ -103,20 +140,30 @@ func NewTargetWithClient(ctx context.Context, cfg config.Backup, hc *http.Client
 	if err != nil {
 		return nil, fmt.Errorf("backup.target: %w", err)
 	}
-	t := &Target{
-		c: c, sseMode: cfg.Target.SSE.Mode, kmsKeyID: cfg.Target.SSE.KMSKeyID,
-		partSize: int64(cfg.Database.PartSize), copyPart: int64(cfg.Copy.PartSize), copyMax: maxCopySingle,
-	}
+	return newTarget(c, cfg, opts), nil
+}
+
+func newTarget(c *Client, cfg config.Backup, opts []TargetOption) *Target {
+	t := newCopier(c, int64(cfg.Copy.PartSize))
+	t.sseMode, t.kmsKeyID, t.partSize = cfg.Target.SSE.Mode, cfg.Target.SSE.KMSKeyID, int64(cfg.Database.PartSize)
 	for _, o := range opts {
 		o(t)
 	}
 	if t.partSize <= 0 {
 		t.partSize = 16 << 20
 	}
-	if t.copyPart <= 0 {
-		t.copyPart = 256 << 20
+	return t
+}
+
+// newCopier is a Target that only copies server-side: the part of the adapter the restore's BlobSink shares.
+func newCopier(c *Client, copyPart int64) *Target {
+	if copyPart <= 0 {
+		copyPart = 256 << 20
 	}
-	return t, nil
+	return &Target{
+		c: c, copyPart: copyPart, copyMax: maxCopySingle, copyBase: defaultCopyBase, copyRate: defaultCopyRate,
+		progressEvery: defaultProgressEvery, abortGrace: defaultAbortGrace,
+	}
 }
 
 // Endpoint is the normalized endpoint of the target, "" for AWS resolution. A copy source on another endpoint cannot be
@@ -195,7 +242,6 @@ func (t *Target) Get(ctx context.Context, key string) (io.ReadCloser, target.Obj
 	}
 	o := objectOf(key, sizeOf(out.ContentLength), out.ETag, out.LastModified, out.ServerSideEncryption, out.SSEKMSKeyId, out.ChecksumSHA256, out.ChecksumType)
 	w := newIdle(t.c.idle, cancel)
-	w.touch()
 	return &body{ReadCloser: out.Body, w: w, cancel: cancel, op: "GetObject", key: key}, o, nil
 }
 

@@ -50,6 +50,10 @@ type PutOptions struct {
 	IfAbsent bool
 	// ContentType is stored with the object.
 	ContentType string
+	// SizeHint is the expected size of a streaming write, 0 when unknown. The writer picks its part size from it so that the
+	// object fits S3's 10,000 parts; a hint above the 5 TiB object limit fails Writer up front. Without a hint the part size
+	// grows with the part number, which reaches about 850 GiB.
+	SizeHint int64
 }
 
 // ObjectRef names an object in a bucket that is not the target, the source of a server-side copy.
@@ -58,6 +62,10 @@ type ObjectRef struct {
 	Bucket   string
 	Key      string
 	Size     int64
+	// Progress, when set, is called with the bytes copied so far: after each finished part of a multipart copy and about every
+	// 10 seconds while a request is outstanding, so that a long server-side copy ticks the run's lease (R-BAK-013). It runs on
+	// a goroutine of the adapter, concurrently with the caller's own code, and must be safe for that; it must not block.
+	Progress func(copied int64)
 }
 
 // CopyMode says how a pool object reached the target (R-BAK-006), the label of
@@ -107,6 +115,7 @@ type Store interface {
 }
 
 // ErrServerCopyUnavailable tells the caller to stream: the store rejected the server-side copy (AccessDenied on the
-// source, a different endpoint, a store without cross-bucket copy). With backup.copy.server_side "auto" the run probes
+// source, a different endpoint, a store without cross-bucket copy, or a copy that did not finish within the bound derived from
+// the object's size: the caller streams, and the bytes of the abandoned copy are aborted). With backup.copy.server_side "auto" the run probes
 // once, remembers the answer and streams from then on; "always" turns it into a run failure.
 var ErrServerCopyUnavailable = errors.New("target: server-side copy is not available")

@@ -41,7 +41,7 @@ func NewBlobSink(c *Client, cfg config.StorageS3, copyPart int64) *BlobSink {
 	if small <= 0 || small < part {
 		small = part
 	}
-	return &BlobSink{c: c, copier: &Target{c: c, copyPart: copyPart, copyMax: maxCopySingle}, prefix: cfg.Prefix, partSize: part, maxSmall: small}
+	return &BlobSink{c: c, copier: newCopier(c, copyPart), prefix: cfg.Prefix, partSize: part, maxSmall: small}
 }
 
 func (s *BlobSink) key(d format.Digest) string { return blob.Key(s.prefix, blob.Digest(d)) }
@@ -119,7 +119,9 @@ func (s *BlobSink) Put(ctx context.Context, d format.Digest, size int64, r io.Re
 	done := false
 	defer func() {
 		if !done {
-			_ = s.c.AbortMultipart(context.WithoutCancel(ctx), key, id)
+			actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.copier.abortGrace)
+			defer cancel()
+			_ = s.c.AbortMultipart(actx, key, id)
 		}
 	}()
 	var parts []blob.Part

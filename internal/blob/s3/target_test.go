@@ -22,7 +22,7 @@ type targetEnv struct {
 	t    *s3.Target
 }
 
-func newTargetEnv(t *testing.T, sse string) *targetEnv {
+func newTargetEnv(t *testing.T, sse string, opts ...s3.TargetOption) *targetEnv {
 	t.Helper()
 	fake := &fakeS3{t: t, objects: map[string][]byte{}}
 	srv := httptest.NewServer(fake)
@@ -43,7 +43,7 @@ func newTargetEnv(t *testing.T, sse string) *targetEnv {
 	}
 	b.Database.PartSize = 5 << 20
 	b.Copy.PartSize = 5 << 20
-	tg, err := s3.NewTarget(context.Background(), b, outbound.New(config.Outbound{TLS: config.OutboundTLS{UseSystemRoots: true}}))
+	tg, err := s3.NewTarget(context.Background(), b, outbound.New(config.Outbound{TLS: config.OutboundTLS{UseSystemRoots: true}}), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}

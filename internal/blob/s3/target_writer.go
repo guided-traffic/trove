@@ -19,6 +19,43 @@ import (
 // maxParts is the number of parts S3 accepts in one upload.
 const maxParts = 10000
 
+const (
+	// maxObjectSize is the largest object S3 stores; maxPartSize the largest part.
+	maxObjectSize int64 = 5 << 40
+	maxPartSize   int64 = 5 << 30
+	// hintedParts is the number of parts a hinted size is spread over, leaving headroom for an object that turns out larger.
+	hintedParts = 9000
+	// growEvery is how many parts an unhinted writer uploads before the part size grows by one step.
+	growEvery = 1000
+)
+
+// basePartSize is the part size of a writer: the configured one, raised so that a hinted object fits hintedParts parts. A hint
+// above the object limit, or one that would need parts above the part limit, is an error before anything is written.
+func basePartSize(configured, hint int64) (int64, error) {
+	if hint <= 0 {
+		return configured, nil
+	}
+	if hint > maxObjectSize {
+		return 0, fmt.Errorf("s3: an object of %d bytes exceeds the 5 TiB object limit", hint)
+	}
+	const mib = 1 << 20
+	need := (hint/hintedParts + mib) / mib * mib
+	if need > maxPartSize {
+		return 0, fmt.Errorf("s3: an object of %d bytes needs parts above the 5 GiB part limit", hint)
+	}
+	return max(configured, need), nil
+}
+
+// partSizeAt is the size of the part that follows n finished parts. A hinted writer keeps its base size; an unhinted one
+// grows it by the base every growEvery parts, since S3 accepts parts of different sizes, so that 10,000 parts reach about 850
+// GiB at the default 16 MiB instead of 156 GiB.
+func partSizeAt(base int64, hinted bool, n int) int64 {
+	if hinted {
+		return base
+	}
+	return min(base*int64(1+n/growEvery), maxPartSize)
+}
+
 // writer is the streaming upload of target.Store.Writer: it collects bytes into parts of the configured size and uploads
 // each when full, one at a time, so memory is one part. An object below one part is written with a single PutObject at
 // Close, and the multipart upload is created only when the first part is full (R-BAK-005 step 5).
@@ -29,6 +66,8 @@ type writer struct {
 	opts  target.PutOptions
 	buf   bytes.Buffer
 	sum   hash.Hash
+	base  int64
+	hint  bool
 	size  int64
 	id    string
 	parts []types.CompletedPart
@@ -38,8 +77,15 @@ type writer struct {
 
 // Writer implements target.Store.
 func (t *Target) Writer(ctx context.Context, key string, opts target.PutOptions) (target.ObjectWriter, error) {
-	return &writer{t: t, ctx: ctx, key: key, opts: opts, sum: sha256.New()}, nil
+	base, err := basePartSize(t.partSize, opts.SizeHint)
+	if err != nil {
+		return nil, err
+	}
+	return &writer{t: t, ctx: ctx, key: key, opts: opts, sum: sha256.New(), base: base, hint: opts.SizeHint > 0}, nil
 }
+
+// part is the size of the part being collected.
+func (w *writer) part() int64 { return partSizeAt(w.base, w.hint, len(w.parts)) }
 
 // Write implements io.Writer.
 func (w *writer) Write(p []byte) (int, error) {
@@ -51,7 +97,7 @@ func (w *writer) Write(p []byte) (int, error) {
 	}
 	n := 0
 	for len(p) > 0 {
-		room := int(w.t.partSize) - w.buf.Len()
+		room := int(w.part()) - w.buf.Len()
 		chunk := p
 		if len(chunk) > room {
 			chunk = chunk[:room]
@@ -61,7 +107,7 @@ func (w *writer) Write(p []byte) (int, error) {
 		w.size += int64(len(chunk))
 		n += len(chunk)
 		p = p[len(chunk):]
-		if int64(w.buf.Len()) >= w.t.partSize && len(p) > 0 {
+		if int64(w.buf.Len()) >= w.part() && len(p) > 0 {
 			// The part is full and more follows: it is not the last one.
 			if err := w.flush(); err != nil {
 				w.err = err
@@ -87,7 +133,7 @@ func (w *writer) flush() error {
 		w.id = aws.ToString(out.UploadId)
 	}
 	if len(w.parts) >= maxParts {
-		return fmt.Errorf("s3: %s needs more than %d parts: raise backup.database.part_size", w.key, maxParts)
+		return fmt.Errorf("s3: %s needs more than %d parts: pass PutOptions.SizeHint or raise backup.database.part_size", w.key, maxParts)
 	}
 	n := int32(len(w.parts) + 1) //nolint:gosec // at most 10,000
 	ctx, idle, done := w.t.c.watch(w.ctx)
@@ -166,14 +212,16 @@ func (w *writer) complete(ctx context.Context) error {
 			in.IfNoneMatch = aws.String("*")
 		}
 	}
-	_, err := t.c.api.CompleteMultipartUpload(ctx, in)
+	cctx, cancel := context.WithTimeout(ctx, t.bound(w.size/8))
+	defer cancel()
+	_, err := t.c.long().CompleteMultipartUpload(cctx, in)
 	if err != nil && w.opts.IfAbsent && in.IfNoneMatch != nil {
 		if cerr := t.conditionalError(ctx, w.key, err); cerr != nil {
 			if !errors.Is(cerr, errRetryUnconditional) {
 				return cerr
 			}
 			in.IfNoneMatch = nil
-			_, err = t.c.api.CompleteMultipartUpload(ctx, in)
+			_, err = t.c.long().CompleteMultipartUpload(cctx, in)
 		}
 	}
 	return terr(mapError(ctx, "CompleteMultipartUpload", w.key, err))
@@ -191,6 +239,9 @@ func (w *writer) abort(ctx context.Context) error {
 	}
 	id := w.id
 	w.id = ""
-	_, err := w.t.c.api.AbortMultipartUpload(ctx, &awss3.AbortMultipartUploadInput{Bucket: &w.t.c.bucket, Key: &w.key, UploadId: &id})
-	return mapError(ctx, "AbortMultipartUpload", w.key, err)
+	// The caller's context is often the reason for the abort (SIGTERM); the request still goes out, within the grace period.
+	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.t.abortGrace)
+	defer cancel()
+	_, err := w.t.c.api.AbortMultipartUpload(actx, &awss3.AbortMultipartUploadInput{Bucket: &w.t.c.bucket, Key: &w.key, UploadId: &id})
+	return mapError(actx, "AbortMultipartUpload", w.key, err)
 }
