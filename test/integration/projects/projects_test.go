@@ -344,6 +344,44 @@ func TestR_AUTHZ_026_AMemberSeesItsOwnProjectsOnly(t *testing.T) {
 		wantStatus(t, f.do(f.bob, "GET", base, nil, authz.HeaderMinEpoch, epoch), 403, "forbidden")
 		wantStatus(t, f.do(f.bob, "GET", base+"/web", nil, authz.HeaderMinEpoch, epoch), 404, "")
 	})
+	t.Run("R-REPO-012 the repositories of a project the caller cannot see answer 404, as an unknown project's", func(t *testing.T) {
+		// listProjectRepositories is decided like hideProject (R-AUTHZ-016): a member, a holder of projects:read or
+		// repositories:read-config, and a caller that reads a repository of the project see it; to anyone else a
+		// project that exists and one that does not answer alike.
+		created := f.do(f.admin, "POST", base+"/shop/repositories", map[string]any{"key": "npm-shop", "class": "local", "format": "npm"})
+		wantStatus(t, created, 201, "")
+		carol := f.e.User("carol")
+		granted := f.do(f.admin, "POST", "/api/v1/permission-policies", map[string]any{
+			"name": "shop-carol", "resources": map[string]any{"repositories": []string{"shop/npm-shop"}},
+			"entries": []map[string]any{{"principal": "user:carol", "actions": []string{"read"}}},
+		})
+		wantStatus(t, granted, 201, "")
+		seen := fmt.Sprint(granted.Epoch())
+		list := func(who stack.Person, path string) stack.Response {
+			return f.do(who, "GET", base+path, nil, authz.HeaderMinEpoch, seen)
+		}
+		hidden, unknown := list(f.alice, "/shop/repositories"), list(f.alice, "/nothing/repositories")
+		wantStatus(t, hidden, 404, "not_found")
+		wantStatus(t, unknown, 404, "not_found")
+		if strings.ReplaceAll(fmt.Sprint(hidden.JSON(t)["detail"]), "shop", "nothing") != unknown.JSON(t)["detail"] {
+			t.Errorf("the hidden project %s, the unknown one %s", hidden.Body, unknown.Body)
+		}
+		wantStatus(t, list(f.bob, "/web/repositories"), 404, "not_found")
+		wantStatus(t, list(f.alice, "/shop/repositories?q=npm"), 404, "not_found")
+		if r := list(f.alice, "/lab/repositories"); r.Status != 200 || len(r.Items(t)) != 0 {
+			t.Errorf("a member's empty project: %d %s", r.Status, r.Body)
+		}
+		if r := list(f.auditor, "/shop/repositories"); r.Status != 200 || keys(r, t) != "npm-shop" {
+			t.Errorf("the auditor: %d %s", r.Status, r.Body)
+		}
+		wantStatus(t, list(f.auditor, "/nothing/repositories"), 404, "not_found")
+		if r := list(carol, "/shop/repositories"); r.Status != 200 || keys(r, t) != "npm-shop" {
+			t.Errorf("a reader of a repository of the project: %d %s", r.Status, r.Body)
+		}
+		if r := list(carol, "/shop/repositories?q=nothing-matches"); r.Status != 200 || len(r.Items(t)) != 0 {
+			t.Errorf("a filter that matches nothing hides no project the caller sees: %d %s", r.Status, r.Body)
+		}
+	})
 	t.Run("R-AUTHZ-026 a Reader reads the project and is refused its administration", func(t *testing.T) {
 		wantStatus(t, f.do(f.alice, "GET", base+"/lab/members", nil, authz.HeaderMinEpoch, epoch), 200, "")
 		wantStatus(t, f.do(f.alice, "PUT", base+"/lab", map[string]any{"displayName": "Lab"}, authz.HeaderMinEpoch, epoch, "If-Match", "*"), 403, "")

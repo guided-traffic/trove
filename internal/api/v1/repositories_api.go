@@ -513,6 +513,9 @@ func (s *Server) listRepositories(w http.ResponseWriter, r *http.Request, projec
 	}
 	f.IncludeDeleting = own.global || own.anyOwned()
 	rows, err := s.visibleRepositories(ctx, acc, svc, f, own, view == "full")
+	if err == nil && project != "" && len(rows) == 0 {
+		err = s.projectSeen(ctx, acc, svc, project, own)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -524,6 +527,49 @@ func (s *Server) listRepositories(w http.ResponseWriter, r *http.Request, projec
 		return
 	}
 	WritePage(w, r, MapPage(page, func(st repository.Stored) any { return toSummary(base, st, own.sees(st.Repository.Name.Project)) }))
+}
+
+// projectSeen decides the empty list of a project's repositories (R-REPO-012) as hideProject decides a refusal
+// (R-AUTHZ-016): 404 for a project that does not exist, and for one the caller cannot see, so that the answer tells
+// the two apart for nobody. A caller sees the project when it holds projects:read or repositories:read-config, is a
+// member of it (as far as its token's scope reaches, Q-AUTHZ-215), or reads one of its repositories whatever the
+// filters and the cursor of the request; to the others the project answers like an unknown one. It runs only for an
+// empty page, so a list that shows a repository costs nothing more.
+func (s *Server) projectSeen(ctx context.Context, acc *edge.Access, svc *repository.Service, project string, own *configScope) error {
+	missing := errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The project %q does not exist.", project))
+	sees := own.global || own.owned[project]
+	if !sees {
+		held, err := s.holds(ctx, string(authz.ProjectsRead))
+		if err != nil {
+			return err
+		}
+		sees = held
+	}
+	if pa, ok := s.o.Access.(ProjectAccess); ok && !sees {
+		members, err := pa.Memberships(ctx)
+		if err != nil {
+			return err
+		}
+		for _, m := range members {
+			sees = sees || m.Key == project
+		}
+	}
+	if sees {
+		// The index of the request holds every project, so a member and a holder of a capability learn whether it
+		// exists on the same index their decisions are made on.
+		if acc == nil || !acc.Index().HasProject(project) {
+			return missing
+		}
+		return nil
+	}
+	rows, err := s.visibleRepositories(ctx, acc, svc, repository.ListFilter{Project: project}, own, false)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return missing
+	}
+	return nil
 }
 
 // configScope is what the caller sees of the configuration: all of it with repositories:read-config, otherwise

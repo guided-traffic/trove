@@ -426,3 +426,17 @@ func TestR_AUTHZ_026_ManyMembershipsMergeToTheHighestRole(t *testing.T) {
 		}
 	}
 }
+
+// TestR_AUTHZ_026_TheIndexHoldsEveryProject: a project is on the index with or without members and repositories, and
+// an unknown key is not; the management API answers a missing project on it (R-REPO-012).
+func TestR_AUTHZ_026_TheIndexHoldsEveryProject(t *testing.T) {
+	idx := roleEngine(t, roleFixture().project("p-empty", "empty")).Index()
+	for key, want := range map[string]bool{"web": true, "shop": true, "empty": true, "nothing": false, "": false} {
+		if got := idx.HasProject(key); got != want {
+			t.Errorf("HasProject(%q) = %v, want %v", key, got, want)
+		}
+	}
+	if (*Index)(nil).HasProject("web") {
+		t.Error("a nil index holds a project")
+	}
+}

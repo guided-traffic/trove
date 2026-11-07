@@ -204,6 +204,11 @@ func mayAdminister(sub Subject) bool {
 	return sub.Scope == nil || sub.Scope.Admin
 }
 
+// HasProject reports whether the index holds the project (R-AUTHZ-026): every project is on the index, with or
+// without members and repositories. The management API answers a missing project on the index a request's
+// decisions are made on.
+func (x *Index) HasProject(key string) bool { return x != nil && x.projects[key] != nil }
+
 // ProjectOf returns the key of the project of a repository on this index, "" for an unknown one.
 func (x *Index) ProjectOf(name qname.Repo) string {
 	if r := x.repos[name]; r != nil {

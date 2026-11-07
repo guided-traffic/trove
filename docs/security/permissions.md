@@ -77,6 +77,12 @@ the same key is not covered by the old key selector (the policy reports `inert`)
   A listing that belongs to a request through a virtual repository (NuGet's merged search) names the addressed repository, and every row
   is decided as a read through it: the exposure of the virtual repository and the lift of a token scope that names it apply, and a
   repository it does not reach reads as nothing (Q-AUTHZ-168, `TestQ_AUTHZ_168_AReadScopeThroughAVirtualRepositoryAgreesWithTheDecisionPoint`).
+- The repositories of one project (`GET /api/v1/projects/{projectKey}/repositories`) answer an empty page only to a caller that sees
+  the project: a holder of `projects:read` or `repositories:read-config`, a member (within its token's scope), or a caller that reads
+  one of its repositories whatever the filters. To anyone else a project that exists and one that does not both answer 404 with the
+  same detail, so the list is no oracle for project keys (`projectSeen` in
+  [repositories_api.go](../../internal/api/v1/repositories_api.go), `hideProject` for the refusals of the other project routes;
+  `TestR_AUTHZ_026_AMemberSeesItsOwnProjectsOnly`).
 - `authz.hide_existence: false` (R-AUTHZ-017) turns the refusal of a read of an existing repository into 403. It is a
   troubleshooting switch; the endpoint-exposure 404 and the anonymous 401 do not change.
 

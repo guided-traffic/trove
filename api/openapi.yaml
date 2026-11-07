@@ -5249,7 +5249,9 @@ paths:
         other caller sees the repositories on which it holds `read`, which includes every repository for a member
         of the project (Q-AUTHZ-207, Q-AUTHZ-208). `view`, `class`, `format`, `q` and `state` act as on
         `GET /api/v1/repositories`. A project the caller cannot see answers `404`, exactly as a project that does
-        not exist.
+        not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member
+        of it, or reads one of its repositories whatever the filters and the cursor (R-AUTHZ-016). A project it sees
+        answers `200`, an empty page included.
       x-trove-permission:
         public: true
       parameters:
