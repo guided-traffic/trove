@@ -391,6 +391,25 @@ func TestFlightLockWait(t *testing.T) {
 			t.Fatalf("Wait = %+v, want the context's deadline error", r)
 		}
 	})
+	t.Run("R-ARCH-033 a failure at a deadline the context has reached is the caller's, not an outage, even before the context's timer fires", func(t *testing.T) {
+		srv := newMemServer(t)
+		v, reg := newTestValkey(t, standaloneCfg(srv.addr()))
+		l := NewFlightLock(v, FlightLockOptions{TTL: fixtureTTL, PollInterval: fixturePoll, Registerer: prometheus.NewRegistry()}).(*flightLock)
+		reached := deadlineReached{Context: context.Background(), at: time.Now().Add(-time.Millisecond)}
+		err := l.fail(reached, errors.New("i/o timeout"))
+		if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrUnavailable) {
+			t.Fatalf("fail = %v, want the context's deadline error and not ErrUnavailable", err)
+		}
+		if got := degradedCount(t, reg, MechanismFlightLock); got != 0 {
+			t.Fatalf("trove_valkey_degraded_total{flight_lock} = %v, want 0", got)
+		}
+		if err := l.fail(context.Background(), errors.New("connection refused")); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("fail without a deadline = %v, want ErrUnavailable", err)
+		}
+		if got := degradedCount(t, reg, MechanismFlightLock); got != 1 {
+			t.Fatalf("trove_valkey_degraded_total{flight_lock} = %v, want 1", got)
+		}
+	})
 	t.Run("R-ARCH-033 a killed holder frees the flight within the TTL plus the poll interval", func(t *testing.T) {
 		fx := newFlightFixture(t, fixtureTTL, fixturePoll)
 		h, _, _ := fx.lock.Acquire(t.Context(), testFlight)
@@ -640,3 +659,12 @@ func TestFlightLockConcurrentFlights(t *testing.T) {
 		wg.Wait()
 	})
 }
+
+// deadlineReached is a context whose deadline has passed while its Err is still nil: the moment between the client's I/O
+// deadline and the context's own timer.
+type deadlineReached struct {
+	context.Context
+	at time.Time
+}
+
+func (d deadlineReached) Deadline() (time.Time, bool) { return d.at, true }

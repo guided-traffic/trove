@@ -173,7 +173,7 @@ func (l *flightLock) keys(f FlightKey) (Key, Channel, error) {
 // fail turns the error of a Valkey call into the error of the interface and
 // counts the fallback the caller is about to run.
 func (l *flightLock) fail(ctx context.Context, err error) error {
-	if cerr := ctx.Err(); cerr != nil {
+	if cerr := callerEnded(ctx); cerr != nil {
 		return cerr
 	}
 	if !errors.Is(err, ErrUnavailable) {

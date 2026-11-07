@@ -94,7 +94,7 @@ func (s negativeStore) key(repoID int64, f FlightKey, ttl time.Duration) (Key, e
 }
 
 func (s negativeStore) fail(ctx context.Context, err error) error {
-	if cerr := ctx.Err(); cerr != nil {
+	if cerr := callerEnded(ctx); cerr != nil {
 		return cerr
 	}
 	if !errors.Is(err, ErrUnavailable) {

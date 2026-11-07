@@ -670,3 +670,18 @@ func (v *Valkey) checkVersion(c valkey.Client) error {
 	}
 	return nil
 }
+
+// callerEnded is the caller's own context error, or nil. A command that ends at the caller's deadline can fail a moment
+// before the context's timer marks the context done, because the client derives its I/O deadline from the context; a
+// deadline already reached counts as the context's too. Such a failure is the caller's, not a Valkey outage: it is not
+// reported as ErrUnavailable and not counted as degraded (Test and Release run 42405681112 saw the flight lock's Wait
+// return ErrUnavailable for a context that had reached its deadline).
+func callerEnded(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if dl, ok := ctx.Deadline(); ok && !time.Now().Before(dl) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}

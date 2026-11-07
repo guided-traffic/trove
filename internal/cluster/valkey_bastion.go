@@ -72,7 +72,7 @@ func (s *BastionStore) fail(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
-	if cerr := ctx.Err(); cerr != nil {
+	if cerr := callerEnded(ctx); cerr != nil {
 		return cerr
 	}
 	s.v.CountDegraded(MechanismBastionState)
