@@ -56,6 +56,8 @@ type Deps struct {
 	SourceRef format.StorageRef
 	// Instance is the pod name, Version and Revision the build.
 	Instance, Version, Revision string
+	// JobName is the Kubernetes Job of the pod (TROVE_JOB_NAME); empty outside a Job (R-BAK-010).
+	JobName string
 	// BackupRole is database.backup_role; empty means the run uses the runtime credential and warns.
 	BackupRole string
 
@@ -166,7 +168,7 @@ func (p *Pipeline) Create(ctx context.Context, opts backup.CreateOptions) (*back
 	}
 	run, err := backup.AcquireSlot(ctx, d.Store, backup.NewRun{
 		ID: runID, Operation: backup.OpCreate, BackupID: string(id), Trigger: opts.Trigger, Target: targetName(d.Cfg.Target),
-		Pod: d.Instance, TroveVersion: d.Version, Lease: d.Cfg.LeaseDuration,
+		Pod: d.Instance, TroveVersion: d.Version, JobName: d.JobName, Lease: d.Cfg.LeaseDuration,
 	}, p.timing(), d.Sleep)
 	if err != nil {
 		return nil, classify(err)

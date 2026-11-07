@@ -82,6 +82,8 @@ type fakeStore struct {
 	active     Run
 	now        time.Time
 	activeOK   bool
+	// alwaysTaken makes every Begin find the slot taken.
+	alwaysTaken bool
 }
 
 type beat struct {
@@ -115,6 +117,9 @@ func (f *fakeStore) renewals() (renewed, plain int) {
 func (f *fakeStore) Begin(_ context.Context, r NewRun) (Run, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.alwaysTaken {
+		return Run{}, &ErrSlotTaken{}
+	}
 	if len(f.begins) == 0 {
 		return Run{ID: r.ID, State: StateStarting}, nil
 	}
@@ -201,6 +206,42 @@ func TestAcquireSlot(t *testing.T) {
 		run, err := AcquireSlot(context.Background(), f, NewRun{ID: "retry"}, timing, func(context.Context, time.Duration) error { sleeps++; return nil })
 		if err != nil || run.ID != "retry" || sleeps != 2 {
 			t.Fatalf("run=%+v err=%v sleeps=%d", run, err, sleeps)
+		}
+	})
+	freshRun := func(job string) Run {
+		return Run{ID: "first", Operation: OpCreate, State: StateCopying, JobName: job, HeartbeatAt: now.Add(-2 * time.Second), StartedAt: now.Add(-time.Hour)}
+	}
+	t.Run("R-BAK-010 a retry pod of the same Job waits for the dead run even though its heartbeat is young, then takes over", func(t *testing.T) {
+		f := &fakeStore{begins: []error{&ErrSlotTaken{}, &ErrSlotTaken{}, nil}, activeOK: true, now: now, active: freshRun("trove-backup-1")}
+		sleeps := 0
+		run, err := AcquireSlot(context.Background(), f, NewRun{ID: "retry", JobName: "trove-backup-1"}, timing, func(context.Context, time.Duration) error { sleeps++; return nil })
+		if err != nil || run.ID != "retry" || sleeps != 2 {
+			t.Fatalf("run=%+v err=%v sleeps=%d", run, err, sleeps)
+		}
+	})
+	t.Run("R-BAK-010 a run of another Job with a young heartbeat is exit 3 at once", func(t *testing.T) {
+		f := &fakeStore{begins: []error{&ErrSlotTaken{}}, activeOK: true, now: now, active: freshRun("trove-backup-1")}
+		_, err := AcquireSlot(context.Background(), f, NewRun{ID: "other", JobName: "trove-backup-2"}, timing, noSleep)
+		if ExitCode(err) != ExitBusy {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("R-BAK-010 without a Job identity on either side a young heartbeat is exit 3 at once", func(t *testing.T) {
+		for name, c := range map[string][2]string{"manual run after a Job": {"trove-backup-1", ""}, "Job after a manual run": {"", "trove-backup-1"}, "two manual runs": {"", ""}} {
+			f := &fakeStore{begins: []error{&ErrSlotTaken{}}, activeOK: true, now: now, active: freshRun(c[0])}
+			if _, err := AcquireSlot(context.Background(), f, NewRun{ID: "x", JobName: c[1]}, timing, noSleep); ExitCode(err) != ExitBusy {
+				t.Fatalf("%s: err = %v", name, err)
+			}
+		}
+	})
+	t.Run("R-BAK-010 a same-Job wait is bounded by the lease and then exit 3", func(t *testing.T) {
+		f := &fakeStore{begins: []error{&ErrSlotTaken{}}, activeOK: true, now: now, active: freshRun("j")}
+		f.alwaysTaken = true
+		n := 0
+		_, err := AcquireSlot(context.Background(), f, NewRun{ID: "retry", JobName: "j"}, Timing{Lease: 30 * time.Millisecond, Heartbeat: 5 * time.Millisecond},
+			func(ctx context.Context, d time.Duration) error { n++; time.Sleep(d); return nil })
+		if ExitCode(err) != ExitBusy || n == 0 {
+			t.Fatalf("err = %v after %d waits", err, n)
 		}
 	})
 	t.Run("R-BAK-010 a verify or an open slot needs no wait", func(t *testing.T) {

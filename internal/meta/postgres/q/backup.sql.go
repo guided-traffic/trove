@@ -49,7 +49,7 @@ func (q *Queries) AbandonExpiredBackupRuns(ctx context.Context) ([]string, error
 }
 
 const activeBackupRuns = `-- name: ActiveBackupRuns :many
-SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at FROM backup_run
+SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at, job_name FROM backup_run
  WHERE state IN ('starting', 'snapshot', 'copying', 'finalizing', 'pruning')
  ORDER BY started_at DESC
 `
@@ -82,6 +82,7 @@ func (q *Queries) ActiveBackupRuns(ctx context.Context) ([]BackupRun, error) {
 			&i.HeartbeatAt,
 			&i.LeaseExpiresAt,
 			&i.FinishedAt,
+			&i.JobName,
 		); err != nil {
 			return nil, err
 		}
@@ -94,7 +95,7 @@ func (q *Queries) ActiveBackupRuns(ctx context.Context) ([]BackupRun, error) {
 }
 
 const activeTargetWritingRun = `-- name: ActiveTargetWritingRun :many
-SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at FROM backup_run
+SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at, job_name FROM backup_run
  WHERE operation IN ('create', 'delete') AND state IN ('starting', 'snapshot', 'copying', 'finalizing', 'pruning')
  LIMIT 1
 `
@@ -127,6 +128,7 @@ func (q *Queries) ActiveTargetWritingRun(ctx context.Context) ([]BackupRun, erro
 			&i.HeartbeatAt,
 			&i.LeaseExpiresAt,
 			&i.FinishedAt,
+			&i.JobName,
 		); err != nil {
 			return nil, err
 		}
@@ -418,7 +420,7 @@ func (q *Queries) FinishBackupRun(ctx context.Context, arg FinishBackupRunParams
 }
 
 const getBackupRun = `-- name: GetBackupRun :many
-SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at FROM backup_run WHERE id = $1::text::uuid
+SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at, job_name FROM backup_run WHERE id = $1::text::uuid
 `
 
 func (q *Queries) GetBackupRun(ctx context.Context, id string) ([]BackupRun, error) {
@@ -448,6 +450,7 @@ func (q *Queries) GetBackupRun(ctx context.Context, id string) ([]BackupRun, err
 			&i.HeartbeatAt,
 			&i.LeaseExpiresAt,
 			&i.FinishedAt,
+			&i.JobName,
 		); err != nil {
 			return nil, err
 		}
@@ -512,10 +515,11 @@ func (q *Queries) InsertBackupPins(ctx context.Context, arg InsertBackupPinsPara
 }
 
 const insertBackupRun = `-- name: InsertBackupRun :exec
-INSERT INTO backup_run (id, operation, backup_id, state, hold, trigger, target, pod, trove_version, lease_expires_at)
+INSERT INTO backup_run (id, operation, backup_id, state, hold, trigger, target, pod, trove_version, job_name, lease_expires_at)
 VALUES ($1::text::uuid, $2::text, NULLIF($3::text, ''), 'starting', 'none',
         $4::text, $5::text, $6::text, $7::text,
-        now() + make_interval(secs => $8::float8))
+        NULLIF($8::text, ''),
+        now() + make_interval(secs => $9::float8))
 `
 
 type InsertBackupRunParams struct {
@@ -526,6 +530,7 @@ type InsertBackupRunParams struct {
 	Target       string
 	Pod          string
 	TroveVersion string
+	JobName      string
 	LeaseSecs    float64
 }
 
@@ -540,13 +545,14 @@ func (q *Queries) InsertBackupRun(ctx context.Context, arg InsertBackupRunParams
 		arg.Target,
 		arg.Pod,
 		arg.TroveVersion,
+		arg.JobName,
 		arg.LeaseSecs,
 	)
 	return err
 }
 
 const lastBackupRunByOutcome = `-- name: LastBackupRunByOutcome :many
-SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at FROM backup_run
+SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at, job_name FROM backup_run
  WHERE operation = $1::text AND state = ANY($2::text[])
  ORDER BY finished_at DESC NULLS LAST, id DESC
  LIMIT 1
@@ -586,6 +592,7 @@ func (q *Queries) LastBackupRunByOutcome(ctx context.Context, arg LastBackupRunB
 			&i.HeartbeatAt,
 			&i.LeaseExpiresAt,
 			&i.FinishedAt,
+			&i.JobName,
 		); err != nil {
 			return nil, err
 		}
@@ -598,7 +605,7 @@ func (q *Queries) LastBackupRunByOutcome(ctx context.Context, arg LastBackupRunB
 }
 
 const listBackupRuns = `-- name: ListBackupRuns :many
-SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at FROM backup_run
+SELECT id, operation, backup_id, state, hold, trigger, target, pod, trove_version, snapshot_at, progress, result, error, started_at, heartbeat_at, lease_expires_at, finished_at, job_name FROM backup_run
  WHERE ($1::text = '' OR operation = $1::text)
    AND ($2::text = '' OR state = $2::text)
    AND ($3::text = '' OR trigger = $3::text)
@@ -659,6 +666,7 @@ func (q *Queries) ListBackupRuns(ctx context.Context, arg ListBackupRunsParams) 
 			&i.HeartbeatAt,
 			&i.LeaseExpiresAt,
 			&i.FinishedAt,
+			&i.JobName,
 		); err != nil {
 			return nil, err
 		}

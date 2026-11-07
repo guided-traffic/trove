@@ -806,6 +806,23 @@ func TestR_HA_030_BackupSecrets(t *testing.T) {
 		}
 	})
 
+	t.Run("R-BAK-010 the backup pod knows its Job, from the pod's job-name label, and the restore pod does not", func(t *testing.T) {
+		var field string
+		for _, e := range list(backupPod, "containers", "0", "env") {
+			if str(e, "name") == "TROVE_JOB_NAME" {
+				field = str(at(e, "valueFrom", "fieldRef"), "fieldPath")
+			}
+		}
+		if field != "metadata.labels['job-name']" {
+			t.Errorf("TROVE_JOB_NAME comes from %q", field)
+		}
+		for _, n := range envNames(restore) {
+			if n == "TROVE_JOB_NAME" {
+				t.Error("the restore pod carries TROVE_JOB_NAME")
+			}
+		}
+	})
+
 	t.Run("the pods know their name for the run record", func(t *testing.T) {
 		for _, pod := range []any{backupPod, restore} {
 			names := envNames(pod)

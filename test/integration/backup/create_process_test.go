@@ -130,7 +130,7 @@ func TestR_BAK_010_AKilledRunIsTakenOverAfterItsLease(t *testing.T) {
 	r.cfg.LeaseDuration = 6 * time.Second
 	r.cfg.HeartbeatInterval = time.Second
 	r.cfg.FinalizeTimeout = time.Second
-	slow := in.processEnv(t, r, "TROVE_BACKUP_COPY_SERVER_SIDE=never", "TROVE_BACKUP_COPY_BYTES_PER_SECOND=64KiB")
+	slow := in.processEnv(t, r, "TROVE_BACKUP_COPY_SERVER_SIDE=never", "TROVE_BACKUP_COPY_BYTES_PER_SECOND=64KiB", "TROVE_JOB_NAME=trove-backup-job-a")
 
 	cmd := exec.Command(troveBinary(t), "backup", "create", "--no-prune")
 	cmd.Env = slow
@@ -154,7 +154,7 @@ func TestR_BAK_010_AKilledRunIsTakenOverAfterItsLease(t *testing.T) {
 		return n > 0
 	})
 
-	code, _, stderr := runTrove(t, in.processEnv(t, r), "--no-prune")
+	code, _, stderr := runTrove(t, in.processEnv(t, r, "TROVE_JOB_NAME=trove-backup-job-b"), "--no-prune")
 	if code != 3 || !strings.Contains(stderr, "another backup run is active") {
 		t.Fatalf("second run: exit %d: %s", code, stderr)
 	}
@@ -168,11 +168,13 @@ func TestR_BAK_010_AKilledRunIsTakenOverAfterItsLease(t *testing.T) {
 		t.Fatalf("hold of the killed run = %s", hold)
 	}
 
-	// A heartbeat younger than 3 x heartbeat_interval counts as alive (R-BAK-010), so a retry pod that starts sooner than that
-	// after the crash would exit 3; the Job controller's backoff is longer.
-	time.Sleep(3500 * time.Millisecond)
+	// The retry pod of the same Job starts at once: the killed run's heartbeat is young, but a Job runs one pod at a time, so its
+	// run is dead and the retry waits for the lease instead of exiting 3 (Q-BAK-44). A pod of another Job still exits 3.
+	if code, _, stderr := runTrove(t, in.processEnv(t, r, "TROVE_JOB_NAME=trove-backup-job-b"), "--no-prune"); code != 3 {
+		t.Fatalf("another Job right after the kill: exit %d: %s", code, stderr)
+	}
 	start := time.Now()
-	code, stdout, stderr := runTrove(t, in.processEnv(t, r), "--no-prune", "--json")
+	code, stdout, stderr := runTrove(t, in.processEnv(t, r, "TROVE_JOB_NAME=trove-backup-job-a"), "--no-prune", "--json")
 	if code != 0 {
 		t.Fatalf("retry: exit %d: %s", code, stderr)
 	}

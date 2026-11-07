@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -106,7 +107,7 @@ func (c *commandCreator) Create(ctx context.Context, opts backup.CreateOptions) 
 	pipeline, err := create.New(create.Deps{
 		Cfg:       cfg.Backup,
 		SourceRef: format.StorageRef{Endpoint: endpoint, Bucket: cfg.Storage.S3.Bucket, Prefix: cfg.Storage.S3.Prefix},
-		Instance:  e.instance, Version: info.Version, Revision: info.Commit, BackupRole: cfg.Database.BackupRole,
+		Instance:  e.instance, JobName: jobName(e.environ), Version: info.Version, Revision: info.Commit, BackupRole: cfg.Database.BackupRole,
 		Store: store, Prune: stage, Facts: facts, Grants: facts, Pins: facts, BlobState: facts,
 		Snapshot: backup.NewPGSnapshotter(db),
 		Source:   backup.NewStoreSource(blobs, cfg.Storage.S3.Prefix, endpoint, cfg.Storage.S3.Bucket),
@@ -150,4 +151,15 @@ func serveBackupMetrics(addr string, m *observability.Metrics, log *slog.Logger)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	return func() { _ = srv.Close() }
+}
+
+// jobName is the Kubernetes Job the pod belongs to: the chart sets TROVE_JOB_NAME from the pod's job-name label. Empty outside a
+// Job (R-BAK-010).
+func jobName(environ []string) string {
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "TROVE_JOB_NAME="); ok {
+			return v
+		}
+	}
+	return ""
 }

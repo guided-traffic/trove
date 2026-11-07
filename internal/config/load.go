@@ -75,7 +75,7 @@ type Loaded struct {
 // configuration keys (R-OPS-028), plus TROVE_TEST_ for the integration suite.
 func reservedEnv(name string) bool {
 	switch name {
-	case EnvConfigFile, "TROVE_POD_NAME", "TROVE_POD_NAMESPACE", "TROVE_NODE_NAME", "TROVE_POOL_NAME":
+	case EnvConfigFile, "TROVE_POD_NAME", "TROVE_JOB_NAME", "TROVE_POD_NAMESPACE", "TROVE_NODE_NAME", "TROVE_POOL_NAME":
 		return true
 	}
 	return strings.HasPrefix(name, "TROVE_CAC_") || strings.HasPrefix(name, "TROVE_TEST_")

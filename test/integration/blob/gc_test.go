@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
-	"github.com/guided-traffic/trove/internal/meta"
 )
 
 // release removes the item at path; the trigger queues its blob.
@@ -209,17 +207,14 @@ func TestGarbageCollection(t *testing.T) {
 	t.Run("R-STOR-024 a blob that a backup holds stays live with its queue entry, and goes once the hold ends", func(t *testing.T) {
 		e, p, r := setup(t, nil)
 		g, _ := garbage(t, r, "h.bin")
-		var held sync.Map
-		held.Store(g, true)
-		r.coll.Hold = func(_ context.Context, _ meta.Tx, d blob.Digest) (bool, error) {
-			_, ok := held.Load(d)
-			return ok, nil
-		}
+		// A running backup pins the digest: the claim's hold check (R-STOR-024 step 2b) finds the pin of a valid run.
+		p.exec(t, "INSERT INTO backup_run (id, operation, state, hold, trigger, target, pod, trove_version, lease_expires_at) VALUES ('0192f0c4-7a1e-7c3b-9d2e-0000000000aa', 'create', 'copying', 'pinned', 'manual', 's3://b/p', 'pod', '0.1.0', now() + interval '1 hour')")
+		p.exec(t, "INSERT INTO backup_blob_pin (run_id, sha256, size) VALUES ('0192f0c4-7a1e-7c3b-9d2e-0000000000aa', $1, 1)", g.Bytes())
 		res := run(t, r, blob.RunOptions{Mode: blob.GCIncremental})
 		if res.Held != 1 || res.Deleted != 0 || !objectExists(t, e, e.prefix, g) || p.count(t, "blob_gc_queue") != 1 {
 			t.Fatalf("%+v", res)
 		}
-		held.Delete(g)
+		p.exec(t, "DELETE FROM backup_blob_pin")
 		if res := run(t, r, blob.RunOptions{Mode: blob.GCIncremental}); res.Deleted != 1 {
 			t.Fatalf("after the hold: %+v", res)
 		}

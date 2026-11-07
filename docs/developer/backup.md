@@ -404,6 +404,11 @@ lock, `LOCK TABLE`, the snapshot, the export connections, `COPY`, the referenced
 Its queries are [backup_snapshot.sql](../../internal/meta/postgres/queries/backup_snapshot.sql). The collector's side of the hold is in
 [blob/gc.go](../../internal/blob/gc.go) (`claim`, `globalHold`).
 
+A retry pod after a `kill -9` meets the dead run's young heartbeat. `backup_run.job_name` (from `TROVE_JOB_NAME`, which the chart sets
+from the pod's `job-name` label on the backup Job) tells `AcquireSlot` that the active run belongs to the same Job, whose pod is gone,
+so it waits for the lease instead of answering exit 3; a run of another Job or without a Job name still gets exit 3 at once
+([Q-BAK-44](../spec/backup-and-restore.md#q-bak-44--a-retry-pod-of-the-same-job-takes-over-a-dead-run-at-once-any-other-pod-meets-the-heartbeat-rule)).
+
 The order that matters, with `Deps.Fault` points for tests between the steps: shared migration lock, hold `all` committed
 (`hold-all`), table locks and snapshot (`snapshot`), pins inserted and committed (`pins-committed`), hold `pinned`
 (`hold-pinned`), copy, last pin gone and hold `none` (`copied`), fence (`finalizing`), manifest. A pause at a point is how the

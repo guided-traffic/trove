@@ -764,9 +764,14 @@ At most one `create` or `delete` run is active per installation (Q-BAK-4).
 
   A unique violation on `backup_run_one_active` (SQLSTATE `23505`) means another run holds the
   slot:
-  - If that run's `heartbeat_at` is younger than 3 × `backup.heartbeat_interval`, it is alive. The
-    command exits `3`, names that run's ID, pod, state and start time, and writes nothing to the
-    target.
+  - If that run belongs to the same Kubernetes Job as the starting pod (both rows carry the Job name, the
+    pod's `job-name` label, which the chart passes as `TROVE_JOB_NAME`), its pod is gone: a Job with
+    parallelism 1 runs one pod at a time and starts the retry pod only after the failed one has
+    terminated. The command waits as in the next case, whatever the age of the heartbeat (Q-BAK-44).
+  - Otherwise, if that run's `heartbeat_at` is younger than 3 × `backup.heartbeat_interval`, it is alive.
+    The command exits `3`, names that run's ID, pod, state and start time, and writes nothing to the
+    target. This is the answer to a run of another Job and to any run without a Job identity, such as
+    a manual run of the command.
   - Otherwise that run's process has stopped renewing: a pod killed without `SIGTERM` handling
     (`OOMKilled`, `kill -9`, a lost node) or a run that lost the database in a failover. The
     command waits until that run's `lease_expires_at` has passed, polling every
@@ -797,8 +802,9 @@ Acceptance criteria:
   message naming the first run; the target holds exactly one new `backups/<id>/` directory.
 - A run whose pod was deleted with `--grace-period=0 --force`: after `backup.lease_duration`, the
   next run starts, the old row is `abandoned` and its pins are gone.
-- `kill -9` of the backup process during `copying`: the Job's retry pod waits for the lease, the
-  old row becomes `abandoned`, the retry completes, and the Job ends `Complete`.
+- `kill -9` of the backup process during `copying`: the Job's retry pod, started at once, waits for
+  the lease, the old row becomes `abandoned`, the retry completes, and the Job ends `Complete`. A pod
+  of another Job started at the same moment exits `3`.
 - A `verify` pod deleted with `--grace-period=0 --force`: once its lease has expired, the next run
   of any operation marks its row `abandoned`.
 
@@ -2453,6 +2459,24 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The fenced heartbeat is the mechanism that cancels a stalled run; it must not fire for the run's own transitions. A unit test moves the state 400 times against a 1 ms heartbeat. The development agent would revisit this if a transition ever becomes a long operation.
 
 **Applied:** R-BAK-010; `internal/backup/handle.go`, `internal/backup/create/run_test.go`.
+
+### Q-BAK-44 · A retry pod of the same Job takes over a dead run at once; any other pod meets the heartbeat rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-010 let a starting pod treat a run with a heartbeat younger than 3 × `heartbeat_interval` (45 s by default) as alive and exit `3`. A Job's retry pod after a `kill -9` or an OOM kill starts within seconds to a minute, so it would meet exactly that heartbeat, exit `3`, and the pod failure policy would fail the Job: the takeover the requirement describes would never happen for the case it was written for.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A shorter stale threshold | 3 × heartbeat becomes 1 × or a fixed few seconds | No new input | A run that is merely slow to heartbeat (a database stall, a GC pause) is declared dead and a second Job overlaps it; the fence still protects the manifest, but the overlap is the case exit `3` exists for |
+| (b) The pod failure policy retries exit `3` | `3` leaves the `FailJob` list | No new input | Kubernetes' backoff starts at 10 s and is not configurable per Job, so the retry still meets a young heartbeat; and an independent overlapping Job would retry as well instead of failing at once |
+| (c) The run row records its Kubernetes Job; the same Job waits, any other pod gets exit `3` (chosen) | `backup_run.job_name`, from `TROVE_JOB_NAME` (the pod's `job-name` label through the downward API) | A Job runs one pod at a time, so a run of the same Job whose pod is not the starting one is dead by construction; an overlapping independent Job or a manual run has another or no identity and still gets exit `3` | A column and an environment variable of the chart; a Job with parallelism above 1 would break the premise (the chart renders 1) |
+
+**Choice:** (c). The starting pod of the same Job polls every `heartbeat_interval` until the dead run's lease has passed, for at most `lease_duration` + `heartbeat_interval`, then inserts its row, which abandons the old run and deletes its pins. If the lease does not pass in that time (a run that keeps heartbeating, which a single pod of the Job cannot do), the command exits `3`. The fencing of R-BAK-010 stays the safety net should the old process still run.
+
+**Rationale:** The Job identity is the one fact that tells a retry from an overlap, and Kubernetes guarantees the premise. The wait for the lease is kept (instead of an immediate takeover) so that nothing changes for the fencing proof: the old run's hold ends by its lease as before. The development agent would revisit this if the Job is ever rendered with parallelism above 1.
+
+**Applied:** R-BAK-010 (text and acceptance criterion); migration `00049_backup_run_job.sql`, `queries/backup.sql`, `internal/backup/slot.go`, `internal/backup/create`, `cmd/trove/backup_create.go`; chart `templates/_backup.tpl` (`TROVE_JOB_NAME`), `test/chart/backup_test.go`.
 
 ## What this does not cover
 

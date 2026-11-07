@@ -85,15 +85,17 @@ type Progress struct {
 
 // Run is one row of backup_run.
 type Run struct {
-	ID             string
-	Operation      Operation
-	BackupID       string
-	State          State
-	Hold           Hold
-	Trigger        Trigger
-	Target         string
-	Pod            string
-	TroveVersion   string
+	ID           string
+	Operation    Operation
+	BackupID     string
+	State        State
+	Hold         Hold
+	Trigger      Trigger
+	Target       string
+	Pod          string
+	TroveVersion string
+	// JobName is the Kubernetes Job the run belongs to; empty for a run without one (R-BAK-010).
+	JobName        string
 	SnapshotAt     *time.Time
 	Progress       Progress
 	Result         json.RawMessage
@@ -119,5 +121,7 @@ type NewRun struct {
 	Target       string
 	Pod          string
 	TroveVersion string
-	Lease        time.Duration
+	// JobName is the Job of the pod (the chart passes its job-name label); empty when the process runs outside a Job.
+	JobName string
+	Lease   time.Duration
 }

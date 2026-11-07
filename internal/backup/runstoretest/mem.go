@@ -76,7 +76,7 @@ func (m *Mem) Begin(_ context.Context, n backup.NewRun) (backup.Run, error) {
 	}
 	r := &backup.Run{
 		ID: n.ID, Operation: n.Operation, BackupID: n.BackupID, State: backup.StateStarting, Hold: backup.HoldNone,
-		Trigger: n.Trigger, Target: n.Target, Pod: n.Pod, TroveVersion: n.TroveVersion,
+		Trigger: n.Trigger, Target: n.Target, Pod: n.Pod, TroveVersion: n.TroveVersion, JobName: n.JobName,
 		StartedAt: now, HeartbeatAt: now, LeaseExpiresAt: now.Add(n.Lease),
 	}
 	m.runs = append(m.runs, r)

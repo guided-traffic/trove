@@ -85,6 +85,12 @@ spec:
         {{- toYaml $.Values.securityContext | nindent 8 }}
       env:
         {{- include "trove.podEnv" $ | nindent 8 }}
+        {{- if eq $kind "backup" }}
+        - name: TROVE_JOB_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['job-name']
+        {{- end }}
         {{- with (include "trove.s3EnvFromSecret" $) }}
         {{- . | nindent 8 }}
         {{- end }}

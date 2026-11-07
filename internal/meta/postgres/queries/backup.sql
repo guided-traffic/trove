@@ -20,9 +20,10 @@ DELETE FROM backup_blob_pin WHERE run_id IN (SELECT id FROM backup_run WHERE sta
 -- name: InsertBackupRun :exec
 -- A unique violation on backup_run_one_active (SQLSTATE 23505) means another target-writing run holds the slot
 -- (R-BAK-010). The lease is relative to the database's clock, so a pod's clock never decides.
-INSERT INTO backup_run (id, operation, backup_id, state, hold, trigger, target, pod, trove_version, lease_expires_at)
+INSERT INTO backup_run (id, operation, backup_id, state, hold, trigger, target, pod, trove_version, job_name, lease_expires_at)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(operation)::text, NULLIF(sqlc.arg(backup_id)::text, ''), 'starting', 'none',
         sqlc.arg(trigger)::text, sqlc.arg(target)::text, sqlc.arg(pod)::text, sqlc.arg(trove_version)::text,
+        NULLIF(sqlc.arg(job_name)::text, ''),
         now() + make_interval(secs => sqlc.arg(lease_secs)::float8));
 
 -- name: GetBackupRun :many

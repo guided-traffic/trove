@@ -130,7 +130,7 @@ func (s *PGStore) Begin(ctx context.Context, r NewRun) (Run, error) {
 		}
 		return qs.InsertBackupRun(ctx, q.InsertBackupRunParams{
 			ID: r.ID, Operation: string(r.Operation), BackupID: r.BackupID, Trigger: string(r.Trigger), Target: r.Target,
-			Pod: r.Pod, TroveVersion: r.TroveVersion, LeaseSecs: r.Lease.Seconds(),
+			Pod: r.Pod, TroveVersion: r.TroveVersion, JobName: r.JobName, LeaseSecs: r.Lease.Seconds(),
 		})
 	})
 	if postgres.IsState(err, sqlstateUniqueViolation) {
@@ -417,6 +417,9 @@ func toRun(r q.BackupRun) Run {
 	}
 	if r.BackupID.Valid {
 		run.BackupID = r.BackupID.String
+	}
+	if r.JobName.Valid {
+		run.JobName = r.JobName.String
 	}
 	if r.SnapshotAt.Valid {
 		t := r.SnapshotAt.Time

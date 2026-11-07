@@ -192,6 +192,7 @@ type BackupRun struct {
 	HeartbeatAt    pgtype.Timestamptz
 	LeaseExpiresAt pgtype.Timestamptz
 	FinishedAt     pgtype.Timestamptz
+	JobName        pgtype.Text
 }
 
 type Bastion struct {
