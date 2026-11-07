@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -121,6 +122,9 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 	}
 	// The project lookups run on this transaction, like the insert (Q-AUTHZ-199).
 	rp, problems, err := s.resolve(ctx, in, append(opts, s.inTx(qs))...)
+	if err == nil && len(problems) == 0 {
+		problems, err = bindKeySelectors(ctx, qs, rp)
+	}
 	if err != nil {
 		return Policy{}, err
 	}
@@ -198,6 +202,11 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 		var problems []ProblemField
 		if rp, problems, err = s.resolve(ctx, in, append(opts, s.inTx(qs))...); err != nil {
 			return err
+		}
+		if len(problems) == 0 {
+			if problems, err = bindKeySelectors(ctx, qs, rp); err != nil {
+				return err
+			}
 		}
 		if len(problems) > 0 {
 			return problemError(problems)
@@ -501,6 +510,34 @@ func (s *Service) snapshotState(ctx context.Context, qs *q.Queries, p Policy) (*
 	}
 	sort.Slice(st.Entries, func(i, j int) bool { return st.Entries[i].PrincipalID < st.Entries[j].PrincipalID })
 	return st, nil
+}
+
+// bindKeySelectors binds the key selectors of a policy write to the repositories the database holds, in the write's
+// transaction and under a share lock of each repository row (AuthzBindRepository), after the project's row
+// (AuthzProjectByKey, FOR SHARE): the lock order of a move, which takes the projects and then the repository. The
+// validation resolved them on the repository snapshot, which may be of another moment on this replica, so a selector
+// could otherwise hold a repository that has left the policy's project, or a global key the repository that held the
+// name before (R-AUTHZ-004, R-REPO-060). A key the project does not hold is 422 unknown_repository, as in the
+// validation. It runs only on a write without problems, where rp.selectors are the selectors of the input in order.
+func bindKeySelectors(ctx context.Context, qs *q.Queries, rp *resolvedPolicy) ([]ProblemField, error) {
+	var ps []ProblemField
+	for i := range rp.selectors {
+		sel := &rp.selectors[i]
+		if sel.kind != selKey {
+			continue
+		}
+		rows, err := qs.AuthzBindRepository(ctx, q.AuthzBindRepositoryParams{Project: sel.project, Key: sel.key})
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			ps = append(ps, field("/resources/repositories/"+strconv.Itoa(i), errs.CodeUnknownRepository,
+				fmt.Sprintf("No repository %q exists.", rp.in.Resources.Repositories[i])))
+			continue
+		}
+		sel.repoID, sel.class = rows[0].ID, rows[0].Class
+	}
+	return ps, nil
 }
 
 func writeChildren(ctx context.Context, qs *q.Queries, id string, rp *resolvedPolicy) error {

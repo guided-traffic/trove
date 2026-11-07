@@ -290,7 +290,11 @@ of CI mappings (R-CI-013), the members and the deployment target of a virtual re
   replicas have picked up the change (R-AUTHZ-028), without touching the policy.
 - Key selectors MUST name an existing repository when the policy is written (422
   `unknown_repository` otherwise; in a project context a key of another project cannot be written at all) and are
-  stored by repository ID. A key selector of an instance context keeps naming its repository when the repository
+  stored by repository ID. The write binds the key to the repository the database holds in its own transaction, under a
+  share lock of the policy's project and of the repository row, never through a replica's cached view of another
+  moment, so a policy write and a move of the repository run one after the other: a key the project no longer holds
+  is `unknown_repository`, and a selector written first refuses the move (R-REPO-060). The database refuses a project
+  policy's key selector on a repository of another project (SQLSTATE `AI007`). A key selector of an instance context keeps naming its repository when the repository
   moves to another project ([repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)
   R-REPO-060) and reads back with the new project. Deleting a repository removes its key selectors (audited). A
   policy left without selectors stays stored, matches nothing and is reported with `"inert": true`. A repository

@@ -46,6 +46,11 @@ type Reference struct {
 // pgUniqueViolation is the SQLSTATE of a key taken in the target project.
 const pgUniqueViolation = "23505"
 
+// stateHeldByProject is the SQLSTATE of the database guard of a move (AI007, migration 00024): something of the source
+// project holds the repository by ID. The references refuse the move first; the guard holds for a write that did not
+// take the row locks a move waits for.
+const stateHeldByProject = "AI007"
+
 // opMoved is the op of the repo_config change of a move: the repository's addresses changed and its
 // config_version moved, so a cache keyed by the repository and its version drops what it built before.
 const opMoved = "moved"
@@ -112,6 +117,11 @@ func (s *service) MoveRepository(ctx context.Context, actor authz.Subject, from 
 		if err != nil {
 			if postgres.IsState(err, pgUniqueViolation) {
 				return keyTaken(to)
+			}
+			if postgres.IsState(err, stateHeldByProject) {
+				// The transaction is aborted, so the references cannot be read again in it: the answer lists none,
+				// and the next attempt lists them.
+				return inUse(from, []Reference{})
 			}
 			return err
 		}
@@ -227,6 +237,11 @@ func specNames(doc string, in qname.Context, key string) bool {
 }
 
 func inUse(from qname.Repo, refs []Reference) error {
+	if len(refs) == 0 {
+		return errs.E(errs.Conflict, errs.CodeRepositoryInUse,
+			fmt.Sprintf("The repository %q was named in its project while it moved; move it again to see the references.", from.String()),
+			errs.WithExtension("references", refs))
+	}
 	names := make([]string, 0, len(refs))
 	for _, r := range refs {
 		names = append(names, r.Kind+" "+r.Name)

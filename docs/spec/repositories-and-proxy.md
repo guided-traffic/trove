@@ -732,6 +732,12 @@ operation of its own ([Q-REPO-217](#q-repo-217--a-repository-moves-to-another-pr
   repository, or removes the selector, and the Owner moves it then
   ([Q-REPO-232](#q-repo-232--an-owners-move-is-refused-while-a-global-policy-names-the-repository-by-key)). A pattern or class
   selector of a global policy matches by address and refuses no move.
+- **Serialised with the writers that name it.** A policy write binds its key selectors under share locks of its project and
+  of the repository ([authorization.md](authorization.md) R-AUTHZ-004), and a virtual repository's write its members under
+  share locks, so such a write and a move run one after the other and the move sees what the write named. The database
+  holds the rule for every writer: a repository that a key selector of a policy of its project or a virtual repository of
+  its project holds by ID does not change its project (SQLSTATE `AI007`; a move that meets it answers 409
+  `repository_in_use`).
 - **One transaction.** The move takes the row locks of both projects in key order and of the repository, changes the
   repository's `project_id`, raises its `config_version`, writes the audit event `repository.moved` with the source and the
   target project, and calls `cluster.Notify("authz", …)` and `cluster.Notify("repo_config", …)` with the repository id

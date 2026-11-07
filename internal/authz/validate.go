@@ -495,7 +495,10 @@ func (s *Service) principalID(ctx context.Context, ref Ref) (string, error) {
 // <project>/<key> or by a pattern or class across projects, a project policy by bare keys of its
 // own project; a selector of the other context is 422 invalid_pattern, never a selector that matches
 // nothing. A key that names no repository is 422 unknown_repository; in a project context the key
-// is looked up in the project only, so a repository of another project cannot be named at all.
+// is looked up in the project only, so a repository of another project cannot be named at all. The
+// lookup reads the repository snapshot, which answers the validation; a write binds the key selectors
+// again in its own transaction under row locks ([bindKeySelectors]), since the snapshot may be of
+// another moment.
 func (s *Service) resolveSelectors(ctx context.Context, rp *resolvedPolicy) []ProblemField {
 	var ps []ProblemField
 	in := instanceContext

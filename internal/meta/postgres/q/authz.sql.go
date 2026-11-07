@@ -49,6 +49,49 @@ func (q *Queries) AuthzAdoptBinding(ctx context.Context, arg AuthzAdoptBindingPa
 	return result.RowsAffected(), nil
 }
 
+const authzBindRepository = `-- name: AuthzBindRepository :many
+SELECT r.id, r.class
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE p.key = $1::text AND r.key = $2::text
+   FOR SHARE OF r
+`
+
+type AuthzBindRepositoryParams struct {
+	Project string
+	Key     string
+}
+
+type AuthzBindRepositoryRow struct {
+	ID    int64
+	Class string
+}
+
+// The repository a key selector of a policy write names, by project and key, in the
+// transaction of the write and under a share lock of its row (R-AUTHZ-004,
+// R-REPO-060): a move of it (ProjectRepositoryLock, FOR UPDATE) waits for the write,
+// whose selector then keeps it from moving, or the write waits for the move and the
+// row no longer matches the project. No row when the project holds no such key.
+func (q *Queries) AuthzBindRepository(ctx context.Context, arg AuthzBindRepositoryParams) ([]AuthzBindRepositoryRow, error) {
+	rows, err := q.db.Query(ctx, authzBindRepository, arg.Project, arg.Key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuthzBindRepositoryRow{}
+	for rows.Next() {
+		var i AuthzBindRepositoryRow
+		if err := rows.Scan(&i.ID, &i.Class); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const authzBindingSource = `-- name: AuthzBindingSource :many
 SELECT source FROM authz_role_binding WHERE role = $1::text AND principal_id = $2::text::uuid
 `
@@ -1126,10 +1169,15 @@ func (q *Queries) AuthzPrincipalHasBinding(ctx context.Context, principalID stri
 }
 
 const authzProjectByKey = `-- name: AuthzProjectByKey :many
-SELECT id::text AS id FROM project WHERE key = $1::text
+SELECT id::text AS id FROM project WHERE key = $1::text FOR SHARE
 `
 
-// The ID of a project by its key; no row when it does not exist (R-AUTHZ-026).
+// The ID of a project by its key; no row when it does not exist (R-AUTHZ-026). The
+// row is taken FOR SHARE: a policy write of the project holds it until it commits,
+// so a move into or out of the project (ProjectLock, FOR UPDATE) runs before or
+// after the write and never between the binding of its key selectors and its
+// commit, and the lock comes before the repository rows AuthzBindRepository takes,
+// in the order the move takes them.
 func (q *Queries) AuthzProjectByKey(ctx context.Context, key string) ([]string, error) {
 	rows, err := q.db.Query(ctx, authzProjectByKey, key)
 	if err != nil {
