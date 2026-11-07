@@ -993,3 +993,32 @@ func TestR_REPO_053_AnEmptySnapshotClearsNoPass(t *testing.T) {
 		t.Fatal("an empty snapshot cleared the pass in progress")
 	}
 }
+
+// R-OPS-007: the series of a repository that left the snapshot are deleted, those of the others stay.
+func TestR_OPS_007_TheMirrorSeriesOfAForgottenRepositoryAreDeleted(t *testing.T) {
+	g := newRig(t, nil, "")
+	g.names("a")
+	g.plan("a", "1.0.0")
+	if _, err := g.run(); err != nil {
+		t.Fatal(err)
+	}
+	g.met.Items.WithLabelValues("it/other", ResultStored).Inc()
+	g.met.Forget("it/npm-mirror")
+	fams, err := g.reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, f := range fams {
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "repo" {
+					seen[l.GetValue()] = true
+				}
+			}
+		}
+	}
+	if seen["it/npm-mirror"] || !seen["it/other"] {
+		t.Errorf("the repo values after Forget: %v", seen)
+	}
+}

@@ -68,6 +68,7 @@ func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv i
 	if err != nil {
 		return proxyEngineArea{}, err
 	}
+	a.tele.metrics.Repos().OnForget(engine.Forget)
 	if err := a.startComponent(ctx, engine); err != nil {
 		return proxyEngineArea{}, err
 	}

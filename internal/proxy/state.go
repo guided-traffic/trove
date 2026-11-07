@@ -88,6 +88,19 @@ func (e *Engine) loadState(ctx context.Context, repoID int64) (*repoState, error
 	return st, nil
 }
 
+// Forget deletes the series of a repository name that left the snapshot (deleted, or renamed by a move) and the entry that
+// would publish the gauge of that name again at the next change of the circuit (R-OPS-007). A repository that was only renamed
+// is published under its new name by its next request.
+func (e *Engine) Forget(name string) {
+	e.keys.Range(func(k, v any) bool {
+		if v.(string) == name {
+			e.keys.Delete(k)
+		}
+		return true
+	})
+	e.m.forget(name)
+}
+
 // publishUp sets trove_remote_upstream_up from the state.
 func (e *Engine) publishUp(repoID int64, st *repoState) {
 	key, ok := e.keys.Load(repoID)

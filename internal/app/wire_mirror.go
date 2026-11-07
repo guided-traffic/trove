@@ -60,6 +60,7 @@ func (a *App) wireMirror(_ context.Context, in infra, repo repositoryArea) (mirr
 	if err != nil {
 		return mirrorArea{}, err
 	}
+	a.tele.metrics.Repos().OnForget(m.Forget)
 	store := mirror.NewPGStore(in.db)
 	a.tele.metrics.DBGauges().Add(mirror.GaugeSource(store.Gauges, repo.reader))
 	build := func() (*mirror.Engine, error) {
