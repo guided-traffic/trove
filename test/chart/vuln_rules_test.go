@@ -16,7 +16,7 @@ func monitoringSet() string { return filepath.Join(chartDir, "ci", "monitoring.y
 // TestR_VULN_024_PromtoolRules (R-VULN-024): the rendered PrometheusRule passes `promtool check rules` and
 // `promtool test rules`, with one test per alert that fires on its failure input and one in which it stays silent
 // (deploy/helm/trove/tests/rules_test.yaml). It runs over every alert of the chart, those of R-HA-045 included; the
-// requirement's own checks are in TestPrometheusRule, which does not carry its ID because the requirement is not complete.
+// requirement's own checks are in TestR_HA_045_PrometheusRule.
 func TestR_VULN_024_PromtoolRules(t *testing.T) {
 	promtool := promtoolPath(t)
 	_, docs := render(t, []string{monitoringSet()})
@@ -108,7 +108,7 @@ func TestR_VULN_024_PrometheusRuleValues(t *testing.T) {
 			name := str(r, "alert")
 			sev, ok := want[name]
 			if !ok {
-				continue // the other alerts of the rule are checked by TestPrometheusRule
+				continue // the other alerts of the rule are checked by TestR_HA_045_PrometheusRule
 			}
 			if got := str(r, "labels", "severity"); got != sev {
 				t.Errorf("%s severity = %q, want %q", name, got, sev)

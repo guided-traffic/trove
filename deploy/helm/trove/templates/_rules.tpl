@@ -2,10 +2,9 @@
 The alerts of the PrometheusRule (R-HA-045) as a YAML list, before disabledAlerts is applied. Names are
 stable. Rendered: the alerts of the vulnerability scanning (R-VULN-024), the two of the mirror mode (R-OPS-046,
 Q-OPS-160, Q-OPS-171), the one of a bridge left on (R-HA-064, Q-HA-92), TroveBlobMissing (R-HA-024, Q-STOR-152) and
-the sixteen rows of R-HA-045's table whose metrics the binary exports, TroveRevocationJournalBacklog (R-HA-054) and the
-six TroveBackup* alerts of the backup runs (R-BAK-014). Not rendered, because the metric does not exist yet:
-TroveBackupCheckFailed, which reads trove_backup_check_ok of the platform check task backup-check (R-HA-023).
-docs/developer/helm-chart.md lists it.
+the sixteen rows of R-HA-045's table whose metrics the binary exports, TroveBackupCheckFailed (the platform check
+task backup-check, R-HA-023), TroveRevocationJournalBacklog (R-HA-054) and the six TroveBackup* alerts of the backup runs
+(R-BAK-014): every alert of the table.
 
 The backup alerts handle the gauges that have no series until the event happened (Q-OPS-180): TroveBackupFailed reads
 the last success as "or vector(0)", and TroveBackupStale has a clause for a success that never was: no series for
@@ -163,6 +162,14 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
   annotations:
     summary: No garbage-collection run has ended successfully for more than two days.
     description: The tasks gc and gc-full do not finish (R-STOR-025). Blobs that nothing references stay in the object store until a run succeeds. The series exists after the first successful run of a worker process, so a worker that never completed a run reports nothing. Check the jobs of the task and the object store.
+- alert: TroveBackupCheckFailed
+  expr: min(trove_backup_check_ok{ {{ $ns }} }) == 0
+  for: 1h
+  labels:
+    severity: critical
+  annotations:
+    summary: A platform protection that the installation declares does not hold.
+    description: The task backup-check (R-HA-023) found that the point-in-time recovery of PostgreSQL or the versioning of the blob bucket that backup.recovery_window and backup.object_versioning declare is missing, or that the grace period of the garbage collection does not cover the window. The label check names it (archive_mode, object_versioning, noncurrent_expiry, grace_period); trove admin backup check prints the reason. A check the credential may not read, or that is not declared, has no series and does not fire.
 - alert: TroveRevocationJournalBacklog
   expr: max(trove_revocation_journal_pending{ {{ $ns }} }) > 0
   for: 15m
@@ -257,5 +264,5 @@ the alert and the report banner agree (R-VULN-004). It is a duration parsed by t
 
 {{/* The names of every alert the chart can render, for the check of disabledAlerts. */}}
 {{- define "trove.rules.names" -}}
-{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveRevocationJournalBacklog" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
+{{- toJson (list "TroveReplicasNotReady" "TroveDatabaseUnreachable" "TroveObjectStoreUnreachable" "TroveObjectStoreUnreachableSingleReplica" "TroveDatabasePoolSaturated" "TroveControlConnectionWaits" "TroveJobsStuck" "TroveLeaseLost" "TroveMixedVersions" "TroveSpoolNearlyFull" "TroveVulnerabilityDataStale" "TroveVulnerabilitySyncFailing" "TroveVulnerabilityClaimedNameMalicious" "TroveMirrorFailing" "TroveMirrorStale" "TroveBridgeLeftOn" "TroveBlobMissing" "TroveGCStale" "TroveBackupCheckFailed" "TroveRevocationJournalBacklog" "TroveValkeyUnavailable" "TroveValkeyUnavailableSingleReplica" "TroveValkeySentinelsDegraded" "TroveValkeyFailoverFlapping" "TroveValkeyPrimaryDisagreement" "TroveBackupStale" "TroveBackupFailed" "TroveBackupRunningLong" "TroveBackupGlobalHoldLong" "TroveBackupSourceDamage" "TroveBackupVerifyFindings") -}}
 {{- end -}}

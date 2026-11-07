@@ -1,0 +1,168 @@
+//go:build chart
+
+package chart_test
+
+import (
+	"strings"
+	"testing"
+)
+
+const restoredTo = "2026-10-28T09:15:00Z"
+
+func postRestoreSets(extra ...string) []string {
+	return append([]string{"postRestore.enabled=true", "postRestore.restoredTo=" + restoredTo}, extra...)
+}
+
+func postRestorePod(docs []doc) any {
+	return at(find(docs, "Job", "trove-post-restore"), "spec", "template", "spec")
+}
+
+// TestR_HA_025_PostRestoreJob (R-HA-025 step 4, R-HA-030, R-HA-042): the hook Job that runs trove admin post-restore.
+func TestR_HA_025_PostRestoreJob(t *testing.T) {
+	t.Run("nothing is rendered without postRestore.enabled", func(t *testing.T) {
+		_, docs := render(t, required())
+		for _, c := range [][2]string{{"Job", "trove-post-restore"}, {"ServiceAccount", "trove-post-restore"}, {"NetworkPolicy", "trove-post-restore"}, {"ConfigMap", "trove-post-restore"}} {
+			if find(docs, c[0], c[1]) != nil {
+				t.Errorf("%s %s rendered with postRestore.enabled: false", c[0], c[1])
+			}
+		}
+	})
+
+	_, docs := render(t, required(), postRestoreSets()...)
+	job := find(docs, "Job", "trove-post-restore")
+	if job == nil {
+		t.Fatal("no Job trove-post-restore")
+	}
+	pod := postRestorePod(docs)
+
+	t.Run("a post-install and post-upgrade hook that Helm waits for", func(t *testing.T) {
+		if got := str(job, "metadata", "annotations", "helm.sh/hook"); got != "post-install,post-upgrade" {
+			t.Errorf("hook = %q", got)
+		}
+		if got := str(job, "metadata", "annotations", "helm.sh/hook-delete-policy"); got != "before-hook-creation" {
+			t.Errorf("hook-delete-policy = %q", got)
+		}
+		checkPodFailurePolicy(t, at(job, "spec", "podFailurePolicy"), "post-restore")
+		if str(pod, "restartPolicy") != "Never" {
+			t.Errorf("restartPolicy = %q", str(pod, "restartPolicy"))
+		}
+	})
+
+	t.Run("the command, with the time of the restore", func(t *testing.T) {
+		if got := strings.Join(containerArgs(pod), " "); got != "admin post-restore --restored-to "+restoredTo {
+			t.Errorf("args = %q", got)
+		}
+		_, d := render(t, required(), postRestoreSets("postRestore.skipRevocationJournal=true")...)
+		if got := strings.Join(containerArgs(postRestorePod(d)), " "); got != "admin post-restore --restored-to "+restoredTo+" --skip-revocation-journal" {
+			t.Errorf("args = %q", got)
+		}
+	})
+
+	t.Run("a ServiceAccount of its own, a policy that admits nothing, no disruption budget", func(t *testing.T) {
+		if str(pod, "serviceAccountName") != "trove-post-restore" || at(pod, "automountServiceAccountToken") != false {
+			t.Errorf("account = %v", str(pod, "serviceAccountName"))
+		}
+		if find(docs, "ServiceAccount", "trove-post-restore") == nil {
+			t.Error("no ServiceAccount")
+		}
+		np := find(docs, "NetworkPolicy", "trove-post-restore")
+		if np == nil {
+			t.Fatal("no NetworkPolicy")
+		}
+		if rules, ok := at(np, "spec", "ingress").([]any); !ok || len(rules) != 0 || at(np, "spec", "egress") != nil {
+			t.Errorf("policy = %v", at(np, "spec"))
+		}
+		lbl := podTemplateLabels(job)
+		if !selects(at(np, "spec", "podSelector", "matchLabels"), lbl) {
+			t.Error("the policy does not select the Job's pods")
+		}
+		for _, p := range ofKind(docs, "PodDisruptionBudget") {
+			if selects(at(p, "spec", "selector", "matchLabels"), lbl) {
+				t.Errorf("%s selects the Job's pods", str(p, "metadata", "name"))
+			}
+		}
+		if lbl["trove/serve"] != "" {
+			t.Error("the pod carries trove/serve")
+		}
+	})
+
+	t.Run("the Secrets of its scope: the owner login, the blob store; no Valkey, no key ring, nothing of the target", func(t *testing.T) {
+		_, d := render(t, required(), postRestoreSets(append(staticTarget(), "secrets.postRestoreJournal.existingSecret=trove-journal", "postRestore.journalCredentials.source=static")...)...)
+		v := secretVolumes(postRestorePod(d))
+		has := func(s string) bool {
+			for _, x := range v {
+				if x == s {
+					return true
+				}
+			}
+			return false
+		}
+		for _, want := range []string{"trove-db-owner", "trove-s3", "trove-journal"} {
+			if !has(want) {
+				t.Errorf("secrets = %v, want %s", v, want)
+			}
+		}
+		for _, no := range []string{"trove-db-app", "trove-db-backup", "trove-valkey", "trove-encryption-keys", "trove-tls", "trove-backup-keys", "trove-backup-ca"} {
+			if has(no) {
+				t.Errorf("the post-restore Job mounts %s", no)
+			}
+		}
+		// The journal credential reaches this Job and no other pod.
+		for name, p := range podSpecs(d) {
+			if name != "trove-post-restore" && has2(secretVolumes(p), "trove-journal") {
+				t.Errorf("%s mounts the journal credential", name)
+			}
+		}
+		if has2(secretVolumes(cronJobPod(d)), "trove-journal") {
+			t.Error("the backup pod mounts the journal credential")
+		}
+	})
+
+	t.Run("journal credentials: runtime passes no file, default and static pass the file the chart renders", func(t *testing.T) {
+		if hasMount(pod, "/etc/trove/post-restore") || find(docs, "ConfigMap", "trove-post-restore") != nil {
+			t.Error("a credentials file with journalCredentials.source runtime")
+		}
+		_, d := render(t, required(), postRestoreSets("postRestore.journalCredentials.source=default")...)
+		args := strings.Join(containerArgs(postRestorePod(d)), " ")
+		if !strings.HasSuffix(args, "--credentials-file /etc/trove/post-restore/credentials.yaml") {
+			t.Errorf("args = %q", args)
+		}
+		cm := str(find(d, "ConfigMap", "trove-post-restore"), "data", "credentials.yaml")
+		if strings.TrimSpace(cm) != "source: default" {
+			t.Errorf("credentials.yaml = %q", cm)
+		}
+		_, d = render(t, required(), postRestoreSets("postRestore.journalCredentials.source=static", "secrets.postRestoreJournal.existingSecret=trove-journal")...)
+		cm = str(find(d, "ConfigMap", "trove-post-restore"), "data", "credentials.yaml")
+		for _, want := range []string{"source: static", "access_key_id_file: /var/run/secrets/trove/post-restore-journal/access-key-id", "secret_access_key_file: /var/run/secrets/trove/post-restore-journal/secret-access-key"} {
+			if !strings.Contains(cm, want) {
+				t.Errorf("credentials.yaml lacks %q: %s", want, cm)
+			}
+		}
+		if !hasMount(postRestorePod(d), "/etc/trove/post-restore") {
+			t.Error("the credentials file is not mounted")
+		}
+	})
+
+	t.Run("validation names the value", func(t *testing.T) {
+		renderFails(t, required(), []string{"postRestore.enabled=true"}, "postRestore.restoredTo")
+		renderFails(t, required(), []string{"postRestore.enabled=true", "postRestore.restoredTo=yesterday"}, "postRestore.restoredTo", "RFC 3339")
+		renderFails(t, required(), postRestoreSets("postRestore.journalCredentials.source=static"), "postRestore.journalCredentials.source", "secrets.postRestoreJournal.existingSecret")
+		renderFails(t, required(), postRestoreSets("postRestore.skipRevocationJournal=true", "postRestore.journalCredentials.source=default"), "postRestore.skipRevocationJournal", "journalCredentials")
+		renderFails(t, required(), append(restoreSets(), "postRestore.enabled=true", "postRestore.restoredTo="+restoredTo), "postRestore.enabled", "restore.enabled")
+		renderFails(t, required(), postRestoreSets("postRestore.terminationGracePeriodSeconds=5"), "terminationGracePeriodSeconds")
+		render(t, required(), "postRestore.enabled=true", "postRestore.restoredTo=2026-10-28T11:15:00.5+02:00")
+	})
+
+	t.Run("a typo in the values is refused", func(t *testing.T) {
+		renderFails(t, required(), []string{"postRestore.restored_to=x"}, "restored_to")
+	})
+}
+
+func has2(v map[string]string, secret string) bool {
+	for _, s := range v {
+		if s == secret {
+			return true
+		}
+	}
+	return false
+}

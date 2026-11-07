@@ -2724,6 +2724,21 @@
             }
           },
           "additionalProperties": false
+        },
+        "postRestoreJournal": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {
+              "type": "string"
+            },
+            "accessKeyIdKey": {
+              "type": "string"
+            },
+            "secretAccessKeyKey": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -3890,6 +3905,103 @@
           "items": {
             "type": "object"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "postRestore": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "skipRevocationJournal": {
+          "type": "boolean"
+        },
+        "backoffLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 30
+        },
+        "serviceAccount": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Kubernetes quantity"
+              }
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Kubernetes quantity"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "podAnnotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extraEnv": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "restoredTo": {
+          "type": "string"
+        },
+        "journalCredentials": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "runtime",
+                "default",
+                "static"
+              ]
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

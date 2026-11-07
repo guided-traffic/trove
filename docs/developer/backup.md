@@ -221,6 +221,17 @@ retried). The alerts of R-BAK-014 are rules of the chart over the metric names o
 [journal/metrics.go](../../internal/journal/metrics.go): a renamed family fails `TestPrometheusRule`. What the chart renders, the Secrets of
 each Job and the tests are in [helm-chart.md](helm-chart.md#the-backup-and-restore-jobs).
 
+## The platform check
+
+The task `backup-check` (R-HA-023, `40 5 * * *`, queue `maintenance`) runs [platform.Checker](../../internal/backup/platform/platform.go) and stores
+its report in `system_state` under `backup_check`; every replica sets `trove_backup_check_ok{check}` from that row in its database gauges
+(`exportBackupCheck` in [wire_backup_check.go](../../internal/app/wire_backup_check.go), Q-OPS-185). Only what `backup.recovery_window` and
+`backup.object_versioning` declare is checked (`archive_mode`, `grace_period`, `object_versioning`, `noncurrent_expiry`); a setting the
+credential may not read is unknown and has no series (`s3.ErrProtectionUnknown`). `trove admin backup check` runs the same checks on
+demand and exits 5 when one fails. The bucket reads are `VersioningStatus` and `NoncurrentExpiryDays` of
+[internal/blob/s3/protection.go](../../internal/blob/s3/protection.go). Tests: `TestR_HA_023_*` in `internal/backup/platform` and
+`test/integration/backup/platform_check_test.go`.
+
 ## Conventions
 
 - Test names carry requirement IDs (`R-BAK-010`), never decision IDs.

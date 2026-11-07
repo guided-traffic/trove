@@ -35,9 +35,9 @@ contain the chart name; fullnameOverride wins. Cut at 50 characters so that ever
 {{- end -}}
 {{- end -}}
 
-{{/* The ServiceAccount of the backup pods and of the restore Job (R-HA-060). Argument: dict "root" . "kind" "backup" | "restore". */}}
+{{/* The ServiceAccount of the backup pods, the restore Job and the post-restore Job (R-HA-060, R-HA-025). Argument: dict "root" . "kind" "backup" | "restore" | "post-restore" "key" <the values key, kind unless "postRestore">. */}}
 {{- define "trove.jobServiceAccountName" -}}
-{{- $sa := (get .root.Values .kind).serviceAccount -}}
+{{- $sa := (get .root.Values (.key | default .kind)).serviceAccount -}}
 {{- if $sa.create -}}
 {{- default (printf "%s-%s" (include "trove.fullname" .root) .kind) $sa.name -}}
 {{- else -}}

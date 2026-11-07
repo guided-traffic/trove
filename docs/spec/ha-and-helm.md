@@ -2659,7 +2659,7 @@ Acceptance criteria:
 ### R-HA-060 · Backup CronJob and restore Job
 Priority: **MVP** · Covers: OPS-032, OPS-033
 
-**Status.** The chart side is built (phase 7): [backup.yaml](../../deploy/helm/trove/templates/backup.yaml) (ServiceAccount and
+**Status.** The chart side is built (phase 7), the post-restore Job of R-HA-025 as well: [backup.yaml](../../deploy/helm/trove/templates/backup.yaml) (ServiceAccount and
 CronJob), [restore.yaml](../../deploy/helm/trove/templates/restore.yaml) (ServiceAccount and Job), the pod template and failure
 policy in [_backup.tpl](../../deploy/helm/trove/templates/_backup.tpl), the validation in
 [_validate_backup.tpl](../../deploy/helm/trove/templates/_validate_backup.tpl), checked by `test/chart/backup_test.go`. The Jobs
@@ -2857,6 +2857,14 @@ The platform layer is recommended, not required; its checks and rules are MVP (Q
   `backup-check` (default schedule `40 5 * * *`,
   [operations-and-observability.md](operations-and-observability.md) R-OPS-019).
 
+**Status.** Built (phase 7): the task `backup-check` (`40 5 * * *`, kind `backup-check` in the `maintenance` queue), the command
+`trove admin backup check` and the gauge, in [internal/backup/platform](../../internal/backup/platform); the startup rule below is
+`validateRecoveryWindow` in [internal/config/backup.go](../../internal/config/backup.go). What the check verifies and why only what is
+declared: [Q-HA-151](#q-ha-151--the-platform-check-verifies-what-the-operator-declared-and-nothing-else),
+[Q-HA-152](#q-ha-152--backuprecovery_window-and-backupobject_versioning-are-config-keys-with-the-startup-rule-of-r-ha-024),
+[Q-HA-153](#q-ha-153--trove-admin-backup-check-runs-the-checks-without-storing-them-and-exits-5-on-a-failed-one). The check names the
+results `archive_mode`, `object_versioning`, `noncurrent_expiry` and `grace_period`. Its gap is [H-564](#h-564--the-platform-check-reads-settings-not-outcomes).
+
 Configuration:
 
 ```yaml
@@ -2930,6 +2938,12 @@ Acceptance criteria:
 
 ### R-HA-025 · Restore procedure
 Priority: **MVP** · Covers: OPS-033
+
+**Status.** Step 4 is built: `trove admin post-restore` ([internal/backup/postrestore](../../internal/backup/postrestore)) and the
+hook Job of the chart ([post-restore.yaml](../../deploy/helm/trove/templates/post-restore.yaml), `postRestore.*`,
+[Q-HA-150](#q-ha-150--the-post-restore-job-is-a-post-upgrade-hook-with-a-credentials-file-the-chart-renders)); the Job passes
+`--credentials-file` for step 5's credential, so the journal replay lists object versions. The drill against the local profile is the
+end-to-end suite's.
 
 Restores are whole-installation, point-in-time operations. Restoring a single repository is
 Deferred (repository export and import, OPS-036 and OPS-037, are P2). This procedure restores the
@@ -4086,6 +4100,10 @@ secrets:
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
     sessionTokenKey: ""                 # empty = no session token
+  postRestoreJournal:
+    existingSecret: ""                  # required with postRestore.journalCredentials.source static; the post-restore Job only. A login that may list the object versions of the blob bucket (s3:ListBucketVersions), which the runtime credential deliberately lacks (R-HA-023)
+    accessKeyIdKey: access-key-id
+    secretAccessKeyKey: secret-access-key
   backupTargetCA:
     existingSecret: ""                  # empty = the system trust store; the backup and restore pods only; example: trove-backup-target-tls. Renders backup.target.ca_file (Q-HA-146)
     key: ca.crt
@@ -4277,7 +4295,25 @@ migrations:
 
 postRestore:
   enabled: false                        # renders the post-restore hook Job once
-  restoredTo: ""                        # example: "2026-10-28T09:15:00Z"
+  restoredTo: ""                        # required with enabled, the time t the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
+  skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
+  journalCredentials:
+    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.postRestoreJournal) (Q-HA-150)
+  backoffLimit: 2                       # a retry applies the clean-up again; its steps are safe to repeat
+  activeDeadlineSeconds: 0              # 0 = not rendered
+  terminationGracePeriodSeconds: 60     # at least 30
+  serviceAccount:
+    create: true
+    name: ""                            # <fullname>-post-restore
+    annotations: {}                     # example (IRSA, with s3:ListBucketVersions on the blob bucket when journalCredentials.source is default): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-post-restore"}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  podAnnotations: {}                    # safe-to-evict: "false" is always added
+  extraEnv: []
 
 # ── Backup CronJob and restore Job (R-HA-060, backup-and-restore.md R-BAK-012) ──
 backup:
@@ -5063,15 +5099,15 @@ Q-STOR-152); and these sixteen rows of the table below: `TroveReplicasNotReady`,
 `namespace`, which every scrape through the Prometheus operator carries. The binary exports every metric these rows read under the name of their
 expression (Q-HA-135).
 
-Phase 7 adds `TroveRevocationJournalBacklog` (R-HA-054) and the six alerts of the backup runs, `TroveBackupStale`, `TroveBackupFailed`,
+Every alert of the table is rendered and tested (phase 7): `TroveBackupCheckFailed` (R-HA-023, the stored report of the task `backup-check`), `TroveRevocationJournalBacklog` (R-HA-054) and the six alerts of the backup runs, `TroveBackupStale`, `TroveBackupFailed`,
 `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`, `TroveBackupSourceDamage` and `TroveBackupVerifyFindings`
 ([backup-and-restore.md](backup-and-restore.md) R-BAK-014), each with a rule test in which it fires and one in which it stays silent. The
 two gauges that have no series until the event happened (Q-OPS-180) are handled in the expressions: `TroveBackupFailed` reads the last success
 as `or vector(0)`, and `TroveBackupStale` has a clause for a backup that never succeeded ([Q-OPS-182](operations-and-observability.md#q-ops-182--the-clause-of-trovebackupstale-for-a-backup-that-never-succeeded-reads-its-window-from-the-chart)).
 
-**Not rendered, because what it reads does not exist yet.** `TroveBackupCheckFailed` reads `trove_backup_check_ok{check}` of the platform
-check task `backup-check` (R-HA-023, [operations-and-observability.md](operations-and-observability.md) R-OPS-019); no code registers that gauge,
-so the alert stays out until the task exists, and R-HA-045 is complete only then. The acceptance criteria
+`TroveBackupCheckFailed` reads `trove_backup_check_ok{check}`, which every replica exports from the report that the task `backup-check` stored in
+`system_state` ([Q-OPS-185](operations-and-observability.md#q-ops-185--the-gauge-of-the-platform-check-is-read-from-the-stored-report-by-every-replica));
+a check that is not declared or not readable has no series. The acceptance criteria
 below that need a Prometheus scraping a running profile (object store stopped, Valkey stopped, the suspended backup, the interrupted backup run)
 are not covered by a test: the rule tests prove the expressions against given series, not that a stopped component produces those series.
 
@@ -8284,6 +8320,67 @@ edge's limit (then the cause is elsewhere) or when a client waits longer than 90
 **Applied:** `deploy/dev/haproxy-values.yaml` (`timeout-keep-alive: 90s`), `test/e2e/clients/fwd/main.go` (closing line, tests in `main_test.go`),
 [developer/e2e.md](../developer/e2e.md) (forwarder), F-70 in [projektplan/promt.md](../projektplan/promt.md). No requirement text changed.
 
+### Q-HA-150 · The post-restore Job is a post-upgrade hook with a credentials file the chart renders
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the one-off pod of R-HA-025 (`kubectl run … -- trove admin post-restore …`) | The chart renders nothing | No chart code | The pod needs the release's configuration, the owner login, the blob store's CA and the journal credential, which the operator would assemble by hand and get wrong under the pressure of a restore |
+| (b) A hook Job `<fullname>-post-restore` with `postRestore.enabled` and `restoredTo`, `post-install,post-upgrade`, Secrets of its scope, and `postRestore.journalCredentials.source` (`runtime`, `default`, `static`) that renders the YAML file of `--credentials-file` (chosen) | Helm waits for it and fails the upgrade when it fails; the owner login of the migration Job, the blob store and, for the journal, the credential that lists object versions reach this Job only; `static` mounts `secrets.postRestoreJournal`, `default` uses the Job's workload identity | The credentials file is chart-written, not the operator's | Four values more than the spec's two |
+| (c) Run it inside the restore Job | One Job | The restore Job already does it for a backup restore (R-BAK-021) | A platform restore has no restore Job, and the clean-up must run while the roles are at zero, before the upgrade that starts them |
+
+**Choice:** (b), with `backoffLimit` 2, because the fix-ups are one transaction and a repeated replay reports its entries as already in effect.
+
+**Rationale:** R-HA-025 step 4 names the hook Job, and step 5 names the separate credential that only this command may receive. The development agent would revisit this if the journal reader should read the credential from the operator's file directly.
+
+**Applied:** R-HA-025 step 4, R-HA-028, R-HA-030 (Secrets table), R-HA-031 (values block), R-HA-029 (rows of `postRestore.enabled`); `templates/post-restore.yaml`, `templates/_backup.tpl`, `templates/_secrets.tpl`, `templates/_validate_backup.tpl`.
+
+### Q-HA-151 · The platform check verifies what the operator declared and nothing else
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Check everything always and export every result | `archive_mode`, versioning, lifecycle and grace period on every installation | Simple to explain | An installation that relies on trove's own backup alone would alarm `TroveBackupCheckFailed` for a protection it never claimed |
+| (b) A check per declaration: `archive_mode` and `grace_period` with `backup.recovery_window`, `object_versioning` with `backup.object_versioning`, `noncurrent_expiry` with both (chosen) | Nothing declared, no series | The alert means "a protection you declared is missing"; the defaults stay silent | The operator must declare to be checked |
+
+**Choice:** (b). A setting the credential may not read is unknown and has no series (R-HA-023 "otherwise unknown").
+
+**Rationale:** R-HA-023 calls the platform layer "recommended, not required". The development agent would revisit this if an installation without any declaration should be told so.
+
+**Applied:** R-HA-023, R-HA-045; `internal/backup/platform`.
+
+### Q-HA-152 · `backup.recovery_window` and `backup.object_versioning` are config keys with the startup rule of R-HA-024
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keys for the check only | The check reads them; no startup rule | Smaller change | R-HA-024's rule (refuse to start) stays unbuilt although the keys and the check hold the same inputs |
+| (b) Keys, the startup rule and the check (chosen) | A replica and every backup command refuse a window above `storage.gc.grace_period` without `object_versioning`, naming the three keys | One definition of the three-key rule | The rule reaches the backup commands too |
+
+**Choice:** (b).
+
+**Rationale:** The check's `grace_period` row and the startup rule are the same inequality; building one without the other would let them disagree. The development agent would revisit this if a restore Job must run on an installation that violates the rule.
+
+**Applied:** R-HA-023, R-HA-024; `internal/config/backup.go`, `internal/config/schema.json`.
+
+### Q-HA-153 · `trove admin backup check` runs the checks without storing them and exits 5 on a failed one
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The CLI reads the stored report | It prints the last run of the task | No S3 access of its own | It shows yesterday's state, and the acceptance criterion asks for a report after `kubectl cnpg backup` |
+| (b) The CLI runs the checks (chosen) | The same `platform.Checker`; it stores nothing; exit 5 when a declared protection does not hold | Current state; usable in a drill script | The pod running it needs the bucket's settings rights to be more than "unknown" |
+
+**Choice:** (b).
+
+**Rationale:** R-HA-023: "reports, without changing anything". The development agent would revisit this if the stored report should be printable too.
+
+**Applied:** R-HA-023; `cmd/trove/admin_backupcheck.go`.
+
 ### Q-HA-146 · The CA of the backup target is a Secret of the chart
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -8496,3 +8593,9 @@ design.
   changed file runs with the secrets. Whoever can push a branch to this repository can therefore read
   `DOCKERHUB_PAT` from a job. The runners are ephemeral pods ([releasing.md](../developer/releasing.md#ci)), which
   bounds what a build leaves behind. What a running job can reach from the pod's network is not verified here.
+
+### H-564 · The platform check reads settings, not outcomes
+
+Component: the task `backup-check` and `trove admin backup check` (R-HA-023). Subject: whether a point-in-time restore would work. The check reads `archive_mode`, the bucket's versioning and lifecycle rules and the grace period. `archive_mode = on` says PostgreSQL hands finished WAL segments to its archive command; it does not say that the command succeeds, that a base backup exists or that a restore has ever been tried. A noncurrent-version rule that matches only a prefix of the bucket counts as one that matches the bucket.
+
+Live whenever `backup.recovery_window` is declared. What makes it real: an archive command that fails (an expired credential, a deleted bucket) while `archive_mode` stays `on`, so `trove_backup_check_ok{check="archive_mode"}` stays 1 and `TroveBackupCheckFailed` stays silent. The restore drill of R-HA-025 is the only check of the outcome, and it is not run by the installation.

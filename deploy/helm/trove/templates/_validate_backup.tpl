@@ -118,4 +118,21 @@ the day of week 7 is not supported; Sunday is 0
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{- /* The post-restore Job after a platform restore (R-HA-025 step 4). */ -}}
+{{- $p := $v.postRestore -}}
+{{- if $p.enabled -}}
+{{- if not (regexMatch "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$" $p.restoredTo) -}}
+{{- fail (printf "trove: postRestore.restoredTo is required while postRestore.enabled is true and must be an RFC 3339 time (example: \"2026-10-28T09:15:00Z\"); it is %q" $p.restoredTo) -}}
+{{- end -}}
+{{- if $r.enabled -}}
+{{- fail "trove: postRestore.enabled and restore.enabled are both set: the restore Job runs the clean-up of a platform restore itself (R-BAK-021), and post-restore is for a restore of PostgreSQL by the platform (R-HA-025). Set one" -}}
+{{- end -}}
+{{- if and (eq $p.journalCredentials.source "static") (not $v.secrets.postRestoreJournal.existingSecret) -}}
+{{- fail "trove: postRestore.journalCredentials.source: static needs secrets.postRestoreJournal.existingSecret (keys secrets.postRestoreJournal.accessKeyIdKey and secretAccessKeyKey)" -}}
+{{- end -}}
+{{- if and $p.skipRevocationJournal (ne $p.journalCredentials.source "runtime") -}}
+{{- fail "trove: postRestore.skipRevocationJournal skips the journal replay, so postRestore.journalCredentials.source must stay runtime" -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}

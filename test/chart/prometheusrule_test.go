@@ -11,9 +11,8 @@ import (
 
 type alertSeverity struct{ name, severity string }
 
-// alertSeverities are the alerts the chart renders, in the order of templates/_rules.tpl, with their severity. Of
-// R-HA-045's table only TroveBackupCheckFailed is not among them: it reads trove_backup_check_ok, which the platform
-// check task backup-check (R-HA-023) exports, and no code registers that gauge yet.
+// alertSeverities are the alerts the chart renders, in the order of templates/_rules.tpl, with their severity: every row of
+// R-HA-045's table, and the alerts of the vulnerability scanning, the mirror and the bridge.
 func alertSeverities() []alertSeverity {
 	return []alertSeverity{
 		{"TroveReplicasNotReady", "critical"},
@@ -34,6 +33,7 @@ func alertSeverities() []alertSeverity {
 		{"TroveBridgeLeftOn", "warning"},
 		{"TroveBlobMissing", "critical"},
 		{"TroveGCStale", "warning"},
+		{"TroveBackupCheckFailed", "critical"},
 		{"TroveRevocationJournalBacklog", "warning"},
 		{"TroveValkeyUnavailable", "critical"},
 		{"TroveValkeyUnavailableSingleReplica", "warning"},
@@ -59,11 +59,12 @@ func renderedRules(t *testing.T, sets ...string) []any {
 	return list(pr, "spec", "groups", "0", "rules")
 }
 
-// TestPrometheusRule is the check of the PrometheusRule of the chart for what is built of the monitoring integration. It
-// does not carry the ID R-HA-045: the requirement is not complete, TroveBackupCheckFailed waits for the gauge of the
-// platform check task (R-HA-023, R-HA-045 status), and its acceptance criteria with a Prometheus scraping a running
-// profile are not covered here. The rule tests of the backup alerts are in deploy/helm/trove/tests/rules_test.yaml.
-func TestPrometheusRule(t *testing.T) {
+// TestR_HA_045_PrometheusRule (R-HA-045) checks the PrometheusRule of the chart: every alert of the requirement's table is
+// rendered with its severity and duration, reads a metric that code under internal/ registers (or kube-state-metrics), and has
+// a rule test in which it fires and one in which it stays silent (deploy/helm/trove/tests/rules_test.yaml, run by
+// TestR_VULN_024_PromtoolRules). The acceptance criteria that need a Prometheus scraping a running profile are the
+// end-to-end suite's: the rule tests prove the expressions against given series, not that a stopped component produces them.
+func TestR_HA_045_PrometheusRule(t *testing.T) {
 	t.Run("it is rendered when metrics.prometheusRule.enabled is true and carries the configured labels", func(t *testing.T) {
 		_, docs := render(t, []string{monitoringSet()})
 		pr := find(docs, "PrometheusRule", "trove")
@@ -123,7 +124,7 @@ func TestPrometheusRule(t *testing.T) {
 			"TroveJobsStuck": "5m", "TroveLeaseLost": "", "TroveMixedVersions": "2h", "TroveSpoolNearlyFull": "10m",
 			"TroveBlobMissing": "", "TroveGCStale": "1h", "TroveValkeyUnavailable": "2m", "TroveValkeyUnavailableSingleReplica": "5m",
 			"TroveValkeySentinelsDegraded": "5m", "TroveValkeyFailoverFlapping": "", "TroveValkeyPrimaryDisagreement": "5m",
-			"TroveRevocationJournalBacklog": "15m", "TroveBackupStale": "", "TroveBackupFailed": "", "TroveBackupRunningLong": "",
+			"TroveBackupCheckFailed": "1h", "TroveRevocationJournalBacklog": "15m", "TroveBackupStale": "", "TroveBackupFailed": "", "TroveBackupRunningLong": "",
 			"TroveBackupGlobalHoldLong": "30m", "TroveBackupSourceDamage": "", "TroveBackupVerifyFindings": "",
 		}
 		for _, r := range renderedRules(t) {
@@ -162,10 +163,18 @@ func TestPrometheusRule(t *testing.T) {
 		}
 	})
 
-	t.Run("the alert of the platform check is not rendered before its gauge is exported", func(t *testing.T) {
+	t.Run("every row of the table of R-HA-045 is rendered, with the expression the table gives", func(t *testing.T) {
+		exprs := map[string]string{}
 		for _, r := range renderedRules(t) {
-			if str(r, "alert") == "TroveBackupCheckFailed" || strings.Contains(str(r, "expr"), "trove_backup_check_ok") {
-				t.Errorf("%s is rendered, but no code registers trove_backup_check_ok: %s", str(r, "alert"), str(r, "expr"))
+			exprs[str(r, "alert")] = str(r, "expr")
+		}
+		for name, want := range map[string]string{
+			"TroveBackupCheckFailed":        `min(trove_backup_check_ok{ namespace="default" }) == 0`,
+			"TroveRevocationJournalBacklog": `max(trove_revocation_journal_pending{ namespace="default" }) > 0`,
+			"TroveBackupFailed":             `max(trove_backup_last_failure_timestamp_seconds{ namespace="default" }) > (max(trove_backup_last_success_timestamp_seconds{ namespace="default" }) or vector(0))`,
+		} {
+			if exprs[name] != want {
+				t.Errorf("%s: expr = %q, want %q", name, exprs[name], want)
 			}
 		}
 	})
@@ -209,8 +218,8 @@ func TestPrometheusRule(t *testing.T) {
 		}
 	})
 
-	t.Run("a name of an alert that waits for its gauge is not yet an alert", func(t *testing.T) {
-		renderFails(t, []string{monitoringSet()}, []string{"metrics.prometheusRule.disabledAlerts={TroveBackupCheckFailed}"}, "disabledAlerts", "TroveBackupCheckFailed")
+	t.Run("a name that is no alert is refused", func(t *testing.T) {
+		renderFails(t, []string{monitoringSet()}, []string{"metrics.prometheusRule.disabledAlerts={TroveBackupCheckFaild}"}, "disabledAlerts", "TroveBackupCheckFaild", "TroveBackupCheckFailed")
 	})
 
 	t.Run("the backup alerts can be disabled one by one", func(t *testing.T) {

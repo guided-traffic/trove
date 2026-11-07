@@ -1,7 +1,7 @@
 {{/*
 The Secret mounts of a pod (R-HA-030) as a YAML list. Argument: dict "root" . "scope" "runtime"
 (the pods of the roles), "migrate" (the migration Job), "backup" (the backup CronJob's pods) or "restore" (the
-restore Job's pod). Each entry names one existing Secret,
+restore Job's pod) or "post-restore" (the hook Job after a platform restore: the database login of the migration Job, the blob store, and the journal credential). Each entry names one existing Secret,
 the keys that are projected and the file name each key gets. Secrets mount read-only with
 defaultMode 0440, with items and without subPath, so a rotated Secret reaches the files.
 Secrets never become environment variables. The login secrets (secrets.oidc, secrets.breakGlass) are
@@ -15,12 +15,13 @@ backup (R-BAK-020).
 {{- $s := .root.Values.secrets -}}
 {{- $out := list -}}
 {{- $dbSecret := $s.database -}}
-{{- if and (has .scope (list "migrate" "restore")) $s.databaseMigration.existingSecret -}}
+{{- if and (has .scope (list "migrate" "restore" "post-restore")) $s.databaseMigration.existingSecret -}}
 {{- $dbSecret = $s.databaseMigration -}}
 {{- else if and (eq .scope "backup") $s.databaseBackup.existingSecret -}}
 {{- $dbSecret = $s.databaseBackup -}}
 {{- end -}}
 {{- $job := has .scope (list "backup" "restore") -}}
+{{- $ioJob := has .scope (list "backup" "restore" "post-restore") -}}
 {{- $out = append $out (dict "name" "database" "secret" $dbSecret.existingSecret "path" "/var/run/secrets/trove/database" "items" (list (dict "key" $dbSecret.usernameKey "path" "username") (dict "key" $dbSecret.passwordKey "path" "password"))) -}}
 {{- if $s.databaseCA.existingSecret -}}
 {{- $out = append $out (dict "name" "database-ca" "secret" $s.databaseCA.existingSecret "path" "/var/run/secrets/trove/database-ca" "items" (list (dict "key" $s.databaseCA.key "path" "ca.crt"))) -}}
@@ -36,7 +37,7 @@ backup (R-BAK-020).
 {{- end -}}
 {{- $out = append $out (dict "name" "encryption" "secret" $s.encryption.existingSecret "path" "/var/run/secrets/trove/encryption" "items" $encItems) -}}
 {{- end -}}
-{{- if or (eq .scope "runtime") $job -}}
+{{- if or (eq .scope "runtime") $ioJob -}}
 {{- if eq (dig "storage" "s3" "credentials" "source" "" .root.Values.config) "static" -}}
 {{- $out = append $out (dict "name" "s3" "secret" $s.s3.existingSecret "path" "/var/run/secrets/trove/s3" "items" (list (dict "key" $s.s3.accessKeyIdKey "path" "access-key-id") (dict "key" $s.s3.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}
@@ -56,6 +57,10 @@ backup (R-BAK-020).
 {{- if $s.backupTargetCA.existingSecret -}}
 {{- $out = append $out (dict "name" "backup-target-ca" "secret" $s.backupTargetCA.existingSecret "path" "/var/run/secrets/trove/backup-target-ca" "items" (list (dict "key" $s.backupTargetCA.key "path" "ca.crt"))) -}}
 {{- end -}}
+{{- end -}}
+{{- if and (eq .scope "post-restore") $s.postRestoreJournal.existingSecret -}}
+{{- /* The credential that lists object versions, for the journal replay only (R-HA-025 step 5, R-HA-023); the runtime credential deliberately lacks it. */ -}}
+{{- $out = append $out (dict "name" "post-restore-journal" "secret" $s.postRestoreJournal.existingSecret "path" "/var/run/secrets/trove/post-restore-journal" "items" (list (dict "key" $s.postRestoreJournal.accessKeyIdKey "path" "access-key-id") (dict "key" $s.postRestoreJournal.secretAccessKeyKey "path" "secret-access-key"))) -}}
 {{- end -}}
 {{- if eq .scope "runtime" -}}
 {{- $vkItems := list -}}

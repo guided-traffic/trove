@@ -28,12 +28,14 @@ podFailurePolicy:
 {{- end -}}
 
 {{/*
-The pod template of a Job. Argument: dict "root" . "kind" "backup" | "restore" "args" <list of container arguments>.
+The pod template of a Job. Argument: dict "root" . "kind" "backup" | "restore" | "post-restore" "key" <the values key, kind
+unless "postRestore"> "args" <list of container arguments>. The post-restore Job also mounts the credentials file that the chart
+renders for the journal replay (templates/post-restore.yaml).
 */}}
 {{- define "trove.jobPod" -}}
 {{- $ := .root -}}
 {{- $kind := .kind -}}
-{{- $r := get $.Values $kind -}}
+{{- $r := get $.Values (.key | default $kind) -}}
 {{- $labels := include "trove.labels" (dict "root" $ "component" $kind) -}}
 metadata:
   labels:
@@ -49,7 +51,7 @@ metadata:
     {{- end }}
 spec:
   restartPolicy: Never
-  serviceAccountName: {{ include "trove.jobServiceAccountName" (dict "root" $ "kind" $kind) }}
+  serviceAccountName: {{ include "trove.jobServiceAccountName" (dict "root" $ "kind" $kind "key" .key) }}
   automountServiceAccountToken: false
   enableServiceLinks: false
   terminationGracePeriodSeconds: {{ $r.terminationGracePeriodSeconds }}
@@ -100,6 +102,11 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
+        {{- if and (eq $kind "post-restore") (ne $r.journalCredentials.source "runtime") }}
+        - name: journal-credentials
+          mountPath: /etc/trove/post-restore
+          readOnly: true
+        {{- end }}
         {{- include "trove.secretVolumeMounts" (dict "root" $ "scope" $kind) | nindent 8 }}
   volumes:
     - name: config
@@ -108,5 +115,10 @@ spec:
     - name: tmp
       emptyDir:
         sizeLimit: {{ $.Values.backup.tmpSizeLimit }}
+    {{- if and (eq $kind "post-restore") (ne $r.journalCredentials.source "runtime") }}
+    - name: journal-credentials
+      configMap:
+        name: {{ include "trove.fullname" $ }}-post-restore
+    {{- end }}
     {{- include "trove.secretVolumes" (dict "root" $ "scope" $kind) | nindent 4 }}
 {{- end -}}

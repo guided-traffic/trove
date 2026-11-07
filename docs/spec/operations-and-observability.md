@@ -5912,6 +5912,21 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-OPS-007, R-OPS-008, R-BAK-014; `internal/app/wire_backup_gauges.go`.
 
+### Q-OPS-185 · The gauge of the platform check is read from the stored report by every replica
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The worker that ran the task sets the gauge | The family lives in that process | No stored state | Only one replica exports it; a restart of that worker drops the series until the next daily run, and `min()` over the replicas that report would read a gap as health |
+| (b) The task stores its report in `system_state` (`backup_check`) and every replica sets `trove_backup_check_ok` from it in the database gauges (chosen) | The same path as the other gauges of the lane (R-BAK-014) | Every replica reports the same value; `max`/`min` are safe; the series survives a restart | One cheap read per gauge evaluation |
+
+**Choice:** (b).
+
+**Rationale:** The lane's rule is that gauges about shared state are read from PostgreSQL by every replica (R-OPS-007). The development agent would revisit this if the report grows beyond a few rows.
+
+**Applied:** R-OPS-008, R-HA-023; `internal/backup/platform`, `internal/app/wire_backup_check.go`, `internal/app/wire_backup_gauges.go`.
+
 ### Q-OPS-182 · The clause of `TroveBackupStale` for a backup that never succeeded reads its window from the chart
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

@@ -1,5 +1,5 @@
 # Values of the trove chart. A value is commented where its meaning, unit, range or consequence is not evident
-# from its name. Values of features the chart does not render yet (Gateway API chart-created Gateway, the post-restore Job)
+# from its name. Values of features the chart does not render yet (Gateway API chart-created Gateway)
 # are not defined: values.schema.json refuses unknown keys, so a typo or a value of a later feature fails before
 # anything renders. docs/developer/helm-chart.md lists what is in and what is not; docs/spec/ha-and-helm.md is the
 # reference of every key.
@@ -474,6 +474,10 @@ secrets:
     accessKeyIdKey: access-key-id
     secretAccessKeyKey: secret-access-key
     sessionTokenKey: ""                 # empty = no session token
+  postRestoreJournal:
+    existingSecret: ""                  # required with postRestore.journalCredentials.source static; the post-restore Job only. A login that may list the object versions of the blob bucket (s3:ListBucketVersions), which the runtime credential deliberately lacks (R-HA-023)
+    accessKeyIdKey: access-key-id
+    secretAccessKeyKey: secret-access-key
   backupTargetCA:
     existingSecret: ""                  # empty = the system trust store; the backup and restore pods only; example: trove-backup-target-tls. Renders backup.target.ca_file
     key: ca.crt
@@ -692,6 +696,31 @@ migrations:
     limits:
       memory: 512Mi
   podAnnotations: {}
+  extraEnv: []
+
+# ── Post-restore Job (R-HA-025 step 4) ───────────────────────────────────────
+# The clean-up after a platform (point-in-time) restore: a post-install and post-upgrade hook that Helm waits for. Run it while every
+# role is at zero. A restore with restore.enabled runs the same clean-up itself.
+postRestore:
+  enabled: false
+  restoredTo: ""                        # required with enabled, the time t the platform restore went to, RFC 3339; example: "2026-10-28T09:15:00Z"
+  skipRevocationJournal: false          # only when the source's bucket is gone (R-BAK-024)
+  journalCredentials:
+    source: runtime                     # runtime (the blob store's credential, a plain listing) | default (the identity of the Job's ServiceAccount lists object versions) | static (secrets.postRestoreJournal)
+  backoffLimit: 2                       # a retry applies the clean-up again; its steps are safe to repeat
+  activeDeadlineSeconds: 0              # 0 = not rendered
+  terminationGracePeriodSeconds: 60     # at least 30
+  serviceAccount:
+    create: true
+    name: ""                            # <fullname>-post-restore
+    annotations: {}                     # example (IRSA, with s3:ListBucketVersions on the blob bucket when journalCredentials.source is default): {eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/trove-post-restore"}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  podAnnotations: {}                    # safe-to-evict: "false" is always added
   extraEnv: []
 
 # ── Backup CronJob and restore Job (R-HA-060, R-BAK-012) ──────────────────────

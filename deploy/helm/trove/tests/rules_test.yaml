@@ -808,3 +808,40 @@ tests:
       - {series: "trove_revocation_journal_pending{namespace=\"default\",pod=\"w1\"}", values: "0x60"}
     alert_rule_test:
       - {eval_time: 50m, alertname: TroveRevocationJournalBacklog, exp_alerts: []}
+
+  # === R-HA-023, R-HA-045: the platform check ===================================================================
+  # trove_backup_check_ok{check} is 1 for a declared protection that holds, 0 for one that does not, and has no series for one that
+  # is not declared or that the credential may not read; every replica exports the stored report, so the series of two pods agree.
+  - name: "TroveBackupCheckFailed fires when a declared protection has been missing for an hour, and names the check"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_check_ok{namespace=\"default\",check=\"archive_mode\",pod=\"w1\"}", values: "1x5 0x100"}
+      - {series: "trove_backup_check_ok{namespace=\"default\",check=\"object_versioning\",pod=\"w1\"}", values: "1x105"}
+      - {series: "trove_backup_check_ok{namespace=\"default\",check=\"archive_mode\",pod=\"w2\"}", values: "1x5 0x100"}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: TroveBackupCheckFailed, exp_alerts: []}
+      - eval_time: 80m
+        alertname: TroveBackupCheckFailed
+        exp_alerts:
+          - exp_labels: {severity: "critical"}
+            exp_annotations:
+              summary: "A platform protection that the installation declares does not hold."
+              description: "The task backup-check (R-HA-023) found that the point-in-time recovery of PostgreSQL or the versioning of the blob bucket that backup.recovery_window and backup.object_versioning declare is missing, or that the grace period of the garbage collection does not cover the window. The label check names it (archive_mode, object_versioning, noncurrent_expiry, grace_period); trove admin backup check prints the reason. A check the credential may not read, or that is not declared, has no series and does not fire."
+
+  - name: "TroveBackupCheckFailed stays silent while every declared protection holds, and with no series at all"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_check_ok{namespace=\"default\",check=\"archive_mode\",pod=\"w1\"}", values: "1x100"}
+      - {series: "trove_backup_check_ok{namespace=\"default\",check=\"grace_period\",pod=\"w1\"}", values: "1x100"}
+    alert_rule_test:
+      - {eval_time: 90m, alertname: TroveBackupCheckFailed, exp_alerts: []}
+
+  - name: "TroveBackupCheckFailed stays silent for a failure of another namespace and for a failure that lasts less than an hour"
+    interval: 1m
+    input_series:
+      - {series: "trove_backup_check_ok{namespace=\"other\",check=\"archive_mode\",pod=\"w1\"}", values: "0x100"}
+      - {series: "trove_backup_check_ok{namespace=\"default\",check=\"archive_mode\",pod=\"w1\"}", values: "1x5 0x30 1x100"}
+    alert_rule_test:
+      - {eval_time: 50m, alertname: TroveBackupCheckFailed, exp_alerts: []}
+      - {eval_time: 90m, alertname: TroveBackupCheckFailed, exp_alerts: []}
+

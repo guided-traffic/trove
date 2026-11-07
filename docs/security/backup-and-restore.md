@@ -182,6 +182,7 @@ The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--bac
 - [H-553](../spec/backup-and-restore.md#h-553--a-journal-object-can-be-overwritten-with-the-runtime-credential): a journal object can be overwritten with the runtime credential.
 - [H-554](../spec/backup-and-restore.md#h-554--a-compromised-backup-pod-can-hold-garbage-collection): a compromised backup pod can hold garbage collection.
 - [H-557](../spec/backup-and-restore.md#h-557--the-post-restore-does-not-verify-the-blobs-and-a-replay-writes-no-audit-event-per-changed-object): post-restore does not verify the blobs, and a replay writes no audit event per changed object.
+- [H-564](../spec/ha-and-helm.md#h-564--the-platform-check-reads-settings-not-outcomes): the platform check reads settings, not outcomes.
 - [H-565](ci-federation.md#h-565--a-replayed-disable-of-a-configuration-declared-ci-issuer-is-undone-by-trove-migrate-when-the-restore-runs-with-an-older-configuration): a replayed disable of a configuration-declared CI issuer is undone by `trove migrate` when the restore runs with an older configuration.
 - [H-555](../spec/backup-and-restore.md#h-555--the-run-history-is-only-as-trustworthy-as-the-backup-role): the run history is only as trustworthy as the backup role.
 - [H-558](../spec/backup-and-restore.md#h-558--a-server-side-copy-into-the-blob-store-is-checked-by-size-not-by-content): a server-side copy into the blob store is checked by size, not by content.

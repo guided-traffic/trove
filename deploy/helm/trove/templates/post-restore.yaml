@@ -1,0 +1,75 @@
+{{- if .Values.postRestore.enabled }}
+{{- /*
+The post-restore Job (R-HA-025 step 4): trove admin post-restore --restored-to <postRestore.restoredTo>, the clean-up after a
+platform (point-in-time) restore. It is a post-install and post-upgrade hook, so Helm waits for it and fails the upgrade
+when it fails; the roles are at zero at that point (step 1), and a replica that started before it would keep the old
+keyspace until it restarts (R-HA-026). It runs as a ServiceAccount of its own with the owner login of the migration Job (it
+resets the revision counters and the keyspace), the blob store, and, for the journal replay, the credential that lists
+object versions (postRestore.journalCredentials). It mounts no Valkey Secret, no key ring and nothing of the backup target.
+*/ -}}
+{{- $fullname := include "trove.fullname" . }}
+{{- $r := .Values.postRestore }}
+{{- $credFile := "/etc/trove/post-restore/credentials.yaml" }}
+{{- $args := list "admin" "post-restore" "--restored-to" $r.restoredTo }}
+{{- if $r.skipRevocationJournal }}
+{{- $args = append $args "--skip-revocation-journal" }}
+{{- else if ne $r.journalCredentials.source "runtime" }}
+{{- $args = concat $args (list "--credentials-file" $credFile) }}
+{{- end }}
+{{- if $r.serviceAccount.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "trove.jobServiceAccountName" (dict "root" . "kind" "post-restore" "key" "postRestore") }}
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "post-restore") | nindent 4 }}
+  {{- if or $r.serviceAccount.annotations .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml (merge (dict) $r.serviceAccount.annotations .Values.commonAnnotations) | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+{{- end }}
+{{- if and (not $r.skipRevocationJournal) (ne $r.journalCredentials.source "runtime") }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-post-restore
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "post-restore") | nindent 4 }}
+  {{- with (include "trove.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  credentials.yaml: |
+    source: {{ $r.journalCredentials.source }}
+    {{- if eq $r.journalCredentials.source "static" }}
+    access_key_id_file: /var/run/secrets/trove/post-restore-journal/access-key-id
+    secret_access_key_file: /var/run/secrets/trove/post-restore-journal/secret-access-key
+    {{- end }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-post-restore
+  labels:
+    {{- include "trove.labels" (dict "root" . "component" "post-restore") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ $r.backoffLimit }}
+  {{- if $r.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ $r.activeDeadlineSeconds }}
+  {{- end }}
+  {{- include "trove.jobPodFailurePolicy" "post-restore" | nindent 2 }}
+  template:
+    {{- include "trove.jobPod" (dict "root" . "kind" "post-restore" "key" "postRestore" "args" $args) | nindent 4 }}
+{{- end }}
