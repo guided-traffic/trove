@@ -212,6 +212,18 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-07 by the security audit of the avatar upload (R-API-055):
+
+### Product
+
+- **F-71 · A token scoped down to part of its owner's rights can write its owner's preferences** (read in the code by the audit,
+  not reproduced). The routes of `users/me/preferences` are `authenticated: true` and their handler checks only the principal's kind
+  (`internal/api/v1/preferences_api.go`, around lines 56 to 62), so a personal access token narrowed by R-AUTH-024 to, say, read on
+  one repository can still change its owner's preferences. The avatar routes had the same pattern and were closed in the fix of the
+  audit; the preferences routes are older and were left for this entry. Done when a write to the owner's profile resources (preferences
+  and whatever else hangs under `users/me` and changes the owner's account) needs a session or a token whose scope inherits the
+  owner's rights, with a test per route.
+
 Found on 2026-11-07 while reading the scheduled nightly run 42356771989:
 
 ### Tests and tools
