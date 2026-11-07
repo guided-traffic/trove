@@ -1275,6 +1275,9 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   exits `0`. Two overlapping runs yield one success and one exit code 3; a drain during a backup and
   during a restore ends both Jobs `Complete` without manual steps; the drill publishes its
   timings as a job artifact.
+  Tests: `TestBackupDrill` and `TestBackupDrain` of the set `backup` ([e2e.md](../developer/e2e.md#the-backup-tests); nightly and on dispatch,
+  [Q-HA-154](../spec/ha-and-helm.md#q-ha-154--the-backup-suite-is-a-long-leg-nightly-and-on-dispatch-not-per-change)); scenarios 1, 2, 5, 7 and 10 also per change as
+  `TestR_BAK_029_*` of `test/integration/backup`.
 - **E5.12** What a restore brings back and what it withholds. After the trove-backup restore:
   - a token revoked and a user disabled after the snapshot stay revoked and disabled, and
     hand-written journal objects grant no principal any access (R-BAK-024, R-HA-054, R-AUTHZ-031);
@@ -1291,6 +1294,12 @@ so the journal ships with the backup, not after it (Q-ROAD-2).
   - the first storage summary matches the restored `blobs` table (R-STOR-047);
   - the backups screen shows the run, the stored backups and the restore origin from R-API-050
     (R-UI-048).
+
+  Tests: `TestBackupJournal` of the set `backup` (the revoked token, the disabled user, the npm withholding and `trove admin npm reinstate`, the NuGet reservation, the narrowed
+  and the deleted exposure rule, the usage counters, the summary of the backups screen); `TestR_BAK_029_RevocationsSurviveTheRestore` (the restore command with the real
+  journal, killed during the replay). Not yet run on a cluster: the CI bullets (a replayed mapping disable with the suspension of the later mappings, the single-use subject token),
+  the hand-written journal objects ([H-567](../spec/backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster))
+  and a narrowing the comparator cannot prove; the integration tier covers them (`TestR_CI_020_*`, `TestR_EP_020_*`, `TestR_HA_054_ForgedEntriesCannotEscalate`).
 
 - **E5.13** Vulnerability scanning under the failure suite ([vulnerability-scanning.md](../spec/vulnerability-scanning.md)):
   a `vuln-sync-osv-full` job on an evicted `worker` finishes elsewhere from its checkpoint (R-VULN-004); a PostgreSQL

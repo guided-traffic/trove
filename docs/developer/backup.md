@@ -158,6 +158,14 @@ test fails otherwise (R-BAK-004).
 - Integration: [test/integration/postgres/backup_runstore_test.go](../../test/integration/postgres/backup_runstore_test.go) runs the run
   store, the hold check and `storage_usage_recount()` against the shared PostgreSQL (`make test-integration`).
 - Command wiring: `TestBackupCommands` in [cmd/trove/main_test.go](../../cmd/trove/main_test.go).
+- The scenarios of R-BAK-029 as a suite: `test/integration/backup/scenario_*_test.go` run scenarios 1, 2, 5, 7 and 10 against the shared stack
+  with the real S3 store ([scenario_env_test.go](../../test/integration/backup/scenario_env_test.go) has the helpers: `sourceOf`,
+  `deepVerify`, `downloadsMatch`). Scenario 1 (`TestR_BAK_029_ConsistencyUnderLoad`) runs a publish, delete, trash and collect loop with grace
+  0s while `create` runs and judges the restored installation by the objects its items reference; scenario 2 collects every source blob after
+  the backup; scenario 5 runs three backups with `keep_last 2` through the pruning stage; scenario 7 serves npm from the old and the restored
+  installation and checks that the old `ETag` gets a `200`; scenario 10 ships the journal, kills the restore during the replay and resumes it.
+  The cluster side (the drill into a second namespace, overlapping Jobs, drain and `kill -9`, E5.12) is the `backup` set of the end-to-end suite
+  ([e2e.md](e2e.md#the-backup-tests)).
 
 ## Restore
 

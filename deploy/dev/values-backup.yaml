@@ -1,0 +1,9 @@
+# The `backup` e2e profile (R-BAK-029, docs/developer/e2e.md#the-backup-tests), layered after values-dev.yaml by up.sh when
+# TROVE_PROFILE=backup: garbage collection without a grace period, so that a blob nothing references any more is collectable at
+# once. The consistency scenario deletes and trashes while a backup runs and collects every 10 seconds; with the default grace
+# period of 24 hours the collector would never touch a blob the backup could lose, and the hold of R-BAK-007 would not be
+# exercised.
+config:
+  storage:
+    gc:
+      grace_period: 0s

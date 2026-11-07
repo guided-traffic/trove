@@ -1,0 +1,136 @@
+# Chart values of the restore drill's installation (R-BAK-021, R-HA-060, deploy/dev/restore-ns.sh): the same chart as the main
+# dev profile in the namespace ${RESTORE_NS}, against the database, the Valkey and the empty bucket restore-ns.yaml sets up, the
+# dev SeaweedFS of the namespace ${NS} and, as the backup target to restore from, that SeaweedFS's bucket trove-backups with the
+# target of the source installation (the same location the source's CronJob writes to). The release is installed first with
+# restore.enabled and no replica, then upgraded with web and worker replicas (restore-ns.sh).
+#
+# No edge, no identity provider and no second endpoint: the drill reaches the restored installation through port-forwards to its
+# Services, with the dev CA that signs trove-tls.
+image:
+  registry: docker.io
+  repository: guidedtraffic/trove
+  tag: dev
+  pullPolicy: IfNotPresent
+
+highAvailability:
+  enforce: false                 # one replica per role; the restore Job also requires it off (R-BAK-021)
+
+tls:
+  enabled: true
+  secretName: trove-tls
+
+api:
+  replicaCount: 1
+  resources:
+    requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
+    limits: {memory: 1Gi}
+packages:
+  replicaCount: 1
+  resources:
+    requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
+    limits: {memory: 1Gi}
+worker:
+  replicaCount: 1
+  resources:
+    requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 128Mi}
+    limits: {memory: 512Mi}
+
+restore:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+backup:
+  enabled: true
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 1Gi}
+
+config:
+  server:
+    base_url: https://localhost:8080          # as the source: with the same base URL the restored tokens keep working (R-BAK-021)
+    replica_header: always
+  log:
+    level: debug
+  api:
+    rate_limits:
+      anonymous:
+        requests_per_second: 1000
+        burst: 10000
+  vulnerabilities:
+    sources:
+      osv:
+        mode: "off"
+      kev:
+        mode: "off"
+  system:
+    bootstrap_anonymous_read: true
+  health:
+    shutdown_drain_delay: 5s
+  cache:
+    rendition_bytes: 64MiB              # the dev pods have 1Gi, as in values-dev.yaml
+  proxy:
+    metadata_cache_bytes: 32MiB
+    merged_metadata_cache_bytes: 64MiB
+  database:
+    host: trove-db-rw.${RESTORE_NS}.svc
+    name: trove
+    ssl_mode: verify-full
+  valkey:
+    mode: sentinel
+    sentinel:
+      addresses:
+        - restore-valkey-sentinel-0.restore-valkey-sentinel-headless.${RESTORE_NS}.svc.cluster.local:36379
+        - restore-valkey-sentinel-1.restore-valkey-sentinel-headless.${RESTORE_NS}.svc.cluster.local:36379
+        - restore-valkey-sentinel-2.restore-valkey-sentinel-headless.${RESTORE_NS}.svc.cluster.local:36379
+      primary_name: restore-valkey
+      tls: true
+    tls:
+      mode: verify-full
+  storage:
+    s3:
+      bucket: trove-restore-blobs               # the empty bucket of restore-ns.yaml
+      region: us-east-1
+      endpoint: https://trove-s3.${NS}.svc:9000
+      force_path_style: true
+      credentials:
+        source: static
+    upload:
+      max_size: 1GiB
+  backup:
+    target:
+      bucket: trove-backups                     # where the source installation writes its backups
+      region: us-east-1
+      endpoint: https://trove-s3.${NS}.svc:9000
+      force_path_style: true
+      credentials:
+        source: static
+      sse:
+        mode: none                              # as the source: the dev SeaweedFS has no KMS
+
+secrets:
+  database:
+    existingSecret: trove-db-app
+  databaseCA:
+    existingSecret: trove-db-ca
+    key: ca.crt
+  s3:
+    existingSecret: trove-s3
+  backupTarget:
+    existingSecret: trove-s3
+  s3CA:
+    existingSecret: trove-s3-tls
+    key: ca.crt
+  backupTargetCA:
+    existingSecret: trove-s3-tls
+    key: ca.crt
+  valkey:
+    existingSecret: restore-valkey-auth
+    usernameKey: ""
+  valkeySentinel:
+    existingSecret: restore-valkey-auth
+  valkeyCA:
+    existingSecret: restore-valkey-tls
+  encryption:
+    existingSecret: trove-encryption-keys       # a copy of the source's: the restore opens its canary rows with it (R-BAK-020 check 3)
+    keys: [dev.key]

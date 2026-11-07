@@ -53,6 +53,8 @@ deploy/dev/s3-stop.sh       scale the object store to 0 until s3-start.sh (its o
 deploy/dev/valkey-cli.sh    valkey-cli against the current primary (FLUSHALL of E1.11, CLIENT PAUSE of E1.8)
 deploy/dev/bastion.sh       the e2e Bastions of R-BAS-049: infra, install <volume|bucket>, status, down (the Bastion tests, below)
 deploy/dev/bastion*.yaml    their manifests and chart values; values-bastion.yaml is the main installation's `bastion` profile
+deploy/dev/restore-ns.sh    the second installation of the restore drill (namespace trove-restore): infra, install <backup id>, serve, down; restore-ns.yaml and values-restore.yaml are its manifests and chart values (the backup tests, below)
+deploy/dev/values-backup.yaml  the profile `backup`: garbage collection without a grace period (TROVE_PROFILE=backup)
 test/e2e/                   the Go tests, build tag `e2e`, package e2e
   env_test.go               kubectl, the API-server proxy to :8081, the driver and k6 helpers
   e03_cluster_test.go       E0.3, E0.7 (Pod Security, NetworkPolicy enforcement)
@@ -108,6 +110,10 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   mirror_long_test.go       the long set `mirror-long`: the drain of the node of the process that runs a pass
   mirror_long_fault_test.go the failure suite of R-HA-052 on a pass (`mirror-long`): the process lost three ways, the upstream throttling across a drain and a kill, a PostgreSQL switchover and a Valkey failover
   vuln_failures_test.go     the vulnerability scanning under the failure suite (E5.13): a switchover during an evaluation, the block through a drain and the primaries' failovers, a killed worker
+  backup_env_test.go        the backup harness (R-BAK-029): the profile, the repositories, the load, Jobs made from the CronJob, the port-forwards to the restored installation, the timings artifact
+  backup_drill_test.go      the restore drill: a backup during the load, the restore Job into the second namespace, the restored installation judged by its bytes, npm view and verify --deep, two overlapping Jobs
+  backup_drain_test.go      a node drain and a kill -9 of a backup and of a restore (R-BAK-012, R-BAK-010, R-BAK-021)
+  backup_journal_test.go    E5.12: the revocation journal across a restore
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
 web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
@@ -154,6 +160,7 @@ make e2e SET=bastion-long    # the drain, the failure suite under client load (r
 make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
 make e2e SET=mirror-long     # the drain of the node of the process that runs a pass of 300 packages, and the failure suite on a pass of 100 (a process lost, a throttling upstream, a switchover and a failover) (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=upgrade         # the upgrade across the cut from v0.16.0 (E6a.7) and the rolling upgrade with its rollback from the latest release (R-HA-020), under npm, NuGet and browser loops; replaces the installation and puts the current dev release back (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
+make e2e SET=backup          # the backup and restore suite (R-BAK-029): the drill into the namespace trove-restore, the drain and the kill -9 of a backup and a restore, the journal across a restore; the profile backup, one npm client pod (CI: job e2e-backup of the nightly workflow, on dispatch; about 25 minutes)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -3142,6 +3149,127 @@ subtest passed in 0.9 s in every run.
 - A rolling restart of the Deployments (R-HA-052's first row) is the drain tests'; the upgrade of the dependencies (PostgreSQL, Valkey) is not part of trove's release.
 - The cluster-minimum-version gate of R-HA-020 (a feature answers `503 cluster_upgrade_in_progress` while an older replica lives) has no feature to gate yet.
 - The k6 load of the drain tests and the 1 GiB transfers do not run under the upgrade; the loops are the clients' (Q-HA-97).
+
+## The backup tests
+
+Work package WP5.10 (the end-to-end suite and the drill): the e2e tier of [R-BAK-029](../spec/backup-and-restore.md#r-bak-029--backup-and-restore-test-suite) on the dev cluster, the row
+"Restore drill, trove backup" of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) and the exit criteria E5.1, E5.11 and E5.12 of the
+[roadmap](../coverage/roadmap.md). The lane is described in [backup.md](backup.md). Decisions: Q-BAK-45 to Q-BAK-48 and Q-HA-154 to Q-HA-156 in the
+[specification](../spec/backup-and-restore.md#q-bak-45--the-restore-drill-runs-in-a-second-namespace-of-the-dev-cluster).
+
+```mermaid
+flowchart LR
+  subgraph trove["namespace trove (the source)"]
+    l["the load: publish, delete, trash,<br/>gc every 10 s (grace 0s)"]
+    r["api, packages, worker"]
+    cj["CronJob trove-backup<br/>Jobs made from it"]
+    s3[("SeaweedFS<br/>trove-blobs, trove-backups")]
+  end
+  subgraph rs["namespace trove-restore (restore-ns.sh)"]
+    j["Job trove-restore"]
+    db[("fresh CloudNativePG")]
+    vk[("fresh Valkey")]
+    r2["api, packages, worker<br/>after the final helm upgrade"]
+  end
+  l --> r
+  cj -- "create" --> s3
+  j -- "reads the target, writes<br/>trove-restore-blobs" --> s3
+  j --> db
+  r2 --> db
+  r2 --> vk
+  t["the test"] -. "port-forwards, npm view in a client pod" .-> r2
+```
+
+**The profile.** `backup` ([values-backup.yaml](../../deploy/dev/values-backup.yaml), `TROVE_PROFILE=backup`) is the dev profile with `storage.gc.grace_period: 0s`. With the default of 24 hours a blob
+nothing references any more is not collectable, so the hold of R-BAK-007 would not be exercised. `TestMain` returns the cluster to the default profile. The dev profile itself carries
+the backup target (the bucket `trove-backups` of the dev SeaweedFS, `backup.target.sse.mode: none` because the dev SeaweedFS has no KMS and answers an SSE-S3 write with a 500) and the CronJob
+`trove-backup`.
+
+**The second installation** ([restore-ns.sh](../../deploy/dev/restore-ns.sh), [restore-ns.yaml](../../deploy/dev/restore-ns.yaml), [values-restore.yaml](../../deploy/dev/values-restore.yaml)). `infra` removes an earlier
+one and creates the namespace `trove-restore` (Pod Security restricted), a copy of the dev CA, of the S3 login, of the CA of the S3 certificate and of the **key ring** (a restore refuses a key ring that does not open
+the backup's canary rows, R-BAK-020 check 3), a CloudNativePG cluster with one instance whose `postInitApplicationSQL` creates the schema `trove` (R-BAK-020 check 4 needs the schema and no relation), a Valkey
+with three Sentinels, and an empty bucket `trove-restore-blobs` in the dev SeaweedFS (a Job in the main namespace). `install <backup id>` is `helm install` of the chart with the sequence of R-BAK-021: every role
+at zero, `restore.enabled`, `restore.backupId`. `serve` is the final `helm upgrade` with `restore.enabled` off, which renders the migration Job and starts one replica of each role. The target to read from is
+the bucket the source writes to; the Jobs of the second namespace use the dev SeaweedFS of the main namespace with the same login, which the suite does not separate (H-566).
+
+| File | What it does |
+|---|---|
+| [backup_env_test.go](../../test/e2e/backup_env_test.go) | the profile, the repositories `bak-npm`, `bak-nuget` and `bak-files`, the publishing helpers (npm document with an attached tarball, NuGet push, file `PUT`), the load (`startBakLoad`), Jobs made from the CronJob with another command, environment, retry budget or node (`bakCreateJob`), the state of a Job and the exit codes of its pods, the port-forwards to the restored Services (`openRestored`), the timings artifact |
+| [backup_drill_test.go](../../test/e2e/backup_drill_test.go) | `TestBackupDrill`: scenario 1 with the restore into the second namespace and the judgement of the result, `verify --deep`, scenario 3 (two overlapping Jobs) and the timings of scenario 9 |
+| [backup_drain_test.go](../../test/e2e/backup_drain_test.go) | `TestBackupDrain`: scenario 8, a drain and a `kill -9` of a backup and of a restore |
+| [backup_journal_test.go](../../test/e2e/backup_journal_test.go) | `TestBackupJournal`: E5.12, what the revocation journal brings back across a restore |
+
+**What the drill checks** (`TestBackupDrill`).
+
+1. *Scenario 1.* A reference data set (12 files of 1 MiB, four npm and four NuGet packages) is published; the load then publishes an npm and a NuGet package and a file every 0.7 s, deletes a file every third round,
+   marks a file trashed every fourth (the trash can has no API, R-STOR-022 is P1, so the row of the item is marked `trashed_at`), empties the trash every ninth round and posts `POST /api/v1/system/tasks/gc/run` every 10 s. A Job
+   made from the CronJob runs with `TROVE_BACKUP_COPY_BYTES_PER_SECOND=2MiB` and one copy worker, so that it runs for a while beside the load; the test requires that the load published npm, NuGet and
+   file items **during** the Job. The backup is restored with the commands of R-BAK-021. In the restored database every untrashed file item is fetched with `GET /files/…` and its bytes hash to the recorded digest; the
+   objects of **all** referenced blobs, trashed items included, are read from the restored bucket by a Job (`blob-check`, the AWS CLI image of the profile) and hashed; `npm view <name> versions` of a client pod lists
+   exactly the versions of the restored database for every package; the version lists of the NuGet flat container equal the database's; `trove backup verify <id> --deep` as a Job exits 0.
+2. *Scenario 3.* Two Jobs from the CronJob created together: one is Complete, the other Failed with exit code 3 (the pod failure policy fails the Job without a retry).
+3. *Scenario 9.* `.out/e2e/backup-timings.json` (an artifact of the leg `e2e-backup`): the duration of the backup Job, the duration of the restore Job and its phases (`phasesSeconds` of the restore's JSON output), the
+   time of the final `helm upgrade`, the numbers of the drain tests.
+
+**Scenario 8** (`TestBackupDrain`). The backup Job of the drain test is pinned to a worker node that holds no PostgreSQL primary (a PodDisruptionBudget refuses its eviction) and copies a fresh target at 1 MiB/s. After
+five seconds `deploy/dev/drain.sh <node>` drains the node; the Job (`backoffLimit: 0`) ends Complete, because an eviction is ignored by the pod failure policy. A `kill -9` (a forced deletion with grace period 0) of the
+next backup pod during the copy: with a lease of 20 s and a heartbeat of 2 s the retry pod of the same Job takes over after the lease and the Job ends Complete (Q-BAK-44). The restore Job, with
+`restore.backoffLimit: 0`, is drained during its blob copy and ends Complete; a second restore with the default budget is killed during the copy, and its next pod resumes from the anchor. The restore has no rate
+limit and copies server-side, which ends step 3 in seconds, so the restore Jobs of this test stream (`TROVE_BACKUP_COPY_SERVER_SIDE=never`) with one worker through the pod. The restore Job has no scheduling values, so the
+test steers its pod: every worker node but the one to drain is cordoned while the Job is created, and uncordoned as soon as the pod has left the drained node. The number of pods a Job
+created is counted from its `SuccessfulCreate` events, because an evicted or killed pod is gone from the list.
+
+**E5.12** (`TestBackupJournal`). After a backup: a service-account token is revoked, a user (alice, signed in through the test IdP) is disabled, an npm version is unpublished with the real npm client, a NuGet
+package is pushed and deleted. The journal ships to the blob bucket (5 s interval); the backup is restored. The restore Job's output lists `token.revoked … applied`; the revoked token answers 401 on the restored
+installation, the administrator's token of the snapshot still works; alice is disabled; `npm view` does not list the unpublished version until `trove admin npm reinstate` (R-NPM-047); another build of the NuGet version
+number is refused and the journaled bytes are accepted (R-NUGET-033); the first overview (`/api/v1/system/overview`) equals the `blobs` table (R-STOR-047); the backup summary of the restored installation names the restore
+origin and the runs (R-API-050, R-UI-048; the browser journey `16-backups.spec.ts` runs against the source installation).
+
+**Measured on the dev cluster** (kind with four nodes on a laptop, runs of 2026-11-07; the numbers are measured, not promised, Q-BAK-48; `backup-timings.json` of the leg has them per run).
+
+| What | Measured |
+|---|---|
+| Backup Job during the load (12 reference files of 1 MiB at 1 to 2 MiB/s, then about 1,000 files of the earlier runs) | 15 s from the creation of the Job to its end; during it the load published 19 npm packages, 19 NuGet packages and 19 files, deleted 7 files, marked 2 or 3 trashed, with 0 errors |
+| Full backup into a fresh target, 1,232 blobs, 132,051,237 bytes | server-side copy: run under 1 s, Job 4.5 s; streamed through the pod: run 2 s (63 MiB/s), Job 6.6 s |
+| Restore Job, the same backup | 6.6 s: schema 0.20 s, blobs 0.50 s, load 0.36 s, forward 0.002 s, fix-ups 0.013 s, journal 0.40 s, verification 0.005 s, finish 0.001 s; the second installation's infrastructure took 33 to 55 s, the final `helm upgrade` with ready roles 16.6 s |
+| The restored installation judged | 1,036 untrashed file items fetched with `GET /files/…` and 1,037 blob objects hashed (about 1.5 minutes with eight readers in the Job), `npm view` of 39 packages and the NuGet version lists of 34 packages equal the database, `verify --deep` exits 0 in 5 s |
+| Drain of the node of a backup pod | the drain 18 s, the Job (`backoffLimit: 0`) Complete after 128 s with a second pod |
+| `kill -9` of a backup pod (lease 20 s, heartbeat 2 s) | the retry pod took over and the Job was Complete 1 min 49 s after the kill |
+| Drain of the node of a restore pod during the blob copy | the drain 26 s, the Job (`restore.backoffLimit: 0`) Complete with a second pod |
+| `kill -9` of a restore pod during the blob copy | the next pod resumed and the Job was Complete 59 s later |
+
+The runs of 2026-11-07 each ran on this cluster after `make image`; `TestBackupDrain` (four subtests), `TestBackupDrill` (five) and `TestBackupJournal` (seven) passed in full.
+
+### Findings of the backup tests
+
+| Finding | Cause | Fix |
+|---|---|---|
+| The first backup Job of the dev cluster failed at the probe of the target: `PutObject … InternalError (HTTP 500)` | the default `backup.target.sse.mode` is `s3` and the dev SeaweedFS has no KMS | `backup.target.sse.mode: none` in `values-dev.yaml` and `values-restore.yaml` (Q-HA-156) |
+| `helm upgrade` of the dev release failed at the migration Job: `migration 00002_storage_core.sql was changed after this database applied it` | the dev database was installed with an earlier build; before the first stable release a changed migration file needs a new database (Q-ARCH-340) | the database `trove` was dropped and created again by hand (the steps of `resetInstallation`); no product change |
+| The load's scenario waited for two minutes for the first trashed item: `relation "blob_gc_queue" does not exist` | the trigger of `items` names its tables without a schema and psql's `search_path` was `public`; the replicas set `search_path` to the schema | the load's SQL sets `search_path` to `trove` first; no product change (a statement written by hand outside a replica needs the same) |
+| The npm client call failed with `npm: No such file or directory` | the client pods have the wrappers `npm10` to `npm12`, not `npm` | `npm11`, as the CI tests do |
+| 294 `GET /files/…` of the restored installation answered `429 rate_limited` | the read class of the token (R-API-016) | the test honours `Retry-After` |
+| A drain test counted one pod for a Job that had been drained | the evicted pod is deleted, so it is gone from the list | the pods a Job created are counted from its `SuccessfulCreate` events |
+| The restore Job of the drain test ended before the drain started | the restore has no rate limit and copies server-side, which takes under a second on this data | the restore Jobs of the drain tests stream through the pod with one worker (`TROVE_BACKUP_COPY_SERVER_SIDE=never`); the restore Job has no scheduling values, so the test steers its pod by cordoning |
+| The overview of the restored installation was 2 blobs behind the `blobs` table, and the table had 259 rows more than at the end of the restore | the restore recounts the usage counters and they equal the table at its end (`1106 totals, 0 deltas, 1106 live, 1106 rows`); `ui_assets` is a transient table, so the replicas that start publish the blobs of the UI bundle again, and the usage fold follows | no defect; the test judges the equality at the end of the restore and again once the roles have started and the fold has run |
+| The restored database listed no backup run | `backup_run` is a transient table (R-BAK-004): the run is the source installation's record | the test reads the run and the stored backups from the source's API and the restore origin from the restored one |
+| A replayed update of an exposure rule from `releases/**` to `releases/2.0/**` was `suspended`, not applied | the comparator compares patterns as strings, never by glob containment (Q-EP-79), so the rule is disabled | as specified (R-EP-020): the test narrows one rule provably (a pattern leaves the include list) and one unprovably, and expects the second disabled |
+
+**Not covered by the backup tests** (the mechanism is covered by the integration tier, [test/integration/backup](../../test/integration/backup)):
+
+- Scenarios 2, 5, 7 and 10 of R-BAK-029 run without a cluster (`scenario_*_test.go`), against the shared integration stack and the real S3 store; scenario 1 also runs there, with generic files.
+- A kill at steps 2 and 4 of a restore: the load is a transaction of milliseconds on the drill's data, so a pod cannot be killed there reliably from outside. The binary is killed at steps 2, 3 and 4 by
+  `TestR_BAK_021_KillNine` (integration).
+- Hand-written journal objects (R-AUTHZ-031, [H-567](../spec/backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster)) and the restore across two releases and across PostgreSQL 16 and 18
+  (R-BAK-023, [H-568](../spec/backup-and-restore.md#h-568--the-restore-across-releases-and-across-postgresql-major-versions-is-not-run-by-the-drill)) are not run on the cluster.
+- The two CI bullets of E5.12 (a replayed disable of a CI mapping that suspends every later enabled mapping of its tier, R-CI-020, and a single-use subject token that answers
+  `subject_token_predates_restore`, R-CI-018) are not run on the cluster: they need the issuer double and the CI fixtures of [the CI tests](#the-ci-tests) inside the second installation. The
+  integration tier runs them against the restored database (`TestR_CI_020_*`, `TestR_CI_018_TheRestoreCutOff`, `journal_ci_replay_test.go`).
+- The exposure rules of E5.12 are judged in the restored database, not through the second endpoint: the restored installation has no endpoint `customers` (values-restore.yaml configures the default
+  endpoint only), so no request reaches a rule there.
+- The browser journey `16-backups.spec.ts` runs against the source installation (the restored one has no edge and no identity provider); the restored installation's side of the screen is the summary
+  of the API (`restoredFrom`), which `TestBackupJournal` reads.
+- The trash can has no API (R-STOR-022 is P1): a trashed item is marked in its row, and its blob is judged through the restored bucket (Q-BAK-46).
 
 ## Extension checklist
 

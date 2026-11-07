@@ -117,6 +117,8 @@ type restorerOptions struct {
 	steps fs.FS
 	ring  *secrets.KeyRing
 	jrn   restore.Journal
+	// journalFn builds the journal from what the restore tells it (the real replay of cmd/trove), instead of the fixed jrn.
+	journalFn func(context.Context, restore.JournalEnv) (restore.Journal, error)
 	// targetEndpoint replaces the target's endpoint in the copy source, so that the blob store sees another store.
 	targetEndpoint string
 }
@@ -156,11 +158,15 @@ func (d *destination) restorer(o restorerOptions) (*restore.Restorer, *bytes.Buf
 	if jrn == nil {
 		jrn = testJournal{}
 	}
+	journalFn := func(context.Context, restore.JournalEnv) (restore.Journal, error) { return jrn, nil }
+	if o.journalFn != nil {
+		journalFn = o.journalFn
+	}
 	return restore.New(restore.Deps{
 		Session: session, Target: tgt, Layout: d.src.layout, TargetEndpoint: endpoint, TargetBucket: tgt.Bucket(),
 		Blobs: s3.NewBlobSink(client, cfg.Storage.S3, int64(cfg.Backup.Copy.PartSize)), Keys: ring,
 		Items:   app.RestoreItems(cfg, testenv.Quiet()),
-		Journal: func(context.Context, restore.JournalEnv) (restore.Journal, error) { return jrn, nil },
+		Journal: journalFn,
 		Config:  cfg.Backup, Log: testenv.Quiet(), Out: &out, Pod: "restore-pod", Hook: o.hook,
 	}), &out
 }

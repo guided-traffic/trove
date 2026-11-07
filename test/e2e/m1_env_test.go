@@ -979,6 +979,7 @@ const forwardRestartWithin = 30 * time.Second
 type forward struct {
 	target string
 	port   int
+	ns     string // the namespace of the target; empty is the namespace of the suite
 	addr   string // 127.0.0.1:<local port>, fixed after the first start
 
 	mu       sync.Mutex
@@ -990,7 +991,11 @@ type forward struct {
 
 // start launches one kubectl process on the local port ("" lets kubectl pick one) and returns the address it reports.
 func (f *forward) start(local string) (string, error) {
-	cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "port-forward", "--address", "127.0.0.1", f.target, local+":"+strconv.Itoa(f.port))
+	ns := cfg.namespace
+	if f.ns != "" {
+		ns = f.ns
+	}
+	cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", ns, "port-forward", "--address", "127.0.0.1", f.target, local+":"+strconv.Itoa(f.port))
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -1123,7 +1128,13 @@ func (f *forward) stop() {
 // local address.
 func portForward(t testing.TB, target string, port int) *forward {
 	t.Helper()
-	f := &forward{target: target, port: port}
+	return portForwardIn(t, "", target, port)
+}
+
+// portForwardIn is portForward to a target of another namespace (the restored installation of the backup suite).
+func portForwardIn(t testing.TB, ns, target string, port int) *forward {
+	t.Helper()
+	f := &forward{target: target, port: port, ns: ns}
 	addr, err := f.start("")
 	if err != nil {
 		t.Fatalf("port-forward %s: %v", target, err)

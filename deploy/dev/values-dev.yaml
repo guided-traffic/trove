@@ -153,7 +153,9 @@ config:
       force_path_style: true
       credentials:
         source: static
-    expected_interval: 6h                          # the schedule below
+      sse:
+        mode: none                                 # the dev SeaweedFS has no KMS and answers an SSE-S3 write with a 500 (R-BAK-026 probe)
+    expected_interval: 6h                         # the schedule below
 
 backup:
   schedule: "0 */6 * * *"

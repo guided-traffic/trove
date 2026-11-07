@@ -1,0 +1,230 @@
+# The namespace-scoped parts of the restore drill's second installation (R-BAK-021, R-HA-060, docs/developer/e2e.md#the-backup-tests):
+# what the release in the namespace ${RESTORE_NS} needs around it, applied by deploy/dev/restore-ns.sh. The restored installation
+# shares the dev PKI, the SeaweedFS and the encryption keys of the main one (a restore needs the source's keys, R-BAK-028) and has
+# its own database, Valkey and blob bucket, as a restore into a new cluster would.
+#
+#   Issuer trove-dev-ca        the dev CA again, in this namespace (restore-ns.sh copies the CA's Secret first)
+#   Certificate trove-tls      trove's listeners (chart tls.secretName), for the Service names of this namespace
+#   Cluster trove-db           CloudNativePG, one instance, the database trove owned by the role trove, and the schema trove that
+#                              R-BAK-020 check 4 requires (the provisioning of R-HA-014): a database with a schema and no relation
+#   Secret restore-valkey-auth the Valkey password (internal-secrets-operator, as secrets.yaml)
+#   Valkey restore-valkey      two data pods and three Sentinels over TLS, as the main installation's, so the restored installation
+#                              starts against the Valkey topology the chart is written for
+#   NetworkPolicy              admits the chart's serving pods to it on the TLS ports only
+#   Job trove-s3-restore-bucket (namespace ${NS}) creates the empty blob bucket trove-restore-blobs in the dev SeaweedFS
+#
+# ${RESTORE_NS}, ${NS} and the images are substituted by restore-ns.sh.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: trove-dev-ca
+  namespace: ${RESTORE_NS}
+spec:
+  ca:
+    secretName: trove-dev-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-tls
+  namespace: ${RESTORE_NS}
+spec:
+  secretName: trove-tls
+  commonName: trove
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages: [digital signature, key encipherment, server auth, client auth]
+  dnsNames:
+    - trove
+    - trove.${RESTORE_NS}
+    - trove.${RESTORE_NS}.svc
+    - trove.${RESTORE_NS}.svc.cluster.local
+    - trove-api
+    - trove-api.${RESTORE_NS}
+    - trove-api.${RESTORE_NS}.svc
+    - trove-api.${RESTORE_NS}.svc.cluster.local
+    - trove-packages
+    - trove-packages.${RESTORE_NS}
+    - trove-packages.${RESTORE_NS}.svc
+    - trove-packages.${RESTORE_NS}.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: trove-db
+  namespace: ${RESTORE_NS}
+spec:
+  instances: 1
+  imageName: ${DEV_CNPG_POSTGRES_IMAGE}
+  primaryUpdateStrategy: unsupervised
+  postgresql:
+    parameters:
+      max_connections: "200"
+      tcp_keepalives_idle: "60"
+      tcp_keepalives_interval: "10"
+      tcp_keepalives_count: "6"
+      client_connection_check_interval: "10s"
+  bootstrap:
+    initdb:
+      database: trove
+      owner: trove
+      postInitApplicationSQL:
+        - CREATE SCHEMA trove AUTHORIZATION trove
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: restore-valkey-auth
+  namespace: ${RESTORE_NS}
+  annotations:
+    iso.gtrfc.com/autogenerate: password
+    iso.gtrfc.com/length: "32"
+type: Opaque
+---
+apiVersion: vko.gtrfc.com/v1
+kind: Valkey
+metadata:
+  name: restore-valkey
+  namespace: ${RESTORE_NS}
+spec:
+  replicas: 2
+  image: ${DEV_VALKEY_IMAGE}
+  sentinel:
+    enabled: true
+    replicas: 3
+    resources:
+      requests: {cpu: 20m, memory: 32Mi}
+      limits: {memory: 128Mi}
+  auth:
+    secretName: restore-valkey-auth
+    secretPasswordKey: password
+  tls:
+    enabled: true
+    unifiedCertificate: true
+    certManager:
+      issuer:
+        kind: Issuer
+        name: trove-dev-ca
+  persistence:
+    enabled: false
+  podDisruptionBudget:
+    enabled: true
+  antiAffinity:
+    mode: hard
+    topologyKey: topology.kubernetes.io/zone
+  networkPolicy:
+    enabled: true
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 320Mi}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restore-valkey-clients
+  namespace: ${RESTORE_NS}
+  labels:
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: restore-valkey
+      app.kubernetes.io/managed-by: vko.gtrfc.com
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove
+              trove/serve: "true"
+      ports:
+        - {port: 16379, protocol: TCP}
+        - {port: 36379, protocol: TCP}
+---
+# The blob bucket of the restored installation, in the SeaweedFS of the dev profile (trove-s3, namespace ${NS}). The identity is
+# the profile's; the bucket is made empty on every run, which R-BAK-020 check 5 requires.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trove-s3-restore-bucket
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/name: trove-s3-restore-bucket
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trove-s3-restore-bucket
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bucket
+          image: ${DEV_AWSCLI_IMAGE}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              export AWS_ACCESS_KEY_ID="$(cat /secrets/access-key-id)"
+              export AWS_SECRET_ACCESS_KEY="$(cat /secrets/secret-access-key)"
+              export AWS_DEFAULT_REGION=us-east-1
+              export AWS_CA_BUNDLE=/tls/ca.crt
+              s3() { aws --endpoint-url https://trove-s3.${NS}.svc:9000 "$@"; }
+              b=trove-restore-blobs
+              if s3 s3api head-bucket --bucket "$b" 2>/dev/null; then s3 s3 rb "s3://$b" --force; fi
+              s3 s3api create-bucket --bucket "$b"
+              echo "bucket: $b ($(s3 s3api list-objects-v2 --bucket "$b" --query 'length(Contents || `[]`)' --output text) objects)"
+          env:
+            - {name: HOME, value: /tmp}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: s3-secret, mountPath: /secrets, readOnly: true}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: s3-secret
+          secret:
+            secretName: trove-s3
+            defaultMode: 0440
+            items:
+              - {key: access-key-id, path: access-key-id}
+              - {key: secret-access-key, path: secret-access-key}
+        - name: tls
+          secret:
+            secretName: trove-s3-tls
+            items:
+              - {key: ca.crt, path: ca.crt}

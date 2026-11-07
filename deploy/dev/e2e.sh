@@ -67,6 +67,8 @@
 #                       CI: job e2e-mirror (a change to the mirror)
 #   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
+#   e2e.sh backup       the backup and restore suite (R-BAK-029, E5.11, E5.12): a backup during a publishing, deleting and collecting load restored into
+#                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore (nightly, dispatch, locally)
 #   e2e.sh upgrade      the upgrade tests (E6a.7 and R-HA-020): the cut into roles in the two steps of R-HA-064 from v0.16.0, the rolling
 #                       upgrade and rollback from the latest release, and the rolling upgrade of the working tree from its second UI
 #                       bundle (make image-marked) to the image under test, each under npm, NuGet and browser loops; it replaces the
@@ -183,6 +185,14 @@ case "$set_name" in
   # A long leg: nightly, on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
   upgrade) run='^TestUpgrade_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
   # <<< M6a upgrade
+  # >>> M5 backup
+  # The backup and restore suite (R-BAK-029, R-HA-052 "Restore drill, trove backup", docs/developer/e2e.md#the-backup-tests): the `backup`
+  # profile (garbage collection without a grace period, values-backup.yaml), a second installation in the namespace trove-restore
+  # (deploy/dev/restore-ns.sh) with a database, a Valkey and a blob bucket of its own, and one npm client pod (`npm view`, `npm unpublish`). The drill
+  # backs up while a load publishes, deletes and collects, restores into the second installation and judges it. A long leg: nightly,
+  # on dispatch, locally (a red long leg is a finding, not a blocker, owner 2026-11-01).
+  backup) run='^TestBackup'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=1 ;;
+  # <<< M5 backup
   *) run="$set_name" ;;
 esac
 

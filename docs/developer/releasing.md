@@ -349,6 +349,12 @@ set, R-VULN-029's drain and E4b.8: a full synchronization of 100,000 npm records
 again with its attempt unchanged and another `worker` completes it from its checkpoint), and the client tests once more with Valkey stopped, and E5.13's scanning under failures: a worker killed in the middle of a full synchronization, a PostgreSQL switchover during an evaluation, and four blocked versions probed through a node drain and the Valkey and PostgreSQL failovers ([e2e.md](e2e.md#the-vulnerability-tests)). A red long leg is
 a finding and holds nothing ([e2e.md](e2e.md#the-vulnerability-tests)). By hand: `make dev-up && make e2e SET=vuln-long`.
 
+Job `e2e-backup` runs the set `backup` (edge port 8102, cluster `trove-backup-<run id>`, reports and artifacts `e2e-backup-report` and `e2e-backup-artifacts`, kept 14 days, on a `large` runner):
+R-BAK-029 and the drill of R-HA-052 on a kind cluster in the profile `backup`: a backup taken while a load publishes, deletes, trashes and collects with a grace period of 0s, restored with the restore Job
+into the namespace `trove-restore` (a database, a Valkey and a bucket of their own), two overlapping Jobs, a node drain and a `kill -9` of a backup and of a restore, and the revocation journal across a restore
+(E5.1, E5.11, E5.12). It takes about 25 minutes and is a long leg: nightly and on dispatch, not per change (owner, 2026-11-01; Q-HA-154). The artifact `e2e-backup-artifacts` holds `backup-timings.json`, the timings of
+scenario 9. By hand: `make dev-up && make e2e SET=backup` ([e2e.md](e2e.md#the-backup-tests)).
+
 Job `e2e-mirror` runs the sets `mirror` and `mirror-long` (edge ports 8098 and 8099, clusters `trove-mirror-<run id>` and `trove-mirror-long-<run id>`, reports and
 artifacts `e2e-mirror-report-<set>`, `e2e-mirror-artifacts-<set>`, `e2e-mirror-playwright-<set>`, kept 14 days): the short set as in Test and Release, with the install-time ratio of R-REPO-055 enforced (on a `large` runner since
 Q-REPO-211: on the 4 vCPUs of a GitHub-hosted runner the pass's own work took the installs' CPU), and the long set (on a `large` runner), R-REPO-058's drain: `kubectl drain` of the node of the process of the

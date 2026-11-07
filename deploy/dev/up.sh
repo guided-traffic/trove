@@ -25,6 +25,9 @@
 #   TROVE_PROFILE=bastion the `bastion` e2e profile (R-BAS-049): the main installation trusts the pod range as a proxy
 #                         and lists the base URLs of the e2e Bastions (values-bastion.yaml, deploy/dev/bastion.sh).
 #                         Run up.sh again without it to switch back.
+#   TROVE_PROFILE=backup  the `backup` e2e profile (R-BAK-029): garbage collection with a grace period of 0s, so that the consistency
+#                         scenario of the backup suite collects what it deletes at once (values-backup.yaml).
+#                         Run up.sh again without it to switch back.
 #   TROVE_POOLER=1        also install the transaction-mode poolers and point the chart at them
 #                         (pooler.yaml, values-pooler.yaml, R-HA-058).
 #   TROVE_IMAGE=<ref>     the trove image to load into the cluster (default guidedtraffic/trove:dev,
@@ -39,7 +42,7 @@ set -euo pipefail
 SKIP_RELEASE="${TROVE_SKIP_RELEASE:-0}"
 POOLER="${TROVE_POOLER:-0}"
 PROFILE="${TROVE_PROFILE:-default}"
-case "$PROFILE" in default|scatter|bastion|vuln|mirror) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln or mirror, not '$PROFILE'" ;; esac
+case "$PROFILE" in default|scatter|bastion|vuln|mirror|backup) ;; *) die "TROVE_PROFILE must be default, scatter, bastion, vuln, mirror or backup, not '$PROFILE'" ;; esac
 IMAGE="${TROVE_IMAGE:-guidedtraffic/trove:dev}"
 LOGS="$STATE_DIR/logs"
 START="$(date +%s)"

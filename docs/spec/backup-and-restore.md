@@ -1743,8 +1743,9 @@ Priority: **MVP** · Covers: OPS-032, OPS-035
 
 Go integration tests against PostgreSQL and the per-change S3 store of
 [ha-and-helm.md](ha-and-helm.md) R-HA-051, plus an end-to-end drill in kind. The suite runs on
-every change; the drill runs in a green full run of Test and Release on the commit that closes the phase,
-as the "Restore drill, trove backup" row of [ha-and-helm.md](ha-and-helm.md) R-HA-052. The point-in-time
+every change; the drill runs nightly and on dispatch as the leg `e2e-backup` of HA and Performance (nightly), a dispatch on the commit that closes the phase
+([ha-and-helm.md](ha-and-helm.md) Q-HA-154, the owner's rule for long legs), as the "Restore drill, trove backup" row of [ha-and-helm.md](ha-and-helm.md) R-HA-052.
+Scenarios 1, 2, 5, 7 and 10 also run per change as integration tests without a cluster (Q-BAK-47). The point-in-time
 drill has no run in the pipeline.
 
 1. **Consistency under load.** A loop publishes npm and NuGet packages, deletes some, empties the
@@ -2605,6 +2606,77 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-BAK-012, R-BAK-013, R-BAK-002; `internal/backup/create/create.go`, `run.go`, `util.go`, `copy.go`, `preflight.go`.
 
+### Q-BAK-45 · The restore drill runs in a second namespace of the dev cluster
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-021 and R-HA-060 name the drill: "restore the newest backup of the local profile into a second namespace with a fresh CloudNativePG cluster and a fresh SeaweedFS bucket". The suite needs the pieces of a second installation and a choice of where they run.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second kind cluster | A cluster of its own for the restored installation | Nothing is shared with the source | Two clusters on one runner; the target and the blob store would have to be reachable across the Docker network; the operators, the PKI and the images are installed twice |
+| (b) A second namespace of the dev cluster, with a database, a Valkey and a bucket of its own (chosen) | `deploy/dev/restore-ns.sh`: CloudNativePG cluster, Valkey with Sentinels, an empty bucket in the dev SeaweedFS, a copy of the dev CA, of the S3 login and of the key ring | The operators and the PKI exist once; the restore Job, the migration Job and the roles are the chart's, installed with the sequence of R-BAK-021; about 25 s to set up | The S3 login and the key ring are copies of the source's (the key ring has to be: R-BAK-020 check 3); the object store is shared, so credential separation is not exercised (H-566) |
+| (c) The same namespace with a second release | `helm install trove2` beside `trove` | Least setup | Names collide (`trove-db`, `trove-tls`), the NetworkPolicies of the source admit the new pods, and "empty database" would be a second database of the same cluster |
+
+**Choice:** (b). The restored installation has one replica of each role, no edge and no identity provider; the test reaches it through port-forwards to its Services and a client pod runs `npm view` against its Service name.
+
+**Rationale:** (b) is the shortest path that still exercises everything R-BAK-021 lists: the empty database with the schema and no relation, the empty blob prefix, Secrets in place, the Job as an ordinary Job and the final `helm upgrade`. The development agent would revisit it if a production-like separation of the credentials becomes part of the drill (H-566).
+
+**Applied:** `deploy/dev/restore-ns.sh`, `restore-ns.yaml`, `values-restore.yaml`; [e2e.md](../developer/e2e.md#the-backup-tests).
+
+### Q-BAK-46 · The drill judges files by their bytes: untrashed items through the API, every referenced blob through the objects of the restored bucket
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-029 scenario 1 says that every untrashed and trashed file item returns bytes whose SHA-256 equals its digest, "`GET /files/…` (or the trash API)". The trash can has no API yet (R-STOR-022 is P1), so a trashed item cannot be fetched.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Judge the untrashed items only | `GET /files/…` for each | Simple | The trashed item, whose blob the backup must keep, is not looked at |
+| (b) `GET` for untrashed items, and a Job in the restored namespace that reads the object of every referenced blob from the restored bucket and hashes it (chosen) | The blob keys derive from the digests (R-STOR-001), so reading `sha256/<h0h1>/<h2h3>/<hex>` and hashing it is the check, whoever references the blob | Covers the trashed items and every other reference; independent of the API | The Job reads the bucket with the S3 login; a blob that is referenced twice is read once |
+| (c) A debug route in the release image | A route that serves a trashed item | Direct | A route the product does not have, only for the test |
+
+**Choice:** (b). The load marks a file item trashed with its `trashed_at` column (no API exists), empties the trash by deleting those rows after five seconds, and so the garbage collector with grace period 0s meets the blobs of trashed and of emptied items.
+
+**Rationale:** The invariant of the backup is on blobs, not on routes: a blob that an item (trashed or not) references must be in the restored bucket with its digest. (b) checks exactly that. The development agent would revisit it when the trash API exists (R-STOR-022): then the trashed items are fetched through it as well.
+
+**Applied:** `test/e2e/backup_drill_test.go` (`blobObjectsMatch`), `test/e2e/backup_env_test.go` (the load).
+
+### Q-BAK-47 · The scenarios of R-BAK-029 that need no cluster run against the integration stack, the others on the cluster
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-029 lists ten scenarios and says "Go integration tests … plus an end-to-end drill in kind". The cut gave scenarios 1, 2, 5, 7 and 10 to the integration tier.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Everything on the cluster | Each scenario is a test of `test/e2e` | One place | A change that touches the lane would wait for a kind leg of 40 minutes to learn that scenario 5 broke |
+| (b) Scenarios 1, 2, 5, 7 and 10 also as integration tests; 1, 3, 8, 9 and 10's journal parts on the cluster (chosen) | `test/integration/backup/scenario_*_test.go` use the real S3 store, PostgreSQL, the create pipeline, the restore and replicas started in the test process | Per-change feedback in seconds to a minute; each scenario is judged with the real adapter | Scenario 1 runs there with generic files, not packages (the drill adds npm and NuGet) |
+
+**Choice:** (b). Scenario 4 (hold and lease) and 6 (restore across versions) are the criteria of R-BAK-007 and R-BAK-023 and keep their tests (`create_hold_test.go`; scenario 6 is H-568).
+
+**Rationale:** The integration tier runs on every change and covers the logic; the cluster adds what only Kubernetes does: Jobs, pod failure policy, eviction, a second namespace. The development agent would revisit it if the integration stack gets a Kubernetes.
+
+**Applied:** `test/integration/backup/scenario_{1,2,5,7,10}_test.go`, `scenario_env_test.go`; [backup.md](../developer/backup.md).
+
+### Q-BAK-48 · The timings of scenario 9 are a JSON artifact of the drill, measured on the data of the drill
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Scenario 9 says the drill "reports the restore duration per phase, and the backup's copy throughput per mode (`server`, `stream`); the numbers are measured, not promised", and the acceptance criterion says the drill "publishes its timings as a job artifact".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The test log | `t.Logf` | Nothing to build | Not an artifact; it is read by hand |
+| (b) `backup-timings.json` in the artifact directory (chosen) | The drill writes the durations of the backup Job, of the restore Job with `phasesSeconds` of the restore's JSON output, of the final `helm upgrade` and of the drain tests; the leg uploads `.out/e2e/` | Machine-readable; one artifact per run, kept 14 days | The reference data set is small (the medium profile of R-HA-050 is not built on kind); the numbers are those of the data set the drill uses |
+| (c) A metric | A gauge pushed somewhere | Trendable | A Job exits; nothing scrapes it |
+
+**Choice:** (b). The reference data set is the drill's own; the medium profile of R-HA-050 belongs to the performance runs, not to the drill. The copy throughput per mode is measured by the Jobs of the drill with a bandwidth cap, so it is a bound check, not a throughput claim.
+
+**Rationale:** The spec asks for measured numbers and an artifact; it does not ask for the medium profile on a laptop-class kind cluster. The development agent would revisit it when the nightly performance workflow runs the medium profile.
+
+**Applied:** `test/e2e/backup_env_test.go` (`timings`), `.github/workflows/performance.yml` (job `e2e-backup`).
+
 ## What this does not cover
 
 ### H-46 · Backup integrity is not authenticated
@@ -2673,3 +2745,15 @@ Component: `backup_run`, the API of R-API-050 and the alerts of R-BAK-014. Subje
 ### H-557 · The post-restore does not verify the blobs, and a replay writes no audit event per changed object
 
 Component: `trove admin post-restore` and the journal replay (R-HA-025 step 4, R-HA-054). Subject: the restored installation after a platform restore. `trove admin storage verify` does not exist in this release, so post-restore prints that the check was not run and reports no count of missing referenced blobs; an operator must verify them another way before resuming deletions. A replay records its changes in its output lines and in one `system.restore.journal_replayed` event, not in one audit event per object (Q-AUTHZ-232), so the audit trail of a restored installation does not say which policy a replay suspended; the output of the run does. Entries naming `ownershipDomain` and the other settings that live in the configuration file are not replayed (R-AUTHZ-031). Live in the MVP in every platform restore. Mitigation: keep the output of the post-restore run, and read the suspended lines.
+
+### H-566 · The drill uses one S3 login for the blob store, the backup target and the restore
+
+Component: the end-to-end suite and the dev profile (R-BAK-015, R-BAK-029). Subject: the separation of credentials the backup role is built on. The dev SeaweedFS has one identity, which `values-dev.yaml` and `values-restore.yaml` give to the blob store, the target and the restore Job. The drill therefore cannot show that a backup role without write access to the blob bucket completes, nor that a restore role with read access to the target and write access to the new prefix only completes. Live today in the suite only. The client-level separation is `TestR_BAK_015_TargetOwnCredentials` (integration). Mitigation: a second identity with a bucket policy per role in the dev SeaweedFS, which its identity model does not offer for this today.
+
+### H-567 · Hand-written journal objects are tried at replay level, not through the restore Job on a cluster
+
+Component: the end-to-end suite (E5.12, R-BAK-024, R-HA-054, R-AUTHZ-031). Subject: the claim that objects written into the journal by hand grant no principal any access. `TestR_HA_054_ForgedEntriesCannotEscalate` and the handler tests run forged entries through the replayer against PostgreSQL; the cluster drill replays only entries the shipper wrote. A Job that reads a bucket in which somebody planted an entry is not run on kind. Mitigation: the replayer applies a handler only to IDs it finds and never grants (ADR-158); the cluster run of the case waits for the planting of an entry from outside the pods.
+
+### H-568 · The restore across releases and across PostgreSQL major versions is not run by the drill
+
+Component: the end-to-end suite (R-BAK-023 criteria, R-BAK-029 scenario 6). Subject: that a backup taken by release N−1 is restored by release N and that a backup taken on PostgreSQL 16 restores onto 18. The drill backs up and restores with one image and one PostgreSQL version. The compatibility of the schema steps is checked by the checksums of R-BAK-020 check 2 and `TestR_BAK_023_*`/`TestR_BAK_020_Preconditions` (an edited migration refuses with exit 6); the CI matrix of R-HA-013 runs the integration tier on both versions but does not restore a backup across them. Before the first stable release a changed migration file needs a new database anyway (Q-ARCH-340), so a cross-release restore has no meaning yet.

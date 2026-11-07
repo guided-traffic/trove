@@ -8526,6 +8526,57 @@ Status: **Decided by the development agent** — selected from the options below
 
 **Applied:** R-HA-046, R-HA-060; `templates/_backup.tpl`.
 
+### Q-HA-154 · The backup suite is a long leg: nightly and on dispatch, not per change
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-029 says that "the suite runs on every change; the drill runs in a green full run of Test and Release on the commit that closes the phase". The owner's rule (2026-11-01) is that drain, failover and other long legs run in "HA and Performance (nightly)" and per-change legs in Test and Release.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A leg of Test and Release | Every change waits for it | The drill runs with the commit | About 25 minutes of a large runner per change: a backup during a load, three restores, two drains and a kill, a profile switch of 3 minutes before and after |
+| (b) A job of the nightly workflow with a `sets` dispatch (chosen) | `e2e-backup` in `performance.yml`, set `backup`, large runner, edge port 8102 | The rule of the owner; the Go integration tier (`scenario_*_test.go`) is what runs on every change; a dispatch with `sets=backup` runs the drill on the closing commit | A regression the drill alone finds shows a day later |
+
+**Choice:** (b). A red long leg is a finding and holds nothing.
+
+**Rationale:** The per-change tier covers scenarios 1, 2, 5, 7 and 10 against the real S3 store and PostgreSQL in about a minute; the drill adds the Kubernetes side. The closing run dispatches the leg once.
+
+**Applied:** `.github/workflows/performance.yml` (job `e2e-backup`, in the `needs` of `latency` and `vuln-perf`), [releasing.md](../developer/releasing.md#ha-and-performance-nightly).
+
+### Q-HA-155 · The `backup` profile of the dev cluster sets the grace period of garbage collection to 0s
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-BAK-029 scenario 1 runs "garbage collection with `storage.gc.grace_period: 0s` every 10 s".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The default profile everywhere sets 0s | `values-dev.yaml` | One profile | Every other suite runs with a collector that deletes at once; their findings would change |
+| (b) A profile `backup` (chosen) | `values-backup.yaml` on top of `values-dev.yaml`, selected by `TROVE_PROFILE=backup`; the suite switches and `TestMain` switches back | Only the backup suite changes the collector | A rollout of three Deployments before and after the suite |
+
+**Choice:** (b).
+
+**Rationale:** Same pattern as the profiles `mirror`, `vuln` and `bastion`.
+
+**Applied:** `deploy/dev/values-backup.yaml`, `up.sh`, `lib.sh`, `release-values.sh`.
+
+### Q-HA-156 · The dev profile sets `backup.target.sse.mode: none`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The default of `backup.target.sse.mode` is `s3` (R-BAK-026). The dev SeaweedFS has no KMS and answers an SSE-S3 write with a 500; the first backup of the dev cluster failed at the probe of the target.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave the default | | The profile shows the default | No backup can be taken on the dev cluster |
+| (b) `none` in `values-dev.yaml` (chosen) | The integration tier does the same for the same store | The profile works; the value is documented where it is set | The encryption path of R-BAK-026 is exercised against a store that encrypts only in the integration tier (`TestR_BAK_026_TargetSSE`, mode `s3` against a store that supports it) |
+
+**Choice:** (b).
+
+**Rationale:** R-BAK-026 says that a store without server-side encryption sets the mode to `none` and that the probe names the key.
+
+**Applied:** `deploy/dev/values-dev.yaml`, `values-restore.yaml`.
+
 ### Q-HA-140 · A journal object is an envelope around the producer's entry
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
