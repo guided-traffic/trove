@@ -114,6 +114,14 @@ func targetStorage(b config.Backup) config.StorageS3 {
 	}
 }
 
+// targetConfigError names the backup.target key of a configuration error the shared client reports under storage.s3.
+func targetConfigError(err error) error {
+	if errors.Is(err, errNoRegion) {
+		return fmt.Errorf("backup.target.region is required (%w)", errNoRegion)
+	}
+	return fmt.Errorf("backup.target: %w", err)
+}
+
 // NewTarget builds the backup target from backup.target through the outbound factory, so that backup.target.ca_file is its
 // own trust store. It is how cmd/trove gets a target.Store from the configuration. The server-side copy requests go through a
 // second HTTP client without a response-header timeout (see Client.copyAPI).
@@ -124,7 +132,7 @@ func NewTarget(ctx context.Context, cfg config.Backup, f *outbound.Factory, opts
 	}
 	c, err := NewFromFactory(ctx, s, f)
 	if err != nil {
-		return nil, fmt.Errorf("backup.target: %w", err)
+		return nil, targetConfigError(err)
 	}
 	return newTarget(c, cfg, opts), nil
 }
@@ -138,7 +146,7 @@ func NewTargetWithClient(ctx context.Context, cfg config.Backup, hc *http.Client
 	}
 	c, err := New(ctx, s, hc)
 	if err != nil {
-		return nil, fmt.Errorf("backup.target: %w", err)
+		return nil, targetConfigError(err)
 	}
 	return newTarget(c, cfg, opts), nil
 }

@@ -163,3 +163,16 @@ func TestR_BAK_026_TargetRefusesPlainHTTP(t *testing.T) {
 		t.Fatal("an http endpoint was accepted without allow_insecure_endpoint")
 	}
 }
+
+func TestR_BAK_002_TargetNamesItsOwnRegionKey(t *testing.T) {
+	// A static credential takes the region from the configuration only, so the host's AWS configuration cannot supply one.
+	var b config.Backup
+	b.Target = config.BackupTarget{
+		Endpoint: "https://s3.example", Bucket: "b",
+		Credentials: config.StorageS3Credentials{Source: "static", AccessKeyIDFile: "/nonexistent/id", SecretAccessKeyFile: "/nonexistent/secret"},
+	}
+	_, err := s3.NewTarget(context.Background(), b, outbound.New(config.Outbound{TLS: config.OutboundTLS{UseSystemRoots: true}}))
+	if err == nil || !strings.Contains(err.Error(), "backup.target.region is required") || strings.Contains(err.Error(), "storage.s3") {
+		t.Fatalf("err = %v, want it to name backup.target.region and not storage.s3", err)
+	}
+}

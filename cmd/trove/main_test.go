@@ -148,7 +148,9 @@ func TestDispatch(t *testing.T) {
 
 func TestBackupCommands(t *testing.T) {
 	id := "20261028T020000Z-7f3a"
-	env := baseEnv("TROVE_BACKUP_TARGET_BUCKET=backups")
+	// The regions are set here so the target and the blob store build without the host's ~/.aws/config; CI has none, and the
+	// check under test is the key ring, which comes after both.
+	env := baseEnv("TROVE_BACKUP_TARGET_BUCKET=backups", "TROVE_BACKUP_TARGET_REGION=eu-central-1", "TROVE_STORAGE_S3_REGION=eu-central-1")
 	t.Run("R-BAK-020 restore builds its collaborators first: a key ring that does not load is exit 2 naming the file", func(t *testing.T) {
 		code, _, stderr := runCmd(t, env, "backup", "restore", id, "--check", "--skip-revocation-journal")
 		if code != 2 || !strings.Contains(stderr, "2026-10.key") {

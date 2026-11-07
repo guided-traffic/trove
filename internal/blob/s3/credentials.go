@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,10 @@ import (
 // files are read again, so that a rotated Secret applies without a restart
 // (R-STOR-031) and a request does not read three files.
 const fileReread = time.Second
+
+// errNoRegion marks a configuration without a region, so the backup target can name its own key (backup.target.region)
+// instead of storage.s3.region, which the target does not inherit.
+var errNoRegion = errors.New("no region in the environment either")
 
 // awsConfig builds the SDK configuration: region, HTTP client, retryer,
 // checksum behaviour and the credential source of R-STOR-031.
@@ -52,7 +57,7 @@ func awsConfig(ctx context.Context, cfg trove.StorageS3, hc *http.Client) (aws.C
 	ac.RequestChecksumCalculation = reqCalc
 	ac.ResponseChecksumValidation = respVal
 	if ac.Region == "" {
-		return aws.Config{}, fmt.Errorf("storage.s3.region is required (no region in the environment either)")
+		return aws.Config{}, fmt.Errorf("storage.s3.region is required (%w)", errNoRegion)
 	}
 
 	switch cfg.Credentials.Source {
