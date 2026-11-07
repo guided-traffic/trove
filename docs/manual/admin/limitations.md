@@ -23,9 +23,18 @@ This page lists what this version of trove does not do, and the known weak spots
 
 ## Backup and restore
 
-- There is no backup or restore. `trove backup` answers "not implemented yet", the **Backups** screen lists no run, and the chart renders no backup CronJob or restore Job.
-- Until then, protect the PostgreSQL database with your database platform's backups, the bucket with your object store's own protection, and keep the Secret with the stored-secret keys (`secrets.encryption`): values sealed with a key that is lost cannot be opened. trove has not tested a restore from such copies.
-- A database restored to an earlier point brings back what was removed after that point: revoked tokens, removed permissions and role bindings, and narrowed exposure rules. Review and revoke them after a restore.
+- trove backs itself up with `trove backup create` (the chart's backup CronJob) into a target bucket of its own, restores into an
+  empty installation with `trove backup restore` (the chart's restore Job), and replays the revocation journal so that a restore
+  keeps revoked tokens revoked, disabled accounts disabled and removed permissions removed ([Backups](operations.md#backups)).
+  The chart turns the backup on by default and needs `config.backup.target.bucket` and the target's credentials.
+- Some narrowings write no journal entry yet and come back with a restore of either kind: a pending identity link removed, a group
+  renamed away from the name the identity provider fills, a repository's include and exclude patterns or virtual members narrowed,
+  claims and pin rules added, a lowered token lifetime ceiling. Review them after a restore.
+- A restore from the database platform's own point-in-time backups is followed by `trove admin post-restore` (the chart's
+  `postRestore` hook Job), which replays the journal from the restore point; `trove admin backup check` reports whether the
+  platform protection you declared (`backup.recovery_window`, `backup.object_versioning`) is in place.
+- Keep the Secret with the stored-secret keys (`secrets.encryption`) outside the cluster: a backup holds sealed values only, and
+  values sealed with a key that is lost cannot be opened.
 
 ## Upgrades and high availability
 

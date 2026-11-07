@@ -31,7 +31,7 @@ numbers (owner, 2026-11-02).
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | 🟢 |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | 🟢 |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | 🟢 |
-| [6a · Task areas](#phase-6a--task-areas) | trove cut into task areas: `api`, `packages` and `worker` as roles of one binary with Deployments of their own, ingress rules between the chart's pods | 🟡 |
+| [6a · Task areas](#phase-6a--task-areas) | trove cut into task areas: `api`, `packages` and `worker` as roles of one binary with Deployments of their own, ingress rules between the chart's pods | 🟢 |
 | [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | 🟢 |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | 🟡 |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
@@ -872,7 +872,7 @@ areas.
 - 🟢 The roles in the binary (`SubsystemsFor` and the wiring areas) and in the chart: a Deployment, Service, disruption
   budget, autoscaler and ingress rule per role, path routing, path and worker pools, the upgrade bridge (WP6a.1 to WP6a.4);
   the findings of the code review and the security audit fixed (Q-HA-90 to Q-HA-93, Q-ARCH-306, Q-ARCH-307, Q-UI-111)
-- 🟡 Tests: the role table in the architecture test, chart tests per role and `TestE03Roles` (every role deployed, routing,
+- 🟢 Tests: the role table in the architecture test, chart tests per role and `TestE03Roles` (every role deployed, routing,
   access logs, the other family an unknown path at the pod) are green on kind, and `TestDrainRoles` (set `drain-roles`, nightly)
   passed in nightly run 41902592855 with its own load and on kind locally on 2026-11-05 with the npm load of `TestNPMHA` beside
   it, the load the owner decided ([Q-HA-94](../spec/ha-and-helm.md#q-ha-94--the-load-of-the-drain-per-role)). E6a.7 built and run
@@ -883,11 +883,11 @@ areas.
   release, which the pods of v0.16.0 cannot serve; for that release alone they are counted as a finding
   ([Q-HA-99](../spec/ha-and-helm.md#q-ha-99--the-uis-hashed-assets-across-an-upgrade); between releases with the shared asset store
   the skew is fixed, Q-HA-120). The dev PostgreSQL allows 450
-  connections for the bridge (Q-HA-98). E6a.8: `TestR_HA_031_ValuesReference` and `TestR_HA_038_GatewayAPIExposure` name R-HA-031 and R-HA-038; open: R-HA-045, whose
-  ServiceMonitor is built (`TestServiceMonitor`) and whose PrometheusRule carries 23 alerts, among them the sixteen rows of the table whose
-  metrics the binary now exports under the specification's names (Q-HA-135; `TestPrometheusRule`, promtool rule tests per alert); the
-  seven `TroveBackup*` alerts and `TroveRevocationJournalBacklog` wait for the backup and the revocation journal (phase 7), so the
-  requirement carries no test named for its ID. The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run 42177273488.
+  connections for the bridge (Q-HA-98). E6a.8: `TestR_HA_031_ValuesReference` and `TestR_HA_038_GatewayAPIExposure` name R-HA-031 and R-HA-038; R-HA-045 is complete since
+  2026-11-07: the ServiceMonitor (`TestServiceMonitor`) and every alert of its table, the seven `TroveBackup*` alerts,
+  `TroveRevocationJournalBacklog` and `TroveRevocationJournalQuarantined` included, rendered with promtool tests firing and silent
+  (`TestR_HA_045_PrometheusRule`; Q-HA-135, Q-OPS-182, Q-HA-162); `TroveBackupCheckFailed` reads the gauge of the task `backup-check`
+  (R-HA-023, Q-HA-151). The leg `e2e-upgrade (upgrade)` passed both upgrade tests in the dispatched nightly run 42177273488.
   R-HA-021 (2026-11-06, finding F-59): `GET /api/v1/system/migrations` is built, the report of `trove migrate status` from the same
   code with the background migrations and their states (Q-HA-114), and a contract step declares the background migration it
   depends on, which the guard enforces (Q-HA-115). `TestR_HA_021_UpgradePreparation` names R-HA-021 and passes against the local
@@ -1070,19 +1070,31 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   one statement after the cache refills R-ARCH-027 exempts (Q-VULN-98, Q-VULN-99), 1 in the local runs. Open: two nightly runs in a row
 
 **Backup and restore**
-- 🟡 Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target
-- 🟡 Restore job into an empty installation
-- 🟡 Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure. Built on 2026-11-07: the
+- 🟢 Backup job (CronJob): consistent database snapshot, blobs copied incrementally to the backup S3 target. Built on 2026-11-07
+  ([backup.md](../developer/backup.md)): `trove backup create` exports every table under one snapshot with the migration lock held
+  shared, copies the referenced blobs into the content-addressed pool (server-side within a size-derived bound, else streamed), keeps
+  garbage collection away from them through the hold and the pins, commits with the manifest, and prunes by the retention policy and a
+  proven pool sweep; `list`, `verify`, `delete`, `prune`; the CronJob with its own identity, a read-only blob login and the target's
+  credentials only in the backup pod; a retry pod of the same Job takes over a killed run (Q-BAK-44). Evidence: the integration tests
+  of `test/integration/backup` (`TestR_BAK_005_*` to `TestR_BAK_019_*`, the hold property test over interleavings, the real binary's exit
+  codes, `kill -9` takeover and SIGTERM), `TestR_HA_060_BackupCronJob`; reviewed (code review, security audit) and every finding fixed
+- 🟢 Restore job into an empty installation. Built on 2026-11-07: `trove backup restore` checks the preconditions, anchors, migrates
+  the empty database to the backup's step, copies the blobs, loads every table in one transaction, migrates the rest, fixes up the
+  derived state (keyspace, incarnation, revisions, jobs, storage usage, remote caches), replays the revocation journal and resumes after
+  a kill at any step; the restore Job with every replica refused while it runs. Evidence: `TestR_BAK_020_*`, `TestR_BAK_021_*` (end to
+  end, resumption, `kill -9` at steps 2, 3 and 4, the streaming fallback, bounded sink memory), `TestR_BAK_008_RestoreWithoutRemoteCaches`,
+  `TestR_HA_060_RestoreJob`
+- 🟢 Revocation journal: a restore never brings back revoked tokens, removed permissions or narrowed exposure. Built on 2026-11-07: the
   removals a security review found without an entry are journaled and replayed, proved through the shipper and the replayer into a copy
   of the database at *t*: a Bastion registration's disable and deletion ([Q-BAS-145](../spec/bastion.md)), one `token.revoked` per token a
   disable or deletion revokes, written in batches, and a cleared auto-join flag ([Q-AUTH-198](../spec/identity-and-authentication.md)), a
   repository's disable and deletion ([Q-AUTHZ-238, Q-AUTHZ-239](../spec/authorization.md)); every journaled event has a handler in the
-  `trove` binary (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`). Open: the narrowings of H-569 and the finding blocks of H-489
+  `trove` binary (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`). The blocks of findings replay since Q-VULN-114 (H-489 narrowed). Narrowings that still write no entry are finding F-72 (H-569)
 - 🟡 E2E: backup taken during publishing restores with every npm and NuGet file digest-correct
 
 **Helm chart and release**
-- 🟡 Chart complete: values reference and schema, autoscaling, network policies, monitoring integration. Built on 2026-11-07: the values reference is held to `values.yaml` and `values.schema.json` (`TestR_HA_031_ValuesReference`), the Gateway API exposure (`TestR_HA_038_GatewayAPIExposure`), the ServiceMonitor and 23 alerts of the PrometheusRule with promtool tests ([Q-HA-135](../spec/ha-and-helm.md)). Open: the backup alerts and the revocation journal's alert of R-HA-045, which wait for the backup jobs and the journal below
-- ⚪ Security documentation in [docs/security](../security/README.md) and security review
+- 🟢 Chart complete: values reference and schema, autoscaling, network policies, monitoring integration. Built on 2026-11-07: the values reference is held to `values.yaml` and `values.schema.json` (`TestR_HA_031_ValuesReference`), the Gateway API exposure (`TestR_HA_038_GatewayAPIExposure`), the ServiceMonitor and 23 alerts of the PrometheusRule with promtool tests ([Q-HA-135](../spec/ha-and-helm.md)). The backup CronJob, the restore Job and the post-restore hook Job with their values, schema, validation and Secrets by scope (R-HA-060, R-HA-025), and every alert of R-HA-045 (`TestR_HA_045_PrometheusRule`)
+- 🟡 Security documentation in [docs/security](../security/README.md) and security review. Pages for the backup lane and the avatar upload, each audited on 2026-11-07 with every finding fixed or recorded as a gap; the review of the whole beta is open
 - 🟡 Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) with provenance and SBOM attestations and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)); it publishes every release since the switch to the organisation's CI standard. Open: E5.8, the beta candidate installed by digest from there passing E2.1's smoke scenarios
 - ⚪ Beta candidate published
 

@@ -1,6 +1,7 @@
 # Backup and restore
 
-Status: specification — not implemented
+Status: implemented (phase 7); P1 parts not built: client-side encryption of the database files (R-BAK-027) and restore onto
+an existing blob store (R-BAK-025)
 
 This page specifies trove's own backup (INV-19): the commands of the `backup` role
 (`trove backup create`, `list`, `verify`, `delete` and `restore`), what a backup contains and how it
