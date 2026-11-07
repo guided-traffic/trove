@@ -267,7 +267,11 @@ job ran, and that the p99 of the propagation and of the pick-up stay under `epoc
 `jobs.poll_interval + 1 s`, which are the bounds without Valkey.
 
 The monitor reads the replicas through the API server (`/api/v1/namespaces/trove/pods/<pod>:8081/proxy/…`),
-so the answer is the pod's own, not a Service's.
+so the answer is the pod's own, not a Service's. The first four non-200 answers of each pod (status and body, so the failing
+check or the transport error) go to the test log, and `runLoadFault` keeps the pod's log (`kubectl logs --timestamps`, since a
+minute before the load) on its first failing sample, then every fifteenth, and at the end, with the previous instance of a
+restarted pod, under `.out/e2e/podlogs-<fault>/` ([monitor_test.go](../../test/e2e/monitor_test.go)): a later fault deletes
+or replaces pods, and a container killed by its liveness probe takes its log with it.
 
 ### E0.14
 

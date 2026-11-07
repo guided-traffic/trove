@@ -249,8 +249,29 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   In the dispatched nightly run 42211913572 (release v0.19.5) the same subtest had no non-200 `/readyz` or `/healthz` at all. The 300 s
   outage, node loss and both primary losses behaved as before. Changed between the two runs on the object store's paths: the read of a
   lost object and the recheck of a `missing` mark (F-62, Q-STOR-151, Q-STOR-153), the shared UI asset store (F-58, not on `packages`),
-  the lease sessions' `idle_session_timeout` (F-65). Not known: which of them stalls the replicas. The run's artifact
-  `e2e-npm-cluster-state-ha-suite` has the pods' logs. Done when the cause is named and fixed and the set passes in a nightly run.
+  the lease sessions' `idle_session_timeout` (F-65). Read from the run's artifact `e2e-npm-cluster-state-ha-suite`, the
+  edge's access log and the job log (2026-11-07): the pods' logs do not hold the window (`2hqv7` and `bqtrr`, the pods that
+  stalled, were killed by their liveness probe at about 17:20 and replaced, the 5 min subtest deleted another, and the kubelet's
+  current log file of `t8gpz`, the one that came through, starts at 17:34), so the cause is **not named yet**. What is
+  known: the store was back at 17:18:27 (the last tarball `503` of the outage), blobs were served again 1.0 s after the return, and
+  the edge's connect time to all three pods (Tc, the TLS handshake included) rose from 12 ms to 0.5 s at 17:18:40 and to 2 s at
+  17:19:10 while the request rate was a quarter of the minute before the outage, with the time to the response headers (Tr) staying
+  at 0.1 to 0.3 s; k6's tarballs then took 20 to 30 s to transfer (the cluster's own npm clients 2 s); the probes of both pods timed
+  out (`context deadline exceeded`, not a `503`) from 17:19:05, six failures in 10 s periods end in the kill at about 17:20:05; the
+  uploads of the test were accepted only 84 s after the return. That is a stall of the process or of its node, beginning with the
+  store's return, not a check that waits on the object store (`/healthz` and `/readyz` answer from cached results and a stuck
+  watched loop would answer `503` at once). Read in the code between v0.19.5 and v0.20.2 and found no wait on the store in a
+  probe, a blocking call under a database transaction, or a per-request cost that grew (`blob.Store.Open`, `RecheckMissing`,
+  `items.Store.Usable`, `proxy` lost-item paths, `virtual` walk, the lease sessions' `idle_session_timeout`, which only the lease
+  connections carry; the shared UI asset store is wired on `api`, `web` and `all` only, `TestR_ARCH_001_RoleTableIsData`). No
+  fix is written for a cause that is not shown. The next nightly names it: the monitor of the fault tests now keeps what it
+  saw (`test/e2e/monitor_test.go`): the first four non-200 answers of every pod with their status and body (the failing
+  check, or the transport error) in the job log, and the log of each failing pod (`kubectl logs --timestamps`, since a minute
+  before the load) each fifteenth failing sample and at the end, with the previous instance of a restarted pod, in the artifact
+  `e2e-artifacts-ha-suite` under `podlogs-<fault>/`; the stuck-loop goroutine dump of `/healthz` (R-OPS-001) is in those logs.
+  Still missing and to be added with the next reading if the logs do not name it: the pods' CPU throttling (`cpu.stat`) and
+  memory (`/metrics` `go_memstats`, `trove_http_in_flight`) at the time. Done when the cause is named and fixed and the set
+  passes in a nightly run.
 - **F-63 · `TestMirror_R_REPO_055_ClientsFirst/npm` missed its install-time bound in the scheduled nightly run 42194413882** (confirmed from
   the run's pod logs, 2026-11-06, release v0.19.4). `npm ci` with a pass running took 161 % of the best install without it (22.6 s against
   14.0 s, the bound 120 %, R-REPO-055, Q-REPO-197). Cause: the leg ran on a GitHub-hosted runner (4 vCPUs for the cluster, both stubs and the
