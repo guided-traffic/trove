@@ -192,11 +192,16 @@ func TestR_REPO_060_TheMoveBodyNamesAProjectKey(t *testing.T) {
 	s := newSetup(t, func(o *Options) {
 		o.Access = projectCaller{caps: map[string]bool{"repositories:write-config": true}}
 		o.Authz.Projects = sampleProjects()
+		// The handler refuses the body before it asks the service for anything: an empty service stands in.
+		o.Repositories.Service = &repository.Service{}
+		o.API.Config.MaxRequestBodyBytes = 1 << 20
 	}, authed)
 	w := s.do("POST", "/api/v1/projects/web/repositories/npm-libs/move", `{"project":"Not A Key"}`, nil)
-	// The repository service is not wired in this setup: the handler answers 503 before it reads the body.
-	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("%d %s", w.Code, w.Body)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), "/project") {
+		t.Errorf("the problem does not point at /project: %s", w.Body)
 	}
 }
 
