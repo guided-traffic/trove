@@ -1851,7 +1851,9 @@ export interface paths {
          *     other caller sees the repositories on which it holds `read`, which includes every repository for a member
          *     of the project (Q-AUTHZ-207, Q-AUTHZ-208). `view`, `class`, `format`, `q` and `state` act as on
          *     `GET /api/v1/repositories`. A project the caller cannot see answers `404`, exactly as a project that does
-         *     not exist.
+         *     not exist: a caller sees a project when it holds `projects:read` or `repositories:read-config`, is a member
+         *     of it, or reads one of its repositories whatever the filters and the cursor (R-AUTHZ-016). A project it sees
+         *     answers `200`, an empty page included.
          */
         get: operations["listProjectRepositories"];
         put?: never;
@@ -1871,6 +1873,9 @@ export interface paths {
          *     `repositories:write-config`, or is an Owner of the project, creates it. A virtual repository's members and
          *     deploy target are repositories of the same project, named by their bare keys (`422
          *     repository_outside_project`, Q-AUTHZ-178). A project the caller cannot see answers `404`.
+         *     An Owner's create whose member `vulnerabilities` is weaker than the defaults (`enabled: false`,
+         *     `matchPublicAdvisories: never`, `blockMalicious: false`) answers `403 vulnerability_weakening_refused` unless the
+         *     caller also holds `vulnerabilities:triage` (R-VULN-002, Q-VULN-69).
          */
         post: operations["createProjectRepository"];
         delete?: never;
@@ -1968,11 +1973,14 @@ export interface paths {
          *     The move is refused with `409 repository_in_use` while an object of the source project references the
          *     repository: a virtual repository lists it as a member or pin-rule member or deploys into it, a project policy
          *     selects it by key, or a CI mapping of the project grants on it. The answer carries the extension member `references`, a list of `{kind, name}` (the kinds are
-         *     `virtual_member`, `pin_rule`, `virtual_deployment_target`, `policy`, `ci_mapping`, `member` and
-         *     `deployment_target`; `name` is the name of the object within the source project); remove them,
-         *     then move. It is refused with `409 already_exists` when the target project has a repository with the key,
+         *     `virtual_member`, `pin_rule`, `virtual_deployment_target`, `policy`, `ci_mapping`, `member`,
+         *     `deployment_target` and `global_policy`; `name` is the name of the object within the source project, of a
+         *     global policy its name); remove them, then move. A caller without `repositories:write-config`, an Owner of
+         *     both projects, is refused as well while a key selector of a global policy names the repository (kind
+         *     `global_policy`, Q-REPO-232): that grant is held by the repository's ID and would follow it into the target
+         *     project, whose other Owners cannot remove it; an administrator of trove moves it or removes the selector. It is refused with `409 already_exists` when the target project has a repository with the key,
          *     also one being deleted. A target equal to the source changes nothing and answers `200` with the repository as it is. The move needs no
-         *     `If-Match`: the path names the source. It records `repository.moved` with both projects, notifies `authz`
+         *     `If-Match`: the path names the source. It records `repository.moved` in the source project and `repository.moved_in` in the target project (Q-REPO-233), notifies `authz`
          *     and `repo_config`, and moves the repository's `ETag`. The caller holds `repositories:write-config`, or is an
          *     Owner of both projects: a target project the caller is no member of answers `404`, one where its role is
          *     below Owner `403`.
@@ -4075,13 +4083,13 @@ export interface components {
             /** @description Extension of `precondition_failed`: the current ETag of the resource (R-API-012). */
             currentEtag?: string;
             job?: components["schemas"]["JobReference"];
-            /** @description Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository (R-REPO-060). */
+            /** @description Extension of `repository_in_use` (409 of a move): the objects of the source project that name the repository, and for an Owner without `repositories:write-config` the global policies that name it by key (R-REPO-060, Q-REPO-232). */
             references?: components["schemas"]["RepositoryReference"][];
         };
         RepositoryReference: {
             /** @enum {string} */
-            kind: "virtual_member" | "pin_rule" | "virtual_deployment_target" | "policy" | "ci_mapping" | "member" | "deployment_target";
-            /** @description The name of the object within the source project. */
+            kind: "virtual_member" | "pin_rule" | "virtual_deployment_target" | "policy" | "ci_mapping" | "member" | "deployment_target" | "global_policy";
+            /** @description The name of the object within the source project; for `global_policy` the name of the global policy. */
             name: string;
         };
         FieldError: {
