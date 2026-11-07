@@ -81,6 +81,7 @@ func (a *App) wireBlob(ctx context.Context, keys keysArea, pg postgresArea) (blo
 		area.gc = blob.NewCollector(cfg.GC, cfg.S3.Prefix, objects, db, blob.WithCollectorLogger(log), blob.WithCollectorMetrics(bm))
 		a.gc.set(area.gc)
 		a.wireJournalShipper(client, pg.db)
+		a.wireBackupCheck(client)
 		// The usage fold of every worker replica (R-STOR-003): no lease, the folds of several replicas take disjoint rows.
 		fold, err := blob.NewUsageFolder(blob.UsageFolderOptions{
 			DB: db, Interval: cfg.Usage.FoldInterval, WatchdogTimeout: a.cfg.Health.WatchdogTimeout,

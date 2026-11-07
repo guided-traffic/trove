@@ -891,6 +891,20 @@
           },
           "type": "object"
         },
+        "object_versioning": {
+          "default": false,
+          "description": "Asserts that the blob bucket is versioned and keeps noncurrent versions for at least recovery_window (R-HA-023).",
+          "type": "boolean",
+          "x-trove-env": "TROVE_BACKUP_OBJECT_VERSIONING"
+        },
+        "recovery_window": {
+          "default": "0s",
+          "description": "The point-in-time recovery window the platform keeps (R-HA-023); 0s is undeclared. The task backup-check verifies it and a replica refuses to start when it exceeds storage.gc.grace_period without object_versioning (R-HA-024).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_BACKUP_RECOVERY_WINDOW",
+          "x-trove-type": "duration"
+        },
         "retention": {
           "additionalProperties": false,
           "properties": {
@@ -2316,6 +2330,10 @@
       "properties": {
         "tasks": {
           "default": {
+            "backup-check": {
+              "Enabled": true,
+              "Schedule": "40 5 * * *"
+            },
             "gc": {
               "Enabled": true,
               "Schedule": "*/30 * * * *"

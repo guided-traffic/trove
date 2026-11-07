@@ -204,6 +204,16 @@ func TestBackupCommands(t *testing.T) {
 			t.Fatalf("code %d stderr %q", code, stderr)
 		}
 	})
+	t.Run("R-HA-024 a recovery window above the grace period needs object_versioning, and the message names the keys", func(t *testing.T) {
+		code, _, stderr := runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=b", "TROVE_BACKUP_RECOVERY_WINDOW=168h"), "backup", "list")
+		if code != 2 || !strings.Contains(stderr, "backup.recovery_window") || !strings.Contains(stderr, "storage.gc.grace_period") || !strings.Contains(stderr, "backup.object_versioning") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+		code, _, stderr = runCmd(t, baseEnv("TROVE_BACKUP_TARGET_BUCKET=b", "TROVE_BACKUP_RECOVERY_WINDOW=168h", "TROVE_BACKUP_OBJECT_VERSIONING=true"), "backup", "list")
+		if strings.Contains(stderr, "backup.recovery_window") {
+			t.Fatalf("code %d stderr %q", code, stderr)
+		}
+	})
 	t.Run("R-BAK-020 usage errors are exit 2", func(t *testing.T) {
 		for _, args := range [][]string{
 			{"backup"},

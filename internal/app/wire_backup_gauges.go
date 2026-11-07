@@ -49,14 +49,17 @@ func (a *App) registerBackupGauges() {
 	a.tele.metrics.DBGauges().Add(observability.GaugeSource{
 		Name: "backup",
 		Collect: func(ctx context.Context) ([]prometheus.Metric, error) {
+			db := a.database()
+			if db == nil {
+				return nil, nil
+			}
 			if col == nil {
-				db := a.database()
-				if db == nil {
-					return nil, nil
-				}
 				col = gauges.New(gauges.Options{Reader: backup.NewPGStore(db), Backup: m.bak, Journal: m.jrnl, ExpectedInterval: expected})
 			}
-			return nil, col.Refresh(ctx)
+			if err := col.Refresh(ctx); err != nil {
+				return nil, err
+			}
+			return nil, db.Read(ctx, func(c q.DBTX) error { return exportBackupCheck(ctx, c, m.bak) })
 		},
 	})
 }

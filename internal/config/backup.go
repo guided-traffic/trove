@@ -8,7 +8,7 @@ import (
 
 // Backup configures trove's own backup and restore (R-BAK-011) and the revocation journal (R-HA-054). The target
 // credentials are file-only secrets; web and worker replicas read expected_interval and manual_run and never the target
-// (R-BAK-011, R-BAK-015). The platform keys recovery_window and object_versioning of R-HA-023 are not in this section yet.
+// (R-BAK-011, R-BAK-015). recovery_window and object_versioning declare the platform protection that the task backup-check verifies (R-HA-023).
 type Backup struct {
 	Target            BackupTarget            `yaml:"target"`
 	Database          BackupDatabase          `yaml:"database"`
@@ -25,6 +25,8 @@ type Backup struct {
 	VerifySample      int                     `yaml:"verify_sample" default:"1000" validate:"min=0" doc:"Pool objects HEAD-checked before each manifest."`
 	RunHistory        time.Duration           `yaml:"run_history" default:"2160h" validate:"min=1h" doc:"backup_run rows older than this are deleted by the next run."`
 	RevocationJournal BackupRevocationJournal `yaml:"revocation_journal"`
+	RecoveryWindow    time.Duration           `yaml:"recovery_window" default:"0s" validate:"min=0s" doc:"The point-in-time recovery window the platform keeps (R-HA-023); 0s is undeclared. The task backup-check verifies it and a replica refuses to start when it exceeds storage.gc.grace_period without object_versioning (R-HA-024)."`
+	ObjectVersioning  bool                    `yaml:"object_versioning" default:"false" doc:"Asserts that the blob bucket is versioned and keeps noncurrent versions for at least recovery_window (R-HA-023)."`
 }
 
 // BackupTarget is the S3 location backups are written to (R-BAK-002, R-BAK-011). It carries the keys of storage.s3 that a
@@ -154,6 +156,15 @@ func (c *Config) validateBackupCoupling(r *Report) {
 	}
 	if prefixContains(t.Prefix, s.Prefix) || prefixContains(s.Prefix, t.Prefix) {
 		r.Add("backup.target.prefix", "(%q) and storage.s3.prefix (%q) must not contain each other (R-BAK-002)", t.Prefix, s.Prefix)
+	}
+}
+
+// validateRecoveryWindow applies the startup rule of R-HA-024: a declared recovery window longer than the garbage-collection
+// grace period is safe only when the bucket keeps deleted objects as noncurrent versions.
+func (c *Config) validateRecoveryWindow(r *Report) {
+	b := c.Backup
+	if b.RecoveryWindow > 0 && b.RecoveryWindow > c.Storage.GC.GracePeriod && !b.ObjectVersioning {
+		r.Add("backup.recovery_window", "(%s) exceeds storage.gc.grace_period (%s): a restore to an older point could reference a deleted object; raise the grace period or keep deleted objects and set backup.object_versioning: true (R-HA-024)", b.RecoveryWindow, c.Storage.GC.GracePeriod)
 	}
 }
 

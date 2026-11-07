@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/backup/platform"
 	"github.com/guided-traffic/trove/internal/journal"
 
 	docsmanual "github.com/guided-traffic/trove/docs/manual"
@@ -149,16 +150,17 @@ type App struct {
 	parts *wiring
 	// The services that job handlers use are late values: the job registry is
 	// built, and frozen, before the area that owns the service is wired.
-	auditStore late[*audit.Store]
-	gc         late[*blob.Collector]
-	repoSvc    late[*repository.Service]
-	itemStore  late[*items.Store]
-	tokenSvc   late[*token.Service]
-	folder     late[*invalidation.Folder]
-	reseal     late[resealDeps]
-	host       late[formats.Host]
-	semver2    late[*nugetdata.Semver2]
-	shipper    late[journal.Shipper]
+	auditStore  late[*audit.Store]
+	gc          late[*blob.Collector]
+	repoSvc     late[*repository.Service]
+	itemStore   late[*items.Store]
+	tokenSvc    late[*token.Service]
+	folder      late[*invalidation.Folder]
+	reseal      late[resealDeps]
+	host        late[formats.Host]
+	semver2     late[*nugetdata.Semver2]
+	shipper     late[journal.Shipper]
+	checkBucket late[platform.Bucket]
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of
