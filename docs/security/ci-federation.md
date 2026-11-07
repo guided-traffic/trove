@@ -440,3 +440,36 @@ storage fault, so it refuses the token; it cannot honour a contribution's own ex
 contribution beyond its bound. Live during that one update and dormant afterwards. What makes it real: a job whose exchange and whose
 package requests reach replicas of different releases while the update rolls; it fails and runs again. The reverse direction works:
 this release reads version 1.
+
+### H-565 · A replayed disable of a configuration-declared CI issuer is undone by `trove migrate` when the restore runs with an older configuration
+
+Stage: the apply of `ci.issuers` in `trove migrate` (R-CI-001, Q-CI-16; `ApplyDeclared` in
+[issuers_declared.go](../../internal/ci/issuers_declared.go)), which the chart's migration Job runs at every `helm install` and
+`helm upgrade`, so also at the final `helm upgrade` of the restore sequence that starts the replicas again
+([ha-and-helm.md](../spec/ha-and-helm.md) R-HA-060), with the values file given there. It runs after the journal replay of
+`trove backup restore` (R-BAK-024) or `trove admin post-restore` (R-HA-025), which disables the issuer
+([journal_replay.go](../../internal/ci/journal_replay.go)).
+
+Subject, case by case:
+
+- **A declared issuer disabled after the restore point.** The API refuses to write an issuer with source `configuration`, so such a
+  disable came from the configuration itself. The replay disables the restored row and revokes its unexpired tokens. A configuration
+  that still declares the issuer enabled, or omits `enabled` (the default is `true`), makes the next `trove migrate` write the
+  declaration over the row: the issuer is enabled again (`ci.issuer.enabled`, actor `system:configuration`) and its jobs obtain CI
+  tokens again. The tokens the replay revoked stay revoked.
+- **A declared issuer that the replay suspended** because it could not prove a `ci.issuer.updated` entry a narrowing. `trove migrate`
+  writes the declared settings over the suspension, whatever they are: the after-state of the narrowing when the configuration is the
+  one in force at the restore, the wider settings of an older one.
+- **A declared issuer the configuration no longer lists** is disabled again by the same step (`removeOne`), so the replay's disable
+  holds.
+
+Confirmed in the code, not run as this case: `applyOne` builds the issuer from the declaration and, when the stored settings differ
+(`sameSettings`), writes it with `writeUpdate`, which enables a disabled row. `TestR_CI_001_DeclaredIssuersAreReadOnlyAndFollowTheConfiguration`
+shows the same path enabling a declared issuer that was disabled, through a removal and a declaration again; no test runs a restore
+followed by `trove migrate`.
+
+Live or dormant: dormant while the restored installation is deployed with the configuration in force when the issuer was disabled,
+because that configuration declares it disabled or not at all. Live when the restore is deployed with the values of the backup's time
+or earlier: a disaster recovery into a new cluster from values kept with the backup, or a GitOps revert of the values to the restore
+point. What makes it real: the reason for the disable still holding, a compromised GitLab instance or a leaked signing key, together
+with such a configuration. The migration Job's audit trail records the enable as `ci.issuer.enabled` by `system:configuration`.
