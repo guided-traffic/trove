@@ -249,6 +249,20 @@ Found on 2026-11-07 by the owner on his installation (`wds18-k8s-main`, release 
     archive completes with one rejected record, a test holds each of the four points, and both screens name the cause of a failed run.
     The owner's installation needs no change of its values: it takes the fix with the release.
 
+Found on 2026-11-07 by the planning agent of E5.13 (phase 7), reading the evaluation engine:
+
+### Product
+
+- **F-74 · A download block the evaluation sets writes no journal entry, so a restore lets a malicious version download again until the
+  first complete import** (read in the code, not reproduced). Three places set `blocked` without an entry: a malicious finding detected
+  for the first time (`internal/vuln/evaluate/engine.go` around line 584), an open finding whose advisory turns malicious (around line
+  653), and a merge whose audit event says `block: set` (around lines 563 to 567). A restore to a point before the block brings the
+  version back as downloadable on every replica until the first `vuln-sync-osv` after the restore re-evaluates it (R-VULN-026). The replay
+  of Q-VULN-115 names its finding by ID, which a finding created after the restore point does not have in the restored database, so the fix
+  needs a decision on what a replayed evaluation block names. Recorded as part of
+  [H-489](../security/vulnerability-scanning.md#what-this-does-not-cover). Done when an evaluation block writes an entry whose replay holds
+  the version blocked on the restored installation before its first sync, with a test, or a decision states why it need not.
+
 Found on 2026-11-07 by the security audit of the avatar upload (R-API-055) and of the revocation journal (R-HA-054):
 
 ### Product
@@ -351,6 +365,18 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   The dispatched nightly run 42258656348 (release v0.20.2, `large`) missed it: 131 % (pairs 16.4/16.8 s, 14.3/19.5 s, 12.8/12.7 s), so by
   Q-REPO-211 this is a product finding now: the pass slows the installs on a 16-CPU runner too. Next: split the phases as Q-REPO-211 did,
   from that run's artifact `e2e-mirror-cluster-state-mirror`. Done when the cause is named and the bound holds.
+  Split on 2026-11-07 (the pod logs of 42258656348 and 42194413882, joined by `trace_id`): the upstream fetches did not change (tarball
+  p50 122 ms in all six installs, every attempt the first, no shedding, no queue timeout); the extra time is in the cache commit's last
+  transaction (item link, proxy entry, audit row, commit), whose median rose from about 10 ms to about 90 ms in windows of 3 to 4 s on all
+  three `packages` replicas at once (load1 of 42258656348: commit sum 23.1 s against 11.0 s idle), so the stall sits in a shared dependency
+  (the primary, its disk or standby, or the host), and it appears without a pass too, smaller. The fetch slot is held through that commit
+  (`fetcher.run` releases after `inSlot`, which includes `Items.Commit`, `internal/proxy/fetch.go`), so a slow commit lowers the whole
+  install's throughput (9 client slots for 15 requests in flight; 50 down to 21 to 26 requests/s in the window). The estimator compares
+  the median loaded install with the best idle install of any pair (131 % in 42258656348; its pairs alone 103 %, 136 %, 99 %); a loaded
+  install more than 30 % slower than its own pair's baseline happened in pair 1 in 7 of 19 runs, in pair 0 never. Readings: large
+  96 %, 131 %, 98 % (42356771989); hosted 161 %, 163 % and twelve at 99 to 104 %. Not named: why the commit stalls and why a pass makes
+  it likelier; the artifacts hold no database, disk or CPU measurement and no log of the pass (the cluster state is taken after the
+  profile is switched back).
 
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
