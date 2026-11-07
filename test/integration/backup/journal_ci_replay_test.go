@@ -411,7 +411,82 @@ func TestR_CI_020_IssuerAndMappingEntriesReplayIntoTheRestoredDatabase(t *testin
 			t.Errorf("gitlab-c = enabled %v, audiences %v, %v: suspended, and no new audience", after.Enabled, after.AllowedAudiences, err)
 		}
 	})
+	t.Run("R-CI-020 a forged after-state that removes a bound or turns the clock skew negative suspends; a genuine narrowing applies", func(t *testing.T) {
+		is := rsvc.issuer(t, "gitlab-f")
+		ttl := int64(600)
+		m := rsvc.mapping(t, "gitlab-f", ci.MappingInput{
+			Name: "f-read", Priority: 10, Grants: readGrant("web/npm-internal"), MaxTTLSeconds: &ttl,
+			Match: node(t, `{"all": [{"claim": "namespace_id", "equals": "4711"}]}`),
+		})
+		store := newMemStore()
+		mapping := func(before, after map[string]any) string {
+			b, _ := json.Marshal(map[string]any{
+				"mappingId": m.ID, "issuerId": m.IssuerID, "issuer": m.Issuer, "name": m.Name, "tier": m.Tier,
+				"priority": m.Priority, "before": before, "after": after,
+			})
+			return handWritten(t, store, audit.EventCIMappingUpdated, b)
+		}
+		issuer := func(before, after map[string]any) string {
+			b, _ := json.Marshal(map[string]any{"issuerId": is.ID, "name": is.Name, "before": before, "after": after})
+			return handWritten(t, store, audit.EventCIIssuerUpdated, b)
+		}
+		bound := func(v int64) map[string]any { r := mappingRecordOf(m); r["maxTtlSeconds"] = v; return r }
+		skew := func(v int) map[string]any { r := issuerRecordOf(is); r["clockSkewSeconds"] = v; return r }
+		want := map[string]journal.Outcome{
+			mapping(bound(600), bound(300)): journal.Applied,
+			issuer(skew(60), skew(30)):      journal.Applied,
+		}
+		res, _ := rst.replay(store, time.Now().Add(-time.Minute), rst.changes)
+		forged := newMemStore()
+		store = forged
+		want2 := map[string]journal.Outcome{
+			mapping(bound(300), bound(0)): journal.Suspended,
+			issuer(skew(30), skew(-30)):   journal.Suspended,
+		}
+		res2, _ := rst.replay(forged, time.Now().Add(-time.Minute), rst.changes)
+		for _, r := range append(res.Results, res2.Results...) {
+			w, ok := want[r.ID]
+			if !ok {
+				w = want2[r.ID]
+			}
+			if r.Outcome != w {
+				t.Errorf("%s %s: %s, want %s (%s)", r.Event, r.Subject, r.Outcome, w, r.Detail)
+			}
+		}
+		if got := rst.text(`SELECT COALESCE(extract(epoch FROM max_ttl)::bigint::text, 'unbounded') || ' ' || enabled::text FROM ci_mappings WHERE id = $1::uuid`, m.ID); got != "300 false" {
+			t.Errorf("f-read = %s, want the bound of 300 s kept and the mapping disabled", got)
+		}
+		if got := rst.text(`SELECT extract(epoch FROM clock_skew)::bigint::text || ' ' || enabled::text FROM ci_issuers WHERE id = $1::uuid`, is.ID); got != "30 false" {
+			t.Errorf("gitlab-f = %s, want the skew of 30 s kept and the issuer disabled", got)
+		}
+	})
 	if t.Failed() {
 		t.Logf("replay:\n%s", printed)
+	}
+}
+
+// mappingRecordOf is the record of a mapping as the producer writes it into a journal entry (recordOfMapping).
+func mappingRecordOf(m ci.Mapping) map[string]any {
+	r := map[string]any{
+		"id": m.ID, "name": m.Name, "issuer": m.Issuer, "tier": m.Tier, "description": m.Description, "priority": m.Priority,
+		"enabled": m.Enabled, "subjectKinds": m.SubjectKinds, "match": m.Match, "grants": m.Grants, "maxTtlSeconds": m.MaxTTLSeconds,
+		"options": m.Options, "version": m.Version,
+	}
+	if m.Project != "" {
+		r["project"] = m.Project
+	}
+	return r
+}
+
+// issuerRecordOf is the record of an issuer as the producer writes it into a journal entry (recordOf).
+func issuerRecordOf(is ci.Issuer) map[string]any {
+	return map[string]any{
+		"id": is.ID, "name": is.Name, "kind": is.Kind, "issuer": is.Issuer, "description": is.Description, "enabled": is.Enabled,
+		"discoveryUrl": is.DiscoveryURL, "jwksUri": is.JWKSURI, "allowedAudiences": is.AllowedAudiences, "exclusiveAudience": is.ExclusiveAudience,
+		"allowedAlgorithms": is.AllowedAlgorithms, "allowedTyp": is.AllowedTyp, "allowMissingTyp": is.AllowMissingTyp,
+		"clockSkewSeconds": is.ClockSkewSeconds, "requiredClaims": is.RequiredClaims, "publicIssuer": is.PublicIssuer, "pinClaims": is.PinClaims,
+		"singleUseSubjectTokens": is.SingleUseSubjectTokens, "maxTtlSeconds": is.MaxTTLSeconds, "caBundleRef": is.CABundleRef,
+		"useOutboundProxy": is.UseOutboundProxy, "jobTokenFallback": is.JobTokenFallback, "source": is.Source,
+		"removedFromConfiguration": is.RemovedFromConfiguration, "version": is.Version,
 	}
 }

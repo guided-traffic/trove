@@ -666,17 +666,29 @@ func (r *run) reopen(ctx context.Context, rv repoView, v store.StoredVersion, f 
 	}
 	pol := vuln.PolicyFor(rv.Settings, rv.Ecosystem, r.s.o.Enabled, r.s.o.Enforcement)
 	body := map[string]any{"finding": f.ID, "advisory": m.ID, "change": change}
+	ev := audit.Event{
+		Type: audit.EventVulnFindingReopened, Actor: audit.Actor{Kind: "system", Name: "vulnerability-scanning"}, Outcome: audit.Success,
+		Repository: rv.Key, Path: v.Name + "@" + v.Version,
+	}
 	if reason, ok := pol.BlockReasonOf(m.Kind, vuln.StatusNeedsTriage); ok && reason == vuln.BlockMalicious && pol.Enforcement == vuln.EnforceBlocks {
 		body["block"] = "set"
+		// The block the reopen sets is journaled like a triage's: a restore to a point before it replays it (R-HA-054,
+		// Q-VULN-48, Q-VULN-114).
+		entry, err := json.Marshal(map[string]string{
+			"finding": f.ID, "repository": rv.Key, "ecosystem": rv.Ecosystem, "package": v.Name, "version": v.Version,
+			"advisory": m.ID, "block": "set",
+		})
+		if err != nil {
+			return err
+		}
+		ev.Journal = entry
 	}
 	details, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	return r.s.o.Recorder.RecordTx(ctx, r.tx, audit.Event{
-		Type: audit.EventVulnFindingReopened, Actor: audit.Actor{Kind: "system", Name: "vulnerability-scanning"}, Outcome: audit.Success,
-		Repository: rv.Key, Path: v.Name + "@" + v.Version, Details: details,
-	})
+	ev.Details = details
+	return r.s.o.Recorder.RecordTx(ctx, r.tx, ev)
 }
 
 // recordClaimed records the public advisories that name an internal name (R-VULN-010): one row per advisory and name and, when

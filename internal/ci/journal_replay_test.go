@@ -19,7 +19,7 @@ func i64p(v int64) *int64 { return &v }
 // replayIssuerFixture is a GitLab issuer as the API stores it.
 func replayIssuerFixture() Issuer {
 	return Issuer{
-		ID: "0192f0c4-0000-7000-8000-000000000001", Name: "gitlab-com", Kind: KindGitLab, Issuer: "https://gitlab.com", Enabled: true,
+		ID: "0192f0c4-0000-7000-8000-000000000001", Name: "gitlab-com", Kind: KindGitLab, Issuer: "https://gitlab.example.com", Enabled: true,
 		AllowedAudiences: []string{"https://trove.example.com", "npm:trove.example.com"}, ExclusiveAudience: true,
 		AllowedAlgorithms: []string{"RS256", "ES256"}, AllowedTyp: []string{"JWT"}, ClockSkewSeconds: 60,
 		RequiredClaims: []string{"project_id"}, PinClaims: []string{"project_id", "namespace_id"}, MaxTTLSeconds: i64p(3600),
@@ -108,7 +108,7 @@ func TestR_CI_020_TheIssuerComparator(t *testing.T) {
 			"a pin claim":               {journaledIssuer(base), with(func(is *Issuer) { is.PinClaims = []string{"project_id"} })},
 			"the outbound proxy":        {journaledIssuer(base), with(func(is *Issuer) { is.UseOutboundProxy = true })},
 			"another name":              {journaledIssuer(base), with(func(is *Issuer) { is.Name = "gitlab-other" })},
-			"another issuer URL":        {journaledIssuer(base), with(func(is *Issuer) { is.Issuer = "https://gitlab.example.com" })},
+			"another issuer URL":        {journaledIssuer(base), with(func(is *Issuer) { is.Issuer = "https://gitlab.other.example.com" })},
 			"another ID":                {journaledIssuer(base), with(func(is *Issuer) { is.ID = "0192f0c4-0000-7000-8000-000000000002" })},
 			"an unreadable record":      {journaledIssuer(base), {}},
 			"a lax issuer":              {journaledIssuer(base), journaledIssuer(lax)},
@@ -322,5 +322,60 @@ func TestR_CI_020_TheHandlersAreRegistered(t *testing.T) {
 		if _, ok := journal.HandlerFor(ev); ok {
 			t.Errorf("%s grants and must never be replayed", ev)
 		}
+	}
+}
+
+// A bound reads as the writer stores it, and a merged record the API would refuse proves nothing (Q-CI-68).
+func TestR_CI_020_TheBoundsReadAsTheWriterStoresThem(t *testing.T) {
+	zero, neg, hour, minute := int64(0), int64(-5), int64(3600), int64(60)
+	for name, c := range map[string]struct {
+		current, after *int64
+		want           bool
+	}{
+		"R-CI-020 0 is stored as NULL, unbounded: it does not narrow 3600": {&hour, &zero, false},
+		"R-CI-020 a negative bound is unbounded as well":                   {&hour, &neg, false},
+		"R-CI-020 NULL after a bound does not narrow":                      {&hour, nil, false},
+		"R-CI-020 a bound below the current one narrows":                   {&hour, &minute, true},
+		"R-CI-020 any bound narrows an unbounded current":                  {nil, &minute, true},
+		"R-CI-020 a current 0 is unbounded":                                {&zero, &minute, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := ttlNotLarger(c.current, c.after); got != c.want {
+				t.Fatalf("ttlNotLarger = %v, want %v", got, c.want)
+			}
+		})
+	}
+	cmp := issuerNarrower{}
+	base := replayIssuerFixture()
+	for name, f := range map[string]func(*Issuer){
+		"R-CI-020 maxTtlSeconds 0 does not narrow an issuer": func(is *Issuer) { is.MaxTTLSeconds = &zero },
+		"R-CI-020 a negative clock skew does not narrow":     func(is *Issuer) { is.ClockSkewSeconds = -30 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			after := replayIssuerFixture()
+			f(&after)
+			if cmp.Narrows(journaledIssuer(base), journaledIssuer(after)) {
+				t.Fatal("the comparator proved a narrowing that removes a bound")
+			}
+		})
+	}
+	w := newCIReplayWriter(journal.Env{})
+	if !w.validIssuer(base) {
+		t.Fatal("the fixture is a valid issuer")
+	}
+	for name, f := range map[string]func(*Issuer){
+		"R-CI-020 the API refuses a negative clock skew":    func(is *Issuer) { is.ClockSkewSeconds = -1 },
+		"R-CI-020 the API refuses a clock skew above 300 s": func(is *Issuer) { is.ClockSkewSeconds = 301 },
+		"R-CI-020 the API refuses a bound of 0 seconds":     func(is *Issuer) { is.MaxTTLSeconds = &zero },
+		"R-CI-020 the API refuses an empty audience list":   func(is *Issuer) { is.AllowedAudiences = nil },
+		"R-CI-020 the API refuses the algorithm none":       func(is *Issuer) { is.AllowedAlgorithms = []string{"none"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := replayIssuerFixture()
+			f(&bad)
+			if w.validIssuer(bad) {
+				t.Fatal("the merged record passed the API's validation")
+			}
+		})
 	}
 }

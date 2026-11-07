@@ -103,6 +103,9 @@ func TestCIMigration(t *testing.T) {
 		wantState(t, admin, "23514", plain("", ""), ciIssuerB, "gitlab-b", "gitlab", "https://gitlab.b.example", []string{})
 		wantState(t, admin, "23514", plain(", clock_skew", ", interval '301 seconds'"), ciIssuerB, "gitlab-b", "gitlab", "https://gitlab.b.example", []string{"x"})
 		wantState(t, admin, "23514", plain(", source", ", 'wizard'"), ciIssuerB, "gitlab-b", "gitlab", "https://gitlab.b.example", []string{"x"})
+		// R-CI-018, R-CI-020 (Q-CI-69): a negative skew and a bound of 0 are refused; NULL is the unbounded value.
+		wantState(t, admin, "23514", plain(", clock_skew", ", interval '-1 seconds'"), ciIssuerB, "gitlab-b", "gitlab", "https://gitlab.b.example", []string{"x"})
+		wantState(t, admin, "23514", plain(", max_ttl", ", interval '0 seconds'"), ciIssuerB, "gitlab-b", "gitlab", "https://gitlab.b.example", []string{"x"})
 		if v := scalar[int64](t, admin, "SELECT version FROM trove.ci_issuers WHERE id = $1", ciIssuerA); v != 1 {
 			t.Errorf("version = %d, want 1", v)
 		}
@@ -123,6 +126,9 @@ func TestCIMigration(t *testing.T) {
 		wantState(t, admin, "23505", insert, "cc000000-0000-0000-0000-0000000000c2", ciIssuerA, "cc000000-0000-0000-0000-0000000000d3", "release", 200)
 		wantState(t, admin, "23505", insert, "cc000000-0000-0000-0000-0000000000c2", ciIssuerA, "cc000000-0000-0000-0000-0000000000d3", "other", 100)
 		wantState(t, admin, "23514", insert, "cc000000-0000-0000-0000-0000000000c2", ciIssuerA, "cc000000-0000-0000-0000-0000000000d3", "other", 0)
+		// R-CI-020 (Q-CI-69): a mapping's bound of 0 is refused.
+		wantState(t, admin, "23514", strings.Replace(strings.Replace(insert, "created_by)", "created_by, max_ttl)", 1), "'test')", "'test', interval '0 seconds')", 1),
+			"cc000000-0000-0000-0000-0000000000c2", ciIssuerA, "cc000000-0000-0000-0000-0000000000d3", "other", 200)
 		wantState(t, admin, "23514", `INSERT INTO trove.principal (id, kind, name) VALUES (gen_random_uuid(), 'ci_mapping', 'no-slash')`)
 		// An issuer with mappings cannot be deleted (ON DELETE RESTRICT).
 		wantRestrict(t, admin, "DELETE FROM trove.ci_issuers WHERE id = $1", ciIssuerA)

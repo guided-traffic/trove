@@ -373,12 +373,17 @@ works only together with the restore package's fix-ups.
 | [authz/journal_replay_exposure.go](../../internal/authz/journal_replay_exposure.go) | the handler of `endpoint.exposure.updated` and `.deleted` (R-EP-020): the rule found by endpoint and name and acted on only with the entry's rule ID and repository ID (Q-EP-77), `exposureNarrower` (rules 1 to 4, package patterns folded with the format's name rule, no range or glob containment, Q-EP-79), the strict reading of a journaled state and the API's validation of an after-state (Q-EP-78), the writes through the rule's row and the change area `authz`; `JournalReplaySubject`, the caller of a replayed write that goes through a service |
 | [ci/journal_replay.go](../../internal/ci/journal_replay.go) | the handlers of `ci.issuer.*` and `ci.mapping.*` updates, disables and deletions (R-CI-020): `issuerNarrower` and `mappingNarrower` over the records the producers write (`readStrict`), a deleted issuer or mapping disabled through the services' own transaction helpers (`writeUpdate`, `revokeTokens`, `setStatus`, `bump`, `applyBindings`), and `fallThrough` (Q-CI-11): every later enabled mapping of the tier suspended, each returned as a further result |
 | [ci/restored.go](../../internal/ci/restored.go) | `predatesRestore`, the restore cut-off of R-CI-018, and the note of R-CI-029's restore column |
+| [vuln/triage/journal_replay.go](../../internal/vuln/triage/journal_replay.go) | the handler of the download blocks (`vulnerability.finding.status_changed` and `.reopened` with `block: set`, R-VULN-013, H-489): the finding found by ID and acted on only with the entry's ecosystem, package and version (Q-VULN-115); `blocked` set again from every other status, a lift after the restore point not being journaled (Q-VULN-114); the statements of [journal_vuln.sql](../../internal/meta/postgres/queries/journal_vuln.sql) and the finding's history row |
 | [journal/replay.go](../../internal/journal/replay.go) | `Result.Also` and `Result.Flat`: an entry's further results; `Summary.Add` counts each, the replayer prints each on a line of its own |
 
 - **What a replayed write does.** The handlers write the object with the statements the API uses, under the lock it takes, and notify
   the change areas through `journal.Env` (`Env.Notify`; a restore without a change log passes no notifier and nothing is notified). They
   write no audit event (Q-AUTHZ-232); the CI services' helpers run with `audit.Nop`, so neither a disable nor its token revocation
   records `ci.*` or `ci.token.revoked`, and nothing re-enters the journal.
+- **Validation before comparison.** The CI handlers merge a journaled after-state into the restored object and run the API's
+  validation of a save on it (`validIssuer`, `validMapping`, with the `ci.token` ceiling left open); a record the API would refuse
+  makes the update rule suspend (Q-CI-68). A lifetime bound of 0 or less reads as unbounded, as the writer stores it, and migration
+  `ci_bounds` refuses a negative skew and a bound of zero in the schema (Q-CI-69).
 - **The format catalog.** The exposure handler reads the name rule and the range syntax of a rule's format from `catalog.Default()`. The
   binary that replays must register the formats (`internal/formats/all`, which the `trove` binary links); without them every update of
   an exposure rule is suspended, never applied.

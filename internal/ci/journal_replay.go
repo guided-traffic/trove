@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/ci/claims"
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/journal"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -60,10 +63,19 @@ type ciReplayWriter struct {
 
 func newCIReplayWriter(env journal.Env) ciReplayWriter {
 	revoker := &TokenRevoker{o: RevokerOptions{Changes: env, Recorder: audit.Nop{}}}
+	cfg := replayCIConfig()
 	return ciReplayWriter{
-		issuers:  &Service{o: Options{Changes: env, Recorder: audit.Nop{}, Revoker: revoker}},
-		mappings: &MappingService{o: MappingsOptions{Changes: env, Recorder: audit.Nop{}, Revoker: revoker}},
+		issuers:  &Service{o: Options{Changes: env, Recorder: audit.Nop{}, Revoker: revoker, Config: cfg}},
+		mappings: &MappingService{o: MappingsOptions{Changes: env, Recorder: audit.Nop{}, Revoker: revoker, Config: cfg}},
 	}
+}
+
+// replayCIConfig is the ci section the replay validates a merged record with (Q-CI-68). A replay does not know the
+// installation's ci.token bounds, so the ceiling is open and the floor is the validators' own of one second: the
+// comparator keeps the after-state's bound not larger than the restored one, which met the installation's ceiling
+// when it was saved.
+func replayCIConfig() config.CI {
+	return config.CI{Token: config.CIToken{MaxTTL: time.Duration(math.MaxInt64)}}
 }
 
 // ciDetail is the detail of a result.
@@ -123,6 +135,10 @@ func replayIssuer(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Ob
 	cmp := issuerNarrower{}
 	current := issuerJournalState{Valid: true, Record: *recordOf(cur)}
 	before, after := readIssuerState(e.Before), readIssuerState(e.After)
+	if after.Valid && !w.validIssuer(mergeIssuer(cur, after.Record)) {
+		// An after-state the API would refuse proves nothing (Q-CI-68).
+		after = issuerJournalState{}
+	}
 	if cmp.Narrows(current, after) && cmp.Narrows(after, current) {
 		res.Outcome = journal.AlreadyInEffect
 		return res, nil
@@ -170,6 +186,12 @@ func (w ciReplayWriter) disableIssuer(ctx context.Context, tx meta.Tx, qs *q.Que
 // updateIssuer sets the access-bearing fields of the issuer to the journaled after-state; name, issuer, kind,
 // description and source stay (R-CI-020).
 func (w ciReplayWriter) updateIssuer(ctx context.Context, tx meta.Tx, qs *q.Queries, cur Issuer, after record) error {
+	_, err := w.issuers.writeUpdate(ctx, tx, qs, replayCaller(), cur, mergeIssuer(cur, after))
+	return err
+}
+
+// mergeIssuer is the issuer a replay would write: the restored issuer with the access-bearing fields of the record.
+func mergeIssuer(cur Issuer, after record) Issuer {
 	next := cur
 	next.Enabled = after.Enabled
 	next.DiscoveryURL, next.JWKSURI, next.CABundleRef = after.DiscoveryURL, after.JWKSURI, after.CABundleRef
@@ -178,8 +200,30 @@ func (w ciReplayWriter) updateIssuer(ctx context.Context, tx meta.Tx, qs *q.Quer
 	next.RequiredClaims, next.PublicIssuer, next.PinClaims = after.RequiredClaims, after.PublicIssuer, after.PinClaims
 	next.SingleUseSubjectTokens, next.MaxTTLSeconds = after.SingleUseSubjectTokens, after.MaxTTLSeconds
 	next.UseOutboundProxy, next.JobTokenFallback = after.UseOutboundProxy, after.JobTokenFallback
-	_, err := w.issuers.writeUpdate(ctx, tx, qs, replayCaller(), cur, next)
-	return err
+	return next
+}
+
+// validIssuer runs the API's validation of an issuer (buildIssuer, R-CI-001, R-CI-002) on a merged record, every member
+// given so that no default fills in: a clock skew outside 0 to 300 seconds, a lifetime bound below one second, an empty
+// audience list or an algorithm the API refuses make the record one the replay must not write (Q-CI-68).
+func (w ciReplayWriter) validIssuer(next Issuer) bool {
+	list := func(s []string) []string {
+		if s == nil {
+			return []string{}
+		}
+		return s
+	}
+	flag := func(v bool) *bool { return &v }
+	skew, fallback := next.ClockSkewSeconds, next.JobTokenFallback
+	_, fields := buildIssuer(IssuerInput{
+		Name: next.Name, Kind: next.Kind, Issuer: next.Issuer, Description: next.Description, Enabled: flag(next.Enabled),
+		DiscoveryURL: next.DiscoveryURL, JWKSURI: next.JWKSURI, AllowedAudiences: list(next.AllowedAudiences),
+		ExclusiveAudience: flag(next.ExclusiveAudience), AllowedAlgorithms: list(next.AllowedAlgorithms), AllowedTyp: list(next.AllowedTyp),
+		AllowMissingTyp: flag(next.AllowMissingTyp), ClockSkewSeconds: &skew, RequiredClaims: list(next.RequiredClaims),
+		PublicIssuer: flag(next.PublicIssuer), PinClaims: list(next.PinClaims), SingleUseSubjectTokens: flag(next.SingleUseSubjectTokens),
+		MaxTTLSeconds: next.MaxTTLSeconds, CABundleRef: next.CABundleRef, UseOutboundProxy: flag(next.UseOutboundProxy), JobTokenFallback: &fallback,
+	}, w.issuers.limits())
+	return len(fields) == 0
 }
 
 // issuerJournalState is an issuer record as the comparator reads it. Valid is false for a record that did not read
@@ -231,8 +275,8 @@ func (issuerNarrower) Narrows(current, after issuerJournalState) bool {
 	case c.ExclusiveAudience && !a.ExclusiveAudience, c.SingleUseSubjectTokens && !a.SingleUseSubjectTokens,
 		!c.AllowMissingTyp && a.AllowMissingTyp, !c.JobTokenFallback.Enabled && a.JobTokenFallback.Enabled:
 		return false
-	// after is not larger.
-	case a.ClockSkewSeconds > c.ClockSkewSeconds, !ttlNotLarger(c.MaxTTLSeconds, a.MaxTTLSeconds):
+	// after is not larger, and not below zero: a negative skew moves the restore cut-off of R-CI-018 before restored_at.
+	case a.ClockSkewSeconds > c.ClockSkewSeconds, a.ClockSkewSeconds < 0, !ttlNotLarger(c.MaxTTLSeconds, a.MaxTTLSeconds):
 		return false
 	}
 	return true
@@ -313,16 +357,14 @@ func (w ciReplayWriter) updateMapping(ctx context.Context, tx meta.Tx, qs *q.Que
 	}
 	var rg resolvedGrants
 	if after.Valid {
-		var fields []errs.FieldError
-		var err error
-		// The policies of a pure removal are the mapping's own; a name the restored database does not resolve makes
-		// the after-state one the replay cannot write, which proves nothing.
-		if rg, fields, err = w.mappings.resolveGrants(ctx, qs, m.Project, m.PrincipalID, after.Record.Grants); err != nil {
+		ok, resolved, err := w.validMapping(ctx, qs, m, after.Record)
+		if err != nil {
 			return res, err
 		}
-		if len(fields) > 0 {
+		if !ok {
 			after = mappingJournalState{}
 		}
+		rg = resolved
 	}
 	var err error
 	res.Outcome, res.Detail, err = journal.ApplyUpdate(cmp, current, before, after, journal.UpdateActions{
@@ -364,6 +406,34 @@ func (w ciReplayWriter) writeMapping(ctx context.Context, tx meta.Tx, qs *q.Quer
 }
 
 var errMappingVanished = errors.New("ci: the mapping vanished under its issuer's lock")
+
+// validMapping runs the API's save validation (shapeFields and check: the shape, the claim engine's rules with the
+// actions the policies and groups give, the project's bounds) on the mapping as the replay would write it, and returns the
+// resolved grants for the write. A violation makes the after-state one the replay must not write (Q-CI-68); a failure of
+// the database is an error.
+func (w ciReplayWriter) validMapping(ctx context.Context, qs *q.Queries, m Mapping, after mappingRecord) (bool, resolvedGrants, error) {
+	enabled, opts := m.Enabled, after.Options
+	in := MappingInput{
+		Name: m.Name, Description: m.Description, Priority: m.Priority, Enabled: &enabled, SubjectKinds: m.SubjectKinds,
+		Match: m.Match, Grants: after.Grants, MaxTTLSeconds: after.MaxTTLSeconds, Options: &opts,
+	}
+	if len(w.mappings.shapeFields(in)) > 0 {
+		return false, resolvedGrants{}, nil
+	}
+	is, ok, err := loadByID(ctx, qs, m.IssuerID)
+	if err != nil || !ok {
+		return false, resolvedGrants{}, err
+	}
+	sv, err := w.mappings.check(ctx, qs, is, tierRef{tier: m.Tier, project: m.Project}, m.ProjectID, m.PrincipalID, in)
+	var ce *claims.Error
+	switch e, isErr := errs.As(err); {
+	case err == nil:
+		return true, sv.grants, nil
+	case isErr && e.Kind == errs.Invalid, errors.As(err, &ce):
+		return false, resolvedGrants{}, nil
+	}
+	return false, resolvedGrants{}, err
+}
 
 // recordMapping moves the issuer's mappings_version and notifies ci_mappings, as every write of a mapping does
 // (R-CI-009), so a replica's copy of the issuer's mapping set is read again.
@@ -561,15 +631,22 @@ func equalPtr(a, b *string) bool {
 	return *a == *b
 }
 
-// ttlNotLarger: a nil bound is unbounded.
+// ttlNotLarger reads a bound as the writer stores it: nil, 0 and a negative number are unbounded, because the write
+// paths store a bound of 0 or less as NULL (ci_issuers.sql, ci_mappings.sql) and a read gives NULL back as unbounded.
 func ttlNotLarger(current, after *int64) bool {
-	switch {
-	case current == nil:
+	c, bounded := ttlBound(current)
+	if !bounded {
 		return true
-	case after == nil:
-		return false
 	}
-	return *after <= *current
+	a, bounded := ttlBound(after)
+	return bounded && a <= c
+}
+
+func ttlBound(p *int64) (int64, bool) {
+	if p == nil || *p <= 0 {
+		return 0, false
+	}
+	return *p, true
 }
 
 // sameNode compares two conditions as values.

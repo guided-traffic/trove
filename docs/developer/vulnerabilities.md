@@ -337,7 +337,8 @@ the security view is [security/vulnerability-scanning.md](../security/vulnerabil
 
 ### E · API and triage
 
-Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes),
+Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes,
+and in `journal_replay.go` the replay of a download block from the revocation journal, Q-VULN-114),
 [internal/vuln/store/api.go](../../internal/vuln/store/api.go) and [queries/vuln_api.sql](../../internal/meta/postgres/queries/vuln_api.sql) (the statements),
 [vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go), [vulnerabilities_views_api.go](../../internal/api/v1/vulnerabilities_views_api.go) (the handlers, the rescan,
 the `vulnerabilityData` block of `GET /system/info`), [wire_vuln_api.go](../../internal/app/wire_vuln_api.go) (the step `vuln-api`, which takes `vulnArea` for the

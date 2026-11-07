@@ -218,12 +218,13 @@ CREATE TABLE ci_issuers (
   allowed_typ                text[] NOT NULL DEFAULT '{JWT}',
   allow_missing_typ          boolean NOT NULL DEFAULT true,
   clock_skew                 interval NOT NULL DEFAULT '60 seconds'
-                               CHECK (clock_skew <= interval '300 seconds'),
+                               CHECK (clock_skew <= interval '300 seconds')
+                               CHECK (clock_skew >= interval '0 seconds'),            -- Q-CI-69
   required_claims            text[] NOT NULL,
   public_issuer              boolean NOT NULL DEFAULT true,
   pin_claims                 text[] NOT NULL,
   single_use_subject_tokens  boolean NOT NULL,              -- kind preset: false (gitlab), true (github, generic)
-  max_ttl                    interval,
+  max_ttl                    interval CHECK (max_ttl > interval '0 seconds'),       -- NULL: unbounded (Q-CI-69)
   ca_bundle_ref              text,
   use_outbound_proxy         boolean NOT NULL DEFAULT false,
   job_token_fallback         jsonb NOT NULL DEFAULT '{"enabled": false}',
@@ -1072,7 +1073,7 @@ CREATE TABLE ci_mappings (
   subject_kinds  text[] NOT NULL DEFAULT '{id_token}',
   match          jsonb NOT NULL,
   grants         jsonb NOT NULL,
-  max_ttl        interval,
+  max_ttl        interval CHECK (max_ttl > interval '0 seconds'),   -- NULL: unbounded (Q-CI-69)
   options        jsonb NOT NULL DEFAULT '{}',
   description    text NOT NULL DEFAULT '',
   version        bigint NOT NULL DEFAULT 1,
@@ -2173,7 +2174,12 @@ which every write moves) are ignored, and replay never changes identifying field
 and `kind` of an issuer; `name`, CI issuer and tier of a mapping. These, the record's `id`, and an
 issuer's `source` and `removedFromConfiguration` must be equal. A journaled record is read only when it
 has exactly the members the producer writes, each of its type; a missing member is a field the
-comparator cannot tell and makes it false like an unknown one. Lists compare as sets.
+comparator cannot tell and makes it false like an unknown one. Lists compare as sets. A lifetime bound of 0 or
+less reads as unbounded, as the write paths store it, and a negative `clock_skew_seconds` never narrows. Before the comparator
+sees an after-state, replay merges it into the restored object and runs the API's validation of a save on the result (the
+rules of R-CI-002 and R-CI-019, with the installation's `ci.token` ceiling left open, which the comparator's "not larger"
+keeps); a record the API would refuse proves nothing, so the update rule suspends the object
+([Q-CI-68](#q-ci-68--a-comparator-judges-the-record-the-replay-would-write-and-the-apis-validation-runs-on-it)). The schema refuses a negative skew and a bound of zero as well ([Q-CI-69](#q-ci-69--the-schema-refuses-a-negative-clock-skew-and-a-lifetime-bound-of-zero))
 
 | Object | Field | Narrowing difference allowed |
 |---|---|---|
@@ -4809,6 +4815,45 @@ selector gains a form that has no instance spelling (then (b)).
 
 **Applied in the spec:** R-CI-007 (the `scope` items), R-CI-009 (the tier's selectors). Code: `internal/ci/claims/selector.go`
 (`instanceForm`, `covers`, `disjoint`), `internal/ci/claims/scope.go` (`Freeze`), `internal/ci/claims/check.go`.
+
+### Q-CI-68 · A comparator judges the record the replay would write, and the API's validation runs on it
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the comparators of R-CI-020 read `maxTtlSeconds: 0` as a bound of 0, which "is not larger" than 3600, while the write paths
+store a bound of 0 or less as `NULL` and read it back as unbounded: a forged `ci.issuer.updated` or `ci.mapping.updated` with
+`"maxTtlSeconds": 0` removed the bound. A negative `clockSkewSeconds` passed as "not larger" and moved the restore cut-off of R-CI-018
+before `restored_at`. Both are values the API refuses on a save.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Fix the two comparisons only | 0 and below unbounded, a negative skew no narrowing | Two lines | The next value the API refuses and the comparator does not know about opens the same hole: the comparator orders values, it does not judge whether a value can be stored |
+| (b) Run the API's validation on the merged record, a failure is "cannot tell"; and the two comparisons as in (a) (chosen) | The restored object with the journaled access fields goes through `buildIssuer`, or through `shapeFields` and the save's `check` of a mapping (the claim engine's rules with the actions its policies and groups give, the project's bounds); a violation makes the after-state invalid and the update rule suspends | A replay writes only what an administrator could have saved; the comparator and the validator each fail closed on their own | The installation's `ci.token` ceiling is unknown to a replay, so the validation leaves it open; the comparator's "not larger" keeps the after-state at or under the restored bound, which met it |
+| (c) Refuse in the schema only | CHECK constraints | Cannot be bypassed | The transaction fails, so a forged entry would stop the replay instead of suspending the object |
+
+**Choice:** (b), with the constraints of [Q-CI-69](#q-ci-69--the-schema-refuses-a-negative-clock-skew-and-a-lifetime-bound-of-zero) beside it.
+**Rationale:** the comparator answers "narrower than the restored state" and the API's validation answers "storable"; an after-state
+needs both, and the API's rules are the ones a reviewer already trusts. The development agent would revisit the open ceiling if a
+replay ever runs with the installation's configuration at hand.
+**Applied:** R-CI-020 (comparators); `validIssuer`, `validMapping`, `ttlNotLarger` and the issuer comparator in
+`internal/ci/journal_replay.go`; `TestR_CI_020_TheBoundsReadAsTheWriterStoresThem`, `TestR_CI_020_IssuerAndMappingEntriesReplayIntoTheRestoredDatabase`.
+
+### Q-CI-69 · The schema refuses a negative clock skew and a lifetime bound of zero
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `ci_issuers.clock_skew` had an upper bound only, and `max_ttl` of issuers and mappings none; the API and the configuration
+refuse a negative skew and a bound below one second, and the write paths store a bound of 0 or less as `NULL`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No constraint | The validators alone | Nothing to migrate | A write path that skips the validators (a replay, a hand-written statement) stores a value every reader takes for something else |
+| (b) `CHECK (clock_skew >= interval '0 seconds')` and `CHECK (max_ttl > interval '0 seconds')`, `NULL` the unbounded value (chosen) | The migration `ci_bounds` | The schema says what the readers assume; no stored row breaks it, because the write paths never store either value | A statement that would break it fails its transaction instead of being stored |
+
+**Choice:** (b).
+**Rationale:** the readers of R-CI-018 and R-CI-016 rely on both bounds; a constraint is the one place no path can skip. The
+development agent would revisit this with a third unbounded encoding of a lifetime, which there is none of.
+**Applied:** R-CI-001 and R-CI-009 (the data models); the migration `ci_bounds` in `internal/meta/postgres/migrations`; `TestCIMigration`.
 
 ## What this does not cover
 
