@@ -37,6 +37,7 @@ import { ErrorNotice } from './shared/error-notice';
 import { Notices } from './shared/notices';
 import { SessionDialog } from './shared/session-dialog';
 import { TroveMark } from './shared/brand/trove-mark';
+import { TroveAvatar } from './shared/ui/avatar';
 import { ProjectSwitcher } from './features/projects/project-switcher';
 
 /** Whether a route on the path to the active screen carries `data: { bare: true }`. */
@@ -67,6 +68,7 @@ function isBare(route: ActivatedRouteSnapshot | null): boolean {
     OpenSubmenuOnClick,
     CdkTrapFocus,
     TroveMark,
+    TroveAvatar,
     ProjectSwitcher,
     Banner,
     ErrorNotice,
@@ -133,8 +135,6 @@ export class App {
   /** The area of the current route: its sidebar shows, and the Admin button is pressed in the admin area. */
   protected readonly area = computed(() => Navigation.areaOf(this.url()));
   protected readonly sidebarArea = computed(() => this.navigation.area(this.area()));
-  /** The first letter of the signed-in name, for the badge of the user menu. */
-  protected readonly initial = computed(() => (this.session.whoami()?.principal?.name ?? '').trim().charAt(0));
   protected readonly themes: readonly { value: UiTheme | null; label: string; icon: string }[] = [
     { value: null, label: $localize`:@@shell.theme.system:Follow the system`, icon: 'brightness_auto' },
     { value: 'light', label: $localize`:@@shell.theme.light:Light`, icon: 'light_mode' },

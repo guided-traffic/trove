@@ -148,19 +148,13 @@ trove-root {
     }
   }
 
-  // The round badge with the first letter of the name; decoration, the name is in the button's accessible name.
+  // The round avatar: the user's generated robot (TroveAvatar) on the strong surface fill; decoration, the name is in the
+  // button's accessible name.
   .avatar {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     inline-size: 2rem;
     block-size: 2rem;
     border-radius: 50%;
-    background: var(--trove-accent-fill);
-    color: var(--trove-on-accent);
-    font-size: 0.875rem;
-    font-weight: 600;
-    text-transform: uppercase;
+    background: var(--trove-surface-variant);
   }
 
   // ---- Frame, sidebar and panel ----------------------------------------------------------------

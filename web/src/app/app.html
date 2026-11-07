@@ -84,8 +84,8 @@
       @switch (session.state()) {
         @case ('authenticated') {
           <button type="button" class="user-button" [cdkMenuTriggerFor]="userMenu">
-            <span class="avatar" aria-hidden="true" translate="no">{{ initial() }}</span>
-            <!-- The name is the first part of the accessible name; the avatar shows its first letter. -->
+            <trove-avatar class="avatar" aria-hidden="true" [seed]="session.whoami()?.principal?.id ?? ''" />
+            <!-- The name is the first part of the accessible name; the avatar is the user's generated robot. -->
             <span class="visually-hidden"
               ><span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span
               >&ngsp;<ng-container i18n="@@shell.user-menu">User menu</ng-container></span

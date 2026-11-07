@@ -82,6 +82,18 @@ for (const locale of locales) {
   }
 }
 
+// R-UI-002, Q-UI-167: the generated avatar needs no host but the origin's own. DiceBear also runs as an HTTP service
+// (api.dicebear.com); no script of the build may name it.
+for (const locale of locales) {
+  const dir = join(built, locale);
+  for (const name of readdirSync(dir).filter((n) => n.endsWith('.js'))) {
+    if (/api\.dicebear\.com/.test(readFileSync(join(dir, name), 'utf8'))) {
+      console.error(`build-embed: ${join(locale, name)} names the DiceBear HTTP service`);
+      process.exit(1);
+    }
+  }
+}
+
 // The notices (Q-UI-144). Angular writes its file next to the locale directories; the second bundle extracts its own.
 function angularNotices() {
   if (mark !== '1') return readFileSync(join(root, 'dist', 'web', notices), 'utf8');
@@ -101,13 +113,18 @@ function iconFontNotice() {
 // Angular's file ends with the rule that opens each package's section; the icon font's section follows it.
 const angular = angularNotices().trimEnd();
 const text = `${angular.endsWith(rule) ? angular : `${angular}\n${rule}`}\n${iconFontNotice()}`;
-// The notices must name Inter with its OFL-1.1 licence and the icon font with its Apache-2.0 licence, or the build fails.
+// The notices must name Inter with its OFL-1.1 licence, the icon font with its Apache-2.0 licence, and DiceBear's core with
+// the licence of the Bottts style (the artist's "free for personal and commercial use", Q-UI-167), or the build fails.
 const required = [
   '\nPackage: @fontsource-variable/inter\n',
   'License: "OFL-1.1"',
   'SIL OPEN FONT LICENSE Version 1.1',
   '\nPackage: material-icons\n',
   'License: "Apache-2.0"',
+  '\nPackage: @dicebear/core\n',
+  '\nPackage: @dicebear/styles\n',
+  '### Bottts\n',
+  'Free for personal and commercial use',
 ];
 const missing = required.filter((s) => !text.includes(s));
 if (missing.length > 0) {

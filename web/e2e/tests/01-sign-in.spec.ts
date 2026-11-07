@@ -10,9 +10,20 @@ test('R-UI-004 R-AUTH-009 sign-in with the identity provider and sign-out', asyn
   await expect(page.locator('.user-name')).toHaveText('alice');
   await expectAccessible(page, 'start page after the sign-in');
 
+  // R-UI-002: the user's generated robot comes out of the UI's own bundle; while the shell renders again after a reload,
+  // no request leaves the origin (the robot is a data URI, its library a chunk of the bundle).
+  const origin = new URL(page.url()).origin;
+  const foreign: string[] = [];
+  page.on('request', (r) => {
+    if (/^https?:/.test(r.url()) && new URL(r.url()).origin !== origin) foreign.push(r.url());
+  });
+
   // A reload is another request, on another replica, and the session holds.
   await page.reload();
   await expect(page.locator('.user-name')).toHaveText('alice');
+  await expect(page.locator('header .user-button .avatar img')).toHaveAttribute('src', /^data:image\/svg\+xml/);
+  expect(foreign, 'requests to another origin while the shell renders').toEqual([]);
+  page.removeAllListeners('request');
 
   await signOut(page);
   await expect(page).toHaveURL(/\/ui\/en\/logged-out/);

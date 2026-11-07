@@ -2597,9 +2597,22 @@ Priority: **MVP** · Covers: UI-001, UI-004
   holds `repositories:read-config`, because that list is the API behind it. The **Documentation** link (R-UI-050) opens
   the manual page of the current screen, or the overview of the help area, which is titled "Documentation" like the link
   (owner, 2026-11-06; Q-UI-90). The theme button offers
-  "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round badge with the
-  first letter of the name, the name in its accessible name and on top of the menu, and holds profile, client setup,
-  language and sign-out. The global
+  "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu is a round 32 px avatar, the
+  name in its accessible name and on top of the menu, and holds profile, client setup, language and sign-out. The
+  avatar (owner, 2026-11-07: "Ich möchte, dass im Frontend eine Kopie von DiceBear mit dem Style Bottts genutzt wird, um
+  Usern die noch kein Avatar hochgeladen haben, ein dynamisches zugeordnet bekommen. Wichtig ist mir hier, dass keine
+  externen Quellen zur Laufzeit benötigt werden. Alles zu DiceBear muss sich zur Laufzeit bereits im web-Container
+  befinden und von dort ausgeliefert werden."): a user without an uploaded avatar gets a generated robot in DiceBear's
+  "Bottts" style, the same one for the same user everywhere and in every session, seeded with the user's ID
+  ([Q-UI-166](#q-ui-166--the-avatar-is-seeded-with-the-id-of-the-principal)). DiceBear's core and the Bottts style are
+  dependencies of the UI, bundled by its build and served by trove with the rest of the UI; the browser renders the SVG
+  itself and shows it as a data URI, and no request goes to DiceBear's HTTP service, a CDN or any other host at runtime
+  ([Q-UI-167](#q-ui-167--the-robot-is-rendered-in-the-browser-from-the-bundled-bottts-style-and-loaded-as-a-lazy-chunk)). An
+  uploaded avatar, once the product has one, takes precedence over the robot (the avatar component takes an optional image
+  URL; there is no upload yet). The robot is decoration, as the letter was: `alt=""`, the name beside it names the
+  button. The robot sits on the surface fill of the theme, so it reads in both colour schemes
+  ([Q-UI-168](#q-ui-168--the-robot-keeps-the-badge-the-letter-had-on-the-themes-surface-fill)). The avatar is shown in the
+  top bar only; other screens get one when the reference's screen for them shows one and the owner asks for it. The global
   search over packages and files (P1, R-UI-015) takes its place in the same bar when its API exists. The project is not
   chosen in the top bar but by the address and the project's side bar
   ([Q-UI-129](#q-ui-129--the-project-is-the-context-of-the-content-chosen-from-your-projects)). A configurable server name is P2 on
@@ -2665,6 +2678,10 @@ Acceptance criteria:
   the list. On `/projects/web/repositories/npm-local` it reads "Projects / web / Repositories / npm-local", and no step
   links to a route that does not exist.
 - A user whose `authz/me` lacks `repositories:read-config` sees no search field in the top bar.
+- The top bar shows a robot avatar for a signed-in user, the same image after a reload and for the same user on another
+  replica or browser, and another image for another user; the image is a data URI, `alt=""` and hidden from assistive
+  technology; while the shell renders, no request leaves the origin; the build fails if a script of the bundle names
+  `api.dicebear.com` or the third-party notices lack DiceBear's licences.
 
 ### R-UI-003 · Route map and deep links
 Priority: **MVP** · Covers: UI-002
@@ -8466,6 +8483,85 @@ services.
 `web/src/app/core/navigation.ts`, `auth-guard.ts`, `help-topics.ts`, `web/src/app/app.routes.ts`. Tests: `security-dashboard.spec.ts`,
 `admin-home.spec.ts`, `vulnerabilities-api.spec.ts`; the browser journey `web/e2e/vuln/16-security-dashboard.spec.ts` (axe in both
 schemes). Documented in [web-ui.md](../developer/web-ui.md) and [vulnerabilities.md](../developer/vulnerabilities.md).
+
+### Q-UI-166 · The avatar is seeded with the ID of the principal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner's decision of 2026-11-07 (R-UI-002) gives every user without an uploaded avatar a generated robot that is
+the same everywhere. The seed decides the robot.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `principal.id` of `GET /api/v1/whoami` (chosen) | The UUID of the principal | Stable for the life of the account, so a rename changes nothing; not an address; already in the response the UI loads; the same on every replica and in every session | Not human-readable, which does not matter for an image |
+| (b) `principal.name` | The user name | Readable | A rename (an IdP that changes a username) changes the robot; two principal kinds can share a name |
+| (c) The e-mail address | The address of the identity provider | Stable at some IdPs | Personal data in a place that does not need it, and not every principal has one |
+| (d) The token or session ID | Per credential | None | Changes with every sign-in: the robot would not be the same |
+
+**Choice:** (a).
+**Rationale:** the ID is the identifier trove itself keys the principal by; it is not a secret (it is in the API response and
+the audit log). The development agent would revisit this when the user has an uploaded avatar (the image then wins) or when
+another principal kind needs a different identity.
+**Applied:** R-UI-002. Code: `web/src/app/app.html` (`[seed]="session.whoami()?.principal?.id"`), `web/src/app/shared/ui/avatar.ts`.
+
+### Q-UI-167 · The robot is rendered in the browser from the bundled Bottts style and loaded as a lazy chunk
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner (R-UI-002) wants DiceBear's Bottts avatars with nothing requested from outside at runtime; everything of
+DiceBear is to be in the web container. The UI's CSP admits `img-src 'self' data:` (`internal/webui/csp.go`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `@dicebear/core` and the style definition of `@dicebear/styles`, rendered in the browser, shown as a data URI in an `<img>`, in a lazy chunk (chosen) | `new Avatar(new Style(bottts.json), {seed, size, idRandomization: false}).toDataUri()` in `shared/ui/robot.ts`, imported dynamically by the avatar component | Nothing leaves the origin; the CSP stays as it is (no `innerHTML`, no `bypassSecurityTrust*`); the chunk (246 kB, 43 kB compressed) is not in the initial bundle, which stays at 588 kB | The robot appears a moment after the shell; an `<img>` of a data URI cannot take the theme's colours |
+| (b) The same, in the initial bundle | A static import | No flash | The initial bundle grows by 247 kB (to 835 kB), over the 800 kB warning of `angular.json`, for a 32 px image |
+| (c) The robots pre-rendered at build time | A set of SVG files | No library in the browser | A user is one of unboundedly many; a seed has no finite set of images |
+| (d) DiceBear's HTTP API or a CDN | `<img src="https://api.dicebear.com/…">` | No dependency | Forbidden by the owner; a request to a third party for every page load; the CSP would need the host |
+| (e) The server renders the SVG | A Go endpoint | No library in the browser | The DiceBear library is JavaScript; a second implementation of its generator would have to be kept equal to it |
+
+The style comes from `@dicebear/styles` (version 10 of DiceBear moved the styles out of per-style packages into definition
+files; `@dicebear/bottts` ends at 9.4.3 and needs core 9). Core 10.7.0 and styles 10.6.0 are the newest stable releases (both
+published 2026-08-26); `@dicebear/styles` has a version line of its own, so the two pins differ. Only `bottts.json` is imported, so the bundler
+takes that one definition (92 kB) and not the other styles of the package. Renovate's weekly group of non-major updates
+carries both; a major goes through the Dependency Dashboard approval (`renovate.json`).
+
+Licences (read in the installed packages): DiceBear's code, `@dicebear/core`, MIT (Florian Körner). The Bottts artwork is by
+Pablo Stanley, licence "Free for personal and commercial use" (https://bottts.com/), repeated in the `meta` block of the
+definition and in the metadata of every SVG the library renders; it permits this use. It asks for no attribution beyond the
+text kept in the SVG's metadata, and trove keeps it there. `@dicebear/styles` ships the licences of all its styles in
+`LICENSE.md`; Angular copies that file into `3rdpartylicenses.txt`, which every installation serves at
+`/ui/<locale>/3rdpartylicenses.txt` (Q-UI-144), so the notice of the Bottts artwork travels with the bundle. The notice also
+lists the licences of the styles that are not bundled (some are CC BY 4.0); they are not used. `web/scripts/build-embed.mjs`
+fails the build when the notice lacks `@dicebear/core`, `@dicebear/styles`, the Bottts entry or its licence text, and when a script
+of the bundle names `api.dicebear.com`.
+
+**Choice:** (a).
+**Rationale:** it is the only option that satisfies the owner's constraint without a second generator, and the lazy chunk keeps
+the initial budget (R-UI-001) where it was. The development agent would revisit this when the avatar is shown on enough
+screens that the flash matters, or when DiceBear's licensing of the Bottts artwork changes (the notice check would show it).
+**Applied:** R-UI-002, R-UI-001 (third-party notices). Code: `web/package.json` (exact pins), `web/src/app/shared/ui/robot.ts`,
+`avatar.ts`, `web/scripts/build-embed.mjs`. Tests: `avatar.spec.ts` (same seed same SVG, other seed other SVG, no external reference in the SVG,
+an uploaded URL wins), `app.spec.ts` (the top bar), `web/e2e/tests/01-sign-in.spec.ts` (no request leaves the origin).
+
+### Q-UI-168 · The robot keeps the badge the letter had, on the theme's surface fill
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the letter badge was a 32 px circle on the accent fill; the owner's rule is the reference's look without unasked
+styling, so the avatar keeps the 32 px circle and the hover (`brightness(1.1)`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A transparent SVG on `--trove-surface-variant` of the host (chosen) | `#ececef` in the light scheme, `#3a383f` in the dark one, round | Follows the chosen theme, including the explicit choice of R-API-021, which a data URI cannot; no new colour | The robot's dark parts sit on a dark fill in the dark scheme (the head is the robot's own colour and fills most of the circle) |
+| (b) A fixed background colour in the SVG (`backgroundColor`) | One colour for both schemes | The image is self-contained | A colour outside the palette; wrong in one of the schemes |
+| (c) The accent fill as before | `--trove-accent-fill` | Unchanged look | The accent is for actions; a robot on it looks like a button state |
+
+**Choice:** (a). The SVG is rendered at 64 px for sharpness at 2x and shown at 32 px (`inline-size: 2rem`); the options are
+only `seed`, `size` and `idRandomization: false` (the ids inside the SVG are not randomised, so the output is a function of the
+seed).
+**Rationale:** the least styling that works in both schemes. The development agent would revisit this when the owner
+wants a coloured background per user (`backgroundColor` in the options).
+**Applied:** R-UI-002. Code: `web/src/styles/_shell.scss` (`.avatar`), `web/src/app/shared/ui/avatar.ts`.
 
 ## What this does not cover
 

@@ -13,6 +13,7 @@ import { NavState } from './core/nav-state';
 import { BrowserStorage } from './core/storage';
 import { SessionStore } from './core/session-store';
 import { seriousViolations } from './testing/axe';
+import { robotDataUri } from './shared/ui/robot';
 
 async function render(url = '/', setup?: (api: FakeSessionApi) => void, pinned?: boolean, keepStorage = false) {
   if (!keepStorage) new BrowserStorage().clear('local');
@@ -289,11 +290,15 @@ describe('App shell', () => {
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
   });
 
-  it('R-UI-002 the user menu shows the initial and the name; the theme is not in it any more', async () => {
+  it('R-UI-002 the user menu shows the robot of the user ID and the name; the theme is not in it any more', async () => {
     const { fixture, root } = await render();
     const user = root.querySelector<HTMLButtonElement>('header .user-button')!;
     const name = user.querySelector('.user-name')?.textContent?.trim() ?? '';
-    expect(user.querySelector('.avatar')?.textContent?.trim()).toBe(name.charAt(0));
+    expect(name).toBe('alice');
+    const img = user.querySelector<HTMLImageElement>('.avatar img')!;
+    expect(img.getAttribute('alt')).toBe('');
+    expect(img.getAttribute('src')).toBe(robotDataUri('00000000-0000-0000-0000-000000000001'));
+    expect(user.querySelector('.avatar')?.getAttribute('aria-hidden')).toBe('true');
     user.click();
     await fixture.whenStable();
     const menu = [...document.querySelectorAll('.menu [role="menuitem"]')].map((e) => e.textContent?.trim());
