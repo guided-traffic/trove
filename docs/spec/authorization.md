@@ -1928,6 +1928,10 @@ of its partners without a system administrator. Delegation per policy (`manage`,
 - A project keeps at least one Owner: removing or demoting the last one answers 409 `last_owner` unless the caller holds
   `projects:write`, whose holder may leave a project without an Owner and administers it alone
   ([Q-AUTHZ-217](#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
+  Two Owners who remove each other at once: exactly one removal commits and the other Owner remains. The other request is
+  refused as what its caller is when it is decided: with 409 `last_owner` while the index it is decided on still holds the
+  caller's role, and with the `404` of a non-member (R-AUTHZ-016) once the first removal, which took the caller's own
+  membership, is in force there.
 
 What the Owner may do, within its project and nowhere else:
 
@@ -5236,14 +5240,22 @@ Owners. The installation guards its own administration the same way (`last_admin
 
 **Choice:** (a). The count is of membership rows with the role `owner`, a group among them, whatever the group's members:
 the write reads it under the project's row lock, so two Owners who remove each other at the same instant run one after
-the other and the second is refused.
+the other, exactly one removal commits and one Owner remains. The second request is refused as what its caller is when it is
+decided. Admission is decided on the request's index like every write (R-AUTHZ-028): an index that still holds the caller's
+role admits it, and the count under the lock answers 409 `last_owner`; an index that already holds the first removal knows
+the caller as no member, and the request answers the `404` of a non-member (R-AUTHZ-016). The member write does not read the
+caller's role again under the lock.
 
 **Rationale:** the rule protects the delegation, not the data: the project is administered by its team, and only the
 administrator who can name a new Owner may leave it without one. Counting rows keeps the check a property of what the
 project itself states. An Owner group that its identity provider empties leaves the project without an acting Owner, as
 an identity-provider group bound to a system role can (H-394); the administrators of trove remain. The development agent
 would revisit this if projects end up unadministered that way in practice; then the count would follow `last_admin`
-(active members only, Q-AUTHZ-70).
+(active members only, Q-AUTHZ-70). The loser of the race is refused either way and the invariant holds under the lock;
+reading the caller's role again there would make the answer the `404` in every case, but only for member writes, while
+every other write of an Owner or an administrator of trove is decided on the index of its request. The development agent would revisit that if
+writes decided on a stale role turn out to matter beyond this race; then every administering write reads the caller's role
+under the lock of what it changes.
 
 **Applied in the spec:** R-AUTHZ-026 (members and roles, the API table); [api-and-ui.md](api-and-ui.md) R-API-047,
 R-UI-041.

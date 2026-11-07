@@ -71,7 +71,10 @@ project's objects inside it. It does not repeat the model of permissions ([permi
 - The writes run under the project's row lock ([members.go](../../internal/project/members.go), `lockProject`). A write that would take
   the role `owner` from the last membership with it (a group counts as one, whatever its members) answers 409 `last_owner` unless the
   caller holds `projects:write` ([Q-AUTHZ-217](../spec/authorization.md#q-authz-217--the-last-owner-of-a-project-is-removed-or-demoted-only-by-an-administrator-of-trove)).
-  Two Owners who remove each other at once run one after the other, and the second is refused.
+  Two Owners who remove each other at once run one after the other: one removal commits and one Owner remains. The second request
+  is refused as what its caller then is: 409 `last_owner` while the index it is decided on still holds the caller's role, the 404
+  of a non-member once its own removal is in force there. The member write does not read the caller's role again under the lock,
+  like every write decided on its request's index (R-AUTHZ-028).
 - Every member write notifies the change area `authz` in its transaction, so the role takes effect or ends on every replica within the
   bound of R-AUTHZ-028. An addition records `authz.project.member_added`; a change and a removal record `member_changed` and
   `member_removed` with the journal entry of R-AUTHZ-031 (the project and the principal by ID, the roles of a change), so a restore
