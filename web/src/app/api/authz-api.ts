@@ -76,8 +76,16 @@ export function policyUrl(name: string, project: string | null): string {
 export class HttpPolicyApi extends PolicyApi {
   private readonly client = inject(ApiClient);
 
+  /**
+   * The policies of a project come from `GET /projects/{project}/policies`, which an Owner of the project may call
+   * (R-AUTHZ-026, Q-AUTHZ-209); the instance-wide list needs `policies:read`. The project is the path then, not a filter.
+   */
   override list(filters: PolicyFilters): PageFetcher<PermissionPolicy> {
-    return this.client.page<PermissionPolicy>('/api/v1/permission-policies', cleanQuery(filters));
+    const { project, ...rest } = filters;
+    if (project) {
+      return this.client.page<PermissionPolicy>(`/api/v1/projects/${seg(project)}/policies`, cleanQuery(rest));
+    }
+    return this.client.page<PermissionPolicy>('/api/v1/permission-policies', cleanQuery(rest));
   }
 
   override async load(name: string, project: string | null): Promise<LoadedPolicy> {

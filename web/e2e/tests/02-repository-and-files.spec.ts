@@ -40,7 +40,8 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
     await page.getByRole('button', { name: 'Next' }).click();
     // Inside a project the project is given, not chosen (Q-UI-129).
     await expect(page.getByLabel('Project', { exact: true })).toHaveCount(0);
-    await expect(page.getByText(e2eProject, { exact: true })).toBeVisible();
+    // The breadcrumb and the switcher name the project as well: the sentence of the step is what is asserted.
+    await expect(page.locator('p.subject')).toHaveText(`In the project ${e2eProject}`);
     await page.locator('#f-key').fill(repoKey);
     await expect(page.getByText('The key is available.')).toBeVisible();
     await expectAccessible(page, 'repository wizard, step basic settings');

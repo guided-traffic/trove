@@ -111,7 +111,7 @@ func allows(e *Engine, sub Subject, repo string, a ...Action) bool {
 	return e.Decide(context.Background(), sub, write(repo, "p", "", a...)).Outcome == Allow
 }
 
-func TestR_AUTHZ_207_MembershipsOnAnswersForUsersAndGroupsThroughSessionsAndAdminTokens(t *testing.T) {
+func TestR_AUTHZ_026_MembershipsOnAnswersForUsersAndGroupsThroughSessionsAndAdminTokens(t *testing.T) {
 	e := newTestEngine(t, projectFixture().project("project-api", "api").member("project-api", idAlice, "maintainer"), nil)
 	idx, err := e.Begin(t.Context(), aliceSub)
 	if err != nil {

@@ -340,7 +340,7 @@ func TestVuln_R_VULN_015_NPMBlockedInstallInTriage(t *testing.T) {
 			}
 			requireAll(t, c.row+" "+strings.Join(cmd, " ")+" of a blocked version", r.Out, "403")
 			if c.family() == "npm" {
-				requireAll(t, c.row+" "+strings.Join(cmd, " "), r.Out, "trove blocked "+spec+" in "+npmAllKey+": blocked in triage ("+e.advisoryOf[name]+")")
+				requireAll(t, c.row+" "+strings.Join(cmd, " "), r.Out, "trove blocked "+spec+" in "+qn(npmAllKey)+": blocked in triage ("+e.advisoryOf[name]+")")
 				if retry := retryNotice.FindString(r.Out); retry != "" {
 					t.Errorf("%s retried the refused request (%q): a 403 is final", c.row, retry)
 				}

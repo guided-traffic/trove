@@ -190,6 +190,9 @@ type api struct {
 	base  string // https://localhost:<edge port>, the default endpoint
 	token string
 	csrf  string
+	// minEpoch, when set, is sent as Trove-Authz-Min-Epoch on every request that names no value itself (R-AUTHZ-032): the
+	// client sees the grant changes its suite made, on whichever replica answers.
+	minEpoch string
 	// writes guards the write class of the token (withWriteBudget); nil guards nothing
 	writes *writeBudget
 }
@@ -407,6 +410,9 @@ func (a *api) send(method, path string, body any, h ...string) (reply, error) {
 	}
 	if unsafeMethod(method) && (a.c.Jar != nil) {
 		req.Header.Set("Origin", a.base)
+	}
+	if a.minEpoch != "" {
+		req.Header.Set("Trove-Authz-Min-Epoch", a.minEpoch)
 	}
 	for i := 0; i+1 < len(h); i += 2 {
 		if strings.EqualFold(h[i], "Host") {
@@ -638,8 +644,9 @@ func repoAPI(ref string) string {
 }
 
 var (
-	projectMu   sync.Mutex
-	projectMade bool
+	projectMu    sync.Mutex
+	projectMade  bool
+	projectEpoch string // Trove-Authz-Epoch of the creation of e2eProject; empty when the project existed already
 )
 
 // ensureE2EProject creates the project e2eProject unless it exists; it is idempotent over runs.
@@ -650,16 +657,22 @@ func ensureE2EProject(t testing.TB, adm *api) {
 	if projectMade {
 		return
 	}
-	adm.do(http.MethodPost, "/api/v1/projects", map[string]any{"key": e2eProject, "displayName": "End-to-end tests"}).
+	r := adm.do(http.MethodPost, "/api/v1/projects", map[string]any{"key": e2eProject, "displayName": "End-to-end tests"}).
 		want(t, "create the project "+e2eProject, 201, 409)
+	projectEpoch = r.Header.Get("Trove-Authz-Epoch")
 	projectMade = true
 }
 
-// adminAPI is a client with the bootstrap administrator's token; the project of the suite exists when it returns.
+// adminAPI is a client with the bootstrap administrator's token; the project of the suite exists when it returns, and the
+// client asks every replica for a grant index at least as new as the project's creation (Trove-Authz-Min-Epoch, R-AUTHZ-032),
+// so that the project's lists (R-REPO-012) do not answer 404 on a replica that has not built the index yet.
 func adminAPI(t testing.TB) *api {
 	t.Helper()
 	a := newAPI(t).withToken(adminToken(t))
 	ensureE2EProject(t, a)
+	projectMu.Lock()
+	a.minEpoch = projectEpoch
+	projectMu.Unlock()
 	return a
 }
 
