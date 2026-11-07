@@ -105,7 +105,7 @@ func (r *runState) exportTable(ctx context.Context, t backup.TableInfo) (format.
 		return format.TableFile{}, classify(fmt.Errorf("start the upload of %s: %w", t.Name, err))
 	}
 	fail := func(err error) (format.TableFile, error) {
-		_ = w.Abort(context.WithoutCancel(ctx))
+		r.abort(ctx, w)
 		r.forget(w)
 		return format.TableFile{}, err
 	}

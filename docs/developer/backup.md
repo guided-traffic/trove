@@ -421,6 +421,12 @@ from the pod's `job-name` label on the backup Job) tells `AcquireSlot` that the 
 so it waits for the lease instead of answering exit 3; a run of another Job or without a Job name still gets exit 3 at once
 ([Q-BAK-44](../spec/backup-and-restore.md#q-bak-44--a-retry-pod-of-the-same-job-takes-over-a-dead-run-at-once-any-other-pod-meets-the-heartbeat-rule)).
 
+The diff does three more things: a referenced blob whose row is not `ok` is listed and recorded as damaged with its status but
+never pinned, the previous blob list is hashed and counted while it streams and compared with its manifest before the hold turns
+`pinned`, and a server-side copy carries `ObjectRef.Progress` so that a long copy inside the store ticks the run
+([Q-BAK-54](../spec/backup-and-restore.md#q-bak-54--a-blob-whose-row-is-not-ok-is-listed-as-damaged-and-not-copied-and-the-previous-blob-list-is-verified-while-it-streams),
+[Q-BAK-55](../spec/backup-and-restore.md#q-bak-55--shutdown-and-exit-codes-of-the-create-run-aborts-have-a-deadline-a-stall-decides-its-exit-code-a-throttled-wait-is-progress)).
+
 The order that matters, with `Deps.Fault` points for tests between the steps: shared migration lock, hold `all` committed
 (`hold-all`), table locks and snapshot (`snapshot`), pins inserted and committed (`pins-committed`), hold `pinned`
 (`hold-pinned`), copy, last pin gone and hold `none` (`copied`), fence (`finalizing`), manifest. A pause at a point is how the

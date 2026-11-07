@@ -4,18 +4,12 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/backup"
-	"github.com/guided-traffic/trove/internal/blob"
-	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
 func actor() audit.Actor { return audit.Actor{Kind: "system", Name: "backup"} }
@@ -45,41 +39,8 @@ func newRunID(at time.Time) (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// classify gives an error from a dependency the exit code of R-BAK-013. Errors that already carry one, and the sentinels
-// internal/backup maps, pass through; a database or target that cannot be reached is temporary (75); anything else is a
-// failure of the run (1).
-func classify(err error) error {
-	if err == nil {
-		return nil
-	}
-	var ee *backup.ExitError
-	if errors.As(err, &ee) {
-		return err
-	}
-	if backup.ExitCode(err) != backup.ExitFailed {
-		return err
-	}
-	if errors.Is(err, backup.ErrSuperseded) || errors.Is(err, backup.ErrHoldLost) || errors.Is(err, backup.ErrPoolDamaged) || errors.Is(err, backup.ErrInvariantViolation) {
-		return err
-	}
-	if temporary(err) {
-		return backup.Fail(backup.ExitTemporary, backup.CodeTemporary, err)
-	}
-	return err
-}
-
-// temporary reports an unreachable database or target: retrying later is useful.
-func temporary(err error) bool {
-	var ne net.Error
-	switch {
-	case postgres.IsUnavailable(err), blob.IsTransient(err):
-		return true
-	case errors.As(err, &ne), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.ECONNREFUSED),
-		errors.Is(err, syscall.EPIPE), errors.Is(err, context.DeadlineExceeded):
-		return true
-	}
-	return false
-}
+// classify gives an error from a dependency the exit code of R-BAK-013 (backup.Classify).
+func classify(err error) error { return backup.Classify(err) }
 
 // group runs functions and cancels the rest when one fails; Wait returns the first error.
 type group struct {
@@ -116,9 +77,15 @@ type limiter struct {
 	mu   sync.Mutex
 	rate float64
 	next time.Time
+	// tick reports progress while a wait sleeps, in slices of at most slice: a throttled run is making progress as long as
+	// the throttle lets it (R-BAK-013), and its lease must not lapse in the sleep.
+	tick  func()
+	slice time.Duration
 }
 
-func newLimiter(bytesPerSecond int64) *limiter { return &limiter{rate: float64(bytesPerSecond)} }
+func newLimiter(bytesPerSecond int64) *limiter {
+	return &limiter{rate: float64(bytesPerSecond), slice: time.Second}
+}
 
 // wait reserves n bytes and sleeps until the reservation is due, with a burst of one second.
 func (l *limiter) wait(ctx context.Context, n int64) error {
@@ -137,12 +104,22 @@ func (l *limiter) wait(ctx context.Context, n int64) error {
 	if delay <= 0 {
 		return nil
 	}
-	t := time.NewTimer(delay)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case <-t.C:
-		return nil
+	for delay > 0 {
+		step := delay
+		if l.tick != nil && l.slice > 0 {
+			step = min(delay, l.slice)
+		}
+		t := time.NewTimer(step)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return context.Cause(ctx)
+		case <-t.C:
+		}
+		if l.tick != nil {
+			l.tick()
+		}
+		delay -= step
 	}
+	return nil
 }

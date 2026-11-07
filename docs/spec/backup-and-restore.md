@@ -464,6 +464,9 @@ needs to be copied again.
 1. The *previous backup* is the newest complete backup in the target (any incarnation). Its
    blob list minus its `blobs.damaged` is known to be in the pool, because pool objects are
    deleted only when no complete backup lists them (R-BAK-017).
+   The previous list is trusted only after it matched its manifest: while the merge streams it, the run hashes it and counts its
+   entries, and a mismatch of the SHA-256 or the count fails the run with `pool_damaged` before the hold turns `pinned`
+   (Q-BAK-54).
 2. The run merges the referenced set (a sorted stream from the snapshot) with the previous list (a
    sorted stream from the target) and produces in one pass:
    - the new blob list, written to `backups/<id>/blobs.idx.zst`;
@@ -498,6 +501,10 @@ needs to be copied again.
   either way, because a pool key is its content's digest.
 - **Source damage.** A `404` from the source, or a size that differs from `blobs.size`, is checked
   against the source database with `READ COMMITTED`:
+  - **A row that is not `ok`.** The snapshot reads `blobs.content_status` with the digest and size. A referenced blob whose status is
+    `missing` or `corrupt` is listed in the blob list and under `blobs.damaged` with that status, and it is not copied, even when an
+    earlier backup holds a pool object for it; the next backup copies it again once the repair has set the status back to `ok`
+    (Q-BAK-54);
   - row `live`: the blob is damaged in the source (R-STOR-027). It goes into `blobs.damaged`, the
     run continues and ends `completed_with_warnings`;
   - row `deleting` or gone: the hold was lost (R-BAK-007). The run fails with `hold_lost` and
@@ -2564,6 +2571,38 @@ A pod killed after the commit of step 9 and before its exit leaves a database wi
 **Choice:** (b), the memory bound, the already-restored rule and the mapping.
 **Rationale:** A restore that is retried by the Job must make progress on every attempt; each of the three cases would otherwise repeat for ever or fail a Job that succeeded. Revisit if the bound needs to be a key, or if a statement of the restore needs more than four times the stall timeout.
 **Applied:** R-BAK-013, R-BAK-021; `internal/backup/restore/restore.go` (`whileTicking`, `alreadyRestored`, `classify`), `internal/meta/postgres/backup_load.go` (`LoadPlan.Keepalive`), `internal/blob/s3/blobsink.go`.
+
+### Q-BAK-54 · A blob whose row is not ok is listed as damaged and not copied, and the previous blob list is verified while it streams
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Copy by digest only, as first built | Only a missing object or a wrong size is damage | Simple | A blob with `content_status = 'corrupt'` and the right size is copied and, via the previous list, never copied again: after the repair every later backup still points at the corrupt pool object and a restore serves it as `ok` |
+| (b) The snapshot reads the status; a blob that is not `ok` goes to `blobs.damaged` with it and is not copied (chosen) | `format.BlobEntry.Status`; the diff skips the pin; the previous list's `damaged` entries are not "known", so the first backup after the repair copies the blob over the old pool object | The pool never gains a copy of a blob the installation itself calls damaged; the repair of R-STOR-027 reaches the backups | A backup of an installation with damaged blobs ends `completed_with_warnings` until they are repaired (it did already for a missing object) |
+
+The same change checks the previous blob list the way the sweep checks the lists it merges (Q-BAK-30): the run hashes and counts it while the diff streams it, reads the rest after the merge, and fails with `pool_damaged` on a mismatch with the manifest's `blobs.sha256` and `blobs.referenced`, before the hold turns `pinned`.
+
+**Choice:** (b) and the verification.
+
+**Rationale:** The completeness of a backup rests on the previous list (R-BAK-007 safety); a list that is not the one its manifest names must not decide which blobs are skipped. The development agent would revisit this if the damaged set grows large enough that a per-run list in memory matters (it is the set of non-`ok` rows, normally empty).
+
+**Applied:** R-BAK-006; `internal/backup/format/bloblist.go` (`Status`), `internal/meta/postgres/backup_snapshot.go` (`BlobStream`), `internal/backup/create/diff.go`.
+
+### Q-BAK-55 · Shutdown and exit codes of the create run: aborts have a deadline, a stall decides its exit code, a throttled wait is progress
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) As first built | Aborts of open uploads run detached with no deadline; the error a cancelled stage ended with decides the exit code; a limiter sleeps silently; an unreadable marker is exit 1 | Nothing to change | A slow target keeps a run past the grace period of its pod, so it ends `abandoned` instead of `interrupted`; a stalled run whose last error carried an exit code of its own exits with that one and is not retried; a throttled copy longer than the lease loses it; a foreign object at the marker's key is retried instead of refused |
+| (b) Each abort runs under `Deps.AbortTimeout` (8 s) and all of them in parallel; `ErrStalled` and `ErrSuperseded` decide the exit code (75 `stalled`, 1 `superseded`); the rate limiter ticks while it sleeps; a marker that does not decode is exit 4 (chosen) | | The run ends inside the grace period; the Job retries a stall; a throttled copy keeps its lease | A multipart upload whose abort timed out is left to the target's lifecycle rule (R-BAK-015) |
+
+**Choice:** (b). The server-side copy's own progress is the callback of Q-BAK-51 (`ObjectRef.Progress`), set by the pipeline to tick the run's handle; the streaming copy passes the size of the object as `PutOptions.SizeHint`.
+
+**Rationale:** R-BAK-013 defines progress as anything the run waits on within a bound, and R-BAK-012 gives the pod 30 s to end. The development agent would revisit the abort deadline if pods get a shorter grace period.
+
+**Applied:** R-BAK-012, R-BAK-013, R-BAK-002; `internal/backup/create/create.go`, `run.go`, `util.go`, `copy.go`, `preflight.go`.
 
 ## What this does not cover
 

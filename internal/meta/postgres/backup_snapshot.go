@@ -430,11 +430,11 @@ type BlobStream struct {
 	rows pgx.Rows
 }
 
-// Next returns the next digest and size in ascending digest order, io.EOF after the last. A referenced row in state
-// deleting is ErrBackupInvariant.
-func (b *BlobStream) Next() (digest [32]byte, size int64, err error) {
+// Next returns the next digest, size and content status ("ok", "missing" or "corrupt") in ascending digest order, io.EOF after
+// the last. A referenced row in state deleting is ErrBackupInvariant.
+func (b *BlobStream) Next() (digest [32]byte, size int64, status string, err error) {
 	if b.rows == nil {
-		return digest, 0, io.EOF
+		return digest, 0, "", io.EOF
 	}
 	if !b.rows.Next() {
 		err = b.rows.Err()
@@ -443,27 +443,27 @@ func (b *BlobStream) Next() (digest [32]byte, size int64, err error) {
 		if err == nil {
 			err = io.EOF
 		}
-		return digest, 0, err
+		return digest, 0, "", err
 	}
 	var sha []byte
 	var state string
-	if err := b.rows.Scan(&sha, &size, &state); err != nil {
+	if err := b.rows.Scan(&sha, &size, &state, &status); err != nil {
 		b.rows.Close()
 		b.rows = nil
-		return digest, 0, err
+		return digest, 0, "", err
 	}
 	if len(sha) != len(digest) {
 		b.rows.Close()
 		b.rows = nil
-		return digest, 0, fmt.Errorf("a blobs row has a digest of %d bytes", len(sha))
+		return digest, 0, "", fmt.Errorf("a blobs row has a digest of %d bytes", len(sha))
 	}
 	copy(digest[:], sha)
 	if state == "deleting" {
 		b.rows.Close()
 		b.rows = nil
-		return digest, 0, fmt.Errorf("%w: %x", ErrBackupInvariant, sha)
+		return digest, 0, "", fmt.Errorf("%w: %x", ErrBackupInvariant, sha)
 	}
-	return digest, size, nil
+	return digest, size, status, nil
 }
 
 // Close releases the stream before the end.
@@ -479,7 +479,7 @@ func (b *BlobStream) Close() {
 // connection serves another call.
 func (s *BackupSnapshot) Referenced(ctx context.Context) (*BlobStream, error) {
 	blobs := pgx.Identifier{s.db.cfg.Schema, "blobs"}.Sanitize()
-	sql := fmt.Sprintf("SELECT b.sha256, b.size, b.state FROM %s b WHERE %s ORDER BY b.sha256", blobs, s.referencedPredicate(s.p.ExcludeRemoteCaches))
+	sql := fmt.Sprintf("SELECT b.sha256, b.size, b.state, b.content_status FROM %s b WHERE %s ORDER BY b.sha256", blobs, s.referencedPredicate(s.p.ExcludeRemoteCaches))
 	rows, err := s.tx.Query(ctx, sql)
 	if err != nil {
 		return nil, err

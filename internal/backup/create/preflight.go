@@ -177,6 +177,11 @@ func (r *runState) readMarker(ctx context.Context) (format.Marker, bool, error) 
 		return format.Marker{}, false, classify(fmt.Errorf("read the target marker: %w", err))
 	}
 	m, err := format.DecodeMarker(b)
+	var unknown *format.UnknownFormatError
+	if err != nil && !errors.As(err, &unknown) {
+		// Not a marker this lane wrote: another installation's target, or a foreign object at that key.
+		err = backup.Fail(backup.ExitForeignTarget, backup.CodeForeignTarget, fmt.Errorf("the target marker %s is not readable: %w", r.layout.Marker(), err))
+	}
 	return m, err == nil, err
 }
 

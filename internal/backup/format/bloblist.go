@@ -19,6 +19,9 @@ import (
 type BlobEntry struct {
 	Digest Digest
 	Size   int64
+	// Status is the blobs.content_status of the row the entry was read from in the snapshot, "missing" or "corrupt" for a
+	// damaged blob; empty means ok. It is not part of a blob list line (R-BAK-006 "Source damage").
+	Status string
 }
 
 // BlobIterator is a sorted stream of blob entries, ascending by digest without duplicates. Next returns io.EOF after the

@@ -84,6 +84,9 @@ type Deps struct {
 	// Fault is called at the named points of a run (see the point constants); a non-nil error ends the run there as a failure.
 	// An integration test pauses a run between two steps of the hold protocol with it.
 	Fault func(ctx context.Context, point string) error
+	// AbortTimeout bounds each abort of an open upload when a run ends, so that a target that does not answer cannot keep the run
+	// past the grace period of its pod; 0 means 8 s.
+	AbortTimeout time.Duration
 	// PinBatch is the number of pins inserted per transaction (Q-BAK-17); 0 means 2000.
 	PinBatch int
 }
@@ -121,6 +124,9 @@ func New(d Deps) (*Pipeline, error) {
 	}
 	if d.Registry == nil {
 		d.Registry = tables.Default()
+	}
+	if d.AbortTimeout <= 0 {
+		d.AbortTimeout = 8 * time.Second
 	}
 	if d.PinBatch <= 0 {
 		d.PinBatch = 2000
@@ -234,6 +240,14 @@ func (r *runState) finish(ctx, hctx context.Context, err error) (*backup.Result,
 	cause := err
 	if c := context.Cause(hctx); c != nil && (errors.Is(c, backup.ErrStalled) || errors.Is(c, backup.ErrSuperseded)) && !errors.Is(err, c) {
 		cause = fmt.Errorf("%w: %w", c, err)
+	}
+	// A stall or a takeover decides the exit code, whatever error the cancelled work ended with: the Job retries a stall (75) and
+	// reads a takeover as a failure (1).
+	switch {
+	case errors.Is(cause, backup.ErrStalled):
+		cause = backup.Fail(backup.ExitTemporary, backup.CodeStalled, cause)
+	case errors.Is(cause, backup.ErrSuperseded):
+		cause = backup.Fail(backup.ExitFailed, backup.CodeSuperseded, cause)
 	}
 	if errors.Is(cause, backup.ErrSuperseded) {
 		// The row was abandoned: it is not ours to write any more.

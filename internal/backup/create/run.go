@@ -161,9 +161,12 @@ func (r *runState) cleanup(ctx context.Context) {
 	ws := r.writers
 	r.writers = nil
 	r.writersMu.Unlock()
+	var wg sync.WaitGroup
 	for _, w := range ws {
-		_ = w.Abort(ctx)
+		wg.Add(1)
+		go func() { defer wg.Done(); r.abort(ctx, w) }()
 	}
+	wg.Wait()
 	r.snapMu.Lock()
 	snap := r.snap
 	r.snap = nil
@@ -175,9 +178,24 @@ func (r *runState) cleanup(ctx context.Context) {
 	}
 }
 
+// abort discards an open upload under a deadline of its own (Deps.AbortTimeout), on a context the signal did not cancel: a run
+// that ends on SIGTERM has the grace period of its pod, and a target that hangs must not use it up.
+func (r *runState) abort(ctx context.Context, w target.ObjectWriter) {
+	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.d.AbortTimeout)
+	defer cancel()
+	if err := w.Abort(actx); err != nil {
+		r.d.Log.Warn("could not abort an open upload; the lifecycle rule of the target removes it", "err", err)
+	}
+}
+
 // newWriter starts a streaming upload and remembers it, so an ended run aborts what it left open.
 func (r *runState) newWriter(ctx context.Context, key string) (target.ObjectWriter, error) {
-	w, err := r.d.Target.Writer(ctx, key, target.PutOptions{})
+	return r.newWriterHint(ctx, key, 0)
+}
+
+// newWriterHint is newWriter for an object of known size, so that the adapter picks a part size that fits it.
+func (r *runState) newWriterHint(ctx context.Context, key string, size int64) (target.ObjectWriter, error) {
+	w, err := r.d.Target.Writer(ctx, key, target.PutOptions{SizeHint: size})
 	if err != nil {
 		return nil, err
 	}

@@ -50,6 +50,7 @@ func (r *runState) copyBlobs(ctx context.Context) error {
 		return r.fault(ctx, PointCopied)
 	}
 	c := &copier{r: r, lim: newLimiter(int64(r.d.Cfg.Copy.BytesPerSecond))}
+	c.lim.tick, c.lim.slice = r.h.Tick, max(r.d.Cfg.HeartbeatInterval/2, 10*time.Millisecond)
 	g, _ := newGroup(ctx)
 	work := make(chan format.BlobEntry, 2*r.d.Cfg.Copy.Concurrency)
 	g.Go(func(ctx context.Context) error {
@@ -238,6 +239,7 @@ func (c *copier) transfer(ctx context.Context, e format.BlobEntry, key string) (
 		}
 		ref := r.d.Source.Ref(e.Digest)
 		ref.Size = e.Size
+		ref.Progress = func(int64) { r.h.Tick() } // a long copy inside the store is progress (R-BAK-013)
 		err := r.d.Target.Copy(ctx, ref, key)
 		switch {
 		case err == nil:
@@ -293,12 +295,12 @@ func (t *tickReader) Read(p []byte) (int, error) {
 // digest is computed; a stream that does not hash to the digest aborts the upload.
 func (c *copier) stream(ctx context.Context, e format.BlobEntry, key string) error {
 	r := c.r
-	w, err := r.newWriter(ctx, key)
+	w, err := r.newWriterHint(ctx, key, e.Size)
 	if err != nil {
 		return err
 	}
 	fail := func(err error) error {
-		_ = w.Abort(context.WithoutCancel(ctx))
+		r.abort(ctx, w)
 		r.forget(w)
 		return err
 	}

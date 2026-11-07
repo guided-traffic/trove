@@ -79,14 +79,17 @@ func (p *pgSnapshot) Info() SnapshotInfo { return p.info }
 type blobStream struct{ s *postgres.BlobStream }
 
 func (b blobStream) Next() (format.BlobEntry, error) {
-	d, size, err := b.s.Next()
+	d, size, status, err := b.s.Next()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return format.BlobEntry{}, io.EOF
 		}
 		return format.BlobEntry{}, mapSnapshotError(err)
 	}
-	return format.BlobEntry{Digest: d, Size: size}, nil
+	if status == "ok" {
+		status = ""
+	}
+	return format.BlobEntry{Digest: d, Size: size, Status: status}, nil
 }
 
 func (p *pgSnapshot) Referenced(ctx context.Context) (format.BlobIterator, error) {

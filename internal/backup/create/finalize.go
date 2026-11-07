@@ -106,10 +106,8 @@ func (r *runState) spotCheck(ctx context.Context) error {
 
 func (r *runState) buildManifest() (*format.Manifest, error) {
 	d := r.d
-	damaged := r.copied.damaged
-	if damaged == nil {
-		damaged = []format.DamagedBlob{}
-	}
+	damaged := append(append([]format.DamagedBlob{}, r.copied.damaged...), r.list.damaged...)
+	sort.Slice(damaged, func(i, j int) bool { return damaged[i].SHA256 < damaged[j].SHA256 })
 	files := r.tableFiles
 	if files == nil {
 		files = []format.TableFile{}

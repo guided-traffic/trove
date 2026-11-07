@@ -81,6 +81,9 @@ The target marker keeps a run from writing into another installation's target: i
 manifest, a mismatch is exit `4`, and a prefix with backups and no marker is refused as well. The marker is written only on an
 empty prefix; adopting a restored installation's target is a compare in the process followed by a write
 ([H-556](../spec/backup-and-restore.md#h-556--adopting-a-target-and-writing-its-marker-are-not-atomic-on-a-store-without-conditional-writes)).
+A blob whose row the installation calls damaged is listed as damaged and never copied, so the pool never gains a copy the
+installation itself distrusts; the previous blob list is trusted only after its SHA-256 and entry count matched its manifest
+([Q-BAK-54](../spec/backup-and-restore.md#q-bak-54--a-blob-whose-row-is-not-ok-is-listed-as-damaged-and-not-copied-and-the-previous-blob-list-is-verified-while-it-streams)).
 A streamed blob is hashed before it becomes a pool object; a blob that does not hash to its digest is recorded as damaged and is
 never copied. A blob copied inside the store is confirmed by size and, where the store reports one, its SHA-256.
 
