@@ -49,10 +49,14 @@ import (
 
 const (
 	ciIssuerName = "gitlab-com" // the name the Examples give the issuer
-	ciNpmInt     = "npm-internal"
-	ciNpmAll     = "npm-all"
-	ciNugetInt   = "nuget-internal"
-	ciNugetAll   = "nuget-all"
+	// ciProject is the project the specification's Examples name (web/npm-internal, /api/nuget/web/nuget-all/...): the fixture
+	// creates it with the four repositories, so that the examples are read unchanged. The constants are qualified references
+	// (repoRef keeps a reference with a "/"); ciKey returns the bare key of one.
+	ciProject    = "web"
+	ciNpmInt     = ciProject + "/npm-internal"
+	ciNpmAll     = ciProject + "/npm-all"
+	ciNugetInt   = ciProject + "/nuget-internal"
+	ciNugetAll   = ciProject + "/nuget-all"
 	ciPolicyName = "ci-read-internal"
 	ciSetupSA    = "e2e-ci-setup"
 	// The dev CA, which signs the double's certificate, as the pods of trove see it (deploy/dev/values-dev.yaml mounts it for
@@ -438,20 +442,22 @@ func buildCIFixture(t testing.TB) (*ciFixture, error) {
 
 	ciCleanSlate(t, adm)
 
-	// the repositories of R-CI-028; the virtual ones are npm-all and nuget-all
+	// the project of the Examples, then the repositories of R-CI-028 in it; the virtual ones are npm-all and nuget-all
+	adm.do(http.MethodPost, "/api/v1/projects", map[string]any{"key": ciProject, "displayName": "End-to-end tests: the project of the CI Examples"}).
+		want(t, "create the project "+ciProject, 201, 409)
 	for _, body := range []map[string]any{
-		{"key": ciNpmInt, "class": "local", "format": "npm", "requireAuthentication": true},
-		{"key": ciNugetInt, "class": "local", "format": "nuget"},
+		{"key": ciKey(ciNpmInt), "class": "local", "format": "npm", "requireAuthentication": true},
+		{"key": ciKey(ciNugetInt), "class": "local", "format": "nuget"},
 		{
-			"key": ciNpmAll, "class": "virtual", "format": "npm", "requireAuthentication": true,
-			"virtual": map[string]any{"members": []string{ciNpmInt}, "deployTarget": ciNpmInt},
+			"key": ciKey(ciNpmAll), "class": "virtual", "format": "npm", "requireAuthentication": true,
+			"virtual": map[string]any{"members": []string{ciKey(ciNpmInt)}, "deployTarget": ciKey(ciNpmInt)},
 		},
 		{
-			"key": ciNugetAll, "class": "virtual", "format": "nuget",
-			"virtual": map[string]any{"members": []string{ciNugetInt}, "deployTarget": ciNugetInt},
+			"key": ciKey(ciNugetAll), "class": "virtual", "format": "nuget",
+			"virtual": map[string]any{"members": []string{ciKey(ciNugetInt)}, "deployTarget": ciKey(ciNugetInt)},
 		},
 	} {
-		adm.do(http.MethodPost, reposRoute, body).want(t, fmt.Sprint("create ", body["key"]), 201)
+		adm.do(http.MethodPost, "/api/v1/projects/"+ciProject+"/repositories", body).want(t, fmt.Sprint("create ", body["key"]), 201)
 	}
 	// the policy of the mapping: no entry yet, the save of a mapping that lists it adds its own (R-CI-013)
 	adm.do(http.MethodPost, "/api/v1/permission-policies", map[string]any{
@@ -487,6 +493,9 @@ func buildCIFixture(t testing.TB) (*ciFixture, error) {
 	return fx, nil
 }
 
+// ciKey is the key of a qualified repository reference within its project.
+func ciKey(ref string) string { _, key, _ := strings.Cut(ref, "/"); return key }
+
 func ciMappingsPath() string { return "/api/v1/ci/issuers/" + ciIssuerName + "/mappings" }
 
 // ciCleanSlate removes what an earlier run left: the issuer with its mappings and tokens, the repositories (their keys are
@@ -504,7 +513,7 @@ func ciCleanSlate(t testing.TB, adm *api) {
 	}
 	for _, key := range []string{ciNpmAll, ciNugetAll, ciNpmInt, ciNugetInt} {
 		waitFor(t, "the repository key "+key+" to be free", 3*time.Minute, 2*time.Second, func() bool {
-			return adm.get(reposBase+key).Status == 404
+			return adm.get(repoAPI(key)).Status == 404
 		})
 	}
 }
@@ -851,8 +860,8 @@ func (fx *ciFixture) publishDependencies(t testing.TB) error {
 	pod := npmClientPod(t, 0)
 	root := "/work/ci-setup-" + fx.run
 	_, _ = podExec(t, pod, "", time.Minute, "rm", "-rf", root)
-	rc := func(key string) string {
-		return fmt.Sprintf("registry=%s%s%s/\n//%s%s%s/:_authToken=${TROVE_TOKEN}\n", fx.base, npmBase, key, fx.host, npmBase, key)
+	rc := func(ref string) string {
+		return fmt.Sprintf("registry=%s%s/\n//%s%s/:_authToken=${TROVE_TOKEN}\n", fx.base, npmAddr(ref), fx.host, npmAddr(ref))
 	}
 	putTree(t, pod, root, map[string]string{
 		"lib/package.json": `{"name": "` + npmDependency + `", "version": "1.0.0", "main": "index.js"}` + "\n",
@@ -891,7 +900,7 @@ func (fx *ciFixture) publishDependencies(t testing.TB) error {
 		"nuget.config": `<?xml version="1.0" encoding="utf-8"?><configuration><packageSources><clear /></packageSources></configuration>` + "\n",
 		// the push source needs credentials of its own: the service index is fetched before the API key is sent
 		"push/nuget.config": `<?xml version="1.0" encoding="utf-8"?><configuration><packageSources><clear />
-<add key="trove-internal" value="` + fx.base + nugetBase + ciNugetInt + `/v3/index.json" /></packageSources>
+<add key="trove-internal" value="` + fx.base + nugetAddr(ciNugetInt) + `/v3/index.json" /></packageSources>
 <packageSourceCredentials><trove-internal><add key="Username" value="ci" /><add key="ClearTextPassword" value="%TROVE_TOKEN%" /></trove-internal></packageSourceCredentials></configuration>` + "\n",
 	})
 	nenv := []string{

@@ -52,7 +52,7 @@ func TestCITokens(t *testing.T) {
 		pod := npmClientPod(t, 1)
 		root := "/work/ci-client-npm-" + fx.run
 		_, _ = podExec(t, pod, "", time.Minute, "rm", "-rf", root)
-		putTree(t, pod, root, map[string]string{".npmrc": fmt.Sprintf("registry=%s%s%s/\n//%s%s%s/:_authToken=${TROVE_TOKEN}\n", fx.base, npmBase, ciNpmAll, fx.host, npmBase, ciNpmAll)})
+		putTree(t, pod, root, map[string]string{".npmrc": fmt.Sprintf("registry=%s%s/\n//%s%s/:_authToken=${TROVE_TOKEN}\n", fx.base, npmAddr(ciNpmAll), fx.host, npmAddr(ciNpmAll))})
 		npmEnv := []string{
 			"env", "-C", root, "HOME=" + root + "/home", "NODE_EXTRA_CA_CERTS=/etc/trove-ca/ca.crt", "TROVE_TOKEN=" + tok,
 			"npm_config_update_notifier=false", "npm_config_cache=" + root + "/cache",

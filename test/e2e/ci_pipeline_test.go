@@ -174,7 +174,7 @@ func TestCIPipeline(t *testing.T) {
 				repo = ciNugetInt
 			}
 			waitFor(t, what+": the audit entry of the publish in "+repo, 30*time.Second, time.Second, func() bool {
-				for _, e := range fx.audit(t, "repository="+qn(repo)) {
+				for _, e := range fx.audit(t, "repository="+repoRef(repo)) {
 					if e.Actor.TokenID == rec.TokenID && e.Outcome == "success" && writeAction.MatchString(e.Action) {
 						t.Logf("%s: audit entry %s of token %s", what, e.Action, rec.TokenID)
 						return true
