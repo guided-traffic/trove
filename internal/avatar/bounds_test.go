@@ -79,14 +79,14 @@ func TestR_API_055_StopsADecodeAtItsDeadline(t *testing.T) {
 		defer stop()
 		time.Sleep(time.Millisecond)
 		// decode derives its own timeout from the context it is given; a context that is already done ends it at once.
-		if _, err := decode(ctx, formatPNG, in); err == nil {
+		if _, err := decode(ctx, formatPNG, in, DecodeTimeout); err == nil {
 			t.Fatal("a decode with an expired context succeeded")
 		}
 	})
 	t.Run("R-API-055 the end of the request is the request's error, not a refusal of the image", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if _, err := decode(ctx, formatPNG, in); !errors.Is(err, context.Canceled) {
+		if _, err := decode(ctx, formatPNG, in, DecodeTimeout); !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v, want context.Canceled", err)
 		}
 	})

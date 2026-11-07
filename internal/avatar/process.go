@@ -87,13 +87,16 @@ var (
 type Processor struct {
 	slots chan struct{}
 	wait  time.Duration
+	// decodeTimeout is DecodeTimeout; a test of an accepted size raises it, because the race detector slows the decoder
+	// beyond the bound of production (Test and Release run 42409044656: 9.7 s for 2048 x 2048).
+	decodeTimeout time.Duration
 }
 
 // NewProcessor returns a Processor that decodes MaxConcurrent images at a time.
 func NewProcessor() *Processor { return newProcessor(MaxConcurrent, BusyWait) }
 
 func newProcessor(n int, wait time.Duration) *Processor {
-	return &Processor{slots: make(chan struct{}, n), wait: wait}
+	return &Processor{slots: make(chan struct{}, n), wait: wait, decodeTimeout: DecodeTimeout}
 }
 
 // format is one of the accepted formats.
@@ -152,7 +155,7 @@ func (p *Processor) Process(ctx context.Context, declared string, data []byte) (
 		return nil, err
 	}
 	defer release()
-	src, err := decode(ctx, f, data)
+	src, err := decode(ctx, f, data, p.decodeTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -239,8 +242,8 @@ func (p *Processor) acquire(ctx context.Context) (release func(), err error) {
 }
 
 // decode runs the decoder of the format. A decoder that panics on a crafted file is an image that does not decode.
-func decode(parent context.Context, f format, data []byte) (img image.Image, err error) {
-	ctx, cancel := context.WithTimeout(parent, DecodeTimeout)
+func decode(parent context.Context, f format, data []byte, timeout time.Duration) (img image.Image, err error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {

@@ -343,7 +343,11 @@ func TestR_API_055_RefusesTheDimensionsBeforeDecoding(t *testing.T) {
 		})
 	}
 	t.Run("R-API-055 the largest accepted area is accepted", func(t *testing.T) {
-		if _, err := proc().Process(context.Background(), "image/png", encodePNG(t, quadrant(2048, 2048))); err != nil {
+		// what is tested is the dimension check, not the decoder's speed: under the race detector a decode of 2048 x 2048
+		// can exceed DecodeTimeout on a throttled runner
+		p := proc()
+		p.decodeTimeout = time.Minute
+		if _, err := p.Process(context.Background(), "image/png", encodePNG(t, quadrant(2048, 2048))); err != nil {
 			t.Fatal(err)
 		}
 	})
