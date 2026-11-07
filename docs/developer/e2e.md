@@ -283,8 +283,11 @@ or replaces pods, and a container killed by its liveness probe takes its log wit
 ### E0.14
 
 1. Pick the node ([drain.sh --pick](../../deploy/dev/drain.sh)): a worker node with an `api`, a `packages` and a `worker`
-   pod, not the PostgreSQL primary's (its PodDisruptionBudget refuses the eviction). When the only such
-   node is the primary's, `failover.sh` moves the primary first.
+   pod. The drain evicts only the release's pods (`--pod-selector`), so PostgreSQL, Valkey and the object store on the
+   node keep running, as R-HA-059's acceptance test has them on other nodes. Evicting a PostgreSQL instance is not
+   trove's drain: until 2026-11-07 the test switched the primary away first, which left the synchronous standby on the
+   drained node; its eviction held every commit about 6 s until CloudNativePG dropped it (`dataDurability: preferred`),
+   and five uploads queued on one row lock met the lock timeout (`503 database_timeout`, Test and Release run 42402849059).
 2. Start a watch on the trove pods (every transition with its arrival time), stream the logs of the pods
    that will be drained, start the driver `load` and k6.
 3. Enqueue six `system.probe` jobs of 150 steps at 1 s, so that both workers run some.

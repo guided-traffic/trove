@@ -1068,8 +1068,10 @@ what "sized for it" means.
 
 **Acceptance test.** In a green full run of Test and Release on the commit that closes the phase, on the kind profile of R-HA-051 with three worker nodes; `packages`
 runs 3 replicas, the chart default, set with `--set packages.replicaCount=3` on top of
-`values-dev.yaml`, `api` 2 and `worker` 2 (before phase 6a: `web` 3 and `worker` 2). PostgreSQL and Valkey run on nodes other than the drained one,
-except where a variant says otherwise. The load starts 5 minutes before the drain and runs until
+`values-dev.yaml`, `api` 2 and `worker` 2 (before phase 6a: `web` 3 and `worker` 2). PostgreSQL and Valkey are not drained:
+they run on other nodes or stay on the cordoned node, because the drain evicts only the release's pods (`kubectl drain
+--pod-selector`; a drained synchronous standby of the dev profile holds every commit until the operator drops it, which is the
+platform's drain, row 5 above), except where a variant says otherwise. The load starts 5 minutes before the drain and runs until
 10 minutes after `kubectl drain` returns:
 
 | Load | Rate |
