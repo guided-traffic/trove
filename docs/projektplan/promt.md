@@ -236,6 +236,15 @@ Found on 2026-11-08 by the phase run's triage of 742 job logs (Test and Release 
 
 ### Product
 
+- **F-82 · Path-scoped grants may not apply on format protocol routes** (read in the code by the penetration test of T-16 WP4a,
+  2026-11-08, not reproduced). Format handlers call `Authorize` with a `formats.Target` without `Path` (NuGet
+  `internal/formats/nuget/documents.go:51` named); the decision point gets an empty path (`internal/formathost/host.go:189-195`) and
+  `globSet.match` (`internal/authz/pattern.go:141-150`) lets a missing path pass a path set with only excludes, while a set with includes
+  denies everything; so a `paths.exclude` grant could read excluded content through the protocol route that `/files/` refuses
+  (R-AUTHZ-005). The OCI format passes the path since its WP4a review round. Done when every format handler authorizes with the item
+  path, an empty path cannot pass a path-scoped set, and a conformance-kit check fails a format that authorizes without one; an agent
+  is on it.
+
 - **F-81 · The largest accepted avatar area is no longer proven to decode within the production bound** (read, not reproduced).
   `MaxPixels` accepts 2048 x 2048 (`internal/avatar/process.go:40`) and `DecodeTimeout` is 5 s (`:53`). Test and Release run 42409044656
   (unit tests, job 128513121017, `process_test.go:347`) measured 9.72 s for a 2048 x 2048 PNG under `-race` on a throttled runner and refused
@@ -344,7 +353,10 @@ separate agents; no agent checks its own work.
   registry, planned, built and checked by separate agents as this section says.
   Run of 2026-11-08 (session of the afternoon): wave 1 started on the rebased WP0 (08fb9ff8) in the first hour, WP4 split into WP4a
   (manifest parser, manifest and blob GET/HEAD/PUT, package view, `routes.go`) and WP4b (tags list, referrers, deletion, sweep, journal
-  replay, reinstate, setup snippets); WP7's stub is built and in its review round.
+  replay, reinstate, setup snippets). On main since: WP0 (6abafcd1, the rebased 6052035a with ChecksumAlwaysVerified merged) and
+  WP7, the counting stub registry (38c066a3). In review rounds on their branches: WP1 (upload sessions), WP2 (registry tokens; a
+  fail-closed grant table for the `/v2/` mount is part of it), WP4a+WP4b (branch `t16-wp4`, rebased on main), WP6 (handshake;
+  Q-OCI-82, a remembered challenge per repository instead of a 401 per request). Wave 2 (WP3, WP5, WP8, WP12) starts as these land.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
@@ -353,6 +365,10 @@ separate agents; no agent checks its own work.
   indexes for a remote, flat repositories, and what a full mirror covers (suites, components, architectures, sources or not, the
   bounds of R-REPO-051/052). Tests per step 3: integration and e2e with `apt-get update` and `apt-get install` in Debian and Ubuntu
   containers through local, remote in both modes and virtual repositories, signature verification on the client included.
+  Status 2026-11-08: the spec `docs/spec/formats/debian.md` (R-DEB-001 to R-DEB-035, Q-DEB-1 to Q-DEB-43, H-620 to H-630) and the cut
+  `docs/projektplan/apt-work-packages.md` (WP0 contracts, WP1 to WP13 in four waves) are on main, planned by one agent and checked in
+  three rounds by another that verified the client behaviour on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04. Next: WP0, after
+  T-16 WP0 (on main) and in coordination with OCI WP10 on `discover.Upstream.Artifact` (whichever starts first builds it).
 
 ## 11 · Run record
 

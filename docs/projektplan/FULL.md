@@ -186,7 +186,7 @@ all four columns green.
 | Chef | ⚪ | ⚪ | ⚪ | ⚪ |
 | CocoaPods | ⚪ | ⚪ | ⚪ | ⚪ |
 | Bower | ⚪ | ⚪ | ⚪ | ⚪ |
-| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | ⚪ | ⚪ | ⚪ | ⚪ |
+| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | 🟢 [formats/debian.md](../spec/formats/debian.md) (planned and checked 2026-11-08; cut in [apt-work-packages.md](apt-work-packages.md)) | ⚪ | ⚪ | ⚪ |
 | RPM | ⚪ | ⚪ | ⚪ | ⚪ |
 | Alpine Linux | ⚪ | ⚪ | ⚪ | ⚪ |
 | Opkg | ⚪ | ⚪ | ⚪ | ⚪ |
