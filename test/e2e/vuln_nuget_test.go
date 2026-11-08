@@ -216,15 +216,15 @@ func TestVuln_R_VULN_018_NuGetVulnerabilityInfoOnTheWire(t *testing.T) {
 	var etags []string
 	for i, addr := range addrs {
 		a := apiAtPod(t, addr, e.nuget.token)
-		idx := a.get(nugetAddr(vulnNuGetRemote)+"/v3/index.json").want(t, "service index of nuget-remote", 200)
+		idx := a.getOverForward(nugetAddr(vulnNuGetRemote)+"/v3/index.json").want(t, "service index of nuget-remote", 200)
 		if strings.Contains(string(idx.Body), "VulnerabilityInfo") {
 			t.Errorf("replica %d: the service index of nuget-remote lists the vulnerability resource although the mode is off", i)
 		}
-		a.get(nugetAddr(vulnNuGetRemote)+"/v3/vulnerabilities/index.json").want(t, "vulnerabilities of nuget-remote (off)", 404)
+		a.getOverForward(nugetAddr(vulnNuGetRemote)+"/v3/vulnerabilities/index.json").want(t, "vulnerabilities of nuget-remote (off)", 404)
 		for _, key := range []string{vulnNuGetLocal, vulnNuGetAll} {
-			si := a.get(nugetAddr(key)+"/v3/index.json").want(t, "service index of "+key, 200)
+			si := a.getOverForward(nugetAddr(key)+"/v3/index.json").want(t, "service index of "+key, 200)
 			requireAll(t, "the service index of "+key, string(si.Body), "VulnerabilityInfo/6.7.0")
-			ix := a.get(vulnResourcePath(t, si, "VulnerabilityInfo/6.7.0")).want(t, "vulnerability index of "+key, 200)
+			ix := a.getOverForward(vulnResourcePath(t, si, "VulnerabilityInfo/6.7.0")).want(t, "vulnerability index of "+key, 200)
 			var entries []struct {
 				Name string `json:"@name"`
 				ID   string `json:"@id"`
@@ -235,7 +235,7 @@ func TestVuln_R_VULN_018_NuGetVulnerabilityInfoOnTheWire(t *testing.T) {
 			}
 		}
 		pagePath := vulnPagePath(t, a, vulnNuGetAll)
-		page := a.get(pagePath).want(t, "vulnerability page", 200)
+		page := a.getOverForward(pagePath).want(t, "vulnerability page", 200)
 		var doc map[string][]struct {
 			Severity int    `json:"severity"`
 			URL      string `json:"url"`
@@ -255,7 +255,7 @@ func TestVuln_R_VULN_018_NuGetVulnerabilityInfoOnTheWire(t *testing.T) {
 			t.Fatalf("replica %d: the page has no ETag", i)
 		}
 		etags = append(etags, etag)
-		a.do(http.MethodGet, pagePath, nil, "If-None-Match", etag).want(t, "conditional request for the page", 304)
+		a.safeOverForward(http.MethodGet, pagePath, "If-None-Match", etag).want(t, "conditional request for the page", 304)
 	}
 	for _, et := range etags[1:] {
 		if et != etags[0] {
