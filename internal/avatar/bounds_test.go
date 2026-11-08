@@ -38,10 +38,10 @@ func TestR_API_055_RefusesAJPEGWithManyScans(t *testing.T) {
 		}
 	})
 	t.Run("R-API-055 the limit is MaxScans", func(t *testing.T) {
-		if _, err := walkJPEG(jpegFrame(0xC2, 2048, 2048, 3, MaxScans)); err != nil {
+		if _, err := walkJPEG(jpegFrame(0xC2, 1024, 1024, 3, MaxScans)); err != nil {
 			t.Fatalf("%d scans: %v", MaxScans, err)
 		}
-		if _, err := walkJPEG(jpegFrame(0xC2, 2048, 2048, 3, MaxScans+1)); !errors.Is(err, ErrComplex) {
+		if _, err := walkJPEG(jpegFrame(0xC2, 1024, 1024, 3, MaxScans+1)); !errors.Is(err, ErrComplex) {
 			t.Fatalf("%d scans: %v, want ErrComplex", MaxScans+1, err)
 		}
 	})

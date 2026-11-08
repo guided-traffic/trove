@@ -48,8 +48,15 @@ const (
 	// MaxScans is the most scans (SOS segments) a JPEG may have. The decoder walks every block of the image once per
 	// scan, so the number of scans multiplies the time; encoders write about ten for a progressive image.
 	MaxScans = 64
-	// DecodeTimeout is how long one decode may take; the decoders read their input as they go, so a decode that exceeds
-	// it stops at its next read.
+	// MaxBlockVisits is the most work the scans of a JPEG may add up to, in visits of an 8 x 8 block: a scan visits every block
+	// of every component it carries once, and an AC refinement scan counts twice (Q-UI-174). The number of scans alone does
+	// not bound the time: with the same 64 scans, an image of 1392 x 1392 pixels with four components, whose scans carry all
+	// four, costs nearly twice what a grey image of 2048 x 2048 pixels does, and a scan of end-of-block runs is a few bytes.
+	// A progressive photo of 2048 x 2048 pixels with ten scans is about a fifth of it.
+	MaxBlockVisits = 3 << 20
+	// DecodeTimeout is how long one decode may take; the decoders read their input as they go, through reads of at most
+	// readChunk bytes, so a decode that exceeds it stops at its next read. What the decoder does after its last read (the
+	// reconstruction of a JPEG) is not stopped (H-640).
 	DecodeTimeout = 5 * time.Second
 	// BusyWait is how long a request waits for a decoding slot before it is told to try again.
 	BusyWait = 2 * time.Second
@@ -59,6 +66,11 @@ const (
 
 	// sniffLen is the number of bytes http.DetectContentType reads.
 	sniffLen = 512
+
+	// readChunk is the most bytes one read of the decoder's input returns. The decoders fill a buffer of 4 KiB at a time, and
+	// a progressive JPEG can carry a scan in a few bytes, so with larger reads all the scans of a small file run between two
+	// reads and the deadline is never looked at.
+	readChunk = 16
 )
 
 // The refusals of Process. The API maps each to the status and code of R-API-055.
@@ -287,7 +299,7 @@ func (c *ctxReader) Read(p []byte) (int, error) {
 	if err := c.ctx.Err(); err != nil {
 		return 0, err
 	}
-	return c.r.Read(p)
+	return c.r.Read(p[:min(len(p), readChunk)])
 }
 
 // scale takes the largest centred square of src and scales it to OutputSide.
@@ -344,13 +356,19 @@ type jpegShape struct {
 	progressive bool
 	components  int
 	scans       int
+	// visits is the work of the scans, in block visits (MaxBlockVisits).
+	visits int64
 }
 
 // walkJPEG reads the markers of a JPEG, stepping over the entropy-coded data of every scan, and returns whether the frame is
-// progressive, its number of components and its number of scans. More than MaxScans scans is ErrComplex. A file that is
+// progressive, its number of components, its number of scans and the block visits they add up to. More than MaxScans scans, or
+// more than MaxBlockVisits visits, is ErrComplex. A file that is
 // malformed past what was seen is left to the decoder to refuse.
 func walkJPEG(data []byte) (jpegShape, error) {
-	var sh jpegShape
+	var (
+		sh     jpegShape
+		blocks int64 // of one component, at the full resolution of the frame
+	)
 	for off := 2; off+2 <= len(data); {
 		if data[off] != 0xFF {
 			return sh, nil
@@ -380,16 +398,35 @@ func walkJPEG(data []byte) (jpegShape, error) {
 			sh.progressive = m == 0xC2 || m == 0xCA
 			if len(seg) >= 6 {
 				sh.components = int(seg[5])
+				h, w := int64(seg[1])<<8|int64(seg[2]), int64(seg[3])<<8|int64(seg[4])
+				blocks = (h + 7) / 8 * ((w + 7) / 8)
 			}
 		case m == 0xDA:
 			sh.scans++
 			if sh.scans > MaxScans {
 				return sh, ErrComplex
 			}
+			if sh.visits += scanVisits(seg, blocks); sh.visits > MaxBlockVisits {
+				return sh, ErrComplex
+			}
 			off = skipEntropy(data, off)
 		}
 	}
 	return sh, nil
+}
+
+// scanVisits is the work of one scan, from its header: the components it carries times the blocks of a component, taken at the
+// full resolution of the frame (an upper bound for a subsampled one), twice for the refinement of AC coefficients, which walks
+// the coded coefficients of the band in every block. A header too short to say is one component.
+func scanVisits(seg []byte, blocks int64) int64 {
+	n := int64(1)
+	if len(seg) > 0 && seg[0] > 0 {
+		n = int64(seg[0])
+	}
+	if i := 1 + 2*int(n); i+2 < len(seg) && seg[i] > 0 && seg[i+2]>>4 != 0 {
+		n *= 2
+	}
+	return n * blocks
 }
 
 // skipEntropy returns the offset of the first marker after the entropy-coded data that starts at off: a 0xFF followed by

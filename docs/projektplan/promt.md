@@ -231,8 +231,7 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-08 by the phase run's triage of 742 job logs (Test and Release 42387599073 to 42464736969, nightlies 42397525137 to
-42465102401):
+Found on 2026-11-08 by the penetration test of T-16 WP4a, reading the npm and NuGet handlers outside that package:
 
 ### Product
 
@@ -244,14 +243,6 @@ Found on 2026-11-08 by the phase run's triage of 742 job logs (Test and Release 
   (R-AUTHZ-005). The OCI format passes the path since its WP4a review round. Done when every format handler authorizes with the item
   path, an empty path cannot pass a path-scoped set, and a conformance-kit check fails a format that authorizes without one; an agent
   is on it.
-
-- **F-81 · The largest accepted avatar area is no longer proven to decode within the production bound** (read, not reproduced).
-  `MaxPixels` accepts 2048 x 2048 (`internal/avatar/process.go:40`) and `DecodeTimeout` is 5 s (`:53`). Test and Release run 42409044656
-  (unit tests, job 128513121017, `process_test.go:347`) measured 9.72 s for a 2048 x 2048 PNG under `-race` on a throttled runner and refused
-  it with "the image takes too long to decode"; commit 86789b58 raised the test's bound to one minute for that case, so no test shows that an
-  area the spec accepts decodes inside 5 s without `-race` in a CPU-limited pod. Not known: the decode time of the worst accepted PNG (16 bits
-  per channel, interlaced) and JPEG at the chart's default CPU limit. Done when a test or benchmark measures it at that limit and the result
-  is a recorded margin or a changed `DecodeTimeout` or `MaxPixels` with a decision block (the timeout bounds CPU per upload).
 
 Found on 2026-11-08 while running the drain variants of E5.13 on kind:
 

@@ -1821,7 +1821,7 @@ Q-STOR-166, Q-STOR-167.
   512 bytes must sniff as PNG, JPEG or WebP, else `415`, and as the declared one, else `415` (an SVG, an HTML page, a GIF or
   a polyglot never gets this far); an animated PNG or WebP is `422`; the size in the header is read before any pixel is
   allocated and must be at least 32 x 32 and at most 4,194,304 pixels in all, else `422` (a header that declares 100,000 x
-  100,000 pixels in a few bytes costs nothing); a JPEG with more than 64 scans is `422` `too_complex`, and one whose estimated
+  100,000 pixels in a few bytes costs nothing); a JPEG with more than 64 scans, or whose scans add up to more than 3,145,728 block visits (Q-UI-174), is `422` `too_complex`, and one whose estimated
   decode memory (Q-API-211) is above 48 MiB is `422` `invalid_dimensions`; the image is decoded with the Go decoders
   (`image/png`, `image/jpeg`, `golang.org/x/image/webp`, decoder only) under a deadline of 5 s, which on expiry is `422`
   `too_complex`, and one that does not decode, a truncated one included, is `422`.
@@ -1832,7 +1832,8 @@ Q-STOR-166, Q-STOR-167.
 - **Bounded cost.** A replica decodes two images at a time (`avatar.MaxConcurrent`); a request that finds no free slot within
   2 s is `503 server_busy` with `Retry-After: 1`. The memory of one decode is estimated from the header and bounded to 48 MiB,
   so the decoding of a replica holds at most 96 MiB, which the admission guard does not charge (H-563). The decode stops at its
-  next read after 5 s or when the client leaves. The management API's rate limits (R-API-016) apply as to any write.
+  next read after 5 s or when the client leaves; the reads of its input are 16 bytes at most, so a file of few bytes and many scans is
+  stopped too (Q-UI-174). The slowest image the checks accept costs about 0.5 s of CPU for the whole of `Process` (Q-UI-173). The management API's rate limits (R-API-016) apply as to any write.
 - **The image answer.** `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src
   'none'; sandbox`, `Content-Disposition: inline; filename="avatar.png"`, `Cross-Origin-Resource-Policy: same-origin`,
   `ETag: "<sha256>"` and `Cache-Control: private, max-age=31536000, immutable`: the answer is for a signed-in caller and the
@@ -9047,6 +9048,67 @@ the room they take is room where it is needed. The development agent would revis
 to scan, with a clamp to a few lines and a control to expand.
 **Applied:** R-UI-038 (the Jobs bullet); [operations-and-observability.md](operations-and-observability.md) Q-OPS-186 types the
 members. Code: `web/src/app/features/system/job-table.ts`; the manual page [operations.md](../manual/admin/operations.md#jobs).
+
+### Q-UI-173 · The slowest accepted avatar is measured against the decode deadline and pinned in the performance run
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-81. The area limit accepts 2048 x 2048 pixels (4,194,304) and a decode is cut off after 5 s (`avatar.DecodeTimeout`), but the only test of the largest accepted area raised the deadline to one minute, because Test and Release run 42409044656 measured 9.7 s for a 2048 x 2048 PNG under the race detector on a throttled runner. Nothing showed that an image the checks accept decodes inside 5 s without the race detector in a CPU-limited pod. The chart gives the pods that serve `/api/v1/` (the `api` and `all` roles) a CPU request of 500m and no CPU limit (`deploy/helm/trove/values.yaml`, `api.resources`); an operator may set one, and a replica decodes two images at a time (`MaxConcurrent`), so under load each decode gets half of what the pod gets.
+
+What decides the slowest accepted image depends on the format. For a PNG, a baseline JPEG and a WebP the 1 MiB upload cap does: a 2048 x 2048 PNG of 16 bits per channel is 32 MiB of filtered rows, so it is accepted only when it deflates at least 32 to 1, and noise that does not compress is refused by size before any decoder runs. The slowest are the images with the most work per byte: Paeth on every row, Adam7 interlacing, 16 bits, sparse noise that keeps the deflate stream literal-heavy. For a progressive JPEG the cap does not decide: the cost is the area times the scans times the work of a scan, and a scan can be a few bytes. The first version of this decision assumed the cap decided for every format and missed that (found in review, with a deadline that did not fire for such a file); [Q-UI-174](api-and-ui.md#q-ui-174--the-scans-of-a-jpeg-are-bounded-by-block-visits-and-the-decoders-input-is-read-in-short-pieces) bounds it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Build the slowest accepted inputs in code, measure them without the race detector in a CPU-limited cgroup, and pin the property in the performance run (chosen) | `internal/avatar/worstcase_test.go`; `make test-performance` | Shows the claim of the security page with numbers and found the unbounded JPEG case; costs the user nothing | The numbers are one machine's; a different CPU needs a new reading |
+| (b) Lower `MaxPixels` (1024 x 1024) | Four times fewer pixels | Four times less CPU for the worst case | Refuses ordinary 1,500 px photos for a 256 px result; the measurement shows no need |
+| (c) Raise `DecodeTimeout` (10 s or more) | A starved pod finishes more decodes | Fewer `too_complex` for legitimate images on a starved pod | Holds a decoding slot and a CPU for twice as long per hostile upload: the deadline is the bound of what an upload costs (H-560), so a larger one is a weaker defence for a case the measurement does not show |
+| (d) Decode at reduced resolution (a DCT-scaled JPEG decode, a subsampled PNG) | Less work per image | Lower worst case | The standard library has no scaled decode; PNG has none at all; a second decoder is more attack surface than the problem |
+| (e) Measure the deadline in CPU time, not wall time | A starved pod is not penalised | Independent of the host's load | Go has no per-goroutine CPU clock; the process's CPU time includes the other request on the replica |
+
+**Choice:** (a). Measured on 2026-11-08 in `golang:1.27.3` (linux/arm64, a 20-CPU Docker VM), without `-race`, `docker run --cpus=1` (Go then runs two threads), `BenchmarkProcessWorstCase` (decode, centre-square scale and PNG encode of the whole `Process`), 8 samples of each, at a host load average of 14 to 23 on 20 cores (the host is shared; the readings of the same inputs in the hours before, at 33 to 128, were more than 25 times slower in the worst sample, which is why the floor, not a median, is the image's cost). The 3-component JPEGs are at 1,576 x 1,576, the 4-component at the largest side the memory estimate admits (1,392 x 1,392); the "visit limit" inputs spend `MaxBlockVisits` exactly (Q-UI-174).
+
+| Slowest accepted input (bytes of 1,048,576) | Floor, CPU | Median, wall | Maximum, wall |
+|---|---|---|---|
+| PNG 16-bit RGBA, Adam7, Paeth, noise (978,235) | 292 ms | 296 ms | 301 ms |
+| PNG 16-bit RGBA, Paeth, noise (973,794) | 272 ms | 276 ms | 301 ms |
+| PNG 8-bit RGBA, Adam7, Paeth, noise (1,005,666) | 171 ms | 173 ms | 193 ms |
+| WebP lossless, one bit of noise a pixel, no transform (524,322) | 244 ms | 246 ms | 268 ms |
+| JPEG baseline, noise, highest quality that fits (1,047,075) | 144 ms | 148 ms | 157 ms |
+| JPEG progressive, gray, 10 scans, dense (1,027,877) | 149 ms | 150 ms | 158 ms |
+| JPEG progressive, gray, 48 scans, dense, at the visit limit (671,682) | 436 ms | 438 ms | 442 ms |
+| JPEG progressive, 3 components, 10 scans, dense (866,014) | 201 ms | 204 ms | 211 ms |
+| JPEG progressive, 3 components, 64 scans, dense (691,995) | 441 ms | 447 ms | 466 ms |
+| JPEG progressive, gray, 1 DC and 23 AC refinement scans of end-of-band runs, at the limit (8,760) | 310 ms | 314 ms | 317 ms |
+| JPEG progressive, gray, 48 DC scans, at the limit (393,840) | 417 ms | 422 ms | 432 ms |
+| JPEG progressive, 3 components, 27 interleaved DC scans, at the limit (393,486) | 440 ms | 454 ms | 500 ms |
+| JPEG progressive, 3 components, 1 DC and 39 AC refinement scans, at the limit (15,342) | 338 ms | 342 ms | 356 ms |
+| JPEG progressive, 4 components, 25 interleaved DC scans, at the limit (379,019) | 457 ms | 467 ms | 475 ms |
+
+The slowest accepted image costs about 0.47 s of CPU. One decode therefore needs 0.094 CPU on average to finish inside 5 s, and a pod that runs two such decodes at once (an attacker fills both slots) needs 0.19 CPU. As a limit of 500m (the chart's request, which is not a limit) that is 0.25 CPU per decode and a predicted 1.9 s for the slowest, a margin of 2.6; that figure is the CPU time divided by the share, not a reading: the runs with `--cpus=0.5` fell in the loaded hours and are not reported. The scale and the encode are part of every figure; the lossy WebP is not measured (the repository has no encoder to build one) and a lossless WebP with transforms (predictor, cross-colour, subtract-green), which adds work per pixel for almost no bytes, was not built, so the WebP row is the stream without them, not the slowest. Only linux/arm64 and the development machine's CPU were measured.
+
+The race detector took 9.7 s for a 2048 x 2048 PNG on a throttled runner (Test and Release run 42409044656) that takes about 0.3 s without it, which is why the per-change tier, which runs with it, judges none of this: both tests skip under `-race` (building the inputs alone takes minutes there). They are not part of the plain run of `make test` either, because the inputs take 14 s to build, and that is paid on every change for a property that moves only when the decoders or the bounds do; `make test-performance`, the nightly run, runs them without `-race`. `TestR_API_055_TheWorstCaseInputsAreAccepted` checks that each input fits the cap, passes every check and decodes. `TestR_API_055_TheSlowestAcceptedImagesDecodeInsideTheDeadline` decodes each input with a deadline of a minute (a slow decode on a busy host is a reading, not a refusal) and logs wall and CPU time; with `TROVE_PERF_GATE=1` it decodes each input seven times (the inputs are built once) and requires the least CPU time inside one second, the threshold of the revisit condition below. The wall time is logged and not judged: on a shared runner it is the runner's load (under a load of 36 to 77 on 20 cores at `--cpus=1` the median wall time of three fresh decodes was 3.3 to 5.0 s while the benchmark floor was 0.58 to 0.9 s, each fresh decode also paying a collection of the 40 MB it allocates), which is the lesson of Q-ARCH-220; the least of several CPU readings is the image's cost, and H-641 turns that into the CPU a pod needs. The inputs are deterministic and fit the cap by construction.
+
+**Rationale:** for a PNG, a baseline JPEG and a WebP the numbers show a margin of 15 or more on an unlimited pod, and no bound has to move; for a progressive JPEG the number of scans was not a bound, which Q-UI-174 corrects. Lowering the area or raising the deadline would change what users and attackers get for a risk the measurement does not show. The development agent revisits the numbers when the floor of any row above exceeds 1 s on the platform's reference hardware (then the area, `MaxBlockVisits` or `MaxScans` falls, not the deadline), when an operator reports `too_complex` for ordinary images (then the CPU limit of the pod is the cause: H-641), when a decoder is replaced, or when a lossless WebP with transforms is built and costs more than a row above.
+**Applied:** R-API-055 (Bounded cost); [user-avatars.md](../security/user-avatars.md) (the cost section, H-640, H-641); `internal/avatar/worstcase_test.go`, `worstcase_bench_unix_test.go`, `cpu_unix_test.go`, `cpu_other_test.go`, `race_on_test.go`, `race_off_test.go`; `Makefile` (`test-performance`); [build-and-test.md](../developer/build-and-test.md), [identity.md](../developer/identity.md).
+
+### Q-UI-174 · The scans of a JPEG are bounded by block visits, and the decoder's input is read in short pieces
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the review of Q-UI-173 found two things that the number of scans (`MaxScans`, 64, Q-API-211) does not bound. (1) The standard decoder walks every block of every component of a scan, for each scan, and checks only that a refinement scan follows one with one bit less, so a scan can repeat. A progressive JPEG whose scans are interleaved DC scans over three or four components, or AC refinement scans of one band in end-of-band runs, costs the same per scan whether the scan is a megabyte or seven bytes. Measured by the reviewer in `golang:1.27.3` at `--cpus=1`: four components at 1,392 x 1,392 with 64 interleaved DC scans (970,025 bytes) 1,011 ms of CPU, three components at 1,576 x 1,576 with 64 DC scans 958 to 990 ms, gray 2048 x 2048 with one DC and 63 AC refinement scans (9,480 bytes) 745 ms, against 550 ms for the densest 64-scan file of the first version. (2) The deadline is looked at only when the decoder reads: the decoders fill a buffer of 4 KiB, so the 9,480-byte file is read in about three reads, all its scans run after the last one, and a deadline of 50 ms ended with the image decoded in 878 ms and no error (reproduced here: 5 ms, 159 ms, no error). The first finding breaks the premise of Q-UI-173 for JPEG, and the second makes the deadline no bound for that class.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A budget of block visits summed over the scans in `walkJPEG`, AC refinement counted twice, refused before a slot is taken, and reads of the decoder's input cut to 16 bytes (chosen) | `MaxBlockVisits` = 3,145,728 = 48 scans of the 65,536 blocks of a 2048 x 2048 component; `readChunk` = 16 | Bounds the work from the header, so a hostile file never holds a slot or a CPU; scales with the components and the area as the cost does; the short reads make the deadline fire inside the scans | A constant calibrated by measurement; the factor two for refinement is flat, not by band width |
+| (b) Lower `MaxScans` (to 24) | One number | Simple | Counts a scan of a gray image as much as one of a four-component image, which cost four times as much; refuses a gray file of 30 scans that costs a third of the allowance |
+| (c) Only the short reads | The deadline is looked at inside the scans | Smallest change | A hostile upload then costs the full deadline of CPU on a slot, 5 s, before it is refused; the work is not bounded from the header |
+| (d) A visit budget weighted by the band width of a refinement scan | Closer to the cost | More exact | A header field more to parse and calibrate for a difference of less than two |
+| (e) Leave it | — | — | The deadline and the scan count are not the bounds the security page claims |
+
+**Choice:** (a). A scan visits every block of every component it carries, taken at the full resolution of the frame (an upper bound for a subsampled one); an AC refinement scan counts twice; more than 3,145,728 visits in all is `422` `too_complex`, like more than 64 scans. The reads of the decoder's input return at most 16 bytes: about 65,000 reads for a 1 MiB upload, each a context check. Measured at the limit (table in Q-UI-173) the costliest file is 0.47 s of CPU; a typical progressive photo of ten scans visits about a fifth of the allowance (655,360 for a 2048 x 2048 gray one). `TestR_API_055_RefusesAJPEGWhoseScansAddUpToTooMuchWork` refuses the inputs above (and the plans that spend the allowance exactly are accepted, one scan more is not) before a slot is taken; `TestR_API_055_StopsAScanHeavyDecodeAtItsDeadline` decodes the 8,760-byte refinement file at the limit with a deadline of 5 ms and 20 ms and requires `too_complex`, and fails with reads of a megabyte.
+
+**Rationale:** the cost of a progressive JPEG is the area times the scans times the work of a scan, and only the header says the first two, so the budget is what the header can prove; the deadline stays as the bound for what the header cannot (H-640). The development agent revisits the constant when ordinary progressive photos are refused (the allowance is five times a typical photo's), when the floor of the file that spends it exceeds 1 s, or when the standard decoder gets a cheaper scan.
+**Applied:** R-API-055 (the size and cost bullet, Bounded cost); [user-avatars.md](../security/user-avatars.md) (steps 6 and 8, the cost section, H-640); `internal/avatar/process.go` (`MaxBlockVisits`, `walkJPEG`, `scanVisits`, `readChunk`, `ctxReader`); `internal/avatar/budget_test.go`, `bounds_test.go`.
 
 ## What this does not cover
 

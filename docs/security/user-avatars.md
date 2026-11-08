@@ -33,7 +33,11 @@ answers.
    refusal is the size and not a failed decode.
 6. **The work and the memory, from the header.** A JPEG is walked marker by marker, stepping over the entropy-coded data, and one
    with more than 64 scans is `422` `too_complex`: the decoder walks every block of the image once per scan, so a progressive
-   file of 2048 x 2048 pixels with tens of thousands of tiny scans would cost minutes of CPU for under 1 MiB of upload. Then the
+   file of 2048 x 2048 pixels with tens of thousands of tiny scans would cost minutes of CPU for under 1 MiB of upload. The number
+   of scans is not the whole bound: a scan of a four-component image costs four times one of a gray image, and a scan can be a few
+   bytes, so the scans are also summed in block visits (the components a scan carries times the blocks of a component, twice for
+   an AC refinement scan) and more than 3,145,728 visits, 48 scans of a 2048 x 2048 component, is the same `422`
+   ([Q-UI-174](../spec/api-and-ui.md#q-ui-174--the-scans-of-a-jpeg-are-bounded-by-block-visits-and-the-decoders-input-is-read-in-short-pieces)). Then the
    memory of the decode is estimated from the header (`decodeCost`): the decoded image at 4 bytes a pixel for an 8-bit PNG, 8 for
    a 16-bit PNG or a WebP, the components of a baseline JPEG (3, or 4 for CMYK), 5 per component for a progressive JPEG (which
    keeps the coefficients of every block), plus the scaler's buffer of 256 x short side x 32 bytes. Above 48 MiB the answer is
@@ -44,7 +48,9 @@ answers.
    (Q-ARCH-328), not a decode, so the processor bounds its own memory: two slots times at most 48 MiB is 96 MiB (H-563).
 8. **The decode, with a deadline.** `image/png` and `image/jpeg` of the standard library, and the decoder of
    `golang.org/x/image/webp` (the encoder is not imported). The decoders read their input as they go, through a reader that fails
-   once the decode's context is done: 5 s after it started, or when the client leaves. A decode that exceeds the deadline is `422`
+   once the decode's context is done: 5 s after it started, or when the client leaves. The reader returns at most 16 bytes a read,
+   because the decoders fill 4 KiB buffers and a file of few bytes and many scans would otherwise run all its scans after its last
+   read, without the deadline being looked at. A decode that exceeds the deadline is `422`
    `too_complex`; a client that left gets no answer. A decoder that panics on a crafted file is recovered and counts as an image
    that does not decode. A truncated or damaged image is `422` `undecodable_image`.
 
@@ -103,8 +109,12 @@ upload records nothing.
 ## What it costs a replica
 
 - One upload holds the body (1 MiB at most), the decoded image and the scaler's buffer (48 MiB at most by the estimate of step 6)
-  and the 256 x 256 result; at most two uploads decode at once on a replica. A decode of the largest accepted image takes a
-  fraction of a second, a decode is cut off after 5 s, and a JPEG is refused above 64 scans; the rate limits of the management API
+  and the 256 x 256 result; at most two uploads decode at once on a replica. The slowest image the checks accept costs about
+  0.5 s of CPU for the whole of `Process`, decode, scale and encode, measured without the race detector
+  ([Q-UI-173](../spec/api-and-ui.md#q-ui-173--the-slowest-accepted-avatar-is-measured-against-the-decode-deadline-and-pinned-in-the-performance-run), [Q-UI-174](../spec/api-and-ui.md#q-ui-174--the-scans-of-a-jpeg-are-bounded-by-block-visits-and-the-decoders-input-is-read-in-short-pieces)).
+  For a PNG, a baseline JPEG and a WebP the 1 MiB cap decides which image that is; for a progressive JPEG it is the block-visit
+  allowance. A decode is cut off after 5 s, so one decode needs 0.1 CPU on average to finish; two at once, which an attacker can
+  arrange, need 0.2 CPU of the pod. A JPEG is refused above 64 scans or above the visit allowance; the rate limits of the management API
   (R-API-016) apply per caller as to any write.
 - A read is one database lookup and, for the first request of each browser, one verified object-store read. A conditional request
   that matches is answered `304` from the lookup alone, with the cache policy of the image (not `no-store`, which would replace the
@@ -185,3 +195,43 @@ to the bucket can read it until then (the bucket is outside trove's authorizatio
 it until its cache entry ends, up to a year (`immutable`, Q-API-209), and shows it for the same URL without asking. Two users who
 uploaded the same picture share one object, which stays until both have dropped it. What would make it matter is a picture that
 must be gone everywhere at once; nothing in trove can recall a copy a browser holds.
+
+### H-640 · Only the decode has a deadline, and it is looked at only when the decoder reads
+
+Component: [Process](../../internal/avatar/process.go), `decode` and what follows it. Subject: the replica's CPU and the decoding
+slot. Live today, bounded by measurement.
+
+The 5 s deadline is the context of the decoder's reader, looked at on each read of at most 16 bytes. Two stretches of work run
+without a read. The first is the reconstruction a JPEG decoder does after its last read (the inverse transform of every block):
+a deadline that falls after it does not stop the decode; measured on the development machine, with a deadline of 100 ms eight of
+the ten JPEG inputs finished with no error in 89 to 194 ms, the slowest 94 ms past the deadline, while a deadline of 20 ms stopped
+all of them within 2.6 ms of it. At the visit limit the reconstruction is part of the 0.47 s. The second is the scale and the encode that follow every decode: the request checks its own
+context once and then scales the centre square to 256 x 256 (Catmull-Rom, which has fast paths for `image.NRGBA`, `RGBA`, `Gray`
+and `YCbCr` and reads a 16-bit PNG through its `RGBA64Image` interface path) and encodes the result; neither reads from the upload,
+and both keep the slot until they finish. All of it is bounded by the area limit, the visit allowance and the fixed output, and it
+is part of the figures of Q-UI-173; nothing enforces it at run time. The nightly test
+(`TestR_API_055_TheSlowestAcceptedImagesDecodeInsideTheDeadline` with `TROVE_PERF_GATE=1`) fails when the slowest input costs more
+than one second of CPU in the least of seven decodes (the wall time is logged, not judged). What would make it matter is a change to the scaler, the
+decoders or the bounds that the nightly run has not yet judged, or a pod whose CPU limit is far below the 0.2 CPU the two slots
+need, where reconstruction, scale and encode alone can run for seconds after a decode that finished inside its 5 s.
+
+### H-641 · The deadline is wall time, so a pod that is starved of CPU refuses large images
+
+Component: `DecodeTimeout` in [Process](../../internal/avatar/process.go), the CPU limit of the `api` pods
+(`api.resources.limits.cpu`, empty by default) and the node's CPU. Subject: a user who uploads a large image. Live today for a
+pod with a low CPU limit or a saturated node; dormant with the chart's defaults on a node with spare CPU.
+
+The deadline bounds what an upload costs the replica, which is why it is wall time: a hostile upload must not hold a CPU and a
+slot for longer. The same bound refuses a legitimate image when the process gets too little CPU. An ordinary photo (a baseline
+JPEG or a PNG of 2048 x 2048 pixels) costs 0.15 to 0.3 s of CPU, the slowest image the checks accept 0.47 s; a decode needs
+0.1 CPU on average to finish inside 5 s for the slowest, and the pod 0.2 CPU while two decode at once. Below that the user sees
+`422` `too_complex` with no hint at the cause, and a retry on a calmer node succeeds. In the measurement of Q-UI-173, hours with a
+host load of 33 to 128 on 20 cores made decodes of the same images more than 25 times slower in the worst sample (8.4 s for a PNG that
+costs 0.3 s), which is the case. The measured margin is one machine's (linux/arm64, Go 1.27.3), and the lossy WebP is not measured
+because the repository has no encoder to build one. What would make it matter is an operator who sets `api.resources.limits.cpu`
+below about 250m (two slots of the slowest image need 0.2 CPU for the deadline to hold), or CPU-starved nodes, together with
+users who upload large images; the remedy for the first is the limit, not a longer deadline, because the deadline is the bound on
+a hostile upload.
+
+The nightly test judges the least CPU time of seven decodes and not the wall time, for the same reason this gap exists: the wall time
+of a decode measures how busy the runner is (Q-ARCH-220), so a loaded runner would fail the gate for a regression that is not in the code.
