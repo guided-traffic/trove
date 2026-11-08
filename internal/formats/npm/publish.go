@@ -165,13 +165,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 		name: n, version: version, tag: req.Tag, res: res, principal: rq.Subject.ID, audit: audit,
 		installScript: manifest.HasInstallScript(res.Manifest, res.Facts), shadowing: shadow, shadowSkipped: shadowSkipped,
 		latestGuard: settingsOf(rq.Repo.Config).LatestGuard,
-		readable: func(ctx context.Context) (func(string) bool, error) {
-			cv, err := formats.CallerVersions(ctx, rq, n.String())
-			if err != nil {
-				return nil, err
-			}
-			return cv.Version, nil
-		},
+		readable:    readableFor(rq, n.String()),
 	}
 	pc.stored = manifest.Stored(req.Manifest, manifest.ServerFields{
 		Name: n.String(), Version: version, Principal: principalName(rq), Integrity: integrity, Shasum: res.SHA1Hex(),
@@ -470,4 +464,16 @@ func principalName(rq *formats.Request) string {
 		return "ci:" + s.Name
 	}
 	return s.Name
+}
+
+// readableFor returns the publisher's view of a package's versions, taken when the commit asks for it: inside the commit's
+// transaction, on the index the commit-time check moved the request to (Q-NPM-85).
+func readableFor(rq *formats.Request, pkg string) func(context.Context) (func(string) bool, error) {
+	return func(ctx context.Context) (func(string) bool, error) {
+		cv, err := formats.CallerVersions(ctx, rq, pkg)
+		if err != nil {
+			return nil, err
+		}
+		return cv.Version, nil
+	}
 }
