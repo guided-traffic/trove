@@ -87,6 +87,15 @@ Fuzz targets: `FuzzR_OCI_020_Parse`, `FuzzR_ARCH_028_Inspect`, `FuzzR_OCI_031_Co
 
 **The view** ([view.go](../../internal/formats/oci/view.go)): `Stored` lists the tags of a local repository newest push first, `Withheld` the tags of
 withheld manifests, `Describe` the digest, media type, size and (for an index) the platform table, `Compare` is `tagorder.Compare`.
+The format also implements the optional `formats.ViewSizer` (`Format.ViewSizes`, ADR-177): the package view asks it, once for a page of the version
+list and once for the details, for the `sizeBytes` of a tag, the stored size of the manifest, read by `Store.TagSizes` (the config and layers of an image, the sum over the required children of an
+index, the same number as `metadata.size`). The core would otherwise show the sum of the version's linked files, which for a tag is the manifest
+document (Q-OCI-130). The blobs are not linked to a version, on purpose. The size is stored: `PutManifest` sets an index's `content_size` to the sum
+of its children's (`OCISetIndexContentSize`, after the edges are written), so an index of indexes is right at any depth; `ViewSizes` reads it with
+`Store.TagSizes`, one statement for a page, and the platform table of the details is the only reader of the children.
+
+| File | Responsibility | Notes |
+|---|---|---|
 | [handlers_tags.go](../../internal/formats/oci/handlers_tags.go), [handlers_referrers.go](../../internal/formats/oci/handlers_referrers.go) | The tags list (`n`, `last`, the `Link`, 404 for a name that holds nothing) and the referrers API (the index answer, the `artifactType` filter, paging by the last digest, 4 MiB per page) | The tags list is decided on `<name>/_taglist`, referrers on the subject's manifest path, each tag and referrer on its own (Q-OCI-140). The tags list is in byte order (R-OCI-015) and does not use `tagorder`, whose rank order is the package view's and the mirror's (Q-OCI-64).
 | [handlers_delete.go](../../internal/formats/oci/handlers_delete.go), [hooks_remove.go](../../internal/formats/oci/hooks_remove.go) | `DELETE` of a tag, a manifest and a blob (authorization, existence, ownership, then the item store), and `OnItemsRemoved`: the refusals, the cascade and the deletion event of every road of removal |
 | [setup.go](../../internal/formats/oci/setup.go), [guide.go](../../internal/formats/oci/guide.go), [guide/](../../internal/formats/oci/guide) | The clients `docker` and `podman`, their setup snippets and the guide (R-OCI-030) |

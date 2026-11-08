@@ -66,15 +66,29 @@ func (t *twin) PutManifest(_ context.Context, tx formats.Tx, in rows.ManifestInp
 	if _, ok := t.manifests[k]; ok {
 		return nil
 	}
-	t.manifests[k] = in.Manifest
+	stored := in.Manifest
 	seen := map[[32]byte]bool{}
 	var refs []rows.Reference
+	var children bool
+	var sum int64
 	for _, r := range in.References {
 		if !seen[r.Target] {
 			seen[r.Target] = true
 			refs = append(refs, r)
+			if r.Kind == rows.KindManifest {
+				children = true
+				if sum > maxInt64-t.manifests[mkey{in.RepoID, in.Name, r.Target}].ContentSize {
+					sum = maxInt64
+				} else {
+					sum += t.manifests[mkey{in.RepoID, in.Name, r.Target}].ContentSize
+				}
+			}
 		}
 	}
+	if children {
+		stored.ContentSize = sum
+	}
+	t.manifests[k] = stored
 	t.refs[k] = refs
 	if rb, ok := tx.(rollbacker); ok {
 		rb.OnRollback(func() {
@@ -193,8 +207,22 @@ func (t *twin) WithheldVersions(ctx context.Context, _ []string) ([]int64, error
 	return out, nil
 }
 
+func (t *twin) TagSizes(ctx context.Context, versionIDs []int64) (map[int64]int64, error) {
+	t.note("TagSizes")
+	out := map[int64]int64{}
+	views, err := t.tagViews(ctx, versionIDs)
+	for _, tv := range views {
+		out[tv.VersionID] = tv.ContentSize
+	}
+	return out, err
+}
+
 func (t *twin) TagViews(ctx context.Context, versionIDs []int64) ([]rows.TagView, error) {
 	t.note("TagViews")
+	return t.tagViews(ctx, versionIDs)
+}
+
+func (t *twin) tagViews(ctx context.Context, versionIDs []int64) ([]rows.TagView, error) {
 	if t.host == nil {
 		return nil, nil
 	}

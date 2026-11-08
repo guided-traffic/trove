@@ -45,7 +45,8 @@ type Manifest struct {
 	Subject *[32]byte
 	// Size is the size of the manifest's own bytes.
 	Size int64
-	// ContentSize is the summed size of the config and the layers of an image manifest.
+	// ContentSize is the summed size of the config and the layers of an image manifest; the store sets it for an index to the sum of the
+	// children's, at any depth (Q-OCI-130).
 	ContentSize int64
 	// Annotations is the JSON object of the annotations a referrers answer needs, at most MaxAnnotationBytes.
 	Annotations json.RawMessage

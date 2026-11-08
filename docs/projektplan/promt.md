@@ -247,11 +247,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   group membership, a revoked token or CI token, or a disabled principal neither narrows nor stops the running job, the main
   deletion included (`docs/spec/formats/oci.md` H-653). Done when the job re-reads the principal (active, current groups) and
   the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
-- **F-86 · An OCI tag's version size in the package view is the manifest document's bytes** (read). `PackageViewVersions`
-  sums the version's linked file items, and an OCI version links only its tag item (`internal/packages/writer.go:195`), so
-  "All versions" shows a few hundred bytes for an image of many MiB; npm and NuGet are unaffected (their lead item is the
-  package file). Done when the server reports an image's size (config and layers; an index's children) and a test pushes an
-  image and reads it back.
 - **F-91 · The stall deadline cancels a request while the server itself works** (confirmed by the code review of the F-89
   fix). Once a request body reaches its end, or at once for a request without a body, net/http reads the connection in the
   background; that read runs into the read deadline the stall timeout (R-ARCH-005) set at the last chunk and cancels the

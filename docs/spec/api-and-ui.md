@@ -1560,6 +1560,10 @@ remain as their owners define them.)
   `copyright`, `language`, `minClientVersion`, `licenseUrl`, `homepage`, `repositoryUrl`, `authors`, `tags`, `packageTypes`,
   `dependencyGroups` (per target framework) and, when true, `requireLicenseAcceptance` and `developmentDependency`; its
   README is the file the `.nuspec` names, read out of the stored package (Q-NUGET-48).
+- `sizeBytes` of a version, in the list and in the details, is the sum of the sizes of the version's files unless the format
+  has the optional `ViewSizer` ([ADR-177](../decisions.md#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files)),
+  which reports the size of its versions: an OCI tag's file is the manifest document, so its `sizeBytes` is the image's (R-OCI-031,
+  Q-OCI-130). The UI shows the value as received.
 - The `versions` list entries hold `version`, `prerelease`, `publishedAt`, `sizeBytes`, `repositories`
   (the qualified names `<projectKey>/<repoKey>` of the repositories the caller may read) and `downloadCount`. The details and the README answer carry a strong `ETag`
   and honour `If-None-Match`; the README tag covers the README source, the renderer version and the hash of

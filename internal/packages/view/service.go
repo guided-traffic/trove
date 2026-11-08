@@ -641,7 +641,9 @@ func (s *Service) Versions(ctx context.Context, sc Scope, format, name string, f
 		only = sc.topo.Expand(sc.topo.IDs(f.Repositories))
 	}
 	out := make([]VersionSummary, 0, len(gs))
+	groupOf := make(map[string]versionGroup, len(gs))
 	for _, g := range gs {
+		groupOf[g.version] = g
 		pre := a.Prerelease(g.version)
 		if f.Prerelease != nil && *f.Prerelease != pre {
 			continue
@@ -690,7 +692,37 @@ func (s *Service) Versions(ctx context.Context, sc Scope, format, name string, f
 	if len(out) > limit+1 {
 		out = out[:limit+1]
 	}
+	if err := s.adapterSizes(ctx, sc, a, format, groupOf, out); err != nil {
+		return nil, true, err
+	}
 	return out, true, nil
+}
+
+// adapterSizes replaces the summed size of the files of the listed versions with the size the format reports for them, when the
+// format reports one (an OCI tag's file is the manifest document, its size the image's, R-OCI-031, Q-OCI-130). The adapter is asked
+// once for the page, after the cut; an adapter without Sizer is not asked. The version rows and the sizes are read in separate
+// transactions, so a version deleted between them, or replaced (a tag re-pushed, the purge of its old row), is absent from the sizes and
+// shows the sum of its files in that one answer; the next request is right.
+func (s *Service) adapterSizes(ctx context.Context, sc Scope, a Adapter, format string, groupOf map[string]versionGroup, page []VersionSummary) error {
+	z, ok := a.(Sizer)
+	if !ok || len(page) == 0 {
+		return nil
+	}
+	vs := make([]Version, 0, len(page))
+	for _, v := range page {
+		pri := groupOf[v.Version].primary()
+		vs = append(vs, Version{ID: pri.VersionID, Format: format, Repo: sc.topo.Name(pri.RepoID).String(), Package: pri.Name, Version: v.Version})
+	}
+	got, err := z.Sizes(ctx, vs)
+	if err != nil {
+		return err
+	}
+	for i, v := range vs {
+		if n, ok := got[v.ID]; ok {
+			page[i].SizeBytes = n
+		}
+	}
+	return nil
 }
 
 // Version returns the details of one version, found false when the scope does not
@@ -746,6 +778,15 @@ func (s *Service) Version(ctx context.Context, sc Scope, format, name, version s
 		}
 		if data.Metadata != nil {
 			d.Metadata = data.Metadata
+		}
+	}
+	if z, ok := a.(Sizer); ok {
+		sizes, err := z.Sizes(ctx, []Version{{ID: pri.VersionID, Format: format, Repo: sc.topo.Name(pri.RepoID).String(), Package: pri.Name, Version: version}})
+		if err != nil {
+			return VersionDetail{}, false, err
+		}
+		if n, ok := sizes[pri.VersionID]; ok {
+			d.SizeBytes = n
 		}
 	}
 	err = s.read(ctx, func(qs *q.Queries) error {

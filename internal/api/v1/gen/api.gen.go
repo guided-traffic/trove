@@ -6545,8 +6545,10 @@ type PackageVersion struct {
 	Prerelease   bool                       `json:"prerelease"`
 	PublishedAt  time.Time                  `json:"publishedAt"`
 	Repositories []PackageVersionRepository `json:"repositories"`
-	SizeBytes    int64                      `json:"sizeBytes"`
-	Version      string                     `json:"version"`
+
+	// SizeBytes The size of the version's files, summed; for an OCI tag the size of its image (config and layers; of an index, its distinct children), as in the version list.
+	SizeBytes int64  `json:"sizeBytes"`
+	Version   string `json:"version"`
 }
 
 // PackageVersionList defines model for PackageVersionList.
@@ -6576,7 +6578,7 @@ type PackageVersionSummary struct {
 	// Repositories The keys of the repositories that hold this version and that the caller may read.
 	Repositories []string `json:"repositories"`
 
-	// SizeBytes The size of the version's files, summed.
+	// SizeBytes The size of the version's files, summed; for a format whose files are not its content, the size the format reports (an OCI tag - the size of its image, config and layers, not of the manifest document).
 	SizeBytes int64  `json:"sizeBytes"`
 	Version   string `json:"version"`
 }

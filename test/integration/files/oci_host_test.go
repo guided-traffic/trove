@@ -66,9 +66,10 @@ func (proceedResolver) ShadowCheck(context.Context, *formats.Request, string) (f
 }
 
 type ociFixture struct {
-	e    *env
-	r    *replica
-	host *formathost.Host
+	e     *env
+	r     *replica
+	host  *formathost.Host
+	ports *formathost.Bindings
 }
 
 const (
@@ -81,7 +82,7 @@ func newOCIFixture(t *testing.T) *ociFixture {
 	e := newEnv(t)
 	e.breakGlass()
 	b := formathost.NewBindings()
-	f := &ociFixture{e: e}
+	f := &ociFixture{e: e, ports: b}
 	// The cascade of a removal hook removes through the item store of the replica, as the composition root wires it.
 	deps := formathost.Deps{Bindings: b, Ownership: allowOwnership{}, AutoClaim: noAutoClaim{}, Remover: func() formathost.ItemRemover {
 		if f.r != nil && f.r.items != nil {

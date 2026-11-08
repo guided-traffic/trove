@@ -202,6 +202,7 @@ checked every earlier decision against them:
 | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) | The OCI data port reads and removes for the deletion, the sweep and the replay | Decided by the development agent — owner review at the walkthrough |
 | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) | The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
+| [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6463,6 +6464,34 @@ second matcher that tracks ServeMux).
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-001, R-OCI-003, R-OCI-017, R-OCI-029, Q-OCI-100, Q-OCI-101;
 [spec/architecture.md](spec/architecture.md) R-ARCH-005, Q-ARCH-390; [spec/endpoints.md](spec/endpoints.md) R-EP-006, R-EP-007, Q-EP-80.
 
+### ADR-177 · The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** Finding F-86 (2026-11-08): the package view computes a version's `sizeBytes` as the sum of its linked file items. An OCI
+tag links its lead item only, the manifest document, so the list of versions showed a few hundred bytes for an image of tens of MiB.
+The format knows the size (the rows of R-OCI-007); the core cannot. The format contract is frozen at version 2 (ADR-141, R-ARCH-025):
+every change is an ADR, and a new behaviour is an optional interface, never a new case of an existing method.
+
+**Decision.** `formats.ViewSizer` is an optional interface of a `Format`: `ViewSizes(ctx, ports, []ViewVersion)` returns the size the
+screens show as the version's `sizeBytes`, by version id, in one call for a page. `CapabilitiesOf` finds it and `Capabilities.ViewSizer`
+records it; the package view asks a format only when it has it (`view.Sizer`, which only the bridge of such a format implements), once
+for a page of the version list after the cut and once for the version details. `ViewData`, `ViewFields` and the view adapters of
+npm and NuGet are unchanged, and `ContractVersion` stays 2. The conformance kit gains a check: a `ViewSizer` answers only for the ids
+it was asked for, with sizes not below zero, in one call. OCI implements it (Q-OCI-130).
+
+**Consequences.** A format whose versions are not their files adds the one method; a format without it is never called. The version
+rows and the sizes are read in separate transactions, so a tag deleted between the two reads, or re-pushed so that its version row is replaced,
+shows the sum of its files in that one answer.
+
+**Alternatives considered.** A new `ViewFields` case and a `ViewData.SizeBytes` member: an existing method would gain a case that
+every adapter has to know, and the unchanged adapters would be called for it. A size stored on the version row: a second copy of what
+the manifest rows hold (Q-OCI-130).
+
+**Revisit condition:** a second format reports a size that needs more than the version's id and name.
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-025; [spec/formats/oci.md](spec/formats/oci.md) R-OCI-031, Q-OCI-130.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -7370,6 +7399,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-100](spec/formats/oci.md#q-oci-100--everything-below-v2-is-one-handler-and-one-match-on-the-patterns-v2-and-v2rest) | How is everything below `/v2/` routed? | (a) The patterns `/v2` and `/v2/{rest...}`; the dispatcher's handler matches the request with the function the enforcement point asks and serves the route that match names | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
 | [Q-OCI-101](spec/formats/oci.md#q-oci-101--the-catalog-merges-the-pages-of-the-readable-repositories-and-decides-each-name) | How does the catalog page over repositories and decide names? | (a) Walk the readable repositories in the order of their name prefix, take names from the data port in pages, decide every name with the listing form of the decision point | — |
 | [Q-OCI-102](spec/formats/oci.md#q-oci-102--the-pull-check-on-a-mounts-source-is-made-by-the-enforcement-point-and-answers-as-an-unreadable-source) | Who checks the registry token's pull on a mount's source, and how does a refusal answer? | (a) The enforcement point drops `mount` and `from`, so the handler opens a session (202), as for an unreadable source | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
+| [Q-OCI-130](spec/formats/oci.md#q-oci-130--the-size-of-a-tag-in-the-package-view-is-the-size-of-its-image-reported-by-the-format) | What is the size of an OCI tag in the package view, and where does it come from? | (a) The image size (config and layers; of an index its children), reported by the format through the optional `ViewSizer` from the manifest rows | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

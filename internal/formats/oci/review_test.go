@@ -149,6 +149,36 @@ func TestR_OCI_031_TheSummaryReadsNothingAndTheDetailsReadOnce(t *testing.T) {
 	}
 }
 
+// The sizes of the tags of a page are read once, answer for the ids asked and no other, and are the size of the image.
+func TestR_OCI_031_TheSizesReadOnceAndAnswerForTheTagsAsked(t *testing.T) {
+	fx := newFixture(t, formattest.HostOptions{})
+	fx.image("a", "1", "one")
+	fx.image("b", "1", "two")
+	ctx := context.Background()
+	va, _, _ := fx.h.Packages().Versions(ctx, fx.h.Ref(), "a")
+	vb, _, _ := fx.h.Packages().Versions(ctx, fx.h.Ref(), "b")
+	both := []formats.ViewVersion{
+		{ID: va[0].ID, Repo: fx.h.Ref(), Package: "a", Version: "1"}, {ID: vb[0].ID, Repo: fx.h.Ref(), Package: "b", Version: "1"},
+	}
+	var f formats.ViewSizer = New()
+	got, err := f.ViewSizes(ctx, fx.h, both)
+	if err != nil || len(got) != 2 || fx.twin.calls["TagSizes"] != 1 || fx.twin.calls["TagViews"] != 0 {
+		t.Fatalf("sizes: %v %v, %d reads of the sizes, %d of the views", got, err, fx.twin.calls["TagSizes"], fx.twin.calls["TagViews"])
+	}
+	for _, v := range both {
+		if got[v.ID] <= 0 {
+			t.Errorf("the size of %s:%s = %d", v.Package, v.Version, got[v.ID])
+		}
+	}
+	one, err := f.ViewSizes(ctx, fx.h, both[:1])
+	if err != nil || len(one) != 1 || one[va[0].ID] != got[va[0].ID] {
+		t.Fatalf("one tag asked: %v %v", one, err)
+	}
+	if none, err := f.ViewSizes(ctx, fx.h, nil); err != nil || len(none) != 0 {
+		t.Fatalf("none asked: %v %v", none, err)
+	}
+}
+
 func TestR_OCI_031_AStringThatIsNoTagSortsBeforeEveryTag(t *testing.T) {
 	v := New().View()
 	for _, junk := range []string{"zz z", "", "-x", "\x00?!"} {

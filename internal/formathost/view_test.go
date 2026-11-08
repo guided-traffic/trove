@@ -147,3 +147,44 @@ func TestR_API_029_ViewAdaptersBridgeTheRegisteredFormats(t *testing.T) {
 		t.Fatalf("%v", w)
 	}
 }
+
+// sizerFormat is a view format with the optional ViewSizer.
+type sizerFormat struct {
+	viewFormat
+	asked *[]formats.ViewVersion
+}
+
+func (s sizerFormat) ViewSizes(_ context.Context, _ formats.DataPorts, vs []formats.ViewVersion) (map[formats.VersionID]int64, error) {
+	*s.asked = append(*s.asked, vs...)
+	return map[formats.VersionID]int64{vs[0].ID: 42}, nil
+}
+
+// TestR_API_029_OnlyAFormatWithAViewSizerIsAskedForSizes: the core finds the size of a version through the capability, so the adapter
+// of a format without ViewSizer has no Sizes method and is never asked; the bridge of one that has it passes the versions and the
+// answer through (ADR-177).
+func TestR_API_029_OnlyAFormatWithAViewSizerIsAskedForSizes(t *testing.T) {
+	var asked []formats.ViewVersion
+	vs := NewViewAdapters([]formats.Format{
+		viewFormat{id: "plain", a: &viewAdapterStub{}},
+		sizerFormat{viewFormat: viewFormat{id: "alpha", a: &viewAdapterStub{}}, asked: &asked},
+	}, noPorts{})
+	plain, ok := vs.For("plain")
+	if !ok {
+		t.Fatal("no adapter for plain")
+	}
+	if _, isSizer := plain.(view.Sizer); isSizer {
+		t.Fatal("the adapter of a format without ViewSizer can be asked for sizes")
+	}
+	alpha, _ := vs.For("alpha")
+	z, isSizer := alpha.(view.Sizer)
+	if !isSizer {
+		t.Fatal("the adapter of a format with ViewSizer cannot be asked for sizes")
+	}
+	got, err := z.Sizes(context.Background(), []view.Version{{ID: 7, Format: "alpha", Repo: "p/r", Package: "app", Version: "1"}})
+	if err != nil || len(got) != 1 || got[7] != 42 {
+		t.Fatalf("sizes = %v, %v", got, err)
+	}
+	if len(asked) != 1 || asked[0].ID != 7 || asked[0].Package != "app" || asked[0].Version != "1" {
+		t.Fatalf("the format was asked %+v", asked)
+	}
+}

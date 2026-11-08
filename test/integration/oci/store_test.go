@@ -95,10 +95,13 @@ func TestR_OCI_007_ARecordedManifestAndItsReferencesReadBack(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	subject := sum("subject")
+	// The children of the index are recorded first, as a push requires; the index's content size is the sum of theirs (Q-OCI-130).
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "team/app", Digest: sum("c1"), MediaType: "application/vnd.oci.image.manifest.v1+json", Size: 10, ContentSize: 300}})
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "team/app", Digest: sum("c2"), MediaType: "application/vnd.oci.image.manifest.v1+json", Size: 10, ContentSize: 354}})
 	in := rows.ManifestInput{
 		Manifest: rows.Manifest{
 			Name: "team/app", Digest: sum("m1"), MediaType: "application/vnd.oci.image.index.v1+json", ArtifactType: "application/vnd.example+json",
-			Subject: &subject, Size: 321, ContentSize: 654, Annotations: json.RawMessage(`{"a": "1", "b": "2"}`), AnnotationsCut: true,
+			Subject: &subject, Size: 321, ContentSize: 0, Annotations: json.RawMessage(`{"a": "1", "b": "2"}`), AnnotationsCut: true,
 		},
 		References: []rows.Reference{
 			{Target: sum("c1"), Kind: rows.KindManifest, Platform: "linux/amd64"},
@@ -135,7 +138,7 @@ func TestR_OCI_007_ARecordedManifestAndItsReferencesReadBack(t *testing.T) {
 		kinds[sum("c1")] != rows.KindManifest || kinds[sum("b1")] != rows.KindBlob {
 		t.Fatalf("references = %+v", refs)
 	}
-	if n := e.st.Number("SELECT count(*) FROM oci_manifests WHERE repo_id = $1", e.repoID); n != 1 {
+	if n := e.st.Number("SELECT count(*) FROM oci_manifests WHERE repo_id = $1", e.repoID); n != 3 { // the index and its two children
 		t.Fatalf("%d manifest rows", n)
 	}
 	// Another name is another manifest, and a manifest that is not recorded is absent.
@@ -352,6 +355,22 @@ func TestR_OCI_031_TheViewReadsTheTagsTheirManifestsAndThePlatformsOfAnIndex(t *
 	if solo.VersionID != vSolo || solo.ContentSize != 500 || solo.ArtifactType != "application/vnd.example.config+json" || len(solo.Children) != 0 {
 		t.Fatalf("image view = %+v", solo)
 	}
+	sizes, err := e.store.TagSizes(ctx, []int64{vIdx, vSolo, vNone, vNone + 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]int64{vIdx: 3000, vSolo: 500}
+	if len(sizes) != len(want) {
+		t.Fatalf("sizes = %v, want %v", sizes, want)
+	}
+	for id, n := range want {
+		if sizes[id] != n {
+			t.Fatalf("sizes = %v, want %v", sizes, want)
+		}
+	}
+	if none, err := e.store.TagSizes(ctx, nil); err != nil || len(none) != 0 {
+		t.Fatalf("no tags: %v %v", none, err)
+	}
 	if v, err := e.store.TagViews(ctx, nil); err != nil || len(v) != 0 {
 		t.Fatalf("no tags: %v %v", v, err)
 	}
@@ -414,5 +433,53 @@ func TestR_OCI_013_ConcurrentRecordsOfManifestsLoseNone(t *testing.T) {
 	}
 	if m, r := e.st.Number("SELECT count(*) FROM oci_manifests"), e.st.Number("SELECT count(*) FROM oci_references"); m != n || r != 2*n {
 		t.Fatalf("%d manifests, %d references", m, r)
+	}
+}
+
+// TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth: the push of an index stores the sum of its children's content sizes, and a
+// child that is an index holds its own sum, so the size is right however deep the nesting goes (Q-OCI-130).
+func TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	image := "application/vnd.oci.image.manifest.v1+json"
+	index := "application/vnd.oci.image.index.v1+json"
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "deep", Digest: sum("a"), MediaType: image, Size: 10, ContentSize: 1000}})
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "deep", Digest: sum("b"), MediaType: image, Size: 10, ContentSize: 2000}})
+	e.put(rows.ManifestInput{
+		Manifest:   rows.Manifest{Name: "deep", Digest: sum("l1"), MediaType: index, Size: 10},
+		References: []rows.Reference{{Target: sum("a"), Kind: rows.KindManifest, Platform: "linux/amd64"}, {Target: sum("b"), Kind: rows.KindManifest, Platform: "linux/arm64"}},
+	})
+	e.put(rows.ManifestInput{
+		Manifest:   rows.Manifest{Name: "deep", Digest: sum("l2"), MediaType: index, Size: 10},
+		References: []rows.Reference{{Target: sum("l1"), Kind: rows.KindManifest}},
+	})
+	e.put(rows.ManifestInput{
+		Manifest:   rows.Manifest{Name: "deep", Digest: sum("l3"), MediaType: index, Size: 10},
+		References: []rows.Reference{{Target: sum("l2"), Kind: rows.KindManifest}, {Target: sum("a"), Kind: rows.KindManifest}},
+	})
+	// An index that names no manifest is not summed: its content size stays what it was recorded with.
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "deep", Digest: sum("empty"), MediaType: index, Size: 10}})
+	// The sum saturates at the largest bigint instead of failing.
+	huge := int64(^uint64(0) >> 1)
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "deep", Digest: sum("h1"), MediaType: image, Size: 10, ContentSize: huge}})
+	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "deep", Digest: sum("h2"), MediaType: image, Size: 10, ContentSize: huge}})
+	e.put(rows.ManifestInput{
+		Manifest:   rows.Manifest{Name: "deep", Digest: sum("hh"), MediaType: index, Size: 10},
+		References: []rows.Reference{{Target: sum("h1"), Kind: rows.KindManifest}, {Target: sum("h2"), Kind: rows.KindManifest}},
+	})
+
+	vs := map[string]int64{}
+	for name, digest := range map[string]string{"l1": "l1", "l2": "l2", "l3": "l3", "empty": "empty", "hh": "hh"} {
+		vs[name] = e.tag("deep", name, digest)
+	}
+	sizes, err := e.store.TagSizes(ctx, []int64{vs["l1"], vs["l2"], vs["l3"], vs["empty"], vs["hh"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{"l1": 3000, "l2": 3000, "l3": 4000, "empty": 0, "hh": huge}
+	for name, n := range want {
+		if sizes[vs[name]] != n {
+			t.Fatalf("size of %s = %d, want %d (all: %v)", name, sizes[vs[name]], n, sizes)
+		}
 	}
 }

@@ -12,6 +12,31 @@ VALUES (
 )
 ON CONFLICT (repo_id, name, digest) DO NOTHING;
 
+-- name: OCISetIndexContentSize :exec
+-- Sets the content size of an index to the sum of its children's, saturated at the largest bigint (R-OCI-031, Q-OCI-130). The
+-- required children are stored before the index (the commit transaction holds them against a removal) and a listed child cannot be
+-- removed while the index exists, so their sum is final and, for a child that is an index itself, correct at any depth. A foreign
+-- child (a descriptor with urls) is not required: it adds nothing here when it is not stored yet, and nothing later (H-672).
+UPDATE oci_manifests m
+   SET content_size = LEAST(COALESCE((
+         SELECT sum(c.content_size)
+           FROM oci_references r
+           JOIN oci_manifests c ON c.repo_id = r.repo_id AND c.name = r.name AND c.digest = r.target
+          WHERE r.repo_id = m.repo_id AND r.name = m.name AND r.manifest = m.digest AND r.kind = 'manifest'), 0),
+         9223372036854775807)::bigint
+ WHERE m.repo_id = sqlc.arg(repo_id)::bigint AND m.name = sqlc.arg(name)::text AND m.digest = sqlc.arg(digest)::bytea;
+
+-- name: OCITagSizes :many
+-- The size of the image each of the tags with the given version ids points at: the content size of its manifest, which an index
+-- holds as the sum of its children (R-OCI-031, Q-OCI-130). One statement for any number of packages.
+SELECT pv.id AS version_id, m.content_size
+FROM package_versions pv
+JOIN packages p ON p.id = pv.package_id
+JOIN items i ON i.id = pv.lead_item_id
+JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = i.blob_sha256
+WHERE pv.id = ANY(sqlc.arg(version_ids)::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+ORDER BY pv.id;
+
 -- name: OCIPutReferences :exec
 -- The edges of a manifest, one per target; an edge that is recorded already changes nothing. They travel as one JSON array of
 -- {"target": "<hex>", "kind": "...", "platform": "..."} (sqlc has no multi-array unnest); an empty platform is none.

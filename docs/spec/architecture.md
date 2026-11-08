@@ -1562,6 +1562,16 @@ type Capabilities struct {
 	Remote        RemoteCaps    // the optional interfaces of the remote adapter (WP3.0a, WP3.0b)
 	Vulnerability VulnerabilityAdapter // nil for a format without the vulnerability adapter (R-VULN-009, ADR-150)
 	ServeFacts    ServeFactsKeyer      // nil for a format whose serve check reads nothing besides the item (Q-ARCH-291)
+	ViewSizer     ViewSizer            // nil for a format whose versions are the sum of their files (ADR-177)
+}
+
+// ViewSizer is the optional interface of a Format whose version has a size that is not the sum of the version's files (an OCI tag:
+// the image, not the manifest document, R-OCI-031, Q-OCI-130). ViewSizes returns the size the screens show as the version's
+// sizeBytes, in bytes and not negative, for the versions asked for: only those ids, in one call however many versions a page
+// holds, never one the caller may not read; a version absent from the answer keeps the sum of its files. A format without it is
+// never asked (ADR-177).
+type ViewSizer interface {
+	ViewSizes(ctx context.Context, ports DataPorts, vs []ViewVersion) (map[VersionID]int64, error)
 }
 
 // ServeFactsKeyer names, for a path of a repository, the rows the format's ServeCheck decides on, or the zero key when it
@@ -1794,8 +1804,8 @@ R-ARCH-025 says which changes keep the version (Q-ARCH-280).
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there are eight: `ItemsRestorer` and `RemovalLocker` on the format, `Discoverer`,
-`FillInspector`, `MirrorLister`, `Authenticator` and `Revalidator` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284,
+that assertion in `CapabilitiesOf` alone). Today there are eleven: `ItemsRestorer`, `RemovalLocker`, `ServeFactsKeyer` (`Capabilities.ServeFacts`, Q-ARCH-291) and `ViewSizer` (`Capabilities.ViewSizer`, [ADR-177](../decisions.md#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files)) on the format, `Discoverer`,
+`FillInspector`, `MirrorLister`, `Authenticator`, `Revalidator` and `FactsGate` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284,
 [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)), and
 `VulnerabilityAdapter` on the format (`Capabilities.Vulnerability`, R-VULN-009,
 [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)). `MirrorLister` also

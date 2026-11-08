@@ -201,3 +201,79 @@ func TestR_ARCH_010_Check11ViewAdapter(t *testing.T) {
 		}
 	})
 }
+
+// sizedFormat is a view format with the optional ViewSizer (ADR-177); each flag breaks one rule of it.
+type sizedFormat struct {
+	viewFormat
+	flags map[string]bool
+}
+
+func (s sizedFormat) ViewSizes(_ context.Context, _ formats.DataPorts, vs []formats.ViewVersion) (map[formats.VersionID]int64, error) {
+	if s.flags["sizes-fails"] && len(vs) > 0 {
+		return nil, errors.New("no sizes")
+	}
+	out := map[formats.VersionID]int64{}
+	if s.flags["sizes-for-none"] && len(vs) == 0 {
+		out[1] = 5
+	}
+	for _, v := range vs {
+		out[v.ID] = 10
+	}
+	if s.flags["sizes-unasked"] && len(vs) > 0 {
+		out[vs[0].ID+1000] = 10
+	}
+	if s.flags["sizes-negative"] && len(vs) > 0 {
+		out[vs[0].ID] = -1
+	}
+	return out, nil
+}
+
+// TestR_ARCH_010_Check11ViewSizer: a conforming ViewSizer passes check 11, and a ViewSizer that answers for an id it was not asked
+// for or with a negative size fails it (ADR-177).
+func TestR_ARCH_010_Check11ViewSizer(t *testing.T) {
+	versions := []string{"2", "1", "3"}
+	run := func(flags ...string) formattest.Report {
+		a := &memView{flags: map[string]bool{}}
+		s := sizedFormat{viewFormat: viewFormat{Format: testformat.New(), a: a}, flags: map[string]bool{}}
+		for _, f := range flags {
+			s.flags[f] = true
+		}
+		fx := viewFixture(a, versions...)
+		seed := fx.View.Seed
+		fx.View.Seed = func(h *formattest.Host) error {
+			if err := seed(h); err != nil {
+				return err
+			}
+			return h.Seed(context.Background(), func(w formats.PackageWriter) error {
+				pkg, _, err := w.EnsureLocked(context.Background(), h.Ref(), "view-sample", "view-sample")
+				if err != nil {
+					return err
+				}
+				for _, v := range versions {
+					if _, err := w.InsertVersion(context.Background(), pkg, formats.NewVersion{Version: v}); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
+		return formattest.Evaluate(s, fx)
+	}
+	t.Run("R-ARCH-010 a conforming ViewSizer passes check 11", func(t *testing.T) {
+		if got := messages(run(), formattest.CheckView); got != "" {
+			t.Fatalf("check 11: %s", got)
+		}
+	})
+	for _, c := range []struct{ name, flag, want string }{
+		{"a ViewSizer that answers for an id it was not asked for", "sizes-unasked", "not asked for"},
+		{"a ViewSizer that answers a negative size", "sizes-negative", "not negative"},
+		{"a ViewSizer that fails for the seeded package", "sizes-fails", "ViewSizes of the seeded package"},
+		{"a ViewSizer that answers when asked for nothing", "sizes-for-none", "ViewSizes of no version"},
+	} {
+		t.Run("R-ARCH-010 "+c.name+" fails check 11", func(t *testing.T) {
+			if got := messages(run(c.flag), formattest.CheckView); !strings.Contains(got, c.want) {
+				t.Fatalf("%q does not say %q", got, c.want)
+			}
+		})
+	}
+}

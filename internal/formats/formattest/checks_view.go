@@ -173,4 +173,42 @@ func (r *run) viewStored(a formats.ViewAdapter, v *ViewFixture) {
 	if err != nil || len(ids) != 0 {
 		r.failf("Withheld over a repository whose versions are all served = %v, %v, want nothing and no error", ids, err)
 	}
+	r.viewSizes(h, v)
+}
+
+// viewSizes checks the optional ViewSizer of a format that has one (ADR-177): over the seeded package it answers in one call, only
+// for the ids it was asked for, with sizes that are not negative; it answers nothing, without an error, when asked for nothing.
+func (r *run) viewSizes(h *Host, v *ViewFixture) {
+	z := formats.CapabilitiesOf(r.f).ViewSizer
+	if z == nil {
+		return
+	}
+	ctx := context.Background()
+	rows, _, err := h.Packages().Versions(ctx, h.Ref(), v.Package)
+	if err != nil || len(rows) < 2 {
+		r.failf("the versions of the seeded package could not be read for ViewSizes: %d rows, %v", len(rows), err)
+		return
+	}
+	asked := make([]formats.ViewVersion, 0, len(rows))
+	for _, row := range rows {
+		asked = append(asked, formats.ViewVersion{ID: row.ID, Repo: h.Ref(), Package: v.Package, Version: row.Version})
+	}
+	// Ask for all but one: the answer holds no id that was not asked for.
+	subset := asked[1:]
+	got, err := z.ViewSizes(ctx, h, subset)
+	if err != nil {
+		r.failf("ViewSizes of the seeded package: %v", err)
+		return
+	}
+	for id, n := range got {
+		if !slices.ContainsFunc(subset, func(x formats.ViewVersion) bool { return x.ID == id }) {
+			r.failf("ViewSizes answered for the version id %d, which it was not asked for", id)
+		}
+		if n < 0 {
+			r.failf("ViewSizes answered %d for the version id %d: a size is not negative", n, id)
+		}
+	}
+	if none, err := z.ViewSizes(ctx, h, nil); err != nil || len(none) != 0 {
+		r.failf("ViewSizes of no version = %v, %v, want nothing and no error", none, err)
+	}
 }

@@ -36,7 +36,11 @@ func NewViewAdapters(fs []formats.Format, ports formats.DataPorts) *ViewAdapters
 		if a := f.View(); a != nil {
 			id := string(f.Descriptor().ID)
 			b := viewBridge{a: a, ports: ports, pre: prereleaseOf(f)}
-			v.by[id], v.bridges[id] = b, b
+			v.bridges[id] = b
+			v.by[id] = b
+			if z := formats.CapabilitiesOf(f).ViewSizer; z != nil {
+				v.by[id] = sizedBridge{viewBridge: b, z: z}
+			}
 			v.formats = append(v.formats, id)
 		}
 	}
@@ -91,6 +95,34 @@ func prereleaseOf(f formats.Format) func(string) bool {
 		pre, ok := x.Prerelease(v)
 		return ok && pre
 	}
+}
+
+// sizedBridge is the bridge of a format that reports the size of its versions (formats.ViewSizer): only such a format has a
+// Sizes method, so the core asks no other.
+type sizedBridge struct {
+	viewBridge
+	z formats.ViewSizer
+}
+
+var _ view.Sizer = sizedBridge{}
+
+func (b sizedBridge) Sizes(ctx context.Context, vs []view.Version) (map[int64]int64, error) {
+	in := make([]formats.ViewVersion, len(vs))
+	for i, v := range vs {
+		in[i] = formats.ViewVersion{
+			ID: formats.VersionID(v.ID), Repo: formats.RepoRef{Name: nameOf(v.Repo), Format: formats.ID(v.Format)},
+			Package: v.Package, Version: v.Version,
+		}
+	}
+	got, err := b.z.ViewSizes(ctx, b.ports, in)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int64, len(got))
+	for id, n := range got {
+		out[int64(id)] = n
+	}
+	return out, nil
 }
 
 func (b viewBridge) Compare(x, y string) int  { return b.a.Compare(x, y) }

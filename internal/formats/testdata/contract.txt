@@ -27,6 +27,7 @@ formats.Capabilities: field ItemsRestorer ItemsRestorer
 formats.Capabilities: field Remote RemoteCaps
 formats.Capabilities: field RemovalLocker RemovalLocker
 formats.Capabilities: field ServeFacts ServeFactsKeyer
+formats.Capabilities: field ViewSizer ViewSizer
 formats.Capabilities: field Vulnerability VulnerabilityAdapter
 formats.Class: alias catalog.Class
 formats.Client: field DisplayName string
@@ -490,6 +491,7 @@ formats.ViewFields: type uint8
 formats.ViewFind: field Keyword string
 formats.ViewFind: field Repos []string
 formats.ViewFind: field Text string
+formats.ViewSizer: method ViewSizes(context.Context, DataPorts, []ViewVersion) (map[VersionID]int64, error)
 formats.ViewVersion: field ID VersionID
 formats.ViewVersion: field Package string
 formats.ViewVersion: field Repo RepoRef

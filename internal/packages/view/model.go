@@ -24,6 +24,13 @@ type Adapter interface {
 	Withheld(ctx context.Context, repos []string) ([]int64, error)
 }
 
+// Sizer is the optional part of an Adapter whose format has versions of a size that is not the sum of their files (an OCI tag):
+// Sizes returns the size the screens show for the versions, by id; a version absent keeps the sum of its files. The core asks an
+// adapter only when it has this method.
+type Sizer interface {
+	Sizes(ctx context.Context, vs []Version) (map[int64]int64, error)
+}
+
 // Adapters finds the adapter of a format; ok is false for a format without
 // package screens.
 type Adapters interface {

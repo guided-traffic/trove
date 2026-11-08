@@ -62,6 +62,10 @@ type Store interface {
 	// TagViews reads, for the tags with the given version ids (of any number of image names), the facts of the manifests they point at
 	// and, for an index, its children (R-OCI-031); a version that is not a stored tag of a recorded manifest is absent.
 	TagViews(ctx context.Context, versionIDs []int64) ([]rows.TagView, error)
+	// TagSizes reads, for the tags with the given version ids, the size of the image each points at: the content size of its manifest,
+	// which an index holds as the sum of its children's (R-OCI-031, Q-OCI-130). One read for any number of tags; a version that is
+	// not a stored tag of a recorded manifest is absent.
+	TagSizes(ctx context.Context, versionIDs []int64) (map[int64]int64, error)
 	// StoredTags lists the tags a local repository serves of an image name, newest push first, at most limit: the live versions
 	// whose manifest the journal replay did not withhold.
 	StoredTags(ctx context.Context, repoID int64, name string, limit int) ([]string, error)

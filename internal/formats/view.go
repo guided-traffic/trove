@@ -58,6 +58,15 @@ type ViewAdapter interface {
 	Stored(ctx context.Context, ports DataPorts, q StoredQuery) (Stored, error)
 }
 
+// ViewSizer is the optional interface of a [Format] whose version has a size that is not the sum of the version's files: an OCI
+// tag's file is the manifest document, its size the image's. ViewSizes returns, for the given versions, the size the screens show
+// as the version's `sizeBytes`, in bytes and not negative; a version the format has no size for is absent from the answer and keeps
+// the sum of its files. It answers only for the ids it was asked for, in one call however many versions the page holds, and it is
+// not asked for a version the caller may not read. [CapabilitiesOf] finds it; a format without it is never asked.
+type ViewSizer interface {
+	ViewSizes(ctx context.Context, ports DataPorts, vs []ViewVersion) (map[VersionID]int64, error)
+}
+
 // StoredQuery asks what one repository stores under one package name.
 type StoredQuery struct {
 	// Repo is a local or a remote repository; the host never asks for a virtual one,

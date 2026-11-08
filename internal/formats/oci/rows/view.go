@@ -9,7 +9,8 @@ type TagView struct {
 	MediaType string
 	// ArtifactType is the manifest's own artifactType, else its config's media type; "" for none.
 	ArtifactType string
-	// Size is the size of the manifest document; ContentSize the summed size of its config and layers (0 for an index).
+	// Size is the size of the manifest document; ContentSize the size of the image: the summed size of the config and layers of an image manifest, the sum of its
+	// children's ContentSize for an index (Q-OCI-130).
 	Size        int64
 	ContentSize int64
 	// Children are what an index names, in platform order; empty for an image manifest.

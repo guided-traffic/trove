@@ -6974,7 +6974,7 @@ export interface components {
             publishedAt: string;
             /**
              * Format: int64
-             * @description The size of the version's files, summed.
+             * @description The size of the version's files, summed; for a format whose files are not its content, the size the format reports (an OCI tag - the size of its image, config and layers, not of the manifest document).
              */
             sizeBytes: number;
             /** @description The keys of the repositories that hold this version and that the caller may read. */
@@ -7014,7 +7014,10 @@ export interface components {
             publishedAt: string;
             /** @description SPDX identifiers or the license expression the package declares; empty when it declares none. */
             licenses: string[];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description The size of the version's files, summed; for an OCI tag the size of its image (config and layers; of an index, its distinct children), as in the version list.
+             */
             sizeBytes: number;
             /** Format: int64 */
             downloadCount: number;

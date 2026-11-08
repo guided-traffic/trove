@@ -15819,7 +15819,7 @@ components:
         sizeBytes:
           type: integer
           format: int64
-          description: The size of the version's files, summed.
+          description: The size of the version's files, summed; for a format whose files are not its content, the size the format reports (an OCI tag - the size of its image, config and layers, not of the manifest document).
         repositories:
           type: array
           description: The keys of the repositories that hold this version and that the caller may read.
@@ -15894,6 +15894,7 @@ components:
         sizeBytes:
           type: integer
           format: int64
+          description: The size of the version's files, summed; for an OCI tag the size of its image (config and layers; of an index, its distinct children), as in the version list.
         downloadCount:
           type: integer
           format: int64

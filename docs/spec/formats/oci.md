@@ -1021,15 +1021,17 @@ Priority: **P1** · Covers: PKG-DOCKER-041, PKG-DOCKER-023
 The format's view adapter (R-API-029) shows an image name as a package and its tags as versions, newest first by push time in a
 local repository and by fetch time in a remote one (the list of versions is ordered by push, `Stored`; the precedence of two tags,
 `Compare`, is the tag order, and decides which tag is "latest"): per tag the digest, the media type, the summed size, and for an index its
-platforms with each child's digest and size, from the rows of R-OCI-007. Layer history and labels are not shown (Deferred).
+platforms with each child's digest and size, from the rows of R-OCI-007. The `sizeBytes` of the version, in the list and in the details, is the same summed size (Q-OCI-130), not the size of the tag item. Layer history and labels are not shown (Deferred).
 The version `metadata` of a tag holds `digest`, `mediaType`, `size` (the summed size of the config and the layers; of an index the
-sum over its children) and `artifactType` (the manifest's own, else the media type of its config, so every image shows its config type); an index adds `platforms`, one object per child with
+sum over its children, at any depth) and `artifactType` (the manifest's own, else the media type of its config, so every image shows its config type); an index adds `platforms`, one object per child with
 `platform` (`os/arch[/variant]`, `unknown/unknown` for an attestation, `""` for a child the index names without a platform), `digest`, `mediaType` and `size`. `Compare` is the tag order
 of the format (Q-OCI-17, Q-OCI-64), and a string that is no tag sorts before every tag; a tag whose manifest the journal replay withheld is not listed (R-OCI-033).
 
 Acceptance criteria:
 
 - The package screen of `docker-local/multi` shows the tag `1` with two platforms; the API returns them in `metadata`.
+- The version list and the details of tag `1` of an image show the size of its config and layers as `sizeBytes`, not the size of the manifest
+  document.
 
 ### R-OCI-032 · OCI on n replicas, without Valkey and during a drain
 Priority: **P1** · Covers: trove-only
@@ -2451,6 +2453,49 @@ Code: `handleTagsList`, `handleReferrers`, the claims of `commitTagItem` and `co
 `TestR_OCI_006_TheListsAreDecidedOnThePackageDocumentAndTheSubjectsPath` and `TestR_OCI_006_APathScopedCallerGetsARegistryTokenForTheImagesItsPatternsAdmit` (integration), the catalog subtest of
 `TestTheCatalogPagesOverRepositoriesInByteOrder`.
 
+### Q-OCI-130 · The size of a tag in the package view is the size of its image, reported by the format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the version list and the version details carry `sizeBytes`, which the core computes as the sum of the version's linked file items.
+A tag links its lead item only (the tag item, whose blob is the manifest document), and the format never links blobs to a version
+(R-OCI-013). So the tab "All versions" showed the size of the manifest, a few hundred bytes, for an image of tens of MiB (finding F-86;
+reproduced by `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage`: 397 and 549 bytes for images of 7 and 12 bytes of layers).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format reports the size through an optional interface of the format contract, `ViewSizer`, from the manifest rows of R-OCI-007 (chosen) | `ViewSizes` returns the size by version id; the core asks only a format that has the interface, once for a page of the list and once for the details, and uses the answer in place of the sum of files | No new column on the version, no change to storage or ownership; the number is the one `metadata.size` holds; one statement for a page of the version list (OCI only), the details add one to the two of `Describe`, none on a download (R-ARCH-027); `ContractVersion` stays 2 and npm and NuGet are not touched or called (ADR-177) | The contract gains an interface and a capability field |
+| (a') A new case of `ViewFields` and a `ViewData.SizeBytes` member (first build, rejected in review) | `Describe` answers the size when asked with a new field | No new interface | An existing method gains a case every adapter has to know and is called for it; against the rule that a new behaviour is added, never inserted (R-ARCH-025) |
+| (b) Link the config and layer blobs to the version | The sum of linked files becomes the image size | The core stays unchanged | A blob shared by two tags or two names would be an item of several versions: it changes what an item belongs to, what a version delete removes and what the sweep keeps (R-OCI-018, R-OCI-020); the file list of a tag would list layers it has no path for |
+| (c) A stored size column on the version | The push writes the size on the version row | Cheapest read | A second copy of a fact the manifest rows hold, and the version row is replaced when a tag moves. The size of an index cannot go stale for its required children, though: they are stored before it (R-OCI-013 step 4, held in the commit transaction), a listed child cannot be removed while the index exists (R-OCI-018), and only the push writes the rows. A foreign child (a descriptor with `urls`) is not required and can be pushed after the index; the gap is [H-672](#h-672--the-size-of-an-index-leaves-out-a-foreign-child-that-is-pushed-after-it). That is why the push stores the index's size in the manifest's own row (the choice below) |
+| (d) Add the manifest documents to the sum | Manifest + config + layers | Closer to "bytes stored for the tag" | Differs from `metadata.size` and from the number clients show (`docker images` sums config and layers); the manifests are a few hundred bytes of it |
+
+**Choice:** (a). The version's `sizeBytes` is `metadata.size`: for an image manifest the summed declared size of its config and layers
+(`oci_manifests.content_size`); for an index the sum over its children's, saturating at the largest `int64`, at any depth: the push of an index sets
+its `content_size` to that sum in the transaction that writes its rows (`OCISetIndexContentSize`), after the rows of its edges, and a child that
+is an index holds its own sum already. `ViewSizes` reads the stored value, one statement for a page (`OCITagSizes`); the children are read only for
+the platform table of the details. No migration of rows stored before this decision (pre-alpha). A layer that two tags or two children share counts in each: it is the
+size of the image, not of the repository's storage. The manifest documents are not part of it. The details' `files` stay the tag item's own file.
+
+
+**Rationale:** the format already holds the image's facts in rows made for the screens, and R-API-029 gives the format the part of the view
+the generic rows cannot answer. Nothing about ownership or the sweep is touched. The sizes are the pusher's declaration (H-600). The
+development agent would revisit it for a layer-level deduplication across the children of an index (a child that shares a layer with
+another counts it twice today) once the layer references are read for the screens. The
+version rows and the sizes of a page are read in separate transactions: a tag that is deleted between the two reads, or re-pushed so that its
+version row is replaced (the purge), is absent from the sizes and shows the sum of its files (the manifest document) in that one answer; a tag
+pushed after the first read is not on the page at all.
+
+**Applied in the spec:** [R-OCI-031](#r-oci-031--package-screens) (text and the acceptance criterion on the size), `sizeBytes` in R-API-029
+([api-and-ui.md](../api-and-ui.md)), the OpenAPI description of the field, R-ARCH-008 and R-ARCH-025 ([architecture.md](../architecture.md): the
+contract block, the list of capabilities), [ADR-177](../../decisions.md#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files)
+and [H-600](#h-600--the-sizes-a-manifest-declares-are-not-compared-with-the-stored-blobs). Code: `ViewSizes` in
+[view.go](../../../internal/formats/oci/view.go), `PutManifest` and `TagSizes` in [store_manifests.go](../../../internal/formatdata/oci/store_manifests.go) with `OCISetIndexContentSize` and `OCITagSizes` in [oci_manifests.sql](../../../internal/meta/postgres/queries/oci_manifests.sql), `formats.ViewSizer` and `Capabilities.ViewSizer`, `view.Sizer`, `Service.Versions` and
+`Service.Version` in [service.go](../../../internal/packages/view/service.go), the bridge in [view.go](../../../internal/formathost/view.go), the check of the
+conformance kit in [checks_view.go](../../../internal/formats/formattest/checks_view.go). Tests: `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage` (the
+evidence of the acceptance criterion), `TestR_OCI_031_TheSizesReadOnceAndAnswerForTheTagsAsked`, `TestR_OCI_031_TheMetadataSizeIsTheStoredImageSize`, `TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth` (the store, with saturation), the index-of-indexes part of `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage`,
+`TestR_API_029_OnlyAFormatWithAViewSizerIsAskedForSizes`, `TestR_ARCH_010_Check11ViewSizer`.
+
 ## What this does not cover
 
 ### H-579 · A holder of the stored-secret key ring can mint registry tokens
@@ -2477,7 +2522,16 @@ A descriptor's `size` is the pusher's claim. The registry checks that the blob o
 not that the stored blob has the declared size, so a manifest can name a layer with a size that is not its own. Pulls are unaffected (a
 client verifies the digest it asked for, and the response carries the real `Content-Length`); the summed size of the package screen
 (R-OCI-031, `oci_manifests.content_size`) is the sum of the declared sizes. Live today; real for a pusher that wants a misleading size on
-the screen, who can already name any tag and annotation.
+the screen, who can already name any tag and annotation. The `sizeBytes` of the version list and the details is the same declaration
+(Q-OCI-130) and saturates at the largest `int64`.
+
+### H-672 · The size of an index leaves out a foreign child that is pushed after it
+
+The size of an index is stored by its push as the sum of its children's content sizes (Q-OCI-130). A child whose descriptor carries `urls`
+is foreign and not required to be stored (R-OCI-013 step 4), so an index can be pushed before such a child exists; the sum then leaves it
+out, and it stays out when the child is pushed afterwards, because nothing rewrites the index's row. The `sizeBytes` of the tag is then
+smaller than the sum of the platform table, which reads the child's own size once the child exists. Live today; real for a pusher of an
+index with a foreign child and an unusual push order. A child pushed before the index is counted.
 
 ### H-601 · Blob downloads are streamed and never redirected to the object store
 

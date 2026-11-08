@@ -87,7 +87,34 @@ func (s *Store) PutManifest(ctx context.Context, tx meta.Tx, in rows.ManifestInp
 	if err != nil {
 		return err
 	}
-	return qs.OCIPutReferences(ctx, q.OCIPutReferencesParams{RepoID: in.RepoID, Name: in.Name, Manifest: in.Digest[:], Refs: raw})
+	if err := qs.OCIPutReferences(ctx, q.OCIPutReferencesParams{RepoID: in.RepoID, Name: in.Name, Manifest: in.Digest[:], Refs: raw}); err != nil {
+		return err
+	}
+	for _, e := range edges {
+		if e.Kind == rows.KindManifest {
+			// An index: its content size is the sum of its children's, at any depth (Q-OCI-130).
+			return qs.OCISetIndexContentSize(ctx, q.OCISetIndexContentSizeParams{RepoID: in.RepoID, Name: in.Name, Digest: in.Digest[:]})
+		}
+	}
+	return nil
+}
+
+// TagSizes reads the size of the image of each tag with the given version id, in one statement; a version that is not a stored tag of
+// a recorded manifest is absent.
+func (s *Store) TagSizes(ctx context.Context, versionIDs []int64) (map[int64]int64, error) {
+	out := make(map[int64]int64, len(versionIDs))
+	if len(versionIDs) == 0 {
+		return out, nil
+	}
+	err := s.read(ctx, nil, func(qs *q.Queries) error {
+		clear(out)
+		rs, err := qs.OCITagSizes(ctx, versionIDs)
+		for _, r := range rs {
+			out[r.VersionID] = r.ContentSize
+		}
+		return err
+	})
+	return out, err
 }
 
 func manifestRow(m q.OciManifest) rows.Manifest {

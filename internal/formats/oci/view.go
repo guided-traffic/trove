@@ -115,6 +115,39 @@ func (viewAdapter) Describe(ctx context.Context, ports formats.DataPorts, vs []f
 	return out, nil
 }
 
+var _ formats.ViewSizer = (*Format)(nil)
+
+// ViewSizes implements [formats.ViewSizer]: the size of a tag, as the package screens show it for the version, is the size of its
+// image, not of the tag's file, which is the manifest document (R-OCI-031, Q-OCI-130). The push stores it in the manifest's row (the
+// config and layers of an image, the sum over the children of an index at any depth), so one read answers for all the tags asked for,
+// and for no other id. A tag with no recorded manifest is absent.
+func (*Format) ViewSizes(ctx context.Context, ports formats.DataPorts, vs []formats.ViewVersion) (map[formats.VersionID]int64, error) {
+	if len(vs) == 0 {
+		return map[formats.VersionID]int64{}, nil
+	}
+	st, err := viewPort(ports)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(vs))
+	asked := make(map[int64]bool, len(vs))
+	for i, v := range vs {
+		ids[i] = int64(v.ID)
+		asked[int64(v.ID)] = true
+	}
+	sizes, err := st.TagSizes(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[formats.VersionID]int64, len(sizes))
+	for id, n := range sizes {
+		if asked[id] {
+			out[formats.VersionID(id)] = n
+		}
+	}
+	return out, nil
+}
+
 func tagMetadata(tv rows.TagView) map[string]any {
 	md := map[string]any{
 		"digest":    "sha256:" + hex.EncodeToString(tv.Digest[:]),
@@ -129,18 +162,11 @@ func tagMetadata(tv rows.TagView) map[string]any {
 	}
 	children := tv.Children // in platform order, as the statement read them
 	platforms := make([]map[string]any, 0, len(children))
-	var total int64
 	for _, c := range children {
 		platforms = append(platforms, map[string]any{
 			"platform": c.Platform, "digest": "sha256:" + hex.EncodeToString(c.Digest[:]), "mediaType": c.MediaType, "size": c.ContentSize,
 		})
-		if total > maxInt64-c.ContentSize {
-			total = maxInt64
-		} else {
-			total += c.ContentSize
-		}
 	}
-	md["size"] = total
 	md["platforms"] = platforms
 	return md
 }

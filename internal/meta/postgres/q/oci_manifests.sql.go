@@ -195,6 +195,32 @@ func (q *Queries) OCIPutReferences(ctx context.Context, arg OCIPutReferencesPara
 	return err
 }
 
+const oCISetIndexContentSize = `-- name: OCISetIndexContentSize :exec
+UPDATE oci_manifests m
+   SET content_size = LEAST(COALESCE((
+         SELECT sum(c.content_size)
+           FROM oci_references r
+           JOIN oci_manifests c ON c.repo_id = r.repo_id AND c.name = r.name AND c.digest = r.target
+          WHERE r.repo_id = m.repo_id AND r.name = m.name AND r.manifest = m.digest AND r.kind = 'manifest'), 0),
+         9223372036854775807)::bigint
+ WHERE m.repo_id = $1::bigint AND m.name = $2::text AND m.digest = $3::bytea
+`
+
+type OCISetIndexContentSizeParams struct {
+	RepoID int64
+	Name   string
+	Digest []byte
+}
+
+// Sets the content size of an index to the sum of its children's, saturated at the largest bigint (R-OCI-031, Q-OCI-130). The
+// required children are stored before the index (the commit transaction holds them against a removal) and a listed child cannot be
+// removed while the index exists, so their sum is final and, for a child that is an index itself, correct at any depth. A foreign
+// child (a descriptor with urls) is not required: it adds nothing here when it is not stored yet, and nothing later (H-672).
+func (q *Queries) OCISetIndexContentSize(ctx context.Context, arg OCISetIndexContentSizeParams) error {
+	_, err := q.db.Exec(ctx, oCISetIndexContentSize, arg.RepoID, arg.Name, arg.Digest)
+	return err
+}
+
 const oCIStoredTags = `-- name: OCIStoredTags :many
 SELECT pv.version::text AS tag
 FROM package_versions pv
@@ -226,6 +252,43 @@ func (q *Queries) OCIStoredTags(ctx context.Context, arg OCIStoredTagsParams) ([
 			return nil, err
 		}
 		items = append(items, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const oCITagSizes = `-- name: OCITagSizes :many
+SELECT pv.id AS version_id, m.content_size
+FROM package_versions pv
+JOIN packages p ON p.id = pv.package_id
+JOIN items i ON i.id = pv.lead_item_id
+JOIN oci_manifests m ON m.repo_id = p.repo_id AND m.name = p.name AND m.digest = i.blob_sha256
+WHERE pv.id = ANY($1::bigint[]) AND pv.trashed_at IS NULL AND i.trashed_at IS NULL
+ORDER BY pv.id
+`
+
+type OCITagSizesRow struct {
+	VersionID   int64
+	ContentSize int64
+}
+
+// The size of the image each of the tags with the given version ids points at: the content size of its manifest, which an index
+// holds as the sum of its children (R-OCI-031, Q-OCI-130). One statement for any number of packages.
+func (q *Queries) OCITagSizes(ctx context.Context, versionIds []int64) ([]OCITagSizesRow, error) {
+	rows, err := q.db.Query(ctx, oCITagSizes, versionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OCITagSizesRow{}
+	for rows.Next() {
+		var i OCITagSizesRow
+		if err := rows.Scan(&i.VersionID, &i.ContentSize); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
