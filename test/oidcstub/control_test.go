@@ -89,7 +89,9 @@ func TestControlAPIRequiresTheToken(t *testing.T) {
 }
 
 // TestControlAPICarriesConcurrentMints is the load of the 50-job e2e tests (R-CI-029): many clients mint at the same moment, each over
-// a new TLS connection, and every one is answered.
+// a new TLS connection, and every one is answered. All 200 requests are issued at once, but at most maxInFlight of them hold a
+// connection at a time: a host's listen backlog (128 on macOS) is not what is under test, and a connect beyond it is reset by the
+// kernel before the stub ever sees it.
 func TestControlAPICarriesConcurrentMints(t *testing.T) {
 	c := newControl(t)
 	tr, ok := c.client.Transport.(*http.Transport)
@@ -99,10 +101,13 @@ func TestControlAPICarriesConcurrentMints(t *testing.T) {
 	tr = tr.Clone()
 	tr.DisableKeepAlives = true
 	cl := &http.Client{Transport: tr, Timeout: 30 * time.Second}
-	const clients = 200
+	const clients, maxInFlight = 200, 64
+	slots := make(chan struct{}, maxInFlight)
 	errs := make(chan error, clients)
 	for range clients {
 		go func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
 			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.url+"/mint", strings.NewReader(`{"claims":{}}`))
 			if err != nil {
 				errs <- err
