@@ -26,6 +26,9 @@ type probeResult struct {
 	ref      *refusal
 	withBody bool
 	err      error
+	// cached is set when the leader found the answer already kept: a request that passed the cache check
+	// while another flight of the key was still running, and led its own flight only after that one ended.
+	cached bool
 }
 
 // write is the write flow of R-BAS-014 (Q-BAS-38): a method other than GET and HEAD is first sent to the main
@@ -37,12 +40,7 @@ func (e *engine) write(q *rq) {
 		return
 	}
 	key := q.r.Method + " " + q.target
-	if rec, ok := e.probes.get(key); ok && e.now().Before(rec.until) {
-		ref := rec.ref
-		q.reason = metrics.RefusedReadOnly
-		e.d.Metrics.Refused.WithLabelValues(metrics.RefusedReadOnly).Inc()
-		q.finish(metrics.ClassPass, metrics.ResultHit)
-		e.writeRefusal(q, &ref, metrics.SourceCache)
+	if e.replayProbe(q, key) {
 		return
 	}
 	if !e.d.Link.Reachable() {
@@ -53,7 +51,14 @@ func (e *engine) write(q *rq) {
 		e.refuseVerdict(q, v)
 		return
 	}
-	res, err := e.probeFlights.do(q.ctx(), key, func(ctx context.Context) (any, error) { return e.probe(ctx, q, key), nil })
+	res, err := e.probeFlights.do(q.ctx(), key, func(ctx context.Context) (any, error) {
+		// A request that checked the cache before the previous flight of this key kept its answer and leads a
+		// new flight after it ended would send a second probe: the leader looks again.
+		if ref, ok := e.keptProbe(key); ok {
+			return probeResult{ref: &ref, cached: true}, nil
+		}
+		return e.probe(ctx, q, key), nil
+	})
 	if err != nil {
 		e.mainError(q, err)
 		return
@@ -62,6 +67,8 @@ func (e *engine) write(q *rq) {
 	switch {
 	case pr.err != nil:
 		e.mainError(q, pr.err)
+	case pr.cached:
+		e.replayRefusal(q, *pr.ref)
 	case pr.ref != nil:
 		q.reason = metrics.RefusedReadOnly
 		if pr.ref.Status == http.StatusForbidden {
@@ -72,6 +79,31 @@ func (e *engine) write(q *rq) {
 	case pr.withBody:
 		e.forwardWithBody(q)
 	}
+}
+
+// keptProbe is the kept probe answer of a key, if it is still valid.
+func (e *engine) keptProbe(key string) (refusal, bool) {
+	if rec, ok := e.probes.get(key); ok && e.now().Before(rec.until) {
+		return rec.ref, true
+	}
+	return refusal{}, false
+}
+
+// replayProbe answers the request from the kept probe answer of its key and reports whether it did.
+func (e *engine) replayProbe(q *rq, key string) bool {
+	ref, ok := e.keptProbe(key)
+	if ok {
+		e.replayRefusal(q, ref)
+	}
+	return ok
+}
+
+// replayRefusal replays a kept refusal of a write without a request to the main installation.
+func (e *engine) replayRefusal(q *rq, ref refusal) {
+	q.reason = metrics.RefusedReadOnly
+	e.d.Metrics.Refused.WithLabelValues(metrics.RefusedReadOnly).Inc()
+	q.finish(metrics.ClassPass, metrics.ResultHit)
+	e.writeRefusal(q, &ref, metrics.SourceCache)
 }
 
 // probe sends the bodiless probe and keeps a 403 or 404 answer (R-BAS-014).

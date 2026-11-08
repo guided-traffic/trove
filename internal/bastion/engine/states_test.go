@@ -375,6 +375,45 @@ func TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe(t *testing.T) {
 	}
 }
 
+// TestR_BAS_014_AWriteThatMissedTheKeptAnswerBeforeTheProbeEndedDoesNotProbeAgain holds one write between its
+// look into the kept answers and its flight until another write of the same key has been probed and kept: the
+// held write must replay the kept answer and not send a second probe.
+func TestR_BAS_014_AWriteThatMissedTheKeptAnswerBeforeTheProbeEndedDoesNotProbeAgain(t *testing.T) {
+	g := newGuard()
+	entered, release := make(chan struct{}), make(chan struct{})
+	g.missHook = func(n int) {
+		if n == 1 {
+			close(entered)
+			<-release
+		}
+	}
+	m := &fakeMain{}
+	s := newSiteHarness(t, options{main: m, guard: g})
+	held := make(chan *httptest.ResponseRecorder, 1)
+	go func() { held <- s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", strings.NewReader("x")) }()
+	<-entered
+	if w := s.do(http.MethodPut, "/api/npm/web/npm-all/acme-sdk", strings.NewReader("x")); w.Code != 403 {
+		t.Fatalf("%d", w.Code)
+	}
+	close(release)
+	if w := <-held; w.Code != 403 || !strings.Contains(w.Body.String(), "bastion_read_only") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if n := m.count(); n != 1 {
+		t.Fatalf("%d probes for two writes of one key, want 1", n)
+	}
+	// the held write is a replay: counted as a hit served from the cache, and as a refusal
+	if counterValue(t, s.harness, "requests", metrics.ClassPass, metrics.ResultHit) != 1 || counterValue(t, s.harness, "requests", metrics.ClassPass, metrics.ResultMiss) != 1 {
+		t.Fatalf("requests: hit %v miss %v, want 1 and 1", counterValue(t, s.harness, "requests", metrics.ClassPass, metrics.ResultHit), counterValue(t, s.harness, "requests", metrics.ClassPass, metrics.ResultMiss))
+	}
+	if cache, main := counterValue(t, s.harness, "bytes", metrics.SourceCache), counterValue(t, s.harness, "bytes", metrics.SourceMain); cache == 0 || cache != main {
+		t.Fatalf("bytes from the cache %v, from main %v: the replay must be served from the cache with the probe's body", cache, main)
+	}
+	if counterValue(t, s.harness, "refused", metrics.RefusedReadOnly) != 2 {
+		t.Fatalf("refused %v, want 2", counterValue(t, s.harness, "refused", metrics.RefusedReadOnly))
+	}
+}
+
 func TestR_BAS_014_ANuGetPushWithoutACredentialIsStillRefusedByTheProbe(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	s.setAnonymous(false)

@@ -368,6 +368,8 @@ type fakeGuard struct {
 	reqs    int
 	// missLimit, when positive, refuses every miss from the missLimit+1st.
 	missLimit int
+	// missHook, when set, is called with the number of the miss before the verdict is given, outside the lock.
+	missHook func(n int)
 }
 
 func newGuard() *fakeGuard {
@@ -392,6 +394,12 @@ func (g *fakeGuard) Miss(context.Context, string, guard.Credentialed) guard.Verd
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.misses++
+	n := g.misses
+	if g.missHook != nil {
+		g.mu.Unlock()
+		g.missHook(n)
+		g.mu.Lock()
+	}
 	if g.missLimit > 0 && g.misses > g.missLimit {
 		return guard.Verdict{Status: 429, Code: iface.CodeRateLimited, RetryAfter: 10 * time.Second, Reason: metrics.RefusedMissLimited}
 	}
