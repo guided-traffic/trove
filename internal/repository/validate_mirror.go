@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/url"
 	"reflect"
 	"slices"
@@ -147,6 +149,36 @@ func checkDelegatedMirrorScope(v *validation, stored, next *RemoteSettings, cur,
 	if !reflect.DeepEqual(stored.ExtraHosts, next.ExtraHosts) {
 		v.add("/remote/extraHosts", errs.CodeMirrorRestricted, why)
 	}
+}
+
+// checkDelegatedFormatMirror applies Q-OCI-22 to a project Owner's write: what a mirror of the format keeps is the format's member
+// `<format>.mirror` (oci.mirror), and it stays as stored, like remote.mirror (the format's defaults on a create), in either mode: an
+// Owner who could widen it would decide what a mirror stores, which the rule of Q-REPO-142 reserves to an administrator. cur is the
+// stored document, nil on a create.
+func checkDelegatedFormatMirror(v *validation, cur, nd *Document) {
+	var curMirror json.RawMessage
+	if cur != nil {
+		curMirror = mirrorMemberOfFormat(cur)
+	}
+	if !bytes.Equal(curMirror, mirrorMemberOfFormat(nd)) {
+		v.add("/"+nd.Format+"/mirror", errs.CodeMirrorRestricted,
+			"a project Owner keeps the mirror settings an administrator of trove chose; the format's mirror member is not its to change")
+	}
+}
+
+// mirrorMemberOfFormat is the canonical `mirror` member of the settings member of the document's format; nil when there is none.
+func mirrorMemberOfFormat(d *Document) json.RawMessage {
+	for _, m := range formatMembers() {
+		if m.format != d.Format {
+			continue
+		}
+		var doc map[string]json.RawMessage
+		if raw := m.read(&d.Settings); len(raw) == 0 || json.Unmarshal(raw, &doc) != nil {
+			return nil
+		}
+		return canonicalObject(doc["mirror"])
+	}
+	return nil
 }
 
 func sameStrings(a, b []string) bool {

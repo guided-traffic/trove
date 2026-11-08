@@ -148,18 +148,28 @@ func Fingerprint(include, exclude []string) []byte {
 }
 
 // SelectItems applies the version bounds of R-REPO-051 to a plan's items (newest first): the prerelease versions go when
-// includePrereleases is false, the newest max of the rest stay (0: all), and a pinned version always stays besides them
-// (Q-NPM-71). The order is the plan's.
+// includePrereleases is false, the newest max versions of the rest stay (0: all), and a pinned version always stays besides them
+// (Q-NPM-71). The bounds count versions, not items: the items of one version (an image's manifests, configs and layers, Q-OCI-180)
+// are kept or dropped together, decided at the first item of the version, and a version is pinned when any of its items is. The
+// order is the plan's.
 func SelectItems(items []discover.Item, includePrereleases bool, max int) []discover.Item {
 	out := make([]discover.Item, 0, len(items))
 	kept := 0
+	decided := map[string]bool{}
 	for _, it := range items {
-		candidate := includePrereleases || !it.Prerelease
-		within := candidate && (max <= 0 || kept < max)
-		if within {
-			kept++
+		keep, ok := decided[it.Version]
+		if !ok {
+			candidate := includePrereleases || !it.Prerelease
+			within := candidate && (max <= 0 || kept < max)
+			if within {
+				kept++
+			}
+			keep = within || it.Pinned
+			decided[it.Version] = keep
+		} else if it.Pinned {
+			keep = true
 		}
-		if within || it.Pinned {
+		if keep {
 			out = append(out, it)
 		}
 	}

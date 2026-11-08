@@ -949,7 +949,7 @@ format settings (R-REPO-004), present in both modes and effective in mode `mirro
 | `platforms` | Platforms (`os/arch` or `os/arch/variant`) of an index whose manifests are mirrored; empty is every platform | `[]` | 0–32 |
 
 - The generic members keep their meaning: `maxVersionsPerPackage` is the number of newest tags kept per image among the tags
-  matched by a wildcard pattern, by the tag order of Q-OCI-17; `includePrereleases` decides about tags the tag order marks as
+  matched by a wildcard pattern, by the tag order of Q-OCI-17 (a tag an exact pattern names is kept besides them, Q-OCI-180); `includePrereleases` decides about tags the tag order marks as
   pre-releases; `maxBytes` bounds the repository's bytes (R-REPO-052).
 - `oci.mirror` decides what the mirror covers like the patterns do, so the rule of R-REPO-050 that keeps `includePatterns`,
   `excludePatterns`, `remote.url` and `remote.extraHosts` for an Owner without `repositories:write-config` keeps
@@ -959,7 +959,8 @@ format settings (R-REPO-004), present in both modes and effective in mode `mirro
 
 Acceptance criteria:
 
-- A remote created without `oci` reads back `"oci": {"mirror": {"tags": ["latest"], "excludeTags": [], "platforms": []}}`.
+- A remote created without `oci` mirrors with `{"tags": ["latest"], "excludeTags": [], "platforms": []}`: the format reads the defaults of a member the
+  document leaves out (the stored document stays without it, Q-OCI-184).
 - `"platforms": ["linux"]` answers 422 `invalid_value` at `/oci/mirror/platforms/0`.
 - An Owner of project `web` without `repositories:write-config` patching `oci.mirror.tags` of the mirror `docker-hub-mirror`
   gets 422 `mirror_restricted`.
@@ -1212,16 +1213,23 @@ named (Q-OCI-16).
     than `n` and no `Link` is complete. Every pass is full.
   - `names`: the include patterns without a wildcard, read as image names (`library/nginx`, `bitnami/redis`), and, as for every
     method, the names the repository holds. For Docker Hub this is the only method; a one-component pattern `nginx` is the name
-    `library/nginx` (R-OCI-025).
-- **The plan of a name.** The format reads the tags list through `discover.Upstream.Get` (pages of 1,000, at most 100,000 tags;
-  a name with more fails its plan with the reason `too_many_tags`), keeps the tags that match `oci.mirror.tags` and none of
-  `oci.mirror.excludeTags`, and orders them newest first by the tag order of Q-OCI-17, the exact tag patterns marked
-  `Pinned`. For each kept tag:
+    `library/nginx` (R-OCI-025): the name stays `nginx` through the discovery, where the engine checks it against the patterns
+    again, and the plan asks for `library/nginx` and stores below it (Q-OCI-183).
+- **The plan of a name.** The format reads the tags list through `discover.Upstream.Get` (pages of 1,000 by `last`, at most 100,000 tags;
+  a name with more fails its plan with the reason `too_many_tags`; a name the upstream answers `404` for, or `401` with
+  `insufficient_scope` after the handshake, has an empty plan), keeps the tags that match `oci.mirror.tags` and none of
+  `oci.mirror.excludeTags`, and orders them: the tags a wildcard pattern matched first, newest first by the tag order of Q-OCI-17,
+  then the tags an exact pattern names, also newest first, marked `Pinned` (Q-OCI-180). A tag the engine would drop (beyond
+  `maxVersionsPerPackage`, or a pre-release with `includePrereleases: false`) is not read, so it costs no manifest request
+  (Q-OCI-182). For each kept tag:
   1. the tag document `<name>/_tags/<tag>` through `discover.Upstream.Document` (stored before the attempt: revalidated by `HEAD`,
-     R-OCI-022, so an unchanged tag costs no manifest `GET`);
+     R-OCI-022, so an unchanged tag costs no manifest `GET`); a manifest the registry does not accept (Docker schema 1, a document
+     the reader refuses) gives the tag no items and does not fail the name (Q-OCI-182);
   2. for an index, the child manifests whose platform is in `oci.mirror.platforms` (all when empty), plus each attestation entry
-     whose `vnd.docker.reference.digest` names a kept child, each read through the new `discover.Upstream.Artifact` (filled and
-     verified like any artifact, then read back within 4 MiB; a stored one costs no request);
+     whose `vnd.docker.reference.digest` names a kept child, each read through `discover.Upstream.Artifact` (filled and
+     verified like any artifact, then read back within 4 MiB; a stored one costs no request). `os/arch` matches every variant of
+     the architecture, `os/arch/variant` that variant, and an entry without a variant is the architecture's default (arm64 is
+     v8, arm is v7) (Q-OCI-181). An index names at most 1,000 manifests; one with more fails its plan (`too_many_children`);
   3. the items: the selected child manifests and, of every selected image manifest, its config and its layers, each with the
      `Size` its descriptor announces, so that `maxBytes` (R-REPO-052) is checked before a fetch. Layers with `urls` are skipped.
 
@@ -1257,6 +1265,9 @@ Acceptance criteria (integration, the OCI stub of R-OCI-035):
 - With `maxBytes` below the image's size, the pass ends `bound_reached` and `docker pull` of an unstored layer through the remote
   still succeeds by pull-through.
 - After a pass, with the stub stopped, `docker pull` of a mirrored tag through the remote succeeds.
+- A Docker Hub remote (the stub under Docker Hub's names) with `includePatterns: ["nginx"]`: the pass stores `library/nginx`, nothing below
+  `nginx/`; when the stub answers the first manifest `GET` with Docker Hub's `429` (`RateLimit-Remaining: 0;w=21600`, no `Retry-After`), the
+  pass counts it in `trove_mirror_rate_limited_total` with the reason `quota_header` and goes on.
 
 ## Test plan
 
@@ -1381,11 +1392,11 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
 | Page | Change | Decision |
 |---|---|---|
 | [README.md](../README.md) | INV-5: the key grammar; INV-6: `/v2/` served by the format `oci`, `_catalog` and `_token` at the registry root | Q-OCI-3, Q-OCI-4 |
-| [architecture.md](../architecture.md) | R-ARCH-005: the `/v2/` row and the route-table rule admit the format's prefix and the core's three root routes; R-ARCH-008: `ProtocolBasePath` may be `/v2/{project}/{key}/` for the one format that declares the registry root, `Refusal.Registry` and the link builder render the base path, the optional remote interfaces `Authenticator` and `Revalidator`, `discover.Upstream.Artifact`, `catalog.Facts.DefaultCredentialHosts`, `SetupData.ImagePrefix`; R-ARCH-009: the upload-session port of the host; R-ARCH-032: the state rows of R-OCI-032 | Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16 |
+| [architecture.md](../architecture.md) | R-ARCH-005: the `/v2/` row and the route-table rule admit the format's prefix and the core's three root routes; R-ARCH-008: `ProtocolBasePath` may be `/v2/{project}/{key}/` for the one format that declares the registry root, `Refusal.Registry` and the link builder render the base path, the optional remote interfaces `Authenticator` and `Revalidator`, `discover.Upstream.Artifact`, the optional `discover.Bounded`, `catalog.Facts.DefaultCredentialHosts`, `SetupData.ImagePrefix`; R-ARCH-009: the upload-session port of the host; R-ARCH-032: the state rows of R-OCI-032 | Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16, Q-ARCH-415 |
 | [identity-and-authentication.md](../identity-and-authentication.md) | R-AUTH-001: the registry token as a credential of the `Authorization` header on `/v2/`, no session cookie there, `/v2/_token` among the routes whose credential the handler presents; R-AUTH-002: the `/v2/` rows of the challenge table; R-AUTH-022: the registry token, its form and that it is not a reference token; R-AUTH-023: a registry token enters the validation at step 2 with the hash it carries; R-AUTH-033: the Basic switch covers the token service; R-AUTH-041: the event `auth.registry_token.denied` (made with the token service) | Q-OCI-5, Q-OCI-50, Q-OCI-51, Q-OCI-53, Q-OCI-57 |
 | [authorization.md](../authorization.md) | R-AUTHZ-007: the OCI table of R-OCI-006 (made with the token service); R-AUTHZ-026: the project key grammar | Q-OCI-3, Q-OCI-6 |
 | [operations-and-observability.md](../operations-and-observability.md) | R-OPS-015: `auth.registry_token.denied` deduplicated like `token.rejected`; the event registry's row of `auth.registry_token.denied`; the metric `trove_oci_registry_tokens_total` (made with the token service) | Q-OCI-53 |
-| [repositories-and-proxy.md](../repositories-and-proxy.md) | R-REPO-002: the key grammar; R-REPO-033: the token handshake's credential rule; R-REPO-050: `<format>.mirror` kept for an Owner without `repositories:write-config`, OCI among the formats that can mirror; R-REPO-051: versions are counted per version, not per item; R-REPO-054: the quota header is read by its integer before `;`; R-REPO-024: the probe reads a Bearer challenge as reachable, at the root of the host for the registry-root format | Q-OCI-3, Q-OCI-13, Q-OCI-16, Q-OCI-22, Q-REPO-280, Q-REPO-281 |
+| [repositories-and-proxy.md](../repositories-and-proxy.md) | R-REPO-002: the key grammar; R-REPO-033: the token handshake's credential rule; R-REPO-050: `<format>.mirror` kept for an Owner without `repositories:write-config`, OCI among the formats that can mirror; R-REPO-051: versions are counted per version, not per item; R-REPO-054: the quota header is read by its integer before `;`; R-REPO-024: the probe reads a Bearer challenge as reachable, at the root of the host for the registry-root format | Q-OCI-3, Q-OCI-13, Q-OCI-16, Q-OCI-22, Q-REPO-280, Q-REPO-281, Q-REPO-295 |
 | [storage.md](../storage.md) | R-STOR-011: status built, with the OCI page as its first user; the session row gains the repository the client addressed and a binding the format names (the OCI image name), both checked on every request | Q-OCI-12 |
 | [endpoints.md](../endpoints.md) | R-EP-007: the Docker Engine mirror points at R-OCI-029 | — |
 | [ha-and-helm.md](../ha-and-helm.md) | R-HA-041: the acceptance criterion points at the e2e set `oci` | — |
@@ -1829,6 +1840,112 @@ Status: **Decided by the development agent** — selected from the options below
 needs the same members.
 
 **Applied in the spec:** R-OCI-026.
+
+### Q-OCI-180 · A tag is the version of everything below it, and the tags an exact pattern names are pinned and planned after the wildcard matches
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-OCI-16 plans one item per manifest, configuration and layer, and R-OCI-026 says `maxVersionsPerPackage` is the number of newest tags kept "among the tags
+matched by a wildcard pattern", with a tag an exact pattern names "always kept". The engine's bound (R-REPO-051) counts the versions of a plan in the plan's order and
+keeps a pinned version besides them, but a pinned version that lies within the bound takes one of its places (npm's `latest`, Q-NPM-71). The acceptance criterion has
+`1.*` and `latest` with a bound of 2 keep `1.2`, `1.1` and `latest`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every item of a tag has the tag as its `Version`; the plan lists the wildcard matches newest first, then the exact tags newest first, marked `Pinned` (chosen) | The exact tags sit after the bound and take no place of it; the engine's rule is unchanged for npm and NuGet | One rule for every format; the criterion holds whichever way the tag order ranks `latest` | The plan is not one list ordered by newness |
+| (b) One plan order, `latest` where the tag order puts it | Newest first as written | The wording of Q-OCI-16 | A non-version tag ranks below every version, so `latest` would come last anyway, but an exact `1.0` inside the window would take a place |
+| (c) A new field on the item that exempts it from the count | Explicit | A contract field | A change of the leaf for one format |
+
+**Choice:** (a).
+
+**Rationale:** the order is only the engine's input; the pinned tags need only come where they cannot displace a wildcard match. The development agent would revisit it if a
+format needs the order to be newest first for a reader of the plan other than the engine.
+
+**Applied in the spec:** R-OCI-026, [Mirror discovery](#mirror-discovery), R-REPO-051 ([Q-REPO-295](../repositories-and-proxy.md#q-repo-295--the-version-bound-counts-versions-a-formats-mirror-member-is-kept-from-an-owner-and-an-artifact-is-filled-once-per-attempt)).
+Code: `selectTags` in [mirror_tags.go](../../../internal/formats/oci/mirror_tags.go). Tests: `TestR_OCI_026_TheTagsAMirrorKeepsAreSelectedAndOrdered`.
+
+### Q-OCI-181 · A platform filter without a variant matches every variant, an entry without one is the architecture's default, and an attestation follows the manifest it names
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the stub's `acme/b` has `linux/arm64/v8`, as Docker Hub writes it, and the mirror criterion filters on `linux/arm64`. `oci.mirror.platforms` allows `os/arch/variant`.
+BuildKit's attestation manifests are index entries with the platform `unknown/unknown` and the annotation `vnd.docker.reference.digest` naming the manifest they attest.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `os/arch` matches every variant of the architecture; `os/arch/variant` matches that variant, and an entry without a variant counts as the default of its architecture (arm64 `v8`, arm `v7`); an attestation entry is selected when the entry it names is (chosen) | `linux/arm64` does what a person writing it means; a registry that omits `v8` is matched by `linux/arm64/v8` | Two registries spell one platform one way each, and the filter agrees | A person who wants `arm/v6` only must write the variant |
+| (b) Exact string comparison | Simple | `linux/arm64` would match nothing on Docker Hub | A filter that silently stores nothing |
+| (c) Normalise both sides as containerd does | Complete | The same | A table of defaults the format does not otherwise need |
+
+**Choice:** (a).
+
+**Rationale:** the filter exists to save bytes, so a filter that does not match is the worse mistake. The development agent would revisit the defaults for another architecture
+whose variant a registry omits. A single-platform image has its platform in its configuration only and is kept whatever `platforms` says; an index entry without a platform that is
+no attestation is not selected when a filter is set. The attestation relation is read from the index document itself, because the manifest parser keeps no descriptor annotations.
+
+**Applied in the spec:** R-OCI-026, [Mirror discovery](#mirror-discovery). Code: `platformSelected`, `selectChildren` in [mirror_plan.go](../../../internal/formats/oci/mirror_plan.go). Tests:
+`TestR_OCI_026_APlatformFilterKeepsTheSelectedManifestsAndTheirAttestations`, `TestR_OCI_026_APlatformFilterKeepsTheArm64ManifestWithItsAttestationOnly`.
+
+### Q-OCI-182 · The plan reads only the tags the engine keeps, and a tag the registry does not accept has no items
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the version bounds apply to the plan after it is made, but a tag costs a manifest `GET` to plan, and on Docker Hub that is a pull against the allowance. The acceptance criterion
+has the stub record no manifest request for `1.0` or `2.0`, tags the bound drops. Docker Hub also holds old tags with a schema 1 manifest, which the registry refuses (R-OCI-022).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The Upstream the engine lends tells the plan the bounds (`discover.Bounded`, Q-ARCH-415); the plan leaves out the tags the engine would drop; a manifest the registry refuses (`MANIFEST_INVALID`) gives the tag no items (chosen) | A tag outside the bound costs nothing; one old tag does not fail an image every pass | The plan repeats the arithmetic of `SelectItems` for tags | Silent: the skipped tag leaves no trace in the status |
+| (b) Plan every tag and let the engine drop | No duplicate rule | | A first pass costs every selected tag, and Docker Hub counts them |
+| (c) Fail the name on a refused manifest | Visible | | One schema 1 tag keeps an image from ever being mirrored |
+
+**Choice:** (a).
+
+**Rationale:** the bound is the operator's wish to spend less; a plan that reads first defeats it. The skipped tag is listed as a gap on the mechanism's security page (H-713). The development agent would revisit it when the status carries
+per-name counters.
+
+**Applied in the spec:** [Mirror discovery](#mirror-discovery). Code: `MirrorPlan`, `invalidManifest` in [mirror_plan.go](../../../internal/formats/oci/mirror_plan.go). Tests: `TestR_REPO_051_ThePlanOfAnImageReadsOnlyTheTagsTheEngineKeeps`,
+`TestR_OCI_026_ForeignLayersAndInvalidManifestsAreSkipped`, `TestR_OCI_026_ACatalogPassStoresTheSelectedTagsWithTheirBlobsAndSurvivesTheUpstream`.
+
+### Q-OCI-183 · A name stays as the pattern spells it through the discovery, and the plan maps it to the Docker Hub name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-025 maps `nginx` to `library/nginx` for a remote whose upstream is Docker Hub itself. The engine checks every pending name against the include patterns again before it plans
+it (R-REPO-051), and the patterns are the operator's: `nginx` admits `nginx`, not `library/nginx`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `names` returns the exact patterns as written; `MirrorPlan` maps the name and every path it lists to `library/<n>` (chosen) | The engine's admission judges the spelling the operator wrote; the stored paths are the ones a client's read is stored under | The package row is `library/nginx`, the pending row `nginx` | |
+| (b) `names` returns `library/nginx` | The same name throughout | The admission would refuse it unless the operator also wrote `library/nginx` | |
+| (c) The host's admission tries both spellings | Either works | A format rule in the host's generic check | |
+
+**Choice:** (a).
+
+**Rationale:** the pattern is the operator's contract. The development agent would revisit it if the host's admission gains a spelling hook for another reason. The names the repository
+holds are `library/nginx` once it is stored, and are admitted only when a pattern admits that spelling; the pattern `nginx` keeps the mirror current by itself.
+
+**Applied in the spec:** [Mirror discovery](#mirror-discovery), R-OCI-025. Code: `mirrorExactNames`, `MirrorPlan` in [mirror.go](../../../internal/formats/oci/mirror.go) and [mirror_plan.go](../../../internal/formats/oci/mirror_plan.go).
+Tests: `TestR_OCI_025_TheMirrorMapsAOneComponentNameOnDockerHubOnly`, `TestR_OCI_025_ADockerHubQuotaAnswerIsAQuotaHeaderRateLimitOfThePass`.
+
+### Q-OCI-184 · A member the document leaves out is read as its defaults by the format; the stored document does not carry it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first acceptance criterion of R-OCI-026 had a remote created without `oci` read back `{"oci": {"mirror": {…defaults}}}`. No format's settings are filled into the stored
+document: the repository service validates the member against the schema and stores it canonically as written, and the formats read their defaults (`npm`, `nuget`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format reads the defaults; the criterion says what the mirror does (chosen) | The same as the other formats; a document sent back saves unchanged | The defaults are not visible in the document | |
+| (b) The service fills format defaults from the schema | The document shows them | A schema-driven default filler in the repository service for every format, and a document an Owner cannot save unchanged when the filled member is `<format>.mirror` (Q-REPO-295) | |
+
+**Choice:** (a).
+
+**Rationale:** the Owner rule of Q-OCI-22 compares the written member with the stored one by value; a filled default would make a document read and sent back differ from the
+stored one. The development agent would revisit it with the schema-driven forms of the UI (R-UI-021), which can show the schema's defaults without the store holding them.
+
+**Applied in the spec:** R-OCI-026. Code: `mirrorMemberOf` in [settings.go](../../../internal/formats/oci/settings.go). Tests: `TestMirrorSettingsDefaults`, `TestMirrorSettingsMember`.
 
 ### Q-OCI-23 · No exposure rules and no Bastion for the format in this phase
 

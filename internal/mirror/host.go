@@ -63,6 +63,23 @@ type Pass struct {
 	Ceiling int
 }
 
+type tallyKey struct{}
+
+// withStoredTally gives the context of a package's plan the function that counts an artifact the plan stored itself.
+func withStoredTally(ctx context.Context, f func(FillResult)) context.Context {
+	return context.WithValue(ctx, tallyKey{}, f)
+}
+
+// ReportStored counts an artifact that a format's plan caused to be stored while it read it (discover.Upstream.Artifact): one item
+// stored, its bytes in the pass's totals and in the byte bound (R-REPO-051, R-REPO-052). The host calls it with the context it
+// was given by the plan, and only for an artifact it stored: one that was present already costs nothing and is not reported. A
+// context that is not a plan's (a test of a format) reports nothing.
+func ReportStored(ctx context.Context, res FillResult) {
+	if f, ok := ctx.Value(tallyKey{}).(func(FillResult)); ok && !res.Present {
+		f(res)
+	}
+}
+
 // FillResult is the outcome of a Fill that did not fail.
 type FillResult struct {
 	// Present is true when the artifact was stored already and no upstream request was sent.

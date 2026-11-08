@@ -419,3 +419,25 @@ WP0 ──┬─ WP1 ─────────────┐
   remote has no version row, Q-OCI-121, so the tag list of the screen is empty).
 - Phase B (round 2b, on the `/v2/` mount): the harness goes through `/v2/` with registry tokens; `DispatchFormats` and the wrapper are gone; the remote gates follow the
   package document path (`<name>/_taglist`, the subject's manifest path); the grant sees the name the client typed (Q-OCI-129).
+
+## WP10 as built (the mirror)
+
+- Built: `internal/formats/oci/mirror.go` (methods, exact names), `mirror_listing.go` (the catalog), `mirror_tags.go` (the tags list in pages, the tag choice and order),
+  `mirror_plan.go` (the plan: tags, child manifests by platform, attestations, configs and layers); `internal/mirror/policy.go` (`SelectItems` counts versions),
+  `fill.go` (a path is filled once per attempt; the tally of an artifact a plan stored), `host.go` (`ReportStored`); `internal/formathost/mirror_host.go` (`Artifact`
+  built on the same `fillPath` as `Fill`, `VersionBounds`); `internal/mirror/discover` (the optional `Bounded`, `BoundsOf`); `internal/repository/validate_mirror.go`
+  (`checkDelegatedFormatMirror`: `<format>.mirror` kept from an Owner, 422 `mirror_restricted` at `/<format>/mirror`). The settings schema and the OpenAPI member of
+  `oci.mirror` were there already (`make generate` changes nothing). ADR-182, Q-OCI-180 to Q-OCI-184, Q-REPO-295, Q-ARCH-415, H-710 to H-714
+  ([oci-remote.md](../security/oci-remote.md#the-mirror)).
+- Decided (the stub's `acme/b` has `linux/arm64/v8`): the platform filter `linux/arm64` matches every variant, `linux/arm64/v8` that variant, an entry without a variant is the
+  architecture's default (Q-OCI-181). The first criterion of R-OCI-026 (defaults read back) is now "the format reads the defaults" (Q-OCI-184).
+- The mirror builds its requests with the shared `registryURL` of `remote.go` (the namespace prefix, the name), not with `UpstreamQuery`, whose shapes are the client's pass-through
+  queries; the token handshake is the engine's (`passUpstream.Get` hands the format's `Authenticator`), the scope of a catalog or tags list request is taken from the request (`scopeOf`).
+- The remote half of R-OCI-025's second criterion is proven: `TestR_OCI_025_ADockerHubQuotaAnswerIsAQuotaHeaderRateLimitOfThePass` (the stub under Docker Hub's names answers the first
+  manifest `GET` with `429-hub`; `trove_mirror_rate_limited_total{reason="quota_header"}` counts it and the pass completes).
+- Tests: [mirror_test.go](../../internal/formats/oci/mirror_test.go), [versions_test.go](../../internal/mirror/versions_test.go), [mirror_format_test.go](../../internal/repository/mirror_format_test.go),
+  `test/integration/mirror/oci_test.go` (two worker processes claiming the queue `mirror`, a client-serving process, the counting stub: catalog pass with the tag bound and a pull with the stub stopped,
+  exact names, platforms, a second pass and a moved tag, the byte bound, a Docker Hub mirror with the quota answer).
+- Touched outside the owned files: `internal/formats/testdata/contract.txt` (the optional `discover.Bounded`), `docs/spec/architecture.md` (the contract comment, Q-ARCH-415),
+  `docs/spec/repositories-and-proxy.md` (R-REPO-050, R-REPO-051, Q-REPO-295), `docs/decisions.md`, `docs/developer/mirror.md`, `README.md`, `internal/mirror/rig_test.go` (a hook of the fake lister).
+- Left to others: the e2e rows (a pass while real clients pull, `mirror-long` drain) are WP11's. Not done: referrers (stay pull-through), nested indexes (H-712), a per-name status of skipped tags (H-713).

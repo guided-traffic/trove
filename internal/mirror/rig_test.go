@@ -590,6 +590,8 @@ type fakeLister struct {
 	// namesErr and planErr return the error of the n-th call (from 1); nil for none.
 	namesErr func(call int) error
 	planErr  func(name string, call int) error
+	// planHook runs at the start of every plan with the plan's context: a format that stores an artifact while it plans reports it there.
+	planHook func(ctx context.Context, name string)
 	methodsE error
 	// methodsFn returns the error of the n-th call of MirrorMethods.
 	methodsFn    func(call int) error
@@ -639,7 +641,10 @@ func (l *fakeLister) MirrorNames(_ context.Context, _ discover.Upstream, rq disc
 	return pg, nil
 }
 
-func (l *fakeLister) MirrorPlan(_ context.Context, _ discover.Upstream, name string) (discover.Plan, error) {
+func (l *fakeLister) MirrorPlan(ctx context.Context, _ discover.Upstream, name string) (discover.Plan, error) {
+	if l.planHook != nil {
+		l.planHook(ctx, name)
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.planCalls == nil {

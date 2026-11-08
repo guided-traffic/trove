@@ -2038,7 +2038,14 @@ type UploadSession struct {
 // it fills an artifact of the repository through the format's gate and the remote engine as the host's Fill does for a plan item
 // (a background request of the pass, counted as an item it stored) and returns the stored bytes when they are at most max; found is
 // false when the upstream does not have it. An artifact above max is filled and counted all the same and answers found true with a nil
-// body, so the plan can tell "stored, too large to read" from "not there" (R-OCI-026, Q-OCI-16).
+// body, so the plan can tell "stored, too large to read" from "not there" (R-OCI-026, Q-OCI-16). The host reports what a call stored
+// to the package's tally (mirror.ReportStored, which the engine reads from the plan's context), so that the pass counts it in its
+// items, its bytes and its byte bound (Q-ARCH-415).
+//
+// discover.Bounded is an optional interface of the Upstream the engine lends: VersionBounds() (maxVersions int, includePrereleases bool)
+// tells a plan the bounds of R-REPO-051, and discover.BoundsOf(u) reads them (no bound and prereleases included for an Upstream
+// that does not implement it). A plan whose versions cost a request each leaves out the versions the engine would drop (Q-OCI-182).
+// It is an addition: ContractVersion stays 3 (ADR-182).
 //
 // catalog.Facts gains RegistryRoot (the one format whose client address is the root of a host: ProtocolBasePath is
 // catalog.RegistryRootBasePath, "/v2/{project}/{key}/"; the catalog refuses a second format that declares it, Q-OCI-4) and
@@ -9715,6 +9722,33 @@ the proxy passes it on. The development agent would revisit the decision if peer
 for longer than that matters.
 
 **Applied in the spec:** the transfer rules of R-ARCH-005. Code: `track`, `trackedBody` and `stallWriter` in [server.go](../../internal/httpserver/server.go).
+
+### Q-ARCH-415 · A plan stores through the host's artifact fill, the engine counts it through the plan's context, and the bounds reach the plan as an optional interface
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the plan of an OCI image has to read the manifests an index names before it can name their configurations and layers
+(R-OCI-026), and `discover.Upstream.Artifact` was a stub answering `not_implemented`. A manifest the plan reads is an artifact the pass
+stores (through the format's gate, the digest check and the populate event of the system), so the pass has to count it, or its items, its
+bytes and `maxBytes` would miss them. The plan also costs a manifest request per tag, and the engine's version bounds are applied after the
+plan, so an image with 2,500 tags would be read in full before 2 were kept.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Artifact` is the host's `Fill` plus a read-back; the host reports a fill it made to the tally in the plan's context (`mirror.ReportStored`); the upstream the engine lends implements the optional `discover.Bounded` (chosen) | No new method on `Upstream`, `Lister` or `Host`: the fakes of the npm and NuGet tests stay as they are; an Upstream without it keeps everything | Two context and interface conventions | |
+| (b) A required `Bounds()` on `Upstream` and a callback parameter on `Artifact` | Explicit | Every implementer changes; the contract file moves for all | |
+| (c) The plan returns tag-level items and the engine asks the format for the blobs of each kept tag | The engine decides before it reads | A second round trip between the engine and the format and a new type | |
+
+**Choice:** (a).
+
+**Rationale:** the value of `Artifact` is that the format reads through the same gate and the same background request as a fill, and that nothing
+it stores escapes the pass's counters. The development agent would revisit it for a second format with a two-level plan (the Debian indexes) that
+wants the engine to see the per-version items before it reads.
+
+**Applied in the spec:** R-ARCH-008 (the contract comment), [formats/oci.md](formats/oci.md) Mirror discovery. Code: `Artifact` and `VersionBounds` in
+[mirror_host.go](../../internal/formathost/mirror_host.go), `ReportStored` in [host.go](../../internal/mirror/host.go), `Bounded` in
+[discover.go](../../internal/mirror/discover/discover.go). Tests: `TestR_REPO_051_AVersionOfSeveralItemsIsStoredWholeAndASharedArtifactOnce`,
+`TestR_REPO_051_ThePlanOfAnImageReadsOnlyTheTagsTheEngineKeeps`, the integration tests of `test/integration/mirror/oci_test.go`.
 
 ## What this does not cover
 

@@ -154,16 +154,20 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 		return
 	}
 	var st pkgState
-	plan, err := p.plan(ctx, name)
+	plan, err := p.plan(ctx, name, &st)
 	if err != nil {
 		p.afterError(ctx, name, st, err)
 		return
 	}
 	var transient, permanent error
+	stored := map[string]bool{} // the paths this attempt stored or found: an artifact that two versions name is filled once
 	for _, item := range SelectItems(plan.Items, rs.Mirror.IncludePrereleases, rs.Mirror.MaxVersionsPerPackage) {
 		if p.isHalted() {
 			p.keep(ctx, name, st)
 			return
+		}
+		if stored[item.Path] {
+			continue
 		}
 		if ok, err := p.admitsBytes(ctx, item); err != nil {
 			p.fatal(&passError{code: CodeInternal, err: err})
@@ -183,6 +187,7 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 		var perm *PermanentError
 		switch {
 		case err == nil:
+			stored[item.Path] = true
 			p.count(&st, res)
 		case errors.As(err, &refused):
 			// Nothing outside the pass changed, so the artifact is not stored: counted, and the next item goes on (R-REPO-057).
@@ -226,9 +231,12 @@ func (p *pass) finishPackage(ctx context.Context, name string, st pkgState) {
 	}
 }
 
-// plan asks the format for the package's plan under the window.
-func (p *pass) plan(ctx context.Context, name string) (plan discover.Plan, err error) {
+// plan asks the format for the package's plan under the window. An artifact the format's plan stores itself, to read what it names
+// (discover.Upstream.Artifact), is counted in the package's tally like one the engine fills: the host reports it through
+// [ReportStored]. A plan runs in one goroutine, so the tally needs no lock.
+func (p *pass) plan(ctx context.Context, name string, st *pkgState) (plan discover.Plan, err error) {
 	err = p.call(ctx, func(c context.Context) (e error) {
+		c = withStoredTally(c, func(res FillResult) { p.count(st, res) })
 		plan, e = p.lister.MirrorPlan(c, p.up, name)
 		return e
 	})

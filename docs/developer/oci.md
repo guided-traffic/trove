@@ -41,6 +41,7 @@ The registry tokens and the token service ([Registry tokens and the token servic
 | [remote.go](../../internal/formats/oci/remote.go) | The remote adapter: `UpstreamRequest` (namespace prefix, `Accept`), `UpstreamQuery`, `AcceptResponse`, `PrepareFill`, `OnFill`, `InspectFill`, `BeforeArtifact`, `Rewrite`; see [the remote class](#the-remote-class-r-oci-021-to-r-oci-025) |
 | [remote_auth.go](../../internal/formats/oci/remote_auth.go), [remote_revalidate.go](../../internal/formats/oci/remote_revalidate.go) | The `Authenticator` (challenge parser, scope from the request, token document) and the `Revalidator` (the `HEAD` and its digest) |
 | [remote_handlers.go](../../internal/formats/oci/remote_handlers.go) | What a client sees of a remote repository: manifests, blobs, the tags list window, referrers; the `library/` mapping |
+| [mirror.go](../../internal/formats/oci/mirror.go), [mirror_listing.go](../../internal/formats/oci/mirror_listing.go), [mirror_tags.go](../../internal/formats/oci/mirror_tags.go), [mirror_plan.go](../../internal/formats/oci/mirror_plan.go) | The mirror lister (`discover.Lister`) on the remote adapter: the methods and the exact names, the catalog, the tags list and the tag selection, the plan of an image; see [the mirror](#the-mirror-r-oci-026) |
 | [hooks.go](../../internal/formats/oci/hooks.go) | `OnCommit`: the package row, the claim, the version of a tag and the manifest rows, in the commit transaction |
 | [view.go](../../internal/formats/oci/view.go) | The package view adapter: tags newest push first, the platform table of an index, the withheld tags |
 | [handlers_upload.go](../../internal/formats/oci/handlers_upload.go) | The blob upload protocol over the host's session port: start, monolithic `POST`, `PATCH`, `PUT`, status, abort; `chunkStart` (the strict `Content-Range`), `outOfOrder` (the headers of a 416) |
@@ -376,6 +377,35 @@ check are in the path. Everything is the application's: the engine, the egress r
 the repository validation. The stub runs in the test process on TLS; `Running.DialOverride()` reaches its three names (`registry.localhost`,
 `auth.localhost`, `cdn.localhost`) and a second stub answers as Docker Hub's three (`registry-1.docker.io`, `auth.docker.io`,
 `production.cloudfront.docker.com`), so no name is resolved. 
+## The mirror (R-OCI-026)
+
+A remote repository in mode `mirror` keeps the images its settings select. The engine is the mirror's ([mirror.md](mirror.md)); the format contributes the lister, in four
+files, and sends no request of its own: the catalog and the tags lists go through `Upstream.Get` (egress rules, token handshake, background slot, throttling), the tag
+documents through `Upstream.Document`, the manifests an index names through `Upstream.Artifact`. Every call is idempotent; nothing is kept between calls.
+
+| Step | Where | What |
+|---|---|---|
+| Methods | `MirrorMethods` | `listing` when `GET /v2/_catalog?n=1` answers 200 with a `repositories` array; `names` always; no feed |
+| Names | `mirrorListing`, `mirrorExactNames` | The catalog in pages of 1,000 by `last` (the `Link` is read for its `last` only; the next request is built here, on the upstream origin), each name below the namespace prefix, checked by `Scope.Admits`; or the include patterns without a wildcard, as written (`nginx` stays `nginx`, Q-OCI-183) |
+| Tags | `readTags`, `selectTags` | The tags list in pages of 1,000, at most 100,000; the tags `oci.mirror.tags` matches and `excludeTags` does not; wildcard matches newest first by [tagorder](../../internal/formats/oci/tagorder/tagorder.go), then the exact tags, `Pinned` (Q-OCI-180) |
+| Bounds | `MirrorPlan`, `discover.BoundsOf` | A tag the engine would drop is not read (Q-OCI-182) |
+| Items | `tagItems`, `itemBuilder` | The tag document (`Document`, a `HEAD` when stored); a single image gives its config and layers; an index gives the selected child manifests (`selectChildren`, `platformSelected`, attestations by `vnd.docker.reference.digest`), read through `Artifact`, and their config and layers; foreign layers (`urls`) are left out; every item carries the tag as its `Version` and the size its descriptor announces |
+
+The host side is format-neutral: [mirror_host.go](../../internal/formathost/mirror_host.go) `fillPath` is `Fill` and `Artifact` (the gate, the engine's fill, the populate event of the system);
+`Artifact` reads the stored bytes back through the item store and reports a fill it made to the package's tally with `mirror.ReportStored` (the engine counts it as an item and in `maxBytes`,
+[fill.go](../../internal/mirror/fill.go) `plan`); `passUpstream.VersionBounds` implements `discover.Bounded`. The engine counts versions, not items
+([policy.go](../../internal/mirror/policy.go) `SelectItems`), and fills a path once per attempt (`fillPackage`). The APT builders reuse `Artifact` and `Bounded` for their indexes.
+The Owner rule for `oci.mirror` is [validate_mirror.go](../../internal/repository/validate_mirror.go) `checkDelegatedFormatMirror`.
+
+What a pass costs on Docker Hub: a first pass of n kept tags is about n manifest `GET` requests plus one per kept child manifest (the only requests Docker Hub counts); a later pass is
+one `HEAD` per kept tag. The platform filter matches `os/arch` against every variant and the stub's `acme/b` carries `linux/arm64/v8`.
+
+Tests: [mirror_test.go](../../internal/formats/oci/mirror_test.go) (the lister over a fake `Upstream`: tag choice and order, the plan, platforms and attestations, foreign layers, a schema 1 tag, an unknown name,
+the tags list in pages and its bound, the catalog and the exact names, the bounds), [versions_test.go](../../internal/mirror/versions_test.go) (versions, the shared path, the tally),
+[mirror_format_test.go](../../internal/repository/mirror_format_test.go) (the Owner rule), and [test/integration/mirror/oci_test.go](../../test/integration/mirror/oci_test.go): the whole stack, two worker processes that
+claim the queue `mirror`, a client-serving process and the counting stub (a catalog pass with the tag bound and a pull with the stub stopped, the exact-name pass, the platform filter, a second pass and a moved tag,
+the byte bound, a Docker Hub mirror with the quota answer). The e2e rows (a pass while real clients pull, the drain) are WP11's.
+
 ## Configuration
 
 | Key | Default | Rule |
@@ -488,7 +518,9 @@ R-OCI-003, R-OCI-017, R-OCI-029).
 
 Built (WP8): the remote class (R-OCI-021 to R-OCI-025): the adapter, the handshake, the revalidation, the pass-through of the tags list window and of referrers.
 
-Not built here (each is a work package of T-16): the virtual class and the mirror, the package screens' remaining parts.
+Built (WP10): the mirror ([the mirror](#the-mirror-r-oci-026)).
+
+Not built here (each is a work package of T-16): the virtual class, the package screens' remaining parts.
 
 ## The counting stub registry
 
@@ -673,4 +705,5 @@ trove, not against the stub.
 
 ## What this page does not cover
 
-The mirror has no code to describe yet; it gets its section here when its work package lands.
+Referrers (signatures, SBOMs) are not mirrored; they stay pull-through (R-OCI-024). The children of an index inside an index are not read. The e2e rows with real clients on several replicas
+are the e2e work package's.

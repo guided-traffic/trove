@@ -177,7 +177,7 @@ PostgreSQL through `mirror.Store`.
    through the plan and stores nothing.
 5. **Fill**: the pending names in name order go to as many workers as the ceiling; a package is checked against the current admission,
    asks its plan, applies the version bounds
-   (`SelectItems`), checks the byte bound and fills each artifact through `Host.Fill` (a `*RefusedError` is counted `refused` and skipped; a transient failure lets the other
+   (`SelectItems`, which counts versions and keeps the items of a version together; a path already filled in the attempt is skipped), checks the byte bound and fills each artifact through `Host.Fill` (a `*RefusedError` is counted `refused` and skipped; a transient failure lets the other
    artifacts go on and the package fails once, Q-REPO-185; `ErrShuttingDown` stops the pass without a write, Q-ARCH-320); a finished
    package deletes its row and raises the counters in one statement. The snapshot is read before each package: a deleted, disabled, paused, offline or switched
    repository halts the attempt. The pass holds its repository by the id of its arguments (`Reader.ByID`), at its start and at every such read: a move to another project (R-REPO-060) renames the repository and neither halts a running pass nor ends a queued one as `repository_gone`; the audit events carry the name the snapshot holds at that moment, the metric series the name the pass began with. The pass records through a handle (`Metrics.of`, released by `run`): when the repository leaves the snapshot under that name `Metrics.Forget` deletes the series and invalidates the handles of the name under the lock every record takes, so the running pass records nothing more under the old name and a pass that begins under the name later starts with a fresh handle (Q-OPS-176).
@@ -409,6 +409,11 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
   `BeforeArtifact` (its document requests are background requests of the pass), then the engine's fill. Offline, a negative entry, a
   refused populate check, a version blocked by the vulnerability scanning and a version the format's gate refuses are errors that
   are failures of the item (not a wait); the host does not check the repository's `mode` or `pausedAt`: that is the engine's.
+- **`Upstream.Artifact`** is `Fill` plus a read-back, for a plan that has to read an artifact before it can name what is below it (an image index's manifests; the APT builders'
+  indexes): the same gate, the same background request and populate event, found=false on an upstream 404, the stored bytes when they are at most `max`. What it stored is
+  reported to the package's tally with `mirror.ReportStored` (read from the plan's context), so the pass counts it as an item and in `maxBytes`; an artifact that was stored costs
+  nothing and is not reported. The Upstream also implements `discover.Bounded` (the version bounds), which a plan whose versions cost a request each reads with `discover.BoundsOf`
+  (ADR-182, [oci.md](oci.md#the-mirror-r-oci-026)).
 - **`Admits`** applies the include and exclude patterns on the name (a format whose patterns match names), the format's name rule
   (`PackageDocumentPath`, `catalog.NormalizeName`), and the claims of R-REPO-023 through `Deps.Refusal`; a failure to read the claims
   is answered by `Admits` itself, and later by a name that is not admitted. It is cheap: the claim index is the routing's snapshot.

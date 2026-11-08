@@ -169,6 +169,23 @@ type Upstream interface {
 	Artifact(ctx context.Context, path string, max int64) (body []byte, found bool, err error)
 }
 
+// Bounded is implemented by the [Upstream] of the engine and tells a plan which versions the engine keeps of it (R-REPO-051): the
+// newest MaxVersions of the versions that are not prereleases when IncludePrereleases is false, 0 for all, and a pinned version
+// always besides them. A plan whose versions cost a request each (an image's tags: the manifest of every tag is read to name its
+// blobs) uses it to leave out the versions the engine would drop, instead of reading them first. A format asks with [BoundsOf];
+// an Upstream that does not implement it keeps everything, and the engine applies the bounds to the plan all the same.
+type Bounded interface {
+	VersionBounds() (maxVersions int, includePrereleases bool)
+}
+
+// BoundsOf returns the version bounds of u: no bound and prereleases included when u does not say.
+func BoundsOf(u Upstream) (maxVersions int, includePrereleases bool) {
+	if b, ok := u.(Bounded); ok {
+		return b.VersionBounds()
+	}
+	return 0, true
+}
+
 // Lister is the optional interface of a format's remote adapter whose upstream packages can be discovered (ADR-152).
 // The engine calls MirrorNames from one goroutine per pass, and MirrorPlan from up to the pass's window at once, for
 // different names.

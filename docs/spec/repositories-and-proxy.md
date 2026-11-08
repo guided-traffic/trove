@@ -3228,8 +3228,9 @@ Priority: **MVP** · Covers: API-082, API-083
   no migration rewrites stored documents (Q-REPO-130). A document read and sent back therefore saves unchanged.
 - `mode: mirror` on a format whose remote adapter cannot discover packages (the catalog fact `Mirror`,
   [architecture.md](architecture.md) R-ARCH-008) answers 422 `not_applicable` at `/remote/mode`, as R-REPO-024 refuses every
-  setting that would be accepted and not enforced. npm and NuGet can: both remote adapters implement the lister
-  ([formats/npm.md](formats/npm.md#mirror-discovery), [formats/nuget.md](formats/nuget.md#mirror-discovery)). A
+  setting that would be accepted and not enforced. npm, NuGet and OCI can: their remote adapters implement the lister
+  ([formats/npm.md](formats/npm.md#mirror-discovery), [formats/nuget.md](formats/nuget.md#mirror-discovery),
+  [formats/oci.md](formats/oci.md#mirror-discovery)). A
   `discovery` that the upstream does not offer is not refused at save, because only the upstream can answer it (as for
   NuGet's resources, [formats/nuget.md](formats/nuget.md) Q-NUGET-14): the pass reports `discovery_unavailable`
   (R-REPO-056).
@@ -3242,7 +3243,10 @@ Priority: **MVP** · Covers: API-082, API-083
   resumes or turns the mode back to `pullThrough` (Q-REPO-142; 422 `mirror_restricted` otherwise). While a mirror stays a
   mirror it also keeps the `includePatterns`, `excludePatterns`, `remote.url` and `remote.extraHosts` as stored: they decide what
   the mirror covers and where it reads from, so a write that changes one answers 422 `mirror_restricted` at its pointer
-  (Q-REPO-193); a write that turns the mode back to `pullThrough` may change them.
+  (Q-REPO-193); a write that turns the mode back to `pullThrough` may change them. What a format's mirror keeps beyond the
+  generic members is the format's member `<format>.mirror` (`oci.mirror`, [formats/oci.md](formats/oci.md) R-OCI-026): an
+  Owner keeps it as stored, in either mode, like `remote.mirror` (the format's defaults on a create), and a write that changes
+  it answers 422 `mirror_restricted` at `/<format>/mirror` (Q-OCI-22, Q-REPO-295).
 - The well-known upstream of a format needs a bound before a mirror of it is accepted (R-REPO-052, 422 `mirror_unbounded`). The
   url of a mirror carries no query (422 `invalid_value` at `/remote/url`, Q-REPO-195).
 
@@ -3313,8 +3317,12 @@ Priority: **MVP** · Covers: trove-only
   an include pattern to narrow a listing request it sends (npm's key ranges); it still checks every name it returns.
 - **Versions.** `maxVersionsPerPackage` keeps the newest n versions of the plan, after `includePrereleases: false` has
   removed the prerelease ones. A format may name versions that always count (npm: the version of the `latest` dist-tag,
-  [formats/npm.md](formats/npm.md) Q-NPM-71). A version outside the bound is not stored by the pass and stays available to
-  clients by pull-through.
+  [formats/npm.md](formats/npm.md) Q-NPM-71; OCI: the tags an exact pattern of `oci.mirror.tags` names, Q-OCI-180). A version
+  outside the bound is not stored by the pass and stays available to clients by pull-through. The bound counts **versions**, not
+  items: a version may have many items (an OCI tag's child manifests, configurations and layers carry the tag as their version),
+  which are kept or dropped together, and an artifact that two kept versions name is filled once per attempt (Q-REPO-295). A
+  format whose versions cost a request each to plan reads the bounds through the optional `discover.Bounded` of the upstream it is
+  lent and leaves out the versions the engine would drop (Q-OCI-182).
 - **Removed upstream.** The mirror deletes nothing (Q-REPO-144). A version or package the upstream withdrew is handled by the
   refreshed document as for every remote: gone packages of R-REPO-029, npm's removal marks of R-NPM-026. A feed's deletion
   record makes the pass refresh that package's document and store nothing.
@@ -7889,6 +7897,30 @@ Context: Q-REPO-280's probe resource for OCI is `/v2/`, and the generic probe ap
 
 **Applied in the spec:** R-REPO-024, [formats/oci.md](formats/oci.md) R-OCI-021. Code: `probeURL` in [probe.go](../../internal/proxy/upstream/probe.go). Test:
 `TestR_REPO_024_TheProbeOfTheRegistryRootFormatIsAtTheRootOfTheHost`, `TestR_REPO_024_TheUpstreamTestOfAPrefixedRegistryAsksTheRootOfTheHost`.
+
+### Q-REPO-295 · The version bound counts versions, a format's mirror member is kept from an Owner, and an artifact is filled once per attempt
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the plan of an OCI image has many items per version (R-OCI-026: the tag is the version of its child manifests, configuration and layers), and
+`SelectItems` counted items, so `maxVersionsPerPackage: 2` would have kept two blobs. Two tags of an image share layers, which the engine would have
+checked against `maxBytes` and asked the host for twice. The format's mirror member `oci.mirror` (Q-OCI-22) is kept from an Owner like the patterns, but the
+validation knew only the generic members.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `SelectItems` decides at the first item of a version and keeps the version whole; the fill skips a path it already filled in the attempt; the validation compares the canonical `<format>.mirror` member of the stored and the written document in either mode (chosen) | One rule for every format; npm and NuGet have one item per version and behave as before | The comparison is by value: an Owner cannot write the format's defaults explicitly into a repository that has none | |
+| (b) A `Version` that is a list, or a per-version item group | Explicit grouping | A contract change for every format | |
+| (c) The format selects versions itself | Nothing in the engine | The engine's bound (R-REPO-051) would be a format matter | |
+
+**Choice:** (a).
+
+**Rationale:** the version is the unit of R-REPO-051 whatever it is made of. The development agent would revisit the by-value comparison if an Owner needs to write
+the defaults, and the path dedupe if a format's plan lists one path in two versions that the bound treats differently (the first fill wins).
+
+**Applied in the spec:** R-REPO-050, R-REPO-051. Code: `SelectItems` ([policy.go](../../internal/mirror/policy.go)), `fillPackage` ([fill.go](../../internal/mirror/fill.go)),
+`checkDelegatedFormatMirror` ([validate_mirror.go](../../internal/repository/validate_mirror.go)). Tests: `TestR_REPO_051_TheVersionBoundsCountVersionsNotItems`,
+`TestR_REPO_051_AVersionOfSeveralItemsIsStoredWholeAndASharedArtifactOnce`, `TestR_OCI_026_AnOwnerKeepsTheFormatsMirrorSettings`.
 
 ## What this does not cover
 

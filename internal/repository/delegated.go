@@ -27,7 +27,8 @@ import (
 //     pullThrough (Q-REPO-142, validate_mirror.go); while the stored mode is mirror and
 //     the write keeps it, the include and exclude patterns, the url and the extra hosts
 //     stay as stored as well, because they decide what the mirror stores and from where
-//     (Q-REPO-193).
+//     (Q-REPO-193); the format's own mirror member (oci.mirror) stays as stored in either
+//     mode (Q-OCI-22, Q-REPO-295).
 //
 // The unsaved upstream test of an Owner has the rules of a create.
 
@@ -50,6 +51,7 @@ func restrictedRemote(v *validation, c Caller, cur, nd *Document) {
 	}
 	checkDelegatedRemote(v, stored, next, nd.pending)
 	checkDelegatedMirror(v, stored, next)
+	checkDelegatedFormatMirror(v, cur, nd)
 	if cur != nil {
 		checkDelegatedMirrorScope(v, stored, next, cur, nd)
 	}

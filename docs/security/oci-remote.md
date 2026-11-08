@@ -2,7 +2,7 @@
 
 Status: built (T-16, WP8): the remote class of the OCI format, a cache in front of another registry (R-OCI-021 to R-OCI-025). The handshake's I/O, the
 credential hosts and the token cache are the engine's and are on [remote-repositories.md](remote-repositories.md#the-token-handshake-and-the-credential-hosts);
-this page is what the format adds: what a registry can make trove store and show. The mirror mode and the virtual class are other pages.
+this page is what the format adds: what a registry can make trove store and show, in pull-through and in mirror mode ([the mirror](#the-mirror)). The virtual class is another page.
 
 The upstream is a party trove does not trust. A registry names the realm trove asks for a token, the host a blob is redirected to, the bytes of a manifest
 and the tags it lists; trove stores some of it and serves it to clients that trust trove. The outbound rules it relies on are on [egress.md](egress.md) and
@@ -70,7 +70,56 @@ A caller who may read a repository reads every image name of its cache that its 
 digest are decided on the name and the path, a tags list is filtered tag by tag, referrers descriptor by descriptor. A caller who may not fill the
 repository (`cacheFillAction`) gets what the cache holds and a refused fill is audited as every refused fill is.
 
+## The mirror
+
+A mirror pass (R-OCI-026) fetches without a client asking, so what the upstream names decides what trove requests. The engine's rules are on [mirror.md](mirror.md) (the system actor, the
+background slots, the bounds); this is what the OCI lister adds.
+
+| What the upstream controls | What trove does with it | Where it stops |
+|---|---|---|
+| The names of a catalog | Each name is checked against the include and exclude patterns, the claims and the name grammar before anything is asked for it; a name below another namespace prefix is dropped | `Scope.Admits`; the engine checks the name again before it plans it |
+| The tags of an image | At most 100,000; only those `oci.mirror.tags` selects, minus `excludeTags`, and, of the wildcard matches, the newest `maxVersionsPerPackage` | The tag grammar (R-OCI-002), `selectTags`; a longer list fails the plan (`too_many_tags`) |
+| The manifests an index names | Read by digest, only for the platforms selected, at most 1,000 per index; each is verified against its digest and parsed within the limits of R-OCI-020 before it is stored | `BeforeArtifact` (the digest the path names), `readFetched`, `maxIndexChildren` |
+| The blobs a manifest names | Fetched from the upstream by digest and verified; a layer with `urls` is **never** fetched, so a manifest cannot send the mirror to another host | `Descriptor.Foreign`; the redirect rules of R-REPO-039 for the host a blob is served from |
+| The sizes a descriptor announces | Checked against `maxBytes` before a fetch, and the real bytes are counted after it | `byteBound`; an upstream that announces less than it sends overshoots the bound by at most the concurrency times the layer (the engine's rule, R-REPO-052) |
+
+Who decides what is mirrored: `oci.mirror`, like the include and exclude patterns, is kept from a project Owner (`mirror_restricted`, Q-OCI-22): only a holder of
+`repositories:write-config` changes which images, tags and platforms a mirror pulls, so a project Owner cannot make the installation fetch a registry's worth of images.
+
+Whose allowance a pass draws on: with `authMode: none` the egress address of the installation, which every client behind it shares; with `authMode: basic` the account of the stored credential.
+The credential goes to the upstream origin and to `extraHosts` entries with `sendCredentials` only, never to a blob host a redirect names (R-REPO-039). A rate-limit answer makes the pass wait
+(`quota_header` for Docker Hub's `RateLimit-Remaining: 0;w=21600`); it does not retry in a loop.
+
 ## What this does not cover
+
+### H-710 · A first pass draws on an allowance that other clients of the same address or account share
+
+Docker Hub counts a manifest `GET` as a pull against the allowance of the address (anonymous) or the account (authenticated). A first pass of n kept tags costs about n manifest `GET`
+requests plus one per kept child manifest, and the pass has no estimate of the allowance before it starts: it learns of the limit from the first `429`, waits, and goes on (R-REPO-054).
+Live today for a Docker Hub mirror with `authMode: none` or with an account that other people use: the pass can use up what remains of the allowance and the other users see the
+registry's own `429`. The control is `authMode: basic` with an account of the mirror's own, which the guide recommends, and the bounds `tags` and `maxVersionsPerPackage`.
+
+### H-711 · The sizes of a mirror's bound are the upstream's claims
+
+`maxBytes` is checked against the `size` of each descriptor before the blob is fetched. A manifest that announces small sizes for large layers passes the check, and the layers are stored in full;
+the bytes are counted after the fetch, so the next item is refused, but the pass can overshoot the bound by the layers it had in flight. Live for any upstream that lies or is hostile; the
+effect is storage above the bound by at most the concurrency (`remote.mirror.concurrency`) times the largest layer, never a wrong image, because the digest of every blob is verified.
+
+### H-712 · An index inside an index is not read
+
+A child of an index that is itself an index is stored as a manifest, but its own children are not planned, so a mirror of such an image holds the outer manifests and pulls the rest by
+pull-through on first use. Live only for an image built that way; it is rare for the registries in use. The effect is a pull that needs the upstream for the nested part.
+
+### H-713 · A tag whose manifest the registry does not accept is skipped without a trace
+
+Docker Hub still holds tags with a Docker schema 1 manifest, and a manifest the reader refuses (R-OCI-020) is a 502 on a client's pull. The mirror's plan gives such a tag no items so that one
+old tag does not fail an image every pass; nothing records that it was skipped (no counter, no line in the status). Live for a mirror whose `tags` select such a tag (`*` on an old image);
+the effect is an image that is quietly less complete than the settings say.
+
+### H-714 · A layer two images share is fetched once per image name
+
+Items are stored below the image name (`<name>/_blobs/<digest>`), so a layer that two images of the mirror share is requested from the upstream for each, although the object store keeps one copy
+of the bytes. Live for every mirror of images with a common base; the cost is bandwidth and the upstream's request count, not storage.
 
 ### H-666 · A cut tags list is assumed to be in byte order
 

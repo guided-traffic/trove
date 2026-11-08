@@ -777,6 +777,7 @@ match.Entry: method Affects(string) Result
 match.Result: field Affected bool
 match.Result: field FixAvailable bool
 match.Result: field Unevaluable int
+discover.Bounded: method VersionBounds() (int, bool)
 discover.Cursor: alias json.RawMessage
 discover.Item: field Path string
 discover.Item: field Pinned bool

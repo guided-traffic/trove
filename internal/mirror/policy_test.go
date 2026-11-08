@@ -3,6 +3,7 @@ package mirror
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -297,5 +298,37 @@ func TestR_REPO_056_AMessageKeepsTheHostOfAnURLAndNothingElse(t *testing.T) {
 	want := `GET registry.example.org failed: dial tcp (see 10.0.0.1`
 	if got != want+`)` {
 		t.Fatalf("sanitize = %q", got)
+	}
+}
+
+// R-REPO-051 (Q-OCI-180): the bounds count versions, not items. A version with several items (an image's manifests, config and
+// layers) is kept or dropped as a whole, and a pinned version counts for its pinned tag only.
+func TestR_REPO_051_TheVersionBoundsCountVersionsNotItems(t *testing.T) {
+	item := func(v, path string, pre, pin bool) discover.Item {
+		return discover.Item{Version: v, Path: path, Prerelease: pre, Pinned: pin}
+	}
+	plan := []discover.Item{
+		item("1.2", "a", false, false), item("1.2", "b", false, false), item("1.2", "c", false, false),
+		item("1.1", "d", false, false), item("1.1", "e", false, false),
+		item("1.0", "f", false, false),
+		item("latest", "g", false, true), item("latest", "h", false, true),
+	}
+	paths := func(items []discover.Item) (out []string) {
+		for _, it := range items {
+			out = append(out, it.Path)
+		}
+		return out
+	}
+	mustContainExactly(t, "two versions of three items and two", paths(SelectItems(plan, true, 2)), []string{"a", "b", "c", "d", "e", "g", "h"})
+	mustContainExactly(t, "all", paths(SelectItems(plan, true, 0)), []string{"a", "b", "c", "d", "e", "f", "g", "h"})
+	mustContainExactly(t, "one version and the pinned one", paths(SelectItems(plan, true, 1)), []string{"a", "b", "c", "g", "h"})
+	pre := []discover.Item{item("2.0-rc1", "p", true, false), item("2.0-rc1", "q", true, false), item("1.0", "r", false, false)}
+	mustContainExactly(t, "a prerelease version goes with all its items", paths(SelectItems(pre, false, 1)), []string{"r"})
+}
+
+func mustContainExactly(t *testing.T, what string, got, want []string) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("%s: %v, want %v", what, got, want)
 	}
 }

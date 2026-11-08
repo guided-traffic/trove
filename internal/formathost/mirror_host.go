@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -141,30 +142,47 @@ func (m *MirrorHost) Upstream(repo repository.Repository, pass mirror.Pass) (dis
 
 // Fill implements [mirror.Host]: the artifact goes through the format's gate and the remote engine as a background request.
 func (m *MirrorHost) Fill(ctx context.Context, repo repository.Repository, pass mirror.Pass, item discover.Item) (mirror.FillResult, error) {
+	f, err := m.fillPath(ctx, repo, pass, formats.Path{Path: item.Path})
+	return f.res, err
+}
+
+// filled is the outcome of fillPath: the result, and the requests that read the artifact back (Artifact).
+type filled struct {
+	res  mirror.FillResult
+	ctx  context.Context
+	rq   *formats.Request
+	preq proxy.Request
+}
+
+// fillPath stores the artifact at a path of the repository through the format's gate and the remote engine as a background request of
+// the pass. An error is as mirror.Host documents it: mapFill's and mapGate's.
+func (m *MirrorHost) fillPath(ctx context.Context, repo repository.Repository, pass mirror.Pass, p formats.Path) (filled, error) {
 	ctx = withBackground(ctx, &backgroundFacts{h: m.h, jobID: pass.JobID, ceiling: pass.Ceiling})
 	fetch := &remote{h: m.h, e: m.e}
-	p := formats.Path{Path: item.Path}
 	rq := m.request(ctx, repo, p)
 	preq, err := fetch.request(ctx, rq, p, "", proxy.Artifact)
 	if err != nil {
-		return mirror.FillResult{}, err
+		return filled{}, err
 	}
+	out := filled{ctx: ctx, rq: rq, preq: preq}
 	// A stored artifact costs no upstream request, and no gate: the gate may revalidate the format's document.
 	if _, cached, err := m.e.Cached(ctx, preq); err != nil && !proxy.IsLost(err) { // a lost item is filled again (Q-REPO-202)
-		return mirror.FillResult{}, mapBackground(err)
+		return filled{}, mapBackground(err)
 	} else if cached {
-		return mirror.FillResult{Present: true}, nil
+		out.res = mirror.FillResult{Present: true}
+		return out, nil
 	}
 	expected, err := fetch.gate(ctx, rq, p)
 	if err != nil {
-		return mirror.FillResult{}, mapGate(err)
+		return filled{}, mapGate(err)
 	}
-	preq.Expected = proxy.Digests{SHA256: expected.SHA256, SHA512: expected.SHA512, SHA1: expected.SHA1}
-	out, err := m.e.Fill(ctx, preq)
+	out.preq.Expected = proxy.Digests{SHA256: expected.SHA256, SHA512: expected.SHA512, SHA1: expected.SHA1}
+	fo, err := m.e.Fill(ctx, out.preq)
 	if err != nil {
-		return mirror.FillResult{}, mapFill(err)
+		return filled{}, mapFill(err)
 	}
-	return mirror.FillResult{Present: out.Present, Bytes: out.Bytes}, nil
+	out.res = mirror.FillResult{Present: fo.Present, Bytes: fo.Bytes}
+	return out, nil
 }
 
 // request is the request a format's gate is handed for a path of a pass: no client behind it, no route, the system as subject. Its
@@ -256,6 +274,13 @@ func (u *passUpstream) Base() *url.URL { b := *u.base; return &b }
 // Settings implements [discover.Upstream].
 func (u *passUpstream) Settings() json.RawMessage { return u.settings }
 
+var _ discover.Bounded = (*passUpstream)(nil)
+
+// VersionBounds implements [discover.Bounded]: the bounds the repository's mirror settings set when the pass began.
+func (u *passUpstream) VersionBounds() (int, bool) {
+	return u.rem.Settings.Mirror.MaxVersionsPerPackage, u.rem.Settings.Mirror.IncludePrereleases
+}
+
 // Get implements [discover.Upstream] through [proxy.Engine.Get]: the host check, the credential rule and the background slot are
 // the engine's; a rate-limit answer is returned as the engine's typed error, which discover.AsRateLimited finds.
 func (u *passUpstream) Get(ctx context.Context, target *url.URL, accept string, max int64) (*discover.Response, error) {
@@ -298,10 +323,44 @@ func (u *passUpstream) Document(ctx context.Context, path, variant string) ([]by
 	return b, true, nil
 }
 
-// Artifact implements [discover.Upstream]. The fill of an artifact through the gate is the work package of the OCI mirror
-// (R-OCI-026); until it is built the call answers not_implemented, so that no format meets a silent no-op.
-func (u *passUpstream) Artifact(context.Context, string, int64) ([]byte, bool, error) {
-	return nil, false, errs.E(errs.NotImplemented, errs.CodeNotImplemented, "Filling an artifact on behalf of a format's plan is not built yet.")
+// Artifact implements [discover.Upstream]: the artifact at path is filled as Fill fills a plan item (the format's gate, the remote
+// engine, a background request of the pass; a stored one costs no request) and read back from the store when it is at most max
+// bytes. An artifact the upstream does not have is found=false; one above max is stored and answered found=true with a nil body. What
+// the call stored is reported to the package's tally (mirror.ReportStored), so that the pass counts it as an item it stored. Any other
+// error is the one Fill would return, and the engine treats it as it treats the error of a plan (mirror.Host).
+func (u *passUpstream) Artifact(ctx context.Context, path string, max int64) ([]byte, bool, error) {
+	f, err := u.m.fillPath(ctx, u.repo, u.pass, formats.Path{Path: path})
+	if err != nil {
+		var refusal *mirror.RefusedError
+		if errors.As(err, &refusal) && refusal.Reason == mirror.RefusedNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	mirror.ReportStored(ctx, f.res)
+	it, cached, err := u.m.e.Cached(f.ctx, f.preq)
+	if err != nil {
+		return nil, false, mapBackground(err)
+	}
+	if !cached {
+		return nil, false, nil
+	}
+	if it.Size > max {
+		return nil, true, nil
+	}
+	rc, err := u.m.h.Items().Open(f.ctx, itemOf(f.rq.RepoRef(), it))
+	if err != nil {
+		return nil, false, mapBackground(err)
+	}
+	defer func() { _ = rc.Close() }()
+	body, err := io.ReadAll(io.LimitReader(rc, max+1))
+	if err != nil {
+		return nil, false, mapBackground(err)
+	}
+	if int64(len(body)) > max {
+		return nil, true, nil
+	}
+	return body, true, nil
 }
 
 // mapBackground turns the outcomes of a background request into the errors the mirror engine reads (mirror.Host): a

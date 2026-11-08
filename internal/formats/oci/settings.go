@@ -25,26 +25,40 @@ type MirrorSettings struct {
 // The service refuses a value the schema does not allow, so only a row written around the service can fail to parse; it
 // yields the defaults.
 func mirrorSettingsOf(config []byte) MirrorSettings {
-	out := MirrorSettings{Tags: []string{"latest"}, ExcludeTags: []string{}, Platforms: []string{}}
 	var doc struct {
-		OCI struct {
-			Mirror struct {
-				Tags        []string `json:"tags"`
-				ExcludeTags []string `json:"excludeTags"`
-				Platforms   []string `json:"platforms"`
-			} `json:"mirror"`
-		} `json:"oci"`
+		OCI json.RawMessage `json:"oci"`
 	}
 	if json.Unmarshal(config, &doc) != nil {
+		return defaultMirrorSettings()
+	}
+	return mirrorMemberOf(doc.OCI)
+}
+
+func defaultMirrorSettings() MirrorSettings {
+	return MirrorSettings{Tags: []string{"latest"}, ExcludeTags: []string{}, Platforms: []string{}}
+}
+
+// mirrorMemberOf reads oci.mirror from the format's member of the repository document, which is what discover.Upstream.Settings
+// returns, with the defaults for what the member leaves out.
+func mirrorMemberOf(member json.RawMessage) MirrorSettings {
+	out := defaultMirrorSettings()
+	var doc struct {
+		Mirror struct {
+			Tags        []string `json:"tags"`
+			ExcludeTags []string `json:"excludeTags"`
+			Platforms   []string `json:"platforms"`
+		} `json:"mirror"`
+	}
+	if len(member) == 0 || json.Unmarshal(member, &doc) != nil {
 		return out
 	}
-	if m := doc.OCI.Mirror; m.Tags != nil {
+	if m := doc.Mirror; m.Tags != nil {
 		out.Tags = m.Tags
 	}
-	if m := doc.OCI.Mirror; m.ExcludeTags != nil {
+	if m := doc.Mirror; m.ExcludeTags != nil {
 		out.ExcludeTags = m.ExcludeTags
 	}
-	if m := doc.OCI.Mirror; m.Platforms != nil {
+	if m := doc.Mirror; m.Platforms != nil {
 		out.Platforms = m.Platforms
 	}
 	return out
