@@ -187,6 +187,12 @@ Notes per package:
   tokens per replica). Tests against a generic test upstream in `internal/proxy/proxytest` (no OCI knowledge needed).
 - **WP7** stub: deterministic set generated in code (no recorded Docker Hub responses); hosts: registry, realm, blob CDN; switches
   as R-OCI-035 lists; a control API like `test/nugetstub`'s.
+  Built (see `docs/developer/oci.md`, "The counting stub registry"). Hand-offs: `deploy/dev/e2e.sh` wiring (marker, `TROVE_E2E_OCISTUB`,
+  loading the image, exporting the three host names) is WP11's; the in-process hosts are `registry.localhost`, `auth.localhost` and
+  `cdn.localhost` (valid in `extraHosts`, whose grammar cannot name an IPv6 literal). They are not resolvable: WP8's tests feed
+`run.DialOverride()` into `app.Options.DialOverride` (and allow the listener's loopback address in the egress policy) and list
+`auth.localhost` and `cdn.localhost` in `extraHosts`; `run.DialContext` serves a Go client; the mirror criterion `linux/arm64` is `linux/arm64/v8` in the stub's `acme/b` (WP10 decides whether the platform
+  filter matches variants); the fixtures `app:1`, `library/app:1` and `acme/tool:1` are in the stub (WP9 for R-OCI-027).
 - **WP8** confirms Docker Hub's current blob redirect hosts with one anonymous request against Docker Hub (curl, no trove) and
   writes them into R-OCI-021 and the Descriptor; records the check in the commit message.
 - **WP10** spec edits: R-REPO-050 (OCI can mirror; `<format>.mirror` restricted), R-REPO-051 (versions counted per version). The

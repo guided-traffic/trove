@@ -752,7 +752,7 @@ Priority: **P1** · Covers: PKG-DOCKER-017, PKG-DOCKER-019
 Acceptance criteria:
 
 - Six concurrent `docker pull` of one image through `docker` on three replicas: the stub records each layer once.
-- The stub redirecting blobs to its second host: the layer is cached and the second host records no `Authorization`.
+- The stub redirecting blobs to its third host (the blob CDN, after the registry and the realm): the layer is cached and the CDN host records no `Authorization`.
 
 ### R-OCI-024 · Remote repository: tags list and referrers
 Priority: **P1** · Covers: PKG-DOCKER-022, PKG-OCI-009

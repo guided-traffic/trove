@@ -204,6 +204,9 @@ trove/
 │   │                         # identity/, login/, repository/, tls/, coordination/, postgres/, server/ (each creates its own database)
 │   ├── chart/                # build tag `chart`: render assertions and the lint script
 │   ├── npmstub/              # the counting npm test upstream (TLS only): stub, corpus/ (700 synthetic packages), recorded set, cmd/npmstub, Containerfile
+│   ├── nugetstub/            # the counting NuGet test upstream (TLS only): corpus, two hosts, catalog, throttling modes, control API, cmd/nugetstub, Containerfile
+│   ├── ocistub/              # the counting OCI test upstream (TLS only): registry, token realm and blob CDN on three hosts, generated image set, switches, counters, control API, cmd/ocistub, Containerfile
+│   ├── osvstub/              # the test advisory source of the vulnerability tests (TLS only): OSV records, cmd/osvstub, Containerfile
 │   ├── oidcstub/             # the GitLab-shaped OIDC issuer double (TLS only): rotating keys, minted ID tokens, faults, counters, control API, cmd/oidcstub, Containerfile
 │   └── e2e/                  # build tag `e2e`: M0 scenarios (e03 to e16, e99), the M1 access-core scenarios (e1_01 login,
 │                             # e1_08 rate limits, e1_11 scatter, e1_13 transfer, e1_14 exposure), m1_env_test.go; k6 load script

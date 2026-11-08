@@ -631,3 +631,16 @@ osv-real-refresh: ## Fetch the real OSV records of test/osvstub/testdata/real/id
 osv-reference-refresh: ## Record the public npm bulk answer for perf/npm/reference/package-lock.json and the OSV records behind it again (needs network); the reference test of R-VULN-017 compares against them
 	go run ./test/osvstub/cmd/osvreference -lock perf/npm/reference/package-lock.json -dir test/osvstub/testdata/reference
 # <<< M4b osv-stub
+
+# >>> T16 oci-stub
+# The counting OCI test upstream (test/ocistub, R-OCI-035, docs/developer/oci.md): a registry, a token realm and a blob CDN
+# with a generated image set. Edit only between the markers.
+OCI_STUB_IMAGE ?= trove-e2e-ocistub:dev
+
+.PHONY: oci-stub-image
+oci-stub-image: ## Build the counting OCI test upstream image (OCI_STUB_IMAGE, IMAGE_ARCH) on the release base image
+	@mkdir -p .out/ocistub
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/ocistub/ocistub-linux-$(IMAGE_ARCH) ./test/ocistub/cmd/ocistub
+	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+	  -f test/ocistub/Containerfile -t $(OCI_STUB_IMAGE) .out/ocistub
+# <<< T16 oci-stub

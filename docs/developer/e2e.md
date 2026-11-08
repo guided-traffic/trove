@@ -2361,6 +2361,22 @@ TROVE_GITLAB_URL=https://localhost:8929 TROVE_GITLAB_CA_FILE=ssl/ca.crt TROVE_GI
 
 </details>
 
+## The counting OCI test upstream
+
+[test/ocistub](../../test/ocistub) is the upstream of the OCI tests (T-16, R-OCI-035): a registry, a token realm and a blob CDN on three hosts, with a
+generated image set (single-platform images and indexes in Docker and OCI media types, BuildKit attestation manifests, referrers, a repository with
+2,500 tags in four pages), the token handshake in an anonymous and a credentialed mode, counters per host, method, path, repository and reference, and
+the switches of R-OCI-035 (down, delay, failure status, a tag moved, a manifest or blob whose bytes do not match the digest, a schema 1 tag, a pull quota
+with Docker Hub's headers, the throttling modes of R-REPO-059). It is a Go package for in-process tests, a container and a pod, all the same code, and
+answers TLS only. Its files, the set, the switches and the control API are in [oci.md](oci.md#the-counting-stub-registry); the other stubs' rows are in the
+sections above.
+
+| What | Where |
+|---|---|
+| image | `make oci-stub-image` (`OCI_STUB_IMAGE`, default `trove-e2e-ocistub:dev`), built from [test/ocistub/Containerfile](../../test/ocistub/Containerfile) on the release base image |
+| manifest | [deploy/dev/ocistub.yaml](../../deploy/dev/ocistub.yaml): Services `ocistub`, `ocistub-auth`, `ocistub-cdn`, one pod, a certificate of the dev CA for the three names, the control token in Secret `trove-ocistub` |
+| wiring in `deploy/dev/e2e.sh` | not done: loading the image into kind, applying the manifest and exporting the host names belong to the e2e work package (WP11) |
+
 ## The test advisory source
 
 [test/osvstub](../../test/osvstub) is the advisory source of the vulnerability-scanning tests
