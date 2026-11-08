@@ -231,6 +231,19 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-08 by the phase run's triage of 742 job logs (Test and Release 42387599073 to 42464736969, nightlies 42397525137 to
+42465102401):
+
+### Product
+
+- **F-81 · The largest accepted avatar area is no longer proven to decode within the production bound** (read, not reproduced).
+  `MaxPixels` accepts 2048 x 2048 (`internal/avatar/process.go:40`) and `DecodeTimeout` is 5 s (`:53`). Test and Release run 42409044656
+  (unit tests, job 128513121017, `process_test.go:347`) measured 9.72 s for a 2048 x 2048 PNG under `-race` on a throttled runner and refused
+  it with "the image takes too long to decode"; commit 86789b58 raised the test's bound to one minute for that case, so no test shows that an
+  area the spec accepts decodes inside 5 s without `-race` in a CPU-limited pod. Not known: the decode time of the worst accepted PNG (16 bits
+  per channel, interlaced) and JPEG at the chart's default CPU limit. Done when a test or benchmark measures it at that limit and the result
+  is a recorded margin or a changed `DecodeTimeout` or `MaxPixels` with a decision block (the timeout bounds CPU per upload).
+
 Found on 2026-11-08 while running the drain variants of E5.13 on kind:
 
 ### Tests and tools
@@ -249,128 +262,6 @@ Found on 2026-11-08 while running the drain variants of E5.13 on kind:
   full pass … did not end complete within 1m30s" while other agents loaded the shared stack. Whether it is load or a defect of the pass's
   take-over after a shutdown is not known. Done when a failing run's diagnostics (the pass state and job rows, the engines' logs) name the
   cause and it is fixed or shown to be the stack's load.
-
-Found on 2026-11-04 while cutting trove into task areas (phase 6a):
-
-### Tests and tools
-
-- **F-50 · A single request of `TestE1_14Exposure` ended in a transport `EOF` at the edge** (read, from the log of the `push` leg of
-  Test and Release run 41871333853, on a GitHub-hosted runner; not reproduced locally). With Valkey stopped, `GET
-  https://packages.trove.localhost:8080/files/generic-local/internal/x.bin` returned `EOF` instead of the `404`; the same subtest passed
-  in run 41864646902 on the same code. The e2e clients set `DisableKeepAlives` (`newAPI` in `test/e2e/m1_env_test.go`), so every
-  request is a fresh TLS connection through the kind port mapping and the edge, and Go retries none of them. Burst cases count
-  status 0 in green runs too (53 and 68 of 1,000 in run 41864646902); locally the zeros of a burst came from the port-forwards to
-  single replicas (18 of 1,000 in `TestE1_08RateLimits` "one replica"), not from the edge. Read on the configuration: the edge
-  (HAProxy Ingress, `deploy/dev/haproxy-values.yaml`) closes an idle connection after 50 s (`timeout server`, `timeout client`) and
-  runs `option http-server-close` toward trove, whose `server.idle_timeout` is 120 s, so the edge closes first and reuses no backend
-  connection: no keep-alive mismatch that closes a connection without a response. `timeout http-request 5s` and `maxconn 2000` are
-  the other limits a loaded runner could meet. Not known: which side closed the connection (the port mapping, HAProxy or a trove pod).
-  Built for the next failure (2026-11-05): the edge writes an access line per request, also for a connection that ends before a
-  request (`syslog-endpoint: stdout`, `no option dontlognull`; before, HAProxy logged nothing), with the termination state that names the
-  side; the kind nodes keep 200Mi of log per container instead of 10Mi, and `deploy/dev/cluster-logs.sh` (every cluster-state step)
-  keeps the logs of every `trove` pod and of the edge whole, timestamped, compressed, with the previous instance of a restarted
-  container, instead of the last 500 lines. Six local runs of `TestE1_14Exposure` (three with the edge logging, 17,891 access lines
-  in the three, every one with the clean state `----`) and three of `TestE1_08RateLimits` showed no `EOF` at the edge. Done when a
-  failed run's artifact names the closing side and the cause is fixed or shown to lie outside trove; remove the entry then.
-  Checked on 2026-11-06: the logs of the 26 Test and Release runs since 2026-11-05 (42035411725 to 42207790533) hold no `EOF` at the
-  edge; `TestE1_14Exposure` passed in the `push` leg (42207790533 among them). Their `EOF` lines are expected negative cases of the unit
-  tests, Valkey's replication messages, `EOF`s on port-forwards that were repeated (the `vuln` and `mirror` legs), and two failures of
-  `e2e-vuln (vuln)` in run 42160309458 (04:22 and 04:23 UTC, `vuln_npm_test.go:126` and `vuln_replicas_test.go:81`) whose request went
-  through the port-forward of one `packages` pod (`apiAtPod`), not through the edge, and was not repeated at that commit (ee274214); both
-  call sites repeat over a new forward now (`getOverForward`, `safeOverForward`). No run named a closing side yet.
-  Third occurrence (2026-11-07, Test and Release run 42363892759, `e2e-vuln (vuln)`): a WRITE through a forward, not a read. In
-  `TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey` "blockMalicious through A is in force on B within 2 s" the dismissal
-  `PATCH /api/v1/vulnerabilities/findings/<id>` (`vuln_replicas_test.go:154`) ended in `read: connection reset by peer` from
-  `127.0.0.1:42893`, the local listener of the `kubectl port-forward` to the api pod `trove-api-55c86f65f-k7w59` (the artifact
-  `e2e-vuln-artifacts-vuln` holds `portforward-pod_trove-api-55c86f65f-k7w59-127.0.0.1_42893-1.log`: the forward ended at 10:44:00Z with
-  `lost connection to pod` after a `connection reset by peer` between kubectl and the container's port 8080 and one from a client
-  connection; `localhost:8095` is only the URL's host, which the route replaces; which side of port 8080 reset first is not known), and the test failed with "subtest may have called
-  FailNow on a parent test" because the clients were bound to the parent's `t`. Writes were not repeated. They are now when they are
-  idempotent: `writeOverForward` repeats a PATCH with a merge patch (R-API-013) or a PUT over a new forward, then reads the resource back
-  and requires the state the write sets (`ctlretry.StateShown`), taking a 412 of the repeat (the first attempt had been applied and had
-  changed the ETag) as the answer when the state is shown; `patchRepo`, `setStatus` (`block`, `lift`) and the two dismissals use it, and
-  the replica clients are rebound to the subtest's `t` (`replicaClients.as`). The audit POSTs of `vuln_npm_test.go` (read-only queries
-  through a forward) and the rate-limit tests (which count requests) still send once.
-
-Found on 2026-11-03 while building phase 6:
-
-### Tests and tools
-
-- **F-43 · The bounds V-4 and V-7b of R-VULN-028 are missed on loaded runners, and a run on the reference environment is
-  missing** (confirmed by the run, narrowed by the fix of 2026-11-04). The performance run `TestR_VULN_028_PerformanceRun` on the
-  integration stack (not the reference environment, H-491), 2026-11-04: V-1 7.1 min, V-2 2.1 min, V-3 0.16 min, V-6 131 ms, V-7a
-  37 ms and V-9 0.33 GiB met their targets; V-5b counts 2.04 transactions per cached download against the one of R-ARCH-027 (F-41,
-  fixed since: a cached download costs one statement, `test/integration/querybudget`; V-5b is to be read again); V-7b took 1,168 ms against 300 ms and V-8 29 ms against
-  25 ms. The nightly run 41748522448 on the CPU-limited CI runner: V-1 did not finish within 40 min (the first import of the npm
-  archive; so V-2 was not measured), V-3 2.3 min, V-4 ≤ 10 ms (bucket bound), V-5b 1.94 transactions, V-7b 446 ms, V-8 52 ms
-  missed; V-5a, V-6 (63 ms), V-7a (33 ms) and V-9 (0.33 GiB) met.
-  Done by the fix: V-4 is measured per call (Q-VULN-76: the p99 of 300 exact samples, the difference of the histogram's sum between
-  two scrapes around each publish; the histogram stays for production). V-7b: the decision point derived the subject's state for
-  every row, about 3 µs of the cost; a scope derives it once (Q-VULN-77, `BenchmarkReadScopeMayRead` about 1 µs a row against about 3.4 µs, interleaved on a loaded host, a
-  focused test of 3,000 findings and a pattern grant pages exactly the pattern's findings). V-8: profiled (Q-VULN-78): a 777 KB
-  page, median 2.2 ms through the whole client path, the time in the socket write and the client's collection, no cost of the page's
-  own path to remove; the p99 over the bound came with a host load average above 190.
-  Left: V-7b still reads the triple of every finding of a repository read in part (about 100 to 120 ms of statement and the
-  transfer of 100,000 rows) and cannot be judged under the shared stack's load: `TestR_VULN_020_TheFirstPageAtScale` measured 1.7 to
-  3.2 s for the pattern grant (and 60 ms to 1.2 s for the administrator) at a load average of 240, before and after the fix alike,
-  so the fix is shown by the benchmark and not by the end-to-end time. The dispatched nightly run 41902592855 on a GitHub-hosted
-  runner (no CPU limit): V-1 3.5 min, V-2 0.02 min, V-3 0.10 min, V-5a, V-5b 0.83 transactions, V-6 83 ms, V-7a 24 ms and V-9 0.33 GiB
-  met; V-4 7.7 ms (the exact p99 of 300 publishes, median 2.2 ms) against 5 ms, V-7b 329 ms against 300 ms and V-8 52 ms against
-  25 ms missed. The scheduled nightly run 42002617340 on the same code: V-4 2.98 ms (median 1.22 ms) and V-7b 205 ms met, so their
-  misses of 41902592855 were the hosted runner's spread; V-8 32.8 ms missed again; V-1 did not finish within 40 min (the npm import
-  never reached `complete`, the second time after 41748522448; a run that ended on a lost lease, a panic or a cancel recorded nothing,
-  fixed with Q-VULN-80), and the gate reported only V-8 because a scenario that did
-  not finish left no row (fixed: Q-VULN-79, a scenario that does not finish is reported as missed and what needs it as not measured).
-  V-4 and V-7b are to be read on a run on the reference environment (H-491). Done when that run reports all nine
-  within their targets, or a decision revises a bound with the measured cost (the next steps for V-7b are named in Q-VULN-77).
-  Every run above had a NuGet dump of 228,403 records instead of 7,403 (the test source kept the filler records numbered 10,000 and
-  above when the NuGet filler was lowered; fixed 2026-11-05): V-1 included their import, V-8 served a page of 28,569,143 bytes
-  (computed) instead of 903,143, and V-9 counted 459,415 advisories. The first run with the fixed dump (integration stack, 2026-11-05,
-  load average about 12): V-1 2.25 min, V-8 1.6 ms, V-9 0.19 GiB for 238,415 advisories, all met; V-4 15.5 ms missed under that load.
-  The runs above also found 9,000 findings, not 10,000: the NuGet packages were seeded under mixed-case names, which the lower-cased
-  advisory names never match (fixed 2026-11-05, the seed stores the lower-cased ID as a push does); the same run found 10,000 and
-  measured V-2 at 0.69 min and V-7b at 213 ms.
-  The dispatched nightly run 42126196109 (2026-11-05, phase 6b's closing commit, the self-hosted class `large`, the fixed dump): V-1 1.5 min, V-2
-  0.72 min, V-3 0.10 min, V-5a, V-5b 0.92 transactions, V-6 62 ms, V-7a 20 ms, V-8 3.3 ms and V-9 0.19 GiB met; V-4 9.7 ms (median
-  2.5 ms) against 5 ms and V-7b 340 ms against 300 ms missed, as in 41902592855.
-  Worked on 2026-11-06 ([Q-VULN-81](../spec/vulnerability-scanning.md#q-vuln-81--a-scope-whose-decision-does-not-look-at-the-version-decides-each-package-once-and-the-statements-compare-the-package),
-  [Q-VULN-82](../spec/vulnerability-scanning.md#q-vuln-82--the-commit-hooks-evaluation-reads-in-one-round-trip-and-writes-its-claimed-name-matches-in-a-second-through-a-pipeline-over-the-generated-statements)).
-  V-7b: the first page of a pattern grant spent its time reading and deciding every version's triple and planning an 11,000-element array
-  (50 ms of planning for 2 ms of execution); a scope whose decision does not look at the version (`authz.VersionIndependent`) now decides
-  each (repository, package) once: 160 ms to 59 ms interleaved at the run's shape, and V-7b p99 75 to 148 ms in five whole runs on the
-  integration stack (load 5 to 25). V-4: a publish's evaluation made 8 sequential round trips of 0.42 to 0.70 ms; it makes 2 now
-  (`q.Pipeline`): V-4 p99 4.6 ms (median 1.32 ms) in the last whole run at load 8 to 13, 5.8 ms in the run before; the margin is thin. The
-  perf jobs of the nightly run after its kind legs since Q-ARCH-325. Done when a nightly run meets all nine (owner, 2026-11-08: no "N runs in a row" gates during the alpha), or a decision
-  revises V-4 with the measured floor (Q-VULN-82 names the next step). V-1 met its statement timeout under load: the advisory
-  group statement was planned as a sequential scan and read the aliases index's pending list in full; fixed with Q-VULN-90 and Q-VULN-91
-  (V-1 1.45 min on the integration stack, the whole run passed, V-5b 1.036 transactions against 1).
-  The dispatched nightly run 42211913572 (release v0.19.5, perf after the kind legs, Q-ARCH-325) met ten of eleven: V-1 1.01 min (F-57
-  fixed: the import's statements by primary key, no planner statistics on `ecosystem`, Q-VULN-95 to Q-VULN-97), V-2 0.65 min, V-3 0.10 min,
-  V-4 3.18 ms (median 1.02 ms), V-5a 0.81 ms, V-6 125 ms, V-7a 21 ms, V-7b 112 ms, V-8 2.5 ms, V-9 0.19 GiB; V-5b missed with 1.065
-  transactions per cached download against 1 (0.83 to 0.94 in earlier nightly runs, 1.036 once on the integration stack).
-  V-5b's cause, established on 2026-11-06: the measurement, not the downloads. A run on the integration stack with `log_statement` on for
-  its database showed every cached download running exactly one transaction (`BEGIN`, `GetLiveItem`, `COMMIT`), 4,000 for 4,000. V-5b was
-  the commits of the whole database over the window minus an idle window: the health checks, registration and change-log loops of three
-  replicas, the worker's scheduler tick (15 inserts every 10 s), the batched writers and the autovacuum, and PostgreSQL publishes a
-  session's counters up to 10 s after its transactions (a burst of 2,000 commits appeared 10.5 s later, all at once), so transactions of
-  V-4's publishes before the window and of the last downloads fell into the wrong window; in 42211913572 the window began 1.4 s after the
-  last of 300 publishes of about 7.6 transactions each (read from the replicas' logs, not verified by a statement log there). Fixed with
-  [Q-VULN-98](../spec/vulnerability-scanning.md#q-vuln-98--v-5b-is-counted-in-the-replicas-by-request-not-from-the-databases-commit-counter)
-  and [Q-VULN-99](../spec/vulnerability-scanning.md#q-vuln-99--v-5b-is-the-largest-count-of-a-download-after-the-refills-r-arch-027-exempts-not-the-mean-of-the-transactions-of-a-window):
-  V-5b is counted in the replicas by request ID; after the refills R-ARCH-027 exempts (the token check's caches, by name) every download
-  must run exactly one statement, and the value is the largest, bound 1 unchanged; a statement off the list fails the run with its name
-  and the download. Local runs on the integration stack, V-5b and in brackets the old database-wide count of the same window: 1 (0.909),
-  1 (1.050), 1 (0.806), 1 (0.803; that run met all eleven values with the gate on), every download exactly 1 after one to three refills
-  per replica; earlier the same day, read with a p99, 1 (0.956), 1 (0.859), 1 (1.051), 1 (0.806), 1 (0.930), and the base commit's
-  measure 0.983 and 0.767. With a cost added to the lookup on
-  purpose (not committed) it read 2 and named the downloads: a second statement in every download (2,000 named; old count 0.949), a
-  transaction of its own in one download of 25 (80 named; old count 0.875) and a second statement in one download of 500 (4 named; old
-  count 0.971; a p99 would have read 1), all passes of the old measure. Under the shared host's load six local runs missed V-4 (5.0 to
-  12.1 ms at load averages of 10 to 120; the base commit's code missed it too, 5.4 ms, so it is the thin margin named above, not the
-  counter), two missed V-5a (1.12 ms beside three concurrent runs, 7.3 ms in a window whose p99 latencies were 46 to 53 ms), and in one
-  at a load average of 110 to 123 a download from the replica without the scanning answered `503 authz_stale` (its grant index unconfirmed
-  within `authz.cache.max_staleness`, R-AUTHZ-028), so V-5 did not finish there; none of these was seen on a CI runner. Left: two nightly
-  runs in a row with every value met.
 
 Found on 2026-11-03 while closing phase 5:
 
@@ -392,7 +283,8 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   buildx again (v0.28.0-desktop.1, pin v0.38.1), so `make versions-check` fails locally; the Homebrew copy is in place
   (`ln -sf /opt/homebrew/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx`, no admin password; Docker Desktop may
   relink it on its next update unless its CLI plugin management is turned off). Machine-level: the owner runs it; a run
-  does not change the machine.
+  does not change the machine. Checked again on 2026-11-08: unchanged (`docker-buildx` still links to Docker Desktop's v0.28.0-desktop.1,
+  `make versions-check` exits 2 on that line only).
 
 ## 9 · Owner review of 2026-11-06: tasks and open questions
 
@@ -457,6 +349,9 @@ separate agents; no agent checks its own work.
   took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
   upload sessions, WP2 registry tokens, WP4 the OCI format (local class), WP6 the remote engine's handshake, WP7 the counting stub
   registry, planned, built and checked by separate agents as this section says.
+  Run of 2026-11-08 (session of the afternoon): wave 1 started on the rebased WP0 (08fb9ff8) in the first hour, WP4 split into WP4a
+  (manifest parser, manifest and blob GET/HEAD/PUT, package view, `routes.go`) and WP4b (tags list, referrers, deletion, sweep, journal
+  replay, reinstate, setup snippets); WP7's stub is built and in its review round.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,

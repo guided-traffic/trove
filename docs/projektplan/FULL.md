@@ -1,7 +1,7 @@
 # trove · Full product plan after the beta
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-02
+**Last updated:** 2026-11-08
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
 registry types, and platform features. Releases after the beta are cut by Semantic Release from the
@@ -76,8 +76,8 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 
 ### F4 · OCI and Docker (container images)
 - 🟡 Spec page `formats/oci.md` (one format `oci` for Docker and OCI content, Q-OCI-1 and Q-OCI-2), with the contracts, schema and format stub of WP0, on the branch `t16-oci` (not on main yet, see T-16 in promt.md)
-- ⚪ Registry API under `/v2/`, token challenge, chunked uploads across replicas
-- ⚪ Local, remote (Docker Hub and other registries), virtual; multi-architecture images; referrers
+- 🟡 Registry API under `/v2/`, token challenge, chunked uploads across replicas (building since 2026-11-08: upload sessions WP1, registry tokens WP2)
+- 🟡 Local, remote (Docker Hub and other registries), virtual; multi-architecture images; referrers (building since 2026-11-08: the local class WP4, the remote engine's handshake WP6, the counting stub registry WP7)
 - ⚪ Clients: Docker CLI, Podman, BuildX, BuildKit (`buildctl`, registry build caches), ORAS, Cosign
 - ⚪ WebAssembly modules as OCI artifacts (`wasm-to-oci`)
 - ⚪ Image vulnerability scanning: operating-system and language packages inside images, with the findings, report and blocking of beta phase 6; the analyser is decided on the spec page ([vulnerability-scanning.md](../spec/vulnerability-scanning.md#deferred))
