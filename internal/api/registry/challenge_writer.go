@@ -19,7 +19,8 @@ type challengeWriter struct {
 }
 
 func (c *challengeWriter) WriteHeader(code int) {
-	if c.wrote {
+	// An informational status (103 Early Hints) is not the response: it is forwarded, and the final status is still decided here.
+	if c.wrote || code < http.StatusOK {
 		c.ResponseWriter.WriteHeader(code)
 		return
 	}

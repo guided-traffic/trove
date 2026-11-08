@@ -6,7 +6,33 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/api/registry/route"
 )
+
+type noMatch struct{}
+
+func (noMatch) RegistryTarget(*http.Request) (route.Target, bool) { return route.Target{}, false }
+
+// A 103 Early Hints before a bare-Bearer 401 does not count as the response: the 401 still gets the registry's challenge.
+func TestTheChallengeWriterRewritesAfterAnInformationalStatus(t *testing.T) {
+	e, err := NewEnforcer(EnforcerOptions{
+		Matcher: noMatch{}, WriteError: func(http.ResponseWriter, *http.Request, error) {},
+		Realm: func(*http.Request) (string, string) { return "https://trove.test/v2/_token", "trove.test" },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	w := &challengeWriter{ResponseWriter: rec, e: e, r: httptest.NewRequest(http.MethodGet, "/v2/web/docker-local/app/manifests/1", nil)}
+	w.Header().Set("Link", "</style.css>; rel=preload")
+	w.WriteHeader(http.StatusEarlyHints)
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	w.WriteHeader(http.StatusUnauthorized)
+	if got, want := rec.Header().Get("WWW-Authenticate"), `Bearer realm="https://trove.test/v2/_token",service="trove.test"`; got != want { // the recorder keeps the first status it saw, so only the header is asserted
+		t.Fatalf("%q, want %q", got, want)
+	}
+}
 
 // readerFromRecorder records that the underlying writer's ReadFrom was used.
 type readerFromRecorder struct {
