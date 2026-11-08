@@ -231,9 +231,27 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-08 by the penetration test of T-16 WP4a, reading the npm and NuGet handlers outside that package:
+Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 fix and the code reviews of WP4b and WP12:
 
 ### Product
+
+- **F-83 · A path pattern finer than a package hides its files and leaves their contents in its documents** (confirmed, live).
+  A grant's, a token scope's or an exposure rule's path exclude of the shape `<name>/-/<file>` (npm) or `<id>/<version>/**`
+  (NuGet) refuses the files and leaves the version's manifest, description and README in the package document, the
+  registrations, the search and the package API (`docs/security/permissions.md` H-647, `docs/security/endpoints-and-exposure.md`
+  H-646; reproduced by the second penetration test of F-82). An operation that writes or removes several files of a package is
+  decided on one path (H-586). Done when the documents decide each version on its files' paths, or path patterns finer than a
+  package's folder are refused on package formats, and H-646, H-647 and H-586 are closed or narrowed by that decision.
+- **F-84 · A running items-delete job decides on the requester's grants as of the request** (read).
+  `DeleteArgs.Subject` encodes the requesting subject's groups, token scope and CI grants when the job is queued; a withdrawn
+  group membership, a revoked token or CI token, or a disabled principal neither narrows nor stops the running job, the main
+  deletion included (`docs/spec/formats/oci.md` H-653). Done when the job re-reads the principal (active, current groups) and
+  the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
+- **F-86 · An OCI tag's version size in the package view is the manifest document's bytes** (read). `PackageViewVersions`
+  sums the version's linked file items, and an OCI version links only its tag item (`internal/packages/writer.go:195`), so
+  "All versions" shows a few hundred bytes for an image of many MiB; npm and NuGet are unaffected (their lead item is the
+  package file). Done when the server reports an image's size (config and layers; an index's children) and a test pushes an
+  image and reads it back.
 
 Found on 2026-11-03 while closing phase 5:
 
