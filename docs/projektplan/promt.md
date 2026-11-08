@@ -245,22 +245,24 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Product
 
-- **F-83 · A path pattern finer than a package hides its files and leaves their contents in its documents** (confirmed, live).
-  A grant's, a token scope's or an exposure rule's path exclude of the shape `<name>/-/<file>` (npm) or `<id>/<version>/**`
-  (NuGet) refuses the files and leaves the version's manifest, description and README in the package document, the
-  registrations, the search and the package API (`docs/security/permissions.md` H-647, `docs/security/endpoints-and-exposure.md`
-  H-646; reproduced by the second penetration test of F-82). An operation that writes or removes several files of a package is
-  decided on one path (H-586). Done when the documents decide each version on its files' paths, or path patterns finer than a
-  package's folder are refused on package formats, and H-646, H-647 and H-586 are closed or narrowed by that decision.
-- **F-84 · A running items-delete job decides on the requester's grants as of the request** (read).
-  `DeleteArgs.Subject` encodes the requesting subject's groups, token scope and CI grants when the job is queued; a withdrawn
-  group membership, a revoked token or CI token, or a disabled principal neither narrows nor stops the running job, the main
-  deletion included (`docs/spec/formats/oci.md` H-653). Done when the job re-reads the principal (active, current groups) and
-  the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
 
 
 
 
+- **F-111 · `TestSpoolAdmission` (`internal/blob`) failed once in a full `go test ./internal/...`** on a loaded host and passed
+  alone. Cause not looked at.
+- **F-112 · An npm unpublish of the visible `latest` can move `latest` onto a version the caller may not read** (read by the F-83
+  builder): the removal rule of R-NPM-016 picks the highest remaining version. The caller learns at most that its tag moved
+  somewhere it cannot see. Decide whether the hidden-version rule of Q-NPM-85 applies to it.
+- **F-113 · The integration stack's object store fills up in about a day** (2026-11-08): the tests leave their objects behind,
+  and SeaweedFS in `test/integration/compose.yaml` holds 100 volumes of 512 MB; at 45 GB every upload failed until the stack was
+  reset. Done when the tests remove what they write, or the stack cleans up on its own.
+- **F-109 · Blocker (main red): `TestEndpointProcesses` takes a port another test holds** (CI, Test and Release 42515085391,
+  unit tests: `endpoints_test.go:310: ops listener: listen tcp 127.0.0.1:35057: bind: address already in use`). The test picks a
+  free port and binds it later, and another package can take it in between. Done when the test binds without that gap.
+- **F-110 · Blocker (main red): `TestR_OCI_020_CraftedManifestsAreRefusedQuicklyWithoutStoringAnything/20,000_layers` has a
+  wall-clock bound of 5 s** (`internal/formats/oci/handlers_manifest_test.go:734`, took 5.15 s on the same run, under `-race` and
+  coverage). Done when the refusal of a crafted manifest is proven without a wall-clock bound that the runner's load decides.
 - **F-108 · A manual name claim and an automatic one of the same name can race** (read by the F-101 builder). The claims API
   does not take the lock F-101 added for automatic claims. Done when both take the same lock, with a test.
 
@@ -375,10 +377,9 @@ agents. The check step (3) below does not run during ALPHA: a builder lands its 
   took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
   upload sessions, WP2 registry tokens, WP4 the OCI format (local class), WP6 the remote engine's handshake, WP7 the counting stub
   registry, planned, built and checked by separate agents as this section says.
-  Status at the end of 2026-11-08: on `main` are WP0 to WP7 and WP12, so the local class works end to end through `/v2/` (push,
-  pull, tags, catalog, referrers, deletes, uploads and mounts). WP8 (the remote class, pull-through) is built on the branch
-  `worktree-agent-af5707b60a45cf45d` and lands once its last round is done (Q-OCI-129: grants on a Docker Hub remote are decided
-  on both spellings of a name). Not started: WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13 (conformance and client
+  Status at the end of 2026-11-08: on `main` are WP0 to WP8 and WP12: the local class works end to end through `/v2/` (push,
+  pull, tags, catalog, referrers, deletes, uploads and mounts), and a remote repository pulls through from Docker Hub, GHCR and
+  other registries (WP8; on Docker Hub grants and exclusions are decided on both spellings of a name, Q-OCI-129). Not started: WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13 (conformance and client
   integration), WP14 (documentation). The cut is `docs/projektplan/oci-work-packages.md`; FULL.md block B F4 stays 🟡.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
@@ -426,12 +427,12 @@ What a run did, in short, so the next run starts where it stopped. The plan item
   grants now apply on the npm and NuGet protocol routes (F-82); the stall timeout no longer cuts a request while the server works,
   over HTTP/1.1 and HTTP/2 (F-91, F-92); a replica's shutdown keeps its deadline (F-94, F-97); two first publishes cannot both claim
   a name (F-101).
-- Not done: T-16 WP8 (OCI remote) is built but not on `main` (its last round decides grants on both spellings of a Docker Hub name,
-  Q-OCI-129); WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13, WP14 not started. T-17 (APT) not started. F-83 (round 3) and
-  F-84 (round 4) are built but not on `main`.
+- Landed at the end of the run: WP8, the OCI remote class (pull-through from Docker Hub, GHCR and other registries), F-83 (a path
+  pattern that hides a version's file hides that version everywhere) and F-84 (a large delete stops when its requester loses the
+  right). Not done: WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13, WP14; T-17 (APT) not started.
 - Where the time went: three or four review rounds per work package and per finding, 28 new findings (most of them false failures
   under the load of 10 to 14 parallel agents on 20 cores), and a full Docker disk at the end (252 GB) that stopped the integration
   stack. The owner's verdict (rule 10, changed): during ALPHA no review subagents, findings only when they block, no repeated race
   or stress runs, at most four builders, each a whole feature, and release notes that say in plain words what changed.
-- Next run: land WP8 and F-83/F-84 if their builders finished, then four builders: OCI virtual (WP9), OCI mirror (WP10), APT local,
+- Next run: first the blockers F-109 and F-110 (main red), then four builders: OCI virtual (WP9), OCI mirror (WP10), APT local,
   APT remote; the open findings of section 8 in one batch at the end.
