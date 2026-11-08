@@ -185,9 +185,3 @@ func retryAfterSeconds(d time.Duration) string {
 	}
 	return strconv.FormatInt(s, 10)
 }
-
-// notImplemented is the answer of an operation this build does not serve yet: 501 UNSUPPORTED, so a client reads a failure of
-// the server and not a missing image.
-func notImplemented(what string) error {
-	return errs.E(errs.NotImplemented, errs.CodeNotImplemented, "The registry operation "+what+" is not served by this build of trove yet.")
-}

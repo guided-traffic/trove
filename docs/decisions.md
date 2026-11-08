@@ -206,6 +206,7 @@ checked every earlier decision against them:
 | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
 | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) | The upload and mount handlers hold the protocol, and the host holds the session and the link | Decided by the development agent — owner review at the walkthrough |
 | [ADR-178](#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3) | The upload sessions' Finalize takes an offset and reports the received count, and the contract is at version 3 | Decided by the development agent — owner review at the walkthrough |
+| [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) | The OCI write routes serve the class virtual and the handler resolves the deployment target | Decided by the development agent — owner review at the walkthrough |
 | [ADR-174](#adr-174--the-format-contract-names-the-file-of-a-version-decides-many-paths-at-once-and-gives-formats-the-versions-a-caller-may-read) | The format contract names the file of a version, decides many paths at once and gives formats the versions a caller may read | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
@@ -6641,6 +6642,35 @@ documents get per-caller filtering (H-655).
 R-ARCH-008, R-ARCH-010, R-ARCH-027; [spec/formats/npm.md](spec/formats/npm.md) Q-NPM-82, Q-NPM-83;
 [spec/formats/nuget.md](spec/formats/nuget.md) Q-NUGET-120, Q-NUGET-121; [spec/endpoints.md](spec/endpoints.md) Q-EP-85.
 
+### ADR-180 · The OCI write routes serve the class virtual and the handler resolves the deployment target
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The dispatcher answers a write to a virtual repository by replacing the request's repository with the deployment target (R-REPO-021): a route that does not
+serve the class virtual is redirected, and the request then carries no addressed repository. For OCI that drops what R-OCI-011 asks the session to record (the repository the
+client addressed) and makes the `Location` of a session and of a blob name the target's address, so a client that follows it talks to the target (H-663). A delete is a write
+as well, so it would have been carried to the target, where the spec says 405 (R-OCI-028).
+
+**Decision.**
+
+- The write routes of the OCI format (manifest put, the five upload routes) and the two delete routes serve the classes local and virtual. The dispatcher no longer redirects them;
+  the handler asks `Resolver().DeployTarget` ([writeRequest](../internal/formats/oci/virtual_write.go)) and decides and commits on a request made for the target
+  (`Request.WriteTarget`), and calls the upload sessions with the request for the addressed repository, whose session records both. Every `Location` is built for the addressed
+  repository.
+- The delete handlers answer 405 `UNSUPPORTED` for the class virtual ([Q-OCI-165](spec/formats/oci.md#q-oci-165--a-delete-through-a-virtual-repository-is-refused-by-the-handler)).
+- No change of the frozen contract, the dispatcher or the host: `uploadTarget` already accepted a virtual repository, and the descriptor lists the class.
+
+**Consequences.** npm and NuGet keep the redirect. The format owns the resolution of the target for its write routes, so a new write route of the format must call `writeRequest`
+(the checklist in [developer/oci.md](developer/oci.md)). The decision point still decides the write on the target before the handler runs
+([Q-OCI-166](spec/formats/oci.md#q-oci-166--a-write-through-a-virtual-repository-without-a-deploy-target-is-refused-by-the-decision-point-before-the-handler)).
+
+**Alternatives considered.** The dispatcher keeps the addressed repository on a redirect for every format (a field or a flag on the request; it changes how npm and NuGet writes are
+decided, Q-AUTHZ-163); a route flag that asks the dispatcher to keep it (a change of the frozen route type for one format).
+
+**Revisit condition:** a second format needs the addressed repository on a write through a virtual repository.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-011, R-OCI-027, R-OCI-028, Q-OCI-160 to Q-OCI-166; [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-021.
+
 ### ADR-176 · The OCI remote adapter works inside the contract and adds a catalog fact and an optional interface
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -7625,6 +7655,12 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-REPO-281](spec/repositories-and-proxy.md#q-repo-281--the-probe-of-the-registry-root-format-is-at-the-root-of-the-host) | Where does the upstream test of a registry probe? | (a) `/v2/` at the root of the host | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
 | [Q-OCI-150](spec/formats/oci.md#q-oci-150--one-request-of-a-client-costs-at-most-eight-pages-of-the-upstreams-tags-list) | How many pages of the upstream's tags list may one client request cost? | (a) Eight | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
 | [Q-OCI-151](spec/formats/oci.md#q-oci-151--refused-within-5-s-is-proven-by-where-the-refusal-happens-not-by-a-wall-clock-on-a-shared-runner) | How is "a crafted manifest is refused within 5 s" proven on the unit tier? | (a) By the refusal happening at the parser's bounds, before any referenced blob is looked up | — |
+| [Q-OCI-160](spec/formats/oci.md#q-oci-160--the-virtual-class-walks-the-members-itself-and-merges-one-document-the-tags-list) | Does the virtual class use the engine's artifact tiers and merged-metadata cache? | (a) The format walks the plan; the tags list is the one merged document | [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) |
+| [Q-OCI-161](spec/formats/oci.md#q-oci-161--the-tags-list-and-the-referrers-of-a-virtual-repository-are-unions-decided-for-the-caller-in-every-member-and-on-the-virtual-repository) | How are the lists of a virtual repository decided? | (a) Per member for the caller, again on the virtual repository | [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) |
+| [Q-OCI-162](spec/formats/oci.md#q-oci-162--a-miss-goes-on-to-the-next-member-a-failure-is-the-answer-only-when-nothing-serves) | When does a member's error end the walk? | (a) Misses go on; a failure is the answer only when nothing serves | [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) |
+| [Q-OCI-164](spec/formats/oci.md#q-oci-164--the-link-step-reads-the-virtual-repository-by-name-and-links-an-indexs-manifests-after-their-blobs) | From where does a push through a virtual repository link what the target lacks? | (a) The virtual repository by name; an index's manifests after their blobs | [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) |
+| [Q-OCI-165](spec/formats/oci.md#q-oci-165--a-delete-through-a-virtual-repository-is-refused-by-the-handler) | Who refuses a delete through a virtual repository? | (a) The handler, 405 | [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) |
+| [Q-OCI-166](spec/formats/oci.md#q-oci-166--a-write-through-a-virtual-repository-without-a-deploy-target-is-refused-by-the-decision-point-before-the-handler) | What does a write to a virtual repository without a deploy target answer? | (a) The decision point's 403; the handler's 405 behind it | [ADR-180](#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

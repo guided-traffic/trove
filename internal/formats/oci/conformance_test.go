@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/oci/rows"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 const digestZero = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -158,8 +159,46 @@ func conformance() formattest.Fixture {
 				return []string{"https://" + d.Name}
 			},
 		},
-		Skip: map[formattest.Check]string{
-			formattest.CheckMerge: "local class only: the virtual adapter joins with its work package (R-OCI-027)",
+		// The one document the members of a virtual repository contribute to is the tags list of an image name (R-OCI-027): the union of
+		// the members' tags, each attributed to the member the tier resolution picks.
+		Merge: &formattest.MergeFixture{
+			Cases: []formattest.MergeCase{
+				{
+					Name: "a local and a remote member that share a tag", Path: "app/_taglist", Request: "app/tags/list",
+					Parts: []formats.MemberDocument{
+						{Member: formats.RepoRef{Name: qname.Repo{Project: "it", Key: "local"}}, Tier: formats.TierLocal, Position: 0, Doc: taglistDoc("app", "1", "2")},
+						{Member: formats.RepoRef{Name: qname.Repo{Project: "it", Key: "remote"}}, Tier: formats.TierRemote, Position: 1, Doc: taglistDoc("app", "2", "3")},
+					},
+					Sources: []string{"local", "remote"},
+				},
+				{
+					Name: "a local member is preferred over a remote member that comes first", Path: "team/app/_taglist", Request: "team/app/tags/list",
+					Parts: []formats.MemberDocument{
+						{Member: formats.RepoRef{Name: qname.Repo{Project: "it", Key: "first"}}, Tier: formats.TierRemote, Position: 0, Doc: taglistDoc("team/app", "latest", "x")},
+						{Member: formats.RepoRef{Name: qname.Repo{Project: "it", Key: "second"}}, Tier: formats.TierLocal, Position: 1, Doc: taglistDoc("team/app", "latest", "y")},
+					},
+					Sources: []string{"first", "second"},
+				},
+			},
+			Versions: func(doc []byte) []string {
+				var d struct {
+					Tags []string `json:"tags"`
+				}
+				_ = json.Unmarshal(doc, &d)
+				return d.Tags
+			},
+			VersionSource: func(merged []byte, tag string) string {
+				var d mergedTaglist
+				if json.Unmarshal(merged, &d) != nil {
+					return ""
+				}
+				for i, t := range d.Tags {
+					if t == tag {
+						return d.Members[d.From[i]]
+					}
+				}
+				return ""
+			},
 		},
 	}
 }
@@ -251,4 +290,10 @@ func changes() []formattest.ChangeCase {
 			},
 		},
 	}
+}
+
+// taglistDoc is the tags list document of one member.
+func taglistDoc(name string, tags ...string) []byte {
+	b, _ := json.Marshal(tagsDoc{Name: name, Tags: tags})
+	return b
 }

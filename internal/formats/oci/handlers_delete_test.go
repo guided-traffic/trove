@@ -149,14 +149,14 @@ func TestR_OCI_018_DeleteOfABlob(t *testing.T) {
 	}
 }
 
-// TestR_OCI_018_DeleteRoutesAreLocalOnly: a delete on a remote or virtual repository is the dispatcher's 405, so the routes declare the
-// class local (R-OCI-018).
-func TestR_OCI_018_DeleteRoutesAreLocalOnly(t *testing.T) {
+// TestDeleteRoutesServeLocalAndVirtual: a delete on a remote repository is the dispatcher's 405; on a virtual repository the
+// handler answers 405, because the dispatcher would carry a write to the deployment target (R-OCI-028).
+func TestDeleteRoutesServeLocalAndVirtual(t *testing.T) {
 	for _, r := range New().Routes() {
 		if r.Name != routeManifestDelete && r.Name != routeBlobDelete {
 			continue
 		}
-		if len(r.Classes) != 1 || r.Classes[0] != formats.Local || r.Action != formats.ActionDelete {
+		if len(r.Classes) != 2 || r.Classes[0] != formats.Local || r.Classes[1] != formats.Virtual || r.Action != formats.ActionDelete {
 			t.Errorf("%s: classes %v action %v", r.Name, r.Classes, r.Action)
 		}
 	}

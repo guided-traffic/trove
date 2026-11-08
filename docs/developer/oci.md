@@ -7,7 +7,7 @@ manifests (WP4a, [ADR-164](../decisions.md#adr-164--the-oci-push-path-is-one-tra
 the tags list, referrers, deletion, sweep and replay (WP4b, ADR-168). The specification is [formats/oci.md](../spec/formats/oci.md); the decision for the contract is
 [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions).
 The registry tokens and the token service ([Registry tokens and the token service](#registry-tokens-and-the-token-service)) and the port of the
-[Upload sessions](#upload-sessions-r-stor-011) and the [blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) are built; and [the remote class](#the-remote-class-r-oci-021-to-r-oci-025) are built; the virtual class, the mirror and the clients are not; the section
+[Upload sessions](#upload-sessions-r-stor-011) and the [blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) are built; and [the remote class](#the-remote-class-r-oci-021-to-r-oci-025) are built, and so is [the virtual class](#the-virtual-class-r-oci-027-r-oci-028); the mirror and the clients are not; the section
 [What is built and what is not](#what-is-built-and-what-is-not) lists them.
 
 ## What has to be in your head first
@@ -45,6 +45,9 @@ The registry tokens and the token service ([Registry tokens and the token servic
 | [hooks.go](../../internal/formats/oci/hooks.go) | `OnCommit`: the package row, the claim, the version of a tag and the manifest rows, in the commit transaction |
 | [view.go](../../internal/formats/oci/view.go) | The package view adapter: tags newest push first, the platform table of an index, the withheld tags |
 | [handlers_upload.go](../../internal/formats/oci/handlers_upload.go) | The blob upload protocol over the host's session port: start, monolithic `POST`, `PATCH`, `PUT`, status, abort; `chunkStart` (the strict `Content-Range`), `outOfOrder` (the headers of a 416) |
+| [virtual.go](../../internal/formats/oci/virtual.go) | The virtual adapter: `Strategy` (the tags list is the one merged document), `Merge` (the union of the members' tags lists, each tag attributed to the member the tier resolution picks) |
+| [virtual_read.go](../../internal/formats/oci/virtual_read.go) | What a client reads through a virtual repository: the plan (`members`), the `walk` over the members, a manifest by tag, a manifest and a blob by digest in three tiers, the tags list and the referrers as unions |
+| [virtual_write.go](../../internal/formats/oci/virtual_write.go) | `writeRequest` (the request a write is decided and committed on), the link step of a manifest push (`linkFromMembers`), the refusal of a delete |
 | [handlers_mount.go](../../internal/formats/oci/handlers_mount.go) | The cross-repository mount (`handleMount`) and `MountSource`, the one parser of `from` |
 | [manifest/](../../internal/formats/oci/manifest/manifest.go) | The manifest parser: the four media types, the strict JSON reader (`tree.go`), descriptors, references, the row annotations |
 | [tagorder/](../../internal/formats/oci/tagorder/tagorder.go) | The order of tags (Q-OCI-17, Q-OCI-64) |
@@ -58,7 +61,7 @@ The registry tokens and the token service ([Registry tokens and the token servic
 ## Manifests, pulls and the push path
 
 The local class serves `GET`/`HEAD` of manifests and blobs and `PUT` of manifests; the list and delete side, the uploads and the remote and
-virtual classes answer `501` through the stub files until their work packages replace them.
+virtual classes are the sections below.
 
 **Pull** ([handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) `handleManifestGet`, [handlers_blob.go](../../internal/formats/oci/handlers_blob.go)).
 The tag or digest is validated, the read is decided for the name (and the tag), the item is looked up and served by the core
@@ -268,8 +271,8 @@ path, lets a registry token push into an image its grant does not name.
 ## Blob uploads and the mount (R-OCI-011, R-OCI-012)
 
 The handlers hold the protocol and nothing of a session: the state is the host's session port ([Upload sessions](#upload-sessions-r-stor-011)),
-so any replica continues a session and none keeps anything of it. The routes are `Classes` local; the dispatcher routes a write addressed
-to a virtual repository to its deployment target, and the handlers act on the request's repository.
+so any replica continues a session and none keeps anything of it. The routes serve the classes local and virtual (ADR-180): the handlers act on the request's
+repository, or through `writeRequest` on the deployment target of the virtual repository the client addressed, and the session records both.
 Decisions: [ADR-175](../decisions.md#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link),
 Q-OCI-110 to Q-OCI-114. The security view is [oci-uploads.md](../security/oci-uploads.md).
 
@@ -298,7 +301,7 @@ a blob item whose content is not the digest of its path, whose name is no digest
 `oci.MountSource` is exported for the registry root: the enforcement point (`Enforcer.withoutUnreadableMount`, `internal/app/wire_registry.go` passes `ociformat.MountSource`) checks the grant of a registry token on the source
 (`pull` there) before the handler runs, with the repository and the name this function returns, and drops `mount` and `from` of a request whose grant lacks it, so the handler opens a plain session (Q-OCI-102). Both read the
 first value of a repeated parameter, and `from` against the bound repository the match read: `EndpointFacts.BoundRepo`, set by the dispatcher's `serveRoute` from the match (for a host bound to a virtual repository it is the
-virtual one, while `Request.Repo` of a write is the deployment target). See [The grant on the source](../security/oci-uploads.md#the-grant-on-the-source); the end-to-end test is
+virtual one, while the request `writeRequest` makes for a write acts on the deployment target). See [The grant on the source](../security/oci-uploads.md#the-grant-on-the-source); the end-to-end test is
 [mount_test.go](../../test/integration/registry/mount_test.go).
 
 The `Finalize` of the port takes the offset of the last bytes as `Append` does (-1 appends at the end), decided under the session's claim, and returns the received count with a 416 in `Committed.Received` (ADR-178, contract version 3);
@@ -376,7 +379,8 @@ service issues to the trove token for the scope of the image (`registryToken`, c
 check are in the path. Everything is the application's: the engine, the egress rules, the storage hooks, the data port,
 the repository validation. The stub runs in the test process on TLS; `Running.DialOverride()` reaches its three names (`registry.localhost`,
 `auth.localhost`, `cdn.localhost`) and a second stub answers as Docker Hub's three (`registry-1.docker.io`, `auth.docker.io`,
-`production.cloudfront.docker.com`), so no name is resolved. 
+`production.cloudfront.docker.com`), so no name is resolved.
+
 ## The mirror (R-OCI-026)
 
 A remote repository in mode `mirror` keeps the images its settings select. The engine is the mirror's ([mirror.md](mirror.md)); the format contributes the lister, in four
@@ -405,6 +409,40 @@ the tags list in pages and its bound, the catalog and the exact names, the bound
 [mirror_format_test.go](../../internal/repository/mirror_format_test.go) (the Owner rule), and [test/integration/mirror/oci_test.go](../../test/integration/mirror/oci_test.go): the whole stack, two worker processes that
 claim the queue `mirror`, a client-serving process and the counting stub (a catalog pass with the tag bound and a pull with the stub stopped, the exact-name pass, the platform filter, a second pass and a moved tag,
 the byte bound, a Docker Hub mirror with the quota answer). The e2e rows (a pass while real clients pull, the drain) are WP11's.
+
+## The virtual class (R-OCI-027, R-OCI-028)
+
+The virtual engine ([internal/virtual](../../internal/virtual)) plans a request: the repository's patterns, the pin rules and claims for the image name, the members the caller
+may read, and for each whether it may fill the member's cache. The OCI format does not use the engine's tiers or its merged-metadata cache (Q-OCI-160): it walks the plan itself and
+calls the handler of a direct request on a request made for each member (`Request.Member`), so a member answers as it does when addressed and every decision it makes still names the
+virtual repository as the addressed one.
+
+| Request | Where | How |
+|---|---|---|
+| Manifest by tag | `virtualManifestGet` | `walk` over the local members, then the remote members, in member order; each through `handleManifestGet` (a remote through the remote request path) |
+| Manifest or blob by digest | `virtualByDigest`, `digestSteps` | three passes: the local members; the caches of the remote members (`serveCached`, `Remote().Cached`, no upstream); the remote members the caller may fill |
+| Tags list | `virtualTagsList` | each member's readable tags (`localMemberTags`, `remoteMemberTags`), merged by `virtualAdapter.Merge`, read again on the virtual repository (`pageVisible`), paged |
+| Referrers | `virtualReferrers` | each local member's page after `last`, each remote member's list (`remoteReferrerList`), deduplicated by digest, read again on the virtual repository (`pageReferrers`) |
+| Catalog | the registry root | not answered for a virtual repository (R-OCI-017) |
+
+`walk` ([virtual_read.go](../../internal/formats/oci/virtual_read.go)) is the one rule for a miss and a failure (Q-OCI-162): a member that has not got the item, refuses the caller or may not be
+filled is a miss; a member that cannot be asked, or whose object is lost, is remembered and is the answer when nothing serves; an error after the first byte ends the request. It puts
+`Trove-Resolved-From` on the answer of the member that serves, when the status line goes out.
+
+**Writes.** The write routes serve the class virtual (ADR-180). A handler that writes starts with `writeRequest`: the request itself for a local repository, a request made for the deployment
+target (`Request.WriteTarget`) for a virtual one. Decisions, the ownership rule, the package rows and the commit act on that request; the upload sessions are called with the addressed
+request (`rq.Host.Uploads().Start(ctx, addr, target, name)`), and every `Location` is built for the addressed one. A new write route must do the same. The DELETE handlers answer 405 for the class.
+
+**The link step** ([virtual_write.go](../../internal/formats/oci/virtual_write.go) `linkFromMembers`) runs in `handleManifestPut` before the reference check when the addressed repository is
+virtual: `Ingestor.Link` with the virtual repository as the source, by name, for each blob and manifest the target lacks; an index's child is read with `memberManifest` (a `GET` of the manifest
+through the first two tiers into memory), parsed, and linked after its own blobs with the payload of a push by digest.
+
+**Tests.** Unit: [virtual_test.go](../../internal/formats/oci/virtual_test.go) (the walk, the merge, the refusals of a write and a delete) and the merge cases of the conformance kit
+([conformance_test.go](../../internal/formats/oci/conformance_test.go)). Application: [test/integration/ocivirtual](../../test/integration/ocivirtual) (the area is in shard b of
+`make test-integration`): a virtual repository over `docker-local` and a remote repository on the stub, with registry tokens from the token service; the push is a chunked upload of every blob
+and the manifest, as a client sends it. [env_test.go](../../test/integration/ocivirtual/env_test.go) builds the installation (two stubs whose `app:1` differ, claims, a virtual repository without
+a deployment target); a writer holds `manage` unless the test says `plain`, because a first push of `app` is a shadowing decision (R-REPO-048), and `docker-local` does not auto-claim unless
+the test asks (`autoClaim`). The security view is [oci-virtual.md](../security/oci-virtual.md).
 
 ## Configuration
 
@@ -520,7 +558,9 @@ Built (WP8): the remote class (R-OCI-021 to R-OCI-025): the adapter, the handsha
 
 Built (WP10): the mirror ([the mirror](#the-mirror-r-oci-026)).
 
-Not built here (each is a work package of T-16): the virtual class, the package screens' remaining parts.
+Built (WP9): the virtual class ([the virtual class](#the-virtual-class-r-oci-027-r-oci-028)).
+
+Not built here (each is a work package of T-16): the package screens' remaining parts, the e2e rows (WP11), the conformance suite (WP13).
 
 ## The counting stub registry
 

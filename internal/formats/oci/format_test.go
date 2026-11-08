@@ -28,8 +28,8 @@ func TestDescriptorDeclaresTheRegistryRoot(t *testing.T) {
 	if d.ID != "oci" || !d.RegistryRoot || d.ProtocolBasePath != "/v2/{project}/{key}/" {
 		t.Fatalf("descriptor = %+v", d.Facts)
 	}
-	if !d.Supports(formats.Local) || !d.Supports(formats.Remote) || d.Supports(formats.Virtual) {
-		t.Errorf("classes = %v; the format registers local and remote", d.Classes)
+	if !d.Supports(formats.Local) || !d.Supports(formats.Remote) || !d.Supports(formats.Virtual) {
+		t.Errorf("classes = %v; the format registers local, remote and virtual", d.Classes)
 	}
 	if d.DefaultUpstreamURL != "https://registry-1.docker.io/" || !reflect.DeepEqual(d.DefaultCredentialHosts, []string{"auth.docker.io"}) {
 		t.Errorf("upstream %q, credential hosts %v", d.DefaultUpstreamURL, d.DefaultCredentialHosts)
@@ -164,10 +164,13 @@ func TestRoutesMatchTheProtocolPaths(t *testing.T) {
 	}
 }
 
-func TestWritesAreServedByLocalRepositoriesOnly(t *testing.T) {
+// TestWritesAreServedByLocalAndVirtualRepositoriesOnly: a remote repository answers 405 for a write, and a write addressed to a
+// virtual repository reaches the handler with the virtual repository as the addressed one (the dispatcher's redirect to the deployment
+// target would drop it).
+func TestWritesAreServedByLocalAndVirtualRepositoriesOnly(t *testing.T) {
 	for _, r := range New().Routes() {
 		write := r.Action != formats.ActionRead
-		if write != (len(r.Classes) == 1 && r.Classes[0] == formats.Local) {
+		if write != (len(r.Classes) == 2 && r.Classes[0] == formats.Local && r.Classes[1] == formats.Virtual) {
 			t.Errorf("route %s: action %v, classes %v", r.Name, r.Action, r.Classes)
 		}
 	}

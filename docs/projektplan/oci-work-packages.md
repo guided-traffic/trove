@@ -441,3 +441,22 @@ WP0 ──┬─ WP1 ─────────────┐
 - Touched outside the owned files: `internal/formats/testdata/contract.txt` (the optional `discover.Bounded`), `docs/spec/architecture.md` (the contract comment, Q-ARCH-415),
   `docs/spec/repositories-and-proxy.md` (R-REPO-050, R-REPO-051, Q-REPO-295), `docs/decisions.md`, `docs/developer/mirror.md`, `README.md`, `internal/mirror/rig_test.go` (a hook of the fake lister).
 - Left to others: the e2e rows (a pass while real clients pull, `mirror-long` drain) are WP11's. Not done: referrers (stay pull-through), nested indexes (H-712), a per-name status of skipped tags (H-713).
+
+## WP9 as built (the OCI virtual class)
+
+- Built: `internal/formats/oci/virtual.go` (the adapter: the tags list is the one merged document), `virtual_read.go` (the plan, the `walk` over the members, a manifest by tag, a manifest and a
+  blob by digest in the three tiers, the tags list and the referrers as unions), `virtual_write.go` (`writeRequest`, the link step of a manifest push, the refusal of a delete); the class
+  `virtual` in the descriptor. ADR-180, Q-OCI-160 to Q-OCI-162, Q-OCI-164 to Q-OCI-166, H-700 to H-704 ([oci-virtual.md](../security/oci-virtual.md)).
+- The H-663 hand-off of WP5 is closed without a change of the dispatcher: the write routes serve the class virtual (ADR-180), so the request reaches the handler with the virtual repository as the
+  addressed one, `uploadTarget` already accepted it, and the session and every `Location` name it. The delete routes serve the class as well and answer 405 from the handler (before, the
+  dispatcher would have carried a delete to the target).
+- Deviation recorded: a write to a virtual repository without a deployment target is refused by the decision point (403 `DENIED`, a registry token without `push`), before the handler's 405
+  (Q-OCI-166); R-OCI-028's criterion now says so.
+- Tests: [virtual_test.go](../../internal/formats/oci/virtual_test.go) and the merge cases in the conformance fixture; `test/integration/ocivirtual` (new, shard b): tag order across members, a
+  remote member's tag asked before a later member's stored copy, the digest tiers, a claim, the tags list paged, the referrers union, a chunked push to the target with the session and `Location`
+  naming the virtual repository, the link of a cached layer, a mount from the virtual repository, the shadowing decision, the refusals of a delete and of a write without a target.
+- Touched outside the owned files: `handlers_manifest.go`, `handlers_blob.go`, `handlers_tags.go`, `handlers_referrers.go` (the class branch), `handlers_upload.go`, `handlers_mount.go`,
+  `handlers_delete.go`, `routes.go`, `remote_handlers.go` (`remoteReferrerList` extracted), `format.go`; `api/openapi.yaml` and its generated copies (`VirtualFormatName` lists `oci`); the guide texts
+  of the virtual class; `docs/security/{README,oci-uploads,oci-content}.md`.
+- Left to others: the `docker pull` and `docker push` rows through a virtual address (R-OCI-027, R-OCI-028 acceptance criteria that run a client) are WP11's; the conformance suite through
+  a virtual address is WP13's. The package screens need no class switch (the OCI screens read the rows of the repositories that hold the images).

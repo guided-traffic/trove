@@ -2780,6 +2780,7 @@ func (e ValkeyViewState) Valid() bool {
 const (
 	VirtualFormatNameNpm   VirtualFormatName = "npm"
 	VirtualFormatNameNuget VirtualFormatName = "nuget"
+	VirtualFormatNameOci   VirtualFormatName = "oci"
 )
 
 // Valid indicates whether the value is a known member of the VirtualFormatName enum.
@@ -2788,6 +2789,8 @@ func (e VirtualFormatName) Valid() bool {
 	case VirtualFormatNameNpm:
 		return true
 	case VirtualFormatNameNuget:
+		return true
+	case VirtualFormatNameOci:
 		return true
 	default:
 		return false

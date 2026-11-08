@@ -24,7 +24,7 @@ func (f *Format) handleBlobGet(ctx context.Context, rq *formats.Request, w http.
 		return f.remoteBlobGet(ctx, rq, w)
 	case formats.Local:
 	default:
-		return notImplemented("pull a blob through a virtual repository (R-OCI-027)")
+		return f.virtualBlobGet(ctx, rq, w)
 	}
 	name, digest := rq.Params.Get("name"), rq.Params.Get("digest")
 	if !ValidDigest(digest) {

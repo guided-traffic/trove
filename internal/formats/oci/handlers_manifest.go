@@ -115,7 +115,7 @@ func (f *Format) handleManifestGet(ctx context.Context, rq *formats.Request, w h
 		return f.remoteManifestGet(ctx, rq, w)
 	case formats.Local:
 	default:
-		return notImplemented("pull a manifest through a virtual repository (R-OCI-027)")
+		return f.virtualManifestGet(ctx, rq, w)
 	}
 	name, ref := rq.Params.Get("name"), rq.Params.Get("reference")
 	var path, version string
@@ -183,9 +183,14 @@ func unsupportedQuery(rq *formats.Request) error {
 // (the package row lock, the reference check on locked rows, the ownership claim) runs again in the commit transaction. A push by tag
 // commits the tag item as the lead and the manifest item as its companion, or links the tag to the stored manifest; a push by digest
 // has the manifest as the lead.
-func (f *Format) handleManifestPut(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	if rq.Repo.Class != formats.Local {
-		return notImplemented("push a manifest to a remote or a virtual repository (R-OCI-028)")
+//
+// Through a virtual repository the push is decided and committed on its deployment target (rq below is the request made for the target,
+// addr the one the client addressed, which the Location is built for), and the blobs and manifests it names that the target lacks are
+// linked in from the members first (R-OCI-028).
+func (f *Format) handleManifestPut(ctx context.Context, addr *formats.Request, w http.ResponseWriter) error {
+	rq, err := writeRequest(ctx, addr)
+	if err != nil {
+		return err
 	}
 	name, ref := rq.Params.Get("name"), rq.Params.Get("reference")
 	byDigest := strings.Contains(ref, ":")
@@ -255,6 +260,11 @@ func (f *Format) handleManifestPut(ctx context.Context, rq *formats.Request, w h
 		return errs.E(errs.Conflict, errs.CodeConflict,
 			"The manifest "+m.Digest+" was deleted and is withheld after a restore; an administrator reinstates it before it is pushed again.")
 	}
+	if addr.Repo.Class == formats.Virtual {
+		if err := f.linkFromMembers(ctx, addr, rq, st, name, len(live), m, 0); err != nil {
+			return err
+		}
+	}
 	if err := checkReferences(ctx, st, nil, repo.ID, name, m); err != nil {
 		return err
 	}
@@ -275,7 +285,7 @@ func (f *Format) handleManifestPut(ctx context.Context, rq *formats.Request, w h
 	}
 	h := w.Header()
 	h.Set("Docker-Content-Digest", m.Digest)
-	h.Set("Location", rq.Host.Links(rq).Path(name+"/manifests/"+m.Digest))
+	h.Set("Location", addr.Host.Links(addr).Path(name+"/manifests/"+m.Digest))
 	if m.Subject != nil {
 		h.Set("OCI-Subject", m.Subject.Digest)
 	}

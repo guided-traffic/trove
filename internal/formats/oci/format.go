@@ -51,16 +51,15 @@ func New() *Format {
 
 // Descriptor returns the catalog entry of R-OCI-001 and the contract facts.
 //
-// The format registers the classes local and remote; virtual joins with its adapter, which is a work package of its own
-// (Q-NUGET-28 did the same). The facts that only a remote repository reads (the upstream, the extra hosts, the periods) were declared
-// from the start, so the catalog answers for the whole format.
+// The format registers the classes local, remote and virtual. The facts that only a remote repository reads (the upstream, the extra
+// hosts, the periods) were declared from the start, so the catalog answers for the whole format.
 func (f *Format) Descriptor() formats.Descriptor {
 	metadataTTL, notFoundTTL := 300, 300
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "OCI (Docker)",
-			Classes:          []formats.Class{formats.Local, formats.Remote},
+			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
 			ProtocolBasePath: catalog.RegistryRootBasePath,
 			RegistryRoot:     true,

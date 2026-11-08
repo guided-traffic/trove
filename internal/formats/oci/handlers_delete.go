@@ -9,8 +9,9 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 )
 
-// The content-management category of the distribution specification (R-OCI-018, Q-OCI-11). The routes are Classes local: a DELETE on
-// a remote or a virtual repository is answered 405 by the dispatcher before a handler runs. The removal itself is the item store's,
+// The content-management category of the distribution specification (R-OCI-018, Q-OCI-11). The routes serve the classes local and
+// virtual: a DELETE on a remote repository is answered 405 by the dispatcher before a handler runs, and one on a virtual repository by the
+// handler (R-OCI-028), because the dispatcher would carry a write of a virtual repository to its deployment target. The removal itself is the item store's,
 // and OnItemsRemoved (hooks_remove.go) holds the cascade and the refusals, so a deletion through /files/, the items API or a retention
 // run behaves exactly as these two routes do.
 
@@ -22,6 +23,9 @@ import (
 //
 // A reference the repository holds nothing under answers 404 MANIFEST_UNKNOWN.
 func (f *Format) handleDeleteManifest(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if rq.Repo.Class == formats.Virtual {
+		return virtualDeleteRefused(http.MethodGet, http.MethodHead, http.MethodPut)
+	}
 	name, ref := rq.Params.Get("name"), rq.Params.Get("reference")
 	target := formats.Target{Package: name, Actions: []formats.Action{formats.ActionDelete}}
 	var path string
@@ -53,6 +57,9 @@ func (f *Format) handleDeleteManifest(ctx context.Context, rq *formats.Request, 
 // (409 DENIED). A blob the name holds no item of answers 404 BLOB_UNKNOWN. The blob object is collected once no item references it
 // (R-STOR-024).
 func (f *Format) handleDeleteBlob(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if rq.Repo.Class == formats.Virtual {
+		return virtualDeleteRefused(http.MethodGet, http.MethodHead)
+	}
 	name, digest := rq.Params.Get("name"), rq.Params.Get("digest")
 	if !ValidDigest(digest) {
 		return errs.E(errs.Invalid, errs.CodeOCIDigestInvalid, "The digest is not a sha256 digest.")

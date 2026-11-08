@@ -12,6 +12,6 @@ The registry answers in the error format of the distribution specification: `{"e
 | `400` `MANIFEST_BLOB_UNKNOWN` | The manifest names a layer, config or manifest that the image name does not hold. Push them first. |
 | `413` `SIZE_INVALID` | A manifest above 4 MiB, a layer above the repository's limit, or the quota. |
 | `409` `DENIED` | A deletion that would leave a dangling reference: a manifest that an index lists, or a blob that a manifest references. Or a push of a manifest that a restore withheld. |
-| `405` `UNSUPPORTED` | A write to a remote repository, or to a virtual repository without a deployment target. |
+| `405` `UNSUPPORTED` | A write to a remote repository, or a delete through a virtual repository. |
 | `429` / `503` `TOOMANYREQUESTS` | Rate limited by trove, or by the upstream of a remote repository. Wait for the time in `Retry-After`; authenticate a Docker Hub remote to raise its allowance. |
 | `502`, `503`, `504` `UNAVAILABLE` | The upstream of a remote repository failed, is unreachable or its circuit is open. Images already cached are still served. |

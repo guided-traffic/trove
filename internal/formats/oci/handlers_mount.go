@@ -42,15 +42,19 @@ func MountSource(from string, bound qname.Repo) (repo qname.Repo, name string, c
 // request's repository through the host's Link, which resolves the source by its name and decides, as the caller, that the caller may
 // read it, that the item is a live file whose blob is served and that no finding blocks it (R-STOR-008, Q-OCI-27). The target
 // needs `deploy`. 201 when the blob is linked; 202 and a new session for everything else the source answers.
-func (f *Format) handleMount(ctx context.Context, rq *formats.Request, w http.ResponseWriter, name, digest, from string) error {
+func (f *Format) handleMount(ctx context.Context, addr *formats.Request, w http.ResponseWriter, name, digest, from string) error {
 	if !ValidDigest(digest) {
 		return errDigestInvalid("A digest is sha256: followed by 64 lower-case hexadecimal digits.")
 	}
-	// On a bound host `from` is an image name of the repository the host is bound to, as the match read it: for a virtual repository that is the
-	// virtual one, not the deployment target the write was redirected to (rq.Repo), and it is the repository the enforcement point checked.
+	// Through a virtual repository the mount links into its deployment target (rq); the source is read on the bound repository as the
+	// match read it, and the answers name the repository the client addressed.
+	rq, err := writeRequest(ctx, addr)
+	if err != nil {
+		return err
+	}
 	repo, srcName, _, ok := MountSource(from, rq.Endpoint.BoundRepo)
 	if !ok {
-		return f.startSession(ctx, rq, w, name)
+		return f.startSession(ctx, addr, w, name)
 	}
 	path := BlobPath(name, digest)
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: path, Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
@@ -59,14 +63,14 @@ func (f *Format) handleMount(ctx context.Context, rq *formats.Request, w http.Re
 	if err := checkOwnership(ctx, rq, name, path); err != nil {
 		return err
 	}
-	_, err := rq.Host.Ingest().Link(ctx, rq, formats.SourceRef{Repo: repo, Path: BlobPath(srcName, digest)},
+	_, err = rq.Host.Ingest().Link(ctx, rq, formats.SourceRef{Repo: repo, Path: BlobPath(srcName, digest)},
 		formats.Commit{Path: formats.Path{Path: path}, MediaType: blobContentType})
 	if err == nil {
-		return blobCreated(w, rq, name, digest)
+		return blobCreated(w, addr, name, digest)
 	}
 	if errs.KindOf(err) == errs.NotFound {
 		// The source repository, the name or the blob does not exist, or the caller may not read it, or the blob is blocked: one answer.
-		return f.startSession(ctx, rq, w, name)
+		return f.startSession(ctx, addr, w, name)
 	}
 	return err
 }

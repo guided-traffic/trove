@@ -11,4 +11,4 @@ An administrator can claim image names for a member (`acme/*` for a local reposi
 
 ### Pushing
 
-A push, a layer upload and a mount through a virtual repository are executed on its deployment target. Without a target they answer `405` `UNSUPPORTED`. When you push an image that is based on a layer a remote member has cached, trove links that layer into the target instead of asking the client to upload it again. Deleting through a virtual repository is not offered: delete in the repository that holds the image.
+A push, a layer upload and a mount through a virtual repository are executed on its deployment target. A virtual repository without a target takes no push: it is refused (`403` `DENIED`), and a token for it carries no `push`. When you push an image that is based on a layer a remote member has cached, trove links that layer into the target instead of asking the client to upload it again. Deleting through a virtual repository is not offered (`405` `UNSUPPORTED`): delete in the repository that holds the image.

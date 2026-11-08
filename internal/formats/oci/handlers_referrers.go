@@ -57,7 +57,7 @@ func (f *Format) handleReferrers(ctx context.Context, rq *formats.Request, w htt
 		return f.remoteReferrers(ctx, rq, w)
 	case formats.Local:
 	default:
-		return notImplemented("list referrers of a virtual repository (R-OCI-027)")
+		return f.virtualReferrers(ctx, rq, w)
 	}
 	name := rq.Params.Get("name")
 	subject, ok := digestFromText(rq.Params.Get("digest"))

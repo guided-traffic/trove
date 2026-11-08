@@ -143,8 +143,10 @@ func matchReferrers(escaped string) (formats.Params, bool) {
 // buildRoutes is the whole endpoint map of R-OCI-009 to R-OCI-018, written once with the name of every handler, so that a work
 // package that builds an operation replaces its stub file with a file of its own and never edits this table.
 //
-// The writes are Classes local, so that a remote repository answers 405 and the dispatcher routes a write addressed to a
-// virtual repository to its deployment target (R-OCI-028). The reads stay open to every class the format supports.
+// The writes serve the classes local and virtual, so that a remote repository answers 405 and a write addressed to a virtual
+// repository reaches the handler with the virtual repository as the addressed one: the dispatcher's redirect to the deployment target
+// would drop it, and the session and the Location of an upload would name the target (R-OCI-028, H-663). The handlers resolve the target
+// ([writeRequest]); the deletes answer 405 for the virtual class themselves. The reads stay open to every class the format supports.
 func (f *Format) buildRoutes() []formats.Route {
 	const (
 		read   = formats.ActionRead
@@ -161,7 +163,7 @@ func (f *Format) buildRoutes() []formats.Route {
 		}
 		r.PackageParam = "name"
 		if action != read {
-			r.Classes = []formats.Class{formats.Local}
+			r.Classes = []formats.Class{formats.Local, formats.Virtual}
 		}
 		return r
 	}

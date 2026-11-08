@@ -477,7 +477,6 @@ func bothAllow(ctx context.Context, rq *formats.Request, name string, elems []st
 // does the registry, so that the client falls back to the tag schema through the same remote (Q-OCI-15).
 func (f *Format) remoteReferrers(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	client := rq.Params.Get("name")
-	name := remoteName(rq, client)
 	dgst := rq.Params.Get("digest")
 	if !ValidDigest(dgst) {
 		return errs.E(errs.Invalid, errs.CodeOCIDigestInvalid, "The digest is not a sha256 digest.")
@@ -495,6 +494,25 @@ func (f *Format) remoteReferrers(ctx context.Context, rq *formats.Request, w htt
 	if len(artifactType) > maxArtifactTypeBytes {
 		return errs.E(errs.Invalid, errs.CodeOCIUnsupported, "The parameter artifactType is longer than 255 bytes.")
 	}
+	kept, err := f.remoteReferrerList(ctx, rq, client, dgst, artifactType)
+	if err != nil {
+		return err
+	}
+	if artifactType != "" {
+		w.Header().Set("OCI-Filters-Applied", "artifactType")
+	}
+	return jsonReply(w, http.StatusOK, mediaTypeImageIndex, struct {
+		SchemaVersion int               `json:"schemaVersion"`
+		MediaType     string            `json:"mediaType"`
+		Manifests     []json.RawMessage `json:"manifests"`
+	}{2, mediaTypeImageIndex, kept})
+}
+
+// remoteReferrerList is the descriptors of the upstream's referrers answer for the digest that the caller may read, filtered by artifactType, at
+// most a page of the local class. The gate of the request is the caller's (the remote's own, or that of the virtual repository this is a member
+// of); each descriptor is decided here, on its own path and on both spellings of the name.
+func (f *Format) remoteReferrerList(ctx context.Context, rq *formats.Request, client, dgst, artifactType string) ([]json.RawMessage, error) {
+	name := remoteName(rq, client)
 	params := url.Values{}
 	if artifactType != "" {
 		params.Set("artifactType", artifactType)
@@ -507,9 +525,9 @@ func (f *Format) remoteReferrers(ctx context.Context, rq *formats.Request, w htt
 		// the client falls back to the tag schema through the same remote, whose manifests are cached like every other (Q-OCI-128). An
 		// empty index would say that nothing refers to the subject, which nobody has found out.
 		if unreachable(err) {
-			return errs.E(errs.NotFound, errs.CodeOCINameUnknown, "The referrers of this digest are not stored and the upstream cannot be asked.")
+			return nil, errs.E(errs.NotFound, errs.CodeOCINameUnknown, "The referrers of this digest are not stored and the upstream cannot be asked.")
 		}
-		return missing(err, func() error {
+		return nil, missing(err, func() error {
 			return errs.E(errs.NotFound, errs.CodeOCINameUnknown, "The upstream serves no referrers for this digest.")
 		})
 	}
@@ -518,22 +536,11 @@ func (f *Format) remoteReferrers(ctx context.Context, rq *formats.Request, w htt
 	}
 	lim := untrusted.DefaultLimits().Tighten(untrusted.Limits{DocumentBytes: MaxReferrersBytes})
 	if err := untrusted.UnmarshalJSON(res.Body, lim, &index); err != nil {
-		return errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream's referrers answer is not an image index the registry reads.", errs.WithCause(err))
+		return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamFailed, "The upstream's referrers answer is not an image index the registry reads.", errs.WithCause(err))
 	}
 	// At most a page of the local class (R-OCI-016): the descriptors beyond it are not decided or listed.
 	index.Manifests = index.Manifests[:min(len(index.Manifests), MaxPage)]
-	kept, err := f.readableReferrers(ctx, rq, client, artifactType, index.Manifests)
-	if err != nil {
-		return err
-	}
-	if artifactType != "" {
-		w.Header().Set("OCI-Filters-Applied", "artifactType")
-	}
-	return jsonReply(w, http.StatusOK, mediaTypeImageIndex, struct {
-		SchemaVersion int               `json:"schemaVersion"`
-		MediaType     string            `json:"mediaType"`
-		Manifests     []json.RawMessage `json:"manifests"`
-	}{2, mediaTypeImageIndex, kept})
+	return f.readableReferrers(ctx, rq, client, artifactType, index.Manifests)
 }
 
 // readableReferrers keeps the descriptors of the upstream's answer that name a manifest the caller may read, and that match the

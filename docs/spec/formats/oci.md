@@ -437,7 +437,7 @@ The format's `WriteError` (R-ARCH-008) maps every core error onto the distributi
 | No credential, invalid credential, insufficient scope | 401 | `UNAUTHORIZED` with the challenge of R-OCI-004 |
 | Denied by the decision point | 403 | `DENIED` |
 | A refusal of the registry itself: the push of a manifest the journal replay withheld (R-OCI-013, R-OCI-033), a deletion that would leave a dangling reference (R-OCI-018) | 409 | `DENIED` |
-| Operation not offered (write to a remote, to a virtual without deploy target, an unsupported parameter) | 405 or 400 | `UNSUPPORTED` |
+| Operation not offered (write to a remote, a delete through a virtual repository, an unsupported parameter) | 405 or 400 | `UNSUPPORTED` |
 | Rate limit (R-ARCH-005 step 7) | 429 | `TOOMANYREQUESTS` with `Retry-After` |
 | Upstream rate limit without a stored copy (R-REPO-029: 503 with `Retry-After`) | 503 | `TOOMANYREQUESTS` |
 | Upstream failure, offline, circuit open, object lost | 502, 503, 504 | `UNAVAILABLE` (distribution's code; the specification allows registry-specific codes) |
@@ -981,8 +981,23 @@ Virtual resolution follows R-REPO-019 with these format rules (Q-OCI-18):
 - Pin rules and namespace claims (R-REPO-023) apply to image names as the client addresses them at the virtual repository:
   a claim of `acme/*` for `docker-local` keeps every remote member from serving `acme/app` through `docker` (dependency
   confusion for images). A remote member applies its own `library/` mapping (R-OCI-025) after the claim decision.
-- `Trove-Resolved-From` names the member that answered (R-REPO-019).
+- `Trove-Resolved-From` names the member that answered (R-REPO-019); an endpoint with exposure rules sends none and words a member's failure as the
+  addressed repository's (R-EP-018).
 - Tag resolution by push time across members (PKG-DOCKER-040) is not offered in this phase (Deferred).
+- **How the walk answers** ([Q-OCI-160](#q-oci-160--the-virtual-class-walks-the-members-itself-and-merges-one-document-the-tags-list),
+  [Q-OCI-162](#q-oci-162--a-miss-goes-on-to-the-next-member-a-failure-is-the-answer-only-when-nothing-serves)). The request is decided on the virtual
+  repository first (grants, the endpoint's exposure, the repository's patterns), then planned for the image name as the client typed it; every
+  member answers through the handler a direct request meets, on a request made for the member, so the addressed repository of each decision stays the
+  virtual one. A member that does not have the item, that the caller may not read in, or whose cache the caller may not fill, is a miss and the walk goes on; a
+  member that cannot be asked or whose stored object is lost is remembered, and its failure is the answer only when no member serves the item (`404` would be a
+  false statement about an item that may exist). A digest is taken in three passes: the local members, the caches of the remote members, then the upstreams of
+  the remote members the caller may fill.
+- **Lists** ([Q-OCI-161](#q-oci-161--the-tags-list-and-the-referrers-of-a-virtual-repository-are-unions-decided-for-the-caller-in-every-member-and-on-the-virtual-repository)).
+  The tags list is the union of the tags each member holds and the caller may read in it, read again on the virtual repository itself, sorted, without repeats,
+  paged as R-OCI-015 (`404 NAME_UNKNOWN` when no member holds anything of the name). A remote member contributes the tags list it stores (or, for a caller
+  who may fill it, what its upstream answers for the metadata period) and not the upstream's further pages. The referrers are the union of the members'
+  descriptors, deduplicated by digest, in digest order, filtered and paged as R-OCI-016; a virtual repository without a local member whose remote members
+  have no referrers API answers `404`, as a remote does.
 
 Acceptance criteria:
 
@@ -991,18 +1006,26 @@ Acceptance criteria:
 - A claim `acme/*` for `docker-local`: `…/docker/acme/tool:1`, which only the stub has, answers 404, and the stub records no
   request.
 - `tags/list` through `docker` lists the union of `docker-local`'s and the stub's tags of the name.
+- With two remote members, the first in member order is asked first although the second holds a stored copy of the tag; a digest that only the second
+  holds in its cache is served from it before the first member's upstream is asked, and the first member's stub records no request.
 
 ### R-OCI-028 · Virtual repository: pushes through a virtual repository
 Priority: **P1** · Covers: PKG-DOCKER-018, PKG-DOCKER-039
 
-- Uploads, mounts and manifest pushes to a virtual repository are executed on its deploy target (R-REPO-021); without one they
-  answer 405 `UNSUPPORTED` naming the missing deploy target. Upload locations stay below the virtual repository's address and
-  the session records the target (R-OCI-011).
+- Uploads, mounts and manifest pushes to a virtual repository are executed on its deploy target (R-REPO-021). The write routes serve the class
+  virtual and the handler resolves the target ([ADR-180](../../decisions.md#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target)),
+  so the repository the client addressed stays the addressed one: upload locations stay below the virtual repository's address and the
+  session records it as the addressed repository and the target as the repository it writes to (R-OCI-011). A virtual repository without a deploy
+  target takes no write: the decision point refuses it with 403 `DENIED` before a handler runs, and a registry token for it carries no `push`
+  ([Q-OCI-166](#q-oci-166--a-write-through-a-virtual-repository-without-a-deploy-target-is-refused-by-the-decision-point-before-the-handler)); the
+  handler's 405 `UNSUPPORTED` is the defence behind it.
 - **Linking from members** (Q-OCI-18). Docker asks `HEAD …/blobs/<d>` before uploading and skips a blob the virtual answers
   200 for, which a member other than the target may have answered. A manifest push through the virtual repository therefore
   links each referenced blob or manifest that the target lacks from the member that holds it (a local member, or a remote
   member's cache, never an upstream fetch), when the caller may read it there, before the reference check of R-OCI-013 step 4;
-  only then is a missing one `MANIFEST_BLOB_UNKNOWN`.
+  only then is a missing one `MANIFEST_BLOB_UNKNOWN`. The source of the link is the virtual repository by name, so it is resolved as a pull would
+  be (the routing of the name, the per-member read check, the claims, the block of a finding); an index's manifests are linked after the blobs
+  they name, to a depth of four ([Q-OCI-164](#q-oci-164--the-link-step-reads-the-virtual-repository-by-name-and-links-an-indexs-manifests-after-their-blobs)).
 - `DELETE` of a manifest or a blob through a virtual repository answers 405 `UNSUPPORTED`; cancelling an upload session
   through it acts on the session's target (R-OCI-011).
 
@@ -1010,7 +1033,10 @@ Acceptance criteria:
 
 - `docker push …/docker/app:2` stores the image in `docker-local`; an image based on a layer that `docker-hub` cached is pushed
   through `docker` without uploading that layer, and `docker pull …/docker-local/app:2` succeeds.
-- With the deploy target removed, `docker push …/docker/app:3` fails and the first upload answers 405 `UNSUPPORTED`.
+- With the deploy target removed, `docker push …/docker/app:3` fails: the token service withholds `push` for `docker`, and a request with a trove token is
+  answered 403 `DENIED` naming the action and the repository.
+- A first upload through `docker` records `docker` as the addressed repository and `docker-local` as the target, its `Location` names `…/docker/…`, and
+  cancelling it through `docker` acts on the session. `DELETE …/docker/app/manifests/1` answers 405 `UNSUPPORTED` and deletes nothing.
 
 ### R-OCI-029 · Bound hosts: the Docker Engine mirror
 Priority: **P1** · Covers: PKG-DOCKER-005, PKG-DOCKER-008
@@ -1363,7 +1389,7 @@ T-16; "F4" means it stays in FULL.md F4 for a later phase; "Not offered" means t
 | PKG-OCI-001 Three classes | Built; one format for Docker and OCI | R-OCI-001, Q-OCI-1 |
 | PKG-OCI-002 Local settings (tag limits, retention) | F4, with the repository caps | Deferred |
 | PKG-OCI-003 Proxying OCI registries | Built; the `ns` parameter is ignored | R-OCI-021, Q-OCI-13 |
-| PKG-OCI-004 Virtual repositories | Built; the merged lists use the merged-metadata cache of R-REPO-020 | R-OCI-027 |
+| PKG-OCI-004 Virtual repositories | Built; the lists are merged per request, decided for the caller in every member (Q-OCI-161) | R-OCI-027 |
 | PKG-OCI-005 Addressing | Built | R-OCI-001 |
 | PKG-OCI-006 Distribution endpoints | Built: pull, push, discovery and management; extra tags in the query F4 | R-OCI-003, R-OCI-009 to R-OCI-018 |
 | PKG-OCI-007 Manifest kinds, negotiation | Built: no conversion | R-OCI-009, R-OCI-013, Q-OCI-8 |
@@ -3076,6 +3102,131 @@ agent would revisit this if the parser gains work per descriptor that is not lin
 
 **Applied in the spec:** [R-OCI-020](#r-oci-020--limits-for-untrusted-content) acceptance criteria. Test:
 `TestR_OCI_020_CraftedManifestsAreRefusedQuicklyWithoutStoringAnything` ([handlers_manifest_test.go](../../../internal/formats/oci/handlers_manifest_test.go)).
+### Q-OCI-160 · The virtual class walks the members itself and merges one document, the tags list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the virtual engine plans a request (patterns, pin rules, claims, the members a caller may read and fill), serves an artifact from the first tier that has
+it, and merges documents of the members into a cached document. A manifest by tag, a manifest and a blob by digest and the lists of OCI are not documents the
+engine can merge from the members' stored bytes: a remote member of Docker Hub applies the `library/` mapping to the name (R-OCI-025), a response carries the
+validators of the registry API (R-OCI-008), a tag is taken from the first member that has it (Q-OCI-18), and the caller's right to read a tag is decided per member and
+per tag.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine only plans; the format walks the plan and calls the handlers of a direct request on a request made for each member; the tags list is the one merged document, merged by the adapter's `Merge` per request (chosen) | `Strategy` is `Merge` for `<name>/_taglist` and `FirstMatch` for every other path; `LocalDocument` is never asked | A member answers exactly as it does when addressed (mapping, validators, gates, populate rules); one place decides each tag for the caller | The union is computed per request, without the merged-metadata cache |
+| (b) The engine's `Artifact` for digests and `Metadata` for the lists, with the cache | Reuses the tiers and the cache | Less code | The path is the same for every member, so a Docker Hub member would be asked for `nginx` while its cache holds `library/nginx`; the cache would hold a merge that the next caller may read differently (tag by tag) |
+| (c) No `Merge` (a skipped kit check) | | | The conformance kit refuses a virtual adapter without a merge fixture, and the tags list is a union |
+
+**Choice:** (a). The adapter is [virtual.go](../../../internal/formats/oci/virtual.go): the attribution of a tag to the member the tier resolution picks is in the merged
+document (`members`, `from`) and is what the kit's fixture reads back.
+
+**Rationale:** the development agent would revisit the cache if the union of a long tags list shows in the profile of a busy virtual repository (H-703).
+
+**Applied in the spec:** [R-OCI-027](#r-oci-027--virtual-repository-resolution). Code: `virtualAdapter`, `members`, `walk` in
+[virtual.go](../../../internal/formats/oci/virtual.go) and [virtual_read.go](../../../internal/formats/oci/virtual_read.go). Test: the merge cases of
+[conformance_test.go](../../../internal/formats/oci/conformance_test.go), `TestATagsListUnionIsSortedWithoutRepeatsAndNamesTheMemberOfEachTag`.
+
+### Q-OCI-161 · The tags list and the referrers of a virtual repository are unions, decided for the caller in every member and on the virtual repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-027 says union. A tag the caller may read in one member and not in another, and a tag the virtual repository's own exposure hides, must not appear.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each member's tags are decided for the caller in that member (the listing form, no audit event per tag), the union is decided again on the virtual repository, then paged (chosen) | Two filters | A tag appears only if the caller may read it where it lives and through the address it used | Two checks per tag |
+| (b) Decide on the virtual repository only | One filter | Cheap | A member's path grant would be bypassed through the union |
+| (c) Decide per member only | One filter | Cheap | The exposure of the endpoint would not apply to the virtual address |
+
+**Choice:** (a), for the tags list and the referrers alike. A local member contributes every readable tag (at most 100,000 per member, `MaxTaglistEntries`); a remote member
+the tags list it stores, of which an upstream that cut its list continues only when a client addresses the remote (H-701). The referrers of each local member are read
+after `last`, so the first page of the union is the first page of the members' union; a remote member's descriptors are filtered here (Q-OCI-123).
+
+**Rationale:** the development agent would revisit it for a pass-through of a cut list (H-701) if a registry with a small page size is a member of a virtual repository.
+
+**Applied in the spec:** [R-OCI-027](#r-oci-027--virtual-repository-resolution). Code: `virtualTagsList`, `localMemberTags`, `remoteMemberTags`, `virtualReferrers`. Tests:
+`TestR_OCI_027_TheTagsListIsTheUnionOfTheMembersTagsPagedLikeADirectList`, `TestR_OCI_027_TheReferrersOfADigestAreTheUnionOfTheRemoteMembersWithoutRepeats`
+([test/integration/ocivirtual](../../../test/integration/ocivirtual)).
+
+### Q-OCI-162 · A miss goes on to the next member, a failure is the answer only when nothing serves
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-019 step 7 lets a virtual repository answer 404 only if every consulted member said "not found".
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not found, forbidden (a path the caller may not read, a cache the caller may not fill) and `populate_not_permitted` are misses; a failure to ask, a lost object and a timeout are remembered and are the answer when no member serves; an error after the first byte ends the request (chosen) | The engine's rule, for the format's own walk | No false 404 for an image an unreachable member has | A client behind a failing member sees the failure instead of a later member's other image only if nothing serves |
+| (b) Every error is a miss | | One rule | A failing upstream reads as "no such image" |
+| (c) Every error ends the request | | One rule | One broken remote member makes the virtual repository unusable for names the others serve |
+
+**Choice:** (a). On an endpoint with exposure rules the failure is worded as the addressed repository's.
+
+**Rationale:** the development agent would revisit it with the circuit state of the members, so that an open circuit is a miss without a request.
+
+**Applied in the spec:** [R-OCI-027](#r-oci-027--virtual-repository-resolution). Code: `walk`, `isMemberMiss`, `isMemberFailure`, `asAddressed`. Tests:
+`TestAWalkServesTheFirstMemberThatHasTheItemAndNamesIt`, `TestAMemberThatFailsDoesNotMakeTheItemUnknown`, `TestAFailureOnAnEndpointWithRulesNamesNoMember`.
+
+### Q-OCI-164 · The link step reads the virtual repository by name and links an index's manifests after their blobs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-028 links every blob or manifest a pushed manifest names that the target lacks, from the member that holds it, before the reference check.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Ingestor.Link` with the virtual repository as the source, by name; an index's child is read from the members (the first two tiers, no upstream request), parsed, its own blobs linked, then the child linked with the payload of a push by digest (chosen) | The host resolves the source as a read of the virtual repository is resolved | A link can never reach what a pull could not (routing, claims, per-member read, finding block); the row of a linked manifest is written by the hook | One resolution per missing item |
+| (b) `Link` from each member in turn | | Handles the `library/` mapping of a Docker Hub member | Decides the read on the member directly, without the virtual repository's routing and claims |
+| (c) Link blobs only | | Simple | A multi-platform image pulled through the virtual repository and pushed again under another name fails for its children |
+
+**Choice:** (a), to a depth of four (an index, its manifests, their blobs). What cannot be linked is left to the reference check, which answers `MANIFEST_BLOB_UNKNOWN`.
+The source of a mount through the virtual repository (`from=<project>/<virtual>/<name>`) is resolved the same way by the host.
+
+**Rationale:** the development agent would revisit (b) for a Docker Hub member whose cache holds `library/<name>` for a one-component name (H-702).
+
+**Applied in the spec:** [R-OCI-028](#r-oci-028--virtual-repository-pushes-through-a-virtual-repository). Code: `linkFromMembers`, `linkManifest`, `linkItem`, `memberManifest` in
+[virtual_write.go](../../../internal/formats/oci/virtual_write.go). Tests: `TestR_OCI_028_ALayerARemoteMemberCachedIsLinkedIntoTheTargetAndNotUploadedAgain`,
+`TestR_OCI_028_AMountFromTheVirtualRepositoryLinksTheBlobOfAMember`, `TestR_OCI_028_ALayerNobodyHoldsIsStillAMissingBlob`.
+
+### Q-OCI-165 · A delete through a virtual repository is refused by the handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-028 says a delete through a virtual repository answers 405 `UNSUPPORTED`. The dispatcher carries every write of a virtual repository, a delete included, to the
+deployment target when the route does not serve the class virtual; until now the delete routes (Classes local) would have deleted from the target.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The delete routes serve the class virtual and the handler answers 405 with the `Allow` header of the path (chosen) | | Matches the spec; nothing is deleted | The class list of the delete routes says virtual |
+| (b) The dispatcher refuses a delete of a virtual repository for every format | | One place | npm and NuGet unpublish through a virtual repository today (R-NPM-029) |
+| (c) Let the delete reach the target | | Nothing to build | Not what the spec says; a delete through an address that reads several repositories |
+
+**Choice:** (a).
+
+**Rationale:** the development agent would revisit it when a retention or deletion API for virtual repositories exists.
+
+**Applied in the spec:** [R-OCI-028](#r-oci-028--virtual-repository-pushes-through-a-virtual-repository). Code: `virtualDeleteRefused`. Tests: `TestDeleteRoutesServeLocalAndVirtual`, `TestADeleteThroughAVirtualRepositoryAnswers405`,
+`TestR_OCI_028_ADeleteThroughAVirtualRepositoryAnswers405AndDeletesNothing`.
+
+### Q-OCI-166 · A write through a virtual repository without a deploy target is refused by the decision point before the handler
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-028 and R-REPO-021 say 405 for a write to a virtual repository without a deploy target. The decision point decides a write to a virtual repository on its deployment target
+(R-AUTHZ-009 rule 5) and denies when there is none (`decide.go`), before the dispatcher looks the repository up; the registry token service asks the same decision for `push`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The decision point's refusal stands: 403 `DENIED` naming the action and the repository for a trove token, no `push` in a registry token; the handler's 405 stays as the defence behind it (chosen) | No change of the core | One rule for every format; a caller without a target learns nothing the grants do not say | The 405 of the spec is reached only when the target is unavailable (disabled or being deleted: 404) or the decision is bypassed |
+| (b) Let the decision point allow a write to a virtual repository without a target and answer 405 in the handler | | Matches the spec's words | Changes the authorization rule for every format and every caller |
+
+**Choice:** (a); R-OCI-028's criterion now says what a client sees.
+
+**Rationale:** the development agent would revisit it if the 405 is wanted for clients: it is a change of rule 5 of R-AUTHZ-009, not of the format.
+
+**Applied in the spec:** [R-OCI-028](#r-oci-028--virtual-repository-pushes-through-a-virtual-repository). Code: `writeRequest`. Tests:
+`TestAWriteThroughAVirtualRepositoryWithoutADeployTargetAnswers405` (the handler's defence), `TestR_OCI_028_WithoutADeployTargetTheFirstUploadIsRefused`.
 
 ## What this does not cover
 

@@ -1,4 +1,4 @@
-{{if eq .Class "virtual"}}A push through a virtual repository is executed on its deployment target{{if .PublishTarget}}, `{{.PublishTarget}}`{{end}}; without a target it answers `405` `UNSUPPORTED`. The snippets name the repository you chose, and trove forwards the push.{{else}}Tag the image with the reference of the snippet and push it. The client uploads each layer, then the manifest; trove stores the manifest exactly as sent.{{end}}
+{{if eq .Class "virtual"}}A push through a virtual repository is executed on its deployment target{{if .PublishTarget}}, `{{.PublishTarget}}`{{end}}; without a target it is refused. The snippets name the repository you chose, and trove forwards the push.{{else}}Tag the image with the reference of the snippet and push it. The client uploads each layer, then the manifest; trove stores the manifest exactly as sent.{{end}}
 
 {{if eq .Client "docker"}}### Multi-platform images
 

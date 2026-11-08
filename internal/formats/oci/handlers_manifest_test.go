@@ -767,12 +767,6 @@ func TestR_OCI_013_AManifestOrTagReachingTheRepositoryAnyOtherWayIsRefused(t *te
 	}
 }
 
-func TestTheVirtualClassIsNotBuiltYet(t *testing.T) {
-	fx := newFixture(t, formattest.HostOptions{Class: formats.Virtual})
-	fx.wantStatus(fx.get("app/manifests/1"), http.StatusNotImplemented, "UNSUPPORTED")
-	fx.wantStatus(fx.get("app/blobs/"+sha([]byte("x"))), http.StatusNotImplemented, "UNSUPPORTED")
-}
-
 func TestR_OCI_031_ThePackageViewShowsTheDigestTheSizeAndThePlatformsOfATag(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("multi", []byte("{}"))

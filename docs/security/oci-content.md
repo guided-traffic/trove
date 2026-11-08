@@ -19,8 +19,8 @@ perspective.
   ([file-transfer.md](file-transfer.md#a-delete-and-its-job), Q-STOR-190). The tags list and the referrers answer leave out the entries whose path the caller may not read, decide them in a batch that writes no
   audit event, and never name a hidden entry in a Link. Authorization runs before the
   existence check, so a caller who may not delete learns nothing of what the name holds.
-- The routes are registered for local repositories only. A remote repository is a cache and a virtual repository routes no deletes;
-  both answer 405 before a handler runs.
+- The routes serve the local and the virtual class. A remote repository is a cache and answers 405 before a handler runs; a virtual repository
+  answers 405 from the handler, because the dispatcher would carry a write to its deployment target (ADR-180).
 - The rules of a removal are the storage hook's, so every road takes them: the protocol, `/files/`, the items API, a retention run and
   the sweep. A manifest an index of the name lists, and a blob a manifest references, are refused (409 `DENIED`) and the whole removal
   rolls back. A removal that takes the referencing manifest in the same event is allowed.

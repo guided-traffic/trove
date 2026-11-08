@@ -88,10 +88,14 @@ func (f *Format) handleUploadStart(ctx context.Context, rq *formats.Request, w h
 	return f.startSession(ctx, rq, w, name)
 }
 
-// startSession opens a session of the image name on the repository of the request and answers 202 (R-OCI-011). The upload routes
-// serve the local class; an upload addressed to a virtual repository is the OCI virtual class's (R-OCI-028): until it exists the
-// session records, and the Location names, the repository of the request (H-663).
-func (f *Format) startSession(ctx context.Context, rq *formats.Request, w http.ResponseWriter, name string) error {
+// startSession opens a session of the image name on the repository of the request and answers 202 (R-OCI-011). The upload routes serve
+// the classes local and virtual; through a virtual repository (R-OCI-028) the decisions act on its deployment target (rq), while the
+// session records the repository the client addressed (addr) as well as the target, and its Location names the addressed one (H-663).
+func (f *Format) startSession(ctx context.Context, addr *formats.Request, w http.ResponseWriter, name string) error {
+	rq, err := writeRequest(ctx, addr)
+	if err != nil {
+		return err
+	}
 	// A session has no blob yet: `deploy` and the ownership of the name are decided on the name's document path (Q-OCI-116), `deploy`
 	// first, so that a caller a path grant refuses never learns that the name has an owner.
 	doc := TaglistPath(name)
@@ -101,11 +105,11 @@ func (f *Format) startSession(ctx context.Context, rq *formats.Request, w http.R
 	if err := checkOwnership(ctx, rq, name, doc); err != nil {
 		return err
 	}
-	sess, err := rq.Host.Uploads().Start(ctx, rq, rq.RepoRef(), name)
+	sess, err := addr.Host.Uploads().Start(ctx, addr, rq.RepoRef(), name)
 	if err != nil {
 		return err
 	}
-	setSession(w, rq, name, sess.ID, 0)
+	setSession(w, addr, name, sess.ID, 0)
 	h := w.Header()
 	h.Set("OCI-Chunk-Min-Length", strconv.FormatInt(sess.PartSize, 10))
 	h.Set("Content-Length", "0")
@@ -116,8 +120,12 @@ func (f *Format) startSession(ctx context.Context, rq *formats.Request, w http.R
 // handleMonolithic is POST …/blobs/uploads/?digest=<d> with the whole blob as the body: one request through the upload pipeline
 // of R-STOR-004, no session. The digest is compared with the computed one after the body is spooled; a difference is 400
 // DIGEST_INVALID and nothing is stored.
-func (f *Format) handleMonolithic(ctx context.Context, rq *formats.Request, w http.ResponseWriter, name, digest string) error {
+func (f *Format) handleMonolithic(ctx context.Context, addr *formats.Request, w http.ResponseWriter, name, digest string) error {
 	sum, err := blobDigest(digest)
+	if err != nil {
+		return err
+	}
+	rq, err := writeRequest(ctx, addr)
 	if err != nil {
 		return err
 	}
@@ -138,7 +146,7 @@ func (f *Format) handleMonolithic(ctx context.Context, rq *formats.Request, w ht
 	if _, err := rq.Host.Ingest().Commit(ctx, rq, sp, formats.Commit{Path: formats.Path{Path: path}, MediaType: blobContentType}); err != nil {
 		return err
 	}
-	return blobCreated(w, rq, name, digest)
+	return blobCreated(w, addr, name, digest)
 }
 
 // blobCreated answers 201 for a stored blob.
@@ -204,6 +212,9 @@ func outOfOrder(err error, rq *formats.Request, name string, id uuid.UUID, recei
 
 // handleUploadPatch is PATCH <location>: a chunk, at the start its Content-Range names or at the end of what the session holds.
 func (f *Format) handleUploadPatch(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if _, err := writeRequest(ctx, rq); err != nil {
+		return err
+	}
 	ref, err := sessionRefOf(rq)
 	if err != nil {
 		return err
@@ -224,7 +235,11 @@ func (f *Format) handleUploadPatch(ctx context.Context, rq *formats.Request, w h
 
 // handleUploadPut is PUT <location>?digest=<d>, optionally with the last bytes: it finishes the session and commits the blob as
 // the item `<name>/_blobs/<digest>`. A digest other than the computed one is 400 DIGEST_INVALID and the session stays open.
-func (f *Format) handleUploadPut(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+func (f *Format) handleUploadPut(ctx context.Context, addr *formats.Request, w http.ResponseWriter) error {
+	rq, err := writeRequest(ctx, addr)
+	if err != nil {
+		return err
+	}
 	ref, err := sessionRefOf(rq)
 	if err != nil {
 		return err
@@ -260,18 +275,21 @@ func (f *Format) handleUploadPut(ctx context.Context, rq *formats.Request, w htt
 		start = -1
 	}
 	// The host decides `deploy` on the blob's path as well before it commits (Uploads().Finalize).
-	done, err := rq.Host.Uploads().Finalize(ctx, rq, ref, start, sum, rq.Body, formats.Commit{
+	done, err := addr.Host.Uploads().Finalize(ctx, addr, ref, start, sum, rq.Body, formats.Commit{
 		Path: formats.Path{Path: path}, MediaType: blobContentType,
 	})
 	if err != nil {
 		// The 416 carries the range the session holds, which the port returns with the refusal (Committed.Received).
-		return outOfOrder(err, rq, ref.Binding, ref.ID, done.Received)
+		return outOfOrder(err, addr, ref.Binding, ref.ID, done.Received)
 	}
-	return blobCreated(w, rq, ref.Binding, digest)
+	return blobCreated(w, addr, ref.Binding, digest)
 }
 
 // handleUploadStatus is GET <location>: 204 with the bytes received.
 func (f *Format) handleUploadStatus(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if _, err := writeRequest(ctx, rq); err != nil {
+		return err
+	}
 	ref, err := sessionRefOf(rq)
 	if err != nil {
 		return err
@@ -289,6 +307,9 @@ func (f *Format) handleUploadStatus(ctx context.Context, rq *formats.Request, w 
 // handleUploadCancel is DELETE <location>: the session is aborted and what it staged removed (204). Cancelling is not a deletion
 // of a blob (R-OCI-011).
 func (f *Format) handleUploadCancel(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if _, err := writeRequest(ctx, rq); err != nil {
+		return err
+	}
 	ref, err := sessionRefOf(rq)
 	if err != nil {
 		return err

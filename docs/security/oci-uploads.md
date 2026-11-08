@@ -96,11 +96,3 @@ makes no ownership claim and asks the rule no more (it creates no package, and t
 before the name gained an owner therefore still commits; its window is the time its body takes. A name that gains an owner, or a principal who is removed from the name's owners, between a `PATCH` and
 the `PUT` of one upload lets that `PATCH` stage its bytes (at most what the session cap and the upload limit allow, up to `storage.uploads.session_max_age`); the `PUT` that would commit them is
 refused, as a session the caller may not continue (404 `BLOB_UPLOAD_UNKNOWN`, as the host answers a `PATCH` whose `deploy` is gone). The staged bytes are removed with the expiry of the session. Live today.
-
-### H-663 · An upload through a virtual repository records and names the deployment target, not the repository the client addressed
-
-Component: the dispatcher's redirect of a write to the deployment target ([dispatcher.go](../../internal/api/dispatch/dispatcher.go) `redirectClass`) and `sessionLocation`. Subject: a client that
-pushes to a virtual repository. R-OCI-011 has the session record the repository the client addressed and R-OCI-028 has the push executed on the target; the dispatcher replaces the repository of
-the request with the target and keeps no addressed repository, so the session records the target as both and the `Location` of a session and of a blob names the target's address. A client that
-follows the `Location` talks to the target (it may lack the right there, or fall outside the virtual repository's exposure). The upload routes serve the local class, and there is no OCI virtual class yet:
-dormant today; it becomes real with the class, which builds the path (the dispatcher keeps the addressed repository on a write redirect, the host accepts an addressed virtual as the session's, the `Location` comes from the link builder for the addressed repository).
