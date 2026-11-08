@@ -42,3 +42,17 @@ func TestQuiesceOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestTheRegisteredWorkerComponentQuiescesFirst: the component the coordination wiring registers (workerGroup, which holds the job
+// worker in a named field) is split into the components that quiesce first, ahead of an engine that started after it; the marker on
+// *jobs.Worker alone is not in its method set (R-ARCH-024 step 4, Q-ARCH-318, Q-ARCH-329).
+func TestTheRegisteredWorkerComponentQuiescesFirst(t *testing.T) {
+	engine := &fakeQuiescer{name: "proxy"}
+	first, rest := quiesceGroups([]Component{&workerGroup{}, engine})
+	if len(first) != 1 || len(rest) != 1 {
+		t.Fatalf("R-ARCH-024 first=%d rest=%d, want the jobs component first and the engine in the rest", len(first), len(rest))
+	}
+	if c, ok := first[0].(Component); !ok || c.Name() != "jobs" {
+		t.Fatalf("R-ARCH-024 the component that quiesces first is %v, want jobs", first[0])
+	}
+}

@@ -84,7 +84,7 @@ func (e *Engine) Fill(ctx context.Context, rq Request) (FillOutcome, error) {
 	defer release()
 	st := &reqState{role: roleLeader, lost: lost}
 	res, end := e.collapse(sctx, rq, st)
-	if st.collapsed && !st.fetched.Load() && end == endDone && res.err != nil && !res.negative && !errors.Is(res.err, errUnrepaired) {
+	if st.collapsed && !st.fetched.Load() && end == endDone && repeatable(res) {
 		// The flight was a client's (this request fetched nothing itself) and failed with the client's classification (R-REPO-029): a 429 would be an item failure
 		// here, with no wait and no halving. The circuit says what happened to the upstream; when it is closed the pass fetches
 		// once for itself (Q-REPO-180).

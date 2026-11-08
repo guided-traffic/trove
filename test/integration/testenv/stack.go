@@ -263,6 +263,32 @@ func (s *Stack) Text(sql string, args ...any) string {
 	return v
 }
 
+// TryText is Text without failing the test: a diagnostic that samples a running system reports the error instead.
+func (s *Stack) TryText(sql string, args ...any) (string, error) {
+	s.adminMu.Lock()
+	defer s.adminMu.Unlock()
+	var v string
+	err := s.admin.QueryRow(context.Background(), sql, args...).Scan(&v)
+	return v, err
+}
+
+// TryQuery is Query without failing the test.
+func (s *Stack) TryQuery(sql string, scan func(pgx.Rows) error, args ...any) error {
+	s.adminMu.Lock()
+	defer s.adminMu.Unlock()
+	rows, err := s.admin.Query(context.Background(), sql, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := scan(rows); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // Number runs a query that returns one integer.
 func (s *Stack) Number(sql string, args ...any) int64 {
 	s.tb.Helper()

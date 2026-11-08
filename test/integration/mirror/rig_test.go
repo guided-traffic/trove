@@ -404,40 +404,104 @@ func (r *rig) pass(rep *testenv.Replica) time.Time {
 }
 
 // waitPass waits until a mirror-pass job created after the time has ended with the outcome (kind "" is any): the result of the
-// job is the summary of the attempt, and its creation time has the resolution that the summary's startedAt lacks.
+// job is the summary of the attempt, and its creation time has the resolution that the summary's startedAt lacks. While it
+// waits it samples the pass's progress, so that a timeout shows whether the pass stood still or only went slowly (F-79).
 func (r *rig) waitPass(after time.Time, kind, outcome string, within time.Duration) {
 	r.t.Helper()
-	deadline := time.Now().Add(within)
+	start := time.Now()
+	deadline := start.Add(within)
+	var trail []string
+	nextSample := start
 	for time.Now().Before(deadline) {
 		n, err := r.st.TryNumber(`SELECT count(*) FROM job WHERE kind = 'mirror-pass' AND state = 'succeeded' AND created_at > $1
 			AND result->>'outcome' = $2 AND ($3 = '' OR result->>'kind' = $3)`, after, outcome, kind)
 		if err == nil && n >= 1 {
+			if took := time.Since(start); took > within/4 {
+				r.t.Logf("the pass ended after %s, a quarter of its bound or more; progress, one sample per 5 s:\n%s", took.Round(time.Millisecond), strings.Join(trail, "\n"))
+				r.t.Logf("the mirror's rows after the slow pass:\n%s", r.diag())
+				for _, rep := range r.st.Replicas() {
+					r.t.Logf("warnings and errors in the log of %s:\n%s", rep.Name, logLines(rep.Logs.String(), "warn", "error"))
+				}
+			}
 			return
+		}
+		if now := time.Now(); !now.Before(nextSample) {
+			trail = append(trail, r.progress("+"+now.Sub(start).Round(time.Second).String()))
+			nextSample = now.Add(5 * time.Second)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	r.t.Fatalf("a %s pass after %s did not end %s within %s\n%s", kind, after.Format(time.TimeOnly), outcome, within, r.diag())
+	r.t.Logf("progress of the pass, one sample per 5 s:\n%s", strings.Join(trail, "\n"))
+	r.t.Logf("the mirror's rows at the timeout:\n%s", r.diag())
+	for _, rep := range r.st.Replicas() {
+		r.t.Logf("log of %s (last 60 lines):\n%s", rep.Name, testenv.Tail(rep.Logs.String(), 60))
+	}
+	r.t.Fatalf("a %s pass after %s did not end %s within %s", kind, after.Format(time.TimeOnly), outcome, within)
 }
 
-// diag describes the state of the mirror and of its jobs, for a failure message.
+// logLines are the lines of a log that contain one of the markers, in any case.
+func logLines(log string, markers ...string) string {
+	var out []string
+	for _, l := range strings.Split(log, "\n") {
+		for _, m := range markers {
+			if strings.Contains(strings.ToLower(l), m) {
+				out = append(out, l)
+				break
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// dumpOnFailure logs the mirror's rows and the progress of the pass when the test fails at any step, a wait that is not waitPass
+// included (F-79). It must be called before the replicas start: the cleanups run last in, first out, so that the rows are read
+// after the replicas stopped and before the stack goes.
+func (r *rig) dumpOnFailure() {
+	r.t.Helper()
+	r.t.Cleanup(func() {
+		if r.t.Failed() {
+			r.t.Logf("the mirror's rows at the failure:\n%s\n%s", r.progress("at the failure:"), r.diag())
+		}
+	})
+}
+
+// progress is one line of the pass's progress: the counters of the state row and the number of pending names. It never fails the
+// test (it samples a running system, also from inside subtests): a query that fails is written into the line.
+func (r *rig) progress(label string) string {
+	line, err := r.st.TryText(`SELECT format('names=%s done=%s failed=%s items=%s discovery_done=%s holder=%s failures=%s updated_at=%s pending=%s',
+			pass_names, pass_packages_done, pass_packages_failed, pass_items_stored, pass_discovery_done, COALESCE(left(pass_holder::text, 8), '-'),
+			consecutive_failures, updated_at, (SELECT count(*) FROM mirror_pending))
+		FROM mirror_state LIMIT 1`)
+	if err != nil {
+		line = "sample failed: " + err.Error()
+	}
+	return label + " " + line
+}
+
+// diag describes the state of the mirror and of its jobs for a timeout: the state row, every mirror job with its owner, lease,
+// attempts, error and times, and the pending names that carry an error count or a wait.
 func (r *rig) diag() string {
 	var b strings.Builder
-	r.st.Query(`SELECT COALESCE(row_to_json(s)::text, '') FROM mirror_state s`, func(rows pgx.Rows) error {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return err
+	add := func(label, sql string) {
+		err := r.st.TryQuery(sql, func(rows pgx.Rows) error {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				return err
+			}
+			b.WriteString(label + ": " + s + "\n")
+			return nil
+		})
+		if err != nil {
+			b.WriteString(label + ": sample failed: " + err.Error() + "\n")
 		}
-		b.WriteString("mirror_state: " + s + "\n")
-		return nil
-	})
-	r.st.Query(`SELECT kind || ' ' || state::text || ' ' || COALESCE(error::text, '') || ' ' || COALESCE(result::text, '') FROM job WHERE kind LIKE 'mirror%' ORDER BY created_at`, func(rows pgx.Rows) error {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return err
-		}
-		b.WriteString("job: " + s + "\n")
-		return nil
-	})
+	}
+	add("mirror_state", `SELECT COALESCE(row_to_json(s)::text, '') FROM mirror_state s`)
+	add("job", `SELECT row_to_json(x)::text FROM (SELECT id, kind, queue, state, attempt, max_attempts, run_at, locked_by, locked_until, started_at,
+		finished_at, created_at, now() AS db_now, progress_done, progress_total, error, result, dedup_key FROM job
+		WHERE kind LIKE 'mirror%' ORDER BY created_at) x`)
+	add("pending", `SELECT format('%s names, %s with attempts > 0, %s with a wait', count(*), count(*) FILTER (WHERE attempts > 0), count(*) FILTER (WHERE not_before IS NOT NULL)) FROM mirror_pending`)
+	add("pending with attempts", `SELECT format('%s attempts=%s queued_at=%s not_before=%s now=%s last_error=%s', name, attempts, queued_at, not_before, now(), last_error)
+		FROM mirror_pending WHERE attempts > 0 OR not_before IS NOT NULL ORDER BY name LIMIT 20`)
 	return b.String()
 }
 

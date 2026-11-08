@@ -8969,8 +8969,13 @@ failures.
 revisit it if another component needs the same.
 
 **Applied in the spec:** R-ARCH-024 (step 4). Code: [internal/app/app.go](../../internal/app/app.go) (`quiesceOrder`),
-[component.go](../../internal/app/component.go) (`QuiescesFirst`), [internal/jobs/worker.go](../../internal/jobs/worker.go). Test:
-`TestQuiesceOrder`.
+[component.go](../../internal/app/component.go) (`QuiescesFirst`), [internal/jobs/worker.go](../../internal/jobs/worker.go),
+[wire_coordination.go](../../internal/app/wire_coordination.go) (`workerGroup`, the registered component, carries the marker: the worker is a
+named field, and only an embedded field promotes a method to the holder). Tests: `TestQuiesceOrder`,
+`TestTheRegisteredWorkerComponentQuiescesFirst`, and the archtest rule `CheckQuiesceMarkers` ([quiesce.go](../../internal/archtest/quiesce.go):
+a type that quiesces and has a field whose type quiesces first must itself carry the marker).
+Consequence: until the marker sat on the registered component, the order was the reverse start order and Q-ARCH-329's earlier release
+time was not in effect either (it applies when a component quiesces first): the handlers were cancelled 5 s before the deadline, not 11 s.
 
 ### Q-ARCH-319 · The host is built in stages that are kept, and a build error is retried
 

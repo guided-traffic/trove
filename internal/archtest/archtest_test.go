@@ -673,6 +673,24 @@ func TestRealTree(t *testing.T) {
 		}
 		wantClean(t, CheckPackageState(module, pkgs))
 	})
+	t.Run("R-ARCH-024 a component that holds a type that quiesces first in a field carries the marker itself", func(t *testing.T) {
+		root, module, _ := realTree(t)
+		pkgs, err := LoadTyped(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantClean(t, CheckQuiesceMarkers(module, pkgs))
+	})
+	t.Run("R-ARCH-024 the marker rule names the holder in a named field and passes the marked and the embedding one", func(t *testing.T) {
+		pkgs, err := LoadTyped(fixtureDir(t, "quiesce"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		vs := CheckQuiesceMarkers("example.test/fix", pkgs)
+		if len(vs) != 1 || vs[0].From != "internal/app.Named" || vs[0].To != "worker" {
+			t.Fatalf("violations: %v", Strings(vs))
+		}
+	})
 }
 
 // hasViolation reports whether a violation of rule names file (prefix) and the offending text.

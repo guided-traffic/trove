@@ -377,6 +377,11 @@ re-check (steps 4 to 8), `Acquire`, `Wait` and re-check in a loop bounded by `pr
 (`valkey_unavailable`, `wait_timeout`, `draining`) when no lock can be had, the fetch, and `Release` with `stored` or `failed`. A draining
 replica never calls `Acquire`; it waits for another replica's flight and fetches under its own single-flight otherwise. The re-check counts an
 entry whose `validated_at` differs from the one the request read first as fresh, so a period of 0 does not make every waiter fetch again.
+A `context.Canceled` in the result of a flight, or of `fetchDirect` (the fetch outside a flight), while the engine is quiesced is the
+shutdown, whichever step saw it first (the entry read, the circuit check, the wait for a holder): `quiesced` turns it into a
+`shutting_down` error (a deadline is left as it is), because a raw cancellation reads as a failure of the item to a mirror pass
+(docs/developer/mirror.md, "The shutdown"). `detached` cancels at once when the engine is already quiesced, and `Fill` does not repeat
+a client's flight that failed with `shutting_down`.
 `flight_role` is defined in Q-REPO-92.
 
 The leader's own client is streamed (`stream`) only when the upstream announced a length longer than the withheld tail (64 KiB), the request is a plain `GET` and the format declares no fill

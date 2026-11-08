@@ -204,6 +204,14 @@ func (g *workerGroup) Start(ctx context.Context) error {
 func (g *workerGroup) Drain(ctx context.Context)        { g.worker.Drain(ctx) }
 func (g *workerGroup) Settle(ctx context.Context) error { return g.worker.Settle(ctx) }
 func (g *workerGroup) Quiesce(ctx context.Context)      { g.worker.Quiesce(ctx) }
+
+// QuiescesFirst is the worker's marker (Q-ARCH-318), on the registered component: the marker on *jobs.Worker is not in the method
+// set of a struct that holds the worker in a named field (only an embedded field promotes it), and the shutdown reads the registered
+// component's. The rule is checked by archtest.CheckQuiesceMarkers.
+func (g *workerGroup) QuiescesFirst() {}
+
+var _ QuiescesFirst = (*workerGroup)(nil)
+
 func (g *workerGroup) Stop(ctx context.Context) error {
 	err := g.worker.Stop(ctx)
 	if lerr := g.leases.Stop(ctx); err == nil {

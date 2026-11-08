@@ -256,13 +256,6 @@ Found on 2026-11-08 while running the drain variants of E5.13 on kind:
   evicted pod's return past `down-after`, or a shorter `down-after` in the dev profile) or revise the variant's condition with a check
   that still proves trove serves through the loss of its Valkey primary; until then a red B in the nightly is this finding.
 
-- **F-79 · A full mirror pass after a shutdown did not end `complete` within 1 min 30 s once in 50 runs** (seen once on the shared
-  integration stack, 2026-11-08, not reproduced in 30 further runs; no diagnostics kept).
-  `TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarballOnce` (`test/integration/mirror/bound_test.go`) failed with "a
-  full pass … did not end complete within 1m30s" while other agents loaded the shared stack. Whether it is load or a defect of the pass's
-  take-over after a shutdown is not known. Done when a failing run's diagnostics (the pass state and job rows, the engines' logs) name the
-  cause and it is fixed or shown to be the stack's load.
-
 Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools

@@ -442,8 +442,14 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
   flight nor the cross-replica lock, and a client never waits under background rules (Q-REPO-179). The slot's wait is the `slot_wait_ms` of
   the first upstream request sent under it (every later one, such as the item after its discovery document, reports 0; Q-REPO-236). A request that joins a client's flight and
   sees it fail reads the circuit: open is a wait, closed is one fetch of its own (Q-REPO-180).
-- **The shutdown.** The job worker is quiesced before the engines (Q-ARCH-318); a request the engine cancelled is an error wrapping
-  `mirror.ErrShuttingDown`, and `Ready` answers it while the engine drains.
+- **The shutdown.** The job worker is quiesced before the engines (Q-ARCH-318): the component the coordination wiring registers
+  (`workerGroup`, [wire_coordination.go](../../internal/app/wire_coordination.go)) carries the `QuiescesFirst` marker, because the
+  marker on `*jobs.Worker` is not in the method set of a struct that holds the worker in a named field. A request the engine cancelled
+  is an error wrapping `mirror.ErrShuttingDown`, and `Ready` answers it while the engine drains. The engine's `quiesced` is the layer
+  for a straggler: a `context.Canceled` in the result of a flight (or of `fetchDirect`) whose engine was cancelled is turned into
+  `shutting_down`, wherever the flight stood (a deadline stays `upstream_timeout`). Without both, a raw `context canceled` would be a
+  failure of the item, written under the old fence with a retry a minute later, and the process that takes the pass over would wait for
+  that retry before it could end the pass (F-79).
 
 ### What the host maps
 

@@ -403,6 +403,8 @@ type replicaOpts struct {
 	blobs func(proxy.BlobStore) proxy.BlobStore
 	// runner wraps the transaction runner the engine uses.
 	runner func(meta.Runner) meta.Runner
+	// detach is the engine's Detach hook: it marks the context of a flight's fetch.
+	detach func(context.Context) context.Context
 	// negatives wraps the Valkey side of the negative cache.
 	negatives func(cluster.NegativeStore) cluster.NegativeStore
 	// upstreamLog receives the upstream log.
@@ -534,6 +536,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if o.runner != nil {
 		po.Runner = o.runner(r.db)
 	}
+	po.Detach = o.detach
 	if o.negatives != nil {
 		po.Negatives = o.negatives(po.Negatives)
 	}

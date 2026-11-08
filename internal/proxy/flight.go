@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/cluster"
+	"github.com/guided-traffic/trove/internal/errs"
 )
 
 // The reasons a fetch goes on without the cross-replica lock
@@ -197,17 +198,48 @@ func (e *Engine) collapse(ctx context.Context, rq Request, st *reqState) (flight
 func (e *Engine) fetchDirect(ctx context.Context, rq Request, st *reqState) flightResult {
 	fctx, cancel := e.detached(ctx)
 	defer cancel()
-	return e.fetch(fctx, rq, st, &flight{done: make(chan struct{})})
+	return e.quiesced(e.fetch(fctx, rq, st, &flight{done: make(chan struct{})}))
+}
+
+// quiesced classifies the result of a flight (or of fetchDirect, which runs outside one) after Quiesce. The detached context does
+// not end with the request, so while the engine is cancelled a context.Canceled in the result is the shutdown, whichever step saw it
+// first: the flight's checks (the entry, the circuit, the wait for another replica's holder) return the raw error, only the fetch
+// itself maps it (classifyError). A deadline is not touched (upstream_timeout stays one). A raw cancellation would be a failure of
+// the item to a mirror pass, written under the pass's fence with a retry a minute later, and the pass that takes the job over would
+// wait for it. A background fetch can also be cancelled by a pre-emption or the end of its pass (bgSlot.link); those carry their
+// own cause and are not the shutdown unless the engine is cancelled as well.
+func (e *Engine) quiesced(res flightResult) flightResult {
+	if res.err != nil && errors.Is(res.err, context.Canceled) && e.base.Err() != nil {
+		res.err = errs.E(errs.Unavailable, errs.CodeShuttingDown, "The replica is shutting down; retry.", errs.WithRetryAfter(time.Second))
+	}
+	return res
+}
+
+// repeatable reports whether a flight's failure is one that a background fill may try again with a fetch of its own: any failure
+// but a negative answer, an unrepaired item and the shutdown (nothing is started under a cancelled engine).
+func repeatable(res flightResult) bool {
+	return res.err != nil && !res.negative && !errors.Is(res.err, errUnrepaired) && !isShuttingDown(res.err)
+}
+
+// isShuttingDown reports whether err is the shutdown's answer: a fetch is not repeated under a cancelled engine.
+func isShuttingDown(err error) bool {
+	ee, ok := errs.As(err)
+	return ok && ee.Code == errs.CodeShuttingDown
 }
 
 // detached returns a context that outlives the client but ends at Quiesce: the
-// fetch is the flight's, not the request's (R-REPO-026 "detached fetch").
+// fetch is the flight's, not the request's (R-REPO-026 "detached fetch"). After Quiesce it is cancelled on return, not in the
+// goroutine of context.AfterFunc, so that a flight that starts late runs no check or lock on a live context.
 func (e *Engine) detached(ctx context.Context) (context.Context, context.CancelFunc) {
 	base := context.WithoutCancel(ctx)
 	if e.o.Detach != nil {
 		base = e.o.Detach(base)
 	}
 	c, cancel := context.WithCancel(base)
+	if e.base.Err() != nil {
+		cancel()
+		return c, cancel
+	}
 	stop := context.AfterFunc(e.base, cancel)
 	return c, func() { stop(); cancel() }
 }
@@ -217,7 +249,7 @@ func (e *Engine) runFlight(reqCtx context.Context, f cluster.FlightKey, key stri
 	ctx, cancel := e.detached(reqCtx)
 	defer cancel()
 	defer e.endFlight(key, fl)
-	fl.res = e.lead(ctx, f, rq, st, fl)
+	fl.res = e.quiesced(e.lead(ctx, f, rq, st, fl))
 }
 
 // lead is the cross-replica part of the protocol (R-REPO-026 steps 3 to 6): it

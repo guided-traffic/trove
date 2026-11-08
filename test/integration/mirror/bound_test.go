@@ -94,20 +94,29 @@ func TestR_REPO_052_TheByteBoundEndsThePassNearTenMiBAndTheClientsAreUnaffected(
 func TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarballOnce(t *testing.T) {
 	const packages, concurrency = 200, 2
 	r := newRig(t, rigOptions{public: true, include: []string{"@acme/*"}, mirror: settings{"concurrency": concurrency}})
+	r.dumpOnFailure()
 	names := r.publishMany("@acme", packages)
 	r.setStub(npmstub.Mode{DelayMS: map[string]int{npmstub.KindTarball: 60}})
 	a := r.runner("runner-a", "TROVE_SERVER_SHUTDOWN_TIMEOUT=8s")
 	t0 := r.pass(a)
+	began := time.Now()
 	testenv.WaitFor(t, "50 packages to be done", passWithin, func() bool {
 		n, err := r.st.TryNumber(`SELECT pass_packages_done FROM mirror_state WHERE repo_id = $1`, r.repoN)
 		return err == nil && n >= 50
 	})
+	// The job that runs at the stop: after a lease loss there can be an older row of the kind.
+	stopped, err := r.st.TryText(`SELECT id::text FROM job WHERE kind = 'mirror-pass' AND state = 'running'`)
+	if err != nil {
+		t.Fatalf("no mirror-pass job runs after 50 packages were done (a lease lost under load between the two reads, or the job failed): %v", err)
+	}
+	stopping := time.Now()
 	if err := a.Stop(); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("50 packages after %s, runner-a stopped in %s", stopping.Sub(began).Round(time.Millisecond), time.Since(stopping).Round(time.Millisecond))
 
 	t.Run("R-REPO-053 the job is queued again with its attempt unchanged and the pass is kept", func(t *testing.T) {
-		if got := r.st.Text(`SELECT state::text || '|' || attempt::text FROM job WHERE kind = 'mirror-pass'`); got != "queued|0" {
+		if got := r.st.Text(`SELECT state::text || '|' || attempt::text FROM job WHERE id = $1::text::uuid`, stopped); got != "queued|0" {
 			t.Errorf("the released job is %q, want queued|0", got)
 		}
 		if n := r.number(`SELECT count(*) FROM mirror_state WHERE repo_id = $1 AND pass_started_at IS NOT NULL AND consecutive_failures = 0`, r.repoN); n != 1 {
@@ -119,7 +128,9 @@ func TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarball
 	})
 
 	r.runner("runner-b")
+	took := time.Now()
 	r.waitPass(t0, "full", "complete", passWithin)
+	t.Logf("runner-b ended the pass %s after its start", time.Since(took).Round(time.Millisecond))
 
 	t.Run("R-REPO-053 the second process ends the pass and the stub saw every tarball once, apart from the packages in progress", func(t *testing.T) {
 		if n := r.storedItems(); n != packages {
