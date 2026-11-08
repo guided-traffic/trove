@@ -612,7 +612,7 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey qname.
 	snippets, err := renderSnippets(setupInput{
 		Templates: templates, Client: p.Client, Credentials: creds, TokenEnvVar: ps.TokenEnvVar,
 		Data: formats.SetupData{
-			RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint,
+			RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Repository: repoKey.String(), Project: repoKey.Project, Key: repoKey.Key, Endpoint: acc.Subject.Endpoint,
 			RequiresAuth: requiresAuth, Bastion: bastion,
 		},
 		Package: values["package"], Version: values["version"], Scope: scopeName, MayPublish: mayPublish,

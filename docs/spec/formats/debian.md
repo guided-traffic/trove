@@ -489,12 +489,14 @@ Priority: **P2** · Covers: PKG-DEB-005, PKG-DEB-006
   `PUT /api/v1/projects/{projectKey}/repositories/{repoKey}/deb/coordinates` with
   `{"path": "pool/h/hello/hello_2.10-3_amd64.deb", "coordinates": [{"distribution": "stable", "component": "main"}]}` replaces a
   file's coordinates: an added coordinate needs `deploy`, a removed one `delete`, both with ownership (R-DEB-004). An empty list
-  answers 422 `invalid_value` (a file without coordinates is deleted instead). It answers 200 with the body of R-DEB-006. This
+  answers 422 `validation_failed` with the field error `invalid_value` at `/coordinates` (a file without coordinates is deleted instead). It answers 200 with the body of R-DEB-006. The decisions are taken before the transaction from the file as it was read; if the file's coordinates changed meanwhile so that the change differs, the request answers 409 `conflict` and is applied by nobody. This
   is how a package moves from one suite to another (`testing` to `stable`).
 - **A removed coordinate is journaled** (Q-DEB-34). Pulling a package out of a suite narrows what clients get, so the change
   writes `deb.coordinates.removed` with a journal entry (repository, path, SHA-256, the removed coordinates, actor) in its
   transaction, and a restore removes them again (R-DEB-032). An added coordinate is not journaled.
-- **Bounds.** 64 suites per repository, 32 components per suite, 32 coordinates per file; more answers 422 `out_of_range`.
+- **Bounds.** 64 suites per repository, 32 components per suite, 32 coordinates per file; more answers 422 `validation_failed` with the
+  field error `out_of_range` at `/coordinates` (Q-DEB-49). A request names at most 64 suites, 32 components and 32 coordinates; the
+  bounds of the repository and of a suite are checked in the transaction after the rows are written, so a crossing rolls the change back.
 - A suite stays while a file is listed in it; a suite without files keeps its last generation with empty indexes until a
   reindex drops it (R-DEB-014).
 
@@ -2610,6 +2612,94 @@ source package: `VersionPath(name, version)` cannot name a path from the package
 data port (`Find`), with the architecture reviewer; the development agent would revisit this choice when it does.
 
 **Applied in the spec:** none until the local class lands. Code: the fixture of `internal/formats/deb/conformance_test.go`.
+
+Revised by [Q-DEB-47](#q-deb-47--the-versionpath-of-a-debian-version-is-the-architecture-independent-file-of-a-source-package-of-the-packages-name).
+
+### Q-DEB-47 · The `VersionPath` of a Debian version is the architecture-independent file of a source package of the package's name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-DEB-46](#q-deb-46--a-debian-version-names-its-file-only-through-the-local-class-so-the-skeleton-has-no-versionpather) left
+the choice to the local class. `VersionPather.VersionPath(name, version)` receives no store and no source package; a version has one
+file per architecture below the pool directory of its source package.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No `VersionPather`; the version is decided on the package only | Nothing is guessed | No wrong path | A path pattern on a version's file never hides the version, for any package (the gap H-720 described) |
+| (b) The path `pool/<prefix>/<name>/<name>_<version without epoch>_all.deb` (chosen) | The file of the source package that bears the package's name, for architecture `all` | A pattern that addresses the package by name or the version by its file name hides the version; no contract change | A pattern that addresses a binary package by the directory of another source package, or one architecture, does not hide the version ([H-720](#h-720--a-path-pattern-that-hides-a-package-file-does-not-hide-its-version-from-the-package-screens)) |
+| (c) A second optional interface that names every file of a version | The contract grows (ADR-141) | Exact | A change of the frozen contract for one format; the decision point would read the data port |
+
+**Choice:** (b).
+
+**Rationale:** the contract is frozen and the decision point asks without a store; (b) closes the common case, a pattern that names the
+package or the version, and leaves the rest as a stated gap. The development agent would revisit (c) when a second format has a version
+with several files.
+
+**Applied in the spec:** R-DEB-004. Code: `VersionPath` in `internal/formats/deb/paths.go`.
+
+### Q-DEB-48 · The change of coordinates runs behind a service of the management API that the composition root implements
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `PUT …/deb/coordinates` is a route of the management API, so it has no format `Request`, no `Host.Write` and no package writer.
+It needs the decision point per side (deploy, delete), the ownership rule inside the transaction, the data port, the item properties
+and the audit events. `internal/api/v1` imports no format package.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `v1.Options.Deb` holds a `DebCoordinateService`; the handler resolves the repository and the caller and passes the decision and the ownership as functions; `internal/app/wire_deb_api.go` implements it over the data port (chosen) | The handler stays thin; the service is the one place that knows the rows | A function-valued request | A second place besides the format that writes the file's rows |
+| (b) The handler imports the format's rows and store | No service | One file | The API layer would depend on a format, which the layers forbid |
+| (c) The change is a route of the format under `/api/deb/` | The format's own pipeline | A second address for an operation the spec puts into the management API | R-DEB-009 and the OpenAPI document name the management route |
+
+**Choice:** (a).
+
+**Rationale:** it keeps the layers and reuses the decision point and the ownership rule of the request. The development agent would
+revisit it when a second format needs a management operation on its rows.
+
+**Applied in the spec:** R-DEB-009. Code: `internal/api/v1/deb_coordinates.go`, `internal/app/wire_deb_api.go`.
+
+### Q-DEB-49 · A crossed bound is 422 `validation_failed` with the field error `out_of_range`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-DEB-009 named a code `out_of_range` for 64 suites, 32 components and 32 coordinates. The registry of problem codes has no
+such code; `out_of_range` is a field error code under `validation_failed` (repositories, claims).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 422 `validation_failed` with the field error `out_of_range` at `/coordinates` (chosen) | The shape every other bound of the API has | One shape for clients | The problem `code` is not `out_of_range` |
+| (b) A new problem code `deb_out_of_range` | The format names it | Findable | A code for what the field error already says |
+
+**Choice:** (a).
+
+**Rationale:** the clients of the API already read field errors. The development agent would revisit it if a client needed the bound
+without parsing the fields.
+
+**Applied in the spec:** R-DEB-009, R-DEB-006. Code: `OutOfRange` in `internal/formats/deb/answer.go`, `checkBounds` in
+`internal/formatdata/deb/local_store.go`.
+### Q-DEB-50 · The rows of a package file are detached from the item, and the removal hook deletes them
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the item store deletes the item rows of a permanent removal and then runs `OnItemsRemoved` ("after the rows were deleted"). The
+migration of the skeleton gave `deb_binaries.item_id` a cascading foreign key to `items`, so the row of the file (package, version,
+architecture) and its coordinates were gone before the hook ran, and the hook could neither raise the suites of the file nor journal the
+deletion (R-DEB-013, R-DEB-032).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Drop the foreign key (migration 00063); the hook reads the row, raises the suites and deletes the row (chosen) | The row outlives the item for the length of the transaction | The hook sees everything it needs; no change of the item store or the contract | Nothing in the schema stops a row from outliving its item if a removal path skipped the hook; every path runs the hook |
+| (b) Keep the cascade; take a snapshot in `LockRemoval` and carry it to the hook in the transaction | The hook reads the snapshot | The schema keeps its guarantee | `LockRemoval` is not called for every removal; the snapshot travels in an untyped transaction value |
+| (c) Change the item store to run the hook before it deletes | The hook sees the item | The simplest hook | A change of the order every format relies on (nuget and npm read digests from the event) |
+
+**Choice:** (a).
+
+**Rationale:** the format owns its rows, and the hook is the one place that removes them; `trove admin` checks of the schema do not
+need the foreign key. The development agent would revisit (c) if a second format needed its rows at removal time.
+
+**Applied in the spec:** R-DEB-013. Code: `internal/meta/postgres/migrations/00063_deb_binaries_detached.sql`, `Removed` in
+`internal/formatdata/deb/local_store.go`, `OnItemsRemoved` in `internal/formats/deb/hooks.go`. Test: `test/integration/postgres/deb_test.go`.
+
 ### Q-DEB-70 · The stub's test keys have a fixed creation date, not "an hour back"
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
@@ -2848,8 +2938,9 @@ built; real for restores without remote caches while an upstream mirror serves a
 
 ### H-720 · A path pattern that hides a package file does not hide its version from the package screens
 
-The decision point decides a version on the path of its file (Q-AUTHZ-255), through the optional `VersionPather`, and a Debian format
-cannot name that path from a package and a version (Q-DEB-46). Until the local class gives the format a rule, a grant whose path
-patterns hide `pool/…` from a principal does not hide the versions of the packages stored there from that principal's package screens
-and version lists. The file stays hidden: the pool route is decided on the path. Dormant today: the skeleton stores no package and
-has no screen; real once the local class lists versions, until its work package closes the gap.
+The decision point decides a version on the path of its file (Q-AUTHZ-255), through the `VersionPather`, and a Debian version has one
+file per architecture below the pool directory of its source package. `VersionPath` names the file of the source package that bears the
+package's name, architecture `all` (Q-DEB-47). A grant whose path patterns hide `pool/…` by the package's name or by the version's file
+name hides the version from the package screens and version lists; a pattern that addresses only the directory of another source
+package, or one architecture's file name, hides the file, which stays hidden on the pool route, but not the version. Live today for
+local repositories with such patterns; the file is never exposed by it.

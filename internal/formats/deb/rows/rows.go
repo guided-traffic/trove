@@ -54,8 +54,14 @@ type SuiteSeq struct {
 
 // Binary is the row of a stored package file of a local repository (deb_binaries).
 type Binary struct {
-	ItemID       int64
-	RepoID       int64
+	ItemID int64
+	RepoID int64
+	// Path is the canonical pool path of the item, SHA256 the digest and Size the length of its bytes; set by the reads.
+	Path   string
+	SHA256 [32]byte
+	Size   int64
+	// Trashed says the item is in the trash can: its row stays until it is removed for good.
+	Trashed      bool
 	Package      string
 	Version      string
 	Architecture string
@@ -77,9 +83,12 @@ type UploadInput struct {
 // change_seq was raised, with the numbers the answer reports.
 type UploadResult struct {
 	// Created is false when the identical bytes were stored already and only coordinates were added.
-	Created     bool
+	Created bool
+	// Coordinates are all the coordinates of the file after the call; Added the ones it added.
 	Coordinates []Coordinate
-	Suites      []SuiteSeq
+	Added       []Coordinate
+	// Suites are the suites of Coordinates with their numbers after the call.
+	Suites []SuiteSeq
 }
 
 // CoordinatesChange replaces the coordinates of a stored file (R-DEB-009).
@@ -111,6 +120,8 @@ type RemovedFile struct {
 	Version      string
 	Architecture string
 	Suites       []string
+	// VersionFiles is the number of files of the same package and version the repository still holds after the removal.
+	VersionFiles int
 }
 
 // PackageDeleted is the data of the audit event deb.package.deleted with its journal entry (R-DEB-032).
@@ -127,6 +138,16 @@ type CoordinatesRemoved struct {
 	RepoKey string
 	Path    string
 	SHA256  [32]byte
+	Removed []Coordinate
+	Actor   string
+}
+
+// CoordinatesChangedEvent is the data of the audit event deb.coordinates.changed (R-DEB-009).
+type CoordinatesChangedEvent struct {
+	RepoID  int64
+	RepoKey string
+	Path    string
+	Added   []Coordinate
 	Removed []Coordinate
 	Actor   string
 }

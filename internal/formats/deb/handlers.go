@@ -38,3 +38,10 @@ func (f *Format) handlerFor(route string) formats.HandlerFunc {
 	}
 	return build(f)
 }
+
+// handlerRegistered reports whether a work package registered the handler of a route.
+func handlerRegistered(route string) bool {
+	handlerRegistry.mu.RLock()
+	defer handlerRegistry.mu.RUnlock()
+	return handlerRegistry.by[route] != nil
+}

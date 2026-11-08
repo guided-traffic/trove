@@ -11782,8 +11782,10 @@ paths:
       summary: Replace the suites and components a package file is listed in
       description: |
         Replaces the coordinates of a stored package file (R-DEB-009): an added coordinate needs `deploy`, a removed one `delete`,
-        both with ownership of the package. An empty list answers `422 invalid_value` (a file without coordinates is deleted
-        instead); more than 64 suites, 32 components or 32 coordinates `422 out_of_range`. A removed coordinate is journaled
+        both with ownership of the package. An empty list answers `422 validation_failed` with the field error `invalid_value` (a
+        file without coordinates is deleted instead); more than 64 suites, 32 components or 32 coordinates answer `422
+        validation_failed` with the field error `out_of_range`. A file the journal replay withheld answers `409 deb_withheld`, and
+        a file whose coordinates changed while the request was decided `409 conflict`. A removed coordinate is journaled
         (`deb.coordinates.removed`) and a restore removes it again. The answer is the upload answer of R-DEB-006.
       x-trove-permission:
         authenticated: true
@@ -11808,6 +11810,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/Unprocessable"
         "429":

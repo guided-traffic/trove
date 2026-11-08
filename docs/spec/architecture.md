@@ -1717,7 +1717,7 @@ type SetupTemplate struct {
 	VersionSpec string
 }
 
-// SetupData: RegistryURL, Repository, Endpoint, Variant (the variant of a configure snippet the request asked for, in the
+// SetupData: RegistryURL, Repository, Project and Key (the two halves of Repository, Q-ARCH-420), Endpoint, Variant (the variant of a configure snippet the request asked for, in the
 // words of the format: npm's scope without "@"), ImagePrefix ("<host>/<projectKey>/<repoKey>" for the registry-root format, "" for
 // every other, Q-OCI-4), Username and RequiresAuth (the repository is not anonymously readable).
 // A template that needs the registry URL without its scheme, the key of a keyed credential line, derives it with the
@@ -9831,6 +9831,26 @@ wants the engine to see the per-version items before it reads.
 [mirror_host.go](../../internal/formathost/mirror_host.go), `ReportStored` in [host.go](../../internal/mirror/host.go), `Bounded` in
 [discover.go](../../internal/mirror/discover/discover.go). Tests: `TestR_REPO_051_AVersionOfSeveralItemsIsStoredWholeAndASharedArtifactOnce`,
 `TestR_REPO_051_ThePlanOfAnImageReadsOnlyTheTagsTheEngineKeeps`, the integration tests of `test/integration/mirror/oci_test.go`.
+
+### Q-ARCH-420 · `SetupData` carries the project and the repository key apart
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `SetupData.Repository` is `<projectKey>/<repoKey>`. The setup of the Debian client names a key file and a source file per
+repository, and a path may not hold the slash: the name of the file needs the two halves separately. A template cannot split a string.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two fields `Project` and `Key` beside `Repository` (chosen) | The API fills them from the same repository name | Additive; a template that does not use them is unchanged | The contract file gains two lines |
+| (b) A template function that splits `Repository` | No new field | No contract change | A function every format must know; the split is the API's knowledge |
+| (c) A single `FileSafeName` | One derived value | One field | A value only one format needs, with a rule the core would own |
+
+**Choice:** (a). The contract version stays (an addition to a data struct the formats read, Q-ARCH-213); `contract.txt` records the two fields.
+
+**Rationale:** the API already holds both halves. The development agent would revisit it if a second format needed a derived file name.
+
+**Applied in the spec:** R-ARCH-008 (the contract comment), R-DEB-029. Code: `SetupData` in `internal/formats/setup.go`, the fills in
+`internal/api/v1/guide_api.go` and `packages_api.go`.
 
 ### Q-ARCH-430 · The throttle of a pass is exported as a window for runs outside a pass, and the background upstream is built from the pass's
 

@@ -428,6 +428,8 @@ formats.SessionRef: field ID uuid.UUID
 formats.SetupData: field Bastion bool
 formats.SetupData: field Endpoint string
 formats.SetupData: field ImagePrefix string
+formats.SetupData: field Key string
+formats.SetupData: field Project string
 formats.SetupData: field RegistryURL string
 formats.SetupData: field Repository string
 formats.SetupData: field RequiresAuth bool

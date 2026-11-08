@@ -21,10 +21,11 @@ type LocalStore interface {
 	// lost it. It returns what was added and removed, so the caller can decide `deploy` and `delete` per side, journal the removal
 	// (Q-DEB-34) and report the suites. The caller has authorized both sides before it calls (the fine check of R-DEB-004).
 	SetCoordinates(ctx context.Context, tx formats.Tx, in rows.CoordinatesChange) (rows.CoordinatesChanged, error)
-	// Removed runs for the removal of an item: it deletes the file's row and coordinates and raises change_seq of its suites (a
-	// removal narrows what clients get). found is false for an item that is no package file. The rows of a file in the trash stay
-	// until the item is removed for good, as NuGet's do.
-	Removed(ctx context.Context, tx formats.Tx, repoID, itemID int64) (rows.RemovedFile, bool, error)
+	// Removed runs for the removal of an item, which the item store has deleted already for a permanent removal (so the path and the digest
+	// come from the event): it raises change_seq of the file's suites (a removal narrows what clients get) and, when
+	// purge is set, deletes the file's row and coordinates; the rows of a file in the trash stay until the item is removed for good,
+	// as NuGet's do. found is false for an item that is no package file.
+	Removed(ctx context.Context, tx formats.Tx, repoID, itemID int64, path string, sha256 [32]byte, purge bool) (rows.RemovedFile, bool, error)
 	// Restored runs for an item restored from the trash: the file's row is live again and change_seq of its suites is raised. found
 	// is false for an item that is no package file.
 	Restored(ctx context.Context, tx formats.Tx, repoID, itemID int64) (rows.RemovedFile, bool, error)

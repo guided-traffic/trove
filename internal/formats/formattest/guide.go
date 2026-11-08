@@ -151,6 +151,10 @@ func (r *run) guideCoverage(secs []formats.GuideSection, class formats.Class, cl
 func (r *run) guideVariants(class formats.Class, client string) []formats.GuideData {
 	var out []formats.GuideData
 	for _, key := range []string{"main", ""} {
+		project := ""
+		if key != "" {
+			project = "it"
+		}
 		registry := DefaultBaseURL + strings.NewReplacer("{project}", "main", "{key}", key).Replace(r.d.ProtocolBasePath)
 		if key == "" {
 			registry = DefaultBaseURL + strings.NewReplacer("{project}", formats.GuideProjectPlaceholder, "{key}", formats.GuideRepositoryPlaceholder).Replace(r.d.ProtocolBasePath)
@@ -164,7 +168,7 @@ func (r *run) guideVariants(class formats.Class, client string) []formats.GuideD
 				for _, rules := range []bool{false, true} {
 					out = append(out, formats.GuideData{
 						SetupData: formats.SetupData{
-							RegistryURL: registry, ImagePrefix: imagePrefix(r.d, registry), Repository: key, Endpoint: "default",
+							RegistryURL: registry, ImagePrefix: imagePrefix(r.d, registry), Repository: key, Project: project, Key: key, Endpoint: "default",
 							RequiresAuth: !anonymous,
 						},
 						Class: class, Client: client, PublishTarget: target, Anonymous: anonymous,

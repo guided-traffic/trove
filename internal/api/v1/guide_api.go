@@ -69,7 +69,7 @@ func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKe
 		Format: f, Class: repo.Class, Client: client, Anonymous: acc.Subject.Anonymous, ExposureRules: exposureRules(ctx),
 		TokenEnvVar: ps.TokenEnvVar, MayPublish: mayPublish,
 		Data: formats.SetupData{
-			RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint,
+			RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Repository: repoKey.String(), Project: repoKey.Project, Key: repoKey.Key, Endpoint: acc.Subject.Endpoint,
 			RequiresAuth: requiresAuth,
 		},
 	}

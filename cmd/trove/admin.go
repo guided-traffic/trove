@@ -20,6 +20,7 @@ commands:
   backup check [--json]                        verify the declared platform protection: archive_mode, bucket versioning (R-HA-023)
   npm reinstate <projectKey>/<repoKey> <name>@<version>   put back a version a journal replay withheld (R-NPM-047)
   oci reinstate <projectKey>/<repoKey> <name>@<digest>   put back a manifest a journal replay withheld (R-OCI-033)
+  deb reinstate <projectKey>/<repoKey> <path>   put back a package file a journal replay withheld (R-DEB-032)
   bastion create <name> [--description <text>]   register a Bastion (R-BAS-004)
   bastion token create <name> [--ttl 8760h]     print a Bastion token once (R-BAS-004)
   bastion token revoke <name> <token-id>        revoke a Bastion token (R-BAS-004)
@@ -57,6 +58,8 @@ func adminCmd(args []string, s streams) error {
 		return npmAdminCmd(args[1:], s)
 	case "oci":
 		return ociAdminCmd(args[1:], s)
+	case "deb":
+		return debAdminCmd(args[1:], s)
 	}
 	return usageError{adminUsage}
 }

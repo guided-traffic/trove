@@ -602,3 +602,37 @@ credential, the counting npm stub, the format host of a `web` replica. The addre
 repository was not given; the refusal of a loopback address outside `allowCidrs` is the engine's and is covered by the proxy tests. The long wait is
 tested with a stub answer of one hour, not with a fake clock in the integration; the unit tests of `Window` use the fake clock. `docs/developer/deb.md`
 still calls the method declared; its owner updates the row with the remote class.
+
+## 13 · WP1 and WP3 as built
+
+Built on 2026-11-08, stage 2 of the APT local feature, from base 82034d88 (WP0 as landed). Details: [deb.md](../developer/deb.md).
+
+**WP1.** `internal/formats/deb/version` (dpkg order), `control` (strict deb822 reader and writer, 512 fields, 1 MiB per field),
+`debfile` (the `ar` container, the control archive under the bounds of R-DEB-034, the normalized paragraph) and
+`internal/formats/untrusted/ar.go` (the real `NewAr`). Fuzz targets: `FuzzCompare`, `FuzzParse`, `FuzzAr`, `FuzzRead`. The crafted inputs
+of R-DEB-034 (a control archive that expands to 70 MiB, 1,001 entries, ten `ar` members, 600 fields, a field of 2 MiB, a body that is no
+`ar` archive) run through the kit's inspect check against the format.
+
+**WP3.** Upload (`PUT upload/<file>`, 201 or 200 for the same bytes, coordinates added), the rows of a file and its coordinates, the
+bounds, deletion with the journaled `deb.package.deleted`, the restore, the replay of both journaled events, `trove admin deb reinstate`,
+`PUT …/deb/coordinates`, `GET pool/…`, the serve check, the package screens, the setup (client `apt`) and the guide, `SetupData.Project`
+and `Key`, `VersionPath`.
+
+**Differences from the plan, each decided in debian.md.**
+
+- `VersionPath` names the architecture-independent file of the package's own source (Q-DEB-47); H-720 states what that leaves open.
+- `PUT …/deb/coordinates` is implemented behind a service of the management API, bound in the composition root, because the API layer
+  imports no format (Q-DEB-48). The file list names `internal/app/wire_deb_api.go` besides `internal/api/v1/deb_coordinates.go`.
+- A crossed bound is `422 validation_failed` with the field error `out_of_range` (Q-DEB-49).
+- `deb_binaries` is detached from `items` by migration 00063 (Q-DEB-50): the item store deletes the item of a permanent removal before
+  the format's hook runs, and the hook needs the row.
+- `SetupData` gains `Project` and `Key` (Q-ARCH-420).
+
+**Not built here.** The index builder (WP4): `dists/…`, `by-hash` and `signing-key.asc` still answer 501, so no `apt-get update` against
+a local repository works yet; the guide and the setup are written for the finished flow. The signing keys (WP2), the remote and virtual
+classes. The browser UI. The manual pages (WP12).
+
+**Not verified.** No real `apt-get` client was run against the upload (there is no index to read). The integration tests
+(`test/integration/deblocal`) cover the upload, the coordinates with the permission per side, the bounds, the deletion, ownership, and
+the store calls of the replay (`Withhold`, `RemoveCoordinatesByJournal`, `ReinstateFile`) against PostgreSQL. They do not run a real
+backup and restore, and they do not run the command `trove admin deb reinstate` itself.

@@ -70,14 +70,14 @@ func replayRetired(ctx context.Context, tx meta.Tx, in rows.KeyRetiredEntry) (ro
 	if k.State == rows.KeyWithheld || k.State == rows.KeyRetired {
 		return rows.AlreadyInEffect, nil
 	}
-	if err := withhold(ctx, qs, in.RepoID, k); err != nil {
+	if err := withholdKey(ctx, qs, in.RepoID, k); err != nil {
 		return "", err
 	}
 	return rows.Applied, nil
 }
 
-// withhold sets a key withheld and raises change_seq, so that the next build signs with what is left.
-func withhold(ctx context.Context, qs *q.Queries, repoID int64, k keyRec) error {
+// withholdKey sets a key withheld and raises change_seq, so that the next build signs with what is left.
+func withholdKey(ctx context.Context, qs *q.Queries, repoID int64, k keyRec) error {
 	if _, err := qs.DebSetKeyState(ctx, q.DebSetKeyStateParams{ID: k.ID, State: rows.KeyWithheld}); err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func replayPromoted(ctx context.Context, tx meta.Tx, in rows.KeyPromotedEntry) (
 		return rows.SubjectUnknown, nil
 	}
 	if hasPrimary {
-		if err := withhold(ctx, qs, in.RepoID, primary); err != nil {
+		if err := withholdKey(ctx, qs, in.RepoID, primary); err != nil {
 			return "", err
 		}
 	}
@@ -208,10 +208,4 @@ func primaryNote(ctx context.Context, qs *q.Queries, repo repoRef) (string, erro
 		return "", nil
 	}
 	return repo.Ref + " has no primary signing key: its builds fail with no_signing_key until an administrator reinstates a withheld key or promotes a new one", nil
-}
-
-func skipped(res journal.Result, why string) journal.Result {
-	res.Outcome = journal.Skipped
-	res.Detail, _ = json.Marshal(map[string]string{"reason": why}) //nolint:errcheck // a map of strings marshals
-	return res
 }

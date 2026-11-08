@@ -14,9 +14,10 @@ type ViewStore interface {
 	Describe(ctx context.Context, versionIDs []int64) (map[int64]rows.VersionView, error)
 	// Stored lists the versions of a package a repository holds, newest first by the order of the caller's choosing, at most limit.
 	Stored(ctx context.Context, repoID int64, pkg string, limit int) ([]string, error)
-	// Find lists the files stored for a package and version, one per architecture.
-	Find(ctx context.Context, repoID int64, pkg, version string) ([]rows.Binary, error)
-	// Withheld returns the ids of the live versions of the repositories (by "<project>/<repository>") that have a file the journal
-	// replay withheld (R-DEB-032).
+	// Find returns the ids of at most limit versions of the repositories (by "<project>/<repository>") whose control data contains the
+	// text, compared without case (R-DEB-030). Debian versions have no keywords.
+	Find(ctx context.Context, repos []string, text string, limit int) ([]int64, error)
+	// Withheld returns the ids of the live versions of the repositories (by "<project>/<repository>") all of whose live files the
+	// journal replay withheld (R-DEB-032).
 	Withheld(ctx context.Context, repos []string) ([]int64, error)
 }

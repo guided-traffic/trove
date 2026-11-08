@@ -666,7 +666,7 @@ func (r *run) setup() {
 	}
 	ids := map[string]bool{}
 	data := formats.SetupData{
-		RegistryURL: DefaultBaseURL + strings.NewReplacer("{project}", "main", "{key}", "main").Replace(r.d.ProtocolBasePath), ImagePrefix: imagePrefix(r.d, DefaultBaseURL+strings.NewReplacer("{project}", "main", "{key}", "main").Replace(r.d.ProtocolBasePath)), Repository: "main", Endpoint: "default", Variant: "scope", Username: "alice",
+		RegistryURL: DefaultBaseURL + strings.NewReplacer("{project}", "main", "{key}", "main").Replace(r.d.ProtocolBasePath), ImagePrefix: imagePrefix(r.d, DefaultBaseURL+strings.NewReplacer("{project}", "main", "{key}", "main").Replace(r.d.ProtocolBasePath)), Repository: "main", Project: "it", Key: "main", Endpoint: "default", Variant: "scope", Username: "alice",
 	}
 	for _, t := range tpls {
 		switch {

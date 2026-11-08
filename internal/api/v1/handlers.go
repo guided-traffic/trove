@@ -171,6 +171,11 @@ type Options struct {
 	Packages PackageServices
 	// <<< M2 packages
 
+	// >>> T-17 deb
+	// Deb holds the services of the Debian (APT) operations (deb_coordinates.go); a nil member answers its operation with 503.
+	Deb DebServices
+	// <<< T-17 deb
+
 	// >>> M1 files
 	// Files is the files service behind the items operations (items_api.go); nil
 	// disables them with 503.

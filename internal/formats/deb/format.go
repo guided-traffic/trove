@@ -116,6 +116,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		},
 		ContractVersion:  formats.ContractVersion,
 		Names:            names{},
+		Clients:          clients(),
 		PropertyPrefix:   "deb.",
 		MaxDocumentBytes: MaxDocumentBytes,
 		// A by-hash digest is verified because it addresses the file (R-DEB-021) and a pool file when a parsed index names its digest

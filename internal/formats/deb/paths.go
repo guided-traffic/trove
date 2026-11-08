@@ -186,3 +186,18 @@ func classifyFile(segs []string) formats.PathInfo {
 // PackageDocumentPath reports ok false: an APT archive has no document per package. A remote answers the shadowing check from its
 // parsed index rows through its NameServer (R-DEB-023, Q-REPO-270).
 func (f *Format) PackageDocumentPath(string) (formats.Path, bool) { return formats.Path{}, false }
+
+var _ formats.VersionPather = (*Format)(nil)
+
+// VersionPath is the path the decision point decides a version on besides the package's (Q-AUTHZ-255, Q-DEB-47). A Debian version
+// has one file per architecture below the pool directory of its source package, and neither the source nor the architectures can be
+// named from the package and the version alone; the path is the one of the architecture-independent file of a source package that
+// bears the package's name, pool/<prefix>/<name>/<name>_<version without epoch>_all.deb. A path pattern that addresses the package
+// by its name or the version by its file name hides the version; one that addresses a binary package by the directory of another
+// source package does not (H-720). The file itself is always decided on its own path (the pool route).
+func (f *Format) VersionPath(name, version string) (formats.Path, bool) {
+	if !ValidPackage(name) || !ValidVersion(version) {
+		return formats.Path{}, false
+	}
+	return formats.Path{Path: PoolPath(name, name, version, "all")}, true
+}

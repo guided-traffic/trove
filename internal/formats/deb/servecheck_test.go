@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 	"github.com/guided-traffic/trove/internal/servefacts"
+	"github.com/guided-traffic/trove/test/debstub/debgen"
 )
 
 // markStore answers the mark of one path, as the replay writes it (R-DEB-032).
@@ -98,9 +99,8 @@ func TestServeFactsKey(t *testing.T) {
 	}
 }
 
-// Until the local class reads package files, Inspect checks the ar signature (R-DEB-007): input that is no ar archive is 422
-// deb_invalid_archive, an archive is not read yet.
-func TestInspectOfTheSkeleton(t *testing.T) {
+// Inspect reads the package (R-DEB-007): input that is no ar archive is 422 deb_invalid_archive, a package gives its identity.
+func TestInspectReadsThePackage(t *testing.T) {
 	in := func(body []byte) formats.InspectInput {
 		return formats.InspectInput{Body: bytesSpool(body), Limits: untrusted.DefaultLimits()}
 	}
@@ -113,9 +113,16 @@ func TestInspectOfTheSkeleton(t *testing.T) {
 	if !errors.As(err, &e) || e.Code != errs.CodeDebInvalidArchive {
 		t.Errorf("empty: %v", err)
 	}
-	_, err = New().Inspect(context.Background(), in([]byte("!<arch>\ndebian-binary")))
-	if !errors.As(err, &e) || e.Code != errs.CodeDebNotImplemented {
-		t.Errorf("an archive: %v", err)
+	d, err := debgen.Build(debgen.Hello("hello", "2.10-3", "amd64"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	insp, err := New().Inspect(context.Background(), in(d.Bytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if insp.Package != "hello" || insp.Version != "2.10-3" || insp.Properties["deb.architecture"] != "amd64" {
+		t.Errorf("inspection = %+v", insp)
 	}
 }
 

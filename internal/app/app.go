@@ -536,6 +536,7 @@ func (a *App) startClient() error {
 			Repositories: a.repositoryAPI(), Packages: part[packagesAPIArea](a.parts).services,
 			Files: part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
 			Cache:      a.cacheAPI(),
+			Deb:        a.debAPI(),
 			Resolution: a.resolutionExplainer(),
 			LoadManual: help,
 			// The operations of the Bastion work answer 501 until their packages are built (wire_bastion.go).

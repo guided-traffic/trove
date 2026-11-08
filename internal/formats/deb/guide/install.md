@@ -1,0 +1,3 @@
+After the source and the key are in place, `apt-get update` fetches the index of the suite and checks its signature against the key, and `apt-get install` installs from it. Use `--error-on=any` in scripts, so that a warning fails the run instead of passing as success.
+
+To install one exact version, name it: `apt-get install hello=2.10-3`. APT installs the highest version among all of its sources, so a package name that another source also offers is decided by version, not by the order of the source lines; claim the names of your own packages, so that no remote repository's package of the same name is merged with them.

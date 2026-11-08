@@ -102,14 +102,15 @@ func TestDebMigrations(t *testing.T) {
 		mustExec(t, admin, gen, repo, 1)
 		wantState(t, admin, "23505", gen, repo, 1)
 
-		// A suite goes with its coordinates and generations, and a binary with the item.
+		// A suite goes with its coordinates and generations. A binary does not follow its item (migration 00063): the item store deletes the
+		// item first and the format's removal hook, which needs the row, deletes the binary.
 		mustExec(t, admin, `DELETE FROM trove.deb_suites WHERE repo_id = $1`, repo)
 		if n := f.count("deb_coordinates", "repo_id = $1", repo) + f.count("deb_generations", "repo_id = $1", repo); n != 0 {
 			t.Errorf("%d rows of a deleted suite", n)
 		}
 		mustExec(t, admin, `DELETE FROM trove.items WHERE id = $1`, item)
-		if n := f.count("deb_binaries", "repo_id = $1", repo); n != 0 {
-			t.Errorf("%d binaries of a deleted item", n)
+		if n := f.count("deb_binaries", "repo_id = $1", repo); n != 1 {
+			t.Errorf("%d binaries after the deletion of one item, want the row to outlive it for the removal hook", n)
 		}
 	})
 

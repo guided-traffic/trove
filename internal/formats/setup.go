@@ -88,7 +88,12 @@ type SetupData struct {
 	// "/v2" prefix, R-OCI-030); "" for every other format.
 	ImagePrefix string
 	Repository  string
-	Endpoint    string
+	// Project and Key are the project key and the repository key of Repository ("web/apt" is Project "web", Key "apt"): a template that
+	// derives a file name from the repository (the Debian format's keyring and source files, R-DEB-029) cannot cut Repository, which is
+	// the qualified name. Both are "" in a guide that names no repository (Q-ARCH-420).
+	Project  string
+	Key      string
+	Endpoint string
 	// Variant names the variant of a configure snippet the request asked for, in the
 	// words of the format: for npm the scope without its "@" ("acme"). "" is the
 	// default variant, the one that binds the whole client to the registry.

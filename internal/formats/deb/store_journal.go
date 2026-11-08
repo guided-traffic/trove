@@ -15,6 +15,9 @@ type JournalStore interface {
 	RecordPackageDeleted(ctx context.Context, tx formats.Tx, in rows.PackageDeleted) error
 	// RecordCoordinatesRemoved writes deb.coordinates.removed with its journal entry, beside deb.coordinates.changed.
 	RecordCoordinatesRemoved(ctx context.Context, tx formats.Tx, in rows.CoordinatesRemoved) error
+	// RecordCoordinatesChanged writes deb.coordinates.changed (R-DEB-009); the removal of any coordinate is also recorded with
+	// RecordCoordinatesRemoved.
+	RecordCoordinatesChanged(ctx context.Context, tx formats.Tx, in rows.CoordinatesChangedEvent) error
 	// Withhold writes the mark of a file the replay withheld (R-DEB-032) and raises change_seq of its suites; a mark that is there
 	// stays (already in effect), a file the repository does not hold with that digest is subject unknown.
 	Withhold(ctx context.Context, tx formats.Tx, in rows.Tombstone) (rows.ReplayResult, error)

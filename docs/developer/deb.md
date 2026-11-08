@@ -1,9 +1,9 @@
 # Debian (APT) repositories
 
 The Debian format (`internal/formats/deb`) serves APT repositories for Debian, Ubuntu and every archive in the Debian repository format.
-This page describes the part that is built: the skeleton of phase T-17 ("WP0, contracts"): the contract additions, the ports, the schema, the
-configuration keys, the API document and a format that registers with its local class and answers `501 deb_not_implemented` until the
-work packages fill it. The specification is [formats/debian.md](../spec/formats/debian.md); the plan and the cut into work packages are
+This page describes the part that is built: the skeleton of phase T-17 ("WP0, contracts": the contract additions, the ports, the schema, the
+configuration keys, the API document), the package-file and deb822 libraries (WP1) and the local class (WP3: upload, coordinates, deletion,
+the serve check, the package screens, the setup and the guide). A route whose work package is not built answers `501 deb_not_implemented`. The specification is [formats/debian.md](../spec/formats/debian.md); the plan and the cut into work packages are
 [apt-work-packages.md](../projektplan/apt-work-packages.md); the decisions for the contract are
 [ADR-170](../decisions.md#adr-170--apt-indexes-are-built-by-a-job-and-published-through-the-item-stores-publication-port-as-generated-items-also-in-virtual-repositories),
 [ADR-171](../decisions.md#adr-171--every-debian-local-and-virtual-repository-has-its-own-eddsalegacy-signing-key-generated-by-trove-and-sealed-with-the-stored-secret-key-ring-rotation-by-a-co-signing-next-key-the-journal-withholds-keys-and-never-erases-them)
@@ -57,22 +57,24 @@ A route of a class the format has not registered is left out of `Format.Routes()
 | [errors.go](../../internal/formats/deb/errors.go) | `WriteError`: the problem details of R-ARCH-023 with the codes of R-DEB-005 |
 | [settings.go](../../internal/formats/deb/settings.go), [settings.schema.json](../../internal/formats/deb/settings.schema.json) | The `deb` member of a repository document (R-DEB-008, R-DEB-024), its schema and `SettingsOf` with the defaults |
 | [servecheck.go](../../internal/formats/deb/servecheck.go) | `ServeCheck` (a withheld package file is 404) and `ServeFactsKey`: `deb_local` for a pool path of a local repository, `deb_remote` for a file of a remote |
-| [inspect.go](../../internal/formats/deb/inspect.go) | The skeleton `Inspect`: input that is no `ar` archive is 422 `deb_invalid_archive`; the reading of the package is the local class's |
+| [inspect.go](../../internal/formats/deb/inspect.go) | `Inspect` and `readPackage`: the package is read through `debfile` and its control file checked against the grammars of R-DEB-002 (a violation is 422 `deb_invalid_control` naming the field); `properties` are the read-only properties of R-DEB-007 |
 | [store.go](../../internal/formats/deb/store.go), `store_*.go` | The data port: `Store` embeds one group per package (`LocalStore`, `KeyStore`, `BuildStore`, `RemoteStore`, `MirrorStore`, `VirtualStore`, `ViewStore`, `JournalStore`) |
 | [rows](../../internal/formats/deb/rows/rows.go) | The values that cross the port (a leaf) |
 | [../formatdata/deb](../../internal/formatdata/deb/port.go) | The implementation: `port.go` composes one stub per group (`local_store.go`, `keys_store.go`, `build_store.go`, `remote_store.go`, `mirror_store.go`, `virtual_store.go`, `view_store.go`, `journal_store.go`), `tables_deb.go` registers the tables, the revision columns and the sealed column, `jobs.go` the kinds and the task, `build.go`, `remote_parse.go`, `refresh.go` the handlers (stubs), `reseal.go` the key-ring walk |
-| [untrusted/{ar,xz,zstd}.go](../../internal/formats/untrusted/ar.go) | `NewAr` (declared, answers `not_implemented`), `NewXZReader` and `NewZstdReader` (bounded, failing instead of cutting; Q-ARCH-382) |
+| [untrusted/{ar,xz,zstd}.go](../../internal/formats/untrusted/ar.go) | `NewAr` (the bounded `ar` reader: at most the member count of the limits, a member is opened by a section reader, never extracted), `NewXZReader` and `NewZstdReader` (bounded, failing instead of cutting; Q-ARCH-382) |
 | [servefacts](../../internal/servefacts/servefacts.go), `files.sql` | The kinds `deb_local` and `deb_remote` and the columns the item lookup returns for them (Q-ARCH-381) |
 | [items/publish.go](../../internal/items/publish.go) | `Publisher`, `GeneratedFile`, `ErrSuperseded`; `Store.Publish` answers `not_implemented` |
 | [formathost/background_upstream.go](../../internal/formathost/background_upstream.go), [name_servers.go](../../internal/formathost/name_servers.go) | `Host.BackgroundUpstream` (built: a job run of one remote repository fetches under the pass's egress, credential, share and throttling rules, without a pass; Q-REPO-272, [mirror.md](mirror.md)) and the virtual engine's `NameServers` (undetermined until the remote class lands; Q-REPO-270) |
 | [repository/create_hooks.go](../../internal/repository/create_hooks.go) | `RegisterCreateHook`: rows of a format's port in the transaction that creates its repository (Q-REPO-273); nothing is bound yet |
-| [api/v1/deb_*.go](../../internal/api/v1/deb_keys.go), [reindex.go](../../internal/api/v1/reindex.go), [deb_stub.go](../../internal/api/v1/deb_stub.go) | The handlers of the management operations: 501, or 503 on a replica without a database |
+| [api/v1/deb_*.go](../../internal/api/v1/deb_keys.go), [reindex.go](../../internal/api/v1/reindex.go), [deb_stub.go](../../internal/api/v1/deb_stub.go) | The handlers of the management operations that are not built: 501, or 503 on a replica without a database |
+| [api/v1/deb_coordinates.go](../../internal/api/v1/deb_coordinates.go), [app/wire_deb_api.go](../../internal/app/wire_deb_api.go) | `PUT …/deb/coordinates` (R-DEB-009): the handler resolves the repository and the caller; `debCoordinates` in the composition root decides deploy and delete per side, enforces ownership and writes in one transaction (Q-DEB-48) |
 | [audit/events_deb.go](../../internal/audit/events_deb.go) | The audit events; four are journaled |
 
 ## Tables, migrations and the sealed column
 
-Migrations [00060_deb](../../internal/meta/postgres/migrations/00060_deb.sql), [00061_deb_signing_keys](../../internal/meta/postgres/migrations/00061_deb_signing_keys.sql)
-and [00062_deb_remote](../../internal/meta/postgres/migrations/00062_deb_remote.sql) are expand steps; every table is export class `data`
+Migrations [00060_deb](../../internal/meta/postgres/migrations/00060_deb.sql), [00061_deb_signing_keys](../../internal/meta/postgres/migrations/00061_deb_signing_keys.sql),
+[00062_deb_remote](../../internal/meta/postgres/migrations/00062_deb_remote.sql) and [00063_deb_binaries_detached](../../internal/meta/postgres/migrations/00063_deb_binaries_detached.sql)
+are expand steps; every table is export class `data`
 ([tables_deb.go](../../internal/formatdata/deb/tables_deb.go)). The three remote tables are cache rows; the purge that a restore without remote caches
 needs is the remote class's work (R-BAK-008, H-630). `test/integration/postgres/deb_test.go` pins the constraints, the registrations and the item lookup's
 facts; `deb_reseal_test.go` pins the key-ring walk.
@@ -83,14 +85,67 @@ facts; `deb_reseal_test.go` pins the key-ring walk.
 (30s, 1s to 120s); [internal/config/deb.go](../../internal/config/deb.go) and [configuration.md](configuration.md). The per-repository settings are the
 `deb` member of the repository document.
 
+## The libraries (WP1)
+
+| Package | Responsibility |
+|---|---|
+| [formats/deb/version](../../internal/formats/deb/version/version.go) | `Parse`, `Compare`, `Less`, `Equal`: dpkg's order (epoch, then upstream and revision by alternating runs; `~` sorts before everything). A leaf; `FuzzCompare` holds that the order is total |
+| [formats/deb/control](../../internal/formats/deb/control/control.go), [parse.go](../../internal/formats/deb/control/parse.go) | Strict deb822: `Reader` reads paragraphs of a stream (one comment style for indexes), `Parse` reads exactly one paragraph. A field name outside the grammar, a continuation line without a field, a CR, a duplicate field, more than 512 fields or a field of more than 1 MiB is an `*Error`; `Refusal(err)` maps it to 422 `deb_invalid_control` naming the field. `Paragraph.Without/With/Bytes` produce the normalized paragraph the index entry is built from |
+| [formats/deb/debfile](../../internal/formats/deb/debfile/debfile.go) | `Read(ra, size, limits)`: the `ar` container (`debian-binary` first, then `control.tar.*`, then `data.tar.*`; at most 8 members), the control archive decompressed with the bounds of R-DEB-034 (16 MiB compressed, 64 MiB decompressed, 1,000 entries, ratio 100:1) and its `control` file. The data archive is never decompressed. `Package` holds the identity and the paragraph |
+| [formats/untrusted](../../internal/formats/untrusted/ar.go) | `NewAr` and the member readers the two above sit on |
+
+Each has a fuzz target (`FuzzCompare`, `FuzzParse`, `FuzzAr`, `FuzzRead`). The crafted inputs of R-DEB-034 (a control archive that expands past
+its bound, 1,001 entries, a ninth member, 600 fields, a field of 2 MiB, a body that is no `ar` archive) are in
+[crafted_test.go](../../internal/formats/deb/crafted_test.go) and the kit's inspect check holds the format to a 413 or 422 for each.
+
+## The local class (WP3)
+
+**Upload.** `PUT upload/<file>?distribution=&component=` ([handlers_upload.go](../../internal/formats/deb/handlers_upload.go)). The body is
+spooled once; the package is read outside any transaction; the permission, the ownership, the withheld check, the
+immutability check (`deb_version_exists`), the file-name check (`deb_filename_conflict`) and the shadowing check run before the commit. The
+item is committed at `pool/<prefix>/<source>/<package>_<version without epoch>_<arch>.deb` with the payload `uploadCommit`;
+`OnCommit` ([hooks.go](../../internal/formats/deb/hooks.go)) writes the package and version rows, the file's row and its coordinates
+and the properties in the commit's transaction. The same bytes uploaded again answer 200 and add the coordinates of the request.
+
+**Coordinates.** `deb_suites.change_seq` is the revision of a suite: it rises with every upload, deletion, restore and change of
+coordinates that affects the suite, and a new suite starts at 1 (the schema default), so it is not raised again by the upload that creates it.
+The bounds (32 coordinates per file, 64 suites per repository, 32 components per suite) are checked in the transaction after the rows
+are written (`checkBounds` in [local_store.go](../../internal/formatdata/deb/local_store.go)); a crossing rolls the write back.
+
+**Deletion.** `DELETE pool/<file>` and every other removal (items API, `/files/`, trash) end in `OnItemsRemoved`. The item store has
+deleted a permanently removed item before the hook runs, so `deb_binaries` no longer references `items` (migration
+[00063](../../internal/meta/postgres/migrations/00063_deb_binaries_detached.sql)): the hook reads the row, raises the suites, deletes the row
+with a purge and writes `deb.package.deleted` with its journal entry. A file in the trash can keeps its rows; `OnItemsRestored` raises the
+suites again.
+
+**Journal replay.** A restore replays `deb.package.deleted` (the file is withheld by a mark in `deb_tombstones`, never deleted) and
+`deb.coordinates.removed` (the coordinates are removed again; a file left without any is withheld) in
+[journal_replay.go](../../internal/formatdata/deb/journal_replay.go). `trove admin deb reinstate <project>/<repository> <path>`
+([cmd/trove/admin_deb.go](../../cmd/trove/admin_deb.go), [reinstate.go](../../internal/formatdata/deb/reinstate.go)) removes a mark while the
+file is stored with the digest the mark names.
+
+**Reads.** `GET pool/…` serves the file through the core (range and conditional requests), after the read permission on the package and
+version is decided; the serve check ([servecheck.go](../../internal/formats/deb/servecheck.go)) answers 404 for a withheld file.
+`VersionPath` ([paths.go](../../internal/formats/deb/paths.go)) names the path the decision point decides a version on besides the
+package's (Q-DEB-47, H-720).
+
+**Screens, setup, guide.** [view.go](../../internal/formats/deb/view.go) is the view adapter (dpkg order, the first line of the description, the
+architectures and coordinates, the control fields); [setup_local.go](../../internal/formats/deb/setup_local.go) the client `apt` (a key file
+and a source file named by `SetupData.Project` and `Key`, Q-ARCH-420, and an `auth.conf.d` file for the credential);
+[guide_local.go](../../internal/formats/deb/guide_local.go) and [guide/](../../internal/formats/deb/guide) the seven sections.
+
+**Tests.** The twin of the local part of the port ([twin_test.go](../../internal/formats/deb/twin_test.go)) drives the conformance kit
+([conformance_test.go](../../internal/formats/deb/conformance_test.go)) and the handler tests
+([handlers_local_test.go](../../internal/formats/deb/handlers_local_test.go)); the SQL, the ownership and the permissions per side are in
+`test/integration/deblocal`.
+
 ## What is built and what is not
 
-Built: everything above. Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the package-file and deb822 libraries
-(WP1), the OpenPGP library, the signing keys and their API (WP2, built beside this skeleton by another builder), the upload, the local class's reads,
-deletion, coordinates, screens, setup and guide (WP3), the index builder and the publication port (WP4), the stub archive (WP5), the remote class (WP6),
-the mirror (WP7), the virtual class (WP8), the background upstream (WP13), the tests and the e2e sets (WP9, WP10), the UI (WP11) and the final
-documentation (WP12). The format declares no client yet, so it has no setup snippets and no guide; they come with the local class together with the
-`Project` the snippets need for the key file name.
+Built: everything above. Not built, by work package of [apt-work-packages.md](../projektplan/apt-work-packages.md): the OpenPGP library, the signing
+keys and their API (WP2, built beside this by another builder), the index builder and the publication port (WP4: `dists/…`, `by-hash` and
+`signing-key.asc` answer 501), the stub archive (WP5), the remote class (WP6), the mirror (WP7), the virtual class (WP8), the background
+upstream (WP13), the tests and the e2e sets (WP9, WP10), the UI (WP11) and the final documentation (WP12). A repository has no `InRelease`
+until WP4 lands, so `apt-get update` cannot use it yet; the packages are stored and downloadable.
 
 ## The OpenPGP library and the counting stub archive (stage 1 of the remote side)
 
