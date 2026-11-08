@@ -274,6 +274,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   `TestR_EP_018_FormatsOnAnEndpointWithRules` (`test/integration/endpoints`) failed with `stop a: close phase overran its
   deadline` while the object-store health probes timed out on an overloaded host. Done when the cause (a close step that
   waits on something slow, or a deadline that does not fit the test configuration) is found and fixed.
+- **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
+  host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
+  fixed; until then a recurrence is reported with the test's name and output.
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
   found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
