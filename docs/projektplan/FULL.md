@@ -75,14 +75,14 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 - ⚪ E2E tests: `helm repo add`, `helm push`, `helm install` through local, remote and virtual repositories
 
 ### F4 · OCI and Docker (container images)
-- 🟡 Spec page `formats/oci.md` (one format `oci` for Docker and OCI content, Q-OCI-1 and Q-OCI-2), with the contracts, schema and format stub of WP0, on the branch `t16-oci` (not on main yet, see T-16 in promt.md)
-- 🟡 Registry API under `/v2/`, token challenge, chunked uploads across replicas (building since 2026-11-08: upload sessions WP1, registry tokens WP2)
-- 🟡 Local, remote (Docker Hub and other registries), virtual; multi-architecture images; referrers (building since 2026-11-08: the local class WP4, the remote engine's handshake WP6, the counting stub registry WP7)
+- 🟢 Spec page `formats/oci.md` (one format `oci` for Docker and OCI content, Q-OCI-1 and Q-OCI-2), with the contracts, schema and format of WP0
+- 🟢 Registry API under `/v2/` (all four categories of the distribution specification, conformance suite v1.1.1), token service, chunked uploads across replicas
+- 🟢 Local, remote (Docker Hub and other registries; `pullThrough` and `mirror`), virtual; multi-architecture images; referrers; deletion and the sweep of unreferenced blobs
 - ⚪ Clients: Docker CLI, Podman, BuildX, BuildKit (`buildctl`, registry build caches), ORAS, Cosign
 - ⚪ WebAssembly modules as OCI artifacts (`wasm-to-oci`)
 - ⚪ Image vulnerability scanning: operating-system and language packages inside images, with the findings, report and blocking of beta phase 6; the analyser is decided on the spec page ([vulnerability-scanning.md](../spec/vulnerability-scanning.md#deferred))
-- ⚪ Integration tests
-- ⚪ E2E tests: push and pull with Docker and Podman through local, remote and virtual repositories, an upload interrupted by a drain
+- 🟢 Integration tests (protocol over HTTP across three replicas, the counting stub registry, the conformance suite)
+- 🟡 E2E tests (building: T-16 WP11): push and pull with Docker and Podman through local, remote and virtual repositories, an upload interrupted by a drain
 
 ### F5 · Helm charts stored as OCI artifacts
 - ⚪ Chart artifact type on top of F4
@@ -186,7 +186,7 @@ all four columns green.
 | Chef | ⚪ | ⚪ | ⚪ | ⚪ |
 | CocoaPods | ⚪ | ⚪ | ⚪ | ⚪ |
 | Bower | ⚪ | ⚪ | ⚪ | ⚪ |
-| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | 🟢 [formats/debian.md](../spec/formats/debian.md) (planned and checked 2026-11-08; cut in [apt-work-packages.md](apt-work-packages.md)) | ⚪ | ⚪ | ⚪ |
+| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | 🟢 [formats/debian.md](../spec/formats/debian.md) (planned and checked 2026-11-08; cut in [apt-work-packages.md](apt-work-packages.md)) | 🟡 (contracts, stub archive and OpenPGP library on main; classes building) | ⚪ | ⚪ |
 | RPM | ⚪ | ⚪ | ⚪ | ⚪ |
 | Alpine Linux | ⚪ | ⚪ | ⚪ | ⚪ |
 | Opkg | ⚪ | ⚪ | ⚪ | ⚪ |

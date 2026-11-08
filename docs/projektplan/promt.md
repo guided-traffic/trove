@@ -257,6 +257,10 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   `TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarballOnce` and
   `TestR_REPO_051_NpmPrivateRegistryTakesNamesAndTheHeldPackages` ("a full pass … did not end complete within 1m30s"); both passed
   alone in 27 s on the same tree. Done when the cause of the pass's slowdown under load is known.
+- **F-115 · Three integration timing bounds missed under host load** (2026-11-08, load about 40): `TestSnapshotAcrossReplicas`
+  (a lookup took 360 ms against a 300 ms poll), `TestVirtualMembers` (a member-order change took 2.45 s against 2 s),
+  `TestR_BAK_005_MigrationLock` (a migration gave up after its 1 s lock wait); all three passed alone on the same tree. Done when
+  each bound is either structural or its cause under load is known.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
@@ -357,10 +361,12 @@ agents. The check step (3) below does not run during ALPHA: a builder lands its 
   took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
   upload sessions, WP2 registry tokens, WP4 the OCI format (local class), WP6 the remote engine's handshake, WP7 the counting stub
   registry, planned, built and checked by separate agents as this section says.
-  Status at the end of 2026-11-08: on `main` are WP0 to WP8 and WP12: the local class works end to end through `/v2/` (push,
-  pull, tags, catalog, referrers, deletes, uploads and mounts), and a remote repository pulls through from Docker Hub, GHCR and
-  other registries (WP8; on Docker Hub grants and exclusions are decided on both spellings of a name, Q-OCI-129). Not started: WP9 (virtual), WP10 (mirror), WP11 (e2e on kind), WP13 (conformance and client
-  integration), WP14 (documentation). The cut is `docs/projektplan/oci-work-packages.md`; FULL.md block B F4 stays 🟡.
+  Status at the end of 2026-11-08: on `main` are WP0 to WP10, WP12 and WP13: the local class end to end through `/v2/`, the remote class
+  (pull-through from Docker Hub, GHCR and other registries), the mirror (`mode: mirror`: selected names, tags and platforms kept and
+  pullable with the upstream gone, ADR-182), the virtual class (pulls in member order, pushes to the deploy target, ADR-180), and the
+  OCI distribution conformance suite v1.1.1 (all four categories through a local repository; pull, push and discovery through a
+  virtual one, Q-OCI-211). Running: WP11 (e2e with Docker and Podman on kind). Not started: WP14 (closing documentation, FULL.md F4).
+  The cut is `docs/projektplan/oci-work-packages.md`; FULL.md block B F4 stays 🟡.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
@@ -371,8 +377,11 @@ agents. The check step (3) below does not run during ALPHA: a builder lands its 
   containers through local, remote in both modes and virtual repositories, signature verification on the client included.
   Status 2026-11-08: the spec `docs/spec/formats/debian.md` (R-DEB-001 to R-DEB-035, Q-DEB-1 to Q-DEB-43, H-620 to H-630) and the cut
   `docs/projektplan/apt-work-packages.md` (WP0 contracts, WP1 to WP13 in four waves) are on main, planned by one agent and checked in
-  three rounds by another that verified the client behaviour on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04. Next: WP0, after
-  T-16 WP0 (on main) and in coordination with OCI WP10 on `discover.Upstream.Artifact` (whichever starts first builds it).
+  three rounds by another that verified the client behaviour on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04.
+  Status at the end of 2026-11-08: on `main` are WP0 (the contracts: schema 00060 to 00062, ports, routes answering 501, ADR-170 to
+  ADR-172), WP5 (the counting stub archive `test/debstub`) and the OpenPGP library of WP2 (`internal/openpgp`, verified against `sqv`
+  and `gpgv` on all four client images). Running: WP1 with WP3 (the local class), WP2's key store and rotation. Next: WP4 (index
+  builder), WP13 and WP6 (remote), WP7, WP8, WP9 to WP12. FULL.md block D row "Debian / APT repositories" is 🟡.
 
 ## 11 · Run record
 
