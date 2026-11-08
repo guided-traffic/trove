@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
 
@@ -23,9 +24,27 @@ func (e *env) setAnonymous(on bool) {
 	if a := e.st.Do(e.rep, "PATCH", "/api/v1/settings/auth", e.admin, body, "Content-Type", "application/merge-patch+json", "If-Match", "*"); a.Status != http.StatusOK {
 		e.t.Fatalf("switch: %d %s", a.Status, a.Body)
 	}
-	testenv.WaitFor(e.t, "anonymous access switched", 10*time.Second, func() bool {
-		return (e.do("default", "", "GET", "/v2/_token", "").Code == http.StatusOK) == on
-	})
+	// The switch reaches a replica within auth.revocation_bound (R-AUTH-037, R-AUTH-023); the wait is on the property itself - the
+	// replica under test answers an anonymous token request as the switch says - within a multiple of the configured bound, and a
+	// failure says what the replica answered last.
+	loaded, err := config.Load(config.Options{Environ: append(e.st.Environ(), "TROVE_POD_NAME="+e.rep.Name, "TROVE_SERVER_OPS_LISTEN="+testenv.FreeAddr(e.t)), Flags: map[string]string{"process.role": "web"}, Command: config.CommandServe})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	within := 5 * loaded.Config.Auth.RevocationBound
+	start := time.Now()
+	last := 0
+	for {
+		last = e.do("default", "", "GET", "/v2/_token", "").Code
+		if (last == http.StatusOK) == on {
+			break
+		}
+		if time.Since(start) > within {
+			e.t.Fatalf("anonymous access %v did not reach the replica within %s (5 x auth.revocation_bound); its last answer to an anonymous token request was %d", on, within, last)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	e.t.Logf("anonymous access %v observed on the replica after %s (bound %s)", on, time.Since(start), loaded.Config.Auth.RevocationBound)
 }
 
 // R-OCI-004: a repository with an anonymous read grant is pulled without a login, through the token flow of Docker (ping, anonymous
@@ -60,10 +79,29 @@ func TestR_OCI_004_AnonymousPullThroughV2AndPushWithoutLoginFails(t *testing.T) 
 	if got.Code != http.StatusOK || got.Body.String() != string(img.manifest) {
 		t.Fatalf("anonymous pull: %d %s", got.Code, got.Body.String())
 	}
-	// The repository without an anonymous grant stays hidden from the same anonymous token flow.
-	hidden := tokenFor("repository:web/docker-local/app:pull")
-	if a := e.send("default", req{method: "GET", path: "/v2/web/docker-local/app/manifests/1", auth: bearer(hidden), header: map[string]string{"Accept": manifestType}}); a.Code == http.StatusOK {
-		t.Fatalf("anonymous pull of a repository without a grant: %d", a.Code)
+	// A repository without an anonymous grant is the same as one that does not exist, with the anonymous token and with no credential:
+	// status, challenge and body are identical, the name the client sent aside.
+	same := func(what string, auth string) {
+		t.Helper()
+		answer := func(repo string) (int, string, string) {
+			a := e.send("default", req{method: "GET", path: "/v2/web/" + repo + "/app/manifests/1", auth: auth, header: map[string]string{"Accept": manifestType}})
+			norm := func(x string) string { return strings.ReplaceAll(x, repo, "REPO") }
+			return a.Code, norm(a.Header().Get("WWW-Authenticate")), norm(a.Body.String())
+		}
+		hc, hch, hb := answer("docker-local")
+		mc, mch, mb := answer("ghost-local")
+		if hc != http.StatusUnauthorized || hc != mc || hch != mch || hb != mb {
+			t.Errorf("%s: hidden %d %q %s\nmissing %d %q %s", what, hc, hch, hb, mc, mch, mb)
+		}
+		if !strings.HasPrefix(hch, `Bearer realm="http://trove.test/v2/_token",service="trove.test"`) {
+			t.Errorf("%s: the 401 carries no registry challenge: %q", what, hch)
+		}
+	}
+	same("anonymous token", bearer(tokenFor("repository:web/docker-local/app:pull")))
+	same("no credential", "")
+	if a := e.send("default", req{method: "GET", path: "/v2/web/docker-local/app/manifests/1", header: map[string]string{"Accept": manifestType}}); a.Code != http.StatusUnauthorized ||
+		!strings.Contains(a.Header().Get("WWW-Authenticate"), `scope="repository:web/docker-local/app:pull"`) {
+		t.Errorf("no credential, private repository: %d, challenge %q; want 401 naming the scope", a.Code, a.Header().Get("WWW-Authenticate"))
 	}
 
 	// A push without a login: no token at all, and the anonymous token asked for push, which grants nothing.

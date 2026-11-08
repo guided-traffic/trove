@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -304,7 +305,8 @@ func (e *Enforcer) wrap(h http.Handler) http.Handler {
 			e.o.WriteError(w, r, err)
 			return
 		}
-		h.ServeHTTP(w, e.withoutUnreadableMount(r))
+		r = e.withoutUnreadableMount(r)
+		h.ServeHTTP(&challengeWriter{ResponseWriter: w, e: e, r: r}, r)
 	})
 }
 
@@ -342,8 +344,9 @@ func (e *Enforcer) withoutUnreadableMount(r *http.Request) *http.Request {
 	q.Del("from")
 	r2 := r.Clone(r.Context())
 	r2.URL.RawQuery = q.Encode()
-	// Clone copies a form already parsed from the old query: the handler must read the stripped one.
-	r2.Form, r2.PostForm = nil, nil
+	// Clone copies a form already parsed from the old query: the handler reads the stripped values, and a form marked as parsed
+	// is never parsed again, so a later FormValue does not read the request body.
+	r2.Form, r2.PostForm = q, url.Values{}
 	// A stripped mount leaves a trace besides the access log: which trove token asked for which source.
 	e.log().Debug("registry token mount stripped: no pull on the source", "token_id", httpserver.PrincipalFrom(r.Context()).Credential.TokenID,
 		"source", q0.Get("from"), "target", t.Repo.String()+"/"+t.Image)

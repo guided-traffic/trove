@@ -149,6 +149,10 @@ decision point decides every request again (R-AUTHZ-015).
   segments, a project or repository that does not exist, one of another format and one the decision point hides answer the same body
   (`TestNameUnknownIsTheSameForWhatDoesNotExistAndWhatTheCallerCannotSee` compares the bytes). The decision point is asked
   before the repository is looked up.
+- **The challenge of a caller without a credential.** Where anonymous access is on, such a caller meets the decision point's bare `Bearer`
+  challenge for a private repository (R-AUTHZ-016); below `/v2/` the enforcement point replaces it by the registry's (realm, service and the
+  route's scope, [challenge_writer.go](../../internal/api/registry/challenge_writer.go)), so the client learns where to ask for a token and
+  the answer is the one for a repository that does not exist.
 - **The version check** answers 401 with the challenge to a caller that is anonymous and carries no registry token; the stage lets such
   a caller through where anonymous access is on, so the handler builds the challenge itself ([ping.go](../../internal/api/registry/ping.go)).
   An invalid credential never arrives there.

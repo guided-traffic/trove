@@ -2567,5 +2567,5 @@ the parsed form of the request and logs the stripped mount at debug level with t
 **Rationale:** the answer to a mount must not depend on whether the source exists or what the token holds, and a failed push would
 make the client's layer upload impossible. The development agent would revisit it if a second format has a mount of its own.
 
-**Applied in the spec:** R-OCI-006 (the source needs `pull`, checked as above), R-OCI-012 (the strip, in the bullet on registry tokens and
-the acceptance criterion).
+**Applied in the spec:** R-OCI-012 (the strip, in the bullet on registry tokens and the acceptance criterion); R-OCI-006 unchanged (it already
+says the source needs `pull`).

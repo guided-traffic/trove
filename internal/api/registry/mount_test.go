@@ -48,7 +48,9 @@ func TestAMountWithoutPullOnTheSourceFallsBackToASession(t *testing.T) {
 	var seen string
 	var formParsed bool
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen, formParsed = r.URL.RawQuery, r.Form != nil
+		seen = r.URL.RawQuery
+		// A form marked as parsed holds the stripped values, and the body is never read for it.
+		formParsed = r.Form == nil || r.PostForm == nil || r.Form.Has("mount") || r.Form.Has("from")
 		w.WriteHeader(http.StatusAccepted)
 	})
 	router := httpserver.NewClientRouter()
@@ -76,7 +78,7 @@ func TestAMountWithoutPullOnTheSourceFallsBackToASession(t *testing.T) {
 		t.Errorf("no pull on the source: %q, want the request without mount and from", got)
 	}
 	if formParsed || !strings.Contains(logs.String(), "mount stripped") || !strings.Contains(logs.String(), "source=web/docker-hub/library/alpine") {
-		t.Errorf("a stripped mount keeps its parsed form (%v) or leaves no trace: %q", formParsed, logs.String())
+		t.Errorf("a stripped mount keeps the old form or leaves the form unparsed (%v) or leaves no trace: %q", formParsed, logs.String())
 	}
 	if got := run(grant(target, httpserver.RegistryEntry{Repo: hub, Name: "other", Pull: true}), q); got != "" {
 		t.Errorf("pull on another image: %q", got)
