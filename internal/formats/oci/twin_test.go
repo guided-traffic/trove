@@ -385,6 +385,26 @@ func (fx *fixture) image(name, ref, layerSeed string) ([]byte, string) {
 	return m, sha(m)
 }
 
+// interleave registers fn as another client's request that completes after the push under test made its checks outside the
+// transaction and before its transaction begins (formattest.Host.OnNextWrite). It fails the test when the callback fires before the
+// checks of a push ran, which is what an earlier write added to a handler would cause: the race would then sit in front of the pre-check
+// and the test would no longer exercise the decision in the transaction.
+func (fx *fixture) interleave(fn func()) {
+	fx.t.Helper()
+	fx.twin.mu.Lock()
+	before := fx.twin.calls["ExistingItems"]
+	fx.twin.mu.Unlock()
+	fx.h.OnNextWrite(func() {
+		fx.twin.mu.Lock()
+		after := fx.twin.calls["ExistingItems"]
+		fx.twin.mu.Unlock()
+		if after <= before {
+			fx.t.Error("the interleaved request ran before the push made its checks outside the transaction")
+		}
+		fn()
+	})
+}
+
 // proceedResolver is the virtual resolution of a host that has no virtual repository: the shadowing check lets a first push pass.
 type proceedResolver struct{ formats.Resolver }
 

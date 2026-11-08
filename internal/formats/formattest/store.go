@@ -96,7 +96,11 @@ func (t *memTx) SetValue(key, v any)                               { t.values[ke
 // log here writes straight into the shared maps, so two overlapping transactions would see each
 // other's uncommitted rows and a rollback would take away rows another transaction had built on;
 // running them one after the other is one of the outcomes the database allows and is the one
-// this Host models. The reads outside a transaction (Stat, Versions) are not blocked by it.
+// this Host models. The reads outside a transaction (Stat, Versions) are not blocked by it, and they are dirty: the rows of a
+// transaction that is still open are visible to them, and vanish again if it rolls back, which PostgreSQL's read committed
+// isolation never shows. Applying a transaction's writes at commit would close that, but the transaction reads its own writes through
+// every writer and item method, so it would need a second layer of overlay maps; the gap is accepted and a test that depends on a
+// reader seeing only committed rows must not rely on this Host.
 func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx formats.Tx, w formats.PackageWriter) error) error {
 	h.runInterleaved()
 	h.txMu.Lock()

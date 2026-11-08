@@ -612,7 +612,7 @@ func TestR_OCI_013_APushThatFailsInTheTransactionLeavesNothing(t *testing.T) {
 	layer := fx.blob("app", []byte("l"))
 	m := imageManifestBytes(cfg, layer)
 	// The blob goes away between the check outside the transaction and the check in it.
-	fx.h.OnNextWrite(func() {
+	fx.interleave(func() {
 		rq, _ := fx.h.NewRequest(context.Background(), http.MethodDelete, "app/blobs/"+layer, nil)
 		if err := fx.h.Remove(context.Background(), rq, "delete", BlobPath("app", layer)); err != nil {
 			t.Error(err)
@@ -668,6 +668,46 @@ func TestR_OCI_013_ConcurrentPushesOfOneTagLeaveOneDigestAndOneVersion(t *testin
 	vs, _, _ := fx.h.Packages().Versions(context.Background(), fx.h.Ref(), "app")
 	if len(vs) != 1 || vs[0].Version != "1" {
 		t.Fatalf("versions = %+v", vs)
+	}
+}
+
+// A push that read its tag as new and finds it taken when its transaction begins decides again (R-OCI-013 step 8, R-OCI-006): with
+// overwrite it commits its own digest, without it is refused. Another push of the tag lands exactly between the push's checks and its
+// transaction, so the retry of commitTag runs on every execution, not by chance.
+func TestR_OCI_013_APushThatFindsTheTagTakenDecidesAgain(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		overwrite bool
+		status    int
+	}{{"with overwrite", true, http.StatusCreated}, {"without overwrite", false, http.StatusForbidden}} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := newFixture(t, formattest.HostOptions{Allow: func(tg formats.Target) error {
+				for _, a := range tg.Actions {
+					if a == formats.ActionOverwrite && !tc.overwrite {
+						return errs.E(errs.Forbidden, errs.CodeForbidden, "no overwrite")
+					}
+				}
+				return nil
+			}})
+			cfg := fx.blob("app", []byte("{}"))
+			mine := imageManifestBytes(cfg, fx.blob("app", []byte("mine")))
+			other := imageManifestBytes(cfg, fx.blob("app", []byte("other")))
+			fx.interleave(func() {
+				fx.wantStatus(fx.put("app/manifests/1", other, ctImage), http.StatusCreated, "")
+			})
+			fx.wantStatus(fx.put("app/manifests/1", mine, ctImage), tc.status, "")
+			want := sha(other)
+			if tc.overwrite {
+				want = sha(mine)
+			}
+			if got := fx.get("app/manifests/1").Header().Get("Docker-Content-Digest"); got != want {
+				t.Fatalf("the tag points at %s, want %s", got, want)
+			}
+			vs, _, _ := fx.h.Packages().Versions(context.Background(), fx.h.Ref(), "app")
+			if len(vs) != 1 || vs[0].Version != "1" {
+				t.Fatalf("versions = %+v", vs)
+			}
+		})
 	}
 }
 
