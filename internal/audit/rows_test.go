@@ -43,6 +43,7 @@ func TestR_OPS_014_RegistryRules(t *testing.T) {
 		})
 	}
 	t.Run("R-OPS-014 a flagged type defaults to a required entry and bounded arrays pass", func(t *testing.T) {
+		t.Cleanup(func() { unregister("rtest.access.revoked") }) // a repeated run registers it again (F-106)
 		Register(EventType{
 			Name: "rtest.access.revoked", Category: CategoryToken, Mode: Transactional, Journal: JournalRevocation,
 			Schema: `{"type":"object","properties":{"ids":{"type":"array","maxItems":1000}}}`,
@@ -201,4 +202,11 @@ func TestR_OPS_017_IDsOfOneProcessSortInCreationOrder(t *testing.T) {
 	if got, ok := idTime(newID(old)); !ok || !got.Equal(old) {
 		t.Errorf("an event of an hour ago carries %v, want %v", got, old)
 	}
+}
+
+// unregister removes a type a test registered, so the test can run again in the same process.
+func unregister(name string) {
+	reg.mu.Lock()
+	delete(reg.by, name)
+	reg.mu.Unlock()
 }
