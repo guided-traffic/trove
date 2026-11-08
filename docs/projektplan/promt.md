@@ -260,6 +260,12 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   statement failed (`audit: insert artifact.deleted: context canceled`, 500 at 60.0 s in 6 of 6 failing runs); with the
   F-91 change the same runs pass at 131 to 201 s. Closes with F-91; the test is its regression check under load.
 
+- **F-100 · Concurrent pushes of one OCI tag answer 404, 409 or 503 and can leave no version** (confirmed).
+  `TestR_OCI_013_ConcurrentPushesOfOneTagLeaveOneDigestAndOneVersion` (`internal/formats/oci`) fails in 20 of 200 runs with
+  the race detector on b2317314: eight concurrent pushes answer e.g. `[409 404 201 503 404 409 503 201]`
+  (`shadow_check_unavailable`), once with no version left. Not yet known whether the production host or only the in-memory
+  test host is at fault. Done when every push of one tag ends 201 with one digest and one version, under `-race -count=500`.
+
 ### Tests and tools
 
 - **F-93 · `TestDatabaseOutageGrace` failed on timing under load** (seen once, `test/integration/server`), and passed when
