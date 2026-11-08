@@ -265,9 +265,16 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   first byte took three, both saw `context canceled`; with the default 60 s, a commit or an upstream fetch longer than a
   minute is cancelled. Not yet verified: whether the commit paths abort on it. Done when quiet server work is never cut by
   the stall timeout, with a test on the real server.
+- **F-92 · Deleting a whole OCI name answered 500 under load** (seen once). `TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval`
+  (`test/integration/ocilocal`) got a 500 while a race-detector build loaded the host, and passed when the area ran alone.
+  An internal error is a product answer, not a test's timing. Done when the cause is found and fixed with a test that fails
+  before.
 
 ### Tests and tools
 
+- **F-93 · `TestDatabaseOutageGrace` failed on timing under load** (seen once, `test/integration/server`), and passed when
+  the area ran alone. Done when the cause (a wall-clock bound in the test, or a grace that fires late or early under load)
+  is fixed.
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
   found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
