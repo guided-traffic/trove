@@ -75,7 +75,7 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 - ⚪ E2E tests: `helm repo add`, `helm push`, `helm install` through local, remote and virtual repositories
 
 ### F4 · OCI and Docker (container images)
-- ⚪ Spec pages `formats/oci.md` and `formats/docker.md`
+- 🟡 Spec page `formats/oci.md` (one format `oci` for Docker and OCI content, Q-OCI-1 and Q-OCI-2), with the contracts, schema and format stub of WP0, on the branch `t16-oci` (not on main yet, see T-16 in promt.md)
 - ⚪ Registry API under `/v2/`, token challenge, chunked uploads across replicas
 - ⚪ Local, remote (Docker Hub and other registries), virtual; multi-architecture images; referrers
 - ⚪ Clients: Docker CLI, Podman, BuildX, BuildKit (`buildctl`, registry build caches), ORAS, Cosign

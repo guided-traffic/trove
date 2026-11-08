@@ -589,6 +589,15 @@ separate agents; no agent checks its own work.
   the plan. Tests per step 3: integration (protocol over HTTP against the stack, the conformance kit) and e2e with the real clients
   through local, remote in both modes and virtual repositories on several replicas, an upload interrupted by a drain, a mirror pass on
   n replicas (R-REPO-058, R-REPO-059).
+  Status 2026-11-08: the spec (`docs/spec/formats/oci.md`, R-OCI-001 to R-OCI-035, Q-OCI-1 to Q-OCI-34) and WP0 (format contract
+  additions ADR-161, migrations 00054 to 00056, config keys, the `oci` stub answering 501, `Ingestor.Link` by source name,
+  `ItemsEvent.Cascade`, the upload-session contract, withheld manifests in the serve facts) are built and reviewed (architecture and
+  code review, every finding fixed) on the branch `t16-oci`; the cut into WP1 to WP14 is `docs/projektplan/oci-work-packages.md` there.
+  Not merged to main on purpose: migration 00056 tightens the key grammar of every repository and project key (Q-OCI-3) and stops at
+  the first key that breaks it, so the owner's installation must first be checked, e.g.
+  `SELECT key FROM repositories WHERE key !~ '^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$' UNION ALL SELECT key FROM project WHERE key !~
+  '^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$';` (empty means safe). Next: rebase `t16-oci` onto main (renumber migrations and ADR if main took
+  them), then WP1 onward.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
