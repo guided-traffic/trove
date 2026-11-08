@@ -1019,7 +1019,9 @@ Priority: **MVP** · Covers: PKG-NPM-021, PKG-NPM-031
 - A package with live versions MUST always have `latest`: a first publish under another tag also
   sets `latest`; when the version `latest` points to is unpublished, trashed or withheld
   (R-NPM-047), `latest` moves to the highest remaining non-pre-release version, or the highest
-  version if all are pre-releases; other tags pointing to it are removed.
+  version if all are pre-releases, whoever removed it and whatever that caller may read
+  ([Q-NPM-86](#q-npm-86--when-a-removal-moves-latest-the-rule-picks-the-highest-remaining-version-regardless-of-who-removed-it));
+  other tags pointing to it are removed.
 - Every tag change, by a publish, a tag write or a removal, runs under the package row lock of
   R-NPM-007 step 5 and applies the guard and the rules above to the values read under that lock.
   Concurrent publishes and tag writes through different replicas therefore cannot leave a package
@@ -5083,6 +5085,30 @@ default chose. The development agent would revisit (b) if a team asks that a pub
 `TestR_NPM_016_OnCommitLeavesATagAtAHiddenVersion` (unit),
 `TestR_NPM_016_APublishLeavesATagAtAVersionThePublisherMayNotReadWhereItIs`
 ([version_paths_test.go](../../../test/integration/npm/version_paths_test.go)).
+
+### Q-NPM-86 · When a removal moves `latest`, the rule picks the highest remaining version regardless of who removed it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-112. A caller whose grant hides some versions unpublishes the version `latest` points to. R-NPM-016 moves `latest` to
+the highest remaining version, which may be one the caller may not read; `latest` then leaves the caller's view. Q-NPM-85 keeps a
+publish from moving a tag onto or off a hidden version; the question is whether the removal of a readable version is bound the same way.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package's rule applies as written: highest remaining version, whoever removed (chosen) | `latest` is the same for every reader whoever deletes | One `latest` per package; the outcome does not depend on the deleter's grant; the caller learns only that `latest` left its view, the same signal it gets when anyone else deletes | The caller moved a tag onto a version it cannot see |
+| (b) `latest` moves to the highest version the remover may read | The remover's view decides | The remover never sends `latest` out of its own view | Every other reader gets a `latest` below the highest release because of who deleted; two deleters with different grants give two answers |
+| (c) Refuse the removal while a hidden version would become `latest` | As a dist-tag `PUT` over a hidden tag (Q-NPM-84) | No move onto a hidden version | A caller could not unpublish a version it may delete, for a reason it cannot see; the refusal itself tells that a hidden version exists |
+
+**Choice:** (a). The removal changes only what the caller may change - the version it removes - and the tag follows the package's
+rule, not the caller's view. The caller sees `latest` disappear from its view, which tells no more than a deletion by another user would.
+
+**Rationale:** `latest` belongs to the package, not to one reader; the hidden-version rule of Q-NPM-85 protects a tag at a hidden
+version from a caller who cannot see it, and here the tag was readable when the caller acted. The development agent would revisit
+(c) if a team asks that a grant which hides versions also stops the move of `latest` onto them.
+
+**Applied in the spec:** R-NPM-016 (the removal sentence). No code change: the rule as built (`tagsAfterRemoval` in
+[tags.go](../../../internal/formats/npm/tags.go)).
 
 ## What this does not cover
 

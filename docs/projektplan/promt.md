@@ -247,9 +247,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 - **F-111 · `TestSpoolAdmission` (`internal/blob`) failed once in a full `go test ./internal/...`** on a loaded host and passed
   alone. Cause not looked at.
-- **F-112 · An npm unpublish of the visible `latest` can move `latest` onto a version the caller may not read** (read by the F-83
-  builder): the removal rule of R-NPM-016 picks the highest remaining version. The caller learns at most that its tag moved
-  somewhere it cannot see. Decide whether the hidden-version rule of Q-NPM-85 applies to it.
 - **F-113 · The integration stack's object store fills up in about a day** (2026-11-08): the tests leave their objects behind,
   and SeaweedFS in `test/integration/compose.yaml` holds 100 volumes of 512 MB; at 45 GB every upload failed until the stack was
   reset. Done when the tests remove what they write, or the stack cleans up on its own.
