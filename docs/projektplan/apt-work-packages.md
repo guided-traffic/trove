@@ -1,0 +1,454 @@
+# T-17 · APT registry (Debian and Ubuntu) — the work-package cut
+
+The plan of task T-17 (docs/projektplan/promt.md section 10), written by the planning agent on 2026-11-08 and revised the same day
+after a separate architecture and security review that tested the plan's APT and OpenPGP assumptions against the real clients,
+and again after its re-check (section 8 lists every finding and where it went). Spec: [docs/spec/formats/debian.md](../spec/formats/debian.md), requirements
+**R-DEB-001 to R-DEB-035**, decisions **Q-DEB-1 to Q-DEB-43**, open gaps **H-620 to H-630**. Reserved for the edits of other
+pages, recorded there by the package that applies them: **Q-ARCH-380 to Q-ARCH-385**, **Q-REPO-270 to Q-REPO-274**,
+**Q-STOR-180 to Q-STOR-182**, **ADR-170 to ADR-172**; Q-AUTH-220 to Q-AUTH-229 are not used (no identity change). Migrations:
+**00070 to 00072**, the range the run assigned to this plan; the development agent renumbers them at build time if main has moved
+past it.
+
+The spec is written first; every other page changes in the work package that builds its mechanism, in the same change as the code
+(the table "Changes to other pages" of debian.md), because the contract blocks of R-ARCH-008 and R-ARCH-009 are held equal to the
+code by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`.
+
+Working mode (promt.md section 10, rule 10): plan, build and check by separate agents; no builder checks its own package; an agent
+and a branch (worktree) per package, started as soon as its dependencies are on the integration branch. Builders do not commit;
+the development agent integrates and commits per package (conventional commits naming R-DEB-… IDs, no attribution). **No two
+packages that run at the same time own the same file**; WP0 creates every shared skeleton file and names the one package that
+owns it afterwards.
+
+## 0 · What T-17 takes from T-16
+
+- **T-16's WP0 is on main** (6abafcd1: ADR-161, migrations 00054 to 00056, the key grammar, `Prepared.Aliases`, the upload-session
+  port, `discover.Upstream.Artifact` as a declared method that answers `not_implemented`). APT's WP0 builds on it.
+- **`discover.Upstream.Artifact` is still a stub** (`internal/formathost/mirror_host.go`). APT needs it in three places: the mirror
+  (WP7), the virtual build (WP8) and the parse job's full-index fetch (WP6). It belongs to OCI WP10 as well. **WP13** builds it with
+  the text oci.md gives it if OCI WP10 has not landed it when wave 1 starts, together with the background `Upstream` outside a pass
+  that WP6 and WP8 need (Q-REPO-272); otherwise WP13 builds only the latter. The same holds for `SelectItems` counting versions and
+  the rule that `<format>.mirror` is kept from an Owner like the patterns (Q-OCI-22): whichever of OCI WP10 and APT WP7 lands first.
+- Nothing else of T-16 is needed: no registry root, no registry tokens, no upload sessions.
+
+## 1 · Reading the plan against the catalog
+
+Full table with one row per entry: debian.md, section "Catalog coverage". Grouped here:
+
+- **Built in T-17:** PKG-DEB-001, 002 (coordinates as rows, derived pool path), 004 (`PUT upload/<file>`), 005, 006, 007 (through
+  remotes), 008, 009 (stricter: refused, not stored), 010 (in part: read-only properties, screens), 011 (gzip and xz), 013, 014,
+  015, 016 (as R-REPO-016), 017, 018 (per-repository keys, co-signing rotation), 020, 021, 022 (automatic), 023, 026, 027.
+- **Stays in FULL.md:** PKG-DEB-004 (the deploy dialog's option), 007 (local source uploads and `Sources`), 010 (search on control
+  fields), 012, 024, 025; `.udeb` and installer indexes, `dput`, translations and `Contents` for local and virtual repositories,
+  mirrors of flat archives, `Valid-Until` on local releases, keys in a key service, Debian vulnerability matching, copy and move
+  (with R-STOR-019), exposure rules, the Bastion, nested virtual repositories.
+- **Not offered:** PKG-DEB-003 for local and virtual repositories (flat upstreams through remotes), PKG-DEB-019, PKG-DEB-028,
+  bzip2 and LZMA indexes, browsing an upstream before anything is cached.
+
+**FULL.md block D status** (written by the closing change, not now; the phase sets the row to 🟡 when building starts): the row
+"Debian / APT repositories (Debian and Ubuntu; apt, apt-get)" at 🟢 in all four columns, and below the table:
+
+```markdown
+- Debian / APT: built — local, remote (`pullThrough` and `mirror`) and virtual repositories; uploads with suites and components;
+  indexes built by a job as signed snapshots served by hash; a signing key per repository with co-signing rotation; remotes that
+  pass upstream releases through and verify them; the mirror of named suites, components and architectures; virtual repositories
+  that merge verified member releases and re-sign; clients Debian 13 and 12, Ubuntu 24.04 and 22.04. Stays: local source packages,
+  snapshots, debug-symbol and installer packages, `dput`, translations for local and virtual repositories, mirrors of flat
+  archives, `Valid-Until` on local releases, keys in a key service, Debian vulnerability matching (debian.md, Deferred).
+```
+
+## 2 · Contracts first: WP0
+
+One package, one builder (`voltagent-lang:golang-pro`, with `voltagent-qa-sec:architect-reviewer` checking), before every other
+package. It writes the contract additions, the ports, the schema, the configuration keys, the API document and the skeletons, with
+no behaviour behind them beyond compile-time stubs (methods answer `errs.Unsupported` or `not_implemented`, routes 501
+`deb_not_implemented`), so that the packages build against fixed types in parallel. Three ADRs, written by WP0 into decisions.md
+with the table rows of Q-DEB-1 to Q-DEB-43:
+
+- **ADR-170 · APT indexes are built by a job and published through the item store's publication port as generated items, also in
+  virtual repositories** (R-ARCH-012 item 2; Q-DEB-6, Q-DEB-33, Q-ARCH-380, Q-STOR-180, Q-STOR-182).
+- **ADR-171 · Every Debian local and virtual repository has its own EdDSALegacy signing key, generated by trove and sealed with the
+  stored-secret key ring; rotation by a co-signing next key; the journal withholds keys and never erases them** (Q-DEB-9 to
+  Q-DEB-11, Q-DEB-30, Q-DEB-31).
+- **ADR-172 · The format contract gains the remote name index and the serve-facts kinds `deb_local` and `deb_remote`** (additions
+  keep `ContractVersion` 2, R-ARCH-025; the surface file changes; Q-ARCH-381).
+
+### 2.1 Go contract (`internal/formats`, `internal/servefacts`)
+
+```go
+// NameServer is the optional interface of a RemoteAdapter whose upstream has no document per package: the shadowing check of
+// repositories-and-proxy.md R-REPO-048 asks it instead of probing a package document (ADR-172, Q-REPO-270, Q-DEB-37). It reads
+// the rows of the indexes the remote repository holds through h, in the scope of the virtual repository whose exposure the
+// check decides. known is false when an index of that scope is not parsed yet; the format then enqueues its parse.
+type NameServer interface {
+	ServesName(ctx context.Context, h Host, q NameQuery) (served, known bool, err error)
+}
+
+// NameQuery names the remote member, the virtual repository through which it would serve the name (its reference and its format
+// settings, from which the format reads the suites, components and architectures it serves) and the normalized name.
+type NameQuery struct {
+	Remote      RepoRef
+	Via         RepoRef
+	ViaSettings json.RawMessage
+	Name        string
+}
+
+// RemoteCaps gains:  Names NameServer
+
+// internal/servefacts gains two kinds; the item lookup of a download reads their rows in its own statement (R-ARCH-027,
+// Q-ARCH-291):
+//   DebLocal  (formats.ServeDebLocal):  whether deb_tombstones marks the (repository, path) of a local package file (R-DEB-032);
+//   DebRemote (formats.ServeDebRemote): the SHA-256 and size the newest parsed index lists for a remote path (R-DEB-022), with
+//             a facts type of its own (ServeDebRemoteFacts), which the remote adapter's FactsGate decides on.
+```
+
+The engine side of `NameServer`: the shadowing check (where R-REPO-048 is implemented) takes `RemoteCapabilities(id).Names` when
+the format's `PackageDocumentPath` reports `ok` false, once per (virtual repository, remote member) pair of the exposure set. WP0
+wires the call with the stub; WP6 implements it.
+
+### 2.2 Ports below the contract (declared by WP0, each implemented by one package)
+
+```go
+// internal/items — the publication port (Q-STOR-182, ADR-170). Implemented by WP4 for both classes; WP8 adds only the rule that
+// a virtual repository accepts generated items from this port and from nothing else.
+type GeneratedFile struct {
+	Path       repository.Cleaned
+	Body       io.Reader // read once; the port spools and hashes it
+	Size       int64
+	MediaType  string
+	ModifiedAt time.Time // the Release Date for every file of a generation (Last-Modified, R-DEB-010)
+}
+type Publisher interface {
+	// Publish stores every file's blob first, outside any transaction (R-STOR-005), then runs one transaction that upserts a
+	// package-less generated item per file (an identical blob changes nothing but modified_at), deletes the generated items at
+	// remove, and runs commit with the transaction for the caller's own rows. commit returning ErrSuperseded rolls everything
+	// back and Publish returns it; the stored blobs are left to garbage collection. Quota admission does not apply (Q-STOR-181).
+	Publish(ctx context.Context, repo RepoRef, files []GeneratedFile, remove []repository.Cleaned,
+		commit func(ctx context.Context, tx meta.Tx) error) error
+}
+var ErrSuperseded = errors.New("items: superseded")
+
+// internal/formathost — the background Upstream outside a mirror pass (Q-REPO-272). Implemented by WP13.
+// BackgroundUpstream returns a discover.Upstream for one job run of one remote repository: the egress, credential, background
+// share (R-REPO-055) and throttling (R-REPO-054) rules of a pass, without a pass, its fence or its window. Document and Artifact
+// behave as for a pass.
+func (h *Host) BackgroundUpstream(ctx context.Context, repo RepoRef) (discover.Upstream, error)
+
+// internal/formats/untrusted (Q-ARCH-382) — bounded readers, implemented by WP1.
+func NewAr(r io.ReaderAt, size int64, lim Limits) (*ArReader, error) // members in order, names, sizes; Next/Open per member
+func NewXZReader(r io.Reader, lim Limits) (io.Reader, error)         // decompressed-byte cap, fails instead of cutting
+func NewZstdReader(r io.Reader, lim Limits) (io.Reader, error)
+
+// internal/openpgp (leaf, Q-ARCH-383) — the only importer of the OpenPGP module, implemented by WP2.
+type Key struct{ /* an opened secret key */ }
+type Certificate struct{ Fingerprint string; Algorithm uint8; Created, BoundSince time.Time /* … */ }
+// BoundSince is the creation time of the earliest valid binding self-signature (Q-DEB-40); Key carries the same two times.
+// Generate makes an EdDSALegacy (algorithm 22) key over Ed25519, version 4, created at created (the caller passes the
+// PostgreSQL time minus one hour, Q-DEB-30), with its binding self-signature made at the same time (Config.Time), so BoundSince
+// equals Created; it never makes algorithm 27.
+func Generate(uid string, created time.Time) (secretArmored, publicArmored []byte, fingerprint string, err error)
+func ParseSecret(armored, passphrase []byte, now time.Time, lim Limits) (*Key, error)  // import rules of R-DEB-015
+func ParseCertificates(armored []byte, now time.Time, lim Limits) ([]Certificate, error) // deb.upstreamKeys (R-DEB-020)
+func ClearSign(text []byte, keys []*Key, at time.Time) ([]byte, error)                 // InRelease; at ≥ max(Created, BoundSince) + 1 s of each key
+func DetachSign(data []byte, keys []*Key, at time.Time) ([]byte, error)                 // Release.gpg, armored
+func VerifyClear(msg []byte, certs []Certificate, now time.Time, lim Limits) (text []byte, signer string, err error)
+func VerifyDetached(data, sig []byte, certs []Certificate, now time.Time, lim Limits) (signer string, err error)
+func ArmorCertificates(certs ...Certificate) []byte                                     // signing-key.asc
+
+// internal/repository — the creation hook seam (Q-REPO-273). The repository service runs the hooks registered for a format
+// inside the transaction that creates a repository of that format; the composition root binds the Debian one (WP2).
+func RegisterCreateHook(format string, fn func(ctx context.Context, tx meta.Tx, repo RepoRef, class string) error)
+```
+
+The data port (`internal/formats/deb/store.go`) is one interface that embeds a group interface per package, each in a file of its
+own: `store_local.go`, `store_keys.go`, `store_build.go`, `store_remote.go`, `store_mirror.go`, `store_virtual.go`, `store_view.go`,
+`store_journal.go`. WP0 writes all of them and freezes them; a change after WP0 goes through the architecture reviewer. Value types
+live in the leaf `internal/formats/deb/rows`. The implementation in `internal/formatdata/deb` composes one stub per group, each in
+the file of the package that replaces it:
+
+| Group | Methods (names indicative) | Interface file (WP0) | Implementation file | Owner |
+|---|---|---|---|---|
+| Local writes and reads | `RecordUpload`, `SetCoordinates` (returns removed coordinates for the journal), `Removed`, `Restored`, `Binary` | `store_local.go` | `local_store.go` | WP3 |
+| Keys | `CreateFirstKey` (creation hook), `PublicCertificates`, `Keys`, `CreateNext`, `Promote`, `RetireNext`, `ConfirmWithheld`, `Reinstate` | `store_keys.go` | `keys_store.go` | WP2 |
+| Builds and state | `Suites`, `WaitPublished`, `GenerationInputs`, `RecordGeneration` | `store_build.go` | `build_store.go` | WP4 |
+| Remote | `RecordRelease` (anti-rollback decision in `OnFill`), `Release`, `EntryDigest`, `ServesName`, `EnqueueParse`, `EnsureParsed`, `ClearVerifiedBy` | `store_remote.go` | `remote_store.go` | WP6 |
+| Mirror | `MirrorNames`, `MirrorEntries` | `store_mirror.go` | `mirror_store.go` | WP7 |
+| Virtual | `VirtualInputs`, `RecordCheck` | `store_virtual.go` | `virtual_store.go` | WP8 |
+| View | `Describe`, `Stored`, `Find`, `Withheld` | `store_view.go` | `view_store.go` | WP3 |
+| Journal | `Withhold`, `Reinstate`, `RemoveCoordinatesByJournal` (keys: `WithholdKey`, `PromoteByJournal` in the keys group) | `store_journal.go` | `journal_store.go` | WP3 |
+
+### 2.3 Schema (`internal/meta/postgres/migrations`, new and therefore editable until merged)
+
+- `00070_deb.sql`: `deb_suites`, `deb_binaries`, `deb_coordinates`, `deb_generations`, `deb_tombstones` exactly as R-DEB-008;
+  `deb_suites.change_seq` and `built_seq` registered with `meta.RegisterRevisionColumn`; export class `data`.
+- `00071_deb_signing_keys.sql`: `deb_signing_keys` as R-DEB-015 (states `primary`, `next`, `withheld`, `retired`; the fingerprint
+  unique in every state; `key_created`, `bound_since`); `private_key` registered in the sealed-column registry of `internal/secrets` (row key
+  `id`); export class `data`.
+- `00072_deb_remote.sql`: `deb_remote_releases` (with `document = 'absent'` and `floor_date`), `deb_remote_indexes`,
+  `deb_remote_entries` as R-DEB-023; export class `data`, and
+  the three tables in the list a restore without remote caches empties (R-BAK-008).
+- The registrations live in `internal/formatdata/deb/tables_deb.go` (WP0).
+- **Queries: one file per package**, so that sqlc writes one output file per package and parallel packages never regenerate the
+  same file (`models.go` changes only with these migrations, which WP0 owns): `queries/deb_keys.sql` (WP2), `deb_local.sql` (WP3),
+  `deb_build.sql` (WP4), `deb_remote.sql` (WP6), `deb_mirror.sql` (WP7), `deb_virtual.sql` (WP8). Each package creates its own
+  file. WP0 alone adds the `deb_local` and `deb_remote` facts to the item lookup statement (R-ARCH-027).
+
+### 2.4 Configuration, API and registrations
+
+- Configuration keys (R-ARCH-020, `internal/config`): `deb.index_delay` (2s, **1s**–60s), `deb.virtual_index_interval` (60s,
+  10s–1h), `deb.by_hash_keep` (1h, 10m–7d), `deb.index_wait_max` (30s, 1s–120s).
+- OpenAPI (`api/openapi.yaml`): `DebSettings` (members of R-DEB-008 with their classes), `DebMirrorSettings` (R-DEB-024), the `deb`
+  member of the repository document with the read-only `upstreamKeyFingerprints`; the operations `GET`/`POST …/deb/signing-keys`,
+  `POST …/deb/signing-keys/promote`, `DELETE …/deb/signing-keys/{fingerprint}`, `POST …/deb/signing-keys/{fingerprint}/reinstate`,
+  `PUT …/deb/coordinates`, `GET …/deb/index` (`waitFor`), and `POST …/reindex` (R-REPO-016); the per-class enums follow the registry
+  (`TestR_ARCH_010_PerClassFormatEnums`); `make generate` for the Go and TypeScript clients.
+- The format's settings schema `internal/formats/deb/settings.schema.json` (defaults of R-DEB-008 and R-DEB-024; `upstreamKeys` at
+  most 256 KiB).
+- Job kinds registered in `internal/formatdata/deb/jobs.go` (WP0) with handlers that call functions of their owners' files:
+  `deb-index` (queue `index`, `coalesce`, key `index:<repository id>`; `RunIndexJob` in `build.go`, WP4), `deb-remote-parse` (queue
+  `index`, `coalesce` per repository, directory and index path, parsing the hash the stored release names when it runs; in
+  `remote_parse.go`, WP6), the task `deb-index-refresh` (queue `maintenance`, every minute, `exclusive`;
+  `refresh.go`, WP4, which only enqueues and calls the hooks that `refresh_remote.go` (WP6) and `refresh_virtual.go` (WP8)
+  register).
+- Journal events registered (journal flag, handlers later): `deb.package.deleted`, `deb.coordinates.removed`,
+  `deb.signing_key.promoted`, `deb.signing_key.retired`; the part `debUpstreamKeysRemoved` of `repository.narrowed` (handler WP6);
+  the other events of R-DEB-033 in the audit registry.
+- `go.mod`: `github.com/ProtonMail/go-crypto` (v1.5.2 or newer) with the module it requires, `github.com/cloudflare/circl` (v1.6.3
+  or newer), and `github.com/ulikunitz/xz` (v0.5.17 or newer) — **three new modules** (Q-DEB-24), each pinned once, imported by the
+  skeletons of `internal/openpgp` and `untrusted` so that `go mod tidy` keeps them. Licences: the OpenPGP module and `xz` BSD,
+  `circl` v1.6.3 BSD-3-Clause (verified by the review).
+- Chart: no new route (`/api` already goes to `packages`) and no new value.
+
+### 2.5 Skeleton of the format (files and their owners afterwards)
+
+| File | Content in WP0 | Owner afterwards |
+|---|---|---|
+| `internal/formats/deb/format.go` | the Descriptor of R-DEB-001, `Classes` assembled from the classes registered by `class_*.go` files | WP0 (frozen) |
+| `internal/formats/deb/routes.go` | every route of R-DEB-003; a handler is looked up by route name in a registry the `handlers_*.go` files fill; an unregistered route answers 501 `deb_not_implemented` | WP0 (frozen) |
+| `internal/formats/deb/paths.go` | the layout, `Classify` complete with its unit tests (flat directories by index file name, the flat root), the canonical path | WP0 (frozen) |
+| `internal/formats/deb/errors.go` | `WriteError` per R-DEB-005 with every code | WP0 (frozen) |
+| `internal/formats/deb/store*.go` | the port interfaces of 2.2 | WP0 (frozen) |
+| `internal/formats/deb/class_local.go` | registers the local class | WP3 |
+| `internal/formats/deb/class_remote.go`, `class_virtual.go` | not created by WP0 | WP6, WP8 create them |
+| `internal/formatdata/deb/{port.go,tables_deb.go,jobs.go}` | the composed port, the table registrations, the job kinds | WP0 (frozen) |
+| `internal/formatdata/deb/{local_store,view_store,journal_store}.go` | stubs | WP3 |
+| `internal/formatdata/deb/keys_store.go` | stub | WP2 |
+| `internal/formatdata/deb/{build_store,build,refresh}.go` | stubs | WP4 |
+| `internal/formatdata/deb/{remote_store,remote_parse}.go` | stubs | WP6 |
+| `internal/formatdata/deb/mirror_store.go`, `virtual_store.go` | stubs | WP7, WP8 |
+| `internal/items/publish.go` | the `Publisher` port, a stub | WP4 |
+| `internal/formathost/background_upstream.go` | the constructor, a stub | WP13 |
+| `internal/formats/untrusted/{ar,xz,zstd}.go` | the readers' signatures, stubs | WP1 |
+| `internal/openpgp/openpgp.go` | the API above, stubs | WP2 |
+| `internal/repository/create_hooks.go` | the seam and its call in the creation transaction | WP0 (frozen); WP2 binds the Debian hook in the composition root |
+
+Registered in `internal/formats/all/all.go`; the archtest layer table gains the leaves `internal/formats/deb/{control,debfile,
+version,index,rows}` and `internal/openpgp`; the conformance kit is green.
+
+### 2.6 Spec edits of WP0 (same change)
+
+R-ARCH-008 Go block (`NameServer`, `NameQuery`, `RemoteCaps.Names`, `ServeDebLocal`, `ServeDebRemote`, `ServeDebRemoteFacts`) and
+its stale pointer for setup templates (R-API-030, not R-API-033), `internal/formats/testdata/contract.txt`, the layer table,
+Q-ARCH-381 and Q-ARCH-383; R-REPO-003 and R-REPO-009 with Q-REPO-273; R-STOR-003 with Q-STOR-180 (a virtual repository of a format
+with a job-built index holds its generated items) and the publication port with Q-STOR-182; decisions.md ADR-170 to ADR-172 and
+the rows of Q-DEB-1 to Q-DEB-43.
+
+**Tests of WP0:** the contract spec test, the surface test, `TestR_ARCH_010_*` (kit with the local class, enums), `Classify`'s
+table, the migration test (export classes, the sealed column, the revision columns, no blob reference without its triggers),
+`make generate-check`, the lint.
+
+## 3 · Work packages after WP0
+
+Every package lists: owner subagent type, requirement IDs, owned files (disjoint across packages; shared skeleton files as in
+2.5), what it depends on, and whether it needs the integration stack (shared `trove-it-*`, never `integration-down/up`) or the kind
+cluster (one agent at a time).
+
+| WP | Subject | Agent | Requirements | Owned files | Depends on | Stack | kind |
+|---|---|---|---|---|---|---|---|
+| WP1 | Package-file and deb822 libraries | `voltagent-lang:golang-pro` | R-DEB-002, R-DEB-007 (parsing), R-DEB-034 (bounds) | `internal/formats/untrusted/{ar,xz,zstd}.go` and tests, `internal/formats/deb/control/` (deb822 parser and writer, fuzz targets), `internal/formats/deb/debfile/` (archive to normalized paragraph), `internal/formats/deb/version/` (grammars, dpkg order) | WP0 | no | no |
+| WP2 | OpenPGP, signing keys, rotation, key journal | `voltagent-infra:security-engineer` + `voltagent-lang:golang-pro` | R-DEB-015, R-DEB-016 (signer), R-DEB-017, R-DEB-018 (local, virtual), R-DEB-020 (verifier library), R-DEB-032 (key replay) | `internal/openpgp/`, `internal/formatdata/deb/{keys_store.go,keys.go,keys_journal.go}`, `internal/api/v1/deb_keys.go`, `queries/deb_keys.sql`, the Debian creation hook's binding in the composition root | WP0 | yes | no |
+| WP3 | Local class: upload, rows, coordinates (with the journal of removals), deletion, serve check, view, setup and guide (local) | `voltagent-lang:golang-pro` + `voltagent-core-dev:backend-developer` | R-DEB-001, R-DEB-004, R-DEB-005, R-DEB-006 to R-DEB-009, R-DEB-013, R-DEB-029 (local), R-DEB-030, R-DEB-032 (deletion and coordinate replay, reinstate) | `internal/formats/deb/{class_local,handlers_local,handlers_upload,hooks,inspect,serve,view,setup_local,guide_local}.go`, `internal/formatdata/deb/{local_store,view_store,journal_store,journal_replay,reinstate}.go`, `internal/api/v1/deb_coordinates.go`, `trove admin deb reinstate`, `queries/deb_local.sql` | WP0, WP1 | yes | no |
+| WP4 | Index builder and publication port (both classes), retention, index state, reindex, the coalesce change | `voltagent-lang:golang-pro` + `voltagent-data-ai:postgres-pro` | R-DEB-010, R-DEB-011, R-DEB-012, R-DEB-014, R-DEB-032 (restore fix-up), R-REPO-016 (endpoint), Q-ARCH-384, Q-STOR-182 | `internal/items/publish.go` (port, both classes, quota exemption), `internal/formats/deb/index/{packages,release}.go` (renderers, pure), `internal/formatdata/deb/{build_store,build,generations,retention,state,refresh}.go`, `internal/api/v1/deb_index.go`, `internal/api/v1/reindex.go`, `internal/jobs/queue.go` and `queries/jobs.sql` (an earlier run time moves a waiting job; a reindex upgrades a waiting automatic job), `queries/deb_build.sql`, the restore fix-up registration | WP0, WP1 (writer), WP2 (signer); its renderers start on fixture rows in wave 1 | yes | no |
+| WP13 | Background fetches | `voltagent-lang:golang-pro` | Q-REPO-272; `Artifact` per oci.md if OCI WP10 has not landed it | `internal/formathost/background_upstream.go`; `internal/formathost/mirror_host.go` (`Artifact`) only when OCI WP10 is not building it | WP0 | yes | no |
+| WP5 | Counting stub archive | `voltagent-qa-sec:test-automator` | R-DEB-035 (stub) | `test/debstub/` (new, with `debgen/`, the generator of installable `.deb` files that integration and e2e uploads use too), Makefile `deb-stub-image` and `DEB_STUB_IMAGE`, `deploy/dev/debstub.yaml` | WP0 (names only) | no | no |
+| WP6 | Remote class | `voltagent-lang:golang-pro` | R-DEB-018 (remote), R-DEB-019 to R-DEB-023, R-DEB-029 (remote), R-DEB-032 (`debUpstreamKeysRemoved` replay), R-REPO-048 through `NameServer`, Q-ARCH-385, Q-REPO-274 | `internal/formats/deb/{class_remote,handlers_remote,remote,remote_gate,remote_names,setup_remote,guide_remote}.go`, `internal/formatdata/deb/{remote_store,remote_parse,housekeeping,refresh_remote}.go`, the shadowing check's use of `NameServer`, `internal/repository/validate_deb.go` (keys, member and mirror refusals, clearing `verified_by`), the `debUpstreamKeysRemoved` part in `internal/repository/narrowed.go` and its replay, the dispatcher's uncleaned flat root (`internal/api/dispatch/`), `queries/deb_remote.sql` | WP0, WP1, WP2 (verifier), WP5, WP13 | yes | no |
+| WP7 | Mirror | `voltagent-lang:golang-pro` | R-DEB-024, Mirror discovery; R-REPO-050 to R-REPO-052 edits | `internal/formats/deb/mirror*.go`, `internal/formatdata/deb/mirror_store.go`, `internal/repository/validate_deb_mirror.go`, `queries/deb_mirror.sql`, `test/integration/mirror/deb_test.go`; shared with T-16 WP10 if not yet on main: `internal/mirror/policy.go` (`SelectItems`), the generic `<format>.mirror` rule | WP5, WP6, WP13 | yes | no |
+| WP8 | Virtual class | `voltagent-lang:golang-pro` | R-DEB-018 (virtual), R-DEB-025 to R-DEB-028, R-DEB-029 (virtual); R-STOR-018/028 edits | `internal/formats/deb/{class_virtual,handlers_virtual,virtual_gate,setup_virtual,guide_virtual}.go`, `internal/formats/deb/index/merge.go` (streaming merge), `internal/formatdata/deb/{virtual_store,virtual_build,refresh_virtual}.go`, `internal/items/publish_virtual.go` (the virtual repository's acceptance of generated items, the summary), `queries/deb_virtual.sql` | WP3, WP4, WP6, WP13 | yes | no |
+| WP9 | Integration tests, conformance, read budget | `voltagent-qa-sec:test-automator` | R-DEB-035 (integration), R-ARCH-027 rows, `TestR_AUTHZ_007_DebActionMap`, crafted inputs | `test/integration/deb/` (new), `test/integration/querybudget/` Debian rows, the kit's crafted inputs for the format, the Makefile integration area `deb`, the CI integration leg | WP3, WP4 (local rows), WP6 (remote rows), WP8 (virtual rows) | yes | no |
+| WP10 | e2e harness and CI | `voltagent-qa-sec:test-automator` + `voltagent-infra:kubernetes-specialist` + `voltagent-infra:devops-engineer` | R-DEB-035 (e2e), R-DEB-031, R-DEB-017 (rotation row on three images), R-REPO-058/059 for Debian | `test/e2e/deb_*_test.go`, `test/e2e/aptclients/` (pins and their check), Makefile pins `E2E_APTCLIENTS_*` (digests of `debian:13`, `debian:12`, `ubuntu:24.04`, `ubuntu:22.04`), `deploy/dev/apt-clients.yaml`, `deploy/dev/values-*.yaml` additions, `test/e2e/mirror_*` additions, `.github/workflows/release.yml` (set `deb`, closing-run legs), `.github/workflows/performance.yml` (`deb-long`) | WP3 to WP8, WP5 | — | **yes** |
+| WP11 | UI | `voltagent-lang:angular-architect` | R-DEB-029 (snippets), R-DEB-030, R-DEB-014 (state), R-DEB-015, R-DEB-017, R-DEB-032 (key panel with withheld keys) | `web/src/app/features/setup/clients.ts` (`deb`: `apt`), `web/src/app/shared/format-icon.ts`, the repository settings' `deb` section, the signing key panel (confirm, reinstate), the index state panel (member failure reasons), the package detail (architectures, coordinates), i18n units, specs, a browser journey step | WP0 (OpenAPI), WP2 (key API), WP3 (view) | no | journey only (WP10's turn) |
+| WP12 | Documentation | `voltagent-dev-exp:documentation-engineer` | all (docs) | README (naming tables: `/api/deb/<p>/<k>/` routes, `deb.*` settings and properties, `deb.*` configuration keys, job kinds, events, metrics, the `/etc/apt` file names of the snippets; TL;DR row for APT), `docs/developer/deb.md` (new), `docs/developer/{README,formats,e2e,build-and-test}.md` rows, `docs/security/deb-signing.md` (key custody, rotation, the withheld state; links H-620, H-621, H-622, H-627, H-629) and `docs/security/deb-remote.md` (verification, re-signing; links H-623, H-625, H-626, H-628, H-630), `docs/manual` user and admin pages for APT, FULL.md row (closing), coverage regenerated | WP3 to WP10 as they land | no | no |
+
+Notes per package:
+
+- **WP1** is pure and leaf: no I/O besides the readers it is given. Fuzz targets for the deb822 parser and the `ar` reader (kit
+  `fuzz.go`); crafted inputs of R-DEB-034 as unit tests; the dpkg order against a table of pairs written in the test. `ulikunitz/xz`
+  is only ever read through the bounded reader (CVE-2021-29482).
+- **WP2** spec edits: architecture R-ARCH-021 (the sealed column of keys in its examples), R-REPO-009 (creation hook). Tests: the
+  generated key's algorithm octet 22, version 4, no expiry, creation one hour back, a binding self-signature whose time equals
+  the key's creation (`bound_since` = `key_created`, Q-DEB-40); `BoundSince` of an imported key whose only self-signature is
+  fresh, and the build's wait until a signature can follow it; import rules (2048-bit RSA, algorithm 27, an
+  expiry, a future creation, a fingerprint known in any state); sealing (`v1:` prefix); no private key in an answer or a log line;
+  the key operations with and without `manage`; promotion and next-key retirement (private key erased, journal entries
+  `deb.signing_key.promoted` and `deb.signing_key.retired`); the replay: promoted with the new key present (new primary, old
+  withheld, sealed key kept) and absent (old withheld, no primary), retired (withheld), confirm and reinstate; signatures verified by
+  the module, and in WP10 by `gpgv` and `sqv`.
+- **WP3** spec edits: authorization R-AUTHZ-007 (the per-format notes name the Debian table), storage R-STOR-018 (409 for a
+  generated item). Its control normalization is reviewed by the security auditor and attacked by the penetration tester (index
+  injection). The local guide and setup templates are its; WP6 and WP8 add their classes' sections in their own files.
+- **WP4** builds the publication port and the snapshot publication on it: blobs first, then one transaction that upserts every
+  by-hash item of the generation, removes what retention gives up, and holds the monotonic condition; `modified_at` = `Date`; the
+  `Date` and signature-time rules of Q-DEB-30 with the wait instead of running ahead; the fault-injection test between blob writes
+  and commit; the integration asserts of R-DEB-010 and R-DEB-016 on times; retention only inside the job; the `waitFor` read; the
+  R-REPO-016 endpoint (405 for formats without a job-built index; a reindex upgrades a waiting automatic job); the coalesce change
+  of the job queue (Q-ARCH-384) with tests of its own. Spec edits: architecture R-ARCH-012 (the format as the first job-built index,
+  its delay bound), R-ARCH-016 (Q-ARCH-384), backup R-BAK-022 (the fix-up), storage (Q-STOR-182).
+- **WP13** builds the `Upstream` that a job run of one remote repository gets outside a pass (egress, credentials, background share,
+  throttling, no fence, no window), and `Artifact` when OCI WP10 has not; spec edit R-REPO-055 (the background share also covers
+  these runs, Q-REPO-272). It is in wave 1 because WP6, WP7 and WP8 depend on it.
+- **WP5** generates everything in code: `.deb` files that `dpkg` installs (an `ar` archive with `control.tar.gz` and `data.tar.gz`
+  holding one script), indexes, releases signed with EdDSALegacy keys from fixed seeds whose creation lies an hour back, the by-hash
+  tree, pdiffs, the flat directory and the flat root, the large index; the switches of R-DEB-035; a control API like
+  `test/nugetstub`'s. The stub signs with the OpenPGP module directly, not through `internal/openpgp`, so trove's verifier is tested
+  against an independent signer.
+- **WP6** spec edits: R-REPO-003, R-REPO-048 (Q-REPO-270, the virtual repository's scope), R-REPO-061 and Q-REPO-246
+  (`debUpstreamKeysRemoved`, Q-REPO-274), architecture R-ARCH-005 and Q-ARCH-42 (the flat root, Q-ARCH-385), R-ARCH-027 (a plain
+  index path of a remote costs two statements), R-ARCH-032 (the parsed release map cache), backup R-BAK-008 (the remote rows). Its
+  parse job (`coalesce`, reading the hash of the stored release when it runs) re-parses on every new release through WP13's
+  `Upstream`; the `absent` record of a suite the upstream lacks; the shadowing check settled only on stored facts (Q-DEB-41); the
+  re-verification of releases from their bytes after a key change, revalidation without validators, and `floor_date`
+  (Q-DEB-42). Tests against the stub only.
+- **WP7** spec edits: R-REPO-050 (Debian can mirror; `deb.mirror` kept like the patterns), R-REPO-051 (versions counted per version,
+  if T-16 WP10 has not written it), R-REPO-052 (the Debian upstream). The lister runs the parse of its indexes in the pass through the
+  data port instead of waiting for the job, and uses only verified, unexpired releases.
+- **WP8** spec edits: R-REPO-019, R-REPO-020 and R-ARCH-015 (Q-REPO-271: one stored merged index per suite, no `rev_seq` check, the
+  gate, no partial merge published), R-AUTHZ-009 (the gate for the format), storage R-STOR-028. The member-release rules of
+  R-DEB-025 (verified by a current key, unexpired, not rolled back), the recorded member `Date` dropped on an upstream identity
+  change and when the member leaves (Q-DEB-43), the earliest `Valid-Until` carried over, members without a suite contributing
+  nothing; the merge streams in member order with a hash set; the bound of R-DEB-026 is tested with
+  `compression: ["xz"]` (the xz writer's speed is not measured yet).
+- **WP9** holds every integration criterion of debian.md at its tier, named `TestR_DEB_0NN_…`; the action map one test per row; the
+  read budget rows; Valkey stopped; three replicas pinned per request where a criterion says so; the time asserts of Q-DEB-30 (one
+  cluster shares one clock, so e2e cannot show those failures).
+- **WP10** sets: `deb` (per change, `scatter` profile, three `packages` replicas, two workers): the four images through `deb-local`,
+  `debian` (`pullThrough`), `debian-mirror` (after a pass, the stub stopped) and `apt`; anonymous read; a wrong keyring that must fail;
+  the rotation table on Debian 13, Ubuntu 24.04 and Ubuntu 22.04; the flat root on Ubuntu 24.04. `deb-long` (nightly and dispatch):
+  the delay bounds under load (local, and virtual with xz), the drain of the worker running a virtual build. `mirror` gains a Debian
+  pass on two workers while clients install; `mirror-long` the drain during a Debian pass. Closing run: `deb` with Valkey stopped;
+  the read-only check against `https://deb.debian.org/debian/`. APT runs with `--error-on=any`, CA trust through
+  `Acquire::https::CAInfo`, credentials in `auth.conf.d`, never `trusted=yes`.
+
+## 4 · Order and parallel waves
+
+```text
+WP0 ──┬─ WP1 ──┬────────── WP3 ──┬──────────────┐
+      ├─ WP2 ──┼─ WP4 ───────────┤              │
+      ├─ WP13 ─┤                 ├─ WP8 ────────┼─ WP9 ── WP10 (kind) ── WP12 (closing docs)
+      └─ WP5 ──┴─ WP6 ──┬────────┘              │
+                        └─ WP7 ─────────────────┘
+                 WP11 after WP2 and WP3 (parallel to WP6–WP8)
+```
+
+- Wave 1 (after WP0): WP1, WP2, WP5 and WP13 in parallel (disjoint files); WP4's pure renderers (`index/packages.go`,
+  `index/release.go`) may start on fixture rows.
+- Wave 2: WP3 (after WP1), WP4 (after WP1 and WP2), WP6 (after WP1, WP2, WP5 and WP13).
+- Wave 3: WP7 (after WP6 and WP13), WP8 (after WP3, WP4, WP6 and WP13), WP11 (after WP2 and WP3), WP9's local rows.
+- Wave 4: WP9's remote and virtual rows, WP10 on kind (the only agent using it), the verifier on kind; WP12 closes.
+- Every package writes the docs of its mechanism in its own change (rule: documentation in the same change); WP12's own pass covers
+  README, the manual, the security pages and FULL.md.
+- Findings of section 8 of promt.md run beside these waves with an agent each (rule 10); nothing here waits for them.
+
+## 5 · Checks (separate agents, promt.md section 10 step 3)
+
+- `voltagent-qa-sec:architect-reviewer` on WP0 (contract, the ports, ADR-170 to ADR-172, schema, generated items in virtual
+  repositories, the creation hook, the file ownership of 2.5) before wave 1 starts; again on the seams of WP4 (publication port,
+  coalesce change), WP6 (`NameServer` in the virtual scope, the release pair, the flat root) and WP8 (merge, member-release rules).
+- `voltagent-qa-sec:code-reviewer` on every package's diff.
+- `voltagent-qa-sec:security-auditor` on WP2 (key custody, sealing, import, rotation, the replay that withholds), WP3 (control
+  normalization, index injection, immutability, the coordinate journal), WP4 (times, retention), WP6 (verification, anti-rollback,
+  key validity, upstream paths, unverified fills, the key-removal journal) and WP8 (re-signing only verified, fresh, not rolled-back
+  member releases, the gate); `voltagent-qa-sec:penetration-tester` on WP1 (the `ar` reader and the deb822 parser), WP3 (crafted
+  `.deb` uploads) and WP6 (crafted releases, signatures, far-future dates and `Packages` from the stub).
+- A verifier that runs the real clients against the chart on kind (WP10's sets) with APT's verification on, and reads every failure
+  back to a builder.
+
+## 6 · Exit criteria and their evidence
+
+| Criterion | Evidence |
+|---|---|
+| Every R-DEB acceptance criterion at its tier | test names `TestR_DEB_0NN_…`, coverage regenerated |
+| `apt-get update` and `apt-get install` in Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04 through local, remote (both modes) and virtual repositories, signatures verified on the client, a wrong keyring refused | e2e set `deb` in Test and Release of the closing commit |
+| The rotation table of R-DEB-017 on `sqv` and `gpgv` 2.2 | e2e rotation row on Debian 13, Ubuntu 24.04 and Ubuntu 22.04 |
+| `sqv` reads the module's EdDSALegacy signatures (verified by the review's re-check; kept proven per change) | the Debian 13 rows of the set `deb` |
+| A "new key only" client on `sqv` verifies an imported key whose only self-signature is fresh | the extra Debian 13 rotation run (R-DEB-017, Q-DEB-40) |
+| Release dates and signature times trail the database clock; keys are older than their signatures | the integration asserts of R-DEB-010 and R-DEB-016 |
+| The delay bounds of R-DEB-010 and R-DEB-026 (with xz) under load; a drain during a virtual build | `deb-long` in HA and Performance (nightly), dispatched on the closing commit |
+| A mirror pass on n replicas; a drain during a pass | e2e `mirror` (Debian rows) per change; `mirror-long` nightly |
+| Valkey stopped; the read-only check against the Debian archive | closing run legs |
+| The read budget rows | `TestR_ARCH_027_ADownloadCostsOneStatement` Debian rows |
+| After a restore: a deleted package withheld, a removed coordinate and a removed upstream key removed again, a promoted key primary with the old one withheld and its sealed key kept | the restore drill (R-BAK-029) and WP2's and WP3's replay tests |
+| White-label scan empty, no attribution | scan output, `git log` check |
+
+## 7 · Open points for the development agent
+
+- **Order with T-16.** T-16's WP0 is on main; `Artifact`, `SelectItems` and the `<format>.mirror` rule go with whichever of OCI
+  WP10 and APT WP13/WP7 lands first (section 0).
+- **Three new Go modules** (Q-DEB-24): the OpenPGP module, `cloudflare/circl` which it requires, and `ulikunitz/xz`; pinned once in
+  `go.mod`, picked up by Renovate; no tool pin changes; all BSD-licensed (verified).
+- **The creation hook** (Q-REPO-273) is a new seam of the repository service, not of the format contract; WP0 declares it, WP2 binds
+  it. If the architecture review prefers a lazy first key (the first build creates it), the deviation is recorded on debian.md and
+  `signing-key.asc` answers 404 until the first build.
+- **The coalesce change** (Q-ARCH-384) touches the shared job queue (`internal/jobs/queue.go`, `queries/jobs.sql`); WP4 owns it in
+  this run, and any other package that needs the queue changed in parallel coordinates through the development agent.
+- **The closing run reaches `deb.debian.org`** and fetches Debian's archive key from `ftp-master.debian.org` (checked against a
+  fingerprint pinned in the test), anonymously, at most 30 upstream requests.
+- **Architectures of the kind node.** The owner's local cluster runs `arm64`, CI `amd64`; the stub serves both and the client images
+  are pinned by the digest of their multi-architecture index.
+- **The owner's installation** needs nothing beyond the release: no chart value, no Secret (keys are generated in the database).
+- **Unverified client behaviour** that a package proves (debian.md, "Client and library behaviour"): pdiff publication on the
+  Debian archive (WP6), the xz writer's speed (WP8), the exact clock thresholds of R-DEB-010 (derived, not measured).
+
+## 8 · The review of 2026-11-08 and where each finding went
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | Signature times break Debian 13 clients | Q-DEB-30: `Date` and signature time = PostgreSQL time − 60 s, at least previous + 1 s, the build waits instead of running ahead; key creation = PostgreSQL time − 1 h; imports created in the future refused; `deb.index_delay` ≥ 1 s; integration asserts (R-DEB-010, R-DEB-015, R-DEB-016) |
+| 2 | Ed25519 key type ambiguous; algorithm 27 unreadable by GnuPG | Q-DEB-10 revised: EdDSALegacy (22) over Ed25519, v4; 27 and v6 refused; unit test on the algorithm; "deterministic" and the subpacket layout dropped (R-DEB-015, R-DEB-016) |
+| 3 | The replay erases private keys | Q-DEB-31, Q-DEB-22 revised: state `withheld`, sealed key kept, confirm or reinstate; `deb.signing_key.promoted` journaled so the replay promotes a restored next key; CHECK adjusted (R-DEB-015, R-DEB-032, H-629) |
+| 4 | A virtual repository re-signs unverified, withdrawn, expired or rolled-back upstream content | Q-DEB-32: member releases only when verified by a current key, unexpired and not older than the last merged; key removals clear `verified_by`; earliest `Valid-Until` carried over; the mirror pass the same (R-DEB-020, R-DEB-024, R-DEB-025, R-DEB-026, H-624, H-630) |
+| 5 | No publication port | WP0 declares `items.Publisher`; WP4 owns it for both classes, WP8 adds the virtual rule (2.2, Q-STOR-182, ADR-170) |
+| 6 | By-hash removal races builds | Q-DEB-33: removals only inside the `deb-index` job; the commit upserts every by-hash item of its generation (R-DEB-010, R-DEB-012, R-DEB-021) |
+| 7 | Coalesce semantics differ from the spec | Q-ARCH-384: an earlier run time moves the waiting job; a reindex upgrades a waiting automatic build; WP4 changes the job queue (R-DEB-010, R-DEB-014) |
+| 8 | R-REPO-020 / R-ARCH-015 MUSTs broken silently | Q-REPO-271 records the exemption for a job-built merged index (Changes to other pages; WP8) |
+| 9 | pdiffs keep parsed rows stale | Q-DEB-36: a new release re-parses the changed indexes through the background path; the stub serves pdiffs; H-625 corrected (R-DEB-023) |
+| 10 | `NameServer` answers from whatever is parsed | Q-DEB-37: `NameQuery` with the virtual repository's scope; unparsed scope undetermined with the parse enqueued; virtual builds parse what they merge; the `contrib` test (R-DEB-023, R-DEB-026) |
+| 11 | Trust narrowings not journaled | Q-DEB-34: `debUpstreamKeysRemoved` in `repository.narrowed` (Q-REPO-274) and `deb.coordinates.removed`, replayed fail-closed (R-DEB-009, R-DEB-020, R-DEB-032) |
+| 12 | A retired key can come back through import | Fingerprint unique in every state; keys with an expiry or a future creation refused (R-DEB-015) |
+| 13 | Upstream keys checked only at signature time | Q-DEB-35: valid now and at signing, created before the signature, signature time ≤ now + 10 min (R-DEB-020) |
+| 14 | Anti-rollback can freeze a remote | Q-DEB-35: `Date` more than 10 min ahead refused; anti-rollback only between verified releases (R-DEB-019) |
+| 15 | Owned files overlap | Section 2.5: explicit file lists, per-class registration files, per-group port and stub files, one query file per package |
+| 16 | WP8 depends on `Artifact` | WP13 (background fetches, wave 1) with the `BackgroundUpstream` contract declared by WP0; WP6, WP7, WP8 depend on it |
+| 17 | 64 KiB / 16 certificates refuse Debian's keyring | 256 KiB and 32 certificates; test with Debian 13's keyring (R-DEB-008, R-DEB-020, R-DEB-034) |
+| 18 | Flat remotes misclassified; `/./` redirected | Classify flat index files by name; Q-DEB-39 and Q-ARCH-385: the flat root reaches the format uncleaned; e2e on Ubuntu 24.04 (R-DEB-003, R-DEB-021) |
+| 19 | `Hash` armor header rule too strict | Checked only when present (R-DEB-019, R-DEB-034, Q-DEB-35) |
+| 20 | Merge order conflicts with streaming | Q-DEB-38: member order with a bounded hash set (R-DEB-011, R-DEB-025) |
+| 21 | Rotation not tested on gpgv 2.2 | Rotation row on Ubuntu 22.04 too (R-DEB-017, R-DEB-035, Q-DEB-27) |
+| 22 | Error table incomplete | R-DEB-005 lists every code |
+| 23 | Stale 304 within one second | `modified_at` of every generated item = the `Release` `Date` (R-DEB-010, Q-STOR-182) |
+| 24 | Module accounting | Three modules with versions and licences; the xz advisory and the bounded reader; WP8's bound test with xz (Q-DEB-24) |
+| 25 | Migration numbers | 00070 to 00072 (2.3) |
+| 26 | Offline mirror misses `dep11` and `cnf` | H-628 (Mirror discovery) |
+| 27 | A member without a suite fails the build | Contributes nothing; no failure (R-DEB-025, R-DEB-026) |
+
+The re-check of the revision (1cbf0b22) found all 27 resolved and six further points:
+
+| # | Finding | Change |
+|---|---|---|
+| N1 | `sqv` refuses a data signature older than every binding self-signature, even when the key is older (verified) | Q-DEB-40: the generated key's self-signature carries its creation time; `bound_since` recorded per key; signatures wait for max(creation, `bound_since`) + 1 s; WP2 unit test on the self-signature time; the Debian 13 rotation run with an imported key whose only self-signature is fresh (R-DEB-015 to R-DEB-017) |
+| N2 | "Not served" vacuously true for a suite the remote never fetched | Q-DEB-41: every suite of V's scope must be settled (stored release with parsed indexes, or a PostgreSQL record `absent`); otherwise undetermined with fetch and parse enqueued; acceptance case (R-DEB-019, R-DEB-023) |
+| N3 | `deb-remote-parse` as `exclusive` loses a trigger during a run | `coalesce` per index path, parsing the hash the stored release names when it runs (R-DEB-023, Q-DEB-36) |
+| N4 | Clearing `verified_by`: a 304 and an older release signed by a remaining key | Q-DEB-42: re-verification from stored bytes by the remote's job, revalidation without validators, a 304 never verifies; `floor_date` as the rollback floor for any release verified once; H-630 states the window (R-DEB-019, R-DEB-020) |
+| N5 | The recorded member `Date` has no reset | Q-DEB-43: dropped on the member's upstream identity change and when it leaves; a reindex keeps it; remove and re-add to accept an older release (R-DEB-025) |
+| N6 | Troubleshooting for trailing client clocks | R-DEB-010 and the guide (R-DEB-029): `sqv` clients from about 60 s ("created after the --not-after date … is not signed"), `gpgv` clients from about 70 s ("not valid yet"), derived from the verified limits |
+
+Also from the re-check, recorded as verified on debian.md: `sqv` and `gpgv` read the module's algorithm-22 signatures (single,
+co-signed, detached) on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04; `circl` v1.6.3 is BSD-3-Clause.

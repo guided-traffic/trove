@@ -20,10 +20,10 @@ regenerated.
 | **Implemented** | **15.6%** (350 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (394 of 394) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 64.2% (330 of 514) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 34.6% (750 of 2,167) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 35.7% (773 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 730 on 17 pages (545 MVP, 179 P1, 6 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 154 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 765 on 18 pages (545 MVP, 179 P1, 41 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 162 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
 **What the owner constraints of 2026-10-28 changed.** The tables were regenerated on 2026-10-29,
@@ -53,10 +53,10 @@ see [Honesty notes](#honesty-notes).
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 394 | 394 | 0 | 100% | 394 | 280 |
 | **P1** | 514 | 330 | 184 | 64.2% | 68 | 61 |
-| **P2** | 885 | 26 | 859 | 2.9% | 12 | 9 |
-| **Later** | 374 | 0 | 374 | 0% | 0 | 0 |
+| **P2** | 885 | 48 | 837 | 5.4% | 12 | 9 |
+| **Later** | 374 | 1 | 373 | 0.3% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 750 | 1,489 | 33.5% | 474 | 350 |
+| **Total** | 2,239 | 773 | 1,466 | 34.5% | 474 | 350 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -97,7 +97,7 @@ Each page name links to that page's section of the checklist.
 | [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 9 | 5 |
 | [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond) | 34 | 0 | 5 | 26 | 3 | 0 | 2 | 32 |
 
-Per-format pages (38 pages, 782 features, 152 specified):
+Per-format pages (38 pages, 782 features, 175 specified):
 
 <details>
 <summary>38 format pages</summary>
@@ -124,7 +124,7 @@ Per-format pages (38 pages, 782 features, 152 specified):
 | [Conan (C/C++) format](checklist.md#conan-cc-format-pkg-conan) | 14 | 0 | 0 | 13 | 1 | 0 | 0 | 14 |
 | [Conda package format](checklist.md#conda-package-format-pkg-conda) | 15 | 0 | 0 | 15 | 0 | 0 | 0 | 15 |
 | [CRAN package format](checklist.md#cran-package-format-pkg-cran) | 16 | 0 | 0 | 16 | 0 | 0 | 0 | 16 |
-| [Debian package format](checklist.md#debian-package-format-pkg-deb) | 28 | 0 | 0 | 27 | 1 | 0 | 0 | 28 |
+| [Debian package format](checklist.md#debian-package-format-pkg-deb) | 28 | 0 | 0 | 27 | 1 | 0 | 23 | 5 |
 | [Git LFS format](checklist.md#git-lfs-format-pkg-lfs) | 9 | 0 | 0 | 9 | 0 | 0 | 0 | 9 |
 | [Gradle, Ivy, sbt and Eclipse P2 formats](checklist.md#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm) | 24 | 0 | 4 | 19 | 1 | 0 | 0 | 24 |
 | [Hex package format (Elixir and Erlang)](checklist.md#hex-package-format-elixir-and-erlang-pkg-hex) | 18 | 0 | 0 | 18 | 0 | 0 | 0 | 18 |

@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 491 of 730 spec requirements are implemented: a passing test names them and no
+**Status.** 491 of 765 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 750 specified (350 of them implemented), 1,489 open.
-730 spec requirements: 576 cover catalog features, 154 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 773 specified (350 of them implemented), 1,466 open.
+765 spec requirements: 603 cover catalog features, 162 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -67,7 +67,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Conan (C/C++) format](#conan-cc-format-pkg-conan) | `PKG-CONAN` | 14 | – | 0 | 14 | 0 |
 | [Conda package format](#conda-package-format-pkg-conda) | `PKG-CONDA` | 15 | – | 0 | 15 | 0 |
 | [CRAN package format](#cran-package-format-pkg-cran) | `PKG-CRAN` | 16 | – | 0 | 16 | 0 |
-| [Debian package format](#debian-package-format-pkg-deb) | `PKG-DEB` | 28 | – | 0 | 28 | 0 |
+| [Debian package format](#debian-package-format-pkg-deb) | `PKG-DEB` | 28 | – | 23 | 5 | 0 |
 | [Git LFS format](#git-lfs-format-pkg-lfs) | `PKG-LFS` | 9 | – | 0 | 9 | 0 |
 | [Gradle, Ivy, sbt and Eclipse P2 formats](#gradle-ivy-sbt-and-eclipse-p2-formats-pkg-jvm) | `PKG-JVM` | 24 | – | 0 | 24 | 0 |
 | [Hex package format (Elixir and Erlang)](#hex-package-format-elixir-and-erlang-pkg-hex) | `PKG-HEX` | 18 | – | 0 | 18 | 0 |
@@ -2404,40 +2404,40 @@ Catalog page: [formats/cran.md](../features/formats/cran.md) · specified by pri
 
 ## Debian package format (PKG-DEB)
 
-Catalog page: [formats/debian.md](../features/formats/debian.md) · specified by priority: P2 0 of 27 · Later 0 of 1
+Catalog page: [formats/debian.md](../features/formats/debian.md) · specified by priority: P2 22 of 27 · Later 1 of 1
 
 <details>
-<summary>28 features: 0 specified, 28 open, 0 implemented</summary>
+<summary>28 features: 23 specified, 5 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| PKG-DEB-001 | Debian repositories in all three repository classes | P2 | open | – |
-| PKG-DEB-002 | Automatic layout and package coordinates | P2 | open | – |
-| PKG-DEB-003 | Legacy trivial (flat) layout | Later | open | – |
-| PKG-DEB-004 | Deploy a binary package with its coordinates | P2 | open | – |
-| PKG-DEB-005 | Several coordinate sets for one package | P2 | open | – |
-| PKG-DEB-006 | Architecture-independent packages | P2 | open | – |
+| PKG-DEB-001 | Debian repositories in all three repository classes | P2 | specified | [R-DEB-001](../spec/formats/debian.md) |
+| PKG-DEB-002 | Automatic layout and package coordinates | P2 | specified | [R-DEB-002](../spec/formats/debian.md), [R-DEB-003](../spec/formats/debian.md), [R-DEB-008](../spec/formats/debian.md) |
+| PKG-DEB-003 | Legacy trivial (flat) layout | Later | specified | [R-DEB-021](../spec/formats/debian.md) |
+| PKG-DEB-004 | Deploy a binary package with its coordinates | P2 | specified | [R-DEB-006](../spec/formats/debian.md) |
+| PKG-DEB-005 | Several coordinate sets for one package | P2 | specified | [R-DEB-006](../spec/formats/debian.md), [R-DEB-009](../spec/formats/debian.md) |
+| PKG-DEB-006 | Architecture-independent packages | P2 | specified | [R-DEB-009](../spec/formats/debian.md), [R-DEB-011](../spec/formats/debian.md), [R-DEB-013](../spec/formats/debian.md) |
 | PKG-DEB-007 | Source packages | P2 | open | – |
-| PKG-DEB-008 | Automatic index calculation for local repositories | P2 | open | – |
-| PKG-DEB-009 | Package metadata validation and index status | P2 | open | – |
-| PKG-DEB-010 | Package metadata as searchable properties | P2 | open | – |
-| PKG-DEB-011 | Index compression formats | P2 | open | – |
+| PKG-DEB-008 | Automatic index calculation for local repositories | P2 | specified | [R-DEB-010](../spec/formats/debian.md) |
+| PKG-DEB-009 | Package metadata validation and index status | P2 | specified | [R-DEB-007](../spec/formats/debian.md) |
+| PKG-DEB-010 | Package metadata as searchable properties | P2 | specified | [R-DEB-007](../spec/formats/debian.md), [R-DEB-030](../spec/formats/debian.md) |
+| PKG-DEB-011 | Index compression formats | P2 | specified | [R-DEB-011](../spec/formats/debian.md) |
 | PKG-DEB-012 | Debug-symbol package indexing | P2 | open | – |
-| PKG-DEB-013 | Acquire-by-hash | P2 | open | – |
-| PKG-DEB-014 | MD5 checksums in the Packages index | P2 | open | – |
-| PKG-DEB-015 | Origin and Label of the Release file | P2 | open | – |
-| PKG-DEB-016 | Recalculate Debian metadata | P2 | open | – |
-| PKG-DEB-017 | Release signing with GPG | P2 | open | – |
-| PKG-DEB-018 | Signing keys per repository and key rotation | P2 | open | – |
-| PKG-DEB-019 | Instance-wide default GPG key | P2 | open | – |
-| PKG-DEB-020 | Public key for client trust | P2 | open | – |
-| PKG-DEB-021 | Remote Debian repositories | P2 | open | – |
-| PKG-DEB-022 | Coordinate calculation for cached remote packages | P2 | open | – |
-| PKG-DEB-023 | Virtual Debian repositories | P2 | open | – |
+| PKG-DEB-013 | Acquire-by-hash | P2 | specified | [R-DEB-003](../spec/formats/debian.md), [R-DEB-012](../spec/formats/debian.md), [R-DEB-021](../spec/formats/debian.md) |
+| PKG-DEB-014 | MD5 checksums in the Packages index | P2 | specified | [R-DEB-011](../spec/formats/debian.md) |
+| PKG-DEB-015 | Origin and Label of the Release file | P2 | specified | [R-DEB-011](../spec/formats/debian.md) |
+| PKG-DEB-016 | Recalculate Debian metadata | P2 | specified | [R-DEB-014](../spec/formats/debian.md) |
+| PKG-DEB-017 | Release signing with GPG | P2 | specified | [R-DEB-016](../spec/formats/debian.md) |
+| PKG-DEB-018 | Signing keys per repository and key rotation | P2 | specified | [R-DEB-015](../spec/formats/debian.md), [R-DEB-017](../spec/formats/debian.md) |
+| PKG-DEB-019 | Instance-wide default GPG key | P2 | specified | [R-DEB-015](../spec/formats/debian.md) |
+| PKG-DEB-020 | Public key for client trust | P2 | specified | [R-DEB-018](../spec/formats/debian.md) |
+| PKG-DEB-021 | Remote Debian repositories | P2 | specified | [R-DEB-019](../spec/formats/debian.md), [R-DEB-020](../spec/formats/debian.md), [R-DEB-021](../spec/formats/debian.md), [R-DEB-022](../spec/formats/debian.md) |
+| PKG-DEB-022 | Coordinate calculation for cached remote packages | P2 | specified | [R-DEB-023](../spec/formats/debian.md) |
+| PKG-DEB-023 | Virtual Debian repositories | P2 | specified | [R-DEB-025](../spec/formats/debian.md), [R-DEB-026](../spec/formats/debian.md), [R-DEB-027](../spec/formats/debian.md), [R-DEB-028](../spec/formats/debian.md) |
 | PKG-DEB-024 | Create a Debian snapshot | P2 | open | – |
 | PKG-DEB-025 | Resolve and delete snapshots | P2 | open | – |
-| PKG-DEB-026 | APT source configuration | P2 | open | – |
-| PKG-DEB-027 | Authenticated APT access | P2 | open | – |
+| PKG-DEB-026 | APT source configuration | P2 | specified | [R-DEB-029](../spec/formats/debian.md) |
+| PKG-DEB-027 | Authenticated APT access | P2 | specified | [R-DEB-029](../spec/formats/debian.md) |
 | PKG-DEB-028 | Companion CLI integration for APT | P2 | open | – |
 
 </details>
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>154 requirements</summary>
+<summary>162 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3061,6 +3061,14 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-EP-018 (implemented) | Package metadata on an endpoint: filtering, URLs and cache keys | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-019 (implemented) | Cache-fill policy per endpoint | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-020 (implemented) | Exposure changes in the revocation journal | MVP | [endpoints.md](../spec/endpoints.md) |
+| R-DEB-004 | Permissions per operation | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-005 | Errors and response headers | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-024 | Mirror settings of a Debian remote | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-031 | Debian on n replicas, without Valkey and during a drain | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-032 | Debian data in backups and restores | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-033 | Audit events and metrics | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-034 | Limits for untrusted content | P2 | [formats/debian.md](../spec/formats/debian.md) |
+| R-DEB-035 | Test suites | P2 | [formats/debian.md](../spec/formats/debian.md) |
 | R-NPM-026 (implemented) | Versions removed upstream | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-044 (implemented) | npm audit events and metrics | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-046 | npm across replicas: no state between requests, Valkey degradation, drain | MVP | [formats/npm.md](../spec/formats/npm.md) |

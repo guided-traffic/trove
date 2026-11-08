@@ -56,12 +56,13 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	// bastion.md raised its features to MVP, the projects of R-AUTHZ-026 (IAM-051, IAM-052, IAM-057,
 	// UI-003, UI-050, UI-051) moved into the beta, and the mirror mode of phase 6b pulled the pull
 	// replication entries API-082 to API-085 forward (Q-REPO-143), and after formats/oci.md (R-OCI-001 to R-OCI-035) listed the
-	// entries of PKG-DOCKER-* and PKG-OCI-* that phase T-16 builds.
+	// entries of PKG-DOCKER-* and PKG-OCI-* that phase T-16 builds, and after formats/debian.md (R-DEB-…, phase T-17) listed
+	// its P2 entries and the Later entry PKG-DEB-003.
 	want := map[string][2]int{
 		prioMVP:   {394, 394},
 		prioP1:    {514, 330},
-		prioP2:    {885, 26},
-		prioLater: {374, 0},
+		prioP2:    {885, 48},
+		prioLater: {374, 1},
 		prioOut:   {72, 0},
 	}
 	t.Run("E0.8 catalog counts per priority", func(t *testing.T) {
@@ -82,11 +83,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 750 {
-			t.Errorf("listed entries: got %d, want 750", got)
+		if got := m.countSpecified(m.Features); got != 773 {
+			t.Errorf("listed entries: got %d, want 773", got)
 		}
-		if got := m.countOpen(m.Features); got != 1489 {
-			t.Errorf("not listed entries: got %d, want 1489", got)
+		if got := m.countOpen(m.Features); got != 1466 {
+			t.Errorf("not listed entries: got %d, want 1466", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {
@@ -94,8 +95,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 730 || count[prioMVP] != 545 || count[prioP1] != 179 || count[prioP2] != 6 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 730 (545, 179, 6)",
+		if len(m.Reqs) != 765 || count[prioMVP] != 545 || count[prioP1] != 179 || count[prioP2] != 41 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 765 (545, 179, 41)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})
