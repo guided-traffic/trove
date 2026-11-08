@@ -474,6 +474,31 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
 
 A `*mirror.RefusedError` keeps the engine's error as its cause: read it with `errors.As`, not a type assertion.
 
+### Background fetches outside a pass
+
+`Host.BackgroundUpstream(ctx, repo)` ([background_upstream.go](../../internal/formathost/background_upstream.go), Q-REPO-272) is for a job that fetches from a
+remote repository and is no pass: the Debian remote's index parse job (R-DEB-023), the virtual build's release fetch (R-DEB-026). It returns the
+`discover.Upstream` a lister reads in a pass, so a job and a pass share one vocabulary and one set of rules.
+
+- **Built from the pass's upstream.** `passUpstream` is built by `MirrorHost.newPassUpstream`, which `Upstream` and `BackgroundUpstream` both call; `Document`, `Artifact` (with `fillPath`,
+  the gate and the engine's fill), `Get` and `VersionBounds` are the pass's. The engine is `Options.Engine` of the host, which has to be a `MirrorEngine` (the composition root
+  hands in the `*proxy.Engine`); a host without one, or without `Options.Repos`, answers `not_implemented`. The repository is read by its id with `Repos.ByID`.
+- **What it keeps of a pass.** The egress and address policy, the redirect rules and the credential (the engine's `Get` and the client path of the gate), the background request
+  with its slot and pre-emption, `flight_role mirror` and the populate event of the system. The job's id reaches the upstream log record when the caller puts it in the context with
+  `formathost.WithJobID`. The ceiling is `proxy.BackgroundShare` of the repository's `maxConcurrentFetches` and `mirror.concurrency` at the time of the call.
+- **What it leaves.** No pass, no fence, no `mirror_state` row, no event. `ReportStored` finds no tally in the context, so what `Artifact` stores is counted by no pass. A document is
+  current only if it was validated after the upstream was created, as in a pass (`since`), so a run revalidates a stored document once.
+- **The window.** Every call goes through a `mirror.Window` of the run ([window.go](../../internal/mirror/window.go), Q-REPO-305, Q-ARCH-430): the pass's throttle
+  (R-REPO-054) without the pass. It starts at 1, grows up to the ceiling, halves on a rate-limit answer and waits the time the upstream named inside the call; a pre-emption is
+  repeated after `PreemptRetry` and a `*mirror.WaitError` after its `After`. A wait over `LongWait` ends the run: the call, and every later call, returns a
+  `*mirror.DeferredError{Until}` (`discover.AsRateLimited` still finds the answer under it); the job fails and its queue retries it. The wait is not stored, and
+  `trove_mirror_rate_limited_total` counts passes only.
+- **Errors** are those of the table above; the gate's refusal of an artifact (`gate_refused`) is returned as `*mirror.RefusedError`, not as found=false (only an upstream 404 is).
+
+Tests: [window_test.go](../../internal/mirror/window_test.go), [background_upstream_test.go](../../internal/formathost/background_upstream_test.go) and the integration test
+[test/integration/mirror/background_test.go](../../test/integration/mirror/background_test.go) (a pull-through remote with a credential, the counting npm stub, a format host of a
+`web` replica reached through `App.FormatHost`, which exists only with the `integration` tag).
+
 ### Tests
 
 - Unit: [slots_exchange_test.go](../../internal/proxy/slots_exchange_test.go) (the two parts of a hold: the share returns at the end of the exchange, the replica's slot at the end of the fetch, a fetch past its exchange is not pre-empted, the invariants of the counters), [preempt_test.go](../../internal/proxy/preempt_test.go) (pre-emption, the joined fetch, the replica limit, a waiting client, the yield with a fake clock, the signal, the

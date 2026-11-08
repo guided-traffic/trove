@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/registry"
+	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -43,4 +44,11 @@ func (a *App) RegistryEnforcer(name string) *registry.Enforcer {
 		}
 	}
 	return nil
+}
+
+// FormatHost returns the format host of this process, nil when it has none (a worker builds its own for its passes). Tests call the
+// host's background fetches (Host.BackgroundUpstream) through it.
+func (a *App) FormatHost() *formathost.Host {
+	h, _ := part[formatHostArea](a.parts).host.(*formathost.Host)
+	return h
 }

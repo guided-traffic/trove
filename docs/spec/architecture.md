@@ -9832,6 +9832,29 @@ wants the engine to see the per-version items before it reads.
 [discover.go](../../internal/mirror/discover/discover.go). Tests: `TestR_REPO_051_AVersionOfSeveralItemsIsStoredWholeAndASharedArtifactOnce`,
 `TestR_REPO_051_ThePlanOfAnImageReadsOnlyTheTagsTheEngineKeeps`, the integration tests of `test/integration/mirror/oci_test.go`.
 
+### Q-ARCH-430 · The throttle of a pass is exported as a window for runs outside a pass, and the background upstream is built from the pass's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Host.BackgroundUpstream` ([Q-REPO-272](repositories-and-proxy.md#q-repo-272--a-job-run-of-a-remote-repository-gets-an-upstream-outside-a-mirror-pass)) has to give a job the egress, credential, share and throttling rules of a pass. The
+first three live in the remote engine and in `passUpstream`; the throttle (R-REPO-054) was a type of the unexported pass.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Export the throttle as `mirror.Window` and wrap `passUpstream` in `backgroundUpstream` (chosen) | One implementation of the window; `Document`, `Artifact`, `Get` and `VersionBounds` are the pass's, the wrapper only sends them through `Window.Do` | No copy of the rules; the format sees the same `discover.Upstream` | `internal/mirror` exports one more type |
+| (b) Copy the window into `formathost` | No change in `internal/mirror` | Independent | Two windows that drift (the rules are R-REPO-054's) |
+| (c) Make a run a pass | Fence, state and window of a pass | Nothing new | A pass is a remote in mode mirror with a row in `mirror_state`; a job of a pull-through remote has none |
+
+**Choice:** (a).
+
+**Rationale:** `Window` writes no state and no event; the pass's `call` and `Window.Do` differ in what a rate-limit answer records and in what a long wait
+does (the pass defers its job, `Do` returns the error). The development agent would revisit it if the pass moved to `Window` as well, which removes the
+second loop. The composition root exposes the format host to the integration tests through `App.FormatHost` (built only with the `integration` tag).
+
+**Applied in the spec:** none beyond [Q-REPO-305](repositories-and-proxy.md#q-repo-305--a-run-outside-a-pass-has-a-window-of-its-own-and-ends-on-a-long-wait) on [repositories-and-proxy.md](repositories-and-proxy.md). Code:
+[window.go](../../internal/mirror/window.go), [background_upstream.go](../../internal/formathost/background_upstream.go), `newPassUpstream` in
+[mirror_host.go](../../internal/formathost/mirror_host.go).
+
 ## What this does not cover
 
 

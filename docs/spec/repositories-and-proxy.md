@@ -3601,6 +3601,10 @@ budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and cli
   the repository at a time; its window (R-REPO-054) never exceeds B. The client shares of R-REPO-040 are not reduced: every
   client-serving replica keeps `ceil(maxConcurrentFetches ÷ n)`. The cluster-wide total therefore stays within
   `maxConcurrentFetches + n − 1 + B`, and within `maxConcurrentFetches + n − 1` while clients press (below).
+- **Runs outside a pass** (Q-REPO-272, Q-REPO-305). The background fetches of a remote repository that no mirror pass runs - the parse job of a
+  Debian remote's indexes, the fetch of the release documents a virtual build merges - are background fetches in the sense of this requirement:
+  the same slots, the same pre-emption, the same ceiling `B`, the same flight rules and the same credential and egress rules as a pass's. They
+  have no pass, fence or window of the pass; each run has a window of its own below `B` (R-REPO-054).
 - **Slots.** A background fetch takes a fetch slot of the replica it runs on: the replica's `proxy.max_concurrent_fetches`
   and a per-repository background counter; it never queues: it waits outside the slots until one is free. It takes the
   cross-replica flight of R-REPO-026 like any fetch, so a client that asks for the same item joins it as a follower or a
@@ -7903,7 +7907,34 @@ background fetches builds it.
 
 **Rationale:** the development agent would revisit it if a job needed to move the circuit of a repository, which a pass's outcomes do not.
 
-**Applied in the spec:** R-REPO-055 (the background share also covers these runs; the Debian work package edits its text). Code:
+**Applied in the spec:** R-REPO-055 (the background share also covers these runs: the bullet "Runs outside a pass"), [Q-REPO-305](#q-repo-305--a-run-outside-a-pass-has-a-window-of-its-own-and-ends-on-a-long-wait). Code:
+[background_upstream.go](../../internal/formathost/background_upstream.go), [window.go](../../internal/mirror/window.go). Tests: the unit tests of both and
+`TestR_REPO_055_ABackgroundUpstreamFetchesAndStoresWithoutAPass` in [background_test.go](../../test/integration/mirror/background_test.go).
+
+### Q-REPO-305 · A run outside a pass has a window of its own and ends on a long wait
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the upstream of a job run outside a pass ([Q-REPO-272](#q-repo-272--a-job-run-of-a-remote-repository-gets-an-upstream-outside-a-mirror-pass))
+sends the same background requests as a pass, which the engine already holds to the slots and the ceiling `B` of R-REPO-055. What a pass adds on
+top is its window and its waits (R-REPO-054): it starts at 1, grows while the upstream answers, halves on a rate-limit answer and sends nothing
+during a wait. A job has no pass state to store a wait in, no job result to defer with, and a Debian index parse may send a request per index.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A window per run, the pass's throttle without the pass (chosen) | `mirror.Window`: starts at 1, ceiling `B`, waits as R-REPO-054 says inside the call; a wait over 300 s ends the run with a `*mirror.DeferredError` that carries the end of the wait | The same behaviour towards a rate-limiting upstream as a pass; no state to keep; the job retries at the given time | Two runs of one repository do not see each other's waits: the slots and `B` still bound them together |
+| (b) The engine's slots only | No window, no wait | Nothing to build | A rate-limit answer fails the job and its retry asks again at once |
+| (c) Store the wait in `mirror_state` | Runs and passes share `rate_limited_until` | One wait for everything | A repository that is no mirror has no row; a job would write the state of a pass it is not |
+
+**Choice:** (a).
+
+**Rationale:** the rules of R-REPO-054 are about not provoking an upstream, whoever sends the requests; the engine's slot cap alone does not slow a
+run down after an answer. The wait is not stored: the next run of the job starts with a window of 1, which is cautious, and the upstream answers
+again if it still limits. The development agent would revisit it if a repository with several runs at once were rate limited in practice, which
+points to the shared wait of (c). Not built: the metrics of R-REPO-057 (`trove_mirror_rate_limited_total`, the wait seconds) count the answers of
+a pass only; a run's answers appear in the upstream log with the job's id.
+
+**Applied in the spec:** R-REPO-055 (the bullet "Runs outside a pass"). Code: [window.go](../../internal/mirror/window.go),
 [background_upstream.go](../../internal/formathost/background_upstream.go).
 
 ### Q-REPO-273 · A format's data port adds rows in the transaction that creates its repository

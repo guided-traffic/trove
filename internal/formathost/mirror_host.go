@@ -130,12 +130,22 @@ func (m *MirrorHost) Upstream(repo repository.Repository, pass mirror.Pass) (dis
 	if err != nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "The repository is not a usable remote repository.", errs.WithCause(err))
 	}
+	return m.newPassUpstream(repo, rem, pass, lister.MirrorHosts)
+}
+
+// newPassUpstream builds the upstream of a pass, or of a background run (Host.BackgroundUpstream); hostsOf names the hosts besides
+// the upstream's that may be reached for the upstream URL (discover.Lister.MirrorHosts), nil for none.
+func (m *MirrorHost) newPassUpstream(repo repository.Repository, rem proxy.Remote, pass mirror.Pass, hostsOf func(*url.URL) []string) (*passUpstream, error) {
 	base, err := url.Parse(rem.Settings.URL)
 	if err != nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "The upstream URL of the repository does not parse.", errs.WithCause(err))
 	}
+	var hosts []string
+	if hostsOf != nil {
+		hosts = hostsOf(base)
+	}
 	return &passUpstream{
-		m: m, repo: repo, rem: rem, pass: pass, base: base, hosts: lister.MirrorHosts(base),
+		m: m, repo: repo, rem: rem, pass: pass, base: base, hosts: hosts,
 		settings: formatSettings(repo.Config, formats.ID(repo.Format)), since: time.Now(),
 	}, nil
 }

@@ -548,3 +548,36 @@ not built: they are WP2's next stage, after WP0 is on main).
   with another key.
 - Not done: the manifest `deploy/dev/debstub.yaml` is applied by no e2e step (like the other stubs); the stub has not been run in
   kind; the stub does not serve `Packages.xz`; `make deb-stub-image` was built and the container answered once.
+
+## WP13 as built (2026-11-08)
+
+Built on the base 654f926b, after the OCI mirror landed `Artifact` and `Bounded`; WP13 therefore built only the background upstream.
+
+**Built.** `Host.BackgroundUpstream(ctx, repo)` (`internal/formathost/background_upstream.go`) replaces the stub. It reads the repository by its id
+(`Options.Repos.ByID`), takes the remote engine from `Options.Engine` (a `MirrorEngine`; otherwise `not_implemented`, like a missing reader),
+builds the pass's own `passUpstream` through the shared `MirrorHost.newPassUpstream` (so the egress, credential, `Document`, `Artifact`,
+`Get` and `VersionBounds` of a pass are reused, not copied) and wraps it so that every call goes through a `mirror.Window`
+(`internal/mirror/window.go`: the pass's throttle without the pass, R-REPO-054) of the run, with the ceiling `proxy.BackgroundShare` (R-REPO-055).
+`formathost.WithJobID(ctx, id)` names the job in the upstream log. A wait longer than `mirror.LongWait` ends the run: the call returns
+`*mirror.DeferredError{Until}` (`discover.AsRateLimited` finds the answer under it), and so does every later call of that upstream.
+Decisions: Q-REPO-305 (a window of its own per run), Q-ARCH-430 (the throttle exported as `Window`); the spec edits are R-REPO-055 (the bullet
+"Runs outside a pass") and the applied lines of Q-REPO-272. Developer page: [mirror.md](../developer/mirror.md#background-fetches-outside-a-pass).
+The integration build gained `App.FormatHost()` (`internal/app/endpoint_access_integration.go`).
+
+**What the callers find.**
+
+- WP6 and WP8 call `Host.BackgroundUpstream` once per job run and keep the result for the run; a second run starts a fresh window at 1.
+- The job handler passes its job id with `formathost.WithJobID`; the host a worker's format is bound with is the mirror host builder's, whose
+  engine is the `*proxy.Engine`, so the call works in a worker as in a client-serving process.
+- A `*mirror.DeferredError` is not retried by the window: the handler returns it, the queue's retry decides when (`Until` says how long the
+  upstream asked to wait). A pre-emption is repeated inside the call after 5 s, a circuit that is open after its `After`.
+- `Artifact` returns a gate's refusal (the version is not listed by the document, a mark, a removal) as `*mirror.RefusedError{gate_refused}`
+  and found=false only for an upstream 404; the Debian gate of R-DEB-022 should answer a path the release does not list the same way.
+- The rate-limit metrics of R-REPO-057 count passes only; a run's answers show in the upstream log with the job's id. Not a requirement of any
+  acceptance criterion; recorded in Q-REPO-305.
+
+**Not done or not verified.** No Debian caller exists yet (WP6, WP8), so the contract is proved with the npm format: a pull-through remote with a bearer
+credential, the counting npm stub, the format host of a `web` replica. The address policy of the egress rules is shown by the refusal of a host the
+repository was not given; the refusal of a loopback address outside `allowCidrs` is the engine's and is covered by the proxy tests. The long wait is
+tested with a stub answer of one hour, not with a fake clock in the integration; the unit tests of `Window` use the fake clock. `docs/developer/deb.md`
+still calls the method declared; its owner updates the row with the remote class.
