@@ -263,6 +263,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
+- **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
+  cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
+  while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
+  the body of a slow publish arrives. Done when the cause is found: a transaction the publish really holds during the
+  body (a product defect), or an unrelated transaction of the shared stack the test counts (a test defect).
 - **F-103 · Two audit events of one repository update can sort in either order** (seen on CI, Test and Release
   42507255713, integration shard a). `TestCreateReadUpdate/R-REPO-011_…` expected `repository.updated` before
   `repository.narrowed` and read them the other way round; the events are listed by `occurred_at, id`. Suspected: both carry
