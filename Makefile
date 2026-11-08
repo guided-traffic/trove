@@ -266,6 +266,7 @@ versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, th
 	tools/sbom-generator/check-pins.sh || fail=1; \
 	node test/e2e/clients/check-pins.mjs "$(NODE_VERSION)" "$(E2E_CLIENTS_NODE_IMAGE)" "$(E2E_CLIENTS_CURL_VERSION)" "$(E2E_CLIENTS_JQ_VERSION)" || fail=1; \
 	node test/e2e/nugetclients/check-pins.mjs "$(E2E_NUGETCLIENTS_SDK_IMAGE)" "$(NUGETVECTORS_SDK_IMAGE)" "$(E2E_NUGETCLIENTS_MONO_VERSION)" "$(E2E_NUGETCLIENTS_NUGET_EXE_VERSION)" "$(E2E_NUGETCLIENTS_NUGET_EXE_SHA256)" "$(E2E_NUGETCLIENTS_JQ_VERSION)" "$(E2E_NUGETCLIENTS_SDK8_IMAGE)" "$(E2E_NUGETCLIENTS_SDK9_IMAGE)" || fail=1; \
+	node test/e2e/ociclients/check-pins.mjs "$(E2E_OCICLIENTS_DOCKER_IMAGE)" "$(E2E_OCICLIENTS_PODMAN_IMAGE)" || fail=1; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "versions ok: go $$(go env GOVERSION), node $(NODE_VERSION), sqlc, oapi-codegen match their pins"
 
@@ -488,7 +489,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|nuget-clients|nuget|nuget-closing|nuget-ha|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|vuln-pooler|mirror|mirror-long|upgrade|backup|release-smoke|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|drain-roles|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|ha-suite|nuget-clients|nuget|nuget-closing|nuget-ha|oci-clients|oci|oci-closing|oci-long|ci|ci-ha|bastion|bastion-long|vuln|vuln-long|vuln-pooler|mirror|mirror-long|upgrade|backup|release-smoke|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients
@@ -690,3 +691,11 @@ oci-conformance: oci-conformance-build ## OCI conformance suite (pull, push, con
 	  OCI_CONFORMANCE_BIN="$(CURDIR)/$(OCI_CONFORMANCE_DIR)/conformance.test" OCI_CONFORMANCE_OUT="$(CURDIR)/$(OCI_CONFORMANCE_DIR)" \
 	  go test -count=1 -tags 'integration ociconformance' -timeout 45m -run 'TestOCIConformance$$' -v ./test/integration/oci/
 # <<< T16 oci-conformance
+
+# >>> T16 oci-clients
+# The OCI clients images (R-OCI-035, Q-OCI-21: dockerd with Buildx and Podman in a privileged pod, test/e2e/ociclients,
+# docs/developer/e2e.md#the-oci-clients). Edit only between the markers.
+.PHONY: oci-clients-image
+oci-clients-image: ## Build the OCI clients images (the pinned dind image with the forwarder, the pinned Podman image) into the local Docker; OCI_CLIENTS_DOCKER_IMAGE and OCI_CLIENTS_PODMAN_IMAGE, default trove-e2e-ociclients-{docker,podman}:dev
+	test/e2e/ociclients/build.sh $(or $(OCI_CLIENTS_DOCKER_IMAGE),trove-e2e-ociclients-docker:dev) $(or $(OCI_CLIENTS_PODMAN_IMAGE),trove-e2e-ociclients-podman:dev)
+# <<< T16 oci-clients

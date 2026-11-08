@@ -181,6 +181,11 @@ release_values() {
   RELEASE_VALUES=(-f "$dir/values-dev.yaml" --set-json "networkPolicy.ingress.probeCIDRs=$probe_cidrs")
   [ "$EDGE_PORT" = "8080" ] || RELEASE_VALUES+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
     --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
+  # The endpoint of the Docker Engine mirror (R-OCI-029) is in the values of the working tree only: the copies of older releases that the
+  # upgrade tests install do not have it, and a baseUrl alone would make an endpoint without a port.
+  if [ "$EDGE_PORT" != "8080" ] && grep -q '^  ocimirror:' "$dir/values-dev.yaml"; then
+    RELEASE_VALUES+=(--set "endpoints.ocimirror.baseUrl=https://oci-mirror.trove.localhost:$EDGE_PORT")
+  fi
   if [ "$annotate" = 1 ]; then
     # The tag stays guidedtraffic/trove:dev while the image behind it changes, and kind load replaces the image on the nodes
     # without touching the pod spec, so helm would find nothing to roll. The image ID in a pod annotation of every role

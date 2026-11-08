@@ -71,6 +71,15 @@
 #                       CI: job e2e-mirror (a change to the mirror)
 #   e2e.sh mirror-long  the long scenario of R-REPO-058: `kubectl drain` of the node of the process that runs a pass of 300 packages
 #                       (nightly, dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01)
+#   e2e.sh oci          the OCI acceptance tests (every TestOCI... but TestOCIClosing... and TestOCILong...): the counting OCI test upstream and three
+#                       client pods, each with the Docker Engine (Buildx) and Podman in a privileged pod of the namespace trove-e2e-clients; the scatter
+#                       profile; login, push and pull through local, remote (pull-through and mirror), virtual and bound-host repositories, multi-platform
+#                       images, an image pull secret, the setup snippets; CI: job e2e-oci
+#   e2e.sh oci-closing  TestOCIClosing...: the additions of the run that closes the phase (CI: job e2e-oci, closing=true)
+#   e2e.sh oci-long     TestOCILong...: a push whose upload is cut by the drain of a packages pod (R-OCI-011, R-HA-052); nightly, dispatch, locally
+#   e2e.sh oci-clients  the smoke test of the OCI client pods (the pinned Docker Engine and Podman run, the CA is trusted, the registry answers);
+#                       builds the client images and starts the pods, which stay up
+#   e2e.sh oci-clients-down  removes the OCI client pods and their namespace
 #   e2e.sh backup       the backup and restore suite (R-BAK-029, E5.11, E5.12): a backup during a publishing, deleting and collecting load restored into
 #                       the namespace trove-restore, the drain and kill -9 of a backup and of a restore, the journal across a restore with E5.12's CI
 #                       bullets (the issuer double, TROVE_E2E_OIDCSTUB=1) (nightly, dispatch, locally)
@@ -92,6 +101,8 @@
 # TROVE_E2E_REUSE_CLIENTS=1 keeps client pods that are already running in the right number (a test under development).
 # The NuGet client pods (sets nuget*): TROVE_E2E_NUGET_CLIENTS_PODS, TROVE_E2E_NUGET_CLIENTS_TARGET and
 # TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_NUGETSTUB=1 deploys the counting NuGet test upstream.
+# The OCI client pods (sets oci*, mirror*): TROVE_E2E_OCI_CLIENTS_PODS (default 3), TROVE_E2E_OCI_CLIENTS_TARGET and
+# TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_OCISTUB=1 deploys the counting OCI test upstream.
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -183,13 +194,23 @@ case "$set_name" in
   # pooler overlay until the next `make dev-up`.
   vuln-pooler) run='^TestVulnPooler_'; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 TROVE_POOLER=1 ;;
   # <<< M4b vuln
+  # >>> T16 oci
+  # The OCI acceptance tests (R-OCI-035, docs/developer/e2e.md#the-oci-tests): the counting OCI test upstream, three client pods (the Docker Engine with
+  # Buildx and Podman in the namespace trove-e2e-clients, one per packages replica), the scatter profile. CI runs `oci` as the job e2e-oci on every change
+  # that touches the format or the registry root; the closing and nightly tests (TestOCIClosing..., TestOCILong...) are sets of their own.
+  oci-clients) run='^TestOCIClients$'; OCI_CLIENTS=1 ;;
+  oci-clients-down) OCI_CLIENTS=down ;;
+  oci) run='^TestOCI'; skip='^TestOCI(Closing|Long)'; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_OCISTUB=1 ;;
+  oci-closing) run='^TestOCIClosing'; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_OCISTUB=1 TROVE_E2E_OCI_CLOSING=1 ;;
+  oci-long) run='^TestOCILong'; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_OCISTUB=1 ;;
+  # <<< T16 oci
   # >>> M6b mirror
   # The remote full mirror (R-REPO-059, docs/developer/e2e.md#the-mirror-tests): the `mirror` profile (up.sh, values-mirror.yaml), the two counting
   # test upstreams and three client pods of each kind. `mirror` is the short scenarios (CI: job e2e-mirror on a change to the mirror);
   # `mirror-long` the drain of the process that runs a pass (nightly, on dispatch, locally: a red long leg is a finding, not a blocker,
   # owner 2026-11-01).
-  mirror) run='^TestMirror_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 ;;
-  mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  mirror) run='^TestMirror_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OCISTUB=1 ;;
+  mirror-long) run='^TestMirrorLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; OCI_CLIENTS=1; OCI_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_OCISTUB=1 ;;
   # <<< M6b mirror
   # >>> M6a upgrade
   # The upgrade tests (R-HA-020, R-HA-064, E6a.7, docs/developer/e2e.md#the-upgrade-tests): the release is removed, the database
@@ -325,6 +346,27 @@ if [ "${TROVE_E2E_NUGETSTUB:-0}" = "1" ]; then
   export TROVE_E2E_NUGETSTUB_HOST="nugetstub.$NS.svc" TROVE_E2E_NUGETSTUB_CONTENT_HOST="nugetstub-content.$NS.svc"
 fi
 # <<< M3 nuget-stub
+
+# >>> T16 oci-stub
+# ── the counting OCI test upstream ───────────────────────────────────────────
+# TROVE_E2E_OCISTUB=1 builds the image of test/ocistub (make oci-stub-image), loads it into kind and (re)starts the stub of
+# deploy/dev/ocistub.yaml: the Services ocistub.<ns>.svc (the registry), ocistub-auth.<ns>.svc (the token realm) and
+# ocistub-cdn.<ns>.svc (the blob CDN) on 443 in front of one pod, TLS from the dev CA, control token in Secret trove-ocistub. The tests read
+# TROVE_E2E_OCISTUB_HOST (the registry; the upstream URL of a remote repository is https://$TROVE_E2E_OCISTUB_HOST/) and
+# TROVE_E2E_OCISTUB_REALM_HOST and TROVE_E2E_OCISTUB_CDN_HOST (the two hosts a remote lists in its extraHosts, R-OCI-021). trove trusts the
+# dev CA for upstreams through proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here runs without the switch.
+if [ "${TROVE_E2E_OCISTUB:-0}" = "1" ]; then
+  log "building the OCI test upstream image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory oci-stub-image IMAGE_ARCH="$ARCH") >"$OUT/ocistub-image.log" 2>&1 || { tail -20 "$OUT/ocistub-image.log" >&2; die "OCI test upstream image build failed"; }
+  kind load docker-image trove-e2e-ocistub:dev --name "$CLUSTER" >"$OUT/ocistub-load.log" 2>&1 || { tail -20 "$OUT/ocistub-load.log" >&2; die "kind load of the OCI test upstream failed"; }
+  log "starting the OCI test upstream"
+  render "$DEV_DIR/ocistub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-ocistub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-ocistub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-ocistub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-ocistub >&2; die "the OCI test upstream did not become ready"; }
+  export TROVE_E2E_OCISTUB_HOST="ocistub.$NS.svc" TROVE_E2E_OCISTUB_REALM_HOST="ocistub-auth.$NS.svc" TROVE_E2E_OCISTUB_CDN_HOST="ocistub-cdn.$NS.svc"
+fi
+# <<< T16 oci-stub
 
 # >>> M4 oidc-stub
 # ── the GitLab-shaped OIDC issuer double ─────────────────────────────────────
@@ -552,6 +594,95 @@ if [ "${NUGET_CLIENTS:-}" = 1 ]; then
   export TROVE_E2E_NUGET_CLIENTS_POD_PREFIX="$NUGET_CLIENTS_PREFIX" TROVE_E2E_NUGET_CLIENTS_PODS="$NUGET_CLIENTS_COUNT"
 fi
 # <<< M3 nuget-clients
+
+# >>> T16 oci-clients
+# The client pods of the OCI acceptance tests (R-OCI-035, Q-OCI-21, docs/developer/e2e.md#the-oci-clients): the Docker Engine (dockerd, CLI, Buildx) and Podman
+# in one privileged pod each, in the namespace trove-e2e-clients (Pod Security level privileged, deploy/dev/oci-clients.yaml). Each pod's forwarder listens
+# on 127.0.0.1:<edge port> and relays to the in-cluster edge, so `localhost:<edge port>` is the registry host of the setup snippets and the certificate is
+# verified for `localhost`; the dev CA is mounted from a ConfigMap, never baked into the images. The tests run the clients through
+# `kubectl -n trove-e2e-clients exec -c docker|podman <pod> -- ...`.
+#
+# The Kubernetes pull row (a pod whose image comes from a trove repository) is pulled by the kubelet of the control-plane node, whose containerd
+# reaches neither the pod's forwarder nor the edge's host port. The node gets, once per run: a forwarder from 127.0.0.1:<edge port> to the edge's NodePort on the
+# node's own address, and the dev CA for that host in /etc/containerd/certs.d (hosts.toml; kind's containerd reads that directory, config_path). The
+# image reference of the row is localhost:<edge port>/..., the token realm of the registry is https://localhost:<edge port>/v2/_token, and both
+# resolve on the node to the forwarder.
+OCI_CLIENTS_NS="trove-e2e-clients"
+OCI_CLIENTS_LABEL="app.kubernetes.io/component=e2e-oci-client"
+OCI_CLIENTS_PREFIX="trove-e2e-oci-"
+OCI_CLIENTS_COUNT="${TROVE_E2E_OCI_CLIENTS_PODS:-${OCI_CLIENTS_DEFAULT_PODS:-1}}"
+OCI_DOCKER_IMAGE="trove-e2e-ociclients-docker:dev"
+OCI_PODMAN_IMAGE="trove-e2e-ociclients-podman:dev"
+
+oci_kc() { kubectl --context "$CTX" -n "$OCI_CLIENTS_NS" "$@"; }
+
+oci_clients_down() {
+  if k get namespace "$OCI_CLIENTS_NS" >/dev/null 2>&1; then
+    k delete namespace "$OCI_CLIENTS_NS" --ignore-not-found --wait=true >/dev/null
+  fi
+}
+
+# oci_node_setup puts the forwarder and the containerd host configuration on the control-plane node (see above).
+oci_node_setup() {
+  local node="${CLUSTER}-control-plane" node_ip host="localhost:$EDGE_PORT"
+  node_ip="$(docker inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$node")"
+  docker exec "$node" grep -q config_path /etc/containerd/config.toml \
+    || die "the containerd of $node has no registry config_path: the cluster was created before deploy/dev/kind.yaml set it; create it again (deploy/dev/down.sh, make dev-up)"
+  mkdir -p "$OUT/oci-node"
+  (cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -o "$OUT/oci-node/fwd" ./test/e2e/clients/fwd)
+  # the forwarder of an earlier run is replaced (its pid is in a file; the node image has no pkill)
+  docker exec "$node" sh -c 'if [ -s /run/trove-fwd.pid ]; then kill "$(cat /run/trove-fwd.pid)" 2>/dev/null || true; fi; rm -f /usr/local/bin/trove-fwd'
+  docker cp "$OUT/oci-node/fwd" "$node:/usr/local/bin/trove-fwd" >/dev/null
+  docker exec -d "$node" sh -c "echo \$\$ >/run/trove-fwd.pid; exec /usr/local/bin/trove-fwd -listen 127.0.0.1:$EDGE_PORT -to $node_ip:30443 >/var/log/trove-fwd.log 2>&1"
+  docker exec "$node" mkdir -p "/etc/containerd/certs.d/$host"
+  docker cp "$CA_FILE" "$node:/etc/containerd/certs.d/$host/ca.crt" >/dev/null
+  printf 'server = "https://%s"\n\n[host."https://%s"]\n  capabilities = ["pull", "resolve"]\n  ca = "/etc/containerd/certs.d/%s/ca.crt"\n' "$host" "$host" "$host" \
+    | docker exec -i "$node" sh -c "cat >'/etc/containerd/certs.d/$host/hosts.toml'"
+}
+
+# oci_render_pod <name> prints the manifest of one client pod with the variables of deploy/dev/oci-clients.yaml replaced.
+oci_render_pod() {
+  sed -e "s|\${POD}|$1|g" -e "s|\${DOCKER_IMAGE}|$OCI_DOCKER_IMAGE|g" -e "s|\${PODMAN_IMAGE}|$OCI_PODMAN_IMAGE|g" -e "s|\${EDGE_PORT}|$EDGE_PORT|g" \
+    -e "s|\${TARGET}|$OCI_TARGET|g" -e "s|\${REGISTRY_HOSTS}|localhost:$EDGE_PORT oci-mirror.trove.localhost:$EDGE_PORT|g" \
+    -e "s|\${ENGINE_MIRROR}|https://oci-mirror.trove.localhost:$EDGE_PORT|g" "$DEV_DIR/oci-clients.yaml"
+}
+
+oci_clients_up() {
+  if [ "${TROVE_E2E_REUSE_CLIENTS:-0}" = 1 ] && [ "$(oci_kc get pods -l "$OCI_CLIENTS_LABEL" --field-selector=status.phase=Running -o name 2>/dev/null | wc -l | tr -d ' ')" = "$OCI_CLIENTS_COUNT" ]; then
+    log "reusing the $OCI_CLIENTS_COUNT OCI client pod(s) (TROVE_E2E_REUSE_CLIENTS=1)"
+    oci_node_setup
+    return 0
+  fi
+  local i image
+  OCI_TARGET="${TROVE_E2E_OCI_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}"
+  [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
+  if [ "${TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
+    "$REPO_ROOT/test/e2e/ociclients/build.sh" "$OCI_DOCKER_IMAGE" "$OCI_PODMAN_IMAGE" >"$OUT/oci-clients-image.log" 2>&1 || { tail -20 "$OUT/oci-clients-image.log" >&2; die "OCI clients image build failed"; }
+  fi
+  # the pods run on the control-plane node only (nodeSelector in the manifest): one copy of the images, not one per node
+  for image in "$OCI_DOCKER_IMAGE" "$OCI_PODMAN_IMAGE"; do
+    kind load docker-image "$image" --name "$CLUSTER" --nodes "${CLUSTER}-control-plane" >>"$OUT/oci-clients-load.log" 2>&1 || { tail -20 "$OUT/oci-clients-load.log" >&2; die "kind load of $image failed"; }
+  done
+  oci_clients_down
+  # the first apply of the file creates the namespace (with the pod, which waits for the ConfigMap); the ConfigMap follows at once
+  oci_render_pod "${OCI_CLIENTS_PREFIX}0" | k apply -f - >/dev/null
+  oci_kc create configmap trove-e2e-oci-ca --from-file=ca.crt="$CA_FILE" >/dev/null
+  log "starting $OCI_CLIENTS_COUNT OCI client pod(s) forwarding localhost:$EDGE_PORT to $OCI_TARGET"
+  i=1
+  while [ "$i" -lt "$OCI_CLIENTS_COUNT" ]; do
+    oci_render_pod "${OCI_CLIENTS_PREFIX}${i}" | k apply -f - >/dev/null
+    i=$((i + 1))
+  done
+  oci_kc wait --for=condition=Ready pod -l "$OCI_CLIENTS_LABEL" --timeout=300s >/dev/null || { oci_kc describe pod -l "$OCI_CLIENTS_LABEL" >&2; die "the OCI client pods did not become ready"; }
+  oci_node_setup
+}
+
+if [ "${OCI_CLIENTS:-}" = down ]; then oci_clients_down; log "OCI client pods removed"; exit 0; fi
+if [ "${OCI_CLIENTS:-}" = 1 ]; then
+  oci_clients_up
+  export TROVE_E2E_OCI_CLIENTS_POD_PREFIX="$OCI_CLIENTS_PREFIX" TROVE_E2E_OCI_CLIENTS_PODS="$OCI_CLIENTS_COUNT" TROVE_E2E_OCI_CLIENTS_NAMESPACE="$OCI_CLIENTS_NS" TROVE_E2E_OCI_NODE="${CLUSTER}-control-plane"
+fi
+# <<< T16 oci-clients
 
 log "go test -tags e2e -run '$run' (report: .out/test-e2e.json, artifacts: $OUT)"
 cd "$REPO_ROOT"

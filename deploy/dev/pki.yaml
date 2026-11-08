@@ -12,6 +12,9 @@
 #                                  and trove-api-ep-customers.<ns>.svc (api pods)
 #   trove-customers-wildcard-tls   the endpoint's wildcard pair (extraSecrets), chosen by SNI
 #   trove-customers-edge-tls       the edge's certificate for the endpoint's host and its wildcard
+#   trove-ocimirror-tls            the endpoint `ocimirror` (values-dev.yaml endpoints.ocimirror, the bound host of the Docker Engine
+#                                  mirror, R-OCI-029): its host and the Service name the edge verifies, trove-ep-ocimirror.<ns>.svc
+#   trove-ocimirror-edge-tls       the edge's certificate for the endpoint's host
 #   <name>-tls          the Valkey operator's own Certificate for the Valkey CR (valkey.yaml, one for both tiers)
 #
 # The Issuer is namespaced in the release namespace, so a namespace other than `trove` needs the names below
@@ -196,6 +199,53 @@ spec:
   dnsNames:
     - packages.trove.localhost
     - "*.packages.trove.localhost"
+  ipAddresses:
+    - 127.0.0.1
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-ocimirror-tls
+spec:
+  secretName: trove-ocimirror-tls
+  commonName: oci-mirror.trove.localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - oci-mirror.trove.localhost
+    - trove-ep-ocimirror
+    - trove-ep-ocimirror.${NS}
+    - trove-ep-ocimirror.${NS}.svc
+    - trove-ep-ocimirror.${NS}.svc.cluster.local
+  issuerRef:
+    name: trove-dev-ca
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: trove-ocimirror-edge-tls
+spec:
+  secretName: trove-ocimirror-edge-tls
+  commonName: oci-mirror.trove.localhost
+  duration: 2160h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages: [digital signature, key encipherment, server auth]
+  dnsNames:
+    - oci-mirror.trove.localhost
   ipAddresses:
     - 127.0.0.1
   issuerRef:

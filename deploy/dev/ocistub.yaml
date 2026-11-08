@@ -3,7 +3,7 @@
 # hosts a large public registry has: ocistub is the registry (the /v2/ API), ocistub-auth the token realm (/token) and ocistub-cdn the
 # blob CDN (the registry redirects blob downloads there). The stub keeps the three apart by the Host header and names them in the
 # challenges and redirects.
-# It is applied by a wiring step of the e2e harness (deploy/dev/e2e.sh), never by up.sh; no step applies it yet.
+# It is applied by the wiring step of the e2e harness (deploy/dev/e2e.sh, marker T16 oci-stub, TROVE_E2E_OCISTUB=1), never by up.sh.
 # The image is built by `make oci-stub-image` and must be loaded into kind (tag trove-e2e-ocistub:dev), so the pull policy is
 # IfNotPresent.
 #

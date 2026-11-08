@@ -260,3 +260,27 @@ endpoints:
       tls:
         - secretName: trove-customers-edge-tls
           hosts: [packages.trove.localhost, "*.packages.trove.localhost"]
+  # The bound host of the Docker Engine mirror (R-OCI-029, R-EP-006, R-EP-007): oci-mirror.trove.localhost answers /v2/ as the root of
+  # the repository e2e/oci-engine-mirror, which the OCI e2e set creates (a binding to a repository that does not exist is no binding). A Docker Engine
+  # names the host in registry-mirrors and pulls without a login, so the endpoint admits anonymous requests; the repository grants
+  # `read` to anonymous only while a test needs it. The host resolves to the loopback address on every system that treats *.localhost
+  # that way, and in the OCI client pods through hostAliases (deploy/dev/oci-clients.yaml); the edge port follows TROVE_DEV_HTTP_PORT.
+  ocimirror:
+    port: 8444
+    baseUrl: https://oci-mirror.trove.localhost:8080
+    hosts: [oci-mirror.trove.localhost]
+    hostRoots:
+      oci-mirror.trove.localhost: e2e/oci-engine-mirror
+    surface: [packages]
+    auth: {tokenTypes: [pat, sat], boundTokensOnly: false, anonymous: true}
+    exposure: all
+    cacheFill: true                       # a pull through the mirror host fills the remote's cache (a further endpoint does not by default)
+    trustedProxies: ["10.244.0.0/24"]     # the same HAProxy pods as the default endpoint
+    tls:
+      existingSecret: trove-ocimirror-tls
+    ingress:
+      enabled: true
+      className: haproxy
+      tls:
+        - secretName: trove-ocimirror-edge-tls
+          hosts: [oci-mirror.trove.localhost]

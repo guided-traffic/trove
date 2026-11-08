@@ -1,0 +1,15 @@
+# The Docker client of the OCI acceptance suite (R-OCI-035, Q-OCI-21, docs/developer/e2e.md#the-oci-clients): the official
+# image with dockerd (the dind variant, which carries the CLI and Buildx) and the forwarder that lets the daemon use the
+# registry's base URL unchanged. It is a test image: never pushed, built by test/e2e/ociclients/build.sh, loaded into kind by
+# deploy/dev/e2e.sh and run by the pod of deploy/dev/oci-clients.yaml, which is privileged (dockerd needs it). Not baked in: the
+# dev CA (the pod mounts it; entrypoint-docker.sh puts it into /etc/docker/certs.d) and any credential.
+#
+#   DOCKER_IMAGE   E2E_OCICLIENTS_DOCKER_IMAGE of tools/versions.env (pinned by digest)
+#   --build-context fwd=<dir>   a directory with the static forwarder fwd-linux-<arch> (build.sh builds it)
+ARG DOCKER_IMAGE
+FROM ${DOCKER_IMAGE}
+ARG TARGETARCH
+COPY --from=fwd fwd-linux-${TARGETARCH} /usr/local/bin/fwd
+COPY entrypoint-docker.sh /usr/local/bin/trove-entrypoint.sh
+# The entrypoint of the image starts dockerd with a TCP listener when it is given no arguments; ours passes the arguments itself.
+ENTRYPOINT ["/usr/local/bin/trove-entrypoint.sh"]

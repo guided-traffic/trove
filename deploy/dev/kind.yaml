@@ -14,6 +14,13 @@ kubeadmConfigPatches:
   - |
     kind: KubeletConfiguration
     containerLogMaxSize: 200Mi
+# The nodes' containerd reads the registry host configuration of /etc/containerd/certs.d (hosts.toml, ca.crt): its default configuration has
+# no config_path. The Kubernetes pull row of the OCI e2e set (R-OCI-035, deploy/dev/e2e.sh marker T16 oci-clients) puts the dev CA there so
+# that the kubelet pulls an image from a trove repository with an image pull secret. An existing cluster has to be created again.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
     extraPortMappings:

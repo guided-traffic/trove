@@ -491,3 +491,18 @@ WP0 ──┬─ WP1 ─────────────┐
   steps in the `integration` job), `docs/decisions.md`, `docs/spec/formats/oci.md`, `docs/security/{oci-virtual,oci-content}.md`, `docs/developer/{oci,build-and-test,formats}.md`, `docs/projektplan/promt.md` (F-88 removed),
   `docs/coverage/`, and the test names of the packages F-88 names.
 
+
+## WP11 as built (the e2e sets on kind)
+
+- Built: `test/e2e/oci_*_test.go` (the harness, the rows, the closing and long tests), `test/e2e/ociclients/` (the two client images: the pinned dind image with the forwarder and the pinned Podman image;
+  the pins `E2E_OCICLIENTS_DOCKER_IMAGE` and `E2E_OCICLIENTS_PODMAN_IMAGE` in `tools/versions.env`, `check-pins.mjs` in `make versions-check`, `make oci-clients-image`), `deploy/dev/oci-clients.yaml` (the
+  namespace `trove-e2e-clients` with Pod Security `privileged`, the pod), the wiring in `deploy/dev/e2e.sh` (markers `T16 oci-stub`, `T16 oci-clients`: the counting stub of WP7, the client pods, the node setup of the
+  Kubernetes pull row; the sets `oci`, `oci-closing`, `oci-long`, `oci-clients`, and the OCI additions to `mirror` and `mirror-long`), `deploy/dev/values-dev.yaml` and `pki.yaml` (the endpoint `ocimirror`, the bound host of the Docker Engine
+  mirror), `deploy/dev/kind.yaml` (`config_path` of the nodes' containerd), `test/e2e/mirror_oci_test.go` and `mirror_long_oci_test.go`, the jobs `e2e-oci` of `release.yml` (leg `oci` per change that touches the registry,
+  `oci-closing` on a closing dispatch; `runs-on: large`) and `performance.yml` (leg `oci-long`, nightly), and the OCI additions of the scope of `e2e-mirror`. ADR-188, Q-OCI-200 to Q-OCI-203, H-750.
+- Q-OCI-21 held: the cluster admitted the namespace with Pod Security `privileged`; option (b) was not needed.
+- Found while building, none a defect of the product: Docker treats `localhost` as a registry that may be plain HTTP and reports the last failure (an `EOF`) of a refused login; BuildKit inside dockerd reads the system trust
+  and not `certs.d` (the dev CA is added to both); the kind node image's containerd has no `config_path`; `docker manifest push` writes the kind of list its members call for; a client that holds a layer does not pull it again, so the
+  tests that count what the upstream delivered empty the clients' stores first (`pruneClients`); the remote answers 404 `MANIFEST_UNKNOWN` for a name its upstream does not know (Q-OCI-202).
+- Not done: the six manifest `GET` requests at Docker Hub of the closing run are not counted (Q-OCI-203); the browser step of the package screen is the UI package's; no client of another version than the two pins.
+- The criteria of WP7 to WP10 that needed a client are the rows of `docs/developer/e2e.md#the-oci-tests`.

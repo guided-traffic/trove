@@ -205,6 +205,7 @@ checked every earlier decision against them:
 | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) | The OCI data port reads and removes for the deletion, the sweep and the replay | Decided by the development agent — owner review at the walkthrough |
 | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) | The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
+| [ADR-188](#adr-188--the-oci-e2e-clients-run-privileged-in-a-namespace-of-their-own-and-the-kubelet-row-is-served-by-a-forwarder-on-the-node) | The OCI e2e clients run privileged in a namespace of their own, and the kubelet row is served by a forwarder on the node | Decided by the development agent — owner review at the walkthrough |
 | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) | The OCI mirror stores through the host's artifact fill, and the engine counts versions | Decided by the development agent — owner review at the walkthrough |
 | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) | The OCI conformance suite and the protocol criteria run against replicas of the whole application | Decided by the development agent — owner review at the walkthrough |
 | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
@@ -6597,6 +6598,22 @@ the e2e rows name them. The deletion path of a virtual repository is covered by 
 
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-035, Q-OCI-210 to Q-OCI-214.
 
+### ADR-188 · The OCI e2e clients run privileged in a namespace of their own, and the kubelet row is served by a forwarder on the node
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The e2e tier of R-OCI-035 needs the real Docker Engine with Buildx and Podman against the chart on kind. dockerd needs a privileged container; the namespace `trove` enforces Pod Security `restricted`. The row that starts a Kubernetes pod from a trove repository is pulled by the node's containerd, which resolves neither the pod's forwarder nor the host port of the edge.
+
+**Decision.** The client pods (`trove-e2e-oci-<i>`, one container `docker` with the pinned dind image and one `podman`) live in the namespace `trove-e2e-clients` with Pod Security `privileged` and nothing else in it. Their forwarder (the tool of the npm and NuGet client pods) makes `localhost:<edge port>` the registry host, as the setup snippets print it. For the kubelet row the harness puts a forwarder and the dev CA with a `hosts.toml` on the control-plane node, and `deploy/dev/kind.yaml` sets `config_path` of the node's containerd. The Docker Engine mirror row uses the further endpoint `ocimirror` of the dev profile (a bound host, anonymous requests, cache fill).
+
+**Consequences.** A cluster created before this change has to be created again (`config_path`). The pods are a privilege footprint of the dev and CI clusters ([H-750](security/oci-registry.md#h-750--the-oci-client-pods-of-the-e2e-tier-are-privileged-and-the-dev-ca-is-added-to-a-nodes-containerd)). Both clients are pinned by digest in `tools/versions.env` and compared by the tests with the versions they run.
+
+**Alternatives considered.** The runner's Docker daemon (Q-OCI-21 (b): shared with kind, certificates in the host's `/etc/docker`); an image host the node resolves (Q-OCI-200 (b)); the bound host as a host of the default endpoint (Q-OCI-201 (b): the host check would answer `421` to the other suites).
+
+**Revisit condition:** the dev cluster's admission refuses the level `privileged`, or the dev cluster gets a registry host every node resolves.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-035, Q-OCI-21, Q-OCI-200, Q-OCI-201; [developer/e2e.md](developer/e2e.md#the-oci-clients).
+
 ### ADR-182 · The OCI mirror stores through the host's artifact fill, and the engine counts versions
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -7783,6 +7800,11 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-20](spec/formats/oci.md#q-oci-20--the-version-check-answers-401-to-a-caller-without-credentials) | What does the version check answer without credentials? | (a) 401 with the challenge | — |
 | [Q-OCI-21](spec/formats/oci.md#q-oci-21--the-real-clients-and-the-conformance-suite-in-the-test-tiers) | Which clients and suites test the registry? | (a) Docker with Buildx and Podman in a privileged client pod, the conformance suite v1.1.1 in the integration tier | — |
 | [Q-OCI-22](spec/formats/oci.md#q-oci-22--a-formats-mirror-settings-live-in-mirror-and-are-kept-like-the-patterns) | Where do a format's mirror settings live? | (a) The member `<format>.mirror`, kept from Owners like the patterns | — |
+| [Q-OCI-200](spec/formats/oci.md#q-oci-200--the-kubernetes-pull-row-reaches-the-registry-through-a-forwarder-on-the-node-and-a-host-configuration-of-the-nodes-containerd) | How does the kubelet of a kind node pull from the registry of the setup snippets? | (a) A forwarder and a host configuration on the node | [ADR-188](#adr-188--the-oci-e2e-clients-run-privileged-in-a-namespace-of-their-own-and-the-kubelet-row-is-served-by-a-forwarder-on-the-node) |
+| [Q-OCI-201](spec/formats/oci.md#q-oci-201--the-bound-host-of-the-docker-engine-mirror-is-a-further-endpoint-of-the-dev-profile-not-a-host-of-the-default-endpoint) | Where is the bound host of the Docker Engine row? | (a) A further endpoint of the dev profile | [ADR-188](#adr-188--the-oci-e2e-clients-run-privileged-in-a-namespace-of-their-own-and-the-kubelet-row-is-served-by-a-forwarder-on-the-node) |
+| [Q-OCI-202](spec/formats/oci.md#q-oci-202--a-path-the-bound-host-of-a-remote-repository-reads-as-an-image-name-answers-404-with-the-code-the-remote-answers) | What does a path below a remote's bound host answer? | (a) 404; the upstream is asked for the name as sent | — |
+| [Q-OCI-204](spec/formats/oci.md#q-oci-204--the-referrers-of-a-remote-whose-upstream-was-asked-and-failed-are-404) | What are the referrers of a remote whose upstream failed? | (a) 404, like a referrers answer that cannot be had | — |
+| [Q-OCI-203](spec/formats/oci.md#q-oci-203--the-closing-run-does-not-count-docker-hubs-manifest-requests) | Does the closing run count Docker Hub's manifest requests? | (a) No; one tag is pulled once, read-only | — |
 | [Q-OCI-180](spec/formats/oci.md#q-oci-180--a-tag-is-the-version-of-everything-below-it-and-the-tags-an-exact-pattern-names-are-pinned-and-planned-after-the-wildcard-matches) | How does a mirror count the tags of an image against `maxVersionsPerPackage`? | (a) A tag is the version of all its items; the exact tags are pinned and planned after the wildcard matches | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) |
 | [Q-OCI-181](spec/formats/oci.md#q-oci-181--a-platform-filter-without-a-variant-matches-every-variant-an-entry-without-one-is-the-architectures-default-and-an-attestation-follows-the-manifest-it-names) | Which index entries does `oci.mirror.platforms` select? | (a) `os/arch` matches every variant, an attestation follows the manifest it names | — |
 | [Q-OCI-182](spec/formats/oci.md#q-oci-182--the-plan-reads-only-the-tags-the-engine-keeps-and-a-tag-the-registry-does-not-accept-has-no-items) | Does the plan read tags the engine will drop? | (a) No; a manifest the registry refuses gives its tag no items | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) |

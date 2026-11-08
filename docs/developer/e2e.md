@@ -101,6 +101,17 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
                             push loops detached in the client pods, the k6 NuGet requests and their conditions
   nuget_ha_test.go          drain variant A, PostgreSQL switchover and Valkey failover under the npm and NuGet load; R-ARCH-024's drain (TestNuGetHA)
   k6/nuget.js               the k6 NuGet requests of R-HA-059: registrations, version lists and packages of nuget-all, 30 requests/s
+  oci_clients_test.go       the OCI client pods (R-OCI-035): the pod helpers, pinning to a replica, the smoke test (TestOCIClients)
+  oci_env_test.go           the OCI harness: fixture (oci-e2e, oci-e2e-open, publisher), ociClient (docker or podman in a pod), the control API of the OCI test upstream, upstreamRepos
+  oci_local_test.go         login, push, pull, anonymous pull, Buildx, docker manifest, Podman manifests (TestOCILocal)
+  oci_remote_test.go        pull-through, six concurrent pulls on three replicas, the mirror with the upstream stopped (TestOCIRemote, TestOCIRemoteMirror)
+  oci_virtual_test.go       pull and push through a virtual repository (TestOCIVirtual)
+  oci_engine_test.go        the Docker Engine mirror of a bound host (TestOCIEngineMirror), a Kubernetes pod with an image pull secret (TestOCIKubernetes)
+  oci_snippets_test.go      the rendered setup snippets run by the clients (TestOCISnippets)
+  oci_closing_test.go       the closing run: Valkey stopped, the read-only subset against Docker Hub (TestOCIClosing, TestOCIClosingPublic)
+  oci_long_test.go          the long set oci-long: the drain of the pod that receives a 300 MiB push (TestOCILong_R_OCI_011_...)
+  mirror_oci_test.go        R-REPO-055 with an OCI pass while docker and podman pull; mirror_long_oci_test.go: the drain of the node of an OCI pass (mirror-long)
+  ociclients/               the OCI client images (below): Dockerfile.docker, Dockerfile.podman, entrypoints, build.sh, check-pins.mjs
   mirror_env_test.go        the mirror harness (R-REPO-059): the profile `mirror`, the repositories in mode mirror, the status and the run, the
                             pool's counters, the CoreDNS rewrite of the public registry's name, the sampler of the job table, the clients
   mirror_clients_test.go    R-REPO-055: npm ci and dotnet restore while a pass runs (TestMirror_R_REPO_055_ClientsFirst)
@@ -162,6 +173,11 @@ make e2e SET=nuget-ha        # TestNuGetHA: drain variant A, the PostgreSQL swit
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
 make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
+make e2e SET=oci-clients     # build the OCI clients images, start the Docker Engine and Podman pods of the namespace trove-e2e-clients, run the smoke test (the pods stay up)
+make e2e SET=oci             # every TestOCI... but the closing and long names: login, push and pull through local, remote, mirror, virtual and bound-host repositories with docker and podman, Buildx, the Kubernetes pull, the setup snippets (CI job e2e-oci, when the change touches the registry); three client pods and the counting OCI test upstream
+make e2e SET=oci-closing     # the additions of the closing run (TestOCIClosing: Valkey stopped; TestOCIClosingPublic: the read-only subset against Docker Hub; exports TROVE_E2E_OCI_CLOSING=1); CI leg of a closing dispatch
+make e2e SET=oci-long        # TestOCILong: the drain of the pod that receives a push of a 300 MiB layer (CI: job e2e-oci of the nightly workflow)
+make oci-clients-image       # only build the two OCI clients images into the local Docker
 make e2e SET=bastion         # the short scenarios of R-BAS-049 with npm, pnpm, Yarn 4 and dotnet restore (CI job e2e-bastion, when the change touches the Bastion; nightly)
 make e2e SET=bastion-long    # the drain, the failure suite under client load (replica lost, main installation failing over, rolling upgrade of either side) and the anonymous miss flood (CI: nightly and on dispatch; a red long leg is a finding, not a blocker)
 make e2e SET=mirror          # the mirror (R-REPO-059, E6b.6): npm ci and dotnet restore while a pass runs, the status from every replica, two claimants, Valkey stopped, a restore with the upstream stopped, the browser journey (CI job e2e-mirror, when the change touches the mirror; nightly)
@@ -2415,7 +2431,109 @@ sections above.
 |---|---|
 | image | `make oci-stub-image` (`OCI_STUB_IMAGE`, default `trove-e2e-ocistub:dev`), built from [test/ocistub/Containerfile](../../test/ocistub/Containerfile) on the release base image |
 | manifest | [deploy/dev/ocistub.yaml](../../deploy/dev/ocistub.yaml): Services `ocistub`, `ocistub-auth`, `ocistub-cdn`, one pod, a certificate of the dev CA for the three names, the control token in Secret `trove-ocistub` |
-| wiring in `deploy/dev/e2e.sh` | not done: loading the image into kind, applying the manifest and exporting the host names belong to the e2e work package (WP11) |
+| wiring in `deploy/dev/e2e.sh` | marker `T16 oci-stub`: `TROVE_E2E_OCISTUB=1` (the sets `oci*`, `mirror`, `mirror-long`) builds the image, loads it into kind, applies the manifest, restarts the pod and exports `TROVE_E2E_OCISTUB_HOST`, `TROVE_E2E_OCISTUB_REALM_HOST` and `TROVE_E2E_OCISTUB_CDN_HOST` (`ocistub.<ns>.svc`, `ocistub-auth.<ns>.svc`, `ocistub-cdn.<ns>.svc`). A remote repository names the registry as its URL and the other two in `extraHosts` (`ociRemoteBody`) |
+
+## The OCI clients
+
+The real clients of the OCI tests ([R-OCI-035](../spec/formats/oci.md#r-oci-035--test-suites), Q-OCI-21): the Docker Engine with the Docker CLI and Buildx, and Podman, both pinned by digest in
+[tools/versions.env](../../tools/versions.env) (`E2E_OCICLIENTS_DOCKER_IMAGE`, the `dind` variant of the official image, and `E2E_OCICLIENTS_PODMAN_IMAGE`; Renovate moves tag and digest together,
+`make versions-check` runs [check-pins.mjs](../../test/e2e/ociclients/check-pins.mjs)). `TestOCIClients` compares `docker version`, `docker buildx version` and `podman --version` with the tags of
+the pins.
+
+```mermaid
+flowchart LR
+  subgraph clients["namespace trove-e2e-clients (Pod Security level privileged)"]
+    subgraph pod["pod trove-e2e-oci-i (x3), one network namespace"]
+      d["container docker<br/>dockerd + CLI + Buildx<br/>fwd on 127.0.0.1:edge port"]
+      p["container podman"]
+    end
+  end
+  d -- "https, localhost:edge port" --> h["HAProxy Ingress<br/>round robin per request"]
+  p --> d
+  h --> r["packages x3 (scatter)"]
+  r --> s["ocistub (trove namespace)<br/>registry, realm, CDN"]
+  n["control-plane node<br/>containerd + fwd + certs.d"] -- "kubelet pull of the Kubernetes row" --> h
+```
+
+| What | Where |
+|---|---|
+| images | `make oci-clients-image` runs [test/e2e/ociclients/build.sh](../../test/e2e/ociclients/build.sh): the forwarder of the npm clients (`test/e2e/clients/fwd`) for `linux/<arch>`, [Dockerfile.docker](../../test/e2e/ociclients/Dockerfile.docker) on the pinned dind image (`trove-e2e-ociclients-docker:dev`) and [Dockerfile.podman](../../test/e2e/ociclients/Dockerfile.podman) on the pinned Podman image (`trove-e2e-ociclients-podman:dev`). Both are test images, never pushed; the pins are build arguments without a default |
+| pod | [deploy/dev/oci-clients.yaml](../../deploy/dev/oci-clients.yaml): the Namespace `trove-e2e-clients` with Pod Security `privileged` (dockerd and Podman need a privileged container, root and a writable root file system, which the level `restricted` of the namespace `trove` refuses) and the Pod, rendered once per client with `sed` by [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (marker T16 oci-clients). The pods run on the control-plane node like the npm and NuGet clients, mount no ServiceAccount token and hold no credential. Their volumes are emptyDirs (`/var/lib/docker`, `/var/lib/containers`, `/work`) |
+| trust | the dev CA is a ConfigMap (`trove-e2e-oci-ca`), never in an image. [entrypoint-docker.sh](../../test/e2e/ociclients/entrypoint-docker.sh) puts it into `/etc/docker/certs.d/<host>/ca.crt` for `localhost:<edge port>` and `oci-mirror.trove.localhost:<edge port>` and into the system trust (BuildKit inside dockerd fetches the token of `buildx build --push` with a client that reads the system trust, not `certs.d`); [entrypoint-podman.sh](../../test/e2e/ociclients/entrypoint-podman.sh) puts it into `/etc/containers/certs.d/<host>/ca.crt` |
+| address | the forwarder in the Docker container listens on `127.0.0.1:<edge port>` and relays to `haproxy-ingress.ingress-controller.svc.cluster.local:443`; the pod shares one network namespace, so both clients reach it as `localhost:<edge port>`, the host of the setup snippets, and verify the edge's certificate for `localhost`. `ociPin` writes a packages pod's address into the forwarder's target file (`/tmp/target`), which pins a pod to one replica until `ociUnpin` |
+| daemon | dockerd starts through the image's own entrypoint with `--host=unix:///var/run/docker.sock` only (without arguments the image opens an unauthenticated TCP listener, which every pod of the cluster could reach). `daemon.json` names `https://oci-mirror.trove.localhost:<edge port>` in `registry-mirrors` (the Docker Engine row) |
+| the bound host | the endpoint `ocimirror` of [values-dev.yaml](../../deploy/dev/values-dev.yaml) (port 8444, host `oci-mirror.trove.localhost`, `hostRoots` to the repository `e2e/oci-engine-mirror`, anonymous requests admitted, the certificates `trove-ocimirror-tls` and `trove-ocimirror-edge-tls` in [pki.yaml](../../deploy/dev/pki.yaml)). `lib.sh` sets its `baseUrl` to the edge port the cluster was created with. A binding to a repository that does not exist is no binding (R-EP-006), so the endpoint is inert until `TestOCIEngineMirror` creates the repository |
+| node setup | the kubelet pulls the image of the Kubernetes row, and the containerd of a kind node reaches neither the pod's forwarder nor the edge's host port. `oci_node_setup` of e2e.sh copies a forwarder to the control-plane node (`/usr/local/bin/trove-fwd`, `127.0.0.1:<edge port>` to the edge's NodePort on the node's address) and the dev CA with a `hosts.toml` into `/etc/containerd/certs.d/localhost:<edge port>`. [deploy/dev/kind.yaml](../../deploy/dev/kind.yaml) sets `config_path` of the node's containerd (its default configuration has none); a cluster created before that is refused with the command to create it again |
+
+How a command runs: `ociClient` ([oci_env_test.go](../../test/e2e/oci_env_test.go)) is one scenario with one tool in one pod. Everything it writes lives below `/work/<tool>-<scenario>-<run>`; every command gets a
+`DOCKER_CONFIG` and a `REGISTRY_AUTH_FILE` of its own below it, so no scenario meets the login of another, and the token as `$TROVE_TOKEN`, the variable of the setup snippets. Test images are
+`FROM scratch` plus one file (`ociClient.build`): no client needs a base image from a public registry, and the payload makes the digest the test's own.
+
+What the real clients do that a unit test would not guess:
+
+- **Docker treats `localhost` as a registry that may be plain HTTP.** After a refusal over TLS (a login with a wrong token: `unauthorized`) it tries HTTP and reports that last failure, an `EOF`, so the
+  refusal over TLS is read from the daemon's log (`TestOCIClients`).
+- **The kind of `docker manifest push` follows its members.** Members that are OCI manifests (what `docker build` writes with the containerd image store of Docker 29) give an OCI image index; Docker
+  manifests (`buildx build --output type=image,oci-mediatypes=false`) give a Docker manifest list. The test builds Docker manifests, as R-OCI-014 says.
+- **`docker build` of a `FROM scratch` image pushes an image index with an attestation manifest** unless `--provenance=false` is given. The registry stores both as ordinary entries (R-OCI-014).
+- **Docker with the containerd image store asks for the referrers of every image it pulls**, also of an image a mirror holds completely, and fails the pull when the answer is an error. With the
+  upstream of a mirror down, the referrers were `502`, and so was the tag `sha256-<hex>` of the referrers tag schema that Docker then asks for; both are `404` now (Q-OCI-204, `upstreamFailed` and `referrersTag` in `remote_handlers.go`). A stub that cannot be reached because its Service has no endpoint is
+  another case: a kind node drops those connections and each request waits for the connect timeout ([H-751](../spec/formats/oci.md#h-751--an-upstream-that-drops-connections-without-an-answer-stalls-the-requests-of-a-remote-for-the-upstream-clients-connect-timeouts)),
+  so the test cuts the stub's connections with its own switch instead of scaling it to zero.
+- **A client that holds a layer does not pull it again.** The tests that count what the upstream delivered empty the image stores of the clients first (`pruneClients`), so that a second run on the same pods
+  counts the same.
+
+## The OCI tests
+
+The e2e tier of [R-OCI-035](../spec/formats/oci.md#r-oci-035--test-suites), T-16 WP11. The suite's own fixture is `ociFx` ([oci_env_test.go](../../test/e2e/oci_env_test.go)): it switches to the `scatter`
+profile (three `packages` replicas, every request to another one, R-OCI-032), creates `oci-e2e` (authentication required) and `oci-e2e-open` (anonymous `read`), a publisher service account and its
+token. A test that needs a remote, a virtual repository or a local repository of its own creates it (`upstreamRepos`: local, remote over the counting OCI test upstream and virtual with the local as
+deployment target; deleted with the test), so the cache a test starts with is empty and no tag of an earlier run is in the way (a moved tag is refused without `overwrite`). Image names and tags carry the run.
+
+| Test | Criterion | What it does |
+|---|---|---|
+| `TestOCIClients` | R-OCI-035 | the pinned versions of dockerd, the CLI, Buildx and Podman; both clients verify the edge's certificate and are refused by the registry for a wrong token |
+| `TestOCILocal` | R-OCI-001, R-OCI-004, R-OCI-014, R-OCI-032 | login with both clients; `docker push` and `docker pull` by another pod; `podman push`, `docker pull` and `podman pull` on other pods; a push without a login refused; anonymous pull from `oci-e2e-open` with `docker` and `podman`, anonymous push refused; `docker buildx build --platform linux/amd64,linux/arm64 --push`, `docker pull --platform linux/arm64`, `podman manifest inspect`; `docker manifest create` and `push` (a Docker manifest list); `podman build --manifest` and `podman manifest push --all` (an OCI index) |
+| `TestOCIRemote` | R-OCI-021 to R-OCI-023, R-OCI-032 | a pull through a remote of the counting test upstream: one manifest `GET`, each layer of the platform once, the CDN host sees no credential; the same image pulled by `docker` and `podman` on two other pods costs no upstream request; six concurrent pulls (three pods pinned to the three replicas, `docker` and `podman` each, the upstream holding each blob 1 s) fetch each layer once; a missing tag is not pulled |
+| `TestOCIRemoteMirror` | R-OCI-026, R-REPO-050 | a mirror (`includePatterns: ["acme/*"]`, `oci.mirror.tags` `["1.*", "latest"]`, the catalog switch of the upstream) runs a pass on the main worker; the upstream's connections are cut (`down: reset` of the stub); the referrers of a mirrored image answer 404 (Q-OCI-204: found by this row, fixed in the product); `docker` and `podman` pull the mirrored tags, and `acme/a:2.0` cannot be pulled |
+| `TestOCIVirtual` | R-OCI-027, R-OCI-028 | a virtual repository over a local member (the deployment target) and a remote: a tag the local member has is served from it and the upstream is not asked; a tag only the remote has is pulled through the virtual repository; `docker push` through it stores the image in the target; an image built on a base layer the remote's cache holds is pushed without uploading the base (`Layer already exists`); the tags list is the union; a delete answers 405 `UNSUPPORTED` |
+| `TestOCIEngineMirror` | R-OCI-029, R-EP-007 | the Docker Engine of the pod, with `registry-mirrors` naming the bound host, pulls `app:1` (Docker Hub's `library/app`) through the repository `oci-engine-mirror`; the upstream records one manifest `GET`; `GET /v2/e2e/oci-engine-mirror/library/app/manifests/1` on the bound host is `404 NAME_UNKNOWN` |
+| `TestOCIKubernetes` | R-OCI-004, R-OCI-030 | a pod whose image is in a virtual repository: without an image pull secret the kubelet reports `ErrImagePull` or `ImagePullBackOff`; with the secret that the unchanged snippet `docker.kubernetes.configure` of the setup API creates, the pod runs the image, and its `imageID` carries the digest of the push |
+| `TestOCISnippets` | R-OCI-030 | the `configure`, the `publish` (`docker.publish`, `docker.publish.buildx`, `podman.publish`) and the `install` snippet the setup API renders for a local repository (`credentials=env`), run unchanged by `sh -c`: login, push, and on a second pod login and pull; the pulled digest is the pushed one |
+| `TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull` | R-REPO-055, R-OCI-026 | set `mirror`: a pass of an OCI mirror (catalog, `library/*` and 1,000 tags of `bulk/tags`, each manifest held 100 ms) runs in a process of the pool while `docker` and `podman` on three pods pull `library/alpine:3`, `library/busybox:latest` and `library/nginx:1` through the same remote; every pull succeeds, the upstream never holds more than 8 + 3 − 1 + 2 requests open, the pass ends `complete` |
+| `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass` | R-REPO-058, R-OCI-026 | set `mirror-long`: the node of the pool process that runs a pass of 400 tags (each manifest held 300 ms) is drained while `docker` pulls through the remote; the pass ends `complete` in the other process, and at most `concurrency` manifests were served twice |
+| `TestOCILong_R_OCI_011_DrainOfThePodThatReceivesAPush` | R-OCI-011, R-HA-052 | set `oci-long`: `docker push` of an image with a 300 MiB layer, the client pod's forwarder pinned to one packages pod; once the session has received 48 MiB the pod's node is drained and the forwarder released to the edge; the push exits 0, the pulled image has the pushed digest, and after the abandoned session is aged past `session_ttl` and a collection run (`POST /api/v1/system/tasks/gc/run`) the bucket holds no multipart upload (`aws s3api list-multipart-uploads`, a Job) |
+| `TestOCIClosing` | R-OCI-032 | set `oci-closing`, the closing run (`TROVE_E2E_OCI_CLOSING=1`): with Valkey stopped, `docker push` and `docker pull` through local, remote and virtual repositories, and six concurrent pulls on three replicas that cost one to three upstream requests per layer (one per replica) |
+| `TestOCIClosingPublic` | R-OCI-025, R-OCI-026, R-OCI-035 | the read-only subset against Docker Hub: a pull-through remote of `https://registry-1.docker.io/` pulls `library/busybox:latest` anonymously (as `busybox` and `library/busybox`, one cached copy), and a mirror with `tags: ["latest"]` of `library/busybox` stores it. Docker Hub's request count is not observable from outside, and the test does not assert the six manifest `GET` requests of R-OCI-035 |
+
+### Running it
+
+```shell
+make image VERSION=dev && make dev-up            # a cluster created before deploy/dev/kind.yaml set config_path of containerd: deploy/dev/down.sh, then make dev-up
+make e2e SET=oci-clients     # build the clients images, start the three pods, run TestOCIClients (the pods stay up)
+make e2e SET=oci             # every TestOCI... but the closing and long names; the counting OCI test upstream and three client pods (CI: job e2e-oci of Test and Release, when the change touches the registry)
+make e2e SET=oci-closing     # TestOCIClosing and TestOCIClosingPublic (CI: job e2e-oci of a closing=true dispatch)
+make e2e SET=oci-long        # TestOCILong... (CI: job e2e-oci of the nightly workflow)
+make e2e SET=oci-clients-down  # remove the pods and their namespace
+make oci-clients-image       # only build the two images into the local Docker
+```
+
+`TROVE_E2E_OCI_CLIENTS_PODS` (default 3), `TROVE_E2E_OCI_CLIENTS_TARGET` and `TROVE_E2E_OCI_CLIENTS_IMAGE_BUILD=0` act as for the npm clients; `TROVE_E2E_REUSE_CLIENTS=1` keeps pods that already run. The sets
+`mirror` and `mirror-long` start the OCI test upstream and the three pods as well (`OCI_CLIENTS=1`).
+
+### Measured on the dev cluster
+
+On a laptop (Apple silicon, 20 cores, kind with one control-plane and three worker nodes, `linux/arm64` clients): `make e2e SET=oci` ran 40 tests and subtests in about 100 s of `go test` once the pods and the
+test upstream were up (starting the three client pods and the stub takes about 3 minutes with the images built; the first `docker pull` of a run is the slowest); `oci-long` took 551 s (the 300 MiB push, the drain of
+the node, the wait for the pod to be replaced and the collection run with the multipart check); the OCI pass beside six clients (`mirror`) 165 s and its drain (`mirror-long`) 213 s. The host's numbers, not the CI runners':
+the amd64 images were not run.
+
+### Not covered by the OCI tests
+
+- The six manifest `GET` requests at Docker Hub of the closing run are not counted (`TestOCIClosingPublic`).
+- The OCI distribution conformance suite and the protocol criteria that need no client are the integration tier (`test/integration/oci*`, `make oci-conformance`).
+- No client of another version than the pins: `docker` 29 and `podman` 5 are the two rows.
+- The browser step of the package screen (R-OCI-031) is the UI work package's.
 
 ## The test advisory source
 
@@ -3144,6 +3262,8 @@ of its log line (written after the commit). `slot_wait_ms` on the upstream recor
 | `TestMirror_R_REPO_058_ValkeyStoppedForAWholePass` | R-REPO-058 | Valkey and the Sentinels are stopped before the pass is requested (every `api` and `packages` pod reports `degraded: valkey`) and started after it: the pass of 40 packages ends `complete`, the stub served each tarball once, the status is the same through the three `api` pods, and after the restart too |
 | `TestMirror_R_REPO_059_RestoreWithTheUpstreamStopped` | E6b.3, R-REPO-059 | both stubs are scaled to zero after complete passes: `npm install` of three mirrored versions (`e2e-mirror-<run>-000` to `002`) and `dotnet restore` of `Newtonsoft.Json 13.0.3` through the same remotes succeed with an empty client cache; the stubs are started again and the extras republished. The test is the last that needs a stub |
 | `TestMirror_R_REPO_059_BrowserJourney` | R-REPO-059, R-UI-021 | [web/e2e/tests/14-mirror.spec.ts](../../web/e2e/tests/14-mirror.spec.ts) (the Mirror tab: status, pause, resume, run a pass, run a full pass, with axe in both schemes; the upstream settings of a remote) against the cluster of this profile, where a pool claims the queue. `TestE1_11Journeys` runs the same journey among the others in the scatter profile |
+| `TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull` | R-REPO-055, R-OCI-026 | the OCI pass: a mirror of the counting OCI test upstream (catalog, `library/*` and 1,000 tags of `bulk/tags`, each manifest held 100 ms) runs in a process of the pool while `docker` and `podman` on three client pods pull `library/alpine:3`, `library/busybox:latest` and `library/nginx:1` through the same remote; every pull succeeds, the upstream never holds more than the bound open, the pass ends `complete` (needs the OCI client pods and the OCI test upstream, which the set starts) |
+| `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass` | R-REPO-058, R-OCI-026 | the set `mirror-long`: the node of the pool process that runs a pass of 400 tags of `bulk/tags` (each manifest held 300 ms) is drained while `docker` pulls through the remote; the pass ends `complete` in the other process and at most `concurrency` manifests were served twice |
 | `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAPass` | R-REPO-058, E6b.6 | the set `mirror-long`: a mirror of the registry's name with `includePatterns: ["e2e-mirror-<run>-*"]`, the 300 extras, `mirror.concurrency` 2; the stub holds a tarball 1 s, so the pass lasts 150 s and outlasts the 60 s grace period of the pool. At 40 packages the node of the pool's process that runs the pass is drained (`deploy/dev/drain.sh`; the PostgreSQL primary is moved first when it is on that node). The job is `queued` again (its attempt unchanged: a release at shutdown counts none), the other process of the pool ends the pass `complete` with 300 packages and none failed, the stub served every tarball and at most `concurrency` of them twice (the fetches in flight at the drain), and the pool has two ready pods again |
 | `TestMirrorLong_R_REPO_053_WorkerLostMidPass` | R-REPO-053, R-REPO-058, R-HA-052 | the failure suite's "pod crash", "node loss" and a frozen node on a pass. Each subtest has a remote of its own over a hundred of the run's extras (the include pattern `e2e-mirror-<run>-0*`, `-1*`, `-2*`), `mirror.concurrency` 2, the test upstream holding a tarball 2 s (a pass of 100 s); when the pass has filled 10 packages a client installs the last package of its order (the remote serves it from the upstream), then the process that holds the pass (read from the job table; the other process of the pool must be on another node) is lost: **(1)** `kubectl delete pod --grace-period=0 --force`; **(2)** `docker stop` of its kind node, then `docker start` after another process has progressed by 10 packages (the PostgreSQL primary, the Valkey primary and the pods of the two operators are moved off the node first, [Q-REPO-200](../spec/repositories-and-proxy.md#q-repo-200--the-node-lost-under-a-pass-is-cleared-of-the-operators-and-the-primaries-first), in the order and with the waits of [the clearance](#the-failure-suite-under-npm-load)); **(3)** `docker pause` of the node, `docker unpause` at the same point, so that the lost process comes back while another one owns the fence. Pass conditions: the pass progresses again in another process (a job id other than the lost one, a holder other than the lost pod) within 5 minutes of the loss; its counter never goes down; it ends `complete` with exactly 100 packages and none failed; the test upstream served every tarball of the range and at most `concurrency` of them twice (the exempt tarball is the one the client fetched); an `npm install` of a stored version through the same remote every 5 s during the loss succeeds (for the node cases from the moment the node is not ready and none of its serving pods is ready, the edge no longer sending requests there: R-HA-052 "node loss" allows failures until then); the pool has two ready pods, the database two ready instances and the serving roles settled again; the job table never held two unfinished passes of the repository |
 | `TestMirrorLong_R_REPO_054_ThrottledUpstreamAcrossAMove` | R-REPO-054, R-REPO-053, R-HA-059, R-HA-052 | the same remotes (ranges `0*` and `1*` of the extras) with the upstream rate-limiting the tarball requests when the pass has filled 20 packages. **(1)** `429` with `Retry-After: 30` for 45 s from the first throttled request; when the first answer has gone out a client installs a stored version through the remote (the upstream must see no request for it), then the node of the pass's process is drained (`deploy/dev/drain.sh`): the job is released with the wait stored in `rate_limited_until`, and the process that claims it must send nothing until it is over (Q-REPO-187). **(2)** `503` with the `SlowDown` body and no `Retry-After` for the next 8 tarball requests; the pass's pod is force-deleted at the first answer. Pass conditions: in the upstream's request log (`GET /-/stub/requests`, Q-REPO-198) no request of any kind arrives between 500 ms after a throttled answer and the end of the wait it named less 1 s (for `SlowDown`: the floor of one second less 200 ms); at least one and at most 6 (12) throttled answers (no burst after the move); the pass ends `complete` with 100 packages; every tarball was served, at most `concurrency` of them twice and none more often (the throttled answers are taken out of the counts, [Q-REPO-201](../spec/repositories-and-proxy.md#q-repo-201--a-throttled-answer-is-not-a-fetch-the-per-name-bound-of-the-tarballs-counts-what-the-upstream-served)) |

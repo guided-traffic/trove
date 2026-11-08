@@ -408,7 +408,7 @@ Tests: [mirror_test.go](../../internal/formats/oci/mirror_test.go) (the lister o
 the tags list in pages and its bound, the catalog and the exact names, the bounds), [versions_test.go](../../internal/mirror/versions_test.go) (versions, the shared path, the tally),
 [mirror_format_test.go](../../internal/repository/mirror_format_test.go) (the Owner rule), and [test/integration/mirror/oci_test.go](../../test/integration/mirror/oci_test.go): the whole stack, two worker processes that
 claim the queue `mirror`, a client-serving process and the counting stub (a catalog pass with the tag bound and a pull with the stub stopped, the exact-name pass, the platform filter, a second pass and a moved tag,
-the byte bound, a Docker Hub mirror with the quota answer). The e2e rows (a pass while real clients pull, the drain) are WP11's.
+the byte bound, a Docker Hub mirror with the quota answer). The e2e rows (a pass while real clients pull, the drain) are in [e2e.md](e2e.md#the-oci-tests) (`TestMirror_R_REPO_055_AnOCIPassRunsWhileClientsPull`, `TestMirrorLong_R_REPO_058_DrainOfTheNodeOfAnOCIPass`).
 
 ## The virtual class (R-OCI-027, R-OCI-028)
 
@@ -590,7 +590,9 @@ Built (WP9): the virtual class ([the virtual class](#the-virtual-class-r-oci-027
 
 Built (WP13): the conformance suite and the protocol tests of [The protocol tests and the conformance suite](#the-protocol-tests-and-the-conformance-suite).
 
-Not built here (each is a work package of T-16): the package screens' remaining parts and the e2e rows (WP11).
+Built (WP11): the e2e rows with Docker and Podman on kind ([e2e.md](e2e.md#the-oci-clients)).
+
+Not built here (each is a work package of T-16): the package screens' remaining parts.
 
 ## The counting stub registry
 

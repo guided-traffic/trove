@@ -140,7 +140,7 @@ func (e *mirrorEnv) removeStaleMirrors(t testing.TB) {
 	}
 	e.adm.get(reposRoute+"?limit=500").want(t, "list the repositories", 200).JSON(t, &l)
 	for _, it := range l.Items {
-		if strings.HasPrefix(it.Key, "npm-mirror-") || strings.HasPrefix(it.Key, "nuget-mirror-") {
+		if strings.HasPrefix(it.Key, "npm-mirror-") || strings.HasPrefix(it.Key, "nuget-mirror-") || strings.HasPrefix(it.Key, "oci-mirror-") {
 			deleteRepository(t, e.adm, it.Key)
 		}
 	}
@@ -167,9 +167,13 @@ func (e *mirrorEnv) grant(t testing.TB, format string, keys ...string) {
 	all := append([]string(nil), e.grants...)
 	e.mu.Unlock()
 	ensurePolicy(t, e.adm, "e2e-mirror-"+e.run, all, [2]any{"sa:" + mirrorSA, []string{"read"}})
-	if format == "nuget" {
+	switch format {
+	case "nuget":
 		nugetReadableOnEveryReplica(t, e.token, keys...)
-	} else {
+	case "oci":
+		// a mirror admits the names of its include patterns only (library/* for the OCI mirrors of this suite)
+		ociReadableOnEveryReplicaFor(t, e.token, "library/zz-probe", keys...)
+	default:
 		awaitReadableOnEveryReplica(t, e.token, keys...)
 	}
 }

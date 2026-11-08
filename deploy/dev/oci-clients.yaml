@@ -1,0 +1,99 @@
+# The client pods of the OCI e2e set (R-OCI-035, Q-OCI-21, docs/developer/e2e.md#the-oci-clients): one Pod with the Docker Engine (dockerd of the
+# pinned dind image, CLI and Buildx included) and Podman, both trusting the dev CA, and a forwarder that carries
+# 127.0.0.1:<edge port> of the pod to the in-cluster edge, so that `localhost:<edge port>`, the host of the setup snippets, works unchanged
+# and the edge's certificate is verified for `localhost`. The two clients share the pod's network namespace and the directory /work.
+#
+# dockerd and Podman need privileges the Pod Security level `restricted` of the namespace trove refuses (a privileged container, root, writable
+# root file system), so the pods live in a namespace of their own with the level `privileged` (Q-OCI-21 (a)). Nothing else runs there, no
+# ServiceAccount token is mounted, and the pods carry no credential: the tests hand each command the token it needs.
+#
+# deploy/dev/e2e.sh (marker T16 oci-clients) applies this file once per pod after replacing the variables below with sed; render()
+# does not know them. Nothing applies it but the e2e sets that use the clients.
+#
+#   ${POD}              pod name: trove-e2e-oci-<i>
+#   ${DOCKER_IMAGE}     the Docker image built by test/e2e/ociclients/build.sh (trove-e2e-ociclients-docker:dev)
+#   ${PODMAN_IMAGE}     the Podman image built by the same script (trove-e2e-ociclients-podman:dev)
+#   ${EDGE_PORT}        the port of the edge (TROVE_DEV_HTTP_PORT), the forwarder's listener and the port of every registry host
+#   ${TARGET}           host:port the forwarder relays to (the in-cluster HAProxy Ingress)
+#   ${REGISTRY_HOSTS}   the registry hosts the clients trust the dev CA for: localhost:<port> and the bound host of the Docker Engine mirror
+#   ${ENGINE_MIRROR}    https://oci-mirror.trove.localhost:<port>, the registry-mirrors entry of the daemon
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trove-e2e-clients
+  labels:
+    app.kubernetes.io/part-of: trove-dev
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD}
+  namespace: trove-e2e-clients
+  labels:
+    app.kubernetes.io/name: trove-e2e
+    app.kubernetes.io/component: e2e-oci-client
+    app.kubernetes.io/part-of: trove-dev
+spec:
+  terminationGracePeriodSeconds: 10
+  # The clients run on the control-plane node as the npm and NuGet client pods do: a drain of a worker node never evicts them, and the
+  # node-level setup of the Kubernetes pull row (deploy/dev/e2e.sh) is made on this one node.
+  nodeSelector: { node-role.kubernetes.io/control-plane: "" }
+  tolerations: [{ key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }]
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  # the bound host of the Docker Engine mirror is the forwarder as well (localhost is in the pod already)
+  hostAliases:
+    - ip: 127.0.0.1
+      hostnames: [oci-mirror.trove.localhost]
+  containers:
+    - name: docker
+      image: ${DOCKER_IMAGE}
+      imagePullPolicy: IfNotPresent
+      args: ["-listen", "127.0.0.1:${EDGE_PORT}", "-to", "${TARGET}", "-target-file", "/tmp/target"]
+      env:
+        - { name: TROVE_CA_FILE, value: /etc/trove-ca/ca.crt }
+        - { name: TROVE_REGISTRY_HOSTS, value: "${REGISTRY_HOSTS}" }
+        - { name: TROVE_ENGINE_MIRROR, value: "${ENGINE_MIRROR}" }
+        - { name: DOCKER_BUILDKIT, value: "1" }
+      securityContext:
+        privileged: true
+      # the daemon answers: the CLI of the container reaches its unix socket
+      readinessProbe:
+        exec: { command: ["docker", "info", "--format", "{{.ServerVersion}}"] }
+        initialDelaySeconds: 3
+        periodSeconds: 3
+        timeoutSeconds: 10
+        failureThreshold: 60
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+      volumeMounts:
+        - { name: ca, mountPath: /etc/trove-ca, readOnly: true }
+        - { name: docker-lib, mountPath: /var/lib/docker }
+        - { name: work, mountPath: /work }
+        - { name: tmp, mountPath: /tmp }
+    - name: podman
+      image: ${PODMAN_IMAGE}
+      imagePullPolicy: IfNotPresent
+      env:
+        - { name: TROVE_CA_FILE, value: /etc/trove-ca/ca.crt }
+        - { name: TROVE_REGISTRY_HOSTS, value: "${REGISTRY_HOSTS}" }
+      securityContext:
+        privileged: true
+      readinessProbe:
+        exec: { command: ["test", "-f", "/tmp/ready"] }
+        periodSeconds: 2
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+      volumeMounts:
+        - { name: ca, mountPath: /etc/trove-ca, readOnly: true }
+        - { name: podman-lib, mountPath: /var/lib/containers }
+        - { name: work, mountPath: /work }
+  volumes:
+    - { name: ca, configMap: { name: trove-e2e-oci-ca } }
+    - { name: docker-lib, emptyDir: { sizeLimit: 8Gi } }
+    - { name: podman-lib, emptyDir: { sizeLimit: 8Gi } }
+    - { name: work, emptyDir: { sizeLimit: 4Gi } }
+    - { name: tmp, emptyDir: { sizeLimit: 256Mi } }

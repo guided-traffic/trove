@@ -1,0 +1,9 @@
+# The Podman client of the OCI acceptance suite (R-OCI-035, Q-OCI-21, docs/developer/e2e.md#the-oci-clients): the official
+# image at its pinned digest and an entrypoint that puts the dev CA into /etc/containers/certs.d. Podman is a CLI: the container
+# only keeps the pod's second client alive (the tests run `podman` per `kubectl exec`). It is a test image, never pushed.
+#
+#   PODMAN_IMAGE   E2E_OCICLIENTS_PODMAN_IMAGE of tools/versions.env (pinned by digest)
+ARG PODMAN_IMAGE
+FROM ${PODMAN_IMAGE}
+COPY entrypoint-podman.sh /usr/local/bin/trove-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/trove-entrypoint.sh"]

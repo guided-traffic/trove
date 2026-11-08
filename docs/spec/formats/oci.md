@@ -905,7 +905,7 @@ Priority: **P1** · Covers: PKG-DOCKER-022, PKG-OCI-009
 - Referrers of a remote are passed through to the upstream's referrers API as a volatile query, cached for the metadata period, limited to
   1,000 descriptors as the local class's page is and filtered for the caller (Q-OCI-123);
   an upstream 404 is answered 404, so that the client falls back to the tag schema through the same remote (Q-OCI-15), and so is an answer that
-  cannot be had (offline, circuit open, a caller who may not fill): an empty index would say that nothing refers to the digest (Q-OCI-128). The
+  cannot be had (offline, circuit open, a caller who may not fill, or an upstream that was asked and failed, [Q-OCI-204](#q-oci-204--the-referrers-of-a-remote-whose-upstream-was-asked-and-failed-are-404)): an empty index would say that nothing refers to the digest (Q-OCI-128). The
   manifests a client then fetches by digest are cached like every manifest.
 
 Acceptance criteria:
@@ -1057,7 +1057,7 @@ Acceptance criteria:
 - With `host_roots: {mirror.example.com: web/docker-hub}`, a Docker Engine configured with that mirror pulls `alpine:3`, and the
   stub records one manifest request (R-EP-007).
 - On `mirror.example.com`, `GET /v2/web/docker-hub/library/alpine/manifests/3` reads the name `web/docker-hub/library/alpine` in
-  R and answers 404 `NAME_UNKNOWN`.
+  R and answers 404 (the remote asks its upstream for that name as sent; Q-OCI-202); on a local repository the code is `NAME_UNKNOWN`.
 - With `host_roots: {plain.example.com: web/files}` (a generic repository), `GET /v2/library/alpine/manifests/3` on
   `plain.example.com` answers 404 `NAME_UNKNOWN` and `GET /v2/web/docker-local/app/manifests/1` there reaches `web/docker-local`.
 
@@ -1217,6 +1217,7 @@ Priority: **P1** · Covers: trove-only
   mirror of a bound host; the rendered setup snippets. Set `oci-long` (nightly, R-HA-052): a push whose upload is cut by a
   drain (R-OCI-011). The set `mirror` gains an OCI mirror of the stub on two worker processes while clients pull through it, and
   `mirror-long` the drain of the node of the process that runs an OCI pass (R-REPO-058, R-REPO-059).
+- **As built (WP11).** The sets, the rows and the clients are in [docs/developer/e2e.md](../../developer/e2e.md#the-oci-tests): `oci` (per change that touches the registry: login with both clients, push and pull through local, remote `pullThrough`, remote `mirror` with the stub stopped, virtual and bound-host repositories, Buildx, `docker manifest`, Podman manifests, anonymous pull, a Kubernetes pod with the image pull secret of the snippet, the Docker Engine mirror, the rendered snippets, six concurrent pulls on three replicas), `oci-long` (a push cut by the drain of the receiving pod, with the multipart check), `mirror` and `mirror-long` (an OCI pass while clients pull, the drain of its node) and `oci-closing` (Valkey stopped, Docker Hub read-only without the count of Q-OCI-203). The clients are `docker:29.9.3-dind` and `quay.io/podman/stable:v5.8.9`, both by digest (`E2E_OCICLIENTS_DOCKER_IMAGE`, `E2E_OCICLIENTS_PODMAN_IMAGE`), in privileged pods of the namespace `trove-e2e-clients` (Q-OCI-21 held; the cluster admitted the level; [H-750](../../security/oci-registry.md#h-750--the-oci-client-pods-of-the-e2e-tier-are-privileged-and-the-dev-ca-is-added-to-a-nodes-containerd), Q-OCI-200, Q-OCI-201). The conformance suite, the integration tier and the criteria that need no client are not these sets.
 - **Closing run** (the full run of Test and Release on the commit that closes the phase): the set `oci` with Valkey stopped,
   and a read-only check against Docker Hub through a `pullThrough` remote and a mirror of `library/busybox` with `tags:
   ["latest"]` (at most six manifest `GET` requests in total, anonymous).
@@ -3339,6 +3340,94 @@ Context: R-OCI-028 and R-REPO-021 say 405 for a write to a virtual repository wi
 **Applied in the spec:** [R-OCI-028](#r-oci-028--virtual-repository-pushes-through-a-virtual-repository). Code: `writeRequest`. Tests:
 `TestAWriteThroughAVirtualRepositoryWithoutADeployTargetAnswers405` (the handler's defence), `TestR_OCI_028_WithoutADeployTargetTheFirstUploadIsRefused`.
 
+### Q-OCI-200 · The Kubernetes pull row reaches the registry through a forwarder on the node and a host configuration of the node's containerd
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the row of R-OCI-035 that starts a pod from an image of a virtual repository is pulled by the kubelet's containerd, which resolves `localhost:<edge port>` on its own node, where nothing listens, and trusts the system roots only. The registry's token realm is built from the response base URL of the endpoint (R-OCI-004), `https://localhost:<edge port>/v2/_token`, so a mirror or a rewrite of the image host does not help: the realm host is the one containerd dials.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A forwarder on the control-plane node from `127.0.0.1:<edge port>` to the edge's NodePort, the dev CA and a `hosts.toml` in `/etc/containerd/certs.d/localhost:<edge port>`, and `config_path` set in `deploy/dev/kind.yaml` (chosen) | The image reference and the realm are the ones of the setup snippets | The row proves the snippet's secret and the real kubelet; nothing in the product changes | A node is changed from outside (H-750); a cluster created before has to be created again |
+| (b) An image host that the node resolves (a name in the node's `/etc/hosts` and a certificate for it) | A second host name for the edge | No forwarder | The snippets and the secret would name another host than the one the other rows use; a second certificate |
+| (c) A second registry endpoint on the node network | An endpoint with its own base URL | The realm would be reachable | A listener and an Ingress for one row |
+
+**Choice:** (a). `deploy/dev/kind.yaml` sets `config_path` through `containerdConfigPatches` (the node image's default has none), and `oci_node_setup` of `deploy/dev/e2e.sh` copies a forwarder (`test/e2e/clients/fwd`, the tool of the client pods) to the control-plane node and starts it, and writes the CA and `hosts.toml`. The pod of the row is pinned to that node.
+
+**Rationale:** the row exists to prove the pull secret of the snippet with the real kubelet, so the image reference must be the snippet's. The development agent would revisit it if the dev cluster gets a registry host that every node resolves.
+
+**Applied in the spec:** R-OCI-035 (as built), [docs/developer/e2e.md](../../developer/e2e.md#the-oci-clients).
+
+### Q-OCI-201 · The bound host of the Docker Engine mirror is a further endpoint of the dev profile, not a host of the default endpoint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a host-root binding needs the host in the endpoint's host set (R-EP-006), and an endpoint with configured hosts checks every request's host (R-EP-003). The dev profile's default endpoint has none, and the e2e suites reach it by Service names and pod addresses as well.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The endpoint `ocimirror` beside `customers` in `values-dev.yaml`: its own port (8444), host `oci-mirror.trove.localhost`, `hostRoots` to `e2e/oci-engine-mirror`, anonymous requests and the cache fill admitted, two certificates (chosen) | The default endpoint stays as every suite knows it | No host check is switched on for the default endpoint | A listener, two Services-worth of objects and two certificates in every profile |
+| (b) `endpoints.default.hosts` and `hostRoots` in the `scatter` values | No new objects | Smaller | The host check answers `421` to a request by IP literal or an unlisted Service name on every set that uses the profile |
+
+**Choice:** (a). The binding is inert until the test creates the repository `e2e/oci-engine-mirror` (R-EP-006). A further endpoint does not fill remote caches by default (`cacheFill: false`), so the endpoint sets `cacheFill: true`.
+
+**Rationale:** a profile that every set shares must not change how the other sets reach the default endpoint. The development agent would revisit it if the default endpoint gets hosts for another reason.
+
+**Applied in the spec:** R-OCI-029 (as built).
+
+### Q-OCI-202 · A path the bound host of a remote repository reads as an image name answers 404 with the code the remote answers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the second acceptance criterion of R-OCI-029 says `GET /v2/web/docker-hub/library/alpine/manifests/3` on the bound host answers 404 `NAME_UNKNOWN`. The repository is a remote: the name `web/docker-hub/library/alpine` is asked of the upstream as sent, and a remote answers a manifest the upstream does not have with 404 `MANIFEST_UNKNOWN` (R-OCI-022), whatever the upstream's own code was. The e2e row measured `MANIFEST_UNKNOWN`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The criterion says 404 and that the upstream is asked for the name as sent (chosen) | The row asserts what the requirement is about: the path is an image name of the bound repository, not a repository | Matches the remote adapter's one 404 for a manifest it cannot get | The code is not part of the criterion |
+| (b) The remote keeps the upstream's `NAME_UNKNOWN` and answers it | The code the criterion names | Matches the criterion as it was written | The remote would keep the code of the upstream's body in the not-found marker (R-REPO-028), a change to every format's engine |
+
+**Choice:** (a). The criterion is rewritten; the e2e row (`TestOCIEngineMirror`) asserts the 404 and the request the upstream saw for the name.
+
+**Rationale:** the criterion's point is the reading of the path, which the upstream's counter proves. The development agent would revisit it if a client needs the code.
+
+**Applied in the spec:** R-OCI-029 (the second acceptance criterion).
+
+### Q-OCI-203 · The closing run does not count Docker Hub's manifest requests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-035 asks the closing run for "at most six manifest `GET` requests in total" against Docker Hub. Docker Hub is outside the cluster; its counter is not readable, trove's metric `trove_remote_upstream_requests_total` counts every request to an upstream by status and not by kind, and a registry's access log is not ours.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The closing run pulls one tag once through a remote and once through a mirror, anonymously and read-only, and does not assert the count (chosen) | The subset is small by construction (one tag, `tags: ["latest"]`, one platform) | Honest about what can be observed | The six requests are a design bound, not an assertion |
+| (b) A forward proxy in front of Docker Hub that counts | A count | The only way to assert it | A second moving part that has to pass TLS to a public host through the egress rules |
+
+**Choice:** (a). `TestOCIClosingPublic` pulls `library/busybox:latest` as `busybox` and as `library/busybox` (one cached copy) and mirrors it; the count is not asserted.
+
+**Rationale:** the stub registry asserts the count exactly where it is observable (R-OCI-022, R-OCI-023, R-OCI-025). The development agent would revisit it if the closing run is bound by Docker Hub's allowance.
+
+**Applied in the spec:** R-OCI-035 (as built).
+
+### Q-OCI-204 · The referrers of a remote whose upstream was asked and failed are 404
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-024 answers the referrers of a remote 404 when they cannot be had without asking the upstream (offline, the circuit open, a caller who may not fill), so that the client falls
+back to the tag schema. A real Docker with the containerd image store asks for the referrers of every image it pulls, also of an image a mirror holds completely, and treats an error as a
+failed pull. With the upstream down (its connections cut) the e2e row measured `502 UNAVAILABLE` for the referrers while the pull of a mirrored tag needed nothing else from the upstream.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An upstream that was asked and failed (cut, timed out, 5xx) is answered like one that cannot be asked: 404 (chosen) | The pull of a mirrored image survives an upstream that is down before its circuit opens | One rule for "the referrers cannot be had"; the tag schema fallback is served from the cache | A failure of the upstream shows as "no referrers" for the metadata period of the engine's volatile query (a failure is not cached) |
+| (b) Only the circuit open and offline are 404 (the text as it was) | The error shows | Simple | Docker fails the pull of a complete mirror for the first requests of an outage |
+
+**Choice:** (a). `upstreamFailed` in [remote_handlers.go](../../../internal/formats/oci/remote_handlers.go); the same helper serves the referrers a remote member contributes to a virtual repository. The tag a client then falls back to (`sha256-<hex of the subject>`, the referrers tag schema) is answered 404 `MANIFEST_UNKNOWN` as well when the upstream cannot be asked or failed, and only that tag: any other tag keeps the failure (`referrersTag`).
+
+**Rationale:** nothing is claimed about the subject (404, not an empty index). The development agent would revisit it if a client reads the 404 as "nothing refers to the digest" and skips a signature check.
+
+**Applied in the spec:** R-OCI-024 (as built); `TestR_OCI_024_ReferrersOfAnUpstreamThatFailedAre404`, `TestR_OCI_024_TheReferrersTagOfAnUpstreamThatFailedIs404`, `TestOCIRemoteMirror` ([oci_remote_test.go](../../../test/e2e/oci_remote_test.go)).
+
 ## What this does not cover
 
 ### H-579 · A holder of the stored-secret key ring can mint registry tokens
@@ -3484,6 +3573,14 @@ enforcement point checks it) and is not narrowed further by its other entries (H
 agent would revisit it if the amplification of H-648 shows up in a measurement.
 
 **Applied in the spec:** R-OCI-017.
+
+### H-751 · An upstream that drops connections without an answer stalls the requests of a remote for the upstream client's connect timeouts
+
+An upstream whose address is reachable but whose connections are dropped without an answer (a kind node does that for a Service without an endpoint; a firewall that drops does too) makes
+every upstream request of a remote wait for the connect timeout of the upstream client before it fails, and the engine tries twice: the e2e row `TestOCIRemoteMirror` measured 20 s for
+one referrers request (a `504`), longer than the header timeout of a Docker client, which gave up on the pull. The circuit opens after `availability.failureThreshold` failures and the requests
+are then answered at once, so the stall is the cost of the first requests of an outage. Live for every remote and mirror whose upstream outage looks like this, not for one that refuses or resets
+the connection (the test uses the stub's `down: reset` for that case). The remedy is a lower `connectTimeoutMs` of the repository's `remote` section; a default that fits both is not decided.
 
 ### Q-OCI-102 · The pull check on a mount's source is made by the enforcement point and answers as an unreadable source
 
