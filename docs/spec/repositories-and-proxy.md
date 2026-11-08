@@ -1348,7 +1348,10 @@ patterns.
   repository (`FOR NO KEY UPDATE`), and it reads the claims after both. Two first publishes of one name into two members of one
   virtual repository therefore create one claim (the second records `autoClaim: skipped`), and two first publishes into one
   repository cannot pass the limit of 1000 ([Q-REPO-285](#q-repo-285--the-decision-of-an-auto-claim-takes-the-auto-claim-configuration-lock-for-a-virtual-member-and-the-row-of-the-repository)).
-  Both locks end with the publish's transaction, so a publish that rolls back leaves no claim and no lock.
+  Both locks end with the publish's transaction, so a publish that rolls back leaves no claim and no lock. A write of the
+  manual claims (`PUT …/claims`) takes the same configuration lock as its first statement, before the repository row, so it and
+  the auto claim of a first publish decide one after the other and the manual write's `claim_overlaps` sees a claim the publish
+  committed.
 - Claims for names that do not exist yet are created explicitly; this reserves a scope or prefix
   before its first publish.
 - **Claim scope.** Every claim has a scope. `members` (the default, and the only scope an auto
@@ -7841,7 +7844,8 @@ for that wait to show in the publish latency; the narrower key would then be a r
 `lockAutoClaim` in [routing.go](../../internal/repository/routing.go), `ConfigAutoClaims` in
 [locks.go](../../internal/cluster/locks.go), queries `RepositoryIsMember` and `LockRepositoryForAutoClaim`
 ([claims.sql](../../internal/meta/postgres/queries/claims.sql)). Tests: `TestAutoClaimConcurrentPublishes`
-(`test/integration/repository`).
+(`test/integration/repository`). A manual claims write takes the configuration lock too, as its first statement and so in the same
+order (F-108; `PutClaims` in [claims.go](../../internal/repository/claims.go), test `TestAutoClaimAndManualClaimOfOneName`).
 
 ### Q-REPO-280 · The upstream test reads a Bearer challenge of a handshake format as reachable
 

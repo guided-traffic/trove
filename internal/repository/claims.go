@@ -444,6 +444,12 @@ func (s *Service) PutClaims(ctx context.Context, c Caller, name qname.Repo, pre 
 	}
 	var out ClaimSet
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
+		// The lock of the automatic claims first, in the order lockAutoClaim takes it before a repository row: a manual write
+		// and the auto claim of a first publish of the same name then decide one after the other, so neither decides on the
+		// other's uncommitted claim (F-108, Q-REPO-285).
+		if err := cluster.LockConfigObject(ctx, tx, cluster.ConfigAutoClaims); err != nil {
+			return err
+		}
 		qs, err := queries(tx)
 		if err != nil {
 			return err

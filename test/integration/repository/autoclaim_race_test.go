@@ -144,3 +144,59 @@ func TestAutoClaimConcurrentPublishes(t *testing.T) {
 		}
 	})
 }
+
+func TestAutoClaimAndManualClaimOfOneName(t *testing.T) {
+	e := newEnv(t)
+	a := e.newReplica("manual-race", replicaOpts{poll: 300 * time.Millisecond, catalog: pkgCatalog()})
+	a.mustCreate("mixed-a", "local", "pkgfmt", "")
+	a.mustCreate("mixed-b", "local", "pkgfmt", "")
+	a.mustCreate("mixed-v", "virtual", "pkgfmt", `"virtual":{"members":["mixed-a","mixed-b"]}`)
+
+	t.Run("R-REPO-023 a manual claim written while a first publish of the name claims it in a sibling member waits and sees the claim", func(t *testing.T) {
+		release := make(chan struct{})
+		var once sync.Once
+		releaseOnce := func() { once.Do(func() { close(release) }) }
+		t.Cleanup(releaseOnce) // a failure below must not leave the held transaction open
+		h := a.holdAutoClaim("mixed-a", "both-ways", release)
+		<-h.applied
+		if h.err != nil || !h.res.Created {
+			t.Fatalf("auto claim %+v, %v", h.res, h.err)
+		}
+		type result struct {
+			set repository.ClaimSet
+			err error
+		}
+		manual := make(chan result, 1)
+		go func() {
+			set, err := a.svc.PutClaims(context.Background(), caller, qr("mixed-b"), repository.MatchAny(),
+				repository.ClaimInput{Claims: []repository.ClaimEntry{{Pattern: "both-ways"}}}, allowGlobal)
+			manual <- result{set, err}
+		}()
+		waitFor(t, "the manual claim write to wait for a lock", 20*time.Second, func() bool {
+			select {
+			case r := <-manual:
+				manual <- r
+				return true
+			default:
+			}
+			return e.scalar(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`) > 0
+		})
+		select {
+		case r := <-manual:
+			t.Fatalf("the manual write finished while the auto claim was open: %+v, %v", r.set, r.err)
+		default:
+		}
+		releaseOnce()
+		<-h.done
+		if h.err != nil {
+			t.Fatal(h.err)
+		}
+		r := <-manual
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		if len(r.set.Warnings) != 1 || r.set.Warnings[0].Code != "claim_overlaps" {
+			t.Fatalf("warnings = %+v: the manual write did not see the committed auto claim", r.set.Warnings)
+		}
+	})
+}

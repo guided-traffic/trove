@@ -250,8 +250,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-113 · The integration stack's object store fills up in about a day** (2026-11-08): the tests leave their objects behind,
   and SeaweedFS in `test/integration/compose.yaml` holds 100 volumes of 512 MB; at 45 GB every upload failed until the stack was
   reset. Done when the tests remove what they write, or the stack cleans up on its own.
-- **F-108 · A manual name claim and an automatic one of the same name can race** (read by the F-101 builder). The claims API
-  does not take the lock F-101 added for automatic claims. Done when both take the same lock, with a test.
 
 ### Tests and tools
 
