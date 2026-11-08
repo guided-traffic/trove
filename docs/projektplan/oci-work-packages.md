@@ -318,7 +318,7 @@ WP0 ──┬─ WP1 ─────────────┐
 - Helpers other files may reuse (all in `handlers_manifest.go`): `storeOf`, `portOf`, `errDigestInvalid`, `errTagInvalid`, `errUnsupported`, `ioError`,
   `serveStored`, `checkReferences`.
 - The integration test of the routes mounts the format at `/api/oci/` in `test/integration/files/oci_host_test.go` until WP3 mounts `/v2/`; WP13 moves the
-  protocol criteria to `test/integration/oci` over `/v2/`.
+  protocol criteria to `test/integration/oci` over `/v2/` (done, see "WP13 as built").
 
 ## WP4b as built (tags, referrers, deletion, sweep, replay, reinstate, setup)
 
@@ -460,3 +460,34 @@ WP0 ──┬─ WP1 ─────────────┐
   of the virtual class; `docs/security/{README,oci-uploads,oci-content}.md`.
 - Left to others: the `docker pull` and `docker push` rows through a virtual address (R-OCI-027, R-OCI-028 acceptance criteria that run a client) are WP11's; the conformance suite through
   a virtual address is WP13's. The package screens need no class switch (the OCI screens read the rows of the repositories that hold the images).
+
+## WP13 as built (the conformance suite, the protocol criteria and F-88)
+
+- Built: `make oci-conformance` (pin `OCI_CONFORMANCE_TAG := v1.1.1`, `oci-conformance-build` resolves the tag to its commit, downloads the module into `.out/oci-conformance/mod` and compiles it with the
+  repository's Go, `GOTOOLCHAIN=local`), `TestOCIConformance` (build tag `ociconformance`, added to the lint build tags), the CI step and the artifact `oci-conformance-junit` in shard b of the
+  `integration` job, `TestProtocol` (20 subtests, three replicas, every request pinned), `TestR_AUTHZ_007_OCIActionMap` (a subtest per row of the OCI table), `TestRegistryWorksWithValkeyStopped`. ADR-189,
+  Q-OCI-210 to Q-OCI-214, H-755, H-756 ([developer/oci.md](../developer/oci.md#the-protocol-tests-and-the-conformance-suite)).
+- The spec said `go mod download …/conformance@v1.1.1`; the module has no tags of its own, so the tag of the repository is resolved to its commit (Q-OCI-210). R-OCI-035 says so now.
+- **The suite passes in all four categories through the local address** (80 specifications, none failed; four skipped: the two that read their data from the environment, the cross-mount spec for automatic
+  discovery enabled, and the cross-mount spec of a nonexistent blob, which runs only after a 202 - the mount answers 201 for a blob the source holds), **and pull, push and content discovery through the
+  virtual address** (80 specifications, none failed, ten more skipped: the content-management category, Q-OCI-211: a delete through a virtual repository is 405 by R-OCI-028).
+- **Product defect found by the suite and fixed first** (own commit): the challenge of a mount named the target's `push` only, so a client that takes its scope from the challenge never held `pull` on the
+  source and the mount fell back to a session (202); the three specs after a 201 were skipped. `Enforcer.mountScope` adds the source's pull (Q-OCI-212, `TestTheChallengeOfAMountNamesTheSourcesPullToo`).
+- **Area:** the protocol criteria are in `test/integration/oci` (the area the spec names, shard b), not `ocilocal` (state seeded by the item store) and not a new area (Q-OCI-214); no shard list changed.
+  `test/integration/files/oci_host_test.go` held the 11 protocol tests of the `/api/oci/` mount: their criteria run over `/v2/` now (pushes, the references and platforms of an index, the moved tag,
+  concurrent pushes, a withheld manifest, crafted manifests, the path-scoped policies and the lists decided on the package document, tag against digest pushes) and the fixture stays as
+  `oci_fixture_test.go` for the other seven files of the area, which need a lock, a guard or a standing session that a replica cannot stage.
+- **"Valkey stopped"** is the replicas' configuration (`StackOptions.Valkey` false: their Sentinel answers nothing), not a stop of the stack's container, so no failover lock was taken.
+- **F-88** (Q-OCI-213): 171 test names lost an R-OCI ID in `internal/formats/oci`, `internal/api/registry`, `internal/auth/registrytoken`, `test/integration/oci*` and `test/integration/registry`; each carries
+  "Mechanism of R-OCI-0nn, not a proof of its criteria: <what the criteria are>" in its comment. `TestWriteErrorMapsEveryRowOfTheTable` gained R-OCI-008 (its criterion), one test moved from R-OCI-020 to
+  R-OCI-022 (the mismatched digest). `docs/coverage/implemented.txt` and the checklist were regenerated from the names.
+- **Criteria no test of the integration tier proves, and who does:** R-OCI-002 (the repository keys: the repository service's tests); R-OCI-003 (the fixture plug-in of the route table);
+  R-OCI-004 (`docker login`, `podman login` and the anonymous `docker pull`: e2e `oci`); R-OCI-005 (the query counter and the key-ring rotation: `test/integration/identity`); R-OCI-007 (the object
+  store holds one object: the test counts the `blobs` rows, not an S3 listing); R-OCI-011 (the drain during a 300 MiB push: `oci-long`); R-OCI-014 and R-OCI-030 (real clients: WP11); R-OCI-021 to
+  R-OCI-025 (the six concurrent pulls on three replicas and `crane`: WP11; the `429` of a pass: `test/integration/mirror`); R-OCI-026 (defaults, 422 and the restriction: the repository service's tests; the
+  pass: `test/integration/mirror/oci_test.go`); R-OCI-032 (Docker and Podman with Valkey stopped: WP11's closing run); R-OCI-033 (the restore drill, R-BAK-029); R-OCI-034 (the metric after the e2e matrix: WP11).
+- Not verified: the suite against more than one replica (it runs against one, and the protocol tests cover three); the conformance run in CI (the step is written and its pieces run here, the job itself has not run).
+- Touched outside the owned files: `internal/api/registry/{enforce,mount_test}.go` (Q-OCI-212), `.golangci.yml` (the build tag), `Makefile` (block `T16 oci-conformance`), `.github/workflows/release.yml` (two
+  steps in the `integration` job), `docs/decisions.md`, `docs/spec/formats/oci.md`, `docs/security/{oci-virtual,oci-content}.md`, `docs/developer/{oci,build-and-test,formats}.md`, `docs/projektplan/promt.md` (F-88 removed),
+  `docs/coverage/`, and the test names of the packages F-88 names.
+

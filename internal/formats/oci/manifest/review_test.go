@@ -10,7 +10,10 @@ import (
 
 // The text of the annotations of a row is at most the limit, to the byte: an object of two entries whose text is exactly the limit is
 // kept whole, and one byte more cuts the second entry (R-OCI-007).
-func TestR_OCI_007_RowAnnotationsAtTheExactBoundary(t *testing.T) {
+//
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestRowAnnotationsAtTheExactBoundary(t *testing.T) {
 	const limit = 200
 	// {"a": "<x>", "b": "<y>"} is 2+3+2+... bytes; build the two values so the whole text is exactly limit bytes.
 	frame := len(`{"a": "", "b": ""}`)
@@ -33,7 +36,9 @@ func TestR_OCI_007_RowAnnotationsAtTheExactBoundary(t *testing.T) {
 	}
 }
 
-func TestR_OCI_020_TheShapeKeysOfTheOtherTypeAreRefusedInEveryCase(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestTheShapeKeysOfTheOtherTypeAreRefusedInEveryCase(t *testing.T) {
 	d := fmt.Sprintf(`{"mediaType":"a/b","digest":%q,"size":1}`, dg("x"))
 	for name, tc := range map[string]struct{ doc, ct string }{
 		"an image manifest with Manifests": {`{"schemaVersion":2,"config":` + d + `,"layers":[],"Manifests":[]}`, tImage},
@@ -50,7 +55,9 @@ func TestR_OCI_020_TheShapeKeysOfTheOtherTypeAreRefusedInEveryCase(t *testing.T)
 	}
 }
 
-func TestR_OCI_020_UnpairedSurrogateEscapesAreRefused(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestUnpairedSurrogateEscapesAreRefused(t *testing.T) {
 	d := fmt.Sprintf(`{"mediaType":"a/b","digest":%q,"size":1}`, dg("x"))
 	doc := func(v string) string {
 		return `{"schemaVersion":2,"config":` + d + `,"layers":[],"annotations":{"k":"` + v + `"}}`
@@ -83,7 +90,9 @@ func TestR_OCI_020_UnpairedSurrogateEscapesAreRefused(t *testing.T) {
 	}
 }
 
-func TestR_OCI_013_UrlsWithCredentialsAreRefused(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestUrlsWithCredentialsAreRefused(t *testing.T) {
 	doc := func(u string) string {
 		return fmt.Sprintf(`{"schemaVersion":2,"config":{"mediaType":"a/b","digest":%q,"size":1},"layers":[{"mediaType":"a/b","digest":%q,"size":1,"urls":[%q]}]}`, dg("c"), dg("l"), u)
 	}

@@ -14,7 +14,10 @@ import (
 
 // A cross-repository mount whose source is a Docker Hub remote's cache is decided on both spellings of the source's name, like a read
 // (Q-OCI-129, R3-3): an exclusion written for either spelling of the source holds for a mount whichever spelling `from` names.
-func TestR_OCI_012_AMountFromADockerHubRemoteIsDecidedOnBothSpellingsOfTheSource(t *testing.T) {
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestAMountFromADockerHubRemoteIsDecidedOnBothSpellingsOfTheSource(t *testing.T) {
 	e := newEnv(t, options{})
 	e.st.Repository("oci-local", "local", "oci", "{}")
 	person := func(name string, exclude ...string) string {

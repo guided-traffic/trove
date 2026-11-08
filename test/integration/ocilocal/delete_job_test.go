@@ -12,7 +12,10 @@ import (
 // The delete job of a whole name commits its batches one by one, blobs first. When a later batch is refused (here: an index pushed after
 // the delete was authorized lists a manifest the job would remove), the blobs of the earlier batches are gone and the manifests that name
 // them stay.
-func TestR_OCI_018_ADeleteJobThatStopsLeavesNoManifestOverARemovedBlob(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestADeleteJobThatStopsLeavesNoManifestOverARemovedBlob(t *testing.T) {
 	e := newEnv(t, "TROVE_STORAGE_DELETE_MAX_SYNC_ITEMS=1", "TROVE_STORAGE_DELETE_BATCH_SIZE=1")
 	layer := e.put(repoLocal, "app/_blobs/"+dg(sha256Of("layer")), "layer", "application/octet-stream")
 	c1 := e.manifestOf(repoLocal, "app", `{"platform":"amd64"}`, manifest, nil, "", ref{layer, "blob"})

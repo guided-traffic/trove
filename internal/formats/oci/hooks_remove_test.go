@@ -54,9 +54,12 @@ func graph() *memStore {
 	return st
 }
 
-// TestR_OCI_018_ARemovedManifestTakesItsTagsReferrersAndExclusiveChildren: the hook of a removed index cascades to its tags, its referrers
+// TestARemovedManifestTakesItsTagsReferrersAndExclusiveChildren: the hook of a removed index cascades to its tags, its referrers
 // and the children no other manifest and no tag names, and records the deletion with its journal entry (R-OCI-018, R-OCI-033).
-func TestR_OCI_018_ARemovedManifestTakesItsTagsReferrersAndExclusiveChildren(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestARemovedManifestTakesItsTagsReferrersAndExclusiveChildren(t *testing.T) {
 	st := graph()
 	h := listHost(t, st)
 	got, err := runHook(t, h, st, "delete", mpath(1))
@@ -82,9 +85,12 @@ func TestR_OCI_018_ARemovedManifestTakesItsTagsReferrersAndExclusiveChildren(t *
 	}
 }
 
-// TestR_OCI_018_AnIndexMustGoBeforeItsChild: a manifest that an index of the name lists is refused, unless the same removal takes the
+// TestAnIndexMustGoBeforeItsChild: a manifest that an index of the name lists is refused, unless the same removal takes the
 // index as well (a folder deleted with its subtree).
-func TestR_OCI_018_AnIndexMustGoBeforeItsChild(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestAnIndexMustGoBeforeItsChild(t *testing.T) {
 	st := graph()
 	h := listHost(t, st)
 	_, err := runHook(t, h, st, "delete", mpath(2))
@@ -103,7 +109,9 @@ func TestR_OCI_018_AnIndexMustGoBeforeItsChild(t *testing.T) {
 	}
 }
 
-func TestR_OCI_018_ABlobAManifestReferencesIsNotRemoved(t *testing.T) {
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestABlobAManifestReferencesIsNotRemoved(t *testing.T) {
 	st := graph()
 	h := listHost(t, st)
 	blob := func(n byte) string { return BlobPath("app", digestText(digestN(n))) }
@@ -120,9 +128,12 @@ func TestR_OCI_018_ABlobAManifestReferencesIsNotRemoved(t *testing.T) {
 	}
 }
 
-// TestR_OCI_018_ATrashedManifestKeepsItsRowsAndItsTags: the rows stay while an item is in the trash (R-OCI-007), and a cascade follows
+// TestATrashedManifestKeepsItsRowsAndItsTags: the rows stay while an item is in the trash (R-OCI-007), and a cascade follows
 // the reason of its event (ItemsEvent.Cascade).
-func TestR_OCI_018_ATrashedManifestKeepsItsRowsAndItsTags(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestATrashedManifestKeepsItsRowsAndItsTags(t *testing.T) {
 	st := graph()
 	h := listHost(t, st)
 	got, err := runHook(t, h, st, "trash", mpath(7))
@@ -138,7 +149,9 @@ func TestR_OCI_018_ATrashedManifestKeepsItsRowsAndItsTags(t *testing.T) {
 	}
 }
 
-func TestR_OCI_018_ARemoteRemovesTheRowsOfAnEvictedManifest(t *testing.T) {
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestARemoteRemovesTheRowsOfAnEvictedManifest(t *testing.T) {
 	st := graph()
 	h := listHost(t, st, func(o *formattest.HostOptions) { o.Class = formats.Remote })
 	if _, err := runHook(t, h, st, "delete", mpath(7), TagPath("app", "v1"), BlobPath("app", digestText(digestN(20)))); err != nil {
@@ -155,7 +168,9 @@ func TestR_OCI_018_ARemoteRemovesTheRowsOfAnEvictedManifest(t *testing.T) {
 	}
 }
 
-func TestR_OCI_018_AnItemOutsideTheLayoutIsNotTheFormats(t *testing.T) {
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestAnItemOutsideTheLayoutIsNotTheFormats(t *testing.T) {
 	st := graph()
 	h := listHost(t, st)
 	if got, err := runHook(t, h, st, "delete", "app/_taglist", "x", "Bad/_manifests/sha256:xx", "app/_manifests/notadigest"); err != nil || len(got) != 0 {
@@ -163,8 +178,11 @@ func TestR_OCI_018_AnItemOutsideTheLayoutIsNotTheFormats(t *testing.T) {
 	}
 }
 
-// TestR_OCI_018_ARemovedTagTakesItsVersionRow: DELETE of a tag removes the tag item and the version that its item led; the manifest stays.
-func TestR_OCI_018_ARemovedTagTakesItsVersionRow(t *testing.T) {
+// TestARemovedTagTakesItsVersionRow: DELETE of a tag removes the tag item and the version that its item led; the manifest stays.
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestARemovedTagTakesItsVersionRow(t *testing.T) {
 	st := newMemStore()
 	st.putManifest(rows.Manifest{Name: "app", Digest: digestN(1)})
 	h := listHost(t, st)

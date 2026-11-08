@@ -32,10 +32,12 @@ func setupData(auth bool) formats.SetupData {
 	}
 }
 
-// TestR_OCI_030_TheSnippetsNameTheImagePrefixAndNoCredential: the setup snippets of a repository start every image reference with
+// TestTheSnippetsNameTheImagePrefixAndNoCredential: the setup snippets of a repository start every image reference with
 // <host>/<projectKey>/<repoKey>/, carry no "/v2" (the protocol's prefix is no part of a reference), and spell the token only as the
 // reference of the environment variable, in a line the API drops for a reader who asked for none (R-OCI-030).
-func TestR_OCI_030_TheSnippetsNameTheImagePrefixAndNoCredential(t *testing.T) {
+//
+// Mechanism of R-OCI-030, not a proof of its criteria: its criterion needs the e2e run of every rendered snippet.
+func TestTheSnippetsNameTheImagePrefixAndNoCredential(t *testing.T) {
 	const prefix = "trove.example.com/web/docker-local"
 	tpls := New().SetupTemplates()
 	if len(tpls) == 0 {
@@ -76,8 +78,10 @@ func TestR_OCI_030_TheSnippetsNameTheImagePrefixAndNoCredential(t *testing.T) {
 	}
 }
 
-// TestR_OCI_030_TheLoginReadsTheTokenFromStandardInput: the token never sits on a command line (R-OCI-030).
-func TestR_OCI_030_TheLoginReadsTheTokenFromStandardInput(t *testing.T) {
+// TestTheLoginReadsTheTokenFromStandardInput: the token never sits on a command line (R-OCI-030).
+//
+// Mechanism of R-OCI-030, not a proof of its criteria: its criterion needs the e2e run of every rendered snippet.
+func TestTheLoginReadsTheTokenFromStandardInput(t *testing.T) {
 	want := map[string]string{
 		"docker.shell.configure": `printf '%s' "${TROVE_TOKEN}" | docker login trove.example.com/web/docker-local --username trove --password-stdin`,
 		"podman.shell.configure": `printf '%s' "${TROVE_TOKEN}" | podman login trove.example.com/web/docker-local --username trove --password-stdin`,
@@ -95,7 +99,8 @@ func TestR_OCI_030_TheLoginReadsTheTokenFromStandardInput(t *testing.T) {
 	}
 }
 
-func TestR_OCI_030_TheKubernetesSecretIsKeyedByTheImagePrefixAndKeepsTheTokenOffTheCommandLine(t *testing.T) {
+// Mechanism of R-OCI-030, not a proof of its criteria: its criterion needs the e2e run of every rendered snippet.
+func TestTheKubernetesSecretIsKeyedByTheImagePrefixAndKeepsTheTokenOffTheCommandLine(t *testing.T) {
 	for _, tpl := range New().SetupTemplates() {
 		if tpl.ID != "docker.kubernetes.configure" {
 			continue
@@ -123,7 +128,8 @@ func TestR_OCI_030_TheKubernetesSecretIsKeyedByTheImagePrefixAndKeepsTheTokenOff
 	t.Fatal("no Kubernetes template")
 }
 
-func TestR_OCI_030_TheInstallSnippetPlacesTheImageAndItsTag(t *testing.T) {
+// Mechanism of R-OCI-030, not a proof of its criteria: its criterion needs the e2e run of every rendered snippet.
+func TestTheInstallSnippetPlacesTheImageAndItsTag(t *testing.T) {
 	for _, tpl := range New().SetupTemplates() {
 		if tpl.Section != "install" {
 			continue
@@ -138,7 +144,8 @@ func TestR_OCI_030_TheInstallSnippetPlacesTheImageAndItsTag(t *testing.T) {
 	}
 }
 
-func TestR_OCI_030_BuildxPushesBothPlatformsWithoutEmulationAssumption(t *testing.T) {
+// Mechanism of R-OCI-030, not a proof of its criteria: its criterion needs the e2e run of every rendered snippet.
+func TestBuildxPushesBothPlatformsWithoutEmulationAssumption(t *testing.T) {
 	for _, tpl := range New().SetupTemplates() {
 		if tpl.ID != "docker.buildx.publish" {
 			continue

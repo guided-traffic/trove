@@ -12,7 +12,9 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 )
 
-func TestR_OCI_021_TheScopeOfAQueryIsReadFromTheRightOfThePath(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestTheScopeOfAQueryIsReadFromTheRightOfThePath(t *testing.T) {
 	rc := rctx(t, "https://ghcr.io/acme")
 	challenge := http.Header{"Www-Authenticate": {`Bearer realm="https://auth.example.com/t",service="s"`}}
 	for orig, want := range map[string]string{
@@ -39,7 +41,9 @@ func TestR_OCI_021_TheScopeOfAQueryIsReadFromTheRightOfThePath(t *testing.T) {
 	}
 }
 
-func TestR_OCI_025_TheLibraryMappingNeedsDockerHubWithoutANamespacePrefix(t *testing.T) {
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestTheLibraryMappingNeedsDockerHubWithoutANamespacePrefix(t *testing.T) {
 	for _, c := range []struct{ url, name, want string }{
 		{"https://registry-1.docker.io/", "nginx", "library/nginx"},
 		{"https://registry-1.docker.io", "nginx", "library/nginx"},
@@ -57,7 +61,9 @@ func TestR_OCI_025_TheLibraryMappingNeedsDockerHubWithoutANamespacePrefix(t *tes
 	}
 }
 
-func TestR_OCI_021_AStoodChallengeWithInsufficientScopeIsAMissingImage(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestAStoodChallengeWithInsufficientScopeIsAMissingImage(t *testing.T) {
 	a := adapter()
 	h := func(v ...string) http.Header { return http.Header{"Www-Authenticate": v} }
 	for name, c := range map[string]struct {
@@ -78,7 +84,9 @@ func TestR_OCI_021_AStoodChallengeWithInsufficientScopeIsAMissingImage(t *testin
 	}
 }
 
-func TestR_OCI_024_ACutTagsListHasNoLengthTheSpoolCouldCheck(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestACutTagsListHasNoLengthTheSpoolCouldCheck(t *testing.T) {
 	body := `{"name":"app","tags":["a","b"]}`
 	h := http.Header{"Link": {`</v2/app/tags/list?last=b&n=2>; rel="next"`}, "Content-Length": {"31"}}
 	resp := &http.Response{StatusCode: 200, Header: h, ContentLength: int64(len(body)), Body: io.NopCloser(strings.NewReader(body))}
@@ -102,7 +110,9 @@ func TestR_OCI_024_ACutTagsListHasNoLengthTheSpoolCouldCheck(t *testing.T) {
 	}
 }
 
-func TestR_OCI_020_AManifestIsBoundedBeforeItIsSpooled(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestAManifestIsBoundedBeforeItIsSpooled(t *testing.T) {
 	big := &http.Response{StatusCode: 200, Header: http.Header{}, ContentLength: MaxDocumentBytes + 1, Body: http.NoBody}
 	err := adapter().AcceptResponse(formats.Path{Path: "app/_manifests/" + sha([]byte("x"))}, big)
 	var e *errs.Error
@@ -124,7 +134,10 @@ func TestR_OCI_020_AManifestIsBoundedBeforeItIsSpooled(t *testing.T) {
 // The verdict on the digest of a tag is given when the body ends, so it holds for a consumer that reads to the end however it reads:
 // the spool reads a body of a known length through a reader that stops one byte past it (blob/spool.go), a body of an unknown length until
 // it ends. A consumer that stops early never gets it, which this test pins as the reliance (Q-OCI-120).
-func TestR_OCI_020_TheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead(t *testing.T) {
+//
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestTheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead(t *testing.T) {
 	body := string(imageManifestBytes(sha([]byte("cfg")), sha([]byte("layer"))))
 	wrong := sha([]byte("another"))
 	open := func(announce string, length int64) *http.Response {

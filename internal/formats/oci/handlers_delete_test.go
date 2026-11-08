@@ -58,7 +58,9 @@ func TestR_OCI_018_DeleteOfAManifestByDigest(t *testing.T) {
 	}
 }
 
-func TestR_OCI_018_DeleteOfATagIsDecidedForTheTagAndTheName(t *testing.T) {
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestDeleteOfATagIsDecidedForTheTagAndTheName(t *testing.T) {
 	st := newMemStore()
 	h := listHost(t, st, func(o *formattest.HostOptions) {
 		o.Allow = func(tg formats.Target) error {
@@ -106,7 +108,9 @@ func TestR_OCI_018_DeleteOfATagIsDecidedForTheTagAndTheName(t *testing.T) {
 	}
 }
 
-func TestR_OCI_018_DeleteRefusesAReferenceOutsideTheGrammars(t *testing.T) {
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestDeleteRefusesAReferenceOutsideTheGrammars(t *testing.T) {
 	h := listHost(t, newMemStore())
 	for path, code := range map[string]string{
 		"app/manifests/-bad":                      "TAG_INVALID",
@@ -125,9 +129,12 @@ func TestR_OCI_018_DeleteRefusesAReferenceOutsideTheGrammars(t *testing.T) {
 	}
 }
 
-// TestR_OCI_018_DeleteOfABlob: a blob no manifest of the name references is removed (202); a referenced one is refused (409 DENIED) and
+// TestDeleteOfABlob: a blob no manifest of the name references is removed (202); a referenced one is refused (409 DENIED) and
 // stays; a blob the name holds no item of is 404 BLOB_UNKNOWN.
-func TestR_OCI_018_DeleteOfABlob(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestDeleteOfABlob(t *testing.T) {
 	st := graph()
 	h := listHost(t, st)
 	blob := func(n byte) string { return BlobPath("app", digestText(digestN(n))) }
@@ -162,9 +169,12 @@ func TestDeleteRoutesServeLocalAndVirtual(t *testing.T) {
 	}
 }
 
-// TestR_OCI_018_DeleteOfABlobMakesNoPackage: a name that holds only blobs has no package row, and deleting one of its blobs creates none
+// TestDeleteOfABlobMakesNoPackage: a name that holds only blobs has no package row, and deleting one of its blobs creates none
 // (a row without a version is a row nobody reads).
-func TestR_OCI_018_DeleteOfABlobMakesNoPackage(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestDeleteOfABlobMakesNoPackage(t *testing.T) {
 	h := listHost(t, newMemStore())
 	p := BlobPath("blobsonly", digestText(digestN(40)))
 	h.PutItem(p, "application/octet-stream", []byte("layer"))

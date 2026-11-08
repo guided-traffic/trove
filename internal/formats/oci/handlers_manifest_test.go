@@ -98,7 +98,9 @@ func TestR_OCI_009_TheStoredManifestIsServedWhateverAcceptSays(t *testing.T) {
 	}
 }
 
-func TestR_OCI_009_PullRefusals(t *testing.T) {
+// Mechanism of R-OCI-009, not a proof of its criteria: it checks a refusal or the read by digest; the criteria are the HEAD
+// headers and the media type served to a narrower Accept.
+func TestPullRefusals(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	fx.image("app", "1", "layer")
 	zero := "sha256:" + strings.Repeat("0", 64)
@@ -121,7 +123,9 @@ func TestR_OCI_009_PullRefusals(t *testing.T) {
 	}
 }
 
-func TestR_OCI_009_AManifestIsServedByDigestWhetherOrNotATagPointsAtIt(t *testing.T) {
+// Mechanism of R-OCI-009, not a proof of its criteria: it checks a refusal or the read by digest; the criteria are the HEAD
+// headers and the media type served to a narrower Accept.
+func TestAManifestIsServedByDigestWhetherOrNotATagPointsAtIt(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	_, first := fx.image("app", "latest", "one")
 	_, second := fx.image("app", "latest", "two") // moves the tag away
@@ -157,7 +161,9 @@ func TestR_OCI_010_PullABlobOfAName(t *testing.T) {
 	fx.wantStatus(fx.get("app/blobs/sha256:"+strings.Repeat("0", 64)), http.StatusNotFound, "BLOB_UNKNOWN")
 }
 
-func TestR_OCI_008_ValidatorsAreTheRegistrysForm(t *testing.T) {
+// Mechanism of R-OCI-008, not a proof of its criteria: it checks the name, tag and digest validators; the criterion is the table
+// of WriteError rows.
+func TestValidatorsAreTheRegistrysForm(t *testing.T) {
 	mk := func(inm string) *formats.Request {
 		hr, _ := http.NewRequest(http.MethodGet, "https://trove.test/x", nil)
 		hr.Header.Set("If-None-Match", inm)
@@ -182,7 +188,9 @@ func TestR_OCI_008_ValidatorsAreTheRegistrysForm(t *testing.T) {
 	}
 }
 
-func TestR_OCI_013_PushByTagCommitsTheTagItemTheManifestItemAndTheRows(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestPushByTagCommitsTheTagItemTheManifestItemAndTheRows(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("team/app", []byte("{}"))
 	layer := fx.blob("team/app", []byte("l1"))
@@ -226,7 +234,9 @@ func TestR_OCI_013_PushByTagCommitsTheTagItemTheManifestItemAndTheRows(t *testin
 	_ = rev
 }
 
-func TestR_OCI_013_PushByDigest(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestPushByDigest(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("app", []byte("{}"))
 	m := imageManifestBytes(cfg)
@@ -332,7 +342,9 @@ func TestR_OCI_013_ArtifactsAreStoredByteForByte(t *testing.T) {
 	}
 }
 
-func TestR_OCI_013_ASubjectNeedNotExistAndIsAnsweredWithOCISubject(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestASubjectNeedNotExistAndIsAnsweredWithOCISubject(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	empty := fx.blob("app", []byte("{}"))
 	subject := sha([]byte("a manifest nobody pushed yet"))
@@ -351,7 +363,9 @@ func TestR_OCI_013_ASubjectNeedNotExistAndIsAnsweredWithOCISubject(t *testing.T)
 	}
 }
 
-func TestR_OCI_007_TheRowKeepsAtMost64KiBOfAnnotationsAndSaysSoWhenItCutsThem(t *testing.T) {
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestTheRowKeepsAtMost64KiBOfAnnotationsAndSaysSoWhenItCutsThem(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	var b strings.Builder
 	b.WriteString(`{"schemaVersion":2,"mediaType":"` + ctIndex + `","manifests":[],"annotations":{`)
@@ -369,7 +383,9 @@ func TestR_OCI_007_TheRowKeepsAtMost64KiBOfAnnotationsAndSaysSoWhenItCutsThem(t 
 	}
 }
 
-func TestR_OCI_014_AnIndexIsPushedAfterItsChildrenAndRecordsTheirPlatforms(t *testing.T) {
+// Mechanism of R-OCI-014, not a proof of its criteria: its criteria run Buildx, Podman and docker manifest against the registry
+// (e2e set oci); this checks the index handling without a client.
+func TestAnIndexIsPushedAfterItsChildrenAndRecordsTheirPlatforms(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	// The two children are pushed by digest; an index names them with their platforms.
 	cfg := fx.blob("multi", []byte("{}"))
@@ -413,7 +429,9 @@ func TestR_OCI_014_AnIndexIsPushedAfterItsChildrenAndRecordsTheirPlatforms(t *te
 	fx.wantStatus(fx.get("multi/manifests/"+sha(idx)), http.StatusOK, "")
 }
 
-func TestR_OCI_014_ADockerManifestListIsAcceptedAsItIs(t *testing.T) {
+// Mechanism of R-OCI-014, not a proof of its criteria: its criteria run Buildx, Podman and docker manifest against the registry
+// (e2e set oci); this checks the index handling without a client.
+func TestADockerManifestListIsAcceptedAsItIs(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("app", []byte("{}"))
 	child := imageManifestBytes(cfg)
@@ -469,7 +487,9 @@ func TestR_OCI_006_AMovedTagNeedsOverwriteAndASameDigestTagDoesNot(t *testing.T)
 	fx.wantStatus(fx.get("app/manifests/"+d1), http.StatusOK, "")
 }
 
-func TestR_OCI_006_AuthorizationIsDecidedPerNameAndTagBeforeTheBodyIsRead(t *testing.T) {
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestAuthorizationIsDecidedPerNameAndTagBeforeTheBodyIsRead(t *testing.T) {
 	var denied bool
 	fx := newFixture(t, formattest.HostOptions{Allow: func(tg formats.Target) error {
 		if denied && tg.Package == "secret/app" {
@@ -519,7 +539,9 @@ func (c *readCounter) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func TestR_OCI_006_ThePrecheckOfOwnershipRunsBeforeTheBody(t *testing.T) {
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestThePrecheckOfOwnershipRunsBeforeTheBody(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{Precheck: func(formats.Target, formats.OwnershipWrite) error {
 		return errs.E(errs.Forbidden, errs.CodePackageOwnedByOtherOwner, "owned")
 	}})
@@ -539,7 +561,9 @@ func TestR_OCI_006_ThePrecheckOfOwnershipRunsBeforeTheBody(t *testing.T) {
 	}
 }
 
-func TestR_OCI_006_TheFirstVersionOfANameIsShadowChecked(t *testing.T) {
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestTheFirstVersionOfANameIsShadowChecked(t *testing.T) {
 	refusal := errs.E(errs.Forbidden, errs.CodeShadowsRemotePackage, "the name is served by a remote repository")
 	var asked int
 	res := shadowResolver{check: func(string) (formats.ShadowOutcome, error) {
@@ -605,7 +629,9 @@ func TestR_OCI_033_APushOfAWithheldDigestIsRefusedWith409(t *testing.T) {
 	fx.wantStatus(fx.put("app/manifests/idx", indexOf(sha(child)+" linux/amd64"), ctIndex), http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN")
 }
 
-func TestR_OCI_013_APushThatFailsInTheTransactionLeavesNothing(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestAPushThatFailsInTheTransactionLeavesNothing(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("app", []byte("{}"))
 	layer := fx.blob("app", []byte("l"))
@@ -673,7 +699,10 @@ func TestR_OCI_013_ConcurrentPushesOfOneTagLeaveOneDigestAndOneVersion(t *testin
 // A push that read its tag as new and finds it taken when its transaction begins decides again (R-OCI-013 step 8, R-OCI-006): with
 // overwrite it commits its own digest, without it is refused. Another push of the tag lands exactly between the push's checks and its
 // transaction, so the retry of commitTag runs on every execution, not by chance.
-func TestR_OCI_013_APushThatFindsTheTagTakenDecidesAgain(t *testing.T) {
+//
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestAPushThatFindsTheTagTakenDecidesAgain(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		overwrite bool
@@ -751,7 +780,9 @@ func TestR_OCI_020_CraftedManifestsAreRefusedQuicklyWithoutStoringAnything(t *te
 	}
 }
 
-func TestR_OCI_013_AManifestOrTagReachingTheRepositoryAnyOtherWayIsRefused(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestAManifestOrTagReachingTheRepositoryAnyOtherWayIsRefused(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	rq, _ := fx.h.NewRequest(context.Background(), http.MethodPut, "app/manifests/1", nil)
 	sp, _ := fx.h.Ingest().Spool(context.Background(), rq, strings.NewReader(`{}`), formats.IngestOptions{})
@@ -814,7 +845,9 @@ func TestR_OCI_031_ThePackageViewShowsTheDigestTheSizeAndThePlatformsOfATag(t *t
 	}
 }
 
-func TestR_OCI_031_TheViewOrdersTagsByTheTagOrder(t *testing.T) {
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestTheViewOrdersTagsByTheTagOrder(t *testing.T) {
 	v := New().View()
 	if v.Compare("1.10", "1.9") <= 0 || v.Compare("latest", "1.0") >= 0 || v.Compare("1.0", "1.0-rc1") <= 0 || v.Compare("a", "a") != 0 {
 		t.Fatal("the view does not use the tag order of the format")

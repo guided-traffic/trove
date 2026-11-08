@@ -13,7 +13,10 @@ import (
 
 // Every decision of a route names the item it acts on (R-AUTHZ-005): a grant or a pattern scoped by path decides on the canonical path
 // of the layout, the same one `/files/` classifies.
-func TestR_OCI_006_EveryDecisionNamesTheCanonicalPathOfTheItem(t *testing.T) {
+//
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestEveryDecisionNamesTheCanonicalPathOfTheItem(t *testing.T) {
 	var seen []formats.Target
 	fx := newFixture(t, formattest.HostOptions{Allow: func(tg formats.Target) error {
 		seen = append(seen, tg)
@@ -72,7 +75,10 @@ func TestR_OCI_006_EveryDecisionNamesTheCanonicalPathOfTheItem(t *testing.T) {
 }
 
 // A tag that is pushed again is no publish: the pre-check says so, as the commit does (a new tag and a manifest by digest are).
-func TestR_OCI_006_ThePrecheckSaysPublishForNewContentOnly(t *testing.T) {
+//
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestThePrecheckSaysPublishForNewContentOnly(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	m, d := fx.image("app", "1", "layer")
 	last := func() formats.OwnershipWrite {
@@ -97,7 +103,10 @@ func TestR_OCI_006_ThePrecheckSaysPublishForNewContentOnly(t *testing.T) {
 }
 
 // Pushing the same tag again brings back a manifest item that was removed around the tag (a raw delete).
-func TestR_OCI_013_PushingATagAgainRestoresARemovedManifestItem(t *testing.T) {
+//
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestPushingATagAgainRestoresARemovedManifestItem(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	m, d := fx.image("app", "1", "layer")
 	ctx := context.Background()
@@ -112,7 +121,10 @@ func TestR_OCI_013_PushingATagAgainRestoresARemovedManifestItem(t *testing.T) {
 
 // The tag is linked to a stored manifest; when that manifest is gone at the commit, the commit is refused inside the transaction and
 // the push commits the manifest with the tag, so no tag points at a manifest that is not stored.
-func TestR_OCI_013_ALinkedTagChecksTheManifestInTheTransaction(t *testing.T) {
+//
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestALinkedTagChecksTheManifestInTheTransaction(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	cfg := fx.blob("app", []byte("{}"))
 	m := imageManifestBytes(cfg)
@@ -128,7 +140,10 @@ func TestR_OCI_013_ALinkedTagChecksTheManifestInTheTransaction(t *testing.T) {
 }
 
 // The list of packages asks for the summary, which an image has none of: no read happens; the details read once for any number of tags.
-func TestR_OCI_031_TheSummaryReadsNothingAndTheDetailsReadOnce(t *testing.T) {
+//
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestTheSummaryReadsNothingAndTheDetailsReadOnce(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	fx.image("a", "1", "one")
 	fx.image("b", "1", "two")
@@ -150,7 +165,10 @@ func TestR_OCI_031_TheSummaryReadsNothingAndTheDetailsReadOnce(t *testing.T) {
 }
 
 // The sizes of the tags of a page are read once, answer for the ids asked and no other, and are the size of the image.
-func TestR_OCI_031_TheSizesReadOnceAndAnswerForTheTagsAsked(t *testing.T) {
+//
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestTheSizesReadOnceAndAnswerForTheTagsAsked(t *testing.T) {
 	fx := newFixture(t, formattest.HostOptions{})
 	fx.image("a", "1", "one")
 	fx.image("b", "1", "two")
@@ -179,7 +197,9 @@ func TestR_OCI_031_TheSizesReadOnceAndAnswerForTheTagsAsked(t *testing.T) {
 	}
 }
 
-func TestR_OCI_031_AStringThatIsNoTagSortsBeforeEveryTag(t *testing.T) {
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestAStringThatIsNoTagSortsBeforeEveryTag(t *testing.T) {
 	v := New().View()
 	for _, junk := range []string{"zz z", "", "-x", "\x00?!"} {
 		for _, tag := range []string{"abc", "1.0", "latest", "a"} {

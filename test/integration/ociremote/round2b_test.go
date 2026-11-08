@@ -28,7 +28,10 @@ func (e *renv) scoped(name, repo string, include, exclude []string) string {
 // check and the screens use the second, the client types either. An exclusion written for one spelling holds whichever is typed, in both
 // directions, for an image that is not cached yet and for one that is; a grant has to name both, and one that names one refuses
 // consistently, cold or warm.
-func TestR_OCI_025_ADecisionOnADockerHubRemoteIsMadeOnBothSpellings(t *testing.T) {
+//
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestADecisionOnADockerHubRemoteIsMadeOnBothSpellings(t *testing.T) {
 	e := newEnv(t, options{})
 	// The people are made before the replica starts: its policy snapshot holds them from the first request.
 	tokens := map[string]string{
@@ -70,7 +73,10 @@ func TestR_OCI_025_ADecisionOnADockerHubRemoteIsMadeOnBothSpellings(t *testing.T
 }
 
 // A rule written for either spelling holds for both: an exclude pattern for nginx hides library/nginx as well, and the reverse.
-func TestR_OCI_025_AnExcludeForOneSpellingHoldsForTheOther(t *testing.T) {
+//
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestAnExcludeForOneSpellingHoldsForTheOther(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	for _, name := range []string{"nginx", "library/nginx"} {
@@ -93,7 +99,10 @@ func sha(string) string { return "sha256:" + strings.Repeat("0", 64) }
 
 // A stood 401 of the revalidation does not mark the image gone: the stored copy keeps being served, and so do the manifests and blobs
 // of the image (R2-1, R-REPO-029).
-func TestR_OCI_021_AnImageTheRegistryDeniesOnRevalidationKeepsServingFromTheCache(t *testing.T) {
+//
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestAnImageTheRegistryDeniesOnRevalidationKeepsServingFromTheCache(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	first := e.get(rep, rFast, "acme/a/manifests/1.0")

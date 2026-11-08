@@ -168,9 +168,12 @@ func (fx *uploadFixture) finish(path, digest string, body []byte) *formattest.Re
 	return fx.request(http.MethodPut, path, body, "application/octet-stream", func(r *http.Request) { r.URL.RawQuery = "digest=" + digest })
 }
 
-// TestR_OCI_011_AnUploadSessionIsStartedWithTheHeadersOfTheSpecification: 202 with the location of the session, Range 0-0, the minimum
+// TestAnUploadSessionIsStartedWithTheHeadersOfTheSpecification: 202 with the location of the session, Range 0-0, the minimum
 // chunk length of the session's part size and the session id (R-OCI-011).
-func TestR_OCI_011_AnUploadSessionIsStartedWithTheHeadersOfTheSpecification(t *testing.T) {
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestAnUploadSessionIsStartedWithTheHeadersOfTheSpecification(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	resp := fx.post("team/app/blobs/uploads/", "", nil)
 	fx.wantStatus(resp, http.StatusAccepted, "")
@@ -190,9 +193,12 @@ func TestR_OCI_011_AnUploadSessionIsStartedWithTheHeadersOfTheSpecification(t *t
 	}
 }
 
-// TestR_OCI_011_AChunkedUploadStoresTheBlobUnderTheName: chunks with and without Content-Range, the Range of every answer, the
+// TestAChunkedUploadStoresTheBlobUnderTheName: chunks with and without Content-Range, the Range of every answer, the
 // finalize with the last bytes, the blob pulled through the name afterwards.
-func TestR_OCI_011_AChunkedUploadStoresTheBlobUnderTheName(t *testing.T) {
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestAChunkedUploadStoresTheBlobUnderTheName(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	data := []byte("0123456789abcdefghij0123456789")
 	digest := sha(data)
@@ -257,9 +263,12 @@ func TestR_OCI_011_AChunkThatDoesNotStartAtTheReceivedCountIs416WithTheRange(t *
 	}
 }
 
-// TestR_OCI_011_ContentRangeIsReadStrictly: a header that is not <start>-<end> in decimal, ends before it starts or does not cover
+// TestContentRangeIsReadStrictly: a header that is not <start>-<end> in decimal, ends before it starts or does not cover
 // the body is 400 BLOB_UPLOAD_INVALID and reaches no session.
-func TestR_OCI_011_ContentRangeIsReadStrictly(t *testing.T) {
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestContentRangeIsReadStrictly(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	path, _ := fx.start("app")
 	for _, rng := range []string{"bytes 0-4/*", "0-", "-4", "a-4", "0-b", "5-4", "0-9", "00-4", "0-04", "-1-3", "0 - 4", "0-4,5-9"} {
@@ -273,8 +282,11 @@ func TestR_OCI_011_ContentRangeIsReadStrictly(t *testing.T) {
 	}
 }
 
-// TestR_OCI_011_AWrongDigestIsRefusedAndTheSessionStaysOpen: 400 DIGEST_INVALID, nothing stored, the session continues.
-func TestR_OCI_011_AWrongDigestIsRefusedAndTheSessionStaysOpen(t *testing.T) {
+// TestAWrongDigestIsRefusedAndTheSessionStaysOpen: 400 DIGEST_INVALID, nothing stored, the session continues.
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestAWrongDigestIsRefusedAndTheSessionStaysOpen(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	path, _ := fx.start("app")
 	fx.wantStatus(fx.patch(path, []byte("abc"), ""), http.StatusAccepted, "")
@@ -288,9 +300,12 @@ func TestR_OCI_011_AWrongDigestIsRefusedAndTheSessionStaysOpen(t *testing.T) {
 	fx.wantStatus(fx.finish(path, sha([]byte("abc")), nil), http.StatusCreated, "")
 }
 
-// TestR_OCI_011_ASessionBelongsToTheImageNameOfItsPath: every call passes the image name of the path as the binding; a session of
+// TestASessionBelongsToTheImageNameOfItsPath: every call passes the image name of the path as the binding; a session of
 // another name and an id that is no UUID are 404 BLOB_UPLOAD_UNKNOWN, the same answer on every method.
-func TestR_OCI_011_ASessionBelongsToTheImageNameOfItsPath(t *testing.T) {
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestASessionBelongsToTheImageNameOfItsPath(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	_, id := fx.start("team/app")
 	for _, tc := range []struct{ method, name string }{
@@ -326,8 +341,11 @@ func TestR_OCI_011_ASessionBelongsToTheImageNameOfItsPath(t *testing.T) {
 	fx.wantStatus(fx.get("team/app/blobs/uploads/"+id), http.StatusNoContent, "")
 }
 
-// TestR_OCI_011_ACancelledSessionIsGone: DELETE answers 204 and the session no longer exists.
-func TestR_OCI_011_ACancelledSessionIsGone(t *testing.T) {
+// TestACancelledSessionIsGone: DELETE answers 204 and the session no longer exists.
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestACancelledSessionIsGone(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	path, _ := fx.start("app")
 	del := fx.request(http.MethodDelete, path, nil, "")
@@ -338,9 +356,12 @@ func TestR_OCI_011_ACancelledSessionIsGone(t *testing.T) {
 	fx.wantStatus(fx.request(http.MethodDelete, path, nil, ""), http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN")
 }
 
-// TestR_OCI_011_AMonolithicPostStoresTheBlobWithoutASession: 201 with the blob's location; a body that is not the digest's content is
+// TestAMonolithicPostStoresTheBlobWithoutASession: 201 with the blob's location; a body that is not the digest's content is
 // 400 DIGEST_INVALID and stores nothing; neither opens a session; the host decides deploy on the blob's path.
-func TestR_OCI_011_AMonolithicPostStoresTheBlobWithoutASession(t *testing.T) {
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestAMonolithicPostStoresTheBlobWithoutASession(t *testing.T) {
 	var deployed []string
 	fx := withSessions(t, formattest.HostOptions{Allow: func(tg formats.Target) error {
 		for _, a := range tg.Actions {
@@ -377,8 +398,11 @@ func TestR_OCI_011_AMonolithicPostStoresTheBlobWithoutASession(t *testing.T) {
 	}
 }
 
-// TestR_OCI_011_AnUploadRefusedByTheDecisionPointStartsNothing: a 403 of Authorize reaches the client and no bytes are read.
-func TestR_OCI_011_AnUploadRefusedByTheDecisionPointStartsNothing(t *testing.T) {
+// TestAnUploadRefusedByTheDecisionPointStartsNothing: a 403 of Authorize reaches the client and no bytes are read.
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestAnUploadRefusedByTheDecisionPointStartsNothing(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{Allow: func(formats.Target) error {
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "no")
 	}})
@@ -387,8 +411,11 @@ func TestR_OCI_011_AnUploadRefusedByTheDecisionPointStartsNothing(t *testing.T) 
 	fx.wantStatus(resp, http.StatusForbidden, "DENIED")
 }
 
-// TestR_OCI_011_TheLocationIsTheLinkBuildersAndNotTheRequests: the location of a session is built by the link builder.
-func TestR_OCI_011_TheLocationIsTheLinkBuildersAndNotTheRequests(t *testing.T) {
+// TestTheLocationIsTheLinkBuildersAndNotTheRequests: the location of a session is built by the link builder.
+//
+// Mechanism of R-OCI-011, not a proof of its criteria: it checks one step of an upload; the criteria are the three-chunk upload
+// over three replicas, the 416 form and the conformance push category.
+func TestTheLocationIsTheLinkBuildersAndNotTheRequests(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{BaseURL: "https://registry.example.com"})
 	resp := fx.post("app/blobs/uploads/", "", nil)
 	if got := resp.Header().Get("Location"); !strings.HasPrefix(got, "https://registry.example.com/v2/it/main/app/blobs/uploads/") {
@@ -482,9 +509,12 @@ func TestR_OCI_012_AMountThatCannotBeServedOpensASessionAndSaysNothingMore(t *te
 	fx.wantStatus(fx.post("team/app/blobs/uploads/", "mount="+d+"&"+mountFrom, nil), http.StatusCreated, "")
 }
 
-// TestR_OCI_012_AMountNeedsDeployOnTheTarget: a caller who may read the source but not deploy to the target name is refused (403), not
+// TestAMountNeedsDeployOnTheTarget: a caller who may read the source but not deploy to the target name is refused (403), not
 // answered with a session.
-func TestR_OCI_012_AMountNeedsDeployOnTheTarget(t *testing.T) {
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestAMountNeedsDeployOnTheTarget(t *testing.T) {
 	fx, _, d := mountHost(t, func(tg formats.Target) error {
 		for _, a := range tg.Actions {
 			if a == formats.ActionDeploy && strings.HasPrefix(tg.Path, "team/") {
@@ -499,9 +529,12 @@ func TestR_OCI_012_AMountNeedsDeployOnTheTarget(t *testing.T) {
 	}
 }
 
-// TestR_OCI_012_AMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames: an item of the source path whose content is not the digest's
+// TestAMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames: an item of the source path whose content is not the digest's
 // (another format's file at the same path) is not linked: the commit hook refuses it.
-func TestR_OCI_012_AMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames(t *testing.T) {
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestAMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	d := sha([]byte("what the digest names"))
 	fx.h.PutItem(BlobPath("base", d), "application/octet-stream", []byte("something else"))
@@ -511,17 +544,23 @@ func TestR_OCI_012_AMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames(t *tes
 	}
 }
 
-// TestR_OCI_012_ADigestThatIsNoDigestIs400: the answer does not depend on the source.
-func TestR_OCI_012_ADigestThatIsNoDigestIs400(t *testing.T) {
+// TestADigestThatIsNoDigestIs400: the answer does not depend on the source.
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestADigestThatIsNoDigestIs400(t *testing.T) {
 	fx, _, _ := mountHost(t, nil)
 	for _, d := range []string{"", "nope", "sha256:abc", "sha512:" + strings.Repeat("0", 128)} {
 		fx.wantStatus(fx.post("team/app/blobs/uploads/", "mount="+d+"&"+mountFrom, nil), http.StatusBadRequest, "DIGEST_INVALID")
 	}
 }
 
-// TestR_OCI_012_AManifestDigestIsNoBlobSource: a mount reads `<name>/_blobs/<digest>`, and a manifest lives in `_manifests/`: the digest of a
+// TestAManifestDigestIsNoBlobSource: a mount reads `<name>/_blobs/<digest>`, and a manifest lives in `_manifests/`: the digest of a
 // stored manifest is the same session as any unknown digest, and nothing is linked under the target.
-func TestR_OCI_012_AManifestDigestIsNoBlobSource(t *testing.T) {
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestAManifestDigestIsNoBlobSource(t *testing.T) {
 	fx, _, _ := mountHost(t, nil)
 	m := []byte(`{"schemaVersion":2}`)
 	d := sha(m)
@@ -532,8 +571,11 @@ func TestR_OCI_012_AManifestDigestIsNoBlobSource(t *testing.T) {
 	}
 }
 
-// TestR_OCI_012_ABoundHostNamesTheSourceWithoutProjectAndKey: on a host bound to the repository, from is an image name of it.
-func TestR_OCI_012_ABoundHostNamesTheSourceWithoutProjectAndKey(t *testing.T) {
+// TestABoundHostNamesTheSourceWithoutProjectAndKey: on a host bound to the repository, from is an image name of it.
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestABoundHostNamesTheSourceWithoutProjectAndKey(t *testing.T) {
 	fx, _, d := mountHost(t, nil)
 	serve := func(query string, bound ...qname.Repo) *formattest.Response {
 		rq, err := fx.h.NewRequest(context.Background(), http.MethodPost, "team/app/blobs/uploads/", nil)
@@ -555,8 +597,11 @@ func TestR_OCI_012_ABoundHostNamesTheSourceWithoutProjectAndKey(t *testing.T) {
 	fx.wantStatus(serve("mount="+d+"&"+mountFrom), http.StatusAccepted, "")
 }
 
-// TestR_OCI_012_TheSourceOfAMountIsParsedOneWay: the table the registry root reads the same function by for the grant on the source.
-func TestR_OCI_012_TheSourceOfAMountIsParsedOneWay(t *testing.T) {
+// TestTheSourceOfAMountIsParsedOneWay: the table the registry root reads the same function by for the grant on the source.
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestTheSourceOfAMountIsParsedOneWay(t *testing.T) {
 	bound := qname.Repo{Project: "web", Key: "docker-local"}
 	for _, tc := range []struct {
 		from  string

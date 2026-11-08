@@ -292,7 +292,7 @@ type digestBody struct {
 // Read hashes what passes. The check is made when the body ends, so it relies on the consumer reading to the end: the spool reads a
 // body of a known length through a reader that stops one byte past it and so sees the end (blob/spool.go), and a body of an unknown
 // length until it ends. A consumer that stops before the end never gets the verdict; digestBody must not be used for one
-// (TestR_OCI_020_TheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead).
+// (TestTheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead).
 func (d *digestBody) Read(p []byte) (int, error) {
 	n, err := d.rc.Read(p)
 	d.h.Write(p[:n])

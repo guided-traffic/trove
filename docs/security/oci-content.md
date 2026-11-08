@@ -48,7 +48,7 @@ perspective.
   holds only blobs has no package row and none is made for it: the rows of the blobs arbitrate, because a push holds them `FOR SHARE`
   until its own rows are written and the hook of the removal reads what the push committed. A manifest that
   commits a reference while the sweep waits for the lock keeps its blob, and the manifest push reads its layers again inside its commit
-  transaction with the rows held (`ExistingItems`, `FOR SHARE`), so a layer cannot go between the check and the manifest's rows; the integration test `TestR_OCI_019_APushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob`
+  transaction with the rows held (`ExistingItems`, `FOR SHARE`), so a layer cannot go between the check and the manifest's rows; the integration test `TestAPushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob`
   holds this against a real database.
 - The sweep never deletes an object of the blob store: it removes items, and the garbage collection of R-STOR-024 collects the object
   once no item references it.
@@ -110,4 +110,12 @@ The journal records the deletion and not the later push of the same bytes (a pus
 therefore withholds a manifest that was deleted and then pushed again after the snapshot, although it is live in the installation that was
 lost. This is the conservative direction: availability of that image is lost until `trove admin oci reinstate`, never integrity or
 access. **Live after every restore that follows a delete and a re-push**; the replay output lists every withheld manifest.
+
+### H-756 · The memory bound of the crafted manifests is measured on the heap of the test process
+
+The criterion of R-OCI-020 says the replica's RSS stays within 512 MiB of its baseline while crafted manifests (nested 100,000 deep, 20,000 layers, a 5 MiB index, a path as a digest) are
+refused. The integration test runs the replicas inside the test process, so it samples the Go heap in use every 10 ms while a manifest is pushed and asserts that the peak stays within 512 MiB of the
+heap before it; it does not see memory the runtime holds without using (stacks, released spans not yet returned) and it cannot see the RSS of a separate process. The refusal itself is structural
+(the parser's bounds run before any blob is looked up, so the work is linear in a document of at most 4 MiB), and the e2e run is the place for an RSS reading of a pod. Live today as a measurement gap,
+not as an observed excess.
 

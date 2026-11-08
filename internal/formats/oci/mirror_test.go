@@ -150,7 +150,10 @@ func pathsOf(items []discover.Item) []string {
 // R-OCI-026 (Mirror discovery): the tags a mirror keeps are the ones oci.mirror.tags selects minus oci.mirror.excludeTags; the wildcard
 // matches come newest first by the tag order, and the tags an exact pattern names follow, pinned, so that maxVersionsPerPackage counts
 // the wildcard matches only.
-func TestR_OCI_026_TheTagsAMirrorKeepsAreSelectedAndOrdered(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestTheTagsAMirrorKeepsAreSelectedAndOrdered(t *testing.T) {
 	all := []string{"1.0", "1.1", "1.2", "2.0", "latest", "1.3-rc1", "edge"}
 	for _, tc := range []struct {
 		name string
@@ -219,7 +222,10 @@ func TestR_OCI_026_TheTagsAMirrorKeepsAreSelectedAndOrdered(t *testing.T) {
 
 // R-OCI-026 (Mirror discovery): the plan of an image lists the tags newest first, every item of a tag carries the tag as its version,
 // and a layer two tags share is listed once per tag.
-func TestR_OCI_026_ThePlanOfAnImageNamesItsTagsItsConfigAndItsLayers(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestThePlanOfAnImageNamesItsTagsItsConfigAndItsLayers(t *testing.T) {
 	f := newFake(t, "https://registry.example.com/", `{"mirror":{"tags":["1.*","latest"]}}`)
 	f.get = func(u *url.URL) *discover.Response { return tagsAnswer("1.0", "1.1", "1.2", "2.0", "latest") }
 	digests := map[string]string{}
@@ -257,7 +263,10 @@ func TestR_OCI_026_ThePlanOfAnImageNamesItsTagsItsConfigAndItsLayers(t *testing.
 
 // R-OCI-026 (Mirror discovery), R-OCI-025: on Docker Hub a one-component name is asked for below library/, and the cache paths carry
 // it; any other upstream keeps the name.
-func TestR_OCI_025_TheMirrorMapsAOneComponentNameOnDockerHubOnly(t *testing.T) {
+//
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestTheMirrorMapsAOneComponentNameOnDockerHubOnly(t *testing.T) {
 	body, _ := imageManifest("n", "l")
 	for _, tc := range []struct {
 		base, requested, wantName string
@@ -290,7 +299,10 @@ func TestR_OCI_025_TheMirrorMapsAOneComponentNameOnDockerHubOnly(t *testing.T) {
 
 // R-OCI-026 (Mirror discovery): oci.mirror.platforms selects the manifests of an index by platform; an attestation entry follows the
 // manifest it names; a platform without a variant matches every variant; a single-platform image is kept whatever the platforms say.
-func TestR_OCI_026_APlatformFilterKeepsTheSelectedManifestsAndTheirAttestations(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestAPlatformFilterKeepsTheSelectedManifestsAndTheirAttestations(t *testing.T) {
 	amd, amdD := imageManifest("amd", "base", "amd")
 	arm, armD := imageManifest("arm", "base", "arm")
 	attAmd, attAmdD := imageManifest("att-amd", "sbom-amd")
@@ -371,7 +383,10 @@ func TestR_OCI_026_APlatformFilterKeepsTheSelectedManifestsAndTheirAttestations(
 
 // R-OCI-026: a layer with urls is a foreign layer the registry is not asked to hold; a tag whose manifest the registry does not accept
 // has no items and does not fail the name.
-func TestR_OCI_026_ForeignLayersAndInvalidManifestsAreSkipped(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestForeignLayersAndInvalidManifestsAreSkipped(t *testing.T) {
 	f := newFake(t, "https://registry.example.com/", `{"mirror":{"tags":["*"]}}`)
 	f.get = func(*url.URL) *discover.Response { return tagsAnswer("good", "old") }
 	foreign := fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":%q,"size":10},`+
@@ -391,7 +406,10 @@ func TestR_OCI_026_ForeignLayersAndInvalidManifestsAreSkipped(t *testing.T) {
 }
 
 // R-OCI-026: a name the upstream does not have is an empty plan, and a name with too many tags fails.
-func TestR_OCI_026_AnUnknownNameIsAnEmptyPlan(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestAnUnknownNameIsAnEmptyPlan(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		answer *discover.Response
@@ -414,7 +432,10 @@ func TestR_OCI_026_AnUnknownNameIsAnEmptyPlan(t *testing.T) {
 }
 
 // R-OCI-026: the tags list is read in pages, following the Link, and a list of more than 100,000 tags fails its plan.
-func TestR_OCI_026_TheTagsListIsReadInPagesAndBounded(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestTheTagsListIsReadInPagesAndBounded(t *testing.T) {
 	f := newFake(t, "https://registry.example.com/", ``)
 	pages := map[string]*discover.Response{
 		"":   {Status: 200, Header: http.Header{"Link": {`</v2/acme/a/tags/list?last=b&n=1000>; rel="next"`}}, Body: []byte(`{"name":"acme/a","tags":["a","b"]}`)},
@@ -455,7 +476,10 @@ func catalogAnswer(link string, names ...string) *discover.Response {
 
 // R-OCI-026 (Mirror discovery): the listing method reads the catalog, drops the namespace prefix, checks every name against the scope
 // and ends with a page shorter than n and no Link.
-func TestR_OCI_026_TheCatalogIsTheListingMethod(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestTheCatalogIsTheListingMethod(t *testing.T) {
 	scope := discover.Scope{Admits: func(n string) bool { return strings.HasPrefix(n, "acme/") }}
 	f := newFake(t, "https://registry.example.com/", ``)
 	f.get = func(u *url.URL) *discover.Response {
@@ -511,7 +535,10 @@ func TestR_OCI_026_TheCatalogIsTheListingMethod(t *testing.T) {
 
 // R-OCI-026 (Mirror discovery): the names method takes the include patterns without a wildcard, as they are written, sorted, admitted
 // ones only.
-func TestR_OCI_026_TheNamesMethodTakesTheExactIncludePatterns(t *testing.T) {
+//
+// Mechanism of R-OCI-026, not a proof of its criteria: it checks the mirror plan against fixtures; the criteria are the defaults,
+// the 422 for a platform and the restriction, and the pass itself is proven under R-REPO-051 in test/integration/mirror.
+func TestTheNamesMethodTakesTheExactIncludePatterns(t *testing.T) {
 	scope := discover.Scope{
 		Include: []string{"nginx", "acme/*", "bitnami/redis", "Bad_Name", "acme/b", "nginx"},
 		Admits:  func(n string) bool { return n != "acme/b" },

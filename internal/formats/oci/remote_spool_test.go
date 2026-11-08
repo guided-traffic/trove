@@ -17,7 +17,10 @@ import (
 // The digest reader of a tag gives its verdict when the body ends, so it holds under the real spool, on each of its three paths: a body
 // of a known length that fits in memory, one of a known length that goes to a file, and one of no known length (a chunked answer). A
 // change of the spool that stops reading before the end of the body fails this test (Q-OCI-120).
-func TestR_OCI_020_TheSpoolReadsATagToItsEndSoTheDigestVerdictIsGiven(t *testing.T) {
+//
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestTheSpoolReadsATagToItsEndSoTheDigestVerdictIsGiven(t *testing.T) {
 	body := string(imageManifestBytes(sha([]byte("cfg")), sha([]byte("layer"))))
 	for name, c := range map[string]struct {
 		memory int64
@@ -65,7 +68,10 @@ func TestR_OCI_020_TheSpoolReadsATagToItsEndSoTheDigestVerdictIsGiven(t *testing
 }
 
 // A cut tags list with a length is stored by the same spool: the wrapper drops the announced length, so the spool reads it to its end.
-func TestR_OCI_024_TheSpoolStoresACutTagsListThatTheWrapperExtended(t *testing.T) {
+//
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestTheSpoolStoresACutTagsListThatTheWrapperExtended(t *testing.T) {
 	doc := `{"name":"app","tags":["a","b"]}`
 	sp, err := blob.NewSpool(config.StorageSpool{Dir: t.TempDir(), MaxBytes: 64 << 20, MemoryThreshold: 1 << 20})
 	if err != nil {

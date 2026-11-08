@@ -107,7 +107,9 @@ func wantCode(t *testing.T, err error, kind errs.Kind, code string) {
 	}
 }
 
-func TestR_OCI_013_ParseValidDocuments(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestParseValidDocuments(t *testing.T) {
 	t.Run("an OCI image manifest", func(t *testing.T) {
 		m, err := parse(t, imageManifest(), tImage)
 		if err != nil {
@@ -212,7 +214,9 @@ func TestR_OCI_013_ParseValidDocuments(t *testing.T) {
 	})
 }
 
-func TestR_OCI_013_ParseRefusals(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestParseRefusals(t *testing.T) {
 	d := dg("x")
 	desc := fmt.Sprintf(`{"mediaType":"a/b","digest":%q,"size":1}`, d)
 	image := func(extra string) string {
@@ -369,7 +373,9 @@ func TestR_OCI_020_CraftedBounds(t *testing.T) {
 	})
 }
 
-func TestR_OCI_013_ReferencesAreDistinctAndRequiredByAnyDistributableUse(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestReferencesAreDistinctAndRequiredByAnyDistributableUse(t *testing.T) {
 	foreign := fmt.Sprintf(`{"mediaType":%q,"digest":%q,"size":9,"urls":["https://example.com/l"]}`, MediaTypeDockerForeignLayer, dg("f"))
 	plain := fmt.Sprintf(`{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":%q,"size":9}`, dg("f"))
 	cfg := fmt.Sprintf(`{"mediaType":"a/b","digest":%q,"size":2}`, dg("cfg"))
@@ -398,7 +404,9 @@ func TestR_OCI_013_ReferencesAreDistinctAndRequiredByAnyDistributableUse(t *test
 	}
 }
 
-func TestR_OCI_007_ContentSizeSaturates(t *testing.T) {
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestContentSizeSaturates(t *testing.T) {
 	big := fmt.Sprintf(`{"mediaType":"a/b","digest":%q,"size":9223372036854775807}`, dg("b"))
 	m, err := parse(t, `{"schemaVersion":2,"config":`+big+`,"layers":[`+big+`,`+big+`]}`, tImage)
 	if err != nil {
@@ -409,7 +417,9 @@ func TestR_OCI_007_ContentSizeSaturates(t *testing.T) {
 	}
 }
 
-func TestR_OCI_007_RowAnnotations(t *testing.T) {
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestRowAnnotations(t *testing.T) {
 	m := &Manifest{Annotations: map[string]string{"b": "2", "a": "1"}}
 	raw, cut := m.RowAnnotations(MaxAnnotationBytes)
 	if string(raw) != `{"a": "1", "b": "2"}` || cut {
@@ -448,7 +458,9 @@ var (
 	mediaTypeRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$`)
 )
 
-func TestR_OCI_002_ValidDigestEqualsItsExpression(t *testing.T) {
+// Mechanism of R-OCI-002, not a proof of its criteria: it checks a grammar function against its expression; the criteria are the
+// refusals a request through /v2/ receives and the repository keys.
+func TestValidDigestEqualsItsExpression(t *testing.T) {
 	cases := []string{
 		"", "sha256:", dg("a"), strings.ToUpper(dg("a")), "SHA256:" + dg("a")[7:], "sha256:" + strings.Repeat("g", 64),
 		dg("a") + "0", dg("a")[:len(dg("a"))-1], "sha512:" + strings.Repeat("a", 128), " " + dg("a"), dg("a") + "\n",
@@ -469,7 +481,9 @@ func TestR_OCI_002_ValidDigestEqualsItsExpression(t *testing.T) {
 	}
 }
 
-func TestR_OCI_013_ValidMediaTypeEqualsItsExpression(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestValidMediaTypeEqualsItsExpression(t *testing.T) {
 	cases := []string{
 		"", "a/b", "application/vnd.oci.image.manifest.v1+json", "application/vnd.cncf.helm.chart.content.v1.tar+gzip", "a/", "/b", "a/b/c",
 		"-a/b", "a/-b", "a b/c", "a/b;x=y", "a/b ", "A/B", "a/" + strings.Repeat("b", 127), "a/" + strings.Repeat("b", 128),
@@ -485,7 +499,10 @@ func TestR_OCI_013_ValidMediaTypeEqualsItsExpression(t *testing.T) {
 
 // A document whose members the standard decoder would read differently from this reader is refused: the pairs below are the
 // shapes a second reader (a client, another registry) is known to disagree about.
-func TestR_OCI_020_AmbiguousDocumentsAreRefused(t *testing.T) {
+//
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestAmbiguousDocumentsAreRefused(t *testing.T) {
 	d := dg("x")
 	desc := fmt.Sprintf(`{"mediaType":"a/b","digest":%q,"size":1}`, d)
 	for name, doc := range map[string]string{

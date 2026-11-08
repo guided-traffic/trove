@@ -91,7 +91,9 @@ func (e *env) put(in rows.ManifestInput) {
 	}
 }
 
-func TestR_OCI_007_ARecordedManifestAndItsReferencesReadBack(t *testing.T) {
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestARecordedManifestAndItsReferencesReadBack(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	subject := sum("subject")
@@ -150,7 +152,9 @@ func TestR_OCI_007_ARecordedManifestAndItsReferencesReadBack(t *testing.T) {
 	}
 }
 
-func TestR_OCI_007_AManifestWithoutAnnotationsOrSubjectStoresNull(t *testing.T) {
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestAManifestWithoutAnnotationsOrSubjectStoresNull(t *testing.T) {
 	e := newEnv(t)
 	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "app", Digest: sum("plain"), MediaType: "application/vnd.oci.image.manifest.v1+json", Size: 10}})
 	if n := e.st.Number("SELECT count(*) FROM oci_manifests WHERE annotations IS NULL AND subject IS NULL AND artifact_type IS NULL AND NOT annotations_cut"); n != 1 {
@@ -161,7 +165,10 @@ func TestR_OCI_007_AManifestWithoutAnnotationsOrSubjectStoresNull(t *testing.T) 
 // The bound the parser computes for the annotations of a row is within the bound of the database's CHECK on the text jsonb prints: the
 // hardest content (escapes, control characters, the characters Go and PostgreSQL print differently) at the limit is accepted, and
 // plain content uses nearly all of it.
-func TestR_OCI_007_TheAnnotationBoundOfTheParserIsWithinTheBoundOfTheColumn(t *testing.T) {
+//
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestTheAnnotationBoundOfTheParserIsWithinTheBoundOfTheColumn(t *testing.T) {
 	e := newEnv(t)
 	for name, value := range map[string]string{
 		"hard":  "q\"b\\s\n\t\u0001\u007f\u2028\u2029<>&\u00e9\u20ac\U0001F600",
@@ -188,7 +195,10 @@ func TestR_OCI_007_TheAnnotationBoundOfTheParserIsWithinTheBoundOfTheColumn(t *t
 
 // The text of the annotations of a row at exactly the limit of the column is kept whole and accepted by the CHECK; the parser's bound
 // is exact to the byte.
-func TestR_OCI_007_AnnotationsAtExactlyTheLimitOfTheColumnAreStored(t *testing.T) {
+//
+// Mechanism of R-OCI-007, not a proof of its criteria: it checks a row, a bound or a query of the data port; the criteria are the
+// digest of the stored bytes, the one object for tag and manifest and the layer shared by two names.
+func TestAnnotationsAtExactlyTheLimitOfTheColumnAreStored(t *testing.T) {
 	e := newEnv(t)
 	frame := len(`{"a": "", "b": ""}`)
 	x := strings.Repeat("x", 30000)
@@ -210,7 +220,9 @@ func TestR_OCI_007_AnnotationsAtExactlyTheLimitOfTheColumnAreStored(t *testing.T
 	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "over", Digest: sum("over"), MediaType: "application/vnd.oci.image.index.v1+json", Annotations: raw, AnnotationsCut: cut}})
 }
 
-func TestR_OCI_013_ExistingItemsAreTheLiveFilesOfTheRepository(t *testing.T) {
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestExistingItemsAreTheLiveFilesOfTheRepository(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	e.item("app/_blobs/"+dg("live"), "live")
@@ -241,7 +253,10 @@ func TestR_OCI_013_ExistingItemsAreTheLiveFilesOfTheRepository(t *testing.T) {
 
 // Inside the commit transaction the rows a manifest names are held against a removal until the manifest's rows are written, so a blob
 // cannot go between the check and the row (R-OCI-013 step 8).
-func TestR_OCI_013_TheItemsAManifestNamesAreHeldAgainstARemovalInTheTransaction(t *testing.T) {
+//
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestTheItemsAManifestNamesAreHeldAgainstARemovalInTheTransaction(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	path := "app/_blobs/" + dg("held")
@@ -281,7 +296,9 @@ func TestR_OCI_013_TheItemsAManifestNamesAreHeldAgainstARemovalInTheTransaction(
 	}
 }
 
-func TestR_OCI_033_WithheldAmongAndTheTombstoneRead(t *testing.T) {
+// Mechanism of R-OCI-033, not a proof of its criteria: it checks a data-port read; the criteria are the restore drill and the
+// refusals for a withheld image.
+func TestWithheldAmongAndTheTombstoneRead(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	e.st.Exec("INSERT INTO oci_tombstones (repo_id, name, digest) VALUES ($1, 'app', $2)", e.repoID, sumBytes("gone"))
@@ -319,7 +336,9 @@ func (e *env) tag(name, tag, seed string) int64 {
 	return v
 }
 
-func TestR_OCI_031_TheViewReadsTheTagsTheirManifestsAndThePlatformsOfAnIndex(t *testing.T) {
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestTheViewReadsTheTagsTheirManifestsAndThePlatformsOfAnIndex(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	e.put(rows.ManifestInput{Manifest: rows.Manifest{Name: "multi", Digest: sum("amd"), MediaType: "application/vnd.oci.image.manifest.v1+json", Size: 100, ContentSize: 1000}})
@@ -405,7 +424,10 @@ func TestR_OCI_031_TheViewReadsTheTagsTheirManifestsAndThePlatformsOfAnIndex(t *
 }
 
 // Concurrent pushes of manifests that name the same targets record each manifest once and lose none.
-func TestR_OCI_013_ConcurrentRecordsOfManifestsLoseNone(t *testing.T) {
+//
+// Mechanism of R-OCI-013, not a proof of its criteria: it checks the parser, one step of the commit transaction or a store query;
+// the criteria are the refusals by size and media type, the foreign layer, the artifact round trip and the concurrent tag.
+func TestConcurrentRecordsOfManifestsLoseNone(t *testing.T) {
 	e := newEnv(t)
 	var wg sync.WaitGroup
 	const n = 16
@@ -436,9 +458,12 @@ func TestR_OCI_013_ConcurrentRecordsOfManifestsLoseNone(t *testing.T) {
 	}
 }
 
-// TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth: the push of an index stores the sum of its children's content sizes, and a
+// TestTheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth: the push of an index stores the sum of its children's content sizes, and a
 // child that is an index holds its own sum, so the size is right however deep the nesting goes (Q-OCI-130).
-func TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth(t *testing.T) {
+//
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestTheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	image := "application/vnd.oci.image.manifest.v1+json"

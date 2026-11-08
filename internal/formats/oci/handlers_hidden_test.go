@@ -31,9 +31,12 @@ func slicesContains(s []formats.Action, a formats.Action) bool {
 	return false
 }
 
-// TestR_OCI_015_ALinkNeverNamesATagTheCallerMayNotRead: with one tag per page the Link of each page names the last tag listed, so paging
+// TestALinkNeverNamesATagTheCallerMayNotRead: with one tag per page the Link of each page names the last tag listed, so paging
 // does not walk the names of the hidden tags (Q-OCI-76), and the whole list costs one audited decision.
-func TestR_OCI_015_ALinkNeverNamesATagTheCallerMayNotRead(t *testing.T) {
+//
+// Mechanism of R-OCI-015, not a proof of its criteria: it checks hidden-tag handling or an edge case; the criteria are the n=2
+// paging and the conformance content-discovery category.
+func TestALinkNeverNamesATagTheCallerMayNotRead(t *testing.T) {
 	st := newMemStore()
 	for _, tag := range []string{"v1", "v2", "v3", "x01", "x02", "x03", "z9"} {
 		st.putTag("app", tag, digestN(1))
@@ -65,9 +68,12 @@ func TestR_OCI_015_ALinkNeverNamesATagTheCallerMayNotRead(t *testing.T) {
 	}
 }
 
-// TestR_OCI_015_AListThatCannotGoOnWithoutNamingAHiddenTagIsRefused: more consecutive hidden tags than the scan budget end the request
+// TestAListThatCannotGoOnWithoutNamingAHiddenTagIsRefused: more consecutive hidden tags than the scan budget end the request
 // with a refusal and not with a Link at a hidden name.
-func TestR_OCI_015_AListThatCannotGoOnWithoutNamingAHiddenTagIsRefused(t *testing.T) {
+//
+// Mechanism of R-OCI-015, not a proof of its criteria: it checks hidden-tag handling or an edge case; the criteria are the n=2
+// paging and the conformance content-discovery category.
+func TestAListThatCannotGoOnWithoutNamingAHiddenTagIsRefused(t *testing.T) {
 	st := newMemStore()
 	st.putTag("app", "a", digestN(1))
 	for i := range tagsScanBudget + 500 {
@@ -87,9 +93,12 @@ func TestR_OCI_015_AListThatCannotGoOnWithoutNamingAHiddenTagIsRefused(t *testin
 	}
 }
 
-// TestR_OCI_018_TheCascadeOfADeleteIsHeldToTheGrantsOfTheCaller: the tags of a referrer go with the referrer, two levels below the manifest
+// TestTheCascadeOfADeleteIsHeldToTheGrantsOfTheCaller: the tags of a referrer go with the referrer, two levels below the manifest
 // the caller named; the cascade decides every path it removes for `delete`, so the removal is refused whole (Q-OCI-76).
-func TestR_OCI_018_TheCascadeOfADeleteIsHeldToTheGrantsOfTheCaller(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestTheCascadeOfADeleteIsHeldToTheGrantsOfTheCaller(t *testing.T) {
 	st := graph()
 	st.putTag("app", "release-sig", digestN(7))
 	h := listHost(t, st, func(o *formattest.HostOptions) {

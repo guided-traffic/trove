@@ -176,7 +176,7 @@ func TestWritesAreServedByLocalAndVirtualRepositoriesOnly(t *testing.T) {
 	}
 }
 
-func TestWriteErrorMapsEveryRowOfTheTable(t *testing.T) {
+func TestR_OCI_008_WriteErrorMapsEveryRowOfTheTable(t *testing.T) {
 	type row struct {
 		name   string
 		err    error

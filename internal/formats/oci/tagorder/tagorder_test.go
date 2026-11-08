@@ -5,7 +5,9 @@ import (
 	"testing"
 )
 
-func TestR_OCI_031_NewestFirstOverATableOfTagSets(t *testing.T) {
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestNewestFirstOverATableOfTagSets(t *testing.T) {
 	// Each row lists tags newest first, as the package screen shows them.
 	for _, want := range [][]string{
 		{"1.29.3", "1.29.3-perl", "1.29.3-alpine", "1.29.3-rc1", "1.29.2", "1.9.15", "latest", "edge", "alpine"},
@@ -24,7 +26,9 @@ func TestR_OCI_031_NewestFirstOverATableOfTagSets(t *testing.T) {
 	}
 }
 
-func TestR_OCI_031_ParseAndPrerelease(t *testing.T) {
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestParseAndPrerelease(t *testing.T) {
 	for tag, ok := range map[string]bool{
 		"1": true, "v1": true, "1.2.3": true, "v1.2.3-rc1": true, "1.2-alpine": true, "01.02": true,
 		"": false, "v": false, "latest": false, "1.": false, ".1": false, "1..2": false, "1-": false, "1.2.x": false, "vv1": false, "V1": false, "-1": false,
@@ -43,7 +47,9 @@ func TestR_OCI_031_ParseAndPrerelease(t *testing.T) {
 	}
 }
 
-func TestR_OCI_031_CompareIsATotalOrder(t *testing.T) {
+// Mechanism of R-OCI-031, not a proof of its criteria: it checks the tag order or one step of the view; the criteria are the
+// platforms in the API metadata and the sizeBytes of the image.
+func TestCompareIsATotalOrder(t *testing.T) {
 	tags := []string{"1", "v1", "01", "1.0", "1.0.0", "v1.0", "1-a", "1-rc1", "2", "latest", "Latest", "_x", "0", "1.2.3", "1.10", "1.9", "99999999999999999999999999", "1-alpine"}
 	for _, a := range tags {
 		if Compare(a, a) != 0 {

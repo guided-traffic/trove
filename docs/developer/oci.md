@@ -314,7 +314,7 @@ digest, the binding and non-UUID ids on every method, abort, the monolithic uplo
 target, a source of the wrong content, a withheld manifest digest, a bound host, `MountSource` table). Integration, on the production host with three replicas
 (each its own blob store, spool and session service, requests pinned per replica) against PostgreSQL and S3:
 [oci_upload_test.go](../../test/integration/files/oci_upload_test.go) (`make test-integration`; the format is mounted at `/api/oci/` as in
-`oci_host_test.go` until `/v2/` is mounted).
+[oci_fixture_test.go](../../test/integration/files/oci_fixture_test.go); the protocol criteria of the push run over `/v2/` in [test/integration/oci](../../test/integration/oci)).
 ## The remote class (R-OCI-021 to R-OCI-025)
 
 The engine owns the request path, the freshness, the flights, the negative cache, the circuit, the handshake's I/O and the redirects; the format
@@ -337,7 +337,7 @@ read handlers of WP4 hand a request addressed to a remote repository to `remoteM
   headers. Two checks need both: the digest a tag announces in `Docker-Content-Digest` is checked by a reader `AcceptResponse` puts around the
   body (`digestBody`: the SHA-256 of what passed against the header, failing at the end of the body with `upstream_integrity_mismatch`, so nothing
   is stored; the engine raises the integrity event and counter for it in `bodyFailure`; the verdict is given when the body ends, which the spool's reads reach,
-  `TestR_OCI_020_TheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead`), and the cut of a tags list is recorded by a reader that adds the member
+  `TestTheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead`), and the cut of a tags list is recorded by a reader that adds the member
   `x-trove-truncated` (`truncatedBody`), which makes the body longer than the length the upstream announced, so `AcceptResponse` sets `ContentLength` to -1 and
   deletes the header (Q-OCI-126). A manifest is bounded before it is spooled (`boundedBody`, and the announced length). The media type of a
   fetched manifest is the document's own `mediaType` member, and for a document without one an index when it has `manifests` and an image manifest
@@ -515,9 +515,10 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [oci_upload_test.go](../../test/integration/files/oci_upload_test.go), [handlers_upload_test.go](../../internal/formats/oci/handlers_upload_test.go) | The upload protocol and the mount: see [Blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) |
 | `TestR_OCI_02[1-5]_…` ([remote_test.go](../../internal/formats/oci/remote_test.go)) | The upstream request per kind and prefix, the four `Accept` types, the `HEAD` derived from the `GET`, schema 1 by type and by content, the announced digest against the bytes, the alias of a tag, the inspection of a manifest by digest, the token request (scope from the request, realm and service from the challenge, Basic is no handshake, a bad realm), the token document, the cut tags list, the tags list windows and the pass-through, referrers with the filter and 404 |
 | `TestR_OCI_02[1-5]_…` ([test/integration/ociremote](../../test/integration/ociremote)) | Against the stack and the stub: the credential only to the realm of a credential host and the token only to the registry, a foreign realm refused, one challenged request per replica, tokens reused and not shared, one manifest `GET` per tag, `HEAD` revalidation and a moved tag, the digest of a fetched tag without a request, a wrong digest, schema 1, a missing tag, a multi-platform pull with each layer once and nothing sent to the CDN, tags list windows, referrers, `library/`, the quota answer, the upstream test |
-| [oci_host_test.go](../../test/integration/files/oci_host_test.go) | The routes on the production host (real dispatcher, item store, hooks, S3), mounted at `/api/oci/` through a wrapper because `/v2/` is not mounted yet |
-| `TestR_OCI_015_…`, `TestR_OCI_016_…`, `TestR_OCI_018_…`, `TestR_OCI_030_…` ([handlers_lists_test.go](../../internal/formats/oci/handlers_lists_test.go), [handlers_delete_test.go](../../internal/formats/oci/handlers_delete_test.go), [hooks_remove_test.go](../../internal/formats/oci/hooks_remove_test.go), [setup_test.go](../../internal/formats/oci/setup_test.go)) | The lists, the deletion routes, the cascade and the refusals of the hook against an in-memory twin of the data port ([store_twin_test.go](../../internal/formats/oci/store_twin_test.go)), and the setup snippets |
-| [test/integration/ocilocal](../../test/integration/ocilocal) | Against the stack: 2,500 tags in pages, the referrers, a raw delete of an index through a running replica (cascade, events, journal entries), the sweep (grace, sessions, the lock against a push, the job on a worker), the replay and the reinstate. The registry routes are not mounted yet, so the state is what a push leaves: items committed through the item store and the rows by SQL |
+| [test/integration/files/oci_fixture_test.go](../../test/integration/files/oci_fixture_test.go) | The seams for the OCI tests of the area `files` that stage what a replica cannot (a removal holding the package lock, the delete job's guard, a standing session): the real dispatcher, item store, hooks and S3 with the format mounted at `/api/oci/` through a wrapper. The protocol criteria that used to run here run over `/v2/` in `test/integration/oci` ([Q-OCI-214](../spec/formats/oci.md#q-oci-214--the-protocol-criteria-run-in-testintegrationoci-against-replicas-of-the-whole-application)) |
+| [test/integration/oci](../../test/integration/oci) | The protocol criteria and the conformance suite: see [The protocol tests and the conformance suite](#the-protocol-tests-and-the-conformance-suite) |
+| `TestR_OCI_015_…`, `TestR_OCI_016_…`, `TestR_OCI_018_…` and the setup tests ([handlers_lists_test.go](../../internal/formats/oci/handlers_lists_test.go), [handlers_delete_test.go](../../internal/formats/oci/handlers_delete_test.go), [hooks_remove_test.go](../../internal/formats/oci/hooks_remove_test.go), [setup_test.go](../../internal/formats/oci/setup_test.go)) | The lists, the deletion routes, the cascade and the refusals of the hook against an in-memory twin of the data port ([store_twin_test.go](../../internal/formats/oci/store_twin_test.go)), and the setup snippets |
+| [test/integration/ocilocal](../../test/integration/ocilocal) | Against the stack: 2,500 tags in pages, the referrers, a raw delete of an index through a running replica (cascade, events, journal entries), the sweep (grace, sessions, the lock against a push, the job on a worker), the replay and the reinstate. The state is what a push leaves (items committed through the item store, the rows by SQL), so the sweep, the replay and a raw delete can be staged exactly |
 | [oci_test.go](../../test/integration/postgres/oci_test.go) | The tables, their export classes, the phases of the three migrations and the key grammar at the database (`make test-integration`) |
 | [registrytoken/*_test.go](../../internal/auth/registrytoken) | `TestRegistryTokenForm` (round trip, every character flipped, expiry, another endpoint, another key, unknown key, malformed values, the scanner pattern), `TestRegistryTokenClaimsRules` (with the configured lifetime and the issue time ahead), `TestR_ARCH_021_RegistryTokenKeyRingRotation`, `TestScopeGrammar` (with the cache view), `TestChallenge` (with no base URL), `TestGrantAllows`, `TestTokenServiceMetrics`, `TestTheLogScrubberHidesARegistryToken` |
 | [stage_registry_test.go](../../internal/auth/stage_registry_test.go) | The stage: a registry token below `/v2/` only, as `Bearer` only and not on an escaped path, refusals without a token lookup, a revoked trove token, a claims mismatch (ID, owner, type), the endpoint's token types, bindings and `principal_disabled` (`TestR_EP_011_TheTroveTokensRulesReachItsRegistryToken`), a forged token counted by the throttle (`TestR_AUTH_038_…`), anonymous registry tokens, no session cookie below `/v2/`, the challenge, `AuthenticateTokenRequest`, `Presented` never printing its secret (`TestR_AUTH_001_…`) |
@@ -529,11 +530,38 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [registrytoken_test.go](../../test/integration/identity/registrytoken_test.go) | Against the stack, two replicas with Valkey running and stopped (`TestRegistryTokensAgainstTheRealStores`): a token issued on one works on the other, a forged, tampered, expired or foreign token runs no statement (a tracer on the replica's pools counts the statements of the marked request, with a positive control), a revoked PAT stops its registry token within the bound; `TestAnonymousRegistryTokenAgainstTheRealStores` with and without `auth.anonymous` and after the switch is turned off; `TestR_ARCH_021_RegistryTokenKeyRingRotationAcrossReplicas` |
 | [dedup_registry_test.go](../../internal/audit/dedup_registry_test.go) | `auth.registry_token.denied` collapses per address, endpoint, reason and credential |
 
-The skeleton tests of WP0 carry no `R-OCI-…` in their names; the tests of the work packages that build behaviour do ([coverage.md](coverage.md)).
-The tests of the registry root carry an R-OCI ID in their names only where they prove its acceptance criteria through `/v2/`
-(`TestR_OCI_003_…`, `TestR_OCI_004_…`, `TestR_OCI_005_…`, `TestR_OCI_017_…` in test/integration/registry); R-OCI-001 and R-OCI-029 are in
-comments there, the criteria needing the upload routes, the virtual repository and the remote class. The unit tests of the registry root name
-their requirement in a comment. The tests of the other work packages keep the names they were built with.
+The skeleton tests of WP0 carry no `R-OCI-…` in their names. A test name carries a requirement ID only when the test proves a whole acceptance criterion of it
+([Q-OCI-213](../spec/formats/oci.md#q-oci-213--a-test-name-carries-the-id-of-a-requirement-when-it-proves-a-whole-acceptance-criterion-of-it), finding F-88); a test of a mechanism names the
+requirement in a comment that says which criteria the requirement has and where they are proven ("Mechanism of R-OCI-0nn, not a proof of its criteria: …"). R-OCI-014 and R-OCI-030
+have criteria that run real clients, so no test of the integration tier carries those IDs; they come with the e2e rows. `go run ./internal/tools/coverage -check` reads the names.
+
+## The protocol tests and the conformance suite
+
+[test/integration/oci](../../test/integration/oci) holds the data port's tests ([store_test.go](../../test/integration/oci/store_test.go)) and, built on real listeners, the protocol criteria of
+R-OCI-035. Why this area and not `ocilocal` or a new one: [Q-OCI-214](../spec/formats/oci.md#q-oci-214--the-protocol-criteria-run-in-testintegrationoci-against-replicas-of-the-whole-application).
+
+| File | What it pins |
+|---|---|
+| [proto_env_test.go](../../test/integration/oci/proto_env_test.go) | `newProto`: one installation (PostgreSQL, Valkey with Sentinel, S3), the repositories `oci-local`, `oci-other`, `oci-secret`, `oci-owned` (ownership enforced) and the virtual `oci-virtual` (member and deployment target `oci-local`), a person per grant (`reader` read; `pusher` read and deploy; `deployonly`; `mover` with overwrite; `deleter`; `nobody`), N replicas started with `app.New`; `proto.do` sends a request to the replica the test names, `proto.next` is the scatter dispatcher; `registryToken` and `grantOf` read the token service and the grant a token carries. People a test needs are made in `protoOptions.setup`, before the replicas start (a policy created later is not in their caches) |
+| [protocol_test.go](../../test/integration/oci/protocol_test.go), [paths_test.go](../../test/integration/oci/paths_test.go) | `TestProtocol`: one subtest per criterion, named with the requirement it proves (`R-OCI-011_a_chunked_upload_over_three_replicas_and_the_416_form`): names, tags and digests that are none; the version check and the paths that reach no core route; the token service, the direct credential, the pull-only token on an upload; overwrite and delete; one object for a tag and its manifest; pull headers and the Docker media type; ranges; the three-chunk upload over three replicas; the mount by the source's grant; push refusals, artifacts and concurrent tags; an index and its platforms; a push by digest; a tag push against a digest push; tags paging; concurrent referrers with the filter; the catalog; the delete of an index; crafted manifests with the heap sampled; a withheld manifest; the path patterns on the protocol routes |
+| [actionmap_test.go](../../test/integration/oci/actionmap_test.go) | `TestR_AUTHZ_007_OCIActionMap`: a subtest per row of the OCI table of R-AUTHZ-007 - the caller with the action is served, the caller without it is refused, the token service grants the row's token action exactly to the first, and a name owned by another owner is refused for the rows that mark ownership |
+| [valkey_test.go](../../test/integration/oci/valkey_test.go) | `TestRegistryWorksWithValkeyStopped`: token service, chunked and monolithic push, pulls, tags list and catalog through a local and a virtual repository on three replicas whose Sentinel answers nothing. "Stopped" is configuration (`testenv.StackOptions.Valkey` false), so the stack's Valkey is not touched and no failover lock is needed |
+| [conformance_run_test.go](../../test/integration/oci/conformance_run_test.go) | `TestOCIConformance` (build tag `ociconformance`): runs the compiled suite twice, reads the JUnit, fails on a failed or an undocumented skipped specification |
+
+The conformance suite is run by `make oci-conformance` ([build-and-test.md](build-and-test.md#targets)):
+
+1. `oci-conformance-build` resolves `OCI_CONFORMANCE_TAG` (the pin, `v1.1.1`) to its commit with `git ls-remote`, downloads
+   `github.com/opencontainers/distribution-spec/conformance` at that commit into `.out/oci-conformance/mod` (a module cache of its own) and compiles its test package with the repository's Go
+   (`GOTOOLCHAIN=local`) to `.out/oci-conformance/conformance.test` ([Q-OCI-210](../spec/formats/oci.md#q-oci-210--the-conformance-suite-is-fetched-at-the-commit-its-tag-points-at)).
+2. `TestOCIConformance` starts one replica whose base URL and listen address are one loopback address (the suite follows the token realm), creates the person `conformance` (read, deploy,
+   overwrite and delete on the three repositories) and runs the binary with the variables of R-OCI-035 in `.out/oci-conformance/local` (namespace `it/oci-local/conformance`) and `.out/oci-conformance/virtual`
+   (`it/oci-virtual/conformance`). Each directory holds `junit.xml`, `report.html` and `output.txt`.
+3. The virtual run switches content management off: a delete through a virtual repository is refused by design ([Q-OCI-211](../spec/formats/oci.md#q-oci-211--the-conformance-suite-runs-all-four-categories-through-the-local-address-and-pull-push-and-discovery-through-the-virtual-address),
+   gap [H-755](../security/oci-virtual.md#what-this-does-not-cover)). The skips the runner accepts are the ones that decision lists, nothing else.
+
+CI runs it in shard b of the `integration` job after `make test-integration` and uploads the reports as the artifact `oci-conformance-junit`. The first run found that the challenge of a mount did not
+name the source ([Q-OCI-212](../spec/formats/oci.md#q-oci-212--the-challenge-of-a-mount-names-the-sources-pull-as-well-as-the-targets-push)); to run one specification or a category while working, set the
+`OCI_TEST_*` variables by hand and run `.out/oci-conformance/conformance.test` against a replica of your own.
 
 ## What is built and what is not
 
@@ -560,7 +588,9 @@ Built (WP10): the mirror ([the mirror](#the-mirror-r-oci-026)).
 
 Built (WP9): the virtual class ([the virtual class](#the-virtual-class-r-oci-027-r-oci-028)).
 
-Not built here (each is a work package of T-16): the package screens' remaining parts, the e2e rows (WP11), the conformance suite (WP13).
+Built (WP13): the conformance suite and the protocol tests of [The protocol tests and the conformance suite](#the-protocol-tests-and-the-conformance-suite).
+
+Not built here (each is a work package of T-16): the package screens' remaining parts and the e2e rows (WP11).
 
 ## The counting stub registry
 

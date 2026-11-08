@@ -139,9 +139,12 @@ func TestR_OCI_033_ReplayWithholdsADeletedManifestAndDeletesNothing(t *testing.T
 	})
 }
 
-// TestR_OCI_033_ReplayReportsWhatTheRestoredRepositoryDoesNotHold: an entry about a manifest the repository does not hold, in a repository
+// TestReplayReportsWhatTheRestoredRepositoryDoesNotHold: an entry about a manifest the repository does not hold, in a repository
 // that is not a local OCI repository, or with other bytes is "subject unknown" and changes nothing; an entry that is no entry is skipped.
-func TestR_OCI_033_ReplayReportsWhatTheRestoredRepositoryDoesNotHold(t *testing.T) {
+//
+// Mechanism of R-OCI-033, not a proof of its criteria: it checks a data-port read; the criteria are the restore drill and the
+// refusals for a withheld image.
+func TestReplayReportsWhatTheRestoredRepositoryDoesNotHold(t *testing.T) {
 	e := newEnv(t)
 	held := e.manifestOf(repoLocal, "app", `{"image":"held"}`, manifest, nil, "")
 	gone := image{name: "app", digest: sha256Of(`{"image":"never stored"}`)}

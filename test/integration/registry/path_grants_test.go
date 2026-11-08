@@ -14,7 +14,10 @@ import (
 // A caller whose grant has path patterns obtains a registry token for the images the patterns admit (R-OCI-006, R-AUTHZ-005): the
 // token service asks the decision point on the path of the image's package document, so an include list and an exclude list decide
 // a name as the handlers do. The token is a ceiling and every request is decided again (R-OCI-005).
-func TestR_OCI_006_APathScopedCallerGetsARegistryTokenForTheImagesItsPatternsAdmit(t *testing.T) {
+//
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestAPathScopedCallerGetsARegistryTokenForTheImagesItsPatternsAdmit(t *testing.T) {
 	var including, excluding string
 	e := newEnv(t, func(e *env, _ *testenv.ReplicaOptions) {
 		inc, exc := e.st.User("pathinc"), e.st.User("pathexc")

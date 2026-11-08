@@ -81,3 +81,12 @@ A member whose path grants or patterns refuse the caller for a tag or a digest a
 goes on. The caller is therefore told "not found" by the virtual repository for an item that exists in a member it may not read, which is the intended answer (R-AUTHZ-009 rule 8), and
 the denied decision of the member is written to the audit trail as for a direct request, once per member consulted. A busy virtual repository over a member that refuses a name
 writes that event on every pull of the name. Not verified: whether the audit trail deduplicates these events per credential and name in the same way as for a direct request.
+
+### H-755 · The deletion path of a virtual repository is covered by its 405 test only, not by the conformance suite
+
+The conformance suite's content-management category is run through the local address and not through a virtual one, because a delete through a virtual repository is refused by design with 405
+`UNSUPPORTED` (R-OCI-028, [Q-OCI-211](../spec/formats/oci.md#q-oci-211--the-conformance-suite-runs-all-four-categories-through-the-local-address-and-pull-push-and-discovery-through-the-virtual-address)).
+What keeps the refusal honest is `TestR_OCI_028_ADeleteThroughAVirtualRepositoryAnswers405AndDeletesNothing` ([test/integration/ocivirtual](../../test/integration/ocivirtual/virtual_test.go)); no test drives the
+suite's delete sequence at a virtual address, so a change that let a delete through (to the target or to a member) would be caught by that one test and by nothing that exercises the other
+specifications of the category. Live today.
+

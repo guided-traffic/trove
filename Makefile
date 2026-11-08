@@ -659,3 +659,34 @@ deb-stub-image: ## Build the counting Debian archive test upstream image (DEB_ST
 	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
 	  -f test/debstub/Containerfile -t $(DEB_STUB_IMAGE) .out/debstub
 # <<< T17 deb-stub
+
+# >>> T16 oci-conformance
+# The OCI distribution conformance suite (R-OCI-035, docs/developer/oci.md): the module at the pinned tag is downloaded into
+# .out/oci-conformance/mod, its test package is compiled with the repository's Go toolchain (GOTOOLCHAIN=local, so no second Go is
+# fetched) and run by test/integration/oci against one replica of the integration stack, once through a local repository and once
+# through a virtual one. The conformance module is a sub-module of distribution-spec without version tags of its own
+# (conformance@v1.1.1 is "unknown revision conformance/v1.1.1"), so the pin is the tag of the repository and the module is
+# fetched at the commit that tag points at (Q-OCI-210). Edit only between the markers.
+OCI_CONFORMANCE_TAG := v1.1.1
+OCI_CONFORMANCE_REPO := https://github.com/opencontainers/distribution-spec.git
+OCI_CONFORMANCE_DIR := .out/oci-conformance
+OCI_CONFORMANCE_GO := GOMODCACHE="$(CURDIR)/$(OCI_CONFORMANCE_DIR)/mod" GOTOOLCHAIN=local GOFLAGS=-mod=mod
+
+.PHONY: oci-conformance-build
+oci-conformance-build: ## Download github.com/opencontainers/distribution-spec/conformance at the commit of OCI_CONFORMANCE_TAG into .out/oci-conformance and compile its test binary with the repository's Go
+	@mkdir -p $(OCI_CONFORMANCE_DIR)/build
+	@commit=$$(git ls-remote --tags $(OCI_CONFORMANCE_REPO) 'refs/tags/$(OCI_CONFORMANCE_TAG)^{}' | cut -f1); \
+	  test -n "$$commit" || { echo "the tag $(OCI_CONFORMANCE_TAG) of $(OCI_CONFORMANCE_REPO) was not found"; exit 1; }; \
+	  echo "conformance suite $(OCI_CONFORMANCE_TAG) = $$commit"; \
+	  cd $(OCI_CONFORMANCE_DIR)/build && { test -f go.mod || GOTOOLCHAIN=local go mod init conformancebuild; } \
+	  && $(OCI_CONFORMANCE_GO) go mod download github.com/opencontainers/distribution-spec/conformance@$$commit \
+	  && $(OCI_CONFORMANCE_GO) go get github.com/opencontainers/distribution-spec/conformance@$$commit \
+	  && $(OCI_CONFORMANCE_GO) go test -c -o ../conformance.test github.com/opencontainers/distribution-spec/conformance
+
+.PHONY: oci-conformance
+oci-conformance: oci-conformance-build ## OCI conformance suite (pull, push, content discovery, content management) against a replica, through a local and a virtual repository (make integration-up); JUnit in .out/oci-conformance/{local,virtual}/junit.xml
+	@test -f $(INTEGRATION_ENV) || { echo "$(INTEGRATION_ENV) is missing: run 'make integration-up' first"; exit 1; }
+	@set -o pipefail; set -a; . $(INTEGRATION_ENV); set +a; \
+	  OCI_CONFORMANCE_BIN="$(CURDIR)/$(OCI_CONFORMANCE_DIR)/conformance.test" OCI_CONFORMANCE_OUT="$(CURDIR)/$(OCI_CONFORMANCE_DIR)" \
+	  go test -count=1 -tags 'integration ociconformance' -timeout 45m -run 'TestOCIConformance$$' -v ./test/integration/oci/
+# <<< T16 oci-conformance

@@ -29,7 +29,9 @@ func rctx(t *testing.T, upstream string) formats.RemoteContext {
 
 func adapter() remoteAdapter { return New().Remote().(remoteAdapter) }
 
-func TestR_OCI_021_TheUpstreamRequestCarriesTheNamespacePrefixOfTheURL(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestTheUpstreamRequestCarriesTheNamespacePrefixOfTheURL(t *testing.T) {
 	d := sha([]byte("x"))
 	cases := []struct {
 		upstream, path, want string
@@ -57,7 +59,9 @@ func TestR_OCI_021_TheUpstreamRequestCarriesTheNamespacePrefixOfTheURL(t *testin
 	}
 }
 
-func TestR_OCI_022_AManifestIsAskedForWithTheFourManifestTypes(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestAManifestIsAskedForWithTheFourManifestTypes(t *testing.T) {
 	d := sha([]byte("x"))
 	for _, p := range []string{"app/_tags/1", "app/_manifests/" + d} {
 		req, err := adapter().UpstreamRequest(context.Background(), rctx(t, "https://r.example.com/"), formats.Path{Path: p}, "")
@@ -80,7 +84,9 @@ func TestR_OCI_022_AManifestIsAskedForWithTheFourManifestTypes(t *testing.T) {
 	}
 }
 
-func TestR_OCI_022_ATagIsAskedForByDigestWithTheSameRequestTheRevalidationDerives(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestATagIsAskedForByDigestWithTheSameRequestTheRevalidationDerives(t *testing.T) {
 	rc := rctx(t, "https://r.example.com/")
 	get, err := adapter().UpstreamRequest(context.Background(), rc, formats.Path{Path: "app/_tags/1"}, "")
 	if err != nil {
@@ -131,7 +137,9 @@ func TestR_OCI_022_ATagIsAskedForByDigestWithTheSameRequestTheRevalidationDerive
 	}
 }
 
-func TestR_OCI_022_ASchemaOneManifestIsNeverStored(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestASchemaOneManifestIsNeverStored(t *testing.T) {
 	// By type, before a byte is stored.
 	for _, ct := range []string{"application/vnd.docker.distribution.manifest.v1+json", "application/vnd.docker.distribution.manifest.v1+prettyjws"} {
 		resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {ct}}, Body: io.NopCloser(strings.NewReader("{}"))}
@@ -150,7 +158,9 @@ func TestR_OCI_022_ASchemaOneManifestIsNeverStored(t *testing.T) {
 	}
 }
 
-func TestR_OCI_020_AManifestWhoseDigestIsNotTheOneTheUpstreamAnnouncedIsRefused(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestAManifestWhoseDigestIsNotTheOneTheUpstreamAnnouncedIsRefused(t *testing.T) {
 	body := imageManifestBytes(sha([]byte("cfg")), sha([]byte("layer")))
 	read := func(announced string) error {
 		h := http.Header{"Content-Type": {ctImage}}
@@ -177,7 +187,9 @@ func TestR_OCI_020_AManifestWhoseDigestIsNotTheOneTheUpstreamAnnouncedIsRefused(
 	}
 }
 
-func TestR_OCI_022_AFetchedTagIsEnteredUnderItsDigest(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestAFetchedTagIsEnteredUnderItsDigest(t *testing.T) {
 	cfg, layer := sha([]byte("cfg")), sha([]byte("layer"))
 	body := imageManifestBytes(cfg, layer)
 	p, err := adapter().PrepareFill(context.Background(), rctx(t, "https://r.example.com/"), formats.Path{Path: "team/app/_tags/1"}, "", strings.NewReader(string(body)), int64(len(body)))
@@ -213,7 +225,9 @@ func TestR_OCI_022_AFetchedTagIsEnteredUnderItsDigest(t *testing.T) {
 	}
 }
 
-func TestR_OCI_024_APassThroughAnswerIsAcceptedAndAPathOutsideTheLayoutIsNot(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestAPassThroughAnswerIsAcceptedAndAPathOutsideTheLayoutIsNot(t *testing.T) {
 	accept := func(p string) error {
 		resp := &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}
 		defer resp.Body.Close()
@@ -231,7 +245,9 @@ func TestR_OCI_024_APassThroughAnswerIsAcceptedAndAPathOutsideTheLayoutIsNot(t *
 	}
 }
 
-func TestR_OCI_020_AManifestFetchedByDigestIsReadBeforeItIsStored(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestAManifestFetchedByDigestIsReadBeforeItIsStored(t *testing.T) {
 	body := imageManifestBytes(sha([]byte("cfg")), sha([]byte("layer")))
 	a := adapter()
 	if !a.InspectsFill(formats.Path{Path: "app/_manifests/" + sha(body)}) || a.InspectsFill(formats.Path{Path: "app/_blobs/" + sha(body)}) || a.InspectsFill(formats.Path{Path: "app/_tags/1"}) {
@@ -267,7 +283,9 @@ func (s spooled) ReaderAt() (io.ReaderAt, error) {
 	return strings.NewReader(string(s)), nil
 }
 
-func TestR_OCI_022_AManifestAndABlobAreVerifiedAgainstTheDigestOfTheirPath(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestAManifestAndABlobAreVerifiedAgainstTheDigestOfTheirPath(t *testing.T) {
 	d := sha([]byte("x"))
 	for _, p := range []string{"app/_manifests/" + d, "app/_blobs/" + d} {
 		got, err := adapter().BeforeArtifact(context.Background(), nil, nil, formats.Path{Path: p})
@@ -281,7 +299,9 @@ func TestR_OCI_022_AManifestAndABlobAreVerifiedAgainstTheDigestOfTheirPath(t *te
 	}
 }
 
-func TestR_OCI_021_TheTokenRequestTakesTheScopeFromTheRequestAndOnlyTheRealmAndTheServiceFromTheChallenge(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestTheTokenRequestTakesTheScopeFromTheRequestAndOnlyTheRealmAndTheServiceFromTheChallenge(t *testing.T) {
 	rc := rctx(t, "https://ghcr.io/acme")
 	challenge := http.Header{"Www-Authenticate": {`Bearer realm="https://auth.example.com/token?x=1",service="registry.example.com",scope="repository:somebody/else:pull,push"`}}
 	// A fetch of a document: the scope names the prefixed name of the path, whatever scope the (remembered) challenge carries.
@@ -322,7 +342,9 @@ func TestR_OCI_021_TheTokenRequestTakesTheScopeFromTheRequestAndOnlyTheRealmAndT
 	}
 }
 
-func TestR_OCI_021_OnlyABearerChallengeIsAHandshake(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestOnlyABearerChallengeIsAHandshake(t *testing.T) {
 	rc := rctx(t, "https://r.example.com/")
 	orig, _ := http.NewRequest(http.MethodGet, "https://r.example.com/v2/app/manifests/1", nil)
 	p := formats.Path{Path: "app/_tags/1"}
@@ -356,7 +378,9 @@ func TestR_OCI_021_OnlyABearerChallengeIsAHandshake(t *testing.T) {
 	}
 }
 
-func TestR_OCI_021_ATokenAnswerIsReadWithinItsBounds(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestATokenAnswerIsReadWithinItsBounds(t *testing.T) {
 	a := adapter()
 	rc := formats.RemoteContext{}
 	cases := []struct {
@@ -384,7 +408,9 @@ func TestR_OCI_021_ATokenAnswerIsReadWithinItsBounds(t *testing.T) {
 	}
 }
 
-func TestR_OCI_024_ATagsListTheUpstreamCutIsMarked(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestATagsListTheUpstreamCutIsMarked(t *testing.T) {
 	read := func(link, body string) string {
 		h := http.Header{}
 		if link != "" {
@@ -418,7 +444,9 @@ func TestR_OCI_024_ATagsListTheUpstreamCutIsMarked(t *testing.T) {
 	}
 }
 
-func TestR_OCI_020_ATagsListIsReadWithinItsBounds(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestATagsListIsReadWithinItsBounds(t *testing.T) {
 	p := func(doc string) error {
 		_, err := adapter().PrepareFill(context.Background(), rctx(t, "https://r.example.com/"), formats.Path{Path: "app/_taglist"}, "", strings.NewReader(doc), int64(len(doc)))
 		return err
@@ -442,7 +470,9 @@ func TestR_OCI_020_ATagsListIsReadWithinItsBounds(t *testing.T) {
 	}
 }
 
-func TestR_OCI_025_TheMappingReadsTheRepositoryOfTheRequest(t *testing.T) {
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestTheMappingReadsTheRepositoryOfTheRequest(t *testing.T) {
 	// The mapping reads the upstream of the repository; a repository without remote settings maps nothing.
 	rq := &formats.Request{Repo: newFixture(t, formattest.HostOptions{Class: formats.Remote}).h.Repo()}
 	if got := remoteName(rq, "nginx"); got != "nginx" {
@@ -453,7 +483,9 @@ func TestR_OCI_025_TheMappingReadsTheRepositoryOfTheRequest(t *testing.T) {
 	}
 }
 
-func TestR_OCI_023_TheRegistryResponseTypesAreExpected(t *testing.T) {
+// Mechanism of R-OCI-023, not a proof of its criteria: it checks a redirect, a response type or a HEAD; the criteria are one
+// fetch per layer across three replicas and the CDN host receiving no credential.
+func TestTheRegistryResponseTypesAreExpected(t *testing.T) {
 	a := adapter()
 	d := sha([]byte("x"))
 	for _, c := range []struct {
@@ -488,7 +520,9 @@ func remoteFixture(t *testing.T, docs, artifacts map[string][]byte, queries func
 	return newFixture(t, formattest.HostOptions{Class: formats.Remote, Remote: m}), m
 }
 
-func TestR_OCI_022_ATagIsServedAsStoredWithTheDigestTheClientVerifies(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestATagIsServedAsStoredWithTheDigestTheClientVerifies(t *testing.T) {
 	body := imageManifestBytes(sha([]byte("cfg")), sha([]byte("layer")))
 	fx, _ := remoteFixture(t, map[string][]byte{TagPath("app", "1"): body}, nil, nil)
 	resp := fx.get("app/manifests/1")
@@ -509,7 +543,9 @@ func TestR_OCI_022_ATagIsServedAsStoredWithTheDigestTheClientVerifies(t *testing
 	fx.wantStatus(fx.get("app/manifests/bad:tag"), http.StatusBadRequest, "DIGEST_INVALID")
 }
 
-func TestR_OCI_022_AManifestByDigestAndABlobAreArtifactsOfTheName(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestAManifestByDigestAndABlobAreArtifactsOfTheName(t *testing.T) {
 	cfg, layer := []byte("cfg"), []byte("layer")
 	body := imageManifestBytes(sha(cfg), sha(layer))
 	fx, _ := remoteFixture(t, nil, map[string][]byte{
@@ -530,7 +566,9 @@ func TestR_OCI_022_AManifestByDigestAndABlobAreArtifactsOfTheName(t *testing.T) 
 	fx.wantStatus(fx.get("app/blobs/sha256:short"), http.StatusBadRequest, "DIGEST_INVALID")
 }
 
-func TestR_OCI_024_ATagsListIsCutFromTheStoredDocument(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestATagsListIsCutFromTheStoredDocument(t *testing.T) {
 	list := func(name string, tags ...string) []byte {
 		return []byte(`{"name":"` + name + `","tags":["` + strings.Join(tags, `","`) + `"]}`)
 	}
@@ -566,7 +604,9 @@ func TestR_OCI_024_ATagsListIsCutFromTheStoredDocument(t *testing.T) {
 	fx.wantStatus(fx.get("none/tags/list"), http.StatusNotFound, "NAME_UNKNOWN")
 }
 
-func TestR_OCI_024_ReferrersArePassedThroughAndFiltered(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestReferrersArePassedThroughAndFiltered(t *testing.T) {
 	subject := sha([]byte("subject"))
 	sig, sbom := sha([]byte("sig")), sha([]byte("sbom"))
 	upstream := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[` +

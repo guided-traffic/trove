@@ -14,7 +14,9 @@ import (
 
 // Round 2 of WP8: what the first review and the audit found.
 
-func TestR_OCI_024_ACutPageSentWithAContentLengthIsStoredAndFollowedByTheUpstreamsPages(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestACutPageSentWithAContentLengthIsStoredAndFollowedByTheUpstreamsPages(t *testing.T) {
 	// The registry cuts its lists at two tags and sends them with a Content-Length, as every small answer has one.
 	e := newEnv(t, options{stub: ocistub.Config{PageSize: 2}})
 	rep := e.start(1)[0]
@@ -47,7 +49,9 @@ func TestR_OCI_024_ACutPageSentWithAContentLengthIsStoredAndFollowedByTheUpstrea
 	}
 }
 
-func TestR_OCI_024_EveryPageOfALongListHasALinkUntilTheListEnds(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestEveryPageOfALongListHasALinkUntilTheListEnds(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	// The upstream cuts the 2,500 tags at 700 a page.
@@ -74,7 +78,9 @@ func TestR_OCI_024_EveryPageOfALongListHasALinkUntilTheListEnds(t *testing.T) {
 	}
 }
 
-func TestR_OCI_021_AnImageTheRegistryDeniesToAValidTokenIsMissingAndTheChallengeIsKept(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestAnImageTheRegistryDeniesToAValidTokenIsMissingAndTheChallengeIsKept(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	if err := e.stub.SetMode(ocistub.Mode{PrivateRepos: []string{"acme/a"}}); err != nil {
@@ -102,7 +108,9 @@ func TestR_OCI_021_AnImageTheRegistryDeniesToAValidTokenIsMissingAndTheChallenge
 	}
 }
 
-func TestR_OCI_023_ABlobRedirectIsFollowedWhateverExtraHostsSaysAndTheDefaultsListNoCDN(t *testing.T) {
+// Mechanism of R-OCI-023, not a proof of its criteria: it checks a redirect, a response type or a HEAD; the criteria are one
+// fetch per layer across three replicas and the CDN host receiving no credential.
+func TestABlobRedirectIsFollowedWhateverExtraHostsSaysAndTheDefaultsListNoCDN(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	e.pull(rep, rNoCDN, "acme/a", "1.0")
@@ -123,7 +131,9 @@ func TestR_OCI_023_ABlobRedirectIsFollowedWhateverExtraHostsSaysAndTheDefaultsLi
 	}
 }
 
-func TestR_OCI_020_ATagWhoseBytesAreNotItsDigestRaisesTheIntegrityEvent(t *testing.T) {
+// Mechanism of R-OCI-020, not a proof of its criteria: it checks digest verification or an ambiguity rule of the parser; the
+// criteria are the crafted inputs refused before any blob is looked up and the memory bound.
+func TestATagWhoseBytesAreNotItsDigestRaisesTheIntegrityEvent(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	if err := e.stub.SetMode(ocistub.Mode{WrongDigest: []string{"acme/a:1.0"}}); err != nil {
@@ -137,7 +147,9 @@ func TestR_OCI_020_ATagWhoseBytesAreNotItsDigestRaisesTheIntegrityEvent(t *testi
 	})
 }
 
-func TestR_OCI_025_AnExpiredTagIsServedFromTheCacheWhileTheUpstreamAnswers429(t *testing.T) {
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestAnExpiredTagIsServedFromTheCacheWhileTheUpstreamAnswers429(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	if err := e.stub.SetMode(ocistub.Mode{PullQuota: &ocistub.PullQuota{Limit: 1}}); err != nil {
@@ -158,7 +170,9 @@ func TestR_OCI_025_AnExpiredTagIsServedFromTheCacheWhileTheUpstreamAnswers429(t 
 	})
 }
 
-func TestR_OCI_021_AWriteToARemoteRepositoryIsRefused(t *testing.T) {
+// Mechanism of R-OCI-021, not a proof of its criteria: it checks a parser or the shape of one handshake request; the criteria are
+// the credential sent to the realm only, the refused foreign realm and the token reuse per replica.
+func TestAWriteToARemoteRepositoryIsRefused(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	for _, c := range []struct{ method, path string }{

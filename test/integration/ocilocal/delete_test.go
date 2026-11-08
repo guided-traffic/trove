@@ -158,9 +158,12 @@ func TestR_OCI_018_ADeleteThatWouldLeaveADanglingReferenceIsRefused(t *testing.T
 	}
 }
 
-// TestR_OCI_018_ARemovalWithoutARequestIsTheSystemsAndCascades: a removal through the item store with no actor (a retention run, a job)
+// TestARemovalWithoutARequestIsTheSystemsAndCascades: a removal through the item store with no actor (a retention run, a job)
 // runs the same hook, and the events it writes name the system actor "removal" (Q-OCI-24).
-func TestR_OCI_018_ARemovalWithoutARequestIsTheSystemsAndCascades(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestARemovalWithoutARequestIsTheSystemsAndCascades(t *testing.T) {
 	e := newEnv(t)
 	f := e.multiPlatform()
 	rp, err := e.r.App.Repositories().ByName(context.Background(), qname.Repo{Project: project, Key: repoLocal})
@@ -185,10 +188,13 @@ func TestR_OCI_018_ARemovalWithoutARequestIsTheSystemsAndCascades(t *testing.T) 
 	}
 }
 
-// TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval: an image name with more than 5,000 files is removed through /files/ although
+// TestADeleteOfAWholeNameBeyondOneEventIsOneRemoval: an image name with more than 5,000 files is removed through /files/ although
 // its blobs and its manifests reach the hook in different events (the blobs of a name sort before its manifests): the item store tells the
 // hook which referencing manifests belong to the same removal (ItemsEvent.InScope).
-func TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestADeleteOfAWholeNameBeyondOneEventIsOneRemoval(t *testing.T) {
 	e := newEnv(t)
 	repo := e.repoID(repoLocal)
 	layer := e.put(repoLocal, "big/_blobs/"+dg(sha256Of("big layer")), "big layer", "application/octet-stream")
@@ -212,9 +218,12 @@ func TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval(t *testing.T) {
 	}
 }
 
-// TestR_OCI_018_TheDeleteJobOfAWholeNameIsOneRemovalToo: above storage.delete.max_sync_items the job removes in batches, each in a transaction
+// TestTheDeleteJobOfAWholeNameIsOneRemovalToo: above storage.delete.max_sync_items the job removes in batches, each in a transaction
 // of its own, and the blobs go before the manifests that reference them; the job takes the scope of the whole delete to the hook.
-func TestR_OCI_018_TheDeleteJobOfAWholeNameIsOneRemovalToo(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestTheDeleteJobOfAWholeNameIsOneRemovalToo(t *testing.T) {
 	e := newEnv(t, "TROVE_STORAGE_DELETE_MAX_SYNC_ITEMS=5", "TROVE_STORAGE_DELETE_BATCH_SIZE=3")
 	e.st.Start(t, testenv.ReplicaOptions{Name: "worker-1", Role: "worker"})
 	f := e.multiPlatform()

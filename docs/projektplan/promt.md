@@ -270,11 +270,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-96 · The registry's anonymous test failed once after 85 s, its message not captured** (seen once, by the WP3
   builder on a loaded host; 10 of 10 later runs passed). The settings wait it was suspected of takes under 1 ms; the test now
   logs that wait and fails with the replica's last answer. Done when a recurrence names its cause and that cause is fixed.
-- **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
-  found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
-  clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
-  from those names. Done when each OCI test name carries only an ID it proves, with a requirement-specific reason for every
-  ID moved into a comment.
 
 Found on 2026-11-03 while closing phase 5:
 

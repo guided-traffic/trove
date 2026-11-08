@@ -54,7 +54,9 @@ func TestR_OCI_027_ALocalMembersTagIsPulledBeforeAnUpstreamsAndNamesTheMember(t 
 	}
 }
 
-func TestR_OCI_027_ATagOnlyAnUpstreamHasIsPulledAndCachedByTheRemoteMember(t *testing.T) {
+// Mechanism of R-OCI-027, not a proof of its criteria: it checks the referrers union or a tag only an upstream holds; the
+// criteria are the local-first pull, the claim, the tag union and the member order.
+func TestATagOnlyAnUpstreamHasIsPulledAndCachedByTheRemoteMember(t *testing.T) {
 	e := newEnv(t, options{})
 
 	a := e.pull(rVirtual, "acme/tool", "1")
@@ -279,7 +281,9 @@ func TestR_OCI_028_ALayerARemoteMemberCachedIsLinkedIntoTheTargetAndNotUploadedA
 	}
 }
 
-func TestR_OCI_028_AFirstPushOfANameARemoteMemberServesNeedsTheShadowingDecision(t *testing.T) {
+// Mechanism of R-OCI-028, not a proof of its criteria: it checks the shadowing decision, a missing blob or the mount; the
+// criteria are the push to the target, the cached-layer link, the missing target and the 405 delete.
+func TestAFirstPushOfANameARemoteMemberServesNeedsTheShadowingDecision(t *testing.T) {
 	e := newEnv(t, options{plain: true})
 	im := newImage("shadow", 1)
 	for _, b := range append([][]byte{im.config}, im.layers...) {
@@ -295,7 +299,9 @@ func TestR_OCI_028_AFirstPushOfANameARemoteMemberServesNeedsTheShadowingDecision
 	}
 }
 
-func TestR_OCI_028_ALayerNobodyHoldsIsStillAMissingBlob(t *testing.T) {
+// Mechanism of R-OCI-028, not a proof of its criteria: it checks the shadowing decision, a missing blob or the mount; the
+// criteria are the push to the target, the cached-layer link, the missing target and the 405 delete.
+func TestALayerNobodyHoldsIsStillAMissingBlob(t *testing.T) {
 	e := newEnv(t, options{})
 	im := newImage("unpushed", 1)
 	a := e.putManifest(rVirtual, "app4", "1", im.manifest)
@@ -304,7 +310,9 @@ func TestR_OCI_028_ALayerNobodyHoldsIsStillAMissingBlob(t *testing.T) {
 	}
 }
 
-func TestR_OCI_028_AMountFromTheVirtualRepositoryLinksTheBlobOfAMember(t *testing.T) {
+// Mechanism of R-OCI-028, not a proof of its criteria: it checks the shadowing decision, a missing blob or the mount; the
+// criteria are the push to the target, the cached-layer link, the missing target and the 405 delete.
+func TestAMountFromTheVirtualRepositoryLinksTheBlobOfAMember(t *testing.T) {
 	e := newEnv(t, options{})
 	cached := e.pull(rVirtual, "app", "1")
 	d := manifestBlobs(t, cached.Body)[0]

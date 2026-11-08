@@ -9,6 +9,7 @@ run:
     - e2e
     - compat
     - chart
+    - ociconformance
 
 linters:
   default: none

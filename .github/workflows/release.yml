@@ -770,6 +770,27 @@ jobs:
       - name: make test-integration SHARD=${{ matrix.shard }}
         run: make test-integration SHARD=${{ matrix.shard }}
 
+      # The OCI distribution conformance suite (R-OCI-035) on the stack of shard b, which holds the oci area: built from the pinned
+      # tag by the job's Go, run against one replica through a local and a virtual repository.
+      - name: make oci-conformance
+        if: matrix.shard == 'b'
+        run: make oci-conformance
+
+      - name: Upload the OCI conformance reports
+        if: always() && matrix.shard == 'b'
+        uses: actions/upload-artifact@v7
+        with:
+          name: oci-conformance-junit
+          path: |
+            .out/oci-conformance/local/junit.xml
+            .out/oci-conformance/local/report.html
+            .out/oci-conformance/local/output.txt
+            .out/oci-conformance/virtual/junit.xml
+            .out/oci-conformance/virtual/report.html
+            .out/oci-conformance/virtual/output.txt
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload the go test -json report
         if: always()
         uses: actions/upload-artifact@v7

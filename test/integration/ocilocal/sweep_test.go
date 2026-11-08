@@ -121,10 +121,13 @@ func TestR_OCI_019_TheSweepRemovesOnlyUnreferencedBlobsAfterTheGrace(t *testing.
 	})
 }
 
-// TestR_OCI_019_APushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob: the sweep takes the lock of the image name's package row before
+// TestAPushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob: the sweep takes the lock of the image name's package row before
 // it removes a blob and reads the references again, so a manifest that references the blob and commits while the sweep waits for the lock
 // wins (R-OCI-019, R-OCI-007).
-func TestR_OCI_019_APushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob(t *testing.T) {
+//
+// Mechanism of R-OCI-019, not a proof of its criteria: it checks a race or the schedule of the job; the criterion is the removal
+// of an unreferenced blob after the grace and a sweep.
+func TestAPushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob(t *testing.T) {
 	e := newEnv(t)
 	p := blobPath("race", "layer of a push in flight")
 	e.put(repoLocal, p, "layer of a push in flight", "application/octet-stream")
@@ -188,9 +191,12 @@ func TestR_OCI_019_APushThatCommitsBetweenTheScanAndTheRemovalKeepsItsBlob(t *te
 	}
 }
 
-// TestR_OCI_019_TheJobRunsOnAWorkerAsAnHourlyMaintenanceTask: the task oci-sweep is registered with the hourly schedule, a manual run is
+// TestTheJobRunsOnAWorkerAsAnHourlyMaintenanceTask: the task oci-sweep is registered with the hourly schedule, a manual run is
 // executed by a worker replica, and the job records what it removed (R-OCI-019, R-STOR-025).
-func TestR_OCI_019_TheJobRunsOnAWorkerAsAnHourlyMaintenanceTask(t *testing.T) {
+//
+// Mechanism of R-OCI-019, not a proof of its criteria: it checks a race or the schedule of the job; the criterion is the removal
+// of an unreferenced blob after the grace and a sweep.
+func TestTheJobRunsOnAWorkerAsAnHourlyMaintenanceTask(t *testing.T) {
 	e := newEnv(t)
 	// The blob is old before the worker starts, so every run that follows sees it (the worker's scheduler may queue a run on its own).
 	p := blobPath("app", "loose layer of a job")

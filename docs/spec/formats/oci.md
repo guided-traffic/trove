@@ -1199,12 +1199,16 @@ Priority: **P1** · Covers: trove-only
   (`TestR_AUTHZ_007_OCIActionMap`); remote and virtual against the stub; mirror passes in `test/integration/mirror` (the OCI
   criteria of [Mirror discovery](#mirror-discovery)).
 - **The OCI distribution conformance suite** (`github.com/opencontainers/distribution-spec/conformance`, tag `v1.1.1`, Apache
-  License 2.0): built with `go test -c` from the pinned tag by the repository's Go toolchain (`make oci-conformance`, the tag
-  pinned once in the Makefile), and run against a replica of the integration stack with `OCI_TEST_PULL`, `OCI_TEST_PUSH`,
-  `OCI_TEST_CONTENT_DISCOVERY` and `OCI_TEST_CONTENT_MANAGEMENT` set, `OCI_NAMESPACE=it/oci-local/conformance`,
-  `OCI_CROSSMOUNT_NAMESPACE=it/oci-other/conformance`, `OCI_AUTOMATIC_CROSSMOUNT=0`, `OCI_DELETE_MANIFEST_BEFORE_BLOBS=1`,
-  `OCI_HIDE_SKIPPED_WORKFLOWS=0`; a run of each category through a virtual repository's address as well. Its JUnit report is a
-  CI artifact; every specification passes and none is skipped beyond the switches above (Q-OCI-21).
+  License 2.0): built with `go test -c` by the repository's Go toolchain (`make oci-conformance`, the tag pinned once in the
+  Makefile; the module has no version tags of its own, so it is fetched at the commit the repository's tag points at, Q-OCI-210),
+  and run by `test/integration/oci` (`TestOCIConformance`, build tag `ociconformance`) against one replica of the integration
+  stack with `OCI_TEST_PULL`, `OCI_TEST_PUSH`, `OCI_TEST_CONTENT_DISCOVERY` and `OCI_TEST_CONTENT_MANAGEMENT` set,
+  `OCI_NAMESPACE=it/oci-local/conformance`, `OCI_CROSSMOUNT_NAMESPACE=it/oci-other/conformance`, `OCI_AUTOMATIC_CROSSMOUNT=0`,
+  `OCI_DELETE_MANIFEST_BEFORE_BLOBS=1`, `OCI_HIDE_SKIPPED_WORKFLOWS=0`; a run through a virtual repository's address as well
+  (`OCI_NAMESPACE=it/oci-virtual/conformance`) with pull, push and content discovery: content management is not run through
+  the virtual address because a delete through it is refused by design (R-OCI-028, Q-OCI-211). Its JUnit reports are a CI
+  artifact; every specification passes and none is skipped beyond the switches above and the two specs that read their data
+  from the environment (Q-OCI-21, Q-OCI-211).
 - **e2e** (kind, chart, the `scatter` profile, three `packages` replicas): a client pod with the Docker CLI (dockerd in the pod,
   Buildx included) and Podman, both pinned in the Makefile and trusting the dev CA. Set `oci` (every change that touches the
   format or the registry root): login, push and pull with both clients through local, remote `pullThrough`, remote `mirror`
@@ -1311,7 +1315,7 @@ against PostgreSQL, Valkey with Sentinel and S3 plus the conformance kit, and e2
 | R-OCI-020 (untrusted input) | crafted inputs (kit) | — | — | — |
 | R-OCI-021 to R-OCI-025 (remote) | handshake parser, `library/` | the counting stub: realm, `HEAD` revalidation, flights, redirects, 429 | — | `oci` (remote `pullThrough`) |
 | R-OCI-026, Mirror discovery | plan against fixtures | stub passes (catalog, names, platforms, moved tag, bound) | — | `mirror` (OCI pass on two worker processes while clients pull), `mirror-long` (drain) |
-| R-OCI-027, R-OCI-028 (virtual) | — | resolution order, claims, union lists, link step | all categories through a virtual address | `oci` (pull and push through `docker`) |
+| R-OCI-027, R-OCI-028 (virtual) | — | resolution order, claims, union lists, link step | pull, push and content discovery through a virtual address (content management: Q-OCI-211) | `oci` (pull and push through `docker`) |
 | R-OCI-029 (bound host) | — | dispatch on a bound host | — | `oci` (Docker Engine mirror) |
 | R-OCI-030, R-OCI-031 (setup, screens) | templates render | view API | — | `oci` (rendered snippets), browser journey of the package screen |
 | R-OCI-032 to R-OCI-034 (replicas, backups, metrics) | — | Valkey stopped, metrics | — | `oci` in `scatter`; closing run with Valkey stopped; restore drill (R-BAK-029) |
@@ -1888,7 +1892,7 @@ keeps a pinned version besides them, but a pinned version that lies within the b
 format needs the order to be newest first for a reader of the plan other than the engine.
 
 **Applied in the spec:** R-OCI-026, [Mirror discovery](#mirror-discovery), R-REPO-051 ([Q-REPO-295](../repositories-and-proxy.md#q-repo-295--the-version-bound-counts-versions-a-formats-mirror-member-is-kept-from-an-owner-and-an-artifact-is-filled-once-per-attempt)).
-Code: `selectTags` in [mirror_tags.go](../../../internal/formats/oci/mirror_tags.go). Tests: `TestR_OCI_026_TheTagsAMirrorKeepsAreSelectedAndOrdered`.
+Code: `selectTags` in [mirror_tags.go](../../../internal/formats/oci/mirror_tags.go). Tests: `TestTheTagsAMirrorKeepsAreSelectedAndOrdered`.
 
 ### Q-OCI-181 · A platform filter without a variant matches every variant, an entry without one is the architecture's default, and an attestation follows the manifest it names
 
@@ -1910,7 +1914,7 @@ whose variant a registry omits. A single-platform image has its platform in its 
 no attestation is not selected when a filter is set. The attestation relation is read from the index document itself, because the manifest parser keeps no descriptor annotations.
 
 **Applied in the spec:** R-OCI-026, [Mirror discovery](#mirror-discovery). Code: `platformSelected`, `selectChildren` in [mirror_plan.go](../../../internal/formats/oci/mirror_plan.go). Tests:
-`TestR_OCI_026_APlatformFilterKeepsTheSelectedManifestsAndTheirAttestations`, `TestR_OCI_026_APlatformFilterKeepsTheArm64ManifestWithItsAttestationOnly`.
+`TestAPlatformFilterKeepsTheSelectedManifestsAndTheirAttestations`, `TestR_OCI_026_APlatformFilterKeepsTheArm64ManifestWithItsAttestationOnly`.
 
 ### Q-OCI-182 · The plan reads only the tags the engine keeps, and a tag the registry does not accept has no items
 
@@ -1931,7 +1935,7 @@ has the stub record no manifest request for `1.0` or `2.0`, tags the bound drops
 per-name counters.
 
 **Applied in the spec:** [Mirror discovery](#mirror-discovery). Code: `MirrorPlan`, `invalidManifest` in [mirror_plan.go](../../../internal/formats/oci/mirror_plan.go). Tests: `TestR_REPO_051_ThePlanOfAnImageReadsOnlyTheTagsTheEngineKeeps`,
-`TestR_OCI_026_ForeignLayersAndInvalidManifestsAreSkipped`, `TestR_OCI_026_ACatalogPassStoresTheSelectedTagsWithTheirBlobsAndSurvivesTheUpstream`.
+`TestForeignLayersAndInvalidManifestsAreSkipped`, `TestR_OCI_026_ACatalogPassStoresTheSelectedTagsWithTheirBlobsAndSurvivesTheUpstream`.
 
 ### Q-OCI-183 · A name stays as the pattern spells it through the discovery, and the plan maps it to the Docker Hub name
 
@@ -1952,7 +1956,7 @@ it (R-REPO-051), and the patterns are the operator's: `nginx` admits `nginx`, no
 holds are `library/nginx` once it is stored, and are admitted only when a pattern admits that spelling; the pattern `nginx` keeps the mirror current by itself.
 
 **Applied in the spec:** [Mirror discovery](#mirror-discovery), R-OCI-025. Code: `mirrorExactNames`, `MirrorPlan` in [mirror.go](../../../internal/formats/oci/mirror.go) and [mirror_plan.go](../../../internal/formats/oci/mirror_plan.go).
-Tests: `TestR_OCI_025_TheMirrorMapsAOneComponentNameOnDockerHubOnly`, `TestR_OCI_025_ADockerHubQuotaAnswerIsAQuotaHeaderRateLimitOfThePass`.
+Tests: `TestTheMirrorMapsAOneComponentNameOnDockerHubOnly`, `TestR_OCI_025_ADockerHubQuotaAnswerIsAQuotaHeaderRateLimitOfThePass`.
 
 ### Q-OCI-184 · A member the document leaves out is read as its defaults by the format; the stored document does not carry it
 
@@ -1972,6 +1976,113 @@ document: the repository service validates the member against the schema and sto
 stored one. The development agent would revisit it with the schema-driven forms of the UI (R-UI-021), which can show the schema's defaults without the store holding them.
 
 **Applied in the spec:** R-OCI-026. Code: `mirrorMemberOf` in [settings.go](../../../internal/formats/oci/settings.go). Tests: `TestMirrorSettingsDefaults`, `TestMirrorSettingsMember`.
+
+### Q-OCI-210 · The conformance suite is fetched at the commit its tag points at
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-035 named `go mod download github.com/opencontainers/distribution-spec/conformance@v1.1.1`. The conformance directory is a module of its own inside the
+repository and the repository carries no `conformance/v1.1.1` tag, so the Go tool answers "unknown revision conformance/v1.1.1"; the module has pseudo-versions only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The Makefile pins the repository's tag `v1.1.1` and the build resolves it with `git ls-remote` to its commit, then fetches the module at that commit (chosen) | One pin, the tag the project publishes; the module proxy and the checksum database verify what the commit yields | A network call to the repository at build time | |
+| (b) The Makefile pins the commit as well as the tag | No resolution at build time | Two pins that can disagree | The rule of one pin per tool |
+| (c) Clone the repository at the tag and build in its `conformance` directory | No module resolution | A checkout beside the module cache, outside the checksum database | |
+
+**Choice:** (a).
+
+**Rationale:** the tag is what a reader of the specification knows; the commit is derived from it, and the module download is checked against the checksum database on every
+machine but the first. The development agent would revisit it if the project publishes `conformance/v*` tags.
+
+**Applied in the spec:** R-OCI-035. Code: `OCI_CONFORMANCE_TAG` and `oci-conformance-build` in the [Makefile](../../../Makefile) (block `T16 oci-conformance`).
+
+### Q-OCI-211 · The conformance suite runs all four categories through the local address and pull, push and discovery through the virtual address
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-035 asked for "a run of each category through a virtual repository's address as well", and R-OCI-028 refuses a delete through a virtual repository with 405
+`UNSUPPORTED` ([Q-OCI-165](#q-oci-165--a-delete-through-a-virtual-repository-is-refused-by-the-handler)). The content-management category deletes manifests and expects 202; the first run
+through the virtual address failed exactly there (the delete of a manifest by digest and the tags list that should reflect it), and nothing else.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The virtual run switches `OCI_TEST_CONTENT_MANAGEMENT` off; the local run covers the category (chosen) | The suite's own switch; the refusal stays a decision and a tested one (R-OCI-028) | The deletion path of a virtual repository is covered by the integration test of the 405 only | |
+| (b) A delete through a virtual repository goes to the deployment target | The category passes through both addresses | It reverses [ADR-180](../../decisions.md#adr-180--the-oci-write-routes-serve-the-class-virtual-and-the-handler-resolves-the-deployment-target) and Q-OCI-165: a delete that would take a tag a member's cache also holds, or one the caller may read but the target does not hold, has no clear meaning | |
+
+**Choice:** (a).
+
+**Rationale:** the refusal is a product decision with its reasons in Q-OCI-165; the suite is to confirm the registry, not to overrule that. The runner (`TestOCIConformance`)
+accepts a skipped specification only for the switches of R-OCI-035 and for these: the two setup specs that read their data from `OCI_TAG_NAME`/`OCI_MANIFEST_DIGEST`/`OCI_BLOB_DIGEST`
+and `OCI_TAG_LIST` (they replace the suite's own pushes and run only when those are set; the runner sets none); the cross-mount spec for automatic discovery *enabled* (the
+runner sets `OCI_AUTOMATIC_CROSSMOUNT=0`, so its twin for *disabled* runs); the cross-mount spec of a *nonexistent* blob, which runs only after a mount that answered 202 (a mount of
+a blob the source holds answers 201); and, in the virtual run, the specs of the content-management category. The development agent would revisit (b) if the owner wants a delete
+through a virtual repository (gap H-755 in [oci-virtual.md](../../security/oci-virtual.md#what-this-does-not-cover)).
+
+**Applied in the spec:** R-OCI-035 and its test plan. Code: `TestOCIConformance`, `documentedSkip` in [conformance_run_test.go](../../../test/integration/oci/conformance_run_test.go).
+
+### Q-OCI-212 · The challenge of a mount names the source's pull as well as the target's push
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the conformance suite's client takes the scope of its token request from the first challenge. A `POST …/blobs/uploads/?mount=<d>&from=<source>` was challenged with the target's
+`push` only, so the token carried no `pull` on the source, the enforcement point dropped `mount` and `from` (Q-OCI-102) and answered 202: valid for the suite's "201 or 202", but the mount
+was never performed and the specs that follow a 201 were skipped. Docker and containerd also ask for both scopes, from what the challenge tells them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The challenge of a mount request carries `repository:<target>:push repository:<source>:pull` (chosen) | A client that follows the challenge gets a token for the whole operation, as the distribution specification's token flow describes | The scope names the `from` the client sent; it tells nothing the request did not | |
+| (b) A client asks for both scopes itself | No change | A client that does not (the suite's) never mounts | |
+
+**Choice:** (a).
+
+**Rationale:** the mount is an operation on two names and the token must be able to cover both. `Enforcer.Scope` and the challenge of a token without `push` add the source entry through
+`Enforcer.mountScope` when the request is a mount whose `from` names an image; every other request is challenged as before. The development agent would revisit it if a client is found that
+refuses a challenge with two scope entries.
+
+**Applied in the spec:** R-OCI-004, R-OCI-012 read as before. Code: `mountScope` in [enforce.go](../../../internal/api/registry/enforce.go). Test: `TestTheChallengeOfAMountNamesTheSourcesPullToo`.
+
+### Q-OCI-213 · A test name carries the ID of a requirement when it proves a whole acceptance criterion of it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-88 (the coverage report derives "implemented" from the IDs in test names): tests of the OCI packages were named with requirements whose criteria they only partly touch or
+whose criteria need real clients, the conformance suite, the e2e runs or the restore drill.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A name carries an ID when the test proves at least one whole criterion (one bullet of "Acceptance criteria") of that requirement; mechanism tests name the ID in a comment with the reason (chosen) | The report says "implemented" for a requirement some test proves part of, and the comment says which part is left | A requirement with a criterion for a real client is "implemented" before the e2e row exists | |
+| (b) Only a test that proves every criterion of a requirement carries its ID | "Implemented" means all criteria | Almost no requirement of the format would read as implemented until the e2e rows land | |
+| (c) Every test keeps its IDs | No change | The finding itself | |
+
+**Choice:** (a).
+
+**Rationale:** the criteria are the unit the spec itself counts. A criterion that names a real client (R-OCI-014, R-OCI-030) is proven by no test of the integration tier, so no test name carries those two IDs
+until the e2e rows (WP11) do. The comment each moved test carries says which criteria the requirement has and where they are proven. The development agent would revisit (b) once the e2e rows exist.
+
+**Applied in the spec:** none (the spec's test plan already assigns the tiers). Code: the tests under `internal/formats/oci`, `internal/api/registry`, `internal/auth/registrytoken` and
+`test/integration/oci*`, `test/integration/registry`; `docs/coverage/implemented.txt` and the checklist follow from the names.
+
+### Q-OCI-214 · The protocol criteria run in `test/integration/oci` against replicas of the whole application
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-035 names `test/integration/oci` for the protocol criteria; the area holds the data port's tests already and `ocilocal` holds tests that start from items written by the item store
+because the routes were not mounted then. The `/api/oci/` fixture in `test/integration/files` served the same purpose until `/v2/` existed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The protocol criteria go into `oci`, as subtests of one installation with three replicas, a plain HTTP client and a request pinned to a replica; `ocilocal`, `ociremote`, `ocivirtual` and `registry` keep theirs; the `/api/oci/` fixture stays for the tests that stage a lock or a guard (chosen) | One place for "what a client sees"; the criteria named in the spec are in the area the spec names | The installation is built once and the subtests share its state (each uses names of its own) | |
+| (b) A new area `ociprotocol` | Isolated | A second area beside the one the spec names, and a shard-list entry | |
+| (c) Into `ocilocal` | Beside the lists and the sweep | That area starts from seeded state by design | |
+
+**Choice:** (a).
+
+**Rationale:** no shard list changes (`oci` is in shard b by default). The valid reason for the fixture in `files` to stay is that a replica cannot hold the package lock or stand a delete job still. The
+development agent would revisit it if the shared installation makes a subtest depend on another's state. "Valkey stopped" is the replicas' configuration pointing their Sentinel at an address that
+answers nothing (`testenv.StackOptions.Valkey` false), so the stack's Valkey is never stopped and the failover lock is not needed.
+
+**Applied in the spec:** the test plan of R-OCI-035. Code: [test/integration/oci](../../../test/integration/oci).
 
 ### Q-OCI-23 · No exposure rules and no Bastion for the format in this phase
 
@@ -2631,9 +2742,9 @@ list would then move to a path every item folder covers).
 **Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation) and R-AUTHZ-005 in [authorization.md](../authorization.md).
 Code: `handleTagsList`, `handleReferrers`, the claims of `commitTagItem` and `commitManifestItem` in
 [hooks.go](../../../internal/formats/oci/hooks.go), the catalog in [catalog.go](../../../internal/api/registry/catalog.go) and the grant in [grantor.go](../../../internal/api/registry/grantor.go), both through `registry.Documents` ([documents.go](../../../internal/api/registry/documents.go)) from the format's `PackageDocumentPath` and `Classify`. Tests:
-`TestR_OCI_006_EveryDecisionNamesTheCanonicalPathOfTheItem`, `TestR_ARCH_010_Conformance` of the format,
+`TestEveryDecisionNamesTheCanonicalPathOfTheItem`, `TestR_ARCH_010_Conformance` of the format,
 `TestR_OCI_006_AnIncludePathSetPushesByTagAndByDigestAndReadsTheLists` and
-`TestR_OCI_006_TheListsAreDecidedOnThePackageDocumentAndTheSubjectsPath` and `TestR_OCI_006_APathScopedCallerGetsARegistryTokenForTheImagesItsPatternsAdmit` (integration), the catalog subtest of
+`TestR_OCI_006_TheListsAreDecidedOnThePackageDocumentAndTheSubjectsPath` and `TestAPathScopedCallerGetsARegistryTokenForTheImagesItsPatternsAdmit` (integration), the catalog subtest of
 `TestTheCatalogPagesOverRepositoriesInByteOrder`.
 
 ### Q-OCI-130 · The size of a tag in the package view is the size of its image, reported by the format
@@ -2676,7 +2787,7 @@ and [H-600](#h-600--the-sizes-a-manifest-declares-are-not-compared-with-the-stor
 [view.go](../../../internal/formats/oci/view.go), `PutManifest` and `TagSizes` in [store_manifests.go](../../../internal/formatdata/oci/store_manifests.go) with `OCISetIndexContentSize` and `OCITagSizes` in [oci_manifests.sql](../../../internal/meta/postgres/queries/oci_manifests.sql), `formats.ViewSizer` and `Capabilities.ViewSizer`, `view.Sizer`, `Service.Versions` and
 `Service.Version` in [service.go](../../../internal/packages/view/service.go), the bridge in [view.go](../../../internal/formathost/view.go), the check of the
 conformance kit in [checks_view.go](../../../internal/formats/formattest/checks_view.go). Tests: `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage` (the
-evidence of the acceptance criterion), `TestR_OCI_031_TheSizesReadOnceAndAnswerForTheTagsAsked`, `TestR_OCI_031_TheMetadataSizeIsTheStoredImageSize`, `TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth` (the store, with saturation), the index-of-indexes part of `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage`,
+evidence of the acceptance criterion), `TestTheSizesReadOnceAndAnswerForTheTagsAsked`, `TestR_OCI_031_TheMetadataSizeIsTheStoredImageSize`, `TestTheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth` (the store, with saturation), the index-of-indexes part of `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage`,
 `TestR_API_029_OnlyAFormatWithAViewSizerIsAskedForSizes`, `TestR_ARCH_010_Check11ViewSizer`.
 
 ### Q-OCI-110 · A mount that cannot be served opens a session and says nothing more, and one function parses its source
@@ -2753,7 +2864,7 @@ the path `<name>/_blobs/<digest>` of a repository of any format is a valid sourc
 
 **Rationale:** the digest in the name is what every client verifies; the layout must not hold anything else. The development agent would revisit it if a registry class stores blobs under another name.
 
-**Applied in the spec:** [R-OCI-012](#r-oci-012--cross-repository-blob-mount). Code: `Format.OnCommit` in [hooks.go](../../../internal/formats/oci/hooks.go). Test: `TestR_OCI_012_AMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames`.
+**Applied in the spec:** [R-OCI-012](#r-oci-012--cross-repository-blob-mount). Code: `Format.OnCommit` in [hooks.go](../../../internal/formats/oci/hooks.go). Test: `TestAMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames`.
 
 ### Q-OCI-114 · The grant on the source of a mount is the registry root's check; the read right is the host's link
 
@@ -2796,7 +2907,7 @@ it if the window of (b) matters (it is the time between a `PATCH` and the `PUT` 
 
 **Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation), [R-OCI-011](#r-oci-011--blob-uploads-across-requests-and-replicas) and [R-OCI-012](#r-oci-012--cross-repository-blob-mount) state it. Code: `checkOwnership` in
 [handlers_upload.go](../../../internal/formats/oci/handlers_upload.go). Tests: `TestR_OCI_006_ADeployerPushesANewImageAndIsRefusedOnAnOwnedName` (the real rule, three replicas),
-`TestR_OCI_006_ABlobOfANameWithAVersionIsNoFirstVersion`, `TestR_OCI_006_AnUploadToAnOwnedNameIsRefusedBeforeABodyIsRead`.
+`TestABlobOfANameWithAVersionIsNoFirstVersion`, `TestAnUploadToAnOwnedNameIsRefusedBeforeABodyIsRead`.
 
 ### Q-OCI-116 · A session is decided on the package's document path
 
@@ -2815,7 +2926,7 @@ Context: a session has no blob yet, but the host decides `deploy` on every call 
 **Rationale:** the property is R-AUTHZ-005's; the document path is the one path every name has. [Q-OCI-140](#q-oci-140--every-oci-decision-and-claim-names-a-path-classify-places-in-the-image-the-tags-list-and-the-catalog-on-the-tags-list-document-referrers-on-the-subject-a-push-on-the-tag-or-the-manifest) names the same path for the lists, the claim of a push and the registry token's grant, so one grant on a name's paths decides the session, the lists and the token alike. The development agent would revisit it if a grant on the blob directory alone should start sessions.
 
 **Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation). Code: `sessions.decide` in [uploads.go](../../../internal/formathost/uploads.go), `startSession`. Tests:
-`TestR_AUTHZ_005_ASessionStartIsDecidedOnAPathOfThePackage` (an exclude and an include pattern, three replicas), `TestR_OCI_006_ADecisionThatRefusesComesBeforeTheOwnershipQuestion`.
+`TestR_AUTHZ_005_ASessionStartIsDecidedOnAPathOfThePackage` (an exclude and an include pattern, three replicas), `TestADecisionThatRefusesComesBeforeTheOwnershipQuestion`.
 
 ### Q-OCI-120 · The digest a tag announces is checked by a reader around the response body
 
@@ -2836,13 +2947,13 @@ artifacts).
 **Rationale:** the reader does not change a byte, so the announced length stays true, and its failure path holds: the error is an `*errs.Error`, which the spool
 and `bodyFailure` return as it is, in memory and for a chunked body alike. It gives the verdict when the body ends, so it relies on the consumer reading to the end
 (the spool reads a body of a known length through a reader that stops one byte past it, [blob/spool.go](../../../internal/blob/spool.go)); the test
-`TestR_OCI_020_TheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead` pins that. Option (b) is open (an addition, not a change of the frozen surface); the development
+`TestTheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead` pins that. Option (b) is open (an addition, not a change of the frozen surface); the development
 agent would take it when a second format needs the headers in `PrepareFill`. A mismatch raises the `proxy.integrity_mismatch` event and the counter an artifact's
 mismatch has (`bodyFailure`), and counts nothing toward the circuit.
 
 **Applied in the spec:** [R-OCI-020](#r-oci-020--limits-for-untrusted-content), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest). Code: `digestBody` in
-[remote.go](../../../internal/formats/oci/remote.go). Tests: `TestR_OCI_020_AManifestWhoseDigestIsNotTheOneTheUpstreamAnnouncedIsRefused`,
-`TestR_OCI_020_AManifestWhoseBytesAreNotTheirAnnouncedDigestIsNotStored`.
+[remote.go](../../../internal/formats/oci/remote.go). Tests: `TestAManifestWhoseDigestIsNotTheOneTheUpstreamAnnouncedIsRefused`,
+`TestR_OCI_022_AManifestWhoseBytesAreNotTheirAnnouncedDigestIsNotStored`.
 
 ### Q-OCI-121 · The rows of a remote's manifest are written by `OnFill` for a tag and by `OnCommit` for a digest
 
@@ -2865,7 +2976,7 @@ written for a tag of a remote (the tag document is a metadata entry).
 **Rationale:** the development agent would revisit it when the engine hands the alias commit a payload.
 
 **Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest). Code: `OnFill`, `InspectFill`, `remoteCommit`.
-Tests: `TestR_OCI_022_AFetchedTagIsEnteredUnderItsDigest`, `TestR_OCI_022_AManifestFetchedByTagIsServedByItsDigestWithoutARequest`.
+Tests: `TestAFetchedTagIsEnteredUnderItsDigest`, `TestR_OCI_022_AManifestFetchedByTagIsServedByItsDigestWithoutARequest`.
 
 ### Q-OCI-122 · A stored tags list records that the upstream cut it
 
@@ -2885,7 +2996,7 @@ because the upstream's does not reach the format. The tags of a cut document are
 
 **Rationale:** the development agent would revisit it when the pass-through carries the response headers.
 
-**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `truncatedBody`, `remoteTagsList`. Test: `TestR_OCI_024_ATagsListTheUpstreamCutIsMarked`,
+**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `truncatedBody`, `remoteTagsList`. Test: `TestATagsListTheUpstreamCutIsMarked`,
 `TestR_OCI_024_TheTagsListIsOneStoredDocumentAndAWindowBeyondItIsPassedThrough`.
 
 ### Q-OCI-123 · Referrers of a remote are filtered here for the caller and for `artifactType`
@@ -2905,7 +3016,7 @@ which an older registry may not have filtered by `artifactType`.
 **Rationale:** the development agent would revisit it for an index member that clients need.
 
 **Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `remoteReferrers`, `readableReferrers`. Test:
-`TestR_OCI_024_ReferrersArePassedThroughAndFiltered`.
+`TestReferrersArePassedThroughAndFiltered`.
 
 ### Q-OCI-124 · The default extra hosts of Docker Hub are the hosts it was seen to use
 
@@ -2941,7 +3052,7 @@ Context: the audit of the first build found that `extraHosts` gates the hosts a 
 | (b) Keep the CDN host with the true rationale | A default that matches what Docker Hub did | Nothing changes for an existing repository | A host listed that gates nothing, and that widens the hosts a realm may name |
 | (c) Make `extraHosts` gate redirects | The list means what the documents said | The operator decides where downloads may come from | A change of R-REPO-039 for every format, and of every registry that redirects to a signed URL on a host nobody lists |
 
-**Choice:** (a). `TestR_OCI_023_ABlobRedirectIsFollowedWhateverExtraHostsSaysAndTheDefaultsListNoCDN` pulls through a repository that lists the realm only.
+**Choice:** (a). `TestABlobRedirectIsFollowedWhateverExtraHostsSaysAndTheDefaultsListNoCDN` pulls through a repository that lists the realm only.
 
 **Rationale:** the development agent would revisit it if R-REPO-039 gates redirects by `extraHosts`; the CDN host then returns to the defaults.
 
@@ -2963,13 +3074,13 @@ The 700-tag page of the test was chunked and hid it.
 | (c) Store the fact elsewhere (a table, the entry) | The document stays the upstream's | | A migration and a row for a fact of a cache entry |
 
 **Choice:** (b). An upstream defect (a list that is no JSON object, above the bound) is a 502 from `PrepareFill`, never a 400.
-`TestR_OCI_024_ACutPageSentWithAContentLengthIsStoredAndFollowedByTheUpstreamsPages` sends a cut page with a length through the whole application.
+`TestACutPageSentWithAContentLengthIsStoredAndFollowedByTheUpstreamsPages` sends a cut page with a length through the whole application.
 
 **Rationale:** option (a) is open and would keep the stored bytes the upstream's; the development agent would take it for a second fact of this kind. ADR-176
 records that `AcceptResponse` may wrap the body.
 
 **Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `truncatedBody` and `AcceptResponse` in
-[remote.go](../../../internal/formats/oci/remote.go). Test: `TestR_OCI_024_ACutTagsListHasNoLengthTheSpoolCouldCheck`.
+[remote.go](../../../internal/formats/oci/remote.go). Test: `TestACutTagsListHasNoLengthTheSpoolCouldCheck`.
 
 ### Q-OCI-127 · A stood `401` with `insufficient_scope` is a missing image and keeps the remembered challenge
 
@@ -3004,7 +3115,7 @@ token is refreshed.
 
 **Applied in the spec:** [R-OCI-021](#r-oci-021--remote-repository-upstream-and-its-token-handshake), R-ARCH-008 (the interface). Code: `StoodChallengeReader` in
 [remote.go](../../../internal/formats/remote.go), `fetcher.stoodMissing` in [fetch.go](../../../internal/proxy/fetch.go). Test:
-`TestR_OCI_021_AnImageTheRegistryDeniesToAValidTokenIsMissingAndTheChallengeIsKept`, `TestR_OCI_021_AStoodChallengeWithInsufficientScopeIsAMissingImage`.
+`TestAnImageTheRegistryDeniesToAValidTokenIsMissingAndTheChallengeIsKept`, `TestAStoodChallengeWithInsufficientScopeIsAMissingImage`.
 
 ### Q-OCI-128 · A remote that cannot ask its upstream answers with what it stores
 
@@ -3025,7 +3136,7 @@ Context: R-OCI-024 says that, offline or with the circuit open, the stored tags 
 **Rationale:** the development agent would revisit the referrers answer when clients handle `503` there.
 
 **Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `tagSource.pass`, `unreachable`, `remoteReferrers`. Test:
-`TestR_OCI_024_OfflineTheStoredWindowAnswersAndReferrersAre404`.
+`TestOfflineTheStoredWindowAnswersAndReferrersAre404`.
 
 ### Q-OCI-129 · The `library/` mapping is for Docker Hub itself, and a read is decided on both spellings of the name
 
@@ -3054,8 +3165,8 @@ an operator who wants one grant to cover both spellings.
 
 **Applied in the spec:** [R-OCI-025](#r-oci-025--remote-repository-docker-hub), [R-OCI-012](#r-oci-012--cross-repository-blob-mount). Code: `libraryName`, `otherSpelling`, `gateRemote`, `bothAllow`,
 `Format.SourceSpellings` in [remote_handlers.go](../../../internal/formats/oci/remote_handlers.go), `linkSource` in [ingest.go](../../../internal/formathost/ingest.go). Tests:
-`TestR_OCI_025_TheLibraryMappingNeedsDockerHubWithoutANamespacePrefix`, `TestR_OCI_025_ADecisionOnADockerHubRemoteIsMadeOnBothSpellings`,
-`TestR_OCI_025_AnExcludeForOneSpellingHoldsForTheOther`, `TestR_OCI_012_AMountFromADockerHubRemoteIsDecidedOnBothSpellingsOfTheSource`.
+`TestTheLibraryMappingNeedsDockerHubWithoutANamespacePrefix`, `TestADecisionOnADockerHubRemoteIsMadeOnBothSpellings`,
+`TestAnExcludeForOneSpellingHoldsForTheOther`, `TestAMountFromADockerHubRemoteIsDecidedOnBothSpellingsOfTheSource`.
 
 ### Q-OCI-150 · One request of a client costs at most eight pages of the upstream's tags list
 
@@ -3077,7 +3188,7 @@ upstream pages is refused as the local class refuses it. Eight is what a page of
 **Rationale:** the development agent would revisit the number if a registry with a small page size is a real upstream of a remote that is paged by clients.
 
 **Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `maxPassPages` in
-[remote_handlers.go](../../../internal/formats/oci/remote_handlers.go). Test: `TestR_OCI_024_APageEndsEarlyWithALinkAfterTheAllowedUpstreamPages`
+[remote_handlers.go](../../../internal/formats/oci/remote_handlers.go). Test: `TestAPageEndsEarlyWithALinkAfterTheAllowedUpstreamPages`
 ([remote_paging_cap_test.go](../../../internal/formats/oci/remote_paging_cap_test.go)).
 
 ### Q-OCI-151 · "Refused within 5 s" is proven by where the refusal happens, not by a wall clock on a shared runner
@@ -3146,7 +3257,7 @@ after `last`, so the first page of the union is the first page of the members' u
 **Rationale:** the development agent would revisit it for a pass-through of a cut list (H-701) if a registry with a small page size is a member of a virtual repository.
 
 **Applied in the spec:** [R-OCI-027](#r-oci-027--virtual-repository-resolution). Code: `virtualTagsList`, `localMemberTags`, `remoteMemberTags`, `virtualReferrers`. Tests:
-`TestR_OCI_027_TheTagsListIsTheUnionOfTheMembersTagsPagedLikeADirectList`, `TestR_OCI_027_TheReferrersOfADigestAreTheUnionOfTheRemoteMembersWithoutRepeats`
+`TestR_OCI_027_TheTagsListIsTheUnionOfTheMembersTagsPagedLikeADirectList`, `TestTheReferrersOfADigestAreTheUnionOfTheRemoteMembersWithoutRepeats`
 ([test/integration/ocivirtual](../../../test/integration/ocivirtual)).
 
 ### Q-OCI-162 · A miss goes on to the next member, a failure is the answer only when nothing serves
@@ -3187,7 +3298,7 @@ The source of a mount through the virtual repository (`from=<project>/<virtual>/
 
 **Applied in the spec:** [R-OCI-028](#r-oci-028--virtual-repository-pushes-through-a-virtual-repository). Code: `linkFromMembers`, `linkManifest`, `linkItem`, `memberManifest` in
 [virtual_write.go](../../../internal/formats/oci/virtual_write.go). Tests: `TestR_OCI_028_ALayerARemoteMemberCachedIsLinkedIntoTheTargetAndNotUploadedAgain`,
-`TestR_OCI_028_AMountFromTheVirtualRepositoryLinksTheBlobOfAMember`, `TestR_OCI_028_ALayerNobodyHoldsIsStillAMissingBlob`.
+`TestAMountFromTheVirtualRepositoryLinksTheBlobOfAMember`, `TestALayerNobodyHoldsIsStillAMissingBlob`.
 
 ### Q-OCI-165 · A delete through a virtual repository is refused by the handler
 

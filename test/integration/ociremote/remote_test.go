@@ -197,7 +197,7 @@ func TestR_OCI_022_AnExpiredTagIsRevalidatedByHeadAndOnlyAMovedTagCostsAGet(t *t
 	}
 }
 
-func TestR_OCI_020_AManifestWhoseBytesAreNotTheirAnnouncedDigestIsNotStored(t *testing.T) {
+func TestR_OCI_022_AManifestWhoseBytesAreNotTheirAnnouncedDigestIsNotStored(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	if err := e.stub.SetMode(ocistub.Mode{WrongDigest: []string{"acme/a:1.0"}}); err != nil {
@@ -218,7 +218,9 @@ func TestR_OCI_020_AManifestWhoseBytesAreNotTheirAnnouncedDigestIsNotStored(t *t
 	}
 }
 
-func TestR_OCI_022_ASchemaOneManifestIsNeverStored(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestASchemaOneManifestIsNeverStored(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	if err := e.stub.SetMode(ocistub.Mode{Schema1: []string{"acme/a:1.0"}}); err != nil {
@@ -233,7 +235,9 @@ func TestR_OCI_022_ASchemaOneManifestIsNeverStored(t *testing.T) {
 	}
 }
 
-func TestR_OCI_022_ATagTheUpstreamDoesNotHaveIsRememberedForTheNotFoundPeriod(t *testing.T) {
+// Mechanism of R-OCI-022, not a proof of its criteria: it checks a request shape, a verification step or the memory of a miss;
+// the criteria are the 300 s revalidation, the read by digest without a request and the mismatched digest.
+func TestATagTheUpstreamDoesNotHaveIsRememberedForTheNotFoundPeriod(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	for range 2 {
@@ -247,7 +251,9 @@ func TestR_OCI_022_ATagTheUpstreamDoesNotHaveIsRememberedForTheNotFoundPeriod(t 
 	}
 }
 
-func TestR_OCI_023_AMultiPlatformImageIsPulledThroughWithItsChildrenAndEveryLayerOnce(t *testing.T) {
+// Mechanism of R-OCI-023, not a proof of its criteria: it checks a redirect, a response type or a HEAD; the criteria are one
+// fetch per layer across three replicas and the CDN host receiving no credential.
+func TestAMultiPlatformImageIsPulledThroughWithItsChildrenAndEveryLayerOnce(t *testing.T) {
 	e := newEnv(t, options{})
 	reps := e.start(1)
 	e.pull(reps[0], rAnon, "library/alpine", "3")
@@ -310,7 +316,9 @@ func TestR_OCI_023_ABlobFromTheCDNIsFetchedWithoutACredentialAndABlobWithTheWron
 	}
 }
 
-func TestR_OCI_023_AHeadOfABlobIsAnsweredWithoutAFill(t *testing.T) {
+// Mechanism of R-OCI-023, not a proof of its criteria: it checks a redirect, a response type or a HEAD; the criteria are one
+// fetch per layer across three replicas and the CDN host receiving no credential.
+func TestAHeadOfABlobIsAnsweredWithoutAFill(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	img, _ := e.stub.Image("acme/a", "1.0")
@@ -455,7 +463,9 @@ func TestR_OCI_025_ANameWithoutANamespaceIsBelowLibraryForDockerHubOnly(t *testi
 	}
 }
 
-func TestR_OCI_025_AnUpstreamQuotaAnswerIsTheRegistrysRateLimitAnswer(t *testing.T) {
+// Mechanism of R-OCI-025, not a proof of its criteria: it checks a decision on both spellings, the quota answer or the mapping;
+// the criteria are the single library/nginx tag item and the quota_header count of a mirror pass.
+func TestAnUpstreamQuotaAnswerIsTheRegistrysRateLimitAnswer(t *testing.T) {
 	e := newEnv(t, options{})
 	rep := e.start(1)[0]
 	if err := e.stub.SetMode(ocistub.Mode{PullQuota: &ocistub.PullQuota{Limit: 1}}); err != nil {

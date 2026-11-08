@@ -555,6 +555,8 @@ func TestLinks(t *testing.T) {
 	write(t, root, "b.md", "# B\n\n## Target `Section`\n\n<a id=\"explicit\"></a>\n")
 	write(t, root, "sub/c.md", "# C Title\n\n[up](../b.md#explicit) [up](../a.md#same)\n")
 	write(t, root, "node_modules/x/README.md", "[skipped](nowhere.md)\n")
+	// .out holds what a build downloads or generates (the conformance suite's module cache, reports): not the repository's documents.
+	write(t, root, ".out/oci-conformance/mod/x/README.md", "[skipped](nowhere.md)\n")
 
 	broken, checked, err := checkLinks(root)
 	if err != nil {

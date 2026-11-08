@@ -26,10 +26,13 @@ func runScoped(t *testing.T, st *memStore, scope func(string) bool, paths ...str
 	return cascaded, err
 }
 
-// TestR_OCI_018_ABlobGoesWithTheManifestsThatTheSameDeleteTakesLater: the batches of the delete job commit one by one and the blobs of a name
+// TestABlobGoesWithTheManifestsThatTheSameDeleteTakesLater: the batches of the delete job commit one by one and the blobs of a name
 // come first; a blob that a manifest of the same delete references is removed together with that manifest, in the transaction of the
 // blob, so a batch that is refused later cannot leave the manifest over a removed blob (Q-OCI-73).
-func TestR_OCI_018_ABlobGoesWithTheManifestsThatTheSameDeleteTakesLater(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestABlobGoesWithTheManifestsThatTheSameDeleteTakesLater(t *testing.T) {
 	blob := BlobPath("app", digestText(digestN(20))) // referenced by the manifest 2 of graph()
 	inScope := func(p string) bool { return p == mpath(2) }
 

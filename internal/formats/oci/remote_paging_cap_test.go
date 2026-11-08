@@ -12,7 +12,10 @@ import (
 )
 
 // One request of a client costs a bounded number of upstream pages, however many tags the caller may not read (Q-OCI-128).
-func TestR_OCI_024_APageEndsEarlyWithALinkAfterTheAllowedUpstreamPages(t *testing.T) {
+//
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestAPageEndsEarlyWithALinkAfterTheAllowedUpstreamPages(t *testing.T) {
 	var asked int
 	var all []string
 	for c := 'b'; c <= 'z'; c++ {

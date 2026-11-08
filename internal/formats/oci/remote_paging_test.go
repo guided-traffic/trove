@@ -89,7 +89,9 @@ func lastOf(link string) string {
 	return u
 }
 
-func TestR_OCI_024_ALinkFollowsEveryPageThatIsNotTheEndOfTheList(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestALinkFollowsEveryPageThatIsNotTheEndOfTheList(t *testing.T) {
 	pf := newPaging(t)
 	for _, c := range []struct {
 		path, tags, next string
@@ -128,7 +130,9 @@ func TestR_OCI_024_ALinkFollowsEveryPageThatIsNotTheEndOfTheList(t *testing.T) {
 	}
 }
 
-func TestR_OCI_024_ATagTheCallerMayNotReadIsInNoPageAndNoLink(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestATagTheCallerMayNotReadIsInNoPageAndNoLink(t *testing.T) {
 	pf := newPaging(t, "b", "e")
 	for _, path := range []string{"whole/tags/list?n=1", "cut/tags/list?n=1"} {
 		var walked []string
@@ -159,7 +163,9 @@ func TestR_OCI_024_ATagTheCallerMayNotReadIsInNoPageAndNoLink(t *testing.T) {
 	}
 }
 
-func TestR_OCI_024_OfflineTheStoredWindowAnswersAndReferrersAre404(t *testing.T) {
+// Mechanism of R-OCI-024, not a proof of its criteria: it checks a window, a bound or a spool detail of the tags list; the
+// criteria are the first five tags with a Link to trove and the referrers pass-through.
+func TestOfflineTheStoredWindowAnswersAndReferrersAre404(t *testing.T) {
 	m := &formattest.MemRemote{Docs: map[string][]byte{
 		TaglistPath("cut"): []byte(`{"name":"cut","tags":["a","b","c"],"x-trove-truncated":true}`),
 	}} // no Queries: the engine answers formats.ErrOffline, as it does for an offline repository and a caller who may not fill

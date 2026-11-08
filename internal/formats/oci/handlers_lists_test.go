@@ -93,7 +93,9 @@ func TestR_OCI_015_TagsListPagesInByteOrder(t *testing.T) {
 	}
 }
 
-func TestR_OCI_015_TagsListEdgeCases(t *testing.T) {
+// Mechanism of R-OCI-015, not a proof of its criteria: it checks hidden-tag handling or an edge case; the criteria are the n=2
+// paging and the conformance content-discovery category.
+func TestTagsListEdgeCases(t *testing.T) {
 	st := newMemStore()
 	for i := range 1005 {
 		st.putTag("big", fmt.Sprintf("t%04d", i), digestN(1))
@@ -257,7 +259,9 @@ func TestR_OCI_016_ReferrersListTheManifestsOfTheSubject(t *testing.T) {
 	}
 }
 
-func TestR_OCI_016_ReferrersEdgeCases(t *testing.T) {
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestReferrersEdgeCases(t *testing.T) {
 	st := newMemStore()
 	h := listHost(t, st)
 	t.Run("a subject that does not exist is an empty index", func(t *testing.T) {
@@ -292,9 +296,12 @@ func TestR_OCI_016_ReferrersEdgeCases(t *testing.T) {
 	})
 }
 
-// TestR_OCI_016_ReferrersContinueWithALink: a page holds at most 1,000 descriptors; a longer list continues with a Link whose last
+// TestReferrersContinueWithALink: a page holds at most 1,000 descriptors; a longer list continues with a Link whose last
 // parameter is the digest the page ended at (R-OCI-016).
-func TestR_OCI_016_ReferrersContinueWithALink(t *testing.T) {
+//
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestReferrersContinueWithALink(t *testing.T) {
 	subject := digestN(250)
 	st := newMemStore()
 	for i := range 1003 {
@@ -339,7 +346,9 @@ func each(f func(rows.Manifest) bool) func([]rows.Manifest) ([]bool, error) {
 	}
 }
 
-func TestR_OCI_016_APageIsBoundedByBytesAndReportsCutAnnotations(t *testing.T) {
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestAPageIsBoundedByBytesAndReportsCutAnnotations(t *testing.T) {
 	big := `{"k":"` + strings.Repeat("x", 60<<10) + `"}`
 	subject := digestN(1)
 	st := newMemStore()
@@ -375,9 +384,12 @@ func TestR_OCI_016_APageIsBoundedByBytesAndReportsCutAnnotations(t *testing.T) {
 	}
 }
 
-// TestR_OCI_016_ARowTheCallerMayNotReadIsLeftOutAndTheCursorPassesIt: the rows the allow function refuses are not listed, are not counted
+// TestARowTheCallerMayNotReadIsLeftOutAndTheCursorPassesIt: the rows the allow function refuses are not listed, are not counted
 // towards the page, and the Link continues after the last row read.
-func TestR_OCI_016_ARowTheCallerMayNotReadIsLeftOutAndTheCursorPassesIt(t *testing.T) {
+//
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestARowTheCallerMayNotReadIsLeftOutAndTheCursorPassesIt(t *testing.T) {
 	subject := digestN(250)
 	st := newMemStore()
 	for i := range 4500 {
@@ -410,7 +422,9 @@ func TestR_OCI_016_ARowTheCallerMayNotReadIsLeftOutAndTheCursorPassesIt(t *testi
 	}
 }
 
-func TestR_OCI_016_ACutAnnotationSetIsReportedInAHeader(t *testing.T) {
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestACutAnnotationSetIsReportedInAHeader(t *testing.T) {
 	st := newMemStore()
 	m := referrer(1, "t", digestN(9), `{"a":"b"}`)
 	m.AnnotationsCut = true
@@ -434,9 +448,12 @@ func (c *chunkCounter) Referrers(ctx context.Context, repo int64, name string, s
 	return out, err
 }
 
-// TestR_OCI_016_AReferrersPageReadsOnlyWhatItCanHold: rows with the largest annotations the table admits are read in chunks until the
+// TestAReferrersPageReadsOnlyWhatItCanHold: rows with the largest annotations the table admits are read in chunks until the
 // page of 4 MiB is full, not 1,001 at a time (R-OCI-016).
-func TestR_OCI_016_AReferrersPageReadsOnlyWhatItCanHold(t *testing.T) {
+//
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestAReferrersPageReadsOnlyWhatItCanHold(t *testing.T) {
 	subject := digestN(250)
 	st := newMemStore()
 	big := `{"k":"` + strings.Repeat("x", 60<<10) + `"}`
@@ -460,10 +477,13 @@ func TestR_OCI_016_AReferrersPageReadsOnlyWhatItCanHold(t *testing.T) {
 	}
 }
 
-// TestR_OCI_016_AListThatGoesOnIsNeverAnsweredWithoutALink: rows whose annotations are stored in the jsonb text form (a space after every
+// TestAListThatGoesOnIsNeverAnsweredWithoutALink: rows whose annotations are stored in the jsonb text form (a space after every
 // colon and comma) are larger as read than as encoded in the answer; the page is measured on the answer's own encoding, so it ends
 // where the 4 MiB end and says so, and never stops early with every row it read.
-func TestR_OCI_016_AListThatGoesOnIsNeverAnsweredWithoutALink(t *testing.T) {
+//
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestAListThatGoesOnIsNeverAnsweredWithoutALink(t *testing.T) {
 	subject := digestN(250)
 	st := newMemStore()
 	var b strings.Builder

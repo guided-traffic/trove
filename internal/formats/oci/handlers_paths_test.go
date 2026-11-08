@@ -22,9 +22,12 @@ func pathHidden(actions []formats.Action, paths ...string) func(formats.Target) 
 	}
 }
 
-// TestR_OCI_018_ADeleteHonoursTheGrantsThatExcludeAPath: the tag, the manifest and the blob are decided by their paths, as the same removal
+// TestADeleteHonoursTheGrantsThatExcludeAPath: the tag, the manifest and the blob are decided by their paths, as the same removal
 // through /files/ is, and a delete by digest is refused when its cascade would take an item whose path the grant excludes (Q-OCI-76).
-func TestR_OCI_018_ADeleteHonoursTheGrantsThatExcludeAPath(t *testing.T) {
+//
+// Mechanism of R-OCI-018, not a proof of its criteria: it checks one step of the cascade, the hook or the grammar of a reference;
+// the criteria are the index delete with a shared child, the 409 for a child and the conformance content-management category.
+func TestADeleteHonoursTheGrantsThatExcludeAPath(t *testing.T) {
 	st := graph()
 	st.putTag("app", "keep", digestN(7))
 	blob99 := BlobPath("app", digestText(digestN(99)))
@@ -61,9 +64,12 @@ func TestR_OCI_018_ADeleteHonoursTheGrantsThatExcludeAPath(t *testing.T) {
 	}
 }
 
-// TestR_OCI_015_TheListsShowOnlyWhatTheCallerMayRead: a tag and a referrer whose path a grant excludes from read are left out of the lists,
+// TestTheListsShowOnlyWhatTheCallerMayRead: a tag and a referrer whose path a grant excludes from read are left out of the lists,
 // as a pull of them is refused (R-AUTHZ-005, R-OCI-006).
-func TestR_OCI_015_TheListsShowOnlyWhatTheCallerMayRead(t *testing.T) {
+//
+// Mechanism of R-OCI-015, not a proof of its criteria: it checks hidden-tag handling or an edge case; the criteria are the n=2
+// paging and the conformance content-discovery category.
+func TestTheListsShowOnlyWhatTheCallerMayRead(t *testing.T) {
 	st := newMemStore()
 	for _, tag := range []string{"a", "keep", "z"} {
 		st.putTag("app", tag, digestN(1))

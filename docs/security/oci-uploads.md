@@ -58,11 +58,11 @@ cases. The answers differ in time ([H-661](#h-661--a-mount-answers-differently-i
 The source is always a path of the form `<source name>/_blobs/<digest>` of a repository the host resolves by name, and the host refuses a repository of
 another format than the target's (the answer is the same `NotFound`). `Link` takes size and digests from the source's blob row, so as defence in depth the
 hook of the target refuses a blob item whose SHA-256 is not the digest in its path, a name that is no digest and a commit without a SHA-256 (409 `DENIED`):
-a blob item cannot hold content its digest does not name, whatever commits it (`TestR_OCI_012_TheBlobHookRefusesWhatItCannotVerify`,
+a blob item cannot hold content its digest does not name, whatever commits it (`TestTheBlobHookRefusesWhatItCannotVerify`,
 `TestR_OCI_012_TheHookRefusesABlobItemThatIsNotItsDigestsContent`). The read of the source is the read: an exclude pattern the source repository gained after the blob was pushed hides it from a
 mount as from a pull (`TestR_OCI_012_AnExcludePatternAddedAfterThePushHidesTheSourceFromAMount`), and a member of a virtual source that the caller may not
 read, or that the routing drops, is not consulted (`TestR_STOR_008_LinkResolvesTheSourceByNameAndChecksIt`). The digest of a manifest is no blob of the
-source: the layout keeps `_manifests/` and `_blobs/` apart, so such a mount is the 202 above (`TestR_OCI_012_AManifestDigestIsNoBlobSource`).
+source: the layout keeps `_manifests/` and `_blobs/` apart, so such a mount is the 202 above (`TestAManifestDigestIsNoBlobSource`).
 
 A mount copies no bytes (the integration test counts the object store's puts on the replica that served it) and links the item the caller proved it can read; the
 new item is a normal item of the target name, so the audit event of an upload and the recorded write decisions are written with it.

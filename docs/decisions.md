@@ -206,6 +206,7 @@ checked every earlier decision against them:
 | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) | The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
 | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) | The OCI mirror stores through the host's artifact fill, and the engine counts versions | Decided by the development agent — owner review at the walkthrough |
+| [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) | The OCI conformance suite and the protocol criteria run against replicas of the whole application | Decided by the development agent — owner review at the walkthrough |
 | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
 | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) | The upload and mount handlers hold the protocol, and the host holds the session and the link | Decided by the development agent — owner review at the walkthrough |
 | [ADR-178](#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3) | The upload sessions' Finalize takes an offset and reports the received count, and the contract is at version 3 | Decided by the development agent — owner review at the walkthrough |
@@ -6567,6 +6568,35 @@ second matcher that tracks ServeMux).
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-001, R-OCI-003, R-OCI-017, R-OCI-029, Q-OCI-100, Q-OCI-101;
 [spec/architecture.md](spec/architecture.md) R-ARCH-005, Q-ARCH-390; [spec/endpoints.md](spec/endpoints.md) R-EP-006, R-EP-007, Q-EP-80.
 
+### ADR-189 · The OCI conformance suite and the protocol criteria run against replicas of the whole application
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** R-OCI-035 asks for the specification's own conformance suite in all four categories, through a local and a virtual address, and for every protocol criterion of the format over HTTP. The suite
+is an external test binary that speaks to an address; the criteria need several replicas with a request pinned to each. Finding F-88 asked that a test name carry an ID only for a criterion it proves.
+
+**Decision.**
+
+- `make oci-conformance` pins the tag once (`OCI_CONFORMANCE_TAG`), resolves it to the commit it points at because the conformance module has no tags of its own
+  ([Q-OCI-210](spec/formats/oci.md#q-oci-210--the-conformance-suite-is-fetched-at-the-commit-its-tag-points-at)), downloads the module into `.out/oci-conformance/mod`, compiles it with the repository's Go
+  (`GOTOOLCHAIN=local`) and runs `TestOCIConformance` (build tag `ociconformance`, so no integration run needs the binary and none has to skip). The test starts one replica on a fixed loopback address,
+  runs the binary once through the local address and once through the virtual one, reads the JUnit reports, and fails on a failed or an undocumented skipped specification
+  ([Q-OCI-211](spec/formats/oci.md#q-oci-211--the-conformance-suite-runs-all-four-categories-through-the-local-address-and-pull-push-and-discovery-through-the-virtual-address)).
+- The suite found one defect, fixed on its own: the challenge of a mount named the target's `push` only, so a client that takes its scope from the challenge never got a token that could mount
+  ([Q-OCI-212](spec/formats/oci.md#q-oci-212--the-challenge-of-a-mount-names-the-sources-pull-as-well-as-the-targets-push)).
+- The protocol criteria run in `test/integration/oci` as subtests of one installation with three replicas ([Q-OCI-214](spec/formats/oci.md#q-oci-214--the-protocol-criteria-run-in-testintegrationoci-against-replicas-of-the-whole-application)),
+  `TestR_AUTHZ_007_OCIActionMap` has a subtest per row of the OCI table, and a separate test runs the registry with Valkey unreachable.
+- A test name carries a requirement ID when it proves a whole criterion of it ([Q-OCI-213](spec/formats/oci.md#q-oci-213--a-test-name-carries-the-id-of-a-requirement-when-it-proves-a-whole-acceptance-criterion-of-it)).
+
+**Consequences.** CI runs the conformance suite in shard b of the integration job and uploads its reports. The coverage evidence record loses the two OCI requirements whose criteria only real clients prove (R-OCI-014, R-OCI-030) until
+the e2e rows name them. The deletion path of a virtual repository is covered by its 405 test only (H-755).
+
+**Alternatives considered.** Running the suite from a container image (a second Go toolchain); a delete through a virtual repository so that the category passes everywhere (reverses ADR-180); one area per criterion family.
+
+**Revisit condition:** the project publishes `conformance/v*` tags; the owner wants a delete through a virtual repository; the e2e rows name R-OCI-014 and R-OCI-030.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-035, Q-OCI-210 to Q-OCI-214.
+
 ### ADR-182 · The OCI mirror stores through the host's artifact fill, and the engine counts versions
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -7742,6 +7772,11 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-182](spec/formats/oci.md#q-oci-182--the-plan-reads-only-the-tags-the-engine-keeps-and-a-tag-the-registry-does-not-accept-has-no-items) | Does the plan read tags the engine will drop? | (a) No; a manifest the registry refuses gives its tag no items | [ADR-182](#adr-182--the-oci-mirror-stores-through-the-hosts-artifact-fill-and-the-engine-counts-versions) |
 | [Q-OCI-183](spec/formats/oci.md#q-oci-183--a-name-stays-as-the-pattern-spells-it-through-the-discovery-and-the-plan-maps-it-to-the-docker-hub-name) | Where is `nginx` mapped to `library/nginx` in a mirror? | (a) In the plan; the discovery keeps the pattern's spelling | — |
 | [Q-OCI-184](spec/formats/oci.md#q-oci-184--a-member-the-document-leaves-out-is-read-as-its-defaults-by-the-format-the-stored-document-does-not-carry-it) | Does the stored document carry the defaults of `oci.mirror`? | (a) No: the format reads them | — |
+| [Q-OCI-210](spec/formats/oci.md#q-oci-210--the-conformance-suite-is-fetched-at-the-commit-its-tag-points-at) | Where does the conformance suite come from, when its module has no tags? | (a) The Makefile pins the repository tag; the build resolves it to a commit and fetches the module there | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) |
+| [Q-OCI-211](spec/formats/oci.md#q-oci-211--the-conformance-suite-runs-all-four-categories-through-the-local-address-and-pull-push-and-discovery-through-the-virtual-address) | Does content management run through a virtual address? | (a) No: a delete through a virtual repository is refused by design; the local run covers the category | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) |
+| [Q-OCI-212](spec/formats/oci.md#q-oci-212--the-challenge-of-a-mount-names-the-sources-pull-as-well-as-the-targets-push) | Which scopes does the challenge of a mount name? | (a) The target push and the source pull | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) |
+| [Q-OCI-213](spec/formats/oci.md#q-oci-213--a-test-name-carries-the-id-of-a-requirement-when-it-proves-a-whole-acceptance-criterion-of-it) | When may a test name carry a requirement ID (F-88)? | (a) When it proves at least one whole criterion; mechanism tests name the ID in a comment | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) |
+| [Q-OCI-214](spec/formats/oci.md#q-oci-214--the-protocol-criteria-run-in-testintegrationoci-against-replicas-of-the-whole-application) | Where do the protocol criteria of the format run? | (a) In the area `oci`, three replicas, a request pinned to each | [ADR-189](#adr-189--the-oci-conformance-suite-and-the-protocol-criteria-run-against-replicas-of-the-whole-application) |
 | [Q-OCI-23](spec/formats/oci.md#q-oci-23--no-exposure-rules-and-no-bastion-for-the-format-in-this-phase) | Do exposure rules and the Bastion cover the format? | (a) No: `Exposure()` returns nil and the Bastion does not serve `/v2/` | — |
 | [Q-OCI-24](spec/formats/oci.md#q-oci-24--a-storage-hook-cascades-through-the-host-and-a-removal-without-a-request-has-a-system-actor) | Does a storage hook cascade, and as whom? | (a) `ItemsEvent.Cascade` removes in the transaction of the event; the system actor `removal` when there was no request | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
 | [Q-OCI-25](spec/formats/oci.md#q-oci-25--a-remote-manifest-keeps-its-media-type-in-the-cache-entry-and-is-entered-under-its-digest-in-the-fill-transaction) | Where does a remote manifest keep its media type, and how is it entered under its digest? | (a) `remote_cache_entries.media_type` and `Prepared.Aliases` entered in the fill transaction | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |

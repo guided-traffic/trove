@@ -28,7 +28,9 @@ func referrers(t *testing.T, raw []byte) map[string]string {
 	return out
 }
 
-func TestR_OCI_027_TheReferrersOfADigestAreTheUnionOfTheRemoteMembersWithoutRepeats(t *testing.T) {
+// Mechanism of R-OCI-027, not a proof of its criteria: it checks the referrers union or a tag only an upstream holds; the
+// criteria are the local-first pull, the claim, the tag union and the member order.
+func TestTheReferrersOfADigestAreTheUnionOfTheRemoteMembersWithoutRepeats(t *testing.T) {
 	e := newEnv(t, options{})
 	signed := e.stubDigest("acme/signed", "1.0")
 	direct := func(repo string) testenv.Answer { return e.get(repo, "acme/signed/referrers/"+signed) }
@@ -75,7 +77,9 @@ func TestR_OCI_027_TheReferrersOfADigestAreTheUnionOfTheRemoteMembersWithoutRepe
 	}
 }
 
-func TestR_OCI_027_ALocalMembersClaimOnAnImageNameKeepsTheRemoteMembersReferrersAway(t *testing.T) {
+// Mechanism of R-OCI-027, not a proof of its criteria: it checks the referrers union or a tag only an upstream holds; the
+// criteria are the local-first pull, the claim, the tag union and the member order.
+func TestALocalMembersClaimOnAnImageNameKeepsTheRemoteMembersReferrersAway(t *testing.T) {
 	e := newEnv(t, options{autoClaim: true})
 	signed := e.stubDigest("acme/signed", "1.0")
 	if err := e.stubA.SetMode(ocistub.Mode{Referrers: true}); err != nil {

@@ -11,9 +11,12 @@ import (
 	"testing"
 )
 
-// TestR_OCI_015_TheTagsListPagesAcrossManyTags: 2,500 tag items of an image name come in pages in byte order, a withheld tag is
+// TestTheTagsListPagesAcrossManyTags: 2,500 tag items of an image name come in pages in byte order, a withheld tag is
 // not listed, and a name the repository holds nothing of has no page (R-OCI-015, R-OCI-033).
-func TestR_OCI_015_TheTagsListPagesAcrossManyTags(t *testing.T) {
+//
+// Mechanism of R-OCI-015, not a proof of its criteria: it checks hidden-tag handling or an edge case; the criteria are the n=2
+// paging and the conformance content-discovery category.
+func TestTheTagsListPagesAcrossManyTags(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	repo := e.repoID(repoLocal)
@@ -100,9 +103,12 @@ func TestR_OCI_015_TheTagsListPagesAcrossManyTags(t *testing.T) {
 	})
 }
 
-// TestR_OCI_016_ReferrersAreReadFromTheRowsInDigestOrder: the referrers of a subject, filtered by artifact type, paged by the cursor
+// TestReferrersAreReadFromTheRowsInDigestOrder: the referrers of a subject, filtered by artifact type, paged by the cursor
 // digest, without the manifests of another subject, another name or another repository, and without a withheld one (R-OCI-016).
-func TestR_OCI_016_ReferrersAreReadFromTheRowsInDigestOrder(t *testing.T) {
+//
+// Mechanism of R-OCI-016, not a proof of its criteria: it checks paging, bounds or hidden rows of the referrers list; the
+// criteria are the concurrent signatures with the artifactType filter and the conformance referrers specifications.
+func TestReferrersAreReadFromTheRowsInDigestOrder(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	repo := e.repoID(repoLocal)
@@ -180,7 +186,9 @@ func TestR_OCI_016_ReferrersAreReadFromTheRowsInDigestOrder(t *testing.T) {
 	})
 }
 
-func TestR_OCI_017_TheCatalogPageOfARepositoryListsTheNamesWithAManifest(t *testing.T) {
+// Mechanism of R-OCI-017, not a proof of its criteria: it checks the data port page of one repository; the criteria are what the
+// caller grants admit and the scoped, paged list.
+func TestTheCatalogPageOfARepositoryListsTheNamesWithAManifest(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	for _, name := range []string{"team/zeta", "app", "team/app", "app"} {

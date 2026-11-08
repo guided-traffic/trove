@@ -58,7 +58,10 @@ func TestR_AUTHZ_005_EveryDecisionOfAnUploadRouteNamesAPathOfThePackage(t *testi
 }
 
 // Once the name holds a version, a blob is no first version: the rule then needs an owner identity or `manage` (R-AUTHZ-018, Q-OCI-115).
-func TestR_OCI_006_ABlobOfANameWithAVersionIsNoFirstVersion(t *testing.T) {
+//
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestABlobOfANameWithAVersionIsNoFirstVersion(t *testing.T) {
 	fx := withSessions(t, formattest.HostOptions{})
 	fx.image("team/app", "1", "layer")
 	fx.wantStatus(fx.post("team/app/blobs/uploads/", "", nil), http.StatusAccepted, "")
@@ -87,7 +90,10 @@ func (c *countingBody) Read(p []byte) (int, error) {
 
 // A caller who may not write a name that has an owner starts no session, uploads no blob and mounts none, and no byte of its body is read
 // (R-AUTHZ-018, Q-OCI-115); a caller the decision refuses is refused before the ownership is asked.
-func TestR_OCI_006_AnUploadToAnOwnedNameIsRefusedBeforeABodyIsRead(t *testing.T) {
+//
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestAnUploadToAnOwnedNameIsRefusedBeforeABodyIsRead(t *testing.T) {
 	refuse := func(tg formats.Target, _ formats.OwnershipWrite) error {
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "owned by another")
 	}
@@ -112,7 +118,10 @@ func TestR_OCI_006_AnUploadToAnOwnedNameIsRefusedBeforeABodyIsRead(t *testing.T)
 }
 
 // The commit hook of a blob fails closed: a name that is no digest and a commit without a SHA-256 are refused as bytes of another digest are.
-func TestR_OCI_012_TheBlobHookRefusesWhatItCannotVerify(t *testing.T) {
+//
+// Mechanism of R-OCI-012, not a proof of its criteria: it checks one rule of the mount source or one refusal; the criteria are
+// the grant-limited 201 and 202 outcomes, the mount without from and the absence of uploaded bytes.
+func TestTheBlobHookRefusesWhatItCannotVerify(t *testing.T) {
 	f := New()
 	d := sha([]byte("x"))
 	good := bytes.Repeat([]byte{'a'}, 32)
@@ -138,7 +147,10 @@ func TestR_OCI_012_TheBlobHookRefusesWhatItCannotVerify(t *testing.T) {
 
 // A caller a path grant refuses is refused by the decision, and never learns that the name has an owner (Q-OCI-116): the decision comes before the
 // ownership question at a session start, as it does at a monolithic upload and a mount.
-func TestR_OCI_006_ADecisionThatRefusesComesBeforeTheOwnershipQuestion(t *testing.T) {
+//
+// Mechanism of R-OCI-006, not a proof of its criteria: it checks one step of the decision (ownership, shadowing, the canonical
+// path, the token ceiling); the criteria are the overwrite, delete and catalog outcomes.
+func TestADecisionThatRefusesComesBeforeTheOwnershipQuestion(t *testing.T) {
 	var precheck int
 	fx := withSessions(t, formattest.HostOptions{
 		Allow: func(formats.Target) error { return errs.E(errs.Forbidden, errs.CodeForbidden, "path refused") },

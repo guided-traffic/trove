@@ -32,7 +32,10 @@ func ociFormat(t *testing.T) formats.Format {
 // The end-to-end proof of Q-OCI-56: the walk runs through the real handler of the endpoint - the chain with the host stage, the
 // authentication stage, the router, the enforcement point and the dispatcher's handler - with registry tokens from the real token
 // service, and every route of the OCI format and the three core routes pass it.
-func TestR_OCI_005_TheWalkThroughTheRealHandler(t *testing.T) {
+//
+// Mechanism of R-OCI-005, not a proof of its criteria: it walks the route set through the enforcement point; the criteria are
+// tampering, revocation, the removed grant and the key-ring rotation.
+func TestTheWalkThroughTheRealHandler(t *testing.T) {
 	e := newEnv(t, nil)
 	f := ociFormat(t)
 	t.Run("the default endpoint", func(t *testing.T) {
