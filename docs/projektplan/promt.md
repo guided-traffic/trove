@@ -446,10 +446,14 @@ separate agents; no agent checks its own work.
   `ItemsEvent.Cascade`, the upload-session contract, withheld manifests in the serve facts) are built and reviewed (architecture and
   code review, every finding fixed) on the branch `t16-oci`; the cut into WP1 to WP14 is `docs/projektplan/oci-work-packages.md` there.
   Not merged to main on purpose: migration 00056 tightens the key grammar of every repository and project key (Q-OCI-3) and stops at
-  the first key that breaks it, so the owner's installation must first be checked, e.g.
-  `SELECT key FROM repositories WHERE key !~ '^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$' UNION ALL SELECT key FROM project WHERE key !~
-  '^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$';` (empty means safe). Next: rebase `t16-oci` onto main (renumber migrations and ADR if main took
-  them), then WP1 onward.
+  the first key that breaks it. Checked on 2026-11-08 on the owner's installation (read-only, schema `trove`): no repository, project,
+  principal, policy or CI-mapping name breaks the new CHECKs (0 repositories, 1 project `test`), so `t16-oci` may go to main.
+  Next, in this order: (1) rebase `t16-oci` (ca928052) onto main. Main has migrations 00052 and 00053, ADR-159 and ADR-160 (F-76
+  added `catalog.Facts.ChecksumAlwaysVerified`: merge it with ADR-161's contract additions and regenerate the contract file), and the
+  jsonb RawMessage override of sqlc (regenerate `q/`); keep 00054 to 00056, ADR-161, the Q-OCI numbers and H-579, H-580 unless main
+  took one; squash into one `feat(oci)` commit and bring it to main without a force push. (2) Wave 1 of the cut in parallel: WP1
+  upload sessions, WP2 registry tokens, WP4 the OCI format (local class), WP6 the remote engine's handshake, WP7 the counting stub
+  registry, planned, built and checked by separate agents as this section says.
 - **T-17 · APT registry (Debian and Ubuntu), with pull-through and full mirror.** Scope from the owner: local, remote and virtual
   repositories for `apt` and `apt-get`; the remote in both modes of R-REPO-050. The planning agent writes `docs/spec/formats/debian.md`
   from [debian.md](../features/formats/debian.md): the repository layout (`dists/<suite>/Release`, `InRelease`, `Release.gpg`,
