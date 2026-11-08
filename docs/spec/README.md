@@ -409,6 +409,7 @@ acceptance criteria.
 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | `R-CI` | GitLab CI OIDC token exchange, identity mappings, `CI_JOB_TOKEN` fallback |
 | [formats/npm.md](formats/npm.md) | `R-NPM` | npm registry protocol, local/remote/virtual behavior |
 | [formats/nuget.md](formats/nuget.md) | `R-NUGET` | NuGet v3 protocol, symbols, local/remote/virtual behavior |
+| [formats/oci.md](formats/oci.md) | `R-OCI` | OCI distribution API under `/v2/` for container images and other OCI content (Docker image manifests included): token service, uploads across replicas, indexes, referrers, deletion, remote in both modes with the mirror's discovery of images, tags and platforms, virtual resolution, bound hosts; specified for phase T-16, not implemented |
 | [formats/generic.md](formats/generic.md) | `R-GENERIC` | Generic format: raw files at free-form paths; the local class (MVP, M1, Q-ROAD-1) with descriptor, flat layout, request classification, deploy, download, patterns and settings; the remote and virtual classes and cross-format copy (P1) |
 | [backup-and-restore.md](backup-and-restore.md) | `R-BAK` | Backup job, backup format in S3, consistency with garbage collection, restore, retention |
 | [ha-and-helm.md](ha-and-helm.md) | `R-HA` | High availability, failure modes, upgrades, backup CronJob and restore Job (chart side), platform backup (PITR, bucket versioning), disaster recovery, Helm chart values |
