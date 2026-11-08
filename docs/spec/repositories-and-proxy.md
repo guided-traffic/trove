@@ -3577,8 +3577,8 @@ Acceptance criteria:
 - e2e (set `mirror`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
   same remote on three client-serving replicas; `npm ci` succeeds within 120 % of its time without the pass, the stub never has more
   than `maxConcurrentFetches + n − 1 + B` connections open. The time ratio is enforced by the nightly run, the bound in every run
-  (Q-REPO-197). Pre-emption is proved by a second part with the contention forced (Q-REPO-253): a pass whose tarballs the stub holds
-  1.5 s runs, 36 clients ask the three client-serving replicas for distinct tarballs the pass has not stored (their slots hold 9), all are served
+  (Q-REPO-197). Pre-emption is proved by a second part with the contention forced (Q-REPO-253): a pass runs while the stub holds a tarball
+  1.5 s, 24 clients ask the three client-serving replicas for distinct tarballs the pass has not stored (their slots hold 9), all are served
   with 200, and `trove_mirror_preempted_total` grew.
 
 ### R-REPO-056 · Mirror status and operations
@@ -7517,7 +7517,7 @@ flight and the settings are the estimator's, and a change there changes what is 
 |---|---|---|---|
 | (a) Keep "grew over the three pairs" | As built | No change | Fails whenever the install is fast enough that no client waits: it asserts the opposite of what the split achieves |
 | (b) Slow the pass's upstream requests in the pairs, or lower the pairs' slot budget | Contention by configuration | The assertion stays where it is | The stub cannot tell the pass from the clients, so the clients' fetches slow too and the ratio is inflated; a lower budget changes the bound |
-| (c) A second part of the e2e test forces the contention on its own remote; the pairs log the counter (chosen) | `TestMirror_R_REPO_055_ClientsFirst/preemption`: a pass over 96 names runs while the stub holds a tarball 1.5 s (the pass's two background fetches sit in their exchange), then 36 clients ask the three replicas for 36 other tarballs of the remote at once (the replicas' slots hold 9) | Deterministic: the clients wait, raise `mirror_yield`, and the pool's processes pre-empt; the estimator, the bound and the pair structure are untouched; the criterion "`trove_mirror_preempted_total` grew" is asserted as specified | A second remote and about a minute of the set |
+| (c) A second part of the e2e test forces the contention on its own remote; the pairs log the counter (chosen) | `TestMirror_R_REPO_055_ClientsFirst/preemption`: a pass over 84 names runs while the stub holds a tarball 1.5 s (a delay keyed by the kind of request for the whole stub, held while the subtest runs; the pass's two background fetches sit in their exchange), then 24 clients ask the three replicas for 24 other tarballs of the remote at once (the replicas' slots hold 9) | Deterministic: the clients wait, raise `mirror_yield`, and the pool's processes pre-empt; the estimator, the bound and the pair structure are untouched; the criterion "`trove_mirror_preempted_total` grew" is asserted as specified | A second remote and about a minute of the set |
 | (d) Drop the criterion | Pre-emption is proved by the unit and integration tests | Simplest | The e2e would no longer show the rule across processes and replicas, which only kind has |
 
 **Choice:** (c). The pairs log `trove_mirror_preempted_total` and assert nothing about it; the subtest `preemption` asserts that it grew and that every

@@ -228,13 +228,18 @@ func (e *mirrorEnv) clientsFirstNuGet(t *testing.T) {
 }
 
 // clientsFirstPreemption is the pre-emption half of the e2e criterion of R-REPO-055, with the contention forced (Q-REPO-253): a pass runs
-// through a remote of the private test upstream whose tarballs take 1.5 s, so its background fetches sit in their upstream exchange; then
-// more distinct tarballs are requested through the three client-serving replicas than their slots hold (3 each, 9 in all). The clients that
-// find no slot raise mirror_yield and the pool's processes pre-empt the pass's fetches: trove_mirror_preempted_total grows, and every
-// client is served. The request counts are small enough for the queue timeout (10 s) of 36 requests over 9 slots at 1.5 s.
+// through a remote of the private test upstream while the stub holds every tarball 1.5 s (the delay is keyed by the kind of request for
+// the whole stub, not per remote: it holds while this subtest runs, the subtests run one after another and each resets the stub), so the
+// pass's background fetches sit in their upstream exchange; then more distinct tarballs are requested through the three client-serving
+// replicas than the repository's budget lets through. The clients that find no slot raise mirror_yield and the pool's processes pre-empt
+// the pass's fetches: trove_mirror_preempted_total grows, and every client is served.
+//
+// The margin against the queue timeout (10 s): the binding limit is the repository's budget maxConcurrentFetches = 8, so 24 requests
+// make 3 waves of about 1.55 s (a tarball and, if the replica asks for it, a document of 20 ms); the last request waits about
+// 3.1 s for a slot, 6.9 s short of the timeout, while 24 > 8 keeps the contention certain.
 func (e *mirrorEnv) clientsFirstPreemption(t *testing.T) {
 	s := stub(t)
-	const passNames, burst = 60, 36
+	const passNames, burst = 60, 24
 	var names []string
 	for i := 0; i < passNames+burst; i++ {
 		name := fmt.Sprintf("e2e-preempt-%s-%03d", e.run, i)
@@ -245,9 +250,17 @@ func (e *mirrorEnv) clientsFirstPreemption(t *testing.T) {
 	t.Cleanup(func() { s.setMode(t, npmstub.Mode{}) })
 
 	key := e.create(t, e.npmNamesBody("npm-mirror-preempt-"+e.run, names))
+	// the remote and its pass go at the end of the subtest, a failure included, so that no pass runs on into the NuGet subtest
+	t.Cleanup(func() {
+		e.drop(t, key)
+		e.awaitNoPassRunning(t)
+	})
 	e.run_(t, key, false)
 	st := e.awaitPassStarted(t, key, 2)
 	t.Logf("the pass runs (%s, %d packages filled) when the clients arrive", st.Pass.Method, st.Pass.PackagesDone)
+	// The first signal of a waiting client is the one that counts: the pass then starts nothing for 30 s (the yield window), so it must
+	// find the pass's two background fetches in their exchange. The burst starts when the stub holds two requests open.
+	waitFor(t, "the pass's two background fetches to be in their upstream exchange", 30*time.Second, 50*time.Millisecond, func() bool { return npmInflight(t).Open >= 2 })
 	before := preempted(t, key)
 
 	// the last names: the pass takes the names in order and is far from them
@@ -277,6 +290,4 @@ func (e *mirrorEnv) clientsFirstPreemption(t *testing.T) {
 			t.Errorf("R-REPO-055: the client fetch of %s answered %d, want 200", asked[i], code)
 		}
 	}
-	e.drop(t, key)
-	e.awaitNoPassRunning(t)
 }
