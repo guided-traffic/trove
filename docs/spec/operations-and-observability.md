@@ -1004,8 +1004,8 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_db_pool_connections_opened_total` | counter | `db_pool` | New connections (pgxpool `NewConnsCount`); a jump after a failover or a credential rotation is a reconnect storm |
 | `trove_db_retries_total` | counter | `kind` (`connection`, `shutdown`, `read_only`, `serialization`, `too_many_connections`) | Repeats of a transaction or read after a retryable error, one per repeat ([ha-and-helm.md](ha-and-helm.md) R-HA-009) |
 | `trove_db_pool_resets_total`, `trove_db_commit_unknown_total` | counter | — | Pool resets and commits with unknown outcome (R-HA-009) |
-| `trove_db_slow_queries_total` | counter | `query` (name of the query in code) | Queries slower than `metrics.slow_query_threshold` |
-| `trove_db_query_duration_seconds` | histogram | `query` | Only with `metrics.db_query_histograms: true` |
+| `trove_db_slow_queries_total` | counter | `query` (name of the query in code) | Statements slower than `metrics.slow_query_threshold` on any pool of the replica, a failed one included, timed from the start of the statement until its result is closed (a streamed cursor counts while it is read); `0` counts none. A statement written inline in code is `unnamed`, pgx's own transaction statements are `begin`, `commit` and `rollback`, a pipeline's batch `pipeline`; `COPY` bypasses the tracer (Q-OPS-188) |
+| `trove_db_query_duration_seconds` | histogram | `query` | Only with `metrics.db_query_histograms: true`, which registers the family; buckets 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 and 30 s (Q-OPS-188) |
 | `trove_jobs_queued` | gauge | `kind` | Queued jobs (from PostgreSQL) |
 | `trove_jobs_oldest_queued_age_seconds` | gauge | `kind` | Age of the oldest queued job that is due (`run_at` has passed; a back-off or delayed start is not waiting); the primary alerting signal for a stuck queue. Read from PostgreSQL by `web` replicas too, so it keeps reporting while no `worker` runs |
 | `trove_jobs_running` | gauge | `kind` | Jobs this replica executes (`worker`) |
@@ -1395,13 +1395,14 @@ completes or fails. The same conventions as R-OPS-010 apply.
 | `status` | Upstream status, `0` on a transport error |
 | `error` | Transport or TLS error text, else `null` |
 | `request_bytes`, `response_bytes` | `-1` if unknown |
-| `duration_ms` | Total time including body |
+| `duration_ms` | Total time including body; a `304` or `404` has none, so its record ends when the fetch closes the response, before it writes the renewal or the negative entry |
 | `attempt` | Attempt number for retried calls, else `1` |
 | `on_behalf_of` | Principal whose request caused the call, or `system` for jobs |
 | `collapsed_waiters` | Number of concurrent misses on this replica that this fetch served (INV-11). Waiters on other replicas wait through the Valkey flight lock ([architecture.md](architecture.md) R-ARCH-033) and are not counted here; they send no upstream request, answer with the `collapsed` parameter of `Cache-Status` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047) and count in `trove_remote_collapsed_requests_total` on their own replica |
 
-[repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047 adds the fields `flight_role`
-and `cache_status` to records with `purpose: remote`. `flight_role` is `leader`, `follower` or
+[repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047 adds the fields `flight_role`,
+`cache_status` and `slot_wait_ms` (the wait for the fetch slot before the request was sent, Q-REPO-236) to records with
+`purpose: remote`. `flight_role` is `leader`, `follower` or
 `waiter` for pull-through fetches, `probe` for the upstream request of a shadowing check
 (R-REPO-048), which stores nothing, and `mirror` for a background request of a mirror's pass (R-REPO-057), whose
 `on_behalf_of` is `system` and whose record names the pass's job in the field `job_id`, which no other record has (Q-REPO-154). The role says how the request that sends the upstream request
@@ -5998,6 +5999,48 @@ answered `null`). Every other job kind sets an object.
 follow it. The development agent would revisit this if a kind needs a result that is not a mapping.
 **Applied:** R-OPS-019 (the paragraph after the table of the jobs API). Code: `RunOSV` in `internal/vuln/sync/run.go`. Tests:
 `TestR_OPS_019_TheResultOfTheOSVSyncIsAnObject`, `TestR_OPS_019_TheResultOfAJobRowIsAnObject`.
+
+### Q-OPS-188 · The statement metrics label by the sqlc query name and are recorded by the pool's query tracer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `trove_db_slow_queries_total{query}` and `trove_db_query_duration_seconds{query}` are in the catalog of R-OPS-008, and
+`metrics.slow_query_threshold` and `metrics.db_query_histograms` exist in the configuration, but no code exported the families. The catalog says
+"name of the query in code" and leaves open what a statement without a name is, how a pipeline's batch is timed, the buckets, whether the
+histogram family exists while the flag is off, and what a threshold of `0` means.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The pool's statement tracer records both families; the label is the sqlc name of the statement's `-- name:` header, `begin`/`commit`/`rollback` for pgx's transaction statements, `unnamed` for other inline SQL, `pipeline` for a batch (chosen) | `stmtTracer` ([internal/meta/postgres/stmttag.go](../../internal/meta/postgres/stmttag.go)) is installed on every pool and sees every statement with its text and its error | One place; every statement of the three pools is covered, a timeout included; the label values are the finite set of generated queries plus five (`begin`, `commit`, `rollback`, `unnamed`, `pipeline`) | A batch has no per-statement time, so it is one `pipeline` sample; inline statements (migrations, backup, advisory locks) share `unnamed` |
+| (b) Wrap `q.DBTX` and time each generated call | The wrapper knows the generated function | Could carry the Go function name | Misses the inline statements and the batch; two layers to keep in step |
+| (c) Label by a prefix of the SQL text | What the timeout tag does for a log line | No convention needed | Unbounded values: a statement with a different literal is a new series, which R-OPS-007 forbids |
+
+**Choice:** (a).
+
+- The label is the first word after `-- name:` in the statement, never the text. pgx's own `begin`, `commit` and `rollback` carry no name and
+  are labelled by their verb: the `commit` of a cache fill is where a stalled replication shows (F-63). Any other statement without the header
+  is `unnamed`. The backup's referenced-blob cursor, which stays open for the whole stream, is named `BackupReferencedBlobs`.
+- A statement is timed from the tracer's start to its end, which for a query is the close of its result: a streamed cursor counts for as long
+  as it is read. `CopyFrom` and `COPY` bypass the tracer and are not recorded.
+- A statement counts in `trove_db_slow_queries_total` when it ran longer than `metrics.slow_query_threshold` from the tracer's start to its end,
+  whether it succeeded or failed (a statement cut by `statement_timeout` is the slowest one). A threshold of `0` counts none; the validation
+  `min=0s` leaves it open and a counter of every statement is what the histogram is for.
+- `trove_db_query_duration_seconds` is registered only with `metrics.db_query_histograms: true`, so a replica without the flag exposes no
+  series and no family. Its buckets run from a key lookup to the statement timeout: 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5,
+  5, 10 and 30 s.
+- A pipeline ([internal/meta/postgres/q/pipeline.go](../../internal/meta/postgres/q/pipeline.go)) is one round trip: the tracer times the
+  batch from its start to its end and records it once as `pipeline`. Its statements are not recorded one by one.
+- The families carry no pool label: the catalog gives `query` alone, and the pools of one replica share the names.
+
+**Rationale:** the statement tracer is the one place that sees every statement of every pool with its error, and the names of generated
+queries are a bounded set. The development agent would revisit the single `unnamed` label if a hot inline statement shows in the slow counter
+(it would then get a name header), and the `pipeline` label if a pipeline's duration needs its steps.
+
+**Applied:** R-OPS-008 (the two rows); [internal/meta/postgres/metrics.go](../../internal/meta/postgres/metrics.go),
+[stmttag.go](../../internal/meta/postgres/stmttag.go), [internal/observability/metrics.go](../../internal/observability/metrics.go).
+Tests: `TestR_OPS_008_TheStatementMetricsCountByTheNameOfTheQuery` (unit), `TestR_OPS_008_AStatementSlowerThanTheThresholdCountsUnderItsQueryName`
+(integration).
+
 
 ## What this does not cover
 

@@ -47,7 +47,7 @@ func (e *Engine) Probe(ctx context.Context, rem Remote, path string, a Adapter) 
 		return ProbeResult{Outcome: Undetermined}, nil //nolint:nilerr // an unusable credential is an upstream failure for the check
 	}
 	f.cl = cl
-	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
+	hold, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
 	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
 	if err != nil {
 		if ee, ok := errs.As(err); ok && ee.Code == errs.CodeFetchQueueTimeout {
@@ -55,7 +55,8 @@ func (e *Engine) Probe(ctx context.Context, rem Remote, path string, a Adapter) 
 		}
 		return ProbeResult{}, err
 	}
-	defer release()
+	defer hold.release()
+	f.wait, f.hasWait = wait, true
 	adm, err := e.circuitAdmit(ctx, rem)
 	if err != nil {
 		return ProbeResult{}, err

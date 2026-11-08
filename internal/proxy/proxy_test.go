@@ -308,12 +308,12 @@ func TestSlots(t *testing.T) {
 		go func() {
 			r2, _, err := s.acquire(context.Background(), 1, 1, 2*time.Second)
 			if err == nil {
-				r2()
+				r2.release()
 			}
 			got <- err
 		}()
 		time.Sleep(50 * time.Millisecond)
-		rel()
+		rel.release()
 		if err := <-got; err != nil {
 			t.Fatalf("a waiter was not served after the release: %v", err)
 		}
@@ -328,8 +328,8 @@ func TestSlots(t *testing.T) {
 		if _, _, err := s.acquire(context.Background(), 3, 100, 50*time.Millisecond); err == nil {
 			t.Fatal("a third fetch got a slot")
 		}
-		a()
-		b()
+		a.release()
+		b.release()
 	})
 	t.Run("the background share is min(concurrency, max(1, budget / 4))", func(t *testing.T) {
 		for _, tc := range []struct{ budget, concurrency, want int }{
@@ -361,7 +361,7 @@ func TestSlots(t *testing.T) {
 			t.Fatalf("background %d, held %d", s.background(1), s.held())
 		}
 		// The client path is the one of R-REPO-040: the repository's share (8 on one replica) has six slots left.
-		var rels []func()
+		var rels []*slotHold
 		for range 6 {
 			rel, _, err := s.acquire(ctx, 1, 8, 50*time.Millisecond)
 			if err != nil {
@@ -372,10 +372,10 @@ func TestSlots(t *testing.T) {
 		if _, _, err := s.acquire(ctx, 1, 8, 50*time.Millisecond); err == nil {
 			t.Fatal("a client fetch got a slot above the repository's share")
 		}
-		r1()
-		r2()
+		r1.release()
+		r2.release()
 		for _, r := range rels {
-			r()
+			r.release()
 		}
 		if s.background(1) != 0 || s.held() != 0 {
 			t.Fatalf("after release: background %d, held %d", s.background(1), s.held())

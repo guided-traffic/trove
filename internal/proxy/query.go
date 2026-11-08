@@ -257,12 +257,13 @@ func (e *Engine) queryFetch(ctx context.Context, rq QueryRequest, cl *upstream.C
 		e: e, rq: Request{Remote: rem, Path: rq.Path, Kind: Metadata, MaxBytes: rq.MaxBytes, Caller: rq.Caller},
 		st: &reqState{role: "query"}, fl: &flight{done: make(chan struct{})}, cl: cl,
 	}
-	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
+	hold, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
 	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer hold.release()
+	f.wait, f.hasWait = wait, true
 	adm, err := e.circuitAdmit(ctx, rem)
 	if err != nil {
 		return nil, err

@@ -335,12 +335,13 @@ func (e *Engine) head(ctx context.Context, rq Request, w http.ResponseWriter) er
 		return err
 	}
 	f.cl = cl
-	release, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
+	hold, wait, err := e.slots.acquire(ctx, rem.id, rem.Settings.Limits.MaxConcurrentFetches, e.o.Config.QueueTimeout())
 	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer hold.release()
+	f.wait, f.hasWait = wait, true
 	adm, err := e.circuitAdmit(ctx, rem)
 	if err != nil {
 		return err
@@ -414,6 +415,7 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 		return f.bodyFailure(ctx, err, idle)
 	}
 	defer func() { _ = sp.Close() }()
+	f.exchanged() // the body is read: the upstream's share ends, the commit below is trove's own work (Q-REPO-235)
 	f.success(ctx)
 
 	if verify(rq, sp.Digests) != verdictOK {

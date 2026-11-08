@@ -325,6 +325,10 @@ func (e *Engine) keepBytes(d [32]byte, b []byte) {
 func (f *fetcher) notModified(ctx context.Context, resp *http.Response) flightResult {
 	e, rq := f.e, f.rq
 	rem := rq.Remote
+	// The upstream log record completes when the body is closed: the status of the answer the client gets is set before.
+	f.box.set(CacheStatus{Forwarded: "stale", FwdStatus: http.StatusNotModified}.Header())
+	_ = resp.Body.Close()
+	f.exchanged() // no body is transferred: the upstream's share ends (Q-REPO-235)
 	f.success(ctx)
 	ttl := int64(rem.Settings.Cache.MetadataTTLSeconds)
 	var renewed bool
@@ -350,7 +354,6 @@ func (f *fetcher) notModified(ctx context.Context, resp *http.Response) flightRe
 		return flightResult{err: firstNonNil(err, errs.E(errs.Unavailable, errs.CodeUnavailable, "The stored document disappeared during its revalidation; retry."))}
 	}
 	cs := CacheStatus{Forwarded: "stale", FwdStatus: http.StatusNotModified}
-	f.box.set(cs.Header())
 	return flightResult{doc: e.document(en, cs), status: http.StatusNotModified}
 }
 
@@ -391,6 +394,7 @@ func (f *fetcher) metadata(ctx context.Context, resp *http.Response, idle *atomi
 		return f.bodyFailure(ctx, err, idle)
 	}
 	defer func() { _ = sp.Close() }()
+	f.exchanged() // the body is read: the upstream's share ends, the commit below is trove's own work (Q-REPO-235)
 	f.success(ctx)
 
 	size := sp.Size

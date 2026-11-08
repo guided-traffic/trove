@@ -83,19 +83,19 @@ func (e *Engine) Get(ctx context.Context, g Get) (*GetResult, error) {
 	if ceiling <= 0 {
 		ceiling = BackgroundShare(budget, rem.Settings.Mirror.Concurrency)
 	}
-	ctx, release, err := e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, nil)
+	ctx, hold, err := e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer release()
-	res, err := e.get(ctx, g, cl, viaMirror)
+	defer hold.release()
+	res, err := e.get(ctx, g, cl, viaMirror, hold.wait)
 	if err != nil && errors.Is(context.Cause(ctx), ErrPreempted) {
 		return nil, ErrPreempted
 	}
 	return res, err
 }
 
-func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror bool) (*GetResult, error) {
+func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror bool, slotWait time.Duration) (*GetResult, error) {
 	rem := g.Remote
 	// Only a mirror host carries the mark: the credential policy of the client decides for every other host.
 	rctx, rcancel := context.WithCancel(ctx)
@@ -103,7 +103,7 @@ func (e *Engine) get(ctx context.Context, g Get, cl *upstream.Client, viaMirror 
 	if viaMirror {
 		rctx = outbound.WithoutCredentials(rctx)
 	}
-	rctx = outbound.WithCall(rctx, outbound.Call{Repo: rem.Repo.Name.String(), FlightRole: roleMirror, JobID: g.JobID})
+	rctx = outbound.WithCall(rctx, outbound.Call{Repo: rem.Repo.Name.String(), FlightRole: roleMirror, JobID: g.JobID, SlotWait: outbound.NewSlotWait(slotWait)})
 	req, err := http.NewRequestWithContext(rctx, http.MethodGet, g.URL.String(), nil)
 	if err != nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(err))

@@ -25,6 +25,8 @@ spec:
       tcp_keepalives_interval: "10"
       tcp_keepalives_count: "6"
       client_connection_check_interval: "10s"
+      log_parameter_max_length: "0"       # no bound value in the statement log (it becomes a CI artifact, and a value can be a token's hash)
+      track_wal_io_timing: "on"           # the WAL write and fsync times in pg_stat_io, which the clients-first sampler of the e2e set mirror reads
     synchronous:
       method: any
       number: 1
@@ -33,6 +35,12 @@ spec:
     initdb:
       database: trove
       owner: trove
+      postInitApplicationSQL:
+        # the slow-statement log, for the role trove alone: a statement or COMMIT of trove above 50 ms shows in the primary's log, which the e2e cluster state keeps.
+        # Per-statement logging rules out one slow statement only: the time is then between statements (idle in transaction) or spread over several (active). Set on the
+        # role, not the database: the role survives the DROP DATABASE of the upgrade set, and the operator's own statements (ALTER ROLE ... PASSWORD) run as postgres, so they
+        # never reach that log. Bootstrap runs once: an existing cluster keeps its settings (docs/developer/local-profile.md says how to set it there).
+        - ALTER ROLE trove SET log_min_duration_statement = '50ms'
   storage:
     size: 2Gi
   resources:

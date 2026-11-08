@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -167,8 +168,30 @@ func (e *Engine) listenYield() {
 // (a client then waits for it, and it finishes).
 type bgSlot struct {
 	ctx context.Context
-	mu  sync.Mutex
-	fls []*flight
+	// hold is the slot's hold; the fetch of the item the slot was taken for returns its share when its upstream exchange ends
+	// (Q-REPO-235).
+	hold *slotHold
+	// path, variant and kind identify that item: a discovery document resolved under the same slot is another one.
+	path    string
+	variant string
+	kind    Kind
+	// waitTaken is set by the first upstream request sent under the slot, which reports the slot's wait; later ones report 0.
+	waitTaken atomic.Bool
+	mu        sync.Mutex
+	fls       []*flight
+}
+
+// owns reports whether the request is the one the slot was taken for.
+func (b *bgSlot) owns(rq Request) bool {
+	return rq.Path == b.path && rq.Variant == b.variant && rq.Kind == b.kind
+}
+
+// takeWait returns the slot's wait for the first upstream request sent under it, 0 for every later one.
+func (b *bgSlot) takeWait() time.Duration {
+	if b.waitTaken.Swap(true) {
+		return 0
+	}
+	return b.hold.wait
 }
 
 // joined reports whether a follower of this replica joined a flight the slot's request leads.
@@ -217,12 +240,12 @@ func (e *Engine) holdBackground(ctx context.Context, rq Request) (Request, conte
 	if ceiling <= 0 {
 		ceiling = BackgroundShare(budget, rem.Settings.Mirror.Concurrency)
 	}
-	b := &bgSlot{}
-	sctx, release, err := e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, b.joined)
+	b := &bgSlot{path: rq.Path, variant: rq.Variant, kind: rq.Kind}
+	sctx, hold, err := e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, b.joined)
 	if err != nil {
 		return rq, ctx, nil, err
 	}
-	b.ctx = sctx
+	b.ctx, b.hold = sctx, hold
 	rq.slot = b
-	return rq, sctx, release, nil
+	return rq, sctx, hold.release, nil
 }

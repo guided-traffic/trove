@@ -134,6 +134,13 @@ func NewMetrics(role string, opts ...MetricsOption) *Metrics {
 	return m
 }
 
+// SlowQueryThreshold is metrics.slow_query_threshold: a database statement slower than this counts in
+// trove_db_slow_queries_total; 0 counts none (R-OPS-008, Q-OPS-188).
+func (m *Metrics) SlowQueryThreshold() time.Duration { return m.cfg.SlowQueryThreshold }
+
+// DBQueryHistograms is metrics.db_query_histograms: whether trove_db_query_duration_seconds is registered (R-OPS-008).
+func (m *Metrics) DBQueryHistograms() bool { return m.cfg.DBQueryHistograms }
+
 // Role returns the process role the metrics were built for.
 func (m *Metrics) Role() string { return m.role }
 

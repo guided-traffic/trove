@@ -1821,7 +1821,8 @@ execute these steps in order:
 10. The collapsing protocol (R-REPO-026). Only the request that fetches, once it holds the flight
     or goes on without the cross-replica lock, takes the fetch slots of R-REPO-040; then the fetch,
     classification of the outcome (R-REPO-029), verification (R-REPO-041, R-REPO-042), storage and
-    response.
+    response. The repository's share of the slots is returned when the upstream exchange ends, before
+    verification and storage; the replica's slot when the fetch ends (R-REPO-040, Q-REPO-235).
 
 - **Gone packages** (R-REPO-029). A request whose descriptor names a package that is gone from R,
   other than the request for that package's package document, MUST answer 404 after step 3,
@@ -2801,8 +2802,11 @@ Priority: **MVP** · Covers: trove-only
   The repository value applies when set, else the system value.
 - **Fetch slots.** Two limits apply to every upstream fetch, shadowing-check probes included
   (R-REPO-048):
-  - `proxy.max_concurrent_fetches` protects the replica itself and counts per replica.
-  - `limits.maxConcurrentFetches` protects the upstream. It is a budget for the whole installation
+  - `proxy.max_concurrent_fetches` protects the replica itself and counts per replica. A fetch counts from the moment
+    it takes its slot until it ends, its verification, the format's inspection and its commit included: that is the work
+    the replica does for it.
+  - `limits.maxConcurrentFetches` protects the upstream. A fetch counts from the moment it takes its slot until its
+    upstream exchange ends (below), not while trove stores what it received. It is a budget for the whole installation
     (Q-REPO-8), divided among the replicas without coordination between them. Each replica allows
     `ceil(maxConcurrentFetches ÷ n)` fetches of the repository at a time. n is the number of live
     replicas that fill client misses in the replica registry
@@ -2821,12 +2825,22 @@ Priority: **MVP** · Covers: trove-only
   call (verified: `internal/proxy/upstream/probe.go`), bounded by the management API's rate-limit classes. The bound below
   therefore holds plus the tests running at that moment (Q-ARCH-297).
 - A slot is taken by the request that fetches, after it holds the flight or has gone on without
-  the cross-replica lock (R-REPO-026 step 3), and returned when its fetch ends. Requests that fetch
-  outside a flight, shadowing-check probes and pass-through artifact requests (R-REPO-044), take
-  theirs directly. In-process followers and cross-replica waiters take none, so a replica's share
-  is never spent on waiting for another replica's transfer. A fetch that finds no free slot waits up to
-  `proxy.queue_timeout_seconds`, then answers 503 with `Retry-After: 5` and releases its flight with
-  `failed`. This bounds the burst a large invalidation can send to the upstream.
+  the cross-replica lock (R-REPO-026 step 3). Its two parts are returned at different moments
+  (Q-REPO-235):
+  - the repository's share when the **upstream exchange** ends: the response body has been read to its end into the
+    spool (R-STOR-004), or the response has no body the fetch reads (a `304`, a `404` or `410`, a refusal before the
+    first byte), or the request failed or was cancelled;
+  - the replica's slot when the fetch ends, after verification (R-REPO-041), the format's inspection, the commit and the
+    entry, negative entry or gone mark it writes.
+
+  A fetch that is storing what it received therefore holds no share of the upstream's budget, and a slow commit does
+  not keep the next fetch of the repository from the upstream; the replica still counts it, and the flight still ends
+  only after the commit, so whoever waits for the flight (R-REPO-026) is answered from the committed entry as before.
+  Requests that fetch outside a flight, shadowing-check probes and pass-through artifact requests (R-REPO-044), take
+  theirs directly; a request that stores nothing returns both parts when it ends. In-process followers and
+  cross-replica waiters take none, so a replica's share is never spent on waiting for another replica's transfer. A
+  fetch that finds no free slot waits up to `proxy.queue_timeout_seconds`, then answers 503 with `Retry-After: 5` and
+  releases its flight with `failed`. This bounds the burst a large invalidation can send to the upstream.
 - Spool admission and its failure answer are those of [R-STOR-004](storage.md).
 - The background fetches of a mirror take a lower-priority share of the same budget, which client fetches pre-empt
   (R-REPO-055); the shares of client-serving replicas above are not reduced by it.
@@ -2852,6 +2866,14 @@ Acceptance criteria:
 - With `limits.maxConcurrentFetches: 4` on two replicas, replica A leads two slow fetches. Replica B
   receives requests for the same two tarballs and for two other uncached tarballs: B fetches the
   other two at once, without a queue wait, because waiting for A's flights takes no slot.
+- With `limits.maxConcurrentFetches: 1` on one replica and the commit of a fetched tarball held back on purpose, a
+  request for a second uncached tarball of the repository reaches the upstream while the first commit is still held,
+  and its upstream record shows a `slot_wait_ms` below the first tarball's transfer time; once the commit is let go, both
+  tarballs are stored once and both clients get them whole. A held-back document fill behaves the same.
+- With `limits.maxConcurrentFetches: 2` on one replica, every commit held back and 20 concurrent requests for distinct
+  uncached tarballs, the upstream serves all 20 before any commit is let go and never has more than 2 open at once.
+  With `proxy.max_concurrent_fetches: 3` in addition, the upstream serves 3 of them and the fourth waits for a slot until
+  a commit is let go: the replica's slot counts a fetch until its store ends.
 
 ### R-REPO-041 · Integrity verification against upstream digests
 Priority: **MVP** · Covers: RMT-022
@@ -3507,6 +3529,13 @@ budget (`limits.maxConcurrentFetches`, R-REPO-040, Q-REPO-8, Q-REPO-97), and cli
   cross-replica flight of R-REPO-026 like any fetch, so a client that asks for the same item joins it as a follower or a
   waiter instead of fetching twice. A background fetch takes its slot before it enters a flight (Q-REPO-179), so that no client waits for a flight whose fetch has not begun;
   the e2e set `mirror` measured `npm ci` at 41 s against 12 s before that rule ([developer/e2e.md](../developer/e2e.md#the-mirror-tests)).
+- **The end of the exchange** (Q-REPO-235). The background counter and the repository's share are returned when the
+  upstream exchange of the item the slot was taken for ends (R-REPO-040), the replica's slot when the fetch ends. From
+  the end of its exchange a background fetch is no longer one that a client fetch or the signal below pre-empts: a
+  pre-emption frees an upstream slot, and a fetch that is storing what it received holds none; cancelling it would throw
+  away a whole transfer that the pass then repeats. Returning the share does not end the context the fetch runs under,
+  so its commit is not cancelled by it. A discovery document that a background fetch resolves under its slot before the
+  item (R-REPO-040, the format's discovery) returns nothing: the slot was taken for the item.
 - **Who runs what** (phase 6a, [architecture.md](architecture.md) R-ARCH-001). A client-serving replica on this page is one
   that fills client misses: `packages` (and `web` in the upgrade bridge); the process that claims the queue `mirror` is a
   `worker`, or a worker pool that claims `mirror` alone ([ha-and-helm.md](ha-and-helm.md) R-HA-062). The two meet only
@@ -3531,7 +3560,9 @@ Acceptance criteria:
 
 - Unit (one process that serves clients and claims the queue, `maxConcurrentFetches: 2`, so B = 1): while the background holds one slot, two client
   fetches of uncached tarballs arrive; the second pre-empts the background fetch and waits less than 50 ms for its slot; the
-  pre-empted tarball is stored once, later, by the pass.
+  pre-empted tarball is stored once, later, by the pass. A background fetch whose upstream exchange has ended and whose
+  commit is held back on purpose is pre-empted neither by a client fetch nor by the signal, holds no background count,
+  and its item is stored once the commit is let go.
 - Integration (one client-serving replica and one process that claims the queue `mirror`, `maxConcurrentFetches: 8`, so
   B = 2; the stub delays every tarball by 2 s): the pass runs two background fetches; eight client fetches take the
   client-serving replica's eight slots without a wait; a ninth waits, the process that runs the pass pre-empts both
@@ -3875,6 +3906,12 @@ L covers the name) is not counted (Q-REPO-115).
   waited first, a `follower` first joined a flight of its replica that ended with nothing to
   read and then fetched itself, a `waiter` first waited for another replica's flight that ended
   without an entry and then fetched.
+- The same records carry `slot_wait_ms` (Q-REPO-236): how long the fetch waited for its fetch slot (R-REPO-040) before
+  the request was sent, `0` when it took one at once. A background request reports the wait for its background slot,
+  the yield windows of R-REPO-055 included (Q-REPO-179). The first upstream request sent under a slot reports the wait;
+  every further one under the same slot (the retry of R-REPO-029, the item after the discovery document resolved under
+  a background slot) reports `0`, and so does every hop after the first of a request that follows redirects (one request is one chain). A request that takes no slot (`Exchange`, the upstream test of R-REPO-024) has `null`.
+  With `duration_ms` it tells a request that queued for the upstream's budget from one whose upstream was slow.
 - Audit events (INV-16): `repository.created`, `repository.updated`, `repository.disabled` (an
   update that sets `disabled`, beside its `repository.updated`), `repository.narrowed` (an update that narrows, beside its
   `repository.updated`, journaled, R-REPO-061), `repository.deleted`,
@@ -7175,6 +7212,9 @@ The suspicion of F-63 that the miss came from another workflow running at the sa
 **Rationale:** the requirement's ratio is a statement about the fetch budget, and its failure must point at the fetch budget: the phase split showed the
 upstream fetches unchanged and the local work slowed, which on 4 vCPUs is the pass's CPU. The bound and its estimator (the median with a pass against the best
 without) are unchanged. The development agent would revisit this if the ratio misses on `large`, where the phase split would then point at trove.
+Revisited by [Q-REPO-235](#q-repo-235--the-repositorys-share-of-a-fetch-slot-ends-with-the-upstream-exchange-the-replicas-slot-with-the-fetch)
+and [Q-REPO-236](#q-repo-236--the-next-reading-of-clients-first-records-the-databases-waits-the-standbys-lag-the-runners-pressure-the-tests-events-and-the-slot-wait):
+the ratio missed on `large` (131 % in nightly run 42258656348), and the phase split pointed at the fetch slot held through a commit that stalls.
 
 **Applied in the spec:** none (CI wiring). Code: [performance.yml](../../.github/workflows/performance.yml) (`e2e-mirror`, the row `mirror`). Elsewhere:
 [releasing.md](../developer/releasing.md#ci).
@@ -7342,6 +7382,117 @@ foreign key has waited.
 ([test/integration/postgres/move_guard_race_test.go](../../test/integration/postgres/move_guard_race_test.go));
 [database.md](../developer/database.md), [delegated-administration.md](../security/delegated-administration.md).
 
+### Q-REPO-235 · The repository's share of a fetch slot ends with the upstream exchange, the replica's slot with the fetch
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestMirror_R_REPO_055_ClientsFirst/npm` missed its bound on the `large` class (131 % in nightly run 42258656348, F-63), the case
+[Q-REPO-211](#q-repo-211--the-nightly-install-time-ratio-of-clients-first-runs-on-the-large-class) named as its reason to revisit. The pod logs of
+that run, joined by `trace_id`, split each client tarball fill into the upstream exchange, the part of the commit before its last transaction
+(spool, the blob row's lookup, the object write) and the last transaction (blob row, item, cache entry, the populate and `artifact.cached` events,
+commit). The upstream answered in 122 ms at the median in all six installs, every attempt the first; the part before the last transaction stayed at
+2 ms at the median; the last transaction's 90th percentile rose from 15 to 39 ms without a pass to 81 and 104 ms in the two slow loaded pairs, in
+windows of 3 to 4 s on all three `packages` replicas at once. The fetch slot is held through all of it: `fetcher.run` releases the slot after
+`inSlot` returns, and `inSlot` includes the commit ([internal/proxy/fetch.go](../../internal/proxy/fetch.go)); a background request holds its slot
+until `Fill` or `Metadata` returns ([internal/proxy/fill.go](../../internal/proxy/fill.go), [metadata.go](../../internal/proxy/metadata.go)). With
+`maxConcurrentFetches` 8 on three replicas the cluster has 9 client slots, and `npm ci` keeps about 15 requests in flight, so a slower commit
+lowers the whole install's throughput (50 down to 21 to 26 requests per second in the windows). R-REPO-040 says what each limit protects:
+`limits.maxConcurrentFetches` the upstream, `proxy.max_concurrent_fetches` the replica.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep both until the fetch ends, as built | The slot covers the store | One release point; nothing changes | The upstream's budget is spent waiting for the database: a commit that stalls throttles every fetch of the repository on the replica although the upstream is idle, and a pre-emption during the commit throws away a whole transfer that the pass repeats |
+| (b) Return the slot after the object write, before the last transaction | A release inside the commit protocol | Covers the transaction that stalled | The object write sits inside the rounds of `blob.Store.CommitAll`, which may write again in a later round, so the release would live in the blob store's protocol; the write took 2 ms at the median in the same run, so (b) gains nothing over (c) for that cost; the upstream was done before it |
+| (c) Return the whole slot when the upstream exchange ends | One release point, earlier | Simplest; the upstream's bound holds | The replica's limit no longer covers the store: a body up to `storage.spool.memory_threshold` (1 MiB) is spooled in memory and not charged to the spool budget (R-STOR-004), the flight hold's extension goroutine is bounded by that limit ([architecture.md](architecture.md) Q-ARCH-196), and a fetch whose client went away runs on detached; during a stall nothing per replica would bound them but the requests in flight |
+| (d) Return the repository's share and the background count when the upstream exchange ends; keep the replica's slot until the fetch ends (chosen) | Each limit is held while what it protects is in use | The upstream's budget counts upstream exchanges only, so a slow commit no longer keeps the next fetch from the upstream; every bound the replica's limit gives stays (Q-ARCH-196, the in-memory spools); a fetch that is storing is not pre-empted, so no finished transfer is thrown away | Two release points the code must keep apart, the background slot's included; the database may see more commits of one repository at once, bounded by the requests in flight and the replica's limit |
+| (e) Raise the budget of the test's remotes, or make the commit cheaper | Configuration, or a change of the transaction | No change of the engine | The first hides the coupling, which any installation with a slow database meets; the second needs the stall's cause, which no reading has named yet ([Q-REPO-236](#q-repo-236--the-next-reading-of-clients-first-records-the-databases-waits-the-standbys-lag-the-runners-pressure-the-tests-events-and-the-slot-wait)) |
+
+**Choice:** (d).
+
+- The **upstream exchange** of a fetch ends when its response body has been read to its end into the spool, when the response has no body
+  the fetch reads (a `304`, a `404` or `410`, a refusal before the first byte), or when the request failed or was cancelled. Then the
+  repository's share is returned, and for a background fetch its background count, and the fetch leaves the set of running background
+  fetches that a client fetch or the signal `mirror_yield` pre-empts. Returning the share does not end the context the fetch runs under.
+- The replica's slot (`proxy.max_concurrent_fetches`) is returned when the fetch ends: after verification, the format's inspection, the commit,
+  and the entry, negative entry or gone mark it writes. A request that stores nothing (a `HEAD`, a probe, a pass-through) returns both when it ends.
+- A background request's slot is taken for its item (Q-REPO-179). A discovery document resolved under the same slot before the item returns
+  nothing; the item's exchange returns the share.
+- A fetch that was pre-empted gave its whole slot up at the pre-emption (as before); the end of its exchange, if it comes, does nothing.
+- The flight still ends after the commit: followers and waiters (R-REPO-026) are answered from the committed entry, and the leader's own client
+  still gets the withheld tail only after the commit (R-REPO-041).
+
+**Rationale:** the upstream is done with a fetch once its body has been read; holding the upstream's share through trove's own commit makes the
+upstream's budget a function of the database's latency, which is the coupling the split of F-63 measured, and it makes a pre-emption cancel a
+transfer that had already completed. The replica's limit protects work that goes on until the commit ends, so it stays with the fetch. (d) does
+not make a stalled commit faster: a request in a stall window still waits for its own commit. In such a window the install is then bounded by
+npm's requests in flight over each request's own time, not by the 9 slots over a slot time that includes the commit; how much of the 131 % that
+recovers is what the next nightly reading measures, with the records of Q-REPO-236. The development agent would revisit (d) if that reading
+names contention between the commits of one repository as the stall (more of them at once would deepen it), or if fetches that are storing exhaust
+the replica's limit (`trove_remote_fetch_queue_wait_seconds` grows with the replica's limit the exhausted one).
+
+**Applied in the spec:** R-REPO-025 (step 10), R-REPO-040 (the two parts of a slot, two acceptance criteria), R-REPO-055 (the end of the exchange,
+the unit criterion). Code: [internal/proxy/slots.go](../../internal/proxy/slots.go), [fetch.go](../../internal/proxy/fetch.go),
+[artifact.go](../../internal/proxy/artifact.go), [metadata.go](../../internal/proxy/metadata.go), [background.go](../../internal/proxy/background.go).
+Tests: `TestR_REPO_040_TheRepositorysShareIsReturnedWhenTheExchangeEnds`, `TestR_REPO_040_TheReplicasSlotIsHeldUntilTheFetchEnds`,
+`TestR_REPO_055_ABackgroundFetchPastItsExchangeIsNotPreempted` (unit); `TestR_REPO_040_ABlockedCommitDoesNotHoldTheUpstreamShare`,
+`TestR_REPO_040_TheUpstreamBoundHoldsWhileEveryCommitIsHeld`, `TestR_REPO_055_ABackgroundFillWhoseCommitIsHeldIsNotPreempted`,
+`TestR_REPO_055_TheDiscoveryDocumentUnderABackgroundSlotKeepsTheItemsShare` (integration). Elsewhere: [developer/proxy.md](../developer/proxy.md),
+[developer/mirror.md](../developer/mirror.md), [manual/admin/repositories.md](../manual/admin/repositories.md).
+
+### Q-REPO-236 · The next reading of clients first records the database's waits, the standby's lag, the runner's pressure, the test's events and the slot wait
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the split of F-63 (Q-REPO-235) names where the extra time of a loaded install went, not why: the last transaction of the cache commit
+stalls for 3 to 4 s on all three `packages` replicas at once, while the read-only transaction and the object write before it do not; it happens
+without a pass too, less. The artifacts of the readings hold no database, disk or CPU measurement; the cluster state is taken only when the job
+fails and after `TestMain` switched the profile back, which removes the pool's processes and with them the pass's logs; and the test logs a pair
+only at its end, so a stall cannot be placed against what the test was doing. Open, in order:
+
+1. Is the time spent in PostgreSQL (a statement, the commit) or between the statements, in trove or on the way?
+2. If in PostgreSQL, what does it wait for? The dev cluster replicates synchronously (`synchronous: {method: any, number: 1}` in
+   [postgres.yaml](../../deploy/dev/postgres.yaml)), so every committing write waits for the standby's flush; the primary's own WAL flush, a lock
+   between commits and CPU are the other candidates. A read-only transaction waits for neither flush, which fits the split.
+3. Was the machine short of CPU or IO at those seconds? The kind nodes, both stubs and the clients share one runner.
+4. What were the pass and the test doing then (a pass's start, a repository's deletion between pairs and the collection after it)?
+5. After Q-REPO-235, do client fetches still queue for the upstream's share in the windows?
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One instrument per open question, in the dev cluster and the clients-first npm subtest (chosen) | The table below | A miss names its cause, or narrows it to the candidates left | Several small additions to the harness |
+| (b) Every instrument the analysis listed | (a) and `log_lock_waits`, `log_autovacuum_min_duration`, a log field or histogram of the commit transaction's duration | Nothing is missing | `log_lock_waits` reports only waits longer than `deadlock_timeout` (1 s) while the stalls are about 90 ms, and lowering `deadlock_timeout` changes the deadlock detector for every set; the other two repeat what (a) records |
+| (c) Nothing new: read the next misses with what exists | | Nothing to build | Three readings named the transaction and none its cause; the next one would leave the same gap |
+
+| What is recorded | Where | The question it answers | Built |
+|---|---|---|---|
+| `log_min_duration_statement: 50ms` with `log_parameter_max_length: 0` | [postgres.yaml](../../deploy/dev/postgres.yaml), every profile | 1. A statement or `COMMIT` of the role `trove` above 50 ms in the primary's log means the server saw the stall; none rules out one slow statement only: the time is then between statements (`idle in transaction` in the sampler) or spread over several (`active` backends). The setting is made on the role `trove` (`ALTER ROLE`, in the bootstrap's `postInitApplicationSQL`), which survives the `DROP DATABASE` of the upgrade set, and the operator's own statements run as `postgres`, so they never land in the log; `log_parameter_max_length` stays cluster-wide. 50 ms lies between the transaction's median idle (10 ms) and in a window (90 ms). No bound value is logged: the log goes into a CI artifact, and a value can be a token's hash | yes |
+| `track_wal_io_timing: on` | postgres.yaml | 2. The WAL write and fsync times, which PostgreSQL 18 keeps in `pg_stat_io` and only with this switch | yes |
+| A sampler on the primary every 250 ms, one `psql` session for the clients-first npm subtest, one JSON line per sample: `pg_stat_activity` (the sessions that are not idle and not waiting for work, wait event type `Activity`) counted by backend type, state, wait event type and wait event and the first 48 characters of the query; `pg_stat_replication` (sync state, write, flush and replay lag, bytes behind); `pg_stat_wal`; the rows of `pg_stat_io` that wrote, evicted or synced (the WAL rows among them); `pg_stat_checkpointer` | `test/e2e`, `.out/e2e/clients-first-npm-pg.jsonl` | 1 and 2. `SyncRep` waits with a flush lag point at the standby, `WALWrite` or `WALSync` with a growing fsync time at the primary's disk, `Lock` waits at commits that contend, active backends without a wait at CPU, `idle in transaction` at trove between statements; an autovacuum worker or a checkpoint in the window shows too | yes |
+| The runner's pressure every second: `/proc/pressure/cpu`, `io` and `memory` (`some` and `full`, their totals) and the test process's cgroup `cpu.stat` and `cpu.pressure` | `test/e2e`, `.out/e2e/clients-first-npm-pressure.jsonl` (what the test process sees: the machine's `/proc/pressure`, the job's cgroup) | 3 | yes |
+| The cgroup that holds the kind nodes every second: a helper container of the pinned tools image through the job's Docker daemon (`--cgroupns=host`), `cpu.stat` (use, throttling), `cpu.pressure` and `io.pressure`; with a fixed name per cluster that the next start removes first and that is removed when the readings stop; a run that is killed leaves it, and its loop ends after an hour. On the `large` runner the nodes run inside the job's Docker-in-Docker container, so the test process's cgroup above is not theirs | `test/e2e`, `.out/e2e/clients-first-npm-nodes.jsonl` | 3 | yes |
+| The test's events with their wall time: each pair's creates, the installs' start and end, the pass's request and start, the drop and the end of the pass's halt | `test/e2e`, the test log and `.out/e2e/clients-first-npm-events.jsonl` | 4, and the time axis every other record is read against | yes |
+| The cluster's logs when one loaded install is above the bound, whether the bound is enforced or logged | `test/e2e` runs `deploy/dev/cluster-logs.sh` into `.out/e2e/clients-first-npm-cluster-logs/` before the next subtest | 4: the logs of the pool's processes, which run the pass, are kept while they exist, and a per-change run that only logs the ratio leaves them too | yes |
+| `slot_wait_ms` on the upstream record of a remote fetch (R-REPO-047) | the engine | 5, and for an operator: queued for the budget, or a slow upstream | yes |
+| `log_lock_waits` | | a lock wait's holder | no: see (b); the sampler shows `Lock` waits, and their holder is the next question only if it does |
+| `log_autovacuum_min_duration` | | an autovacuum run's statistics | no: the sampler shows an autovacuum worker and its table in a window; its statistics are not the question |
+| A log field or histogram of the commit transaction's duration | | its duration | no: it is measurable already. The audit event of a client fill takes the transaction's `now()` as `occurred_at` and its log line is written after the commit, so their difference is the transaction's duration as trove saw it, which the split used; its cause is what is missing |
+
+**Choice:** (a). The two cluster-wide PostgreSQL settings and the role's slow-statement setting apply in every profile: the dev cluster has one PostgreSQL, made by `make dev-up` before any profile,
+and a slow-statement log helps the cluster state of every set. The samplers, the events and the kept logs belong to the clients-first npm subtest
+alone. R-REPO-055's bound and its estimator (the median install with a pass against the best without) are unchanged.
+
+**Rationale:** each record answers one of the open questions, and together they tell the candidates apart: the standby, the primary's disk, a
+lock, CPU in the database, the machine, or trove between statements. The development agent would revisit (a) when a reading names the cause
+(the records that did not contribute are then removed with the fix), or when a miss leaves the question open with these records: then
+`log_lock_waits` with a lower `deadlock_timeout` in the profile `mirror`, or a sampler on the standby.
+
+**Applied in the spec:** R-REPO-047 (`slot_wait_ms`), [operations-and-observability.md](operations-and-observability.md) R-OPS-011. Code:
+[deploy/dev/postgres.yaml](../../deploy/dev/postgres.yaml), [test/e2e/mirror_clients_test.go](../../test/e2e/mirror_clients_test.go),
+`test/e2e/mirror_readings_test.go`, [internal/outbound/factory.go](../../internal/outbound/factory.go) (`Call`),
+[roundtripper.go](../../internal/outbound/roundtripper.go). Tests: `TestR_OPS_011_TheSlotWaitIsARemoteRecordsField` (unit),
+`TestR_OPS_011_TheUpstreamRecordOfAFetchCarriesItsSlotWait` (integration). Elsewhere: [developer/e2e.md](../developer/e2e.md#the-mirror-tests),
+[developer/local-profile.md](../developer/local-profile.md), [developer/observability.md](../developer/observability.md).
+
 ### Q-REPO-245 · A narrowing update records `repository.narrowed` beside `repository.updated`, with only the parts that narrowed
 
 Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
@@ -7485,6 +7636,7 @@ an auto claim carries exactly one claim, and a repository that ends above the li
 which an overlapping claim takes nothing and lets nothing through. The development agent would revisit this if the journal
 volume of first publishes became a cost.
 **Applied:** R-REPO-061, R-REPO-023; `internal/audit/events_repository.go`, `recordClaims` in `internal/repository/claims.go`.
+
 
 ## What this does not cover
 

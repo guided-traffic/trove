@@ -250,12 +250,17 @@ All outbound HTTP goes through [internal/outbound](../../internal/outbound). Its
 `User-Agent: trove/<version>`, a client span, a `traceparent` only with `tracing.propagate_to_upstreams`, one
 `log: upstream` record (R-OPS-011: `purpose`, `repo`, `subscription`, scrubbed `url`, `status`, `error`,
 `request_bytes`, `response_bytes`, `duration_ms` including the body, `attempt`, `on_behalf_of`, `collapsed_waiters`;
-pass `on_behalf_of`, `attempt`, `repo`, `collapsed_waiters` and, for `purpose=remote`, `flight_role` and `cache_status`
+pass `on_behalf_of`, `attempt`, `repo`, `collapsed_waiters` and, for `purpose=remote`, `flight_role`, `cache_status` and
+`SlotWait` (a `*outbound.SlotWait` made with `outbound.NewSlotWait(d)`, logged as `slot_wait_ms` with the precision of `duration_ms`; nil logs `null`: the request took no slot)
 (and `job_id`, the id of a mirror's pass, for a background request, R-REPO-057)
 with `outbound.WithCall` (`CollapsedWaiters` and `CacheStatus` are functions read when the request completes, because
 waiters join while the body streams), extra fields with `outbound.WithLogAttrs`) and the families
 `trove_outbound_requests_total{kind,code}`, `trove_outbound_request_duration_seconds{kind}` and
-`trove_outbound_egress_denied_total{kind}`, where `kind` is the purpose.
+`trove_outbound_egress_denied_total{kind}`, where `kind` is the purpose. The record completes when the body ends or is closed: a `304`
+or `404` (no body the fetch reads) at the close in `fetcher.notModified` / `notFound`, so the record's `duration_ms` leaves out the renewal
+transaction or the negative entry. Only the `304` sets the `Cache-Status` box before the close; a `404` sets none, so its `cache_status`
+stays `null`. `slot_wait_ms` is reported once per request (`outbound.SlotWait`): the first hop
+of a redirect chain carries it, later hops log 0.
 
 The factory (`outbound.New(cfg.Proxy.Outbound, opts...)`; call `Err()` at start-up) applies:
 

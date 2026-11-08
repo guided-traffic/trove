@@ -479,7 +479,7 @@ func (b *BlobStream) Close() {
 // connection serves another call.
 func (s *BackupSnapshot) Referenced(ctx context.Context) (*BlobStream, error) {
 	blobs := pgx.Identifier{s.db.cfg.Schema, "blobs"}.Sanitize()
-	sql := fmt.Sprintf("SELECT b.sha256, b.size, b.state, b.content_status FROM %s b WHERE %s ORDER BY b.sha256", blobs, s.referencedPredicate(s.p.ExcludeRemoteCaches))
+	sql := fmt.Sprintf("-- name: BackupReferencedBlobs :many\nSELECT b.sha256, b.size, b.state, b.content_status FROM %s b WHERE %s ORDER BY b.sha256", blobs, s.referencedPredicate(s.p.ExcludeRemoteCaches))
 	rows, err := s.tx.Query(ctx, sql)
 	if err != nil {
 		return nil, err

@@ -382,7 +382,7 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
 
 | File | Responsibility |
 |---|---|
-| [internal/proxy/slots.go](../../internal/proxy/slots.go) | The slots of R-REPO-040 with the background counter per repository, the running background fetches (`bgRun`), pre-emption by a client fetch (`acquire`, `preempt`, `take`), the yield window (`yield`, `yieldAll`, `yieldOpen`), `onWait` (a client has to queue) |
+| [internal/proxy/slots.go](../../internal/proxy/slots.go) | The slots of R-REPO-040 with the background counter per repository, the running background fetches (`bgRun`), pre-emption by a client fetch (`acquire`, `preempt`, `take`), `slotHold` (`exchanged` returns the repository's share and the background count, `release` the rest and the replica's slot), the yield window (`yield`, `yieldAll`, `yieldOpen`), `onWait` (a client has to queue) |
 | [internal/proxy/background.go](../../internal/proxy/background.go) | `ErrPreempted`, `*BackgroundWait` (`WaitCircuitOpen`, `WaitSpoolBusy`), `resultOf` and `backgroundOutcome` (the outcomes that only the leading background request sees), `rateLimited` (`upstream.RateLimitOf` on a background answer), the signal: `Signals`, `raiseYield`, `onYield`, `listenYield` |
 | [internal/proxy/fetch.go](../../internal/proxy/fetch.go), [flight.go](../../internal/proxy/flight.go), [metadata.go](../../internal/proxy/metadata.go), [artifact.go](../../internal/proxy/artifact.go) | The fetch path with the background rules: the circuit is read (`circuitPeek`), never claimed or changed (`fetcher.success`, `fetcher.failed`); the slot is the background one; the upstream log call carries `flight_role: mirror` and `JobID`; `flightResult.own`; a pre-empted fetch returns `ErrPreempted` and releases its flight with `failed` |
 | [internal/proxy/fill.go](../../internal/proxy/fill.go) | `Engine.Fill`: steps 4 to 10 of R-REPO-025 for a background artifact request without a client: `FillOutcome{Present, Bytes}` |
@@ -418,9 +418,20 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
   `found=false` for a negative entry (404, 410), a gone document or a package marked gone; a stored document is returned
   only if it was validated after the attempt began (`passUpstream.since`, [Q-REPO-167](../spec/repositories-and-proxy.md#q-repo-167--a-pass-revalidates-a-stored-document-that-was-validated-before-its-attempt-began)),
   and any other is revalidated by a background request.
-- **A flight is not cancelled with the pass.** A background fetch runs detached from the context of its caller, like a client's: when the
-  pass's context ends, `Fill` returns at once and the fetch finishes or is cancelled by a pre-emption, the yield or the shutdown (R-ARCH-024).
-  Its slot is held until then.
+- **What ends a background fetch.** The flight runs detached from the context of the request that leads it (`Engine.detached`), so the
+  fetch is not cancelled by the caller's context directly. The background slot links it to the pass instead (`bgSlot.link` in
+  [background.go](../../internal/proxy/background.go)): the fetch runs under a context that the slot's context ends. A pre-emption (a client
+  fetch or the yield) ends it always, with the cause `ErrPreempted`. The end of the pass's context ends it too, unless a follower of this
+  replica joined the flight by then; a client waits for such a fetch, so it finishes (R-REPO-055). The shutdown ends every fetch
+  (R-ARCH-024). When the pass's context ends, `Fill` returns at once (`ctx.Err()`, or `ErrPreempted` after a pre-emption) and its deferred
+  release gives the slot back then, so a joined fetch that finishes afterwards no longer counts in the slot counters.
+- **Where a background slot ends.** A slot has two parts (R-REPO-040, [Q-REPO-235](../spec/repositories-and-proxy.md#q-repo-235--the-repositorys-share-of-a-fetch-slot-ends-with-the-upstream-exchange-the-replicas-slot-with-the-fetch)).
+  The repository's share and the background counter end with the upstream exchange of the item the slot was taken for: `slotHold.exchanged`,
+  called by the fetch once the body is spooled, or at a `304`, `404` or `410` (`fetcher.exchanged`). From then on the fetch is out of the set
+  that a client fetch or the yield pre-empts (`runs`), so a fetch that is storing is never pre-empted, and its commit runs under the context it
+  had; `exchanged` ends no context, so `bgSlot.link` does not fire because of it. The replica's slot ends with `slotHold.release`, which
+  `Fill` and `Metadata` defer. The slot is taken for its item: the discovery document a fetch resolves under the same slot (`discover`) does
+  not call `exchanged` (`bgSlot.owns` compares path, variant and kind), so the item keeps its share while its document is read.
 - **Where it runs.** In a client-serving process the host shares the replica's engine, so a client fetch pre-empts the pass in the process;
   in a `worker` the area `mirror-engine` builds an engine and a format host of its own on the first call of the host (Q-ARCH-316): caches
   of 16 MiB of metadata bytes and 10,000 negative entries, no query cache, a set of cache invalidations of its own, and no division of the
@@ -428,7 +439,8 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
   `mirror_yield`. A build error is the error of `Ready`; the next call builds what is missing (Q-ARCH-319).
   [worker_role_test.go](../../test/integration/mirror/worker_role_test.go) runs a pass on a `worker` with no host override against the npm stub.
 - **The slot comes first.** A background request takes its slot before it enters a flight, so a request that may not run holds neither the
-  flight nor the cross-replica lock, and a client never waits under background rules (Q-REPO-179). A request that joins a client's flight and
+  flight nor the cross-replica lock, and a client never waits under background rules (Q-REPO-179). The slot's wait is the `slot_wait_ms` of
+  the first upstream request sent under it (every later one, such as the item after its discovery document, reports 0; Q-REPO-236). A request that joins a client's flight and
   sees it fail reads the circuit: open is a wait, closed is one fetch of its own (Q-REPO-180).
 - **The shutdown.** The job worker is quiesced before the engines (Q-ARCH-318); a request the engine cancelled is an error wrapping
   `mirror.ErrShuttingDown`, and `Ready` answers it while the engine drains.
@@ -452,7 +464,7 @@ A `*mirror.RefusedError` keeps the engine's error as its cause: read it with `er
 
 ### Tests
 
-- Unit: [preempt_test.go](../../internal/proxy/preempt_test.go) (pre-emption, the joined fetch, the replica limit, a waiting client, the yield with a fake clock, the signal, the
+- Unit: [slots_exchange_test.go](../../internal/proxy/slots_exchange_test.go) (the two parts of a hold: the share returns at the end of the exchange, the replica's slot at the end of the fetch, a fetch past its exchange is not pre-empted, the invariants of the counters), [preempt_test.go](../../internal/proxy/preempt_test.go) (pre-emption, the joined fetch, the replica limit, a waiting client, the yield with a fake clock, the signal, the
   classification of a background answer), [allowed_mirror_test.go](../../internal/proxy/upstream/allowed_mirror_test.go),
   [without_credentials_test.go](../../internal/outbound/without_credentials_test.go), [mirror_host_test.go](../../internal/formathost/mirror_host_test.go),
   [wire_mirror_host_test.go](../../internal/app/wire_mirror_host_test.go).

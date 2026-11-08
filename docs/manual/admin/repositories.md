@@ -190,7 +190,7 @@ The `remote` section of an npm remote repository:
 | `integrity.checksumPolicy` | `verify-if-available` | `verify-if-available`, `require`, `ignore` or `pass-through` |
 | `integrity.blockUnexpectedContentTypes`, `allowedContentTypes` | `true`, `[]` | Refuse upstream answers of unexpected content types |
 | `limits.maxArtifactBytes`, `maxMetadataBytes` | system value | Largest upstream answer |
-| `limits.maxConcurrentFetches` | `64` | Parallel upstream fetches |
+| `limits.maxConcurrentFetches` | `64` | Budget of upstream requests of the repository in flight at once. Each replica takes `ceil(budget ÷ n)` of it for the n replicas that fill client misses, so the cluster-wide total stays within `budget + n − 1`, plus the background share B of a mirror (R-REPO-040). A fetch counts until the upstream's answer has been read, not while trove stores it |
 | `mode` | `pullThrough` | `pullThrough` or `mirror`: a mirror also stores, in background passes, what the upstream offers within the include patterns and the bounds below. A mirror of `https://registry.npmjs.org/` needs include patterns that each start with a literal part (such as `@types/*`) or `mirror.maxBytes`; only a holder of `repositories:write-config` sets the mode, an Owner of the project without it may pause a mirror or turn it back to `pullThrough` |
 | `mirror.paused` | `false` | Pause or resume the mirror |
 | `mirror.intervalSeconds`, `fullPassIntervalSeconds` | `3600`, `604800` | Time between passes; age of the last full pass after which a pass reads everything again |

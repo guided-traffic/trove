@@ -399,6 +399,12 @@ type replicaOpts struct {
 	flights func(cluster.FlightLock) cluster.FlightLock
 	// items wraps the item store the engine reads and commits through.
 	items func(proxy.ItemStore) proxy.ItemStore
+	// blobs wraps the blob store the engine commits metadata documents through.
+	blobs func(proxy.BlobStore) proxy.BlobStore
+	// runner wraps the transaction runner the engine uses.
+	runner func(meta.Runner) meta.Runner
+	// negatives wraps the Valkey side of the negative cache.
+	negatives func(cluster.NegativeStore) cluster.NegativeStore
 	// upstreamLog receives the upstream log.
 	upstreamLog io.Writer
 	// signals gives the engine the signal path of the replica (cluster.Signals on its Valkey client) and starts it, so that it
@@ -521,6 +527,15 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}
 	if o.items != nil {
 		po.Items = o.items(r.items)
+	}
+	if o.blobs != nil {
+		po.Blobs = o.blobs(r.blobs)
+	}
+	if o.runner != nil {
+		po.Runner = o.runner(r.db)
+	}
+	if o.negatives != nil {
+		po.Negatives = o.negatives(po.Negatives)
 	}
 	if r.inv != nil {
 		po.Invalid = r.inv

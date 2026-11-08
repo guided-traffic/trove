@@ -236,6 +236,8 @@ helm --kube-context "$CTX" -n "$NS" status trove >/dev/null 2>&1 || die "the tro
 tag="${K6_IMAGE#*:}"; tag="${tag%%@*}"
 [ "v$tag" = "$K6_VERSION" ] || die "K6_IMAGE tag $tag does not match K6_VERSION $K6_VERSION in tools/versions.env"
 docker image inspect "$K6_IMAGE" >/dev/null 2>&1 || { log "pulling $K6_IMAGE"; docker pull "$K6_IMAGE" >/dev/null; }
+# the helper container of the clients-first readings (test/e2e/mirror_readings_test.go) reads the cgroup of the kind nodes
+docker image inspect "$INTEGRATION_TOOLS_IMAGE" >/dev/null 2>&1 || { log "pulling $INTEGRATION_TOOLS_IMAGE"; docker pull "$INTEGRATION_TOOLS_IMAGE" >/dev/null || log "$INTEGRATION_TOOLS_IMAGE not pulled: the readings record the nodes' cgroup as absent"; }
 
 # ── the driver ───────────────────────────────────────────────────────────────
 ARCH="$(arch)"
@@ -389,7 +391,7 @@ export TROVE_E2E_REPO="$REPO_ROOT" TROVE_E2E_CONTEXT="$CTX" TROVE_E2E_NAMESPACE=
   TROVE_E2E_EDGE_URL="$SCHEME://localhost:$EDGE_PORT" TROVE_E2E_K6_TARGET="$K6_TARGET" \
   TROVE_E2E_K6_IMAGE="$K6_IMAGE" TROVE_E2E_OUT="$OUT" \
   TROVE_E2E_OPS_SCHEME="$OPS_SCHEME" TROVE_E2E_CA_FILE="$CA_FILE" TROVE_E2E_K6_HOSTS_ADDR="$K6_HOSTS_ADDR" \
-  TROVE_E2E_OPENSSL_IMAGE="$OPENSSL_IMAGE" \
+  TROVE_E2E_OPENSSL_IMAGE="$OPENSSL_IMAGE" TROVE_E2E_TOOLS_IMAGE="$INTEGRATION_TOOLS_IMAGE" \
   TROVE_E2E_DEV_DIR="$DEV_DIR" TROVE_E2E_SCATTER_RETURN="${TROVE_E2E_SCATTER_RETURN:-1}" TROVE_DEV_HTTP_PORT="$EDGE_PORT"
 
 # >>> M2 npm-clients

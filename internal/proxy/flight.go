@@ -93,6 +93,10 @@ type reqState struct {
 	// lost says that the request found its item lost (its object missing or damaged) before it entered the flight, and
 	// sawLost that a re-check under the flight found it lost still (Q-REPO-205).
 	lost, sawLost bool
+	// fetched is set when this request's own fetch ran, as the flight's leader or outside a flight. A request that joined
+	// a flight and led a later round has collapsed and fetched; Fill repeats a client's failed flight only if it fetched nothing
+	// itself (Q-REPO-180).
+	fetched atomic.Bool
 }
 
 type waitEnd uint8

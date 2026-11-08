@@ -20,6 +20,9 @@ import (
 // pre-empts the youngest background fetch that qualifies and takes its slot at once; a yield of another process
 // ([slots.yield]) pre-empts every background fetch of a repository that no client of this replica joined and keeps the
 // background from starting for [yieldFor].
+//
+// A hold has two parts (R-REPO-040, Q-REPO-235): the repository's share, and for a background fetch its background count, end
+// with the upstream exchange ([slotHold.exchanged]); the replica's slot ends with the fetch ([slotHold.release]).
 type slots struct {
 	max      int
 	replicas func() int
@@ -60,6 +63,81 @@ type bgRun struct {
 	gone bool
 }
 
+// slotHold is a fetch's hold on the slots, in two parts that end at different moments (R-REPO-040, Q-REPO-235):
+//
+//   - exchanged returns the repository's share, and for a background fetch the background count; the fetch also leaves the
+//     running background fetches that a client fetch or the signal pre-empts. It does not end the context the fetch runs under.
+//   - release returns what exchanged has not returned yet, and the replica's slot. For a background fetch it ends the fetch's
+//     context with no cause.
+//
+// Both are idempotent and safe for concurrent use. A background fetch that was pre-empted gave all three counters up at the
+// pre-emption: for it both do nothing to the counters. A nil hold does nothing.
+type slotHold struct {
+	s    *slots
+	repo int64
+	// run is the background fetch of the hold, nil for a client's.
+	run *bgRun
+	// cancel ends the context of a background hold; nil for a client's.
+	cancel context.CancelCauseFunc
+	// wait is how long acquiring the hold took.
+	wait time.Duration
+	// exchangedDone and released are guarded by s.mu.
+	exchangedDone, released bool
+}
+
+// exchanged returns the repository's share (and the background count) of the hold.
+func (h *slotHold) exchanged() {
+	if h == nil {
+		return
+	}
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	h.exchangeLocked()
+}
+
+// exchangeLocked is exchanged with mu held.
+func (h *slotHold) exchangeLocked() {
+	if h.exchangedDone {
+		return
+	}
+	h.exchangedDone = true
+	s := h.s
+	if h.run != nil {
+		if h.run.gone {
+			return // the pre-emption returned every counter
+		}
+		s.forget(h.run)
+		if s.bg[h.repo]--; s.bg[h.repo] <= 0 {
+			delete(s.bg, h.repo)
+		}
+	}
+	if s.repo[h.repo]--; s.repo[h.repo] <= 0 {
+		delete(s.repo, h.repo)
+	}
+	s.broadcast()
+}
+
+// release returns the hold's remaining parts and the replica's slot.
+func (h *slotHold) release() {
+	if h == nil {
+		return
+	}
+	s := h.s
+	s.mu.Lock()
+	if !h.released {
+		h.released = true
+		h.exchangeLocked()
+		if h.run == nil || !h.run.gone {
+			s.inUse--
+		}
+		s.broadcast()
+	}
+	s.mu.Unlock()
+	if h.cancel != nil {
+		h.cancel(nil)
+	}
+}
+
 func newSlots(max int, replicas func() int) *slots {
 	if replicas == nil {
 		replicas = func() int { return 1 }
@@ -82,14 +160,14 @@ func (s *slots) fits(repoID int64, budget int) bool {
 }
 
 // acquire takes a slot for a fetch of repository repoID, waiting up to timeout for
-// one to be free. The returned function gives the slot back; wait is how long the
-// fetch queued. A timeout is 503 with Retry-After 5 (R-REPO-040).
+// one to be free. The returned hold gives the slot back, its share when the upstream exchange ends and the rest when the
+// fetch ends; wait is how long the fetch queued. A timeout is 503 with Retry-After 5 (R-REPO-040).
 //
 // A fetch that finds no free slot first pre-empts a background fetch when one qualifies (R-REPO-055: the youngest of the
 // repository, or of any repository when only the replica's limit is exhausted; never one a follower joined) and takes its
 // slot at once. Without such a fetch it queues, counts as waiting for the repository, which keeps background fetches of it
 // from starting, and tells the engine through onWait.
-func (s *slots) acquire(ctx context.Context, repoID int64, budget int, timeout time.Duration) (release func(), wait time.Duration, err error) {
+func (s *slots) acquire(ctx context.Context, repoID int64, budget int, timeout time.Duration) (hold *slotHold, wait time.Duration, err error) {
 	start := time.Now()
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
@@ -115,7 +193,7 @@ func (s *slots) acquire(ctx context.Context, repoID int64, budget int, timeout t
 			s.inUse++
 			s.repo[repoID]++
 			s.mu.Unlock()
-			return func() { s.release(repoID) }, time.Since(start), nil
+			return &slotHold{s: s, repo: repoID, wait: time.Since(start)}, time.Since(start), nil
 		}
 		first := false
 		if !queued {
@@ -283,15 +361,17 @@ func (s *slots) broadcast() {
 // share. It never joins the clients' queue and has no queue timeout: it waits outside the slots until one is free or ctx
 // ends, and it does not start while a client fetch of the repository waits for a slot or the yield window of a signal is
 // open. The returned context is ctx, cancelled with the cause ErrPreempted when a client fetch pre-empts this one; the fetch
-// runs under it, and release gives the slot back.
-func (s *slots) acquireBackground(ctx context.Context, repoID int64, budget, ceiling int) (context.Context, func(), error) {
+// runs under it, and the hold gives the slot back.
+func (s *slots) acquireBackground(ctx context.Context, repoID int64, budget, ceiling int) (context.Context, *slotHold, error) {
 	return s.acquireBackgroundJoined(ctx, repoID, budget, ceiling, nil)
 }
 
 // acquireBackgroundJoined is acquireBackground for a fetch that leads a flight: joined reports whether a follower of this
-// replica has joined the flight, which exempts the fetch from pre-emption.
-func (s *slots) acquireBackgroundJoined(ctx context.Context, repoID int64, budget, ceiling int, joined func() bool) (context.Context, func(), error) {
+// replica has joined the flight, which exempts the fetch from pre-emption. The hold's wait is how long the fetch waited for
+// its slot, the yield windows included.
+func (s *slots) acquireBackgroundJoined(ctx context.Context, repoID int64, budget, ceiling int, joined func() bool) (context.Context, *slotHold, error) {
 	ceiling = max(1, ceiling)
+	start := time.Now()
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -305,7 +385,7 @@ func (s *slots) acquireBackgroundJoined(ctx context.Context, repoID int64, budge
 			r := &bgRun{repo: repoID, seq: s.seq, cancel: cancel, joined: joined}
 			s.runs[repoID] = append(s.runs[repoID], r)
 			s.mu.Unlock()
-			return bctx, func() { cancel(nil); s.releaseBackground(r) }, nil
+			return bctx, &slotHold{s: s, repo: repoID, run: r, cancel: cancel, wait: time.Since(start)}, nil
 		}
 		ch := s.wake
 		s.mu.Unlock()
@@ -318,36 +398,11 @@ func (s *slots) acquireBackgroundJoined(ctx context.Context, repoID int64, budge
 	}
 }
 
-// releaseBackground gives a background slot back; a fetch that was pre-empted gave its slot up then.
-func (s *slots) releaseBackground(r *bgRun) {
-	s.mu.Lock()
-	if r.gone {
-		s.mu.Unlock()
-		return
-	}
-	s.forget(r)
-	if s.bg[r.repo]--; s.bg[r.repo] <= 0 {
-		delete(s.bg, r.repo)
-	}
-	s.mu.Unlock()
-	s.release(r.repo)
-}
-
 // background returns the background slots in use for a repository, for tests and the status of a pass.
 func (s *slots) background(repoID int64) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bg[repoID]
-}
-
-func (s *slots) release(repoID int64) {
-	s.mu.Lock()
-	s.inUse--
-	if s.repo[repoID]--; s.repo[repoID] <= 0 {
-		delete(s.repo, repoID)
-	}
-	s.broadcast()
-	s.mu.Unlock()
 }
 
 // held returns the slots in use, for tests and the drain.

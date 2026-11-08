@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -430,6 +431,26 @@ type Call struct {
 	// JobID is the id of the job whose pass sent a background request of a mirror (R-REPO-057); it is logged as job_id for
 	// purpose remote when set and left out otherwise.
 	JobID string
+	// SlotWait is how long the request waited for its fetch slot before it was sent (R-REPO-047, R-OPS-011); it is logged as
+	// slot_wait_ms for purpose remote, with the precision of duration_ms. Nil means the request took no slot and logs null.
+	SlotWait *SlotWait
+}
+
+// SlotWait is a wait for a fetch slot that the upstream log reports once. A request that follows redirects is one request:
+// the record of its first hop carries the wait and every later hop logs 0.
+type SlotWait struct {
+	d     time.Duration
+	taken atomic.Bool
+}
+
+// NewSlotWait returns the wait d.
+func NewSlotWait(d time.Duration) *SlotWait { return &SlotWait{d: d} }
+
+func (s *SlotWait) take() time.Duration {
+	if s.taken.Swap(true) {
+		return 0
+	}
+	return s.d
 }
 
 type callKey struct{}

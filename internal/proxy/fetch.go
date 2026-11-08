@@ -62,11 +62,23 @@ type fetcher struct {
 	stored      entry
 	haveStored  bool
 	conditional bool
+
+	// hold is the slot hold whose repository share the fetch returns when its upstream exchange ends (Q-REPO-235): its own, or
+	// the background slot's when the fetch is the slot's item. Nil for a fetch that holds none or leaves the share to another.
+	hold *slotHold
+	// wait is the wait for the fetch's own slot, reported by its first upstream request as slot_wait_ms; hasWait tells a
+	// fetch that took a slot from one that took none (null).
+	wait    time.Duration
+	hasWait bool
 }
+
+// exchanged returns the repository's share of the fetch's slot: its upstream exchange has ended.
+func (f *fetcher) exchanged() { f.hold.exchanged() }
 
 // fetch runs the fetch of an item under the flight fl: slots, circuit, the request
 // to the upstream, classification, verification, storage (R-REPO-025 step 10).
 func (e *Engine) fetch(ctx context.Context, rq Request, st *reqState, fl *flight) flightResult {
+	st.fetched.Store(true)
 	f := &fetcher{e: e, rq: rq, st: st, fl: fl}
 	return f.run(ctx)
 }
@@ -84,6 +96,9 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 		var done func()
 		ctx, done = rq.slot.link(ctx, f.fl)
 		defer done()
+		if rq.slot.owns(rq) {
+			f.hold = rq.slot.hold // the discovery document resolved under the slot returns nothing
+		}
 	}
 	if err := f.discover(ctx); err != nil {
 		return resultOf(err)
@@ -102,12 +117,13 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 		}
 	}
 	if rq.slot == nil {
-		var release func()
+		var hold *slotHold
 		var err error
-		if ctx, release, err = e.acquireSlot(ctx, rq, f.fl); err != nil {
+		if ctx, hold, err = e.acquireSlot(ctx, rq, f.fl); err != nil {
 			return resultOf(err)
 		}
-		defer release()
+		defer hold.release()
+		f.hold, f.wait, f.hasWait = hold, hold.wait, true
 	}
 	res := f.inSlot(ctx)
 	if rq.background() && errors.Is(context.Cause(ctx), ErrPreempted) && !res.stored && res.doc == nil && !res.negative {
@@ -165,8 +181,9 @@ func (f *fetcher) inSlot(ctx context.Context) flightResult {
 
 // acquireSlot takes the fetch slot of the request (R-REPO-040, R-REPO-055): a client's from the clients' queue, with the
 // queue wait observed; a mirror's background slot, at most the background share of the repository, under a context that
-// a client's pre-emption cancels. The returned context is the one the fetch runs under.
-func (e *Engine) acquireSlot(ctx context.Context, rq Request, fl *flight) (context.Context, func(), error) {
+// a client's pre-emption cancels. The returned context is the one the fetch runs under; the hold's wait is how long the fetch
+// waited.
+func (e *Engine) acquireSlot(ctx context.Context, rq Request, fl *flight) (context.Context, *slotHold, error) {
 	rem := rq.Remote
 	budget := rem.Settings.Limits.MaxConcurrentFetches
 	if rq.background() {
@@ -177,9 +194,9 @@ func (e *Engine) acquireSlot(ctx context.Context, rq Request, fl *flight) (conte
 		// A follower of this replica that joins the fetch's flight keeps it from being pre-empted (R-REPO-055).
 		return e.slots.acquireBackgroundJoined(ctx, rem.id, budget, ceiling, func() bool { return fl.joined.Load() > 0 })
 	}
-	release, wait, err := e.slots.acquire(ctx, rem.id, budget, e.o.Config.QueueTimeout())
+	hold, wait, err := e.slots.acquire(ctx, rem.id, budget, e.o.Config.QueueTimeout())
 	e.m.queueWait.WithLabelValues(rem.Repo.Name.String()).Observe(wait.Seconds())
-	return ctx, release, err
+	return ctx, hold, err
 }
 
 // systemPopulate is the populate check of a request the engine makes for itself, with no
@@ -294,6 +311,9 @@ func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Respo
 			// The record of a pass's request names the pass's job and no caller (R-REPO-057).
 			call.FlightRole, call.OnBehalfOf, call.JobID = roleMirror, "", rq.JobID
 		}
+		if w, ok := f.slotWait(attempt); ok {
+			call.SlotWait = outbound.NewSlotWait(w)
+		}
 		rctx = outbound.WithCall(rctx, call)
 		start := time.Now()
 		resp, err = f.cl.HTTP().Do(req.Clone(rctx))
@@ -315,6 +335,20 @@ func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Respo
 			return nil, nil, idle, ctx.Err()
 		}
 	}
+}
+
+// slotWait is the slot_wait_ms of the upstream request of an attempt (Q-REPO-236): the first request sent under a slot reports
+// the wait for it, every later one 0. A fetch that took no slot reports none.
+func (f *fetcher) slotWait(attempt int) (time.Duration, bool) {
+	switch {
+	case f.rq.slot != nil:
+		return f.rq.slot.takeWait(), true
+	case !f.hasWait:
+		return 0, false
+	case attempt > 1:
+		return 0, true
+	}
+	return f.wait, true
 }
 
 // transportFailure turns an error of the transfer into the fetch's result: the
@@ -397,6 +431,8 @@ func (f *fetcher) success(ctx context.Context) {
 func (f *fetcher) notFound(ctx context.Context, resp *http.Response) flightResult {
 	e, rq := f.e, f.rq
 	rem := rq.Remote
+	_ = resp.Body.Close()
+	f.exchanged() // no body is read: the upstream's share ends (Q-REPO-235)
 	if err := e.neg.record(ctx, rem, rq.Path, rq.Variant, resp.StatusCode, f.sentAt); err != nil {
 		e.log.Warn("recording a negative entry failed", "repo", rem.Repo.Name, "error", err)
 	}

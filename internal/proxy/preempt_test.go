@@ -65,12 +65,12 @@ func TestPreemption(t *testing.T) {
 		if s.background(1) != 0 || s.held() != 2 {
 			t.Fatalf("background %d, held %d", s.background(1), s.held())
 		}
-		rel() // the pre-empted fetch unwinds: its release gives nothing back a second time
+		rel.release() // the pre-empted fetch unwinds: its release gives nothing back a second time
 		if s.held() != 2 {
 			t.Fatalf("the release of a pre-empted fetch changed the count: held %d", s.held())
 		}
-		first()
-		second()
+		first.release()
+		second.release()
 		if s.held() != 0 {
 			t.Fatalf("held = %d", s.held())
 		}
@@ -89,8 +89,8 @@ func TestPreemption(t *testing.T) {
 		if !preempted(young) || preempted(old) {
 			t.Fatalf("young pre-empted %v, old pre-empted %v", preempted(young), preempted(old))
 		}
-		for _, r := range []func(){relOld, relYoung, c1, c2, c3} {
-			r()
+		for _, r := range []*slotHold{relOld, relYoung, c1, c2, c3} {
+			r.release()
 		}
 	})
 
@@ -108,8 +108,8 @@ func TestPreemption(t *testing.T) {
 		if preempted(bctx) {
 			t.Fatal("a joined background fetch was pre-empted")
 		}
-		first()
-		rel()
+		first.release()
+		rel.release()
 	})
 
 	t.Run("R-REPO-055 when only the replica's limit is exhausted, the youngest background fetch of any repository is pre-empted", func(t *testing.T) {
@@ -123,9 +123,9 @@ func TestPreemption(t *testing.T) {
 		if !preempted(bctx) {
 			t.Fatal("the other repository's background fetch was not pre-empted")
 		}
-		rel()
-		other()
-		got()
+		rel.release()
+		other.release()
+		got.release()
 	})
 
 	t.Run("R-REPO-055 a client fetch does not pre-empt for a share another repository's background fetch does not hold", func(t *testing.T) {
@@ -138,8 +138,8 @@ func TestPreemption(t *testing.T) {
 		if preempted(bctx) {
 			t.Fatal("a background fetch of another repository was pre-empted for a limit that is not the replica's")
 		}
-		rel()
-		c1()
+		rel.release()
+		c1.release()
 	})
 
 	t.Run("R-REPO-055 a background fetch starts only while no client fetch of the repository waits for a slot", func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestPreemption(t *testing.T) {
 			if err == nil {
 				close(waiter)
 				time.Sleep(100 * time.Millisecond)
-				rel()
+				rel.release()
 			}
 		}()
 		time.Sleep(50 * time.Millisecond) // the client fetch queues
@@ -160,10 +160,10 @@ func TestPreemption(t *testing.T) {
 			_, rel, err := s.acquireBackground(ctx, 1, 8, 1)
 			if err == nil {
 				close(started)
-				rel()
+				rel.release()
 			}
 		}()
-		c1() // a slot is free: the waiting client fetch takes it, the background fetch must not
+		c1.release() // a slot is free: the waiting client fetch takes it, the background fetch must not
 		<-waiter
 		select {
 		case <-started:
@@ -201,8 +201,8 @@ func TestPreemption(t *testing.T) {
 		if len(told) != 1 || told[0] != 7 {
 			t.Fatalf("told = %v", told)
 		}
-		relBg()
-		c()
+		relBg.release()
+		c.release()
 	})
 }
 
@@ -223,8 +223,8 @@ func TestYield(t *testing.T) {
 		if !preempted(a) || !preempted(b) || preempted(joinedCtx) || preempted(other) {
 			t.Fatalf("a %v b %v joined %v other %v", preempted(a), preempted(b), preempted(joinedCtx), preempted(other))
 		}
-		relA()
-		relB()
+		relA.release()
+		relB.release()
 
 		start := func() chan struct{} {
 			ch := make(chan struct{})
@@ -233,7 +233,7 @@ func TestYield(t *testing.T) {
 				if err == nil {
 					_ = c
 					close(ch)
-					rel()
+					rel.release()
 				}
 			}()
 			return ch
@@ -249,7 +249,7 @@ func TestYield(t *testing.T) {
 		if _, rel, err := s.acquireBackground(ctx, 3, 8, 1); err != nil {
 			t.Fatal(err)
 		} else {
-			rel()
+			rel.release()
 		}
 		clk.advance(2 * time.Second) // 31 s after the signal
 		select {
@@ -257,8 +257,8 @@ func TestYield(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("no background fetch started 31 s after the signal")
 		}
-		relJ()
-		relO()
+		relJ.release()
+		relO.release()
 	})
 
 	t.Run("R-REPO-055 every signal moves the window: 30 s count from the last one", func(t *testing.T) {
@@ -278,7 +278,7 @@ func TestYield(t *testing.T) {
 		if _, rel, err := s.acquireBackground(ctx, 1, 8, 1); err != nil {
 			t.Fatal(err)
 		} else {
-			rel()
+			rel.release()
 		}
 	})
 
@@ -291,7 +291,7 @@ func TestYield(t *testing.T) {
 		if !preempted(c) {
 			t.Fatal("a coarse signal did not pre-empt")
 		}
-		rel()
+		rel.release()
 		short, cancel := context.WithTimeout(ctx, 400*time.Millisecond)
 		defer cancel()
 		if _, _, err := s.acquireBackground(short, 6, 8, 1); err == nil {
@@ -356,7 +356,7 @@ func TestYieldSignal(t *testing.T) {
 			t.Fatalf("subscribed to %q", sig.subArea)
 		}
 		bctx, rel, _ := e.slots.acquireBackground(context.Background(), 11, 8, 2)
-		defer rel()
+		defer rel.release()
 		sig.handler([]string{"12", "not a number"}, false)
 		if preempted(bctx) {
 			t.Fatal("a signal for another repository pre-empted the fetch")

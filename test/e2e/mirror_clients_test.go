@@ -51,6 +51,8 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 	s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 20, "tarball": 120}})
 	t.Cleanup(func() { s.setMode(t, npmstub.Mode{}) })
 
+	// The readings of Q-REPO-236 run over the pairs: the primary's waits and the standby's lag, the runner's pressure and the events below.
+	rd := startReadings(t)
 	var bases, loads []time.Duration
 	var key string
 	// A client fetch pre-empts the background fetches that are running when it has to wait, and whether the pass has one in flight at that
@@ -61,7 +63,10 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 		last := i == clientsFirstPairs-1
 		// the baseline: the mirror of the idle remote is paused, so no pass runs; both remotes start with an empty cache
 		idle := e.create(t, e.npmBody(fmt.Sprintf("npm-mirror-idle%d-%s", i, e.run), true))
+		rd.event(i, "baseline-created", map[string]any{"key": idle})
+		rd.event(i, "baseline-ci-start", nil)
 		base, n := e.npmCI(t, 0, idle, fmt.Sprintf("base%d", i))
+		rd.event(i, "baseline-ci-end", map[string]any{"duration_ms": base.Dur.Milliseconds(), "exit": base.Code})
 		if base.Code != 0 {
 			t.Fatalf("the baseline npm ci through %s exited %d:\n%s", idle, base.Code, tailLines(base.Out, 30))
 		}
@@ -69,7 +74,9 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 
 		// the run with the pass: requested now, and it has filled packages before the install starts
 		key = e.create(t, e.npmBody(fmt.Sprintf("npm-mirror%d-%s", i, e.run), false))
+		rd.event(i, "loaded-created", map[string]any{"key": key})
 		s.reset(t) // the counters and the maximum of open requests count from the pass's start
+		rd.event(i, "pass-requested", nil)
 		e.run_(t, key, false)
 		st := e.awaitPassStarted(t, key, 5)
 		if st.Pass.Method != "feed" {
@@ -79,8 +86,11 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 		if !strings.HasPrefix(pod, "trove-worker-"+mirrorPoolName+"-") {
 			t.Errorf("the pass runs in %q (node %s), want a process of the pool %s", pod, node, mirrorPoolName)
 		}
+		rd.event(i, "pass-started", map[string]any{"pod": pod, "packages_done": st.Pass.PackagesDone})
 		before := preempted(t, key)
+		rd.event(i, "loaded-ci-start", nil)
 		loaded, n2 := e.npmCI(t, 0, key, fmt.Sprintf("load%d", i))
+		rd.event(i, "loaded-ci-end", map[string]any{"duration_ms": loaded.Dur.Milliseconds(), "exit": loaded.Code})
 		after := preempted(t, key)
 		end := e.status(t, key)
 		if loaded.Code != 0 {
@@ -102,13 +112,23 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 		}
 		if !last {
 			// the pass of this pair is not needed any more: the repository goes, and the pass halts before its next package
+			rd.event(i, "drop-start", nil)
 			e.drop(t, key, idle)
+			rd.event(i, "drop-end", nil)
 			e.awaitNoPassRunning(t)
+			rd.event(i, "no-pass-running", nil)
 		}
 	}
 	bestBase, medLoad := slices.Min(bases), median(loads)
 	ratio := float64(medLoad) / float64(bestBase)
 	t.Logf("npm ci without a pass: %v, with a pass: %v; best without %s, median with %s: %.0f %% (budget %.0f %%)", bases, loads, bestBase.Round(time.Millisecond), medLoad.Round(time.Millisecond), ratio*100, installBudget*100)
+	rd.event(-1, "ratio", map[string]any{"best_baseline_ms": bestBase.Milliseconds(), "median_loaded_ms": medLoad.Milliseconds(), "ratio": ratio, "budget": installBudget})
+	rd.close()
+	// One loaded install above the budget, whether the bound is enforced or only logged, keeps the cluster's logs while the pool's
+	// processes (they ran the pass) and the PostgreSQL log with its slow statements still exist. No pass condition depends on it.
+	if slices.ContainsFunc(loads, func(d time.Duration) bool { return float64(d) > installBudget*float64(bestBase) }) {
+		captureClusterLogs(t)
+	}
 	if preemptions == 0 {
 		t.Errorf("R-REPO-055: trove_mirror_preempted_total did not grow in any of the %d pairs: no client fetch took a background slot", clientsFirstPairs)
 	}

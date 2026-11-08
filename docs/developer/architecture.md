@@ -287,6 +287,12 @@ background gauges `trove_jobs_queued{kind}`, `trove_jobs_oldest_queued_age_secon
 counters cannot give in [metrics.go](../../internal/meta/postgres/metrics.go): `trove_db_retries_total{kind}`,
 `trove_db_commit_unknown_total` and the histogram `trove_db_pool_acquire_duration_seconds{db_pool}`, which the pool tracer
 (`stmtTracer`, a `pgxpool.AcquireTracer`) fills for the pools `request`, `control` and `lease`; `postgres.WithMetrics` hands them to `Open`.
+The same tracer, as a `pgx.QueryTracer`, times every statement: `trove_db_slow_queries_total{query}` counts those slower than
+`metrics.slow_query_threshold` (0 counts none), and `trove_db_query_duration_seconds{query}` exists only with `metrics.db_query_histograms`.
+`query` is the sqlc name of the `-- name:` header, `unnamed` for inline SQL, and a pipeline's batch is one `pipeline` sample (Q-OPS-188);
+the text of a statement is never a label. A statement is timed from its start until its result is closed, so a streamed cursor counts for as
+long as it is read (the backup's referenced-blob stream is named `BackupReferencedBlobs` for that reason); `CopyFrom` and the raw `COPY`
+of the backup bypass the tracer and are not recorded. pgx's own `begin`, `commit` and `rollback` are labelled by their verb.
 The blob store exports `trove_spool_used_bytes`, `trove_spool_free_bytes` and `trove_gc_last_success_timestamp_seconds`
 ([internal/blob/metrics.go](../../internal/blob/metrics.go)). Not exported: `trove_db_pool_resets_total` (no mechanism resets a pool
 yet), the inventory gauges and every `trove_backup_*` and `trove_revocation_journal_pending` (the backup and the revocation journal are

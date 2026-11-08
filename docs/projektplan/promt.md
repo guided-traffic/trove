@@ -216,6 +216,18 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-08 by the documentation of the remote engine for E5.7 (spec against code):
+
+### Product
+
+- **F-76 · An npm remote whose digest policy is `ignore` or `pass-through` stores tarballs unchecked, although the spec says npm always
+  verifies** (read in the code, not reproduced). R-REPO-041 (`docs/spec/repositories-and-proxy.md` around line 2871) says npm verifies the
+  announced digest whatever the setting; no format sets `VerifyAnnouncedDigests`, so the remote engine follows the repository's setting for
+  npm too. Either the code is wrong (an npm tarball's `dist.integrity` is always checked, as the spec says) or the spec is; decide, fix the
+  side that is wrong, and test an npm remote under each digest setting with a tampered tarball.
+- **F-77 · The spec names `502 upstream_tls_untrusted`, the code answers `tls_untrusted`** (read). R-REPO-035 (around lines 2576 and
+  2596) against `internal/errs/codes.go` (around line 430). Decide the name, change the other side and the error registry's docs, test.
+
 Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay handler outside that change:
 
 ### Product
@@ -320,6 +332,12 @@ Found on 2026-11-06 while building the upgrade tests of phase 6a and phase 7:
   96 %, 131 %, 98 % (42356771989); hosted 161 %, 163 % and twelve at 99 to 104 %. Not named: why the commit stalls and why a pass makes
   it likelier; the artifacts hold no database, disk or CPU measurement and no log of the pass (the cluster state is taken after the
   profile is switched back).
+  Built on 2026-11-08: a fetch returns the repository's share of its slot once the upstream exchange ends and keeps the replica's slot
+  through the commit ([Q-REPO-235](../spec/repositories-and-proxy.md#q-repo-235--the-repositorys-share-of-a-fetch-slot-ends-with-the-upstream-exchange-the-replicas-slot-with-the-fetch)),
+  `slot_wait_ms` on upstream records, `trove_db_slow_queries_total` and the optional statement histogram labelled by query name and
+  transaction verb (Q-OPS-188), and the clients-first subtest records the database's waits, the standby's lag, the nodes' and the
+  runner's pressure, the test's steps and, on a miss, the cluster logs while the mirror profile is installed (Q-REPO-236). Next: the
+  nightly `mirror` reading names the stall from these records; done when the cause is named and the bound holds.
 
 Found on 2026-11-04 while cutting trove into task areas (phase 6a):
 
