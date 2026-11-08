@@ -244,6 +244,28 @@ func (s *Store) commitRound(ctx context.Context, ms []*member, link LinkFunc, wi
 	return true, nil
 }
 
+// LinkExisting runs link in one transaction that holds the FOR SHARE lock of the row of a blob the store already holds, with no
+// object write: the commit of an item for content that is stored (deploy by checksum, R-STOR-008). A blob that has no row, is
+// being deleted or whose content is not ok is [ErrBlobNotFound]: a digest names nothing a caller may link unless the object is live.
+// The guard trigger of the reference column re-checks liveness under the same lock; a collector that claimed the row between the lock
+// and the reference makes the call answer ErrBlobNotFound as well. link must be safe to run again.
+func (s *Store) LinkExisting(ctx context.Context, d Digest, link LinkFunc) error {
+	err := s.db.InTx(ctx, func(tx meta.Tx) error {
+		state, status, found, err := s.rows.LockShare(ctx, tx, d)
+		if err != nil {
+			return err
+		}
+		if !found || state == "deleting" || status != "ok" {
+			return ErrBlobNotFound
+		}
+		return link(ctx, tx)
+	})
+	if err != nil && sqlState(err) == sqlStateAS001 {
+		return ErrBlobNotFound
+	}
+	return err
+}
+
 // waitGone polls until the blob row has disappeared, for at most
 // storage.upload.blob_wait_timeout.
 func (s *Store) waitGone(ctx context.Context, d Digest) error {

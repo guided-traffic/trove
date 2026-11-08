@@ -4,7 +4,7 @@ import { JsonObject } from '../../shared/merge-patch';
 import { SettingSchema, pruneDefaults } from './settings-schema';
 
 /** The key pattern of R-REPO-002 (INV-5), checked live in the wizard; the server decides. */
-export const KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
+export const KEY_PATTERN = /^(?=.{2,64}$)[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$/;
 
 export type HideExistence = 'inherit' | 'true' | 'false';
 

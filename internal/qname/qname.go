@@ -34,13 +34,15 @@ const CacheSuffix = "~cache"
 
 // The rules of the keys in words, for the messages of a refusal. The parsers below are the one source of the grammar.
 const (
-	ProjectKeyRule = "2 to 32 characters: lower-case letters, digits and hyphens, starting with a letter"
-	KeyRule        = "2 to 64 characters: lower-case letters, digits, dots, underscores and hyphens, starting with a letter or digit, without \"..\" and not ending in \".\""
+	ProjectKeyRule = "2 to 32 characters: lower-case letters, digits and hyphens, starting with a letter, ending with a letter or digit"
+	KeyRule        = "2 to 64 characters: lower-case letters and digits, separated by single dots or underscores, a double underscore or hyphens; starting and ending with a letter or digit"
 )
 
-// ValidProjectKey reports whether s is a project key: ^[a-z][a-z0-9-]{1,31}$.
+// ValidProjectKey reports whether s is a project key: ^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$ with 2 to 32 characters (R-OCI-002,
+// Q-OCI-3). A project key is a path component of every image reference, so it is an OCI name component without dots and
+// underscores.
 func ValidProjectKey(s string) bool {
-	if len(s) < 2 || len(s) > 32 || !isLower(s[0]) {
+	if len(s) < 2 || len(s) > 32 || !isLower(s[0]) || !isLower(s[len(s)-1]) && !isDigit(s[len(s)-1]) {
 		return false
 	}
 	for i := 1; i < len(s); i++ {
@@ -51,21 +53,49 @@ func ValidProjectKey(s string) bool {
 	return true
 }
 
-// ValidKey reports whether s is a repository key (R-REPO-002): ^[a-z0-9][a-z0-9._-]{1,63}$,
-// without ".." and not ending in ".". It does not look at reserved names.
+// ValidKey reports whether s is a repository key (R-REPO-002, R-OCI-002, Q-OCI-3): ^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$ with
+// 2 to 64 characters, the component grammar of the OCI distribution specification: runs of lower-case letters and digits,
+// separated by one dot, one underscore, two underscores or any number of hyphens. A key does not start or end with a
+// separator, which rules out ".." and a trailing ".". It does not look at reserved names.
 func ValidKey(s string) bool {
-	if len(s) < 2 || len(s) > 64 || !isLower(s[0]) && !isDigit(s[0]) {
+	if len(s) < 2 || len(s) > 64 {
 		return false
 	}
-	for i := 1; i < len(s); i++ {
-		if c := s[i]; !isLower(c) && !isDigit(c) && c != '-' && c != '_' && c != '.' {
+	alnum := func(c byte) bool { return isLower(c) || isDigit(c) }
+	if !alnum(s[0]) || !alnum(s[len(s)-1]) {
+		return false
+	}
+	for i := 1; i < len(s); {
+		if alnum(s[i]) {
+			i++
+			continue
+		}
+		// s[i] starts a separator; it is followed by an alphanumeric (s ends with one), within the separator rules.
+		j := i
+		switch s[i] {
+		case '.':
+			j = i + 1
+		case '_':
+			j = i + 1
+			if j < len(s) && s[j] == '_' {
+				j++
+			}
+		case '-':
+			for j < len(s) && s[j] == '-' {
+				j++
+			}
+		default:
 			return false
 		}
+		if j >= len(s) || !alnum(s[j]) {
+			return false
+		}
+		i = j + 1
 	}
-	return !strings.Contains(s, "..") && !strings.HasSuffix(s, ".")
+	return true
 }
 
-// ValidFormat reports whether s has the shape of a format ID: ^[a-z][a-z0-9-]{1,31}$ and
+// ValidFormat reports whether s has the shape of a format ID: the shape of a project key and
 // not ^v[0-9]+$, which is reserved for API versions.
 func ValidFormat(s string) bool {
 	if !ValidProjectKey(s) { // the same character rule and length

@@ -52,7 +52,7 @@ func newFormatsFixture(t *testing.T) *formatsFixture {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if f.host, err = formathost.New(formathost.Options{Runner: r.db, Decider: r.engine, Items: r.items, Packages: pkgs, Deps: deps}); err != nil {
+			if f.host, err = formathost.New(formathost.Options{Runner: r.db, Decider: r.engine, Items: r.items, Packages: pkgs, Repos: r.reader, Deps: deps}); err != nil {
 				t.Fatal(err)
 			}
 			if f.disp, err = dispatch.New(dispatch.Options{Host: f.host, Decider: r.engine, Repos: r.reader}); err != nil {

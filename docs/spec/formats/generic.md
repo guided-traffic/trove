@@ -47,7 +47,7 @@ Priority: **MVP** · Covers: PKG-GENERIC-001
 
 | Field | Value | Meaning |
 |---|---|---|
-| `name` | `generic` | Format ID (`^[a-z][a-z0-9-]{1,31}$`) |
+| `name` | `generic` | Format ID (the shape of a project key, `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` with 2 to 32 characters) |
 | `classes` | `["local"]`; `["local","remote","virtual"]` once R-GENERIC-009 and R-GENERIC-010 ship | Classes the implementation accepts |
 | `layout` | `generic` | The flat layout (R-GENERIC-003) |
 | `protocolBasePath` | `/files/{project}/{key}/` | The format has no protocol of its own; the raw file URL is the protocol |

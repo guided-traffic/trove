@@ -131,9 +131,12 @@ type StorageUpload struct {
 	BlobWaitTimeout time.Duration `yaml:"blob_wait_timeout" default:"120s" validate:"min=1s"`
 }
 
+// maxUploadParts is the most parts an S3 multipart upload has.
+const maxUploadParts = 10_000
+
 // StorageUploads configures multi-request upload sessions (R-STOR-011, P1).
 type StorageUploads struct {
-	PartSize      ByteSize      `yaml:"part_size" default:"16MiB" validate:"min=5MiB"`
+	PartSize      ByteSize      `yaml:"part_size" default:"16MiB" validate:"min=5MiB,max=5GiB"`
 	WriterLease   time.Duration `yaml:"writer_lease" default:"60s" validate:"min=1s"`
 	SessionTTL    time.Duration `yaml:"session_ttl" default:"4h" validate:"min=1m"`
 	SessionMaxAge time.Duration `yaml:"session_max_age" default:"20h" validate:"min=1m"`
@@ -213,6 +216,9 @@ func (s *Storage) Validate(r *Report) {
 	}
 	if s.Uploads.SessionMaxAge >= s.Orphans.MultipartMaxAge {
 		r.Add("uploads.session_max_age", "must be below orphans.multipart_max_age")
+	}
+	if s.Uploads.PartSize > 0 && s.Upload.MaxSize > s.Uploads.PartSize*maxUploadParts {
+		r.Add("upload.max_size", "must not exceed %d parts of uploads.part_size (%s), the most an S3 multipart upload has (R-STOR-011)", maxUploadParts, s.Uploads.PartSize)
 	}
 	if s.S3.Credentials.Source == "static" && (s.S3.Credentials.AccessKeyIDFile == "" || s.S3.Credentials.SecretAccessKeyFile == "") {
 		r.Add("s3.credentials", "source static needs access_key_id_file and secret_access_key_file")

@@ -130,9 +130,11 @@ Priority: **MVP** · Covers: REPO-004, REPO-005
 - Every repository belongs to exactly one project and is addressed inside it
   ([Q-AUTHZ-206](authorization.md#q-authz-206--every-repository-belongs-to-exactly-one-project),
   [Q-REPO-212](#q-repo-212--a-repository-is-addressed-inside-its-project-and-no-repository-is-shared),
-  [authorization.md](authorization.md) R-AUTHZ-026). A key MUST match `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5: 2 to 64
-  characters, lower case, so it is valid for container formats too), MUST NOT contain `..` and MUST NOT end in `.`
-  (trailing dots are stripped by some reverse proxies and Windows clients). Keys are unique within the project across
+  [authorization.md](authorization.md) R-AUTHZ-026). A key MUST match `^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$` (INV-5, 2 to 64
+  characters: the component grammar of the OCI distribution specification, so a key is valid in every image reference,
+  [Q-OCI-3](formats/oci.md#q-oci-3--repository-and-project-keys-follow-the-oci-component-grammar-for-every-format)).
+  A key therefore starts and ends with a letter or digit and holds no `..`, no trailing `.` (trailing dots are
+  stripped by some reverse proxies and Windows clients) and no mixed separator such as `.-`, `._` or `___`. Keys are unique within the project across
   all classes; two projects can each have a repository of the same key (`web/npm-remote`, `mobile/npm-remote`).
   Violations answer 422 `validation_failed` with `invalid_key` in `errors[]`; a key taken in the project answers 409
   `already_exists`.

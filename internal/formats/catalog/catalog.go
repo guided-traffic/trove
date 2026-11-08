@@ -14,6 +14,7 @@ package catalog
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -69,6 +70,9 @@ const (
 	KindOther RequestKind = "other"
 )
 
+// RegistryRootBasePath is the protocol base path of the format that declares [Facts.RegistryRoot].
+const RegistryRootBasePath = "/v2/{project}/{key}/"
+
 // Facts are the registration of R-REPO-003 that every layer may read;
 // GET /api/v1/formats serves them.
 type Facts struct {
@@ -80,13 +84,22 @@ type Facts struct {
 	Classes []Class
 	// Layout is the name of the format's one built-in layout (R-REPO-006).
 	Layout string
-	// ProtocolBasePath is the client address template, {project} and {key} the project and repository keys.
+	// ProtocolBasePath is the client address template, {project} and {key} the project and repository keys:
+	// "/api/<id>/{project}/{key}/", or "/v2/{project}/{key}/" for the format that declares [Facts.RegistryRoot].
 	ProtocolBasePath string
+	// RegistryRoot is true for the one format whose client address is the root of a host: its ProtocolBasePath is
+	// "/v2/{project}/{key}/" and the three repository-less routes below "/v2/" belong to the core (R-OCI-001, R-OCI-003,
+	// Q-OCI-4). At most one registered format declares it; the catalog refuses a second.
+	RegistryRoot bool
 	// DefaultUpstreamURL is empty for a format without a well-known upstream;
 	// DefaultExtraHosts are the further hosts a remote repository of the format
 	// may fetch from by default (R-REPO-024).
 	DefaultUpstreamURL string
 	DefaultExtraHosts  []string
+	// DefaultCredentialHosts are the entries of DefaultExtraHosts a remote repository of the format proposes with
+	// sendCredentials: true, because the upstream's token realm lives there (R-OCI-021). Each is also in
+	// DefaultExtraHosts; the catalog refuses an entry that is not.
+	DefaultCredentialHosts []string
 	// ProbePath is the resource the upstream test of a remote repository requests
 	// (R-REPO-024), relative to the upstream URL: "-/ping" for npm. Empty: the
 	// upstream URL itself, which is the probe for a format whose URL names the
@@ -261,6 +274,13 @@ func (r *Registry) Register(e Entry) {
 	if _, dup := r.by[e.ID]; dup {
 		panic(fmt.Sprintf("catalog: %q is registered twice", e.ID))
 	}
+	if e.RegistryRoot {
+		for id, other := range r.by {
+			if other.RegistryRoot {
+				panic(fmt.Sprintf("catalog: %q declares the registry root, which %q already holds (R-OCI-001)", e.ID, id))
+			}
+		}
+	}
 	e.Classes = append([]Class(nil), e.Classes...)
 	e.settings = compiled
 	r.by[e.ID] = e
@@ -284,10 +304,17 @@ func check(e Entry) error {
 		return fmt.Errorf("%q has the ownership default %q", e.ID, e.OwnershipDefault)
 	case e.OwnershipDefault != "" && !e.PackageNames:
 		return fmt.Errorf("%q has an ownership default and no package names", e.ID)
+	case e.RegistryRoot && e.ProtocolBasePath != RegistryRootBasePath:
+		return fmt.Errorf("%q declares the registry root and has protocol base path %q, not %q", e.ID, e.ProtocolBasePath, RegistryRootBasePath)
 	case e.Exposure.Versions && e.Exposure.Versioning == nil:
 		return fmt.Errorf("%q exposes versions and has no versioning", e.ID)
 	case !e.Exposure.Exposable && (e.Exposure.Packages || e.Exposure.Versions || e.Exposure.Tags):
 		return fmt.Errorf("%q narrows exposure dimensions and is not exposable", e.ID)
+	}
+	for _, h := range e.DefaultCredentialHosts {
+		if !slices.Contains(e.DefaultExtraHosts, h) {
+			return fmt.Errorf("%q proposes credentials for %q, which is not among its default extra hosts", e.ID, h)
+		}
 	}
 	seen := map[Class]bool{}
 	for _, c := range e.Classes {

@@ -260,7 +260,7 @@ when any selector matches it. Every repository belongs to exactly one project an
 within the project (R-AUTHZ-026, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-002), so
 a selector names the project wherever the context does not fix it
 ([Q-AUTHZ-216](#q-authz-216--repository-selectors-name-the-project-in-instance-contexts-and-a-bare-key-inside-a-project)).
-Project keys match `^[a-z][a-z0-9-]{1,31}$` and repository keys `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5), so
+Project keys match `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters) and repository keys `^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$` (2 to 64, INV-5), so
 the characters `/`, `*`, `?`, `@` and `:` never occur in a key and make the selector kinds unambiguous.
 
 **Instance contexts** select repositories of any project: global policies, token scopes (R-AUTHZ-013), the
@@ -1893,7 +1893,8 @@ of its partners without a system administrator. Delegation per policy (`manage`,
 
 **The project.**
 
-- A project has a key matching `^[a-z][a-z0-9-]{1,31}$` (unique and immutable), a display name (1 to 128 characters) and a
+- A project has a key matching `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` with 2 to 32 characters, a path component of every image reference
+  ([Q-OCI-3](formats/oci.md#q-oci-3--repository-and-project-keys-follow-the-oci-component-grammar-for-every-format)) (unique and immutable), a display name (1 to 128 characters) and a
   description (at most 1024). It has no switches: what its Owner may do is fixed by the role (Q-AUTHZ-208).
 - An administrator of trove (`projects:write`) creates and deletes projects; the Owner changes the display name and the
   description.
@@ -2039,7 +2040,7 @@ Data model:
 ```sql
 CREATE TABLE project (
   id            uuid PRIMARY KEY,
-  key           text NOT NULL UNIQUE CHECK (key ~ '^[a-z][a-z0-9-]{1,31}$'),
+  key           text NOT NULL UNIQUE CHECK (length(key) BETWEEN 2 AND 32 AND key ~ '^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$'),
   display_name  text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 128),
   description   text NOT NULL DEFAULT '' CHECK (length(description) <= 1024),
   version       bigint NOT NULL DEFAULT 1,                                   -- ETag

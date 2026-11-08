@@ -34,7 +34,8 @@ The page of a repository shows its **Project**. A repository is created in its p
 
 The key rules:
 
-- 2 to 64 characters: lower-case letters, digits, `.`, `_` and `-`, starting with a letter or digit; no `..` and no trailing `.`.
+- 2 to 64 characters: lower-case letters and digits, separated by one `.`, one `_`, two `_` or any number of `-`. A key starts and ends with a letter or digit, so `docker-local`, `docker.hub` and `a__b` are accepted and `docker-`, `a.-b`, `a._b` and `a___b` are refused. The same grammar holds for every format, because the key is part of every container image reference.
+- A project key follows the same grammar without `.` and `_`, at most 32 characters, starting with a letter.
 - `batch-create`, `batch-update`, `batch-get`, `batch-delete` and `quick-setup` are reserved.
 - A key is unique within its project and stays taken there until a deleted repository is completely removed; another project can have a repository of the same key.
 - Key, class and format cannot be changed after creation.

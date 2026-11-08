@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -398,5 +400,102 @@ func TestR_API_029_ViewAdapterNeedsPackageNames(t *testing.T) {
 	}
 	if (Base{}).View() != nil {
 		t.Fatal("Base has a view")
+	}
+}
+
+// TestR_ARCH_010_RegisterChecksTheRegistryRootBasePath: the format that declares the registry root has its routes below
+// /v2/{project}/{key}/ and no other, and a format that does not keeps /api/<id>/ (Q-OCI-4).
+var rootOnce sync.Once
+
+// registerRootOnce registers the one probe format that is the registry root of this test binary.
+func registerRootOnce(t *testing.T) {
+	t.Helper()
+	rootOnce.Do(func() {
+		d := valid("probe-rootok")
+		d.RegistryRoot, d.ProtocolBasePath = true, "/v2/{project}/{key}/"
+		Register(fake{d: d, routes: []Route{route("a.get", http.MethodGet, "/a", "a")}})
+	})
+}
+
+func TestR_ARCH_010_RegisterChecksTheRegistryRootBasePath(t *testing.T) {
+	r := route("a.get", http.MethodGet, "/a", "a")
+	root := func(id, base string) fake {
+		d := valid(id)
+		d.RegistryRoot, d.ProtocolBasePath = true, base
+		return fake{d: d, routes: []Route{r}}
+	}
+	mustPanic(t, root("probe-rootbad", "/api/probe-rootbad/{project}/{key}/"), "not \"/v2/{project}/{key}/\"")
+	registerRootOnce(t)
+	if e, ok := catalog.Default().Lookup("probe-rootok"); !ok || !e.RegistryRoot {
+		t.Fatalf("entry = %+v, %v", e, ok)
+	}
+	// A format with routes that does not declare the root cannot take the registry's base path.
+	d := valid("probe-v2")
+	d.ProtocolBasePath = "/v2/{project}/{key}/"
+	mustPanic(t, fake{d: d, routes: []Route{r}}, "protocol base path")
+	// Only one format is the root of a host.
+	mustPanic(t, root("probe-rootok2", "/v2/{project}/{key}/"), "registry root")
+}
+
+// TestRefusalRegistryRendersTheBasePathOfTheFormat: a refusal links to the repository the client addressed with the
+// format's own base path, an /api/<id>/ one or the registry root's.
+func TestRefusalRegistryRendersTheBasePathOfTheFormat(t *testing.T) {
+	registerRootOnce(t)
+	d := valid("probe-refapi")
+	d.ProtocolBasePath = "/api/probe-refapi/{project}/{key}/"
+	Register(fake{d: d})
+	name := qr("docker-local")
+	for _, tc := range []struct {
+		r    Refusal
+		want string
+	}{
+		{Refusal{Format: "probe-refapi", Name: name, BaseURL: "https://t.example"}, "https://t.example/api/probe-refapi/it/docker-local/"},
+		{Refusal{Format: "probe-rootok", Name: name, BaseURL: "https://t.example"}, "https://t.example/v2/it/docker-local/"},
+		{Refusal{Format: "probe-rootok", Name: qr("docker-hub"), CacheView: true, BaseURL: "https://t.example"}, "https://t.example/v2/it/docker-hub~cache/"},
+	} {
+		if got := tc.r.Registry(); got != tc.want {
+			t.Errorf("Registry() = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+// authRemote has the handshake and the revalidation of the optional interfaces added for container registries.
+type authRemote struct{ stubRemote }
+
+func (authRemote) TokenRequest(context.Context, RemoteContext, *http.Request, Path, int, http.Header) (*http.Request, string, bool, error) {
+	return nil, "k", false, nil
+}
+
+func (authRemote) ReadToken(context.Context, RemoteContext, int, []byte) (string, time.Duration, error) {
+	return "Bearer t", time.Minute, nil
+}
+
+func (authRemote) RevalidationRequest(context.Context, RemoteContext, Path, string, RemoteDocument) (*http.Request, bool, error) {
+	return nil, false, nil
+}
+
+func (authRemote) Unchanged(Path, RemoteDocument, *http.Response) bool { return true }
+
+// TestR_ARCH_008_RegisterReadsTheHandshakeAndTheRevalidation: Authenticator and Revalidator are optional interfaces of the remote
+// adapter, found once at Register (ADR-161); an adapter without them has none.
+func TestR_ARCH_008_RegisterReadsTheHandshakeAndTheRevalidation(t *testing.T) {
+	d := valid("probe-auth")
+	d.Classes = []Class{Local, Remote}
+	Register(fake{d: d, remote: authRemote{}})
+	d2 := valid("probe-noauth")
+	d2.Classes = []Class{Local, Remote}
+	Register(fake{d: d2, remote: stubRemote{}})
+	got := RemoteCapabilities("probe-auth")
+	if got.Auth == nil || got.Revalidate == nil {
+		t.Fatalf("capabilities = %+v, want both", got)
+	}
+	if a, ttl, err := got.Auth.ReadToken(context.Background(), RemoteContext{}, 200, nil); err != nil || a != "Bearer t" || ttl != time.Minute {
+		t.Errorf("ReadToken = %q, %v, %v", a, ttl, err)
+	}
+	if !got.Revalidate.Unchanged(Path{}, RemoteDocument{}, nil) {
+		t.Error("Unchanged")
+	}
+	if c := RemoteCapabilities("probe-noauth"); c.Auth != nil || c.Revalidate != nil {
+		t.Errorf("capabilities = %+v, want none", c)
 	}
 }

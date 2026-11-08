@@ -23,7 +23,7 @@ export type Membership = Schema<'Membership'>;
 export const PROJECT_ROLES: readonly ProjectRole[] = ['reader', 'developer', 'maintainer', 'owner'];
 
 /** The key pattern of a project (R-AUTHZ-026), checked live in the dialog; the server decides. */
-export const PROJECT_KEY_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
+export const PROJECT_KEY_PATTERN = /^(?=.{2,32}$)[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$/;
 
 export interface ProjectFilters {
   readonly q?: string;

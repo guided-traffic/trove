@@ -301,10 +301,11 @@ name components (R-OCI-002), so the layout never collides with an image name:
   item is the tag item (R-STOR-039). A manifest without a tag (a platform manifest of an index, a referrer) has no version
   row; it belongs to the units of R-STOR-039 through the format's references.
 - **The format's tables** (data port `internal/formatdata/oci`, Q-OCI-7): a row per manifest of a name with its media type,
-  `artifactType`, `subject`, size, the summed size of its config and layers, its platform where an index names one and the
-  annotations a referrers answer needs (at most 64 KiB, the rest is cut and the cut is recorded); and a row per reference from
-  a manifest to a manifest or a blob of the same name. They carry no blob reference (no `blob_sha256` column, R-STOR-003 rule
-  1), so they never hold a blob against garbage collection; the items do.
+  `artifactType`, `subject`, size, the summed size of its config and layers and the annotations a referrers answer needs (at most
+  64 KiB, the rest is cut and the cut is recorded in `annotations_cut`); a row per reference from a manifest to a manifest or a
+  blob of the same name, which carries the platform where an index names one for the child (the fact belongs to the edge: only the
+  index knows it, Q-OCI-28); and the mark of a manifest the journal replay withheld after a restore (`oci_tombstones`, R-OCI-033). They carry no blob reference (no `blob_sha256`
+  column, R-STOR-003 rule 1), so they never hold a blob against garbage collection; the items do.
 
 ```sql
 CREATE TABLE oci_manifests (
@@ -316,12 +317,12 @@ CREATE TABLE oci_manifests (
   subject        bytea CHECK (subject IS NULL OR octet_length(subject) = 32),
   size           bigint NOT NULL CHECK (size >= 0),
   content_size   bigint NOT NULL DEFAULT 0 CHECK (content_size >= 0), -- config and layers of an image manifest
-  platform       text CHECK (length(platform) <= 128),                 -- os/arch[/variant], from an index entry
   annotations    jsonb CHECK (annotations IS NULL OR octet_length(annotations::text) <= 65536),
+  annotations_cut boolean NOT NULL DEFAULT false,                       -- the annotations were cut at 64 KiB
   created_at     timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (repo_id, name, digest)
 );
-CREATE INDEX oci_manifests_subject ON oci_manifests (repo_id, name, subject) WHERE subject IS NOT NULL;
+CREATE INDEX oci_manifests_subject ON oci_manifests (repo_id, name, subject, digest) WHERE subject IS NOT NULL;
 
 CREATE TABLE oci_references (
   repo_id   bigint NOT NULL,
@@ -329,14 +330,36 @@ CREATE TABLE oci_references (
   manifest  bytea NOT NULL,
   target    bytea NOT NULL CHECK (octet_length(target) = 32),
   kind      text NOT NULL CHECK (kind IN ('manifest', 'blob')),
+  platform  text CHECK (length(platform) <= 128),             -- os/arch[/variant], on the edge from an index to a child
   PRIMARY KEY (repo_id, name, manifest, target),
+  CHECK (kind = 'manifest' OR platform IS NULL),
   FOREIGN KEY (repo_id, name, manifest) REFERENCES oci_manifests (repo_id, name, digest) ON DELETE CASCADE
 );
 CREATE INDEX oci_references_target ON oci_references (repo_id, name, target);
+
+CREATE TABLE oci_tombstones (                                  -- a manifest the journal replay withheld (R-OCI-033); written by the replay only
+  repo_id      bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+  name         text COLLATE "C" NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
+  digest       bytea NOT NULL CHECK (octet_length(digest) = 32),
+  withheld_at  timestamptz NOT NULL DEFAULT now(),
+  deleted_by   uuid,                                          -- the principal of the journaled deletion
+  PRIMARY KEY (repo_id, name, digest)
+);
+
+ALTER TABLE remote_cache_entries ADD COLUMN media_type text CHECK (length(media_type) <= 255);  -- R-OCI-022
 ```
 
 - The rows are written by the storage hooks (`OnCommit` for a push and a remote fill, `OnItemsRemoved` for a removal) in the
-  transaction that writes the items, and every change increments the package's `rev_seq` (R-STOR-003).
+  transaction that writes the items, and every change increments the package's `rev_seq` (R-STOR-003). A hook that has to remove
+  more than the item it was told of (the tags of a deleted manifest, the children nobody else names) does so through
+  `ItemsEvent.Cascade`, which removes in the same transaction and runs the hook again for those items (Q-OCI-24); the hook that
+  records a manifest keeps one reference row per target, however often the manifest names it (the empty descriptor as config and as
+  a layer).
+- The rows stay while an item is in the trash can, as NuGet's do, and go when the item is removed for good: a restore from the
+  trash needs no hook for them. The rows of a remote repository are tied to the alias item `<name>/_manifests/<digest>` that its fill
+  entered (R-OCI-022, Q-OCI-25): the eviction of a metadata entry (the tag document) reaches no format hook, but the removal of an
+  item does, so the hook removes the rows of a manifest with its alias item. The tag documents and the tags list are metadata
+  entries and own no row.
 - Layer deduplication across names and repositories is the blob store's: a blob item references the one object of its
   SHA-256 (R-STOR-005).
 
@@ -370,6 +393,8 @@ The format's `WriteError` (R-ARCH-008) maps every core error onto the distributi
 | Upstream rate limit without a stored copy (R-REPO-029: 503 with `Retry-After`) | 503 | `TOOMANYREQUESTS` |
 | Upstream failure, offline, circuit open, object lost | 502, 503, 504 | `UNAVAILABLE` (distribution's code; the specification allows registry-specific codes) |
 
+- `Retry-After` is the engine's wait in whole seconds, at least 1, and is never cut: a client told 60 s for a wait of six hours
+  would retry into the same refusal, and the throttling of an upstream (R-REPO-054) is exactly such a wait.
 - `Docker-Content-Digest` is set on every successful manifest and blob response and on `201` of a push; `Content-Length` on
   every `HEAD`; `ETag` of a manifest or blob is `"sha256:<hex>"`, so `If-None-Match` gives 304.
 - `Content-Type` of a manifest response is the stored media type without parameters; a blob is
@@ -487,7 +512,7 @@ Priority: **P1** · Covers: PKG-DOCKER-020, PKG-DOCKER-021, PKG-DOCKER-026, PKG-
    two exceptions: a layer with `urls` or a non-distributable media type is not required (foreign layers, Q-OCI-10), and the
    `subject` may name a manifest that does not exist (yet).
 5. **Digest.** The digest is the SHA-256 of the received bytes. A `PUT` by digest whose digest differs answers 400
-   `DIGEST_INVALID`.
+   `DIGEST_INVALID`. A manifest whose digest the journal replay withheld under this name answers 409 `DENIED` until it is reinstated (R-OCI-033).
 6. **Tag.** A `PUT` by tag points the tag at the manifest: a new tag or one that points at the same digest needs `deploy`,
    one that points at another digest also `overwrite` (R-OCI-006). The answer is 201 with `Location`
    (`/v2/<p>/<r>/<name>/manifests/<digest>`) and `Docker-Content-Digest`.
@@ -518,7 +543,7 @@ Acceptance criteria:
 Priority: **P1** · Covers: PKG-DOCKER-023, PKG-DOCKER-025
 
 - An index (OCI image index or Docker manifest list) is pushed after the manifests it lists, each by digest; its entries'
-  `platform` objects are recorded on the child rows (R-OCI-007).
+  `platform` objects are recorded on the references from the index to the children (R-OCI-007).
 - Index entries that point at attestation manifests (`platform` `unknown/unknown` with the annotation
   `vnd.docker.reference.type: attestation-manifest`) are ordinary entries for the registry.
 - An index and the children only it references form one unit for deletion (R-OCI-018) and retention (R-STOR-039).
@@ -600,8 +625,12 @@ The content-management category of the distribution specification is supported (
 
 - Removals go through the item store and the hook `OnItemsRemoved`, so a removal through the package screens, `/files/` or a
   retention policy (R-STOR-039) applies the same cascade and the same refusals.
-- Removed items go to the trash can when it is enabled (R-STOR-022); a restore brings the format's rows back through
-  `OnItemsRestored`.
+- Removed items go to the trash can when it is enabled (R-STOR-022). The format's rows stay while an item is in the trash (R-OCI-007),
+  so a restore from it brings the item back with its rows and needs no hook. A hook that cascades follows the reason of its
+  event: a manifest that goes to the trash takes its tags to the trash with it and not out of the repository for good
+  (`ItemsEvent.Cascade`, Q-OCI-24).
+- A removal that has no request (a retention run, the purge of the trash, `/files/` through a job) runs the same hook with the same
+  cascade, recorded as the system actor `removal` (Q-OCI-24).
 - Untagged manifests are kept: a tag moved away leaves its old manifest pullable by digest until it is deleted or a retention
   policy removes it.
 
@@ -683,13 +712,16 @@ Priority: **P1** · Covers: PKG-DOCKER-017, PKG-DOCKER-034
 
 - A manifest by tag is the metadata document `<name>/_tags/<tag>`: fetched with `GET /v2/<prefix/name>/manifests/<tag>` and
   `Accept` listing the four manifest types of R-OCI-013 (so the upstream returns its index, not a platform manifest it picked),
-  stored byte for byte with the upstream's `Content-Type`, and fresh for the metadata period (# default (proposed) 300 s).
+  stored byte for byte with the upstream's `Content-Type` (kept in the cache entry's `media_type` and served as the stored media
+  type), and fresh for the metadata period (# default (proposed) 300 s).
 - **Revalidation by `HEAD`** (Q-OCI-13). An expired tag document is revalidated with `HEAD` on the same URL: a
   `Docker-Content-Digest` equal to the stored manifest's digest renews its freshness without a body; another digest, or an
   answer without the header, fetches the manifest with `GET`. Docker Hub counts `GET` of manifests against its pull limit and
   not `HEAD` ([Docker Hub usage](https://docs.docker.com/docker-hub/usage/pulls/)), so an unchanged tag costs no pull.
 - A manifest fetched by tag is also served by its digest from the cache: a later `GET …/manifests/<digest>` sends no upstream
-  request.
+  request. The format names the digest path as an alias of the fetched document (`Prepared.Aliases`), and the engine enters it in
+  the fill transaction as an item for the same blob and an artifact cache entry (Q-OCI-25); the manifest row is written for the alias
+  by the hook, with the origin `fill`.
 - A manifest by digest is content: fetched once, verified against the digest (R-OCI-020), never revalidated.
 - A tag the upstream does not have answers 404 `MANIFEST_UNKNOWN` and is remembered for the not-found period (# default
   (proposed) 300 s, R-REPO-028).
@@ -910,15 +942,41 @@ Acceptance criteria:
 ### R-OCI-033 · OCI data in backups and restores
 Priority: **P1** · Covers: trove-only
 
-- `oci_manifests` and `oci_references` have the backup export class `data`; `upload_sessions` and `upload_session_parts` are
-  `transient` (R-STOR-011): a client restarts an upload after a restore.
-- Tags are mutable and digests verify themselves, so a restore keeps no reservation for the format: a tag moved after the
-  snapshot points where it pointed at the snapshot, and a digest can never come back with other bytes.
+- `oci_manifests`, `oci_references` and `oci_tombstones` have the backup export class `data`; `upload_sessions` and
+  `upload_session_parts` are `transient` (R-STOR-011): a client restarts an upload after a restore.
+- Tags are mutable and digests verify themselves, so a restore keeps no reservation for a push: a tag moved after the snapshot
+  points where it pointed at the snapshot, and a digest can never come back with other bytes.
+- **A deleted image does not come back** (Q-OCI-30, Q-OCI-33). An image that was deleted may have been malicious, and a restore
+  returns the repository to the snapshot. The deletion of a manifest writes the audit event `oci.manifest.deleted` in the transaction
+  of the deletion; the event is in the revocation journal (R-HA-054) with an entry that names the repository, the image name, the
+  digest and the actor. A live deletion writes no mark, so a digest that was deleted can be pushed again.
+- **Replay withholds and never deletes** (R-HA-054, as npm's does, R-NPM-047). When the restored repository holds the manifest under
+  the name, the replay writes its mark in `oci_tombstones` and increments `packages.rev_seq` in one transaction (`applied`); the items
+  and their bytes stay stored. A manifest that is withheld already is `already in effect`; one the restored repository does not hold
+  is `subject unknown` and changes nothing, so a forged or mistaken entry costs availability until an administrator acts, never
+  integrity, access or data.
+- **What withheld means.** The serve check of the format (`ServeCheck`) refuses a manifest item or a tag item whose digest is marked
+  with the 404 `MANIFEST_UNKNOWN` of a missing manifest, on `/v2/` and on `/files/`, and a push of a manifest with a marked digest
+  under the same name answers 409 `DENIED` until the mark is removed (the same bytes cannot be pushed back around a withholding).
+  The check reads the manifest row and the mark with the item in the one statement of the download (the serve-facts kind `oci_local`
+  of R-ARCH-027, Q-OCI-33), so the hottest route costs no further query. A tag that points at a withheld manifest answers the same.
+  The tags list omits a tag whose manifest is withheld. A withheld manifest counts toward the repository's storage like a live one.
+- **The way back.** The replay output lists every withheld manifest. An administrator confirms the withdrawal by deleting the
+  manifest through the management item API (R-STOR-018; the mark stays, so the digest stays refused), or reverses it with
+  `trove admin oci reinstate <projectKey>/<repoKey> <name>@<digest>`, which removes the mark only while the manifest row and its items
+  are stored with that digest (so it brings back the same bytes and never admits new ones), increments `rev_seq` and writes
+  `oci.reinstate` (not journaled, as `npm.reinstate`). There is no other way to push a digest back: reinstating is the explicit
+  allowance.
+- The event, the table, the journal registration and the serve-facts kind exist; the replay handler and the command are built with
+  the deletion (R-OCI-018), and until then a restore skips the entry and reports it (nothing emits the event before that).
 
 Acceptance criteria:
 
 - The restore drill of R-BAK-029 includes an image pushed before the snapshot: after the restore `docker pull` by tag and by
   digest succeeds and `tags/list` lists its tags.
+- An image deleted after the snapshot is withheld after the restore: `docker pull` by tag and by digest answers 404, the replay
+  reports the entry as applied, the items are still stored, and a push of the same digest answers 409 `DENIED` until
+  `trove admin oci reinstate` brings it back.
 
 ### R-OCI-034 · Audit events and metrics
 Priority: **P1** · Covers: trove-only
@@ -1627,6 +1685,178 @@ Status: **Decided by the development agent** — selected from the options below
 revisit it when a customer endpoint needs images.
 
 **Applied in the spec:** [Deferred](#deferred).
+
+### Q-OCI-24 · A storage hook cascades through the host, and a removal without a request has a system actor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ItemsEvent.Cascade(ctx, paths…)` removes in the transaction of the event and runs the hook again; the actor is the removal's, or the system actor `removal` when there was no request; the sweep job `oci-sweep` lives in `internal/formatdata/oci` and removes through the item store as NuGet's index job does (chosen) | One road for every removal (route, `/files/`, retention, trash purge, job) | The tags and children of a deleted manifest cannot be missed by a removal that has no request | The contract grows a field of `ItemsEvent` |
+| (b) Make `PackageWriter.DeleteItems` work for the writer of an event | No new member | Smaller contract | The writer of an event is bound to no request and has no actor; the hook would re-enter its own event by a path the host does not control |
+| (c) The format cascades only in its routes | Nothing to add | Simplest | A removal through `/files/`, a retention run or the purge of the trash leaves tags that point at nothing |
+
+**Choice:** (a).
+
+**Rationale:** A format's removal rules (a manifest takes its tags, a tag takes the manifest nobody else names) must hold for every removal, and the host is the only party that knows the transaction and the actor. The development agent would revisit it if a second format needs a cascade that depends on the order of removal.
+
+**Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-018](#r-oci-018--deletion); [ADR-161](../../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions).
+
+### Q-OCI-25 · A remote manifest keeps its media type in the cache entry and is entered under its digest in the fill transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `remote_cache_entries.media_type` filled from the upstream `Content-Type`, and `Prepared.Aliases`: the engine enters each alias as an item for the same blob and an artifact entry in the fill transaction (chosen) | A tag fetched once serves its digest and its type with no second request; the third bullet of R-OCI-022 holds | No second fetch; the type survives replicas and restarts | Two core changes (a column, the alias step) |
+| (b) Derive the media type from the manifest's `mediaType` member | No column | Small | A Docker v2 manifest may omit it; the stored type must be the one the upstream sent, or the client's digest check of a re-encoded type fails |
+| (c) Fetch the digest from the upstream on its first use | No engine change | Simplest | `crane manifest …@<digest>` right after a tag pull costs a pull against Docker Hub's limit, which R-OCI-022 forbids |
+
+**Choice:** (a).
+
+**Rationale:** The stored bytes are the only thing the client verifies, and the type is part of what the upstream served; both must come back as fetched. The development agent would revisit it if the alias step needs more than paths derived from the document's bytes.
+
+**Applied in the spec:** [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest), [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables).
+
+### Q-OCI-26 · Upload session calls repeat a session reference, the host decides, and a 416 carries the received count as a value
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `SessionRef{ID, Binding}` on every call; the host decides principal, binding and `deploy` on the session's target on every call and validates the target at `Start`; `Append` returns the recorded count with a 416 and appends at the received count for an offset below zero (chosen) | A session cannot be continued by a request that names another image or lost its permission; the format renders `Range` from a typed value | The checks cannot be forgotten by a format | Every call carries two values |
+| (b) The id alone; the format passes the binding at `Start` only | Smaller calls | Simple | A session id from one image name continues under another; the binding check would be the format's |
+| (c) Parse the range out of the 416 error text | No signature change | Smallest | A text is not a contract |
+
+**Choice:** (a).
+
+**Rationale:** The checks that a continued upload still belongs to the caller are security checks and belong to the one party that cannot be bypassed. The development agent would revisit it if a format needs sessions without a binding.
+
+**Applied in the spec:** [R-OCI-011](#r-oci-011--blob-uploads-across-requests-and-replicas), [storage.md](../storage.md) R-STOR-011.
+
+### Q-OCI-27 · A link names the source item, and the host checks it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Ingestor.Link(ctx, rq, from ItemRef, c Commit)`: the host checks that the source is a live untrashed file whose blob is served, that no finding blocks it and that the caller may read it; size and digests come from the blob row; independent of `storage.deploy_by_checksum` (chosen) | A mount, the link step of a virtual push and a tag push share one checked road | A digest alone names nothing the caller may not read | The host side is built in the contract package, with the blob store's `LinkExisting` |
+| (b) `Link(sha256, size, Commit)` as first drafted | One value pair | Small | A caller could link any blob that exists; the read check on the source would be the format's |
+| (c) Re-upload the bytes through the spool | No new road | Nothing to build | A mount of a 5 GiB layer would pass through the replica |
+
+**Choice:** (a).
+
+**Rationale:** Deploy by checksum is the one thing that lets a caller reach a blob without holding its bytes, so the proof of a right to read is the item, not the digest. The development agent would revisit it if a mount source can be a blob that no item names.
+
+**Applied in the spec:** [R-OCI-012](#r-oci-012--cross-repository-blob-mount), [R-OCI-013](#r-oci-013--pushing-manifests-and-tags), [storage.md](../storage.md) R-STOR-008.
+
+### Q-OCI-28 · The platform is a fact of the reference from an index to a child; a few schema rules for the port
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `oci_references.platform` (NULL for blobs), `oci_manifests.annotations_cut`, the referrers index with the digest, one reference row per target, rows kept across the trash and removed with an evicted remote metadata entry (chosen) | The platform sits where it is known; a page of referrers is read in order from the index | A child that two indexes list has two platforms, one per edge | The row of a child no longer has a platform |
+| (b) `oci_manifests.platform` as first drafted | One column | Simple | The child does not know its platform, only an index does; two indexes would overwrite each other |
+
+**Choice:** (a).
+
+**Rationale:** A fact belongs to the row that can know it. The development agent would revisit it if a referrers answer needs the platform of a manifest that no index lists.
+
+**Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-014](#r-oci-014--multi-platform-images).
+
+### Q-OCI-29 · A route declares its package parameter, and the link builder knows a bound host
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Route.PackageParam`, `EndpointFacts.Bound`, `LinkBuilder.ClientName`; the registry URL of a bound host is `<base>/v2/` (chosen) | The core knows the image name without parsing an OCI path; the token grant and the challenge name the image; a bound host's links are right | One mechanism for any format that has a package in its path | Three small members |
+| (b) The core parses `/v2/` paths | No contract change | Direct | The core would know a format's path grammar, against R-ARCH-008 |
+
+**Choice:** (a).
+
+**Rationale:** R-ARCH-008 keeps path grammars in the format. The development agent would revisit it if a route has two packages (a mount names a source name in a query, which the format reads itself).
+
+**Applied in the spec:** [R-OCI-001](#r-oci-001--the-format-oci-its-classes-and-the-registry-address), [R-OCI-029](#r-oci-029--bound-hosts-the-docker-engine-mirror).
+
+### Q-OCI-30 · The deletion of a manifest is journaled, so a restore does not serve a deleted image again
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The audit event `oci.manifest.deleted` with the revocation journal flag, registered now; the table `oci_tombstones` holds the manifests the replay withheld; the replay handler is built with the deletion (chosen) | A deleted, possibly malicious image is not served after a restore | The same road as npm's unpublish; replay never deletes (R-HA-054) | A journaled event without a handler is skipped on replay until the deletion is built |
+| (b) No journal for OCI | Nothing to build | Simplest | A restore resurrects every image deleted since the snapshot, malicious ones included, against R-HA-054 |
+| (c) The replay deletes the restored manifest | The image is really gone | Tidy | A forged or mistaken entry would destroy data; R-HA-054 allows nothing to be deleted by a replay |
+
+**Choice:** (a).
+
+**Rationale:** R-HA-054 asks the journal for every change that withdraws content where a format page asks for it, and this page does; withholding is reversible and costs availability only. The development agent would revisit it if tags need a journal of their own.
+
+**Applied in the spec:** [R-OCI-018](#r-oci-018--deletion), [R-OCI-033](#r-oci-033--oci-data-in-backups-and-restores); the row of R-HA-054 in [ha-and-helm.md](../ha-and-helm.md).
+
+### Q-OCI-31 · The key grammar migration adds its checks directly and folds the composite names
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 00056 adds the checks in their validated form, replaces the checks of the composite names that embed the project key (principal, policy, CI mapping tier), keeps the compatibility floor at 0.1.0 and says why; the remedy for a refused key is to delete the repository (a key is immutable) (chosen) | One rule for every table; a failing key stops the step with the constraint's name | The floor stays where the harnesses migrate | The step takes a scan lock on the tables |
+| (b) `NOT VALID` and `VALIDATE` in one step | Looks gentler | Familiar | In one transaction it holds the stronger lock as long as the direct form and adds nothing |
+| (c) Leave the composite names on the old grammar | Fewer statements | Smaller | A project key the project table refuses could appear in a service account name |
+
+**Choice:** (a).
+
+**Rationale:** Pre-alpha has no installation that must survive the step, and the rule should be the same everywhere. The development agent would revisit the floor at the first stable release.
+
+**Applied in the spec:** [R-OCI-002](#r-oci-002--keys-image-names-tags-and-digests); migration 00056.
+
+### Q-OCI-32 · A link names its source by repository name and path, and the host resolves it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Link(rq, from SourceRef{Repo qname.Repo, Path}, c)`: the host resolves the repository by name (id, class, format), finds the item (through the members of a virtual repository, in member order), decides the read on the named repository and runs the checks of R-STOR-008 (chosen) | A cross-repository mount has a road; a virtual source resolves as a read would; nothing the caller supplies is trusted | The format needs no repository snapshot of its own | The host side grows by a resolution |
+| (b) `Link(from ItemRef)` with a repository reference the format builds | The format reads the repository | Smaller host side | The id and the name of the reference can disagree, and a format could name a repository it does not hold |
+
+**Choice:** (a).
+
+**Rationale:** The one party that may say which repository a name is, is the host; the answer to a caller who may not read is the same as for a missing item. The development agent would revisit it if a mount needs a source that is not an item (a blob a name does not hold).
+
+**Applied in the spec:** [R-OCI-012](#r-oci-012--cross-repository-blob-mount).
+
+### Q-OCI-33 · A manifest the journal replay withheld is refused by the serve check from facts read with the item, and an administrator reinstates it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The serve-facts kind `oci_local` (R-ARCH-027): the one statement of the item lookup returns the manifest row and whether a tombstone withholds the item's digest; the replay writes the mark and deletes nothing; `trove admin oci reinstate` removes it; a push of a withheld digest is refused until then (chosen) | The hottest route costs no extra query; a restore never deletes; the way back is explicit | The same shape as npm's tombstone and reinstate | A column more in the lookup statement; an admin command to build |
+| (b) The serve check queries the data port on every manifest pull | No contract addition | Smaller statement | A second statement on the hottest route, against R-ARCH-027 |
+| (c) The replay deletes the manifest | Nothing to serve | Simple | A forged entry destroys data, against R-HA-054 |
+
+**Choice:** (a).
+
+**Rationale:** A restore must neither serve a deleted image nor destroy a possibly wrong entry's target. The development agent would revisit it if withholding needs more than a digest (a tag-level withhold).
+
+**Applied in the spec:** [R-OCI-033](#r-oci-033--oci-data-in-backups-and-restores), [R-OCI-013](#r-oci-013--pushing-manifests-and-tags); the row of R-HA-054 in [ha-and-helm.md](../ha-and-helm.md).
+
+### Q-OCI-34 · The rows of a remote manifest are tied to its alias item
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The hook removes a remote's manifest rows when the alias item `<name>/_manifests/<digest>` is removed; tag documents and the tags list are metadata entries and own no row (chosen) | Eviction of a cached manifest reaches a format hook, because it removes an item | No new hook for metadata eviction | The rows depend on the alias item the fill enters |
+| (b) A hook for the eviction of metadata entries | The rows follow the tag document | Direct | A new contract member for one format; the tag document is not the manifest |
+
+**Choice:** (a).
+
+**Rationale:** An item removal already runs the format's hook; a metadata eviction does not. The development agent would revisit it if a remote keeps a manifest that has no alias item.
+
+**Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest).
 
 ## What this does not cover
 

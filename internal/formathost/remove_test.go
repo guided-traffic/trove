@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/items"
@@ -57,6 +59,36 @@ func TestR_STOR_018_DeleteItemsOfThePackageWriter(t *testing.T) {
 	} {
 		if err := w.DeleteItems(t.Context(), repo, "a"); err == nil {
 			t.Errorf("%s removed items", name)
+		}
+	}
+}
+
+// TestTheCascadeOfARemovalHookRemovesInTheTransactionAsTheActorOrTheSystem: a hook removes what hangs on a removed item through
+// ItemsEvent.Cascade, in the transaction of the event, as the actor of the removal, or as the system actor when it had no request
+// (ADR-161); a host that cannot remove fails the cascade.
+func TestTheCascadeOfARemovalHookRemovesInTheTransactionAsTheActorOrTheSystem(t *testing.T) {
+	rm := &recordRemover{}
+	repo := items.RepoRef{ID: 7, Name: qr("casc-local"), Class: "local", Format: "casc"}
+	run := func(remover func() ItemRemover, e items.RemovedEvent, path string) error {
+		e.Repo = repo
+		return NewHooks(Deps{Remover: remover}).cascade(nil, e)(context.Background(), path)
+	}
+	user := audit.Actor{Kind: "user", ID: "u1", Name: "alice"}
+	if err := run(func() ItemRemover { return rm }, items.RemovedEvent{Reason: "delete", Actor: "u1", By: user}, "app/_tags/1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(func() ItemRemover { return rm }, items.RemovedEvent{Reason: "purge"}, "app/_tags/2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rm.got) != 2 || rm.got[0].Actor != user || rm.got[0].Paths[0] != "app/_tags/1" || rm.got[0].Repo.ID != 7 {
+		t.Fatalf("removals = %+v", rm.got)
+	}
+	if rm.got[1].Actor.Kind != "system" || rm.got[1].Actor.Name != "removal" {
+		t.Errorf("a removal without a request is recorded as %+v", rm.got[1].Actor)
+	}
+	for name, remover := range map[string]func() ItemRemover{"no remover": nil, "a remover that is not there yet": func() ItemRemover { return nil }} {
+		if err := run(remover, items.RemovedEvent{}, "x"); errs.KindOf(err) != errs.Internal {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

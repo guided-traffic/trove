@@ -55,11 +55,12 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	// Catalog priority -> entries, listed in a Covers: line; measured 2026-11-04, after the page
 	// bastion.md raised its features to MVP, the projects of R-AUTHZ-026 (IAM-051, IAM-052, IAM-057,
 	// UI-003, UI-050, UI-051) moved into the beta, and the mirror mode of phase 6b pulled the pull
-	// replication entries API-082 to API-085 forward (Q-REPO-143).
+	// replication entries API-082 to API-085 forward (Q-REPO-143), and after formats/oci.md (R-OCI-001 to R-OCI-035) listed the
+	// entries of PKG-DOCKER-* and PKG-OCI-* that phase T-16 builds.
 	want := map[string][2]int{
 		prioMVP:   {394, 394},
-		prioP1:    {514, 290},
-		prioP2:    {885, 20},
+		prioP1:    {514, 330},
+		prioP2:    {885, 26},
 		prioLater: {374, 0},
 		prioOut:   {72, 0},
 	}
@@ -81,11 +82,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 704 {
-			t.Errorf("listed entries: got %d, want 704", got)
+		if got := m.countSpecified(m.Features); got != 750 {
+			t.Errorf("listed entries: got %d, want 750", got)
 		}
-		if got := m.countOpen(m.Features); got != 1535 {
-			t.Errorf("not listed entries: got %d, want 1535", got)
+		if got := m.countOpen(m.Features); got != 1489 {
+			t.Errorf("not listed entries: got %d, want 1489", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {
@@ -93,8 +94,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 695 || count[prioMVP] != 545 || count[prioP1] != 144 || count[prioP2] != 6 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 695 (545, 144, 6)",
+		if len(m.Reqs) != 730 || count[prioMVP] != 545 || count[prioP1] != 179 || count[prioP2] != 6 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 730 (545, 179, 6)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

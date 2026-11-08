@@ -1044,6 +1044,7 @@ const (
 	FormatNameGeneric FormatName = "generic"
 	FormatNameNpm     FormatName = "npm"
 	FormatNameNuget   FormatName = "nuget"
+	FormatNameOci     FormatName = "oci"
 )
 
 // Valid indicates whether the value is a known member of the FormatName enum.
@@ -1054,6 +1055,8 @@ func (e FormatName) Valid() bool {
 	case FormatNameNpm:
 		return true
 	case FormatNameNuget:
+		return true
+	case FormatNameOci:
 		return true
 	default:
 		return false
@@ -1335,6 +1338,7 @@ const (
 	LocalFormatNameGeneric LocalFormatName = "generic"
 	LocalFormatNameNpm     LocalFormatName = "npm"
 	LocalFormatNameNuget   LocalFormatName = "nuget"
+	LocalFormatNameOci     LocalFormatName = "oci"
 )
 
 // Valid indicates whether the value is a known member of the LocalFormatName enum.
@@ -1345,6 +1349,8 @@ func (e LocalFormatName) Valid() bool {
 	case LocalFormatNameNpm:
 		return true
 	case LocalFormatNameNuget:
+		return true
+	case LocalFormatNameOci:
 		return true
 	default:
 		return false
@@ -5551,6 +5557,10 @@ type FormatDescriptor struct {
 	// without one. generic, addressed with any HTTP client, names curl (R-GENERIC-016).
 	Clients []FormatClient `json:"clients"`
 
+	// DefaultCredentialHosts The entries of `defaultExtraHosts` that a remote repository of the format proposes with `sendCredentials: true`, because the
+	// upstream's token realm lives there (R-OCI-021); each is also in `defaultExtraHosts`. Empty for a format without any.
+	DefaultCredentialHosts []string `json:"defaultCredentialHosts"`
+
 	// DefaultExtraHosts The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
 	DefaultExtraHosts         []string `json:"defaultExtraHosts"`
 	DefaultMetadataTtlSeconds *int     `json:"defaultMetadataTtlSeconds"`
@@ -5567,7 +5577,7 @@ type FormatDescriptor struct {
 	PinsAndClaims   bool                           `json:"pinsAndClaims"`
 	PriorityMembers bool                           `json:"priorityMembers"`
 
-	// ProtocolBasePath The client address template; `{key}` is the repository key.
+	// ProtocolBasePath The client address template; `{project}` and `{key}` are the project and the repository key. `/api/<format>/{project}/{key}/`, or `/v2/{project}/{key}/` for the format that serves the registry root (R-OCI-001).
 	ProtocolBasePath string `json:"protocolBasePath"`
 
 	// SettingsSchema The JSON Schema 2020-12 of the format's settings member of a repository document (the member named
@@ -6361,6 +6371,25 @@ type ObjectStoreFacts struct {
 	Prefix           string `json:"prefix"`
 }
 
+// OciSettings The settings of the OCI format, the `oci` member of a repository document (R-REPO-004, R-OCI-026). The document of the
+// format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember`
+// fails on any difference between the two. Local and virtual repositories have no settings of the format: a setting that
+// does not apply to the class of the repository answers 422 `not_applicable`. An omitted setting takes its default.
+type OciSettings struct {
+	// Mirror Remote repositories (R-OCI-026, Q-OCI-16). What a mirror of a registry keeps; present in both modes and effective in mode
+	// `mirror`. A caller without `repositories:write-config` on the project cannot change it on a mirror (R-REPO-050, Q-OCI-22).
+	Mirror *struct {
+		// ExcludeTags Tag patterns that are never mirrored.
+		ExcludeTags *[]string `json:"excludeTags,omitempty"`
+
+		// Platforms Platforms (`os/arch` or `os/arch/variant`) of an index whose manifests are mirrored; empty is every platform.
+		Platforms *[]string `json:"platforms,omitempty"`
+
+		// Tags Tag patterns (`*` and `?`) a tag must match to be mirrored; a pattern without a wildcard names a tag that is always kept.
+		Tags *[]string `json:"tags,omitempty"`
+	} `json:"mirror,omitempty"`
+}
+
 // OwnedPackage One name an identity owns.
 type OwnedPackage struct {
 	AddedAt    time.Time          `json:"addedAt"`
@@ -7151,8 +7180,14 @@ type Repository struct {
 	// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`
 	// fails on any difference between the two. A setting that does not apply to the class of the repository
 	// answers 422 `not_applicable`. An omitted setting takes its default.
-	Nuget          *NugetSettings `json:"nuget,omitempty"`
-	PriorityMember *bool          `json:"priorityMember,omitempty"`
+	Nuget *NugetSettings `json:"nuget,omitempty"`
+
+	// Oci The settings of the OCI format, the `oci` member of a repository document (R-REPO-004, R-OCI-026). The document of the
+	// format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember`
+	// fails on any difference between the two. Local and virtual repositories have no settings of the format: a setting that
+	// does not apply to the class of the repository answers 422 `not_applicable`. An omitted setting takes its default.
+	Oci            *OciSettings `json:"oci,omitempty"`
+	PriorityMember *bool        `json:"priorityMember,omitempty"`
 
 	// Project The key of the project the repository belongs to (Q-AUTHZ-206). Read on every answer; the path names the
 	// project on a write, and a value that differs from it answers `422`. `POST …/move` moves the repository. The

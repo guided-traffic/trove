@@ -67,6 +67,10 @@ func (refusedBlobs) CommitAll(context.Context, []*blob.Spooled, blob.LinkFunc) (
 	return nil, errRestoreOnly
 }
 
+func (refusedBlobs) LinkExisting(context.Context, blob.Digest, blob.LinkFunc) error {
+	return errRestoreOnly
+}
+
 func (refusedBlobs) Open(context.Context, blob.Digest, int64, blob.OpenOptions) (io.ReadCloser, error) {
 	return nil, errRestoreOnly
 }

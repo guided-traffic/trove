@@ -27,6 +27,7 @@ SELECT e.kind,
        b.content_status AS blob_content_status,
        e.upstream_url,
        COALESCE(e.upstream_etag, '')::text AS upstream_etag,
+       COALESCE(e.media_type, '')::text AS media_type,
        COALESCE((extract(epoch FROM e.upstream_last_modified) * 1000000)::bigint, 0)::bigint AS last_modified_us,
        (extract(epoch FROM e.fetched_at) * 1000000)::bigint AS fetched_us,
        (extract(epoch FROM e.validated_at) * 1000000)::bigint AS validated_us,
@@ -72,12 +73,14 @@ SELECT count(*)::bigint AS total,
 -- (R-REPO-026: the upsert keeps the newer fetched_at), unless force is set: the format
 -- recorded the document as the newer one by an order of its own (npm: time.modified), so
 -- the entry follows its records whatever fetch time it has. validated_at is the database
--- clock now, expires_at is that plus the period. A gone mark is cleared by a 2xx.
+-- clock now, expires_at is that plus the period. A gone mark is cleared by a 2xx. media_type is the
+-- media type of the answer without parameters (RemoteDocument.MediaType), NULL when it sent none.
 INSERT INTO remote_cache_entries
-       (repo_id, path, variant, kind, blob_sha256, upstream_url, upstream_etag, upstream_last_modified,
+       (repo_id, path, variant, kind, blob_sha256, upstream_url, upstream_etag, media_type, upstream_last_modified,
         fetched_at, validated_at, expires_at, upstream_gone_at, last_used_at)
 VALUES (sqlc.arg(repo_id)::bigint, sqlc.arg(path)::text, sqlc.arg(variant)::text, 'metadata',
         sqlc.arg(blob_sha256)::bytea, sqlc.arg(upstream_url)::text, NULLIF(sqlc.arg(upstream_etag)::text, ''),
+        NULLIF(sqlc.arg(media_type)::text, ''),
         CASE WHEN sqlc.arg(last_modified_us)::bigint = 0 THEN NULL
              ELSE timestamptz 'epoch' + sqlc.arg(last_modified_us)::bigint * interval '1 microsecond' END,
         timestamptz 'epoch' + sqlc.arg(fetched_us)::bigint * interval '1 microsecond',
@@ -87,7 +90,8 @@ VALUES (sqlc.arg(repo_id)::bigint, sqlc.arg(path)::text, sqlc.arg(variant)::text
         timestamptz 'epoch' + sqlc.arg(fetched_us)::bigint * interval '1 microsecond')
 ON CONFLICT (repo_id, path, variant) DO UPDATE
    SET blob_sha256 = EXCLUDED.blob_sha256, upstream_url = EXCLUDED.upstream_url,
-       upstream_etag = EXCLUDED.upstream_etag, upstream_last_modified = EXCLUDED.upstream_last_modified,
+       upstream_etag = EXCLUDED.upstream_etag, media_type = EXCLUDED.media_type,
+       upstream_last_modified = EXCLUDED.upstream_last_modified,
        fetched_at = EXCLUDED.fetched_at, validated_at = EXCLUDED.validated_at, expires_at = EXCLUDED.expires_at,
        upstream_gone_at = NULL
  WHERE remote_cache_entries.kind = 'metadata'

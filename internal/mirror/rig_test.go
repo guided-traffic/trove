@@ -564,6 +564,12 @@ type fakeUpstream struct{}
 
 func (fakeUpstream) Base() *url.URL            { u, _ := url.Parse("https://registry.example.org/"); return u }
 func (fakeUpstream) Settings() json.RawMessage { return nil }
+
+// Artifact implements discover.Upstream: the fake holds no artifacts.
+func (fakeUpstream) Artifact(context.Context, string, int64) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
 func (fakeUpstream) Document(context.Context, string, string) ([]byte, bool, error) {
 	return nil, false, nil
 }

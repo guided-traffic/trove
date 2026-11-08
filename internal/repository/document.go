@@ -66,6 +66,8 @@ type Settings struct {
 	// NuGet is the settings member of the NuGet format (R-NUGET-007, R-NUGET-014), under
 	// the same rules as NPM.
 	NuGet json.RawMessage `json:"nuget,omitempty"`
+	// OCI is the settings member of the OCI format (R-OCI-026), under the same rules as NPM.
+	OCI json.RawMessage `json:"oci,omitempty"`
 	// Vulnerabilities is the member owned by vulnerability-scanning.md (R-VULN-002): local and remote repositories of a
 	// format with the vulnerability adapter. It is absent until set, and an absent member means the defaults of
 	// [vuln.DefaultSettings]; a member set with a few fields takes the defaults of the others (Q-VULN-26). Virtual
@@ -175,6 +177,7 @@ func (s *Settings) normalize() {
 	s.Storage = emptyToNil(s.Storage)
 	s.NPM = canonicalObject(emptyToNil(s.NPM))
 	s.NuGet = canonicalObject(emptyToNil(s.NuGet))
+	s.OCI = canonicalObject(emptyToNil(s.OCI))
 }
 
 // formatMembers are the members of a document that hold the settings of one format,
@@ -183,6 +186,7 @@ func formatMembers() []formatMember {
 	return []formatMember{
 		{"npm", func(s *Settings) json.RawMessage { return s.NPM }},
 		{"nuget", func(s *Settings) json.RawMessage { return s.NuGet }},
+		{"oci", func(s *Settings) json.RawMessage { return s.OCI }},
 	}
 }
 

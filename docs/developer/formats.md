@@ -105,7 +105,7 @@ for `Lookup` and `List`. It panics on:
 - a `DataPort` that is no interface type;
 - a route set that is not servable: a route without name, method, template, handler, kind, action or example; a name used twice; a route
   that does not match its own example; an example that another route of the same method (and an overlapping class set) also matches; routes under a protocol base
-  path other than `/api/<id>/{project}/{key}/`; a route of a class the format does not support;
+  path other than `/api/<id>/{project}/{key}/` (the format that declares `catalog.Facts.RegistryRoot` has `/v2/{project}/{key}/` instead, and the catalog refuses a second one); a route of a class the format does not support;
 - every rule of the catalog (class set, layout, pattern subject, name rule, exposure).
 
 `formats.Validate(f)` runs the contract checks without registering. The exposure facts of the catalog come from `Format.Exposure()`: no adapter
@@ -115,7 +115,7 @@ freezes the catalog ([wire_formats.go](../../internal/app/wire_formats.go) `wire
 `Register` also records the format's [`Capabilities`](../../internal/formats/formats.go) once (`CapabilitiesOf`, read back with `CapabilitiesFor`):
 the optional `ItemsRestorer` and, in `Capabilities.Remote` (`RemoteCaps`, read back with `RemoteCapabilities(id)`), the optional interfaces of the
 remote adapter, `Discoverer` (a discovery document such as NuGet's service index, Q-ARCH-268) and `FillInspector` (inspect a fetched artifact
-before it is stored, Q-ARCH-267) and `FactsGate` (the artifact gate on the rows the item lookup read, `RemoteCaps.Gate`, Q-ARCH-291); and, on the format itself, the optional `ServeFactsKeyer` (`Capabilities.ServeFacts`: the rows the serve check decides on, which the item lookup of a download reads with the item, Q-ARCH-291, [download-statements.md](download-statements.md)) and `VulnerabilityAdapter` (`Capabilities.Vulnerability`, R-VULN-009, [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)), from which `Register` also derives `catalog.Entry.Ecosystem`; a format's audit routes read the scanning through `Host.Vulnerabilities()` ([vulnerabilities.md](vulnerabilities.md)). The remote adapter must be a stable value, because the instance `Remote()` returned at `Register` is the one
+before it is stored, Q-ARCH-267) and `FactsGate` (the artifact gate on the rows the item lookup read, `RemoteCaps.Gate`, Q-ARCH-291), `Authenticator` (the token handshake with the upstream: the format reads the 401 challenge and the realm's answer, the engine does the I/O and keeps the token per replica, `RemoteCaps.Auth`) and `Revalidator` (the format's own revalidation request, a `HEAD` for a registry, `RemoteCaps.Revalidate`; [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)); and, on the format itself, the optional `ServeFactsKeyer` (`Capabilities.ServeFacts`: the rows the serve check decides on, which the item lookup of a download reads with the item, Q-ARCH-291, [download-statements.md](download-statements.md)) and `VulnerabilityAdapter` (`Capabilities.Vulnerability`, R-VULN-009, [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)), from which `Register` also derives `catalog.Entry.Ecosystem`; a format's audit routes read the scanning through `Host.Vulnerabilities()` ([vulnerabilities.md](vulnerabilities.md)). The remote adapter must be a stable value, because the instance `Remote()` returned at `Register` is the one
 recorded. What the engine does with them is in [proxy.md](proxy.md#what-a-format-adds-to-the-engine).
 
 ## The request path of a format route
@@ -458,6 +458,12 @@ test of its own).
 
 The contract is frozen since the end of M3 (E3.3; version 1, and version 2 since the project model, ADR-156, [ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)): it only grows,
 and every change of its exported surface is an ADR (R-ARCH-025, Q-ARCH-256, Q-ARCH-280). Ordered steps for a new behaviour:
+
+The additions of [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)
+show the three kinds: `Host.Uploads()` and `Ingestor.Link` are services (the production host answers `not_implemented` until the
+work package of the sessions lands; the in-memory host implements `Link` and takes an `UploadSessions` in `HostOptions.Uploads`),
+`Authenticator` and `Revalidator` are optional interfaces, and `catalog.Facts.RegistryRoot`, `DefaultCredentialHosts`,
+`Refusal.Base` and `SetupData.ImagePrefix` are facts that every layer reads.
 
 1. Ask first whether it is a service a format calls (a method of `Host`, `PackageWriter` or a store): adding one breaks no format. Do that, with the in-memory twin in
    [store.go](../../internal/formats/formattest/store.go) and the production implementation in `internal/formathost`, and stop.

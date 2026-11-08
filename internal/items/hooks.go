@@ -3,6 +3,7 @@ package items
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/meta"
 )
@@ -82,6 +83,10 @@ type RemovedEvent struct {
 	Reason string
 	// Actor is the principal id behind the removal, "" for none.
 	Actor string
+	// By is the audit actor of the removal, the zero value for a removal without a request (a retention run, a trash purge, a job).
+	By audit.Actor
+	// Source is the source of the request behind the removal, the zero value for none.
+	Source audit.Source
 }
 
 // Hooks are the storage hooks of the formats, injected by the composition root

@@ -36,6 +36,8 @@ const CacheMetadataBytes = "proxy_metadata_bytes"
 type ItemStore interface {
 	Spool(ctx context.Context, body io.Reader, o items.IngestOptions) (*items.Spooled, error)
 	Commit(ctx context.Context, spec items.CommitSpec) (items.CommitResult, error)
+	// LinkIn links a file to a blob inside the transaction of a fill (Prepared.Aliases).
+	LinkIn(ctx context.Context, tx meta.Tx, spec items.CommitSpec, d blob.Digests) (items.CommitResult, error)
 	Live(ctx context.Context, repo items.RepoRef, path string) (items.Item, bool, error)
 	// Usable looks for the object of an item marked missing again, at most once per interval and blob (Q-STOR-153).
 	Usable(ctx context.Context, it items.Item) (items.Item, error)

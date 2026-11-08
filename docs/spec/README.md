@@ -159,8 +159,11 @@ stored in PostgreSQL.
 **INV-5 · Repository model.** Every repository belongs to exactly one project and has a key that is
 unique within its project, exactly one package format and one class: `local` (hosted), `remote` (pull-through proxy and cache of one upstream)
 or `virtual` (ordered aggregation of local and remote repositories of the same format, with one
-default deployment target). Federated repositories are not part of the MVP. Repository keys match
-`^[a-z0-9][a-z0-9._-]{1,63}$`, project keys `^[a-z][a-z0-9-]{1,31}$`. No repository is shared: a virtual repository lists
+default deployment target). Federated repositories are not part of the MVP. A repository key and a project key are
+path components of every container image reference, so both are components in the grammar of the OCI distribution
+specification ([Q-OCI-3](formats/oci.md#q-oci-3--repository-and-project-keys-follow-the-oci-component-grammar-for-every-format)):
+repository keys match `^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$` with 2 to 64 characters, project keys
+`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` with 2 to 32. No repository is shared: a virtual repository lists
 only repositories of its own project. Outside its project a repository is named `<projectKey>/<repoKey>`. Owner's
 decision of 2026-11-06 ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project),
 [authorization.md](authorization.md) R-AUTHZ-026); until then keys were unique in the installation.

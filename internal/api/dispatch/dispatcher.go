@@ -65,7 +65,9 @@ type Dispatcher struct {
 	keyed map[string]bool
 }
 
-// New creates the dispatcher over the formats that have routes.
+// New creates the dispatcher over the formats that have routes below /api/<id>/. The format that declares the registry root has
+// its routes below /v2/<project>/<key>/ ([catalog.Facts.RegistryRoot]); the mount of that prefix is the registry root's work
+// package, and until it exists such a format is served nowhere: its address is not /api/<id>/, so it must not answer there.
 func New(o Options) (*Dispatcher, error) {
 	switch {
 	case o.Host == nil:
@@ -81,7 +83,7 @@ func New(o Options) (*Dispatcher, error) {
 	d := &Dispatcher{o: o, formats: map[string]formats.Format{}, keyed: map[string]bool{}}
 	for _, f := range o.Formats() {
 		routes := f.Routes()
-		if len(routes) == 0 {
+		if len(routes) == 0 || f.Descriptor().RegistryRoot {
 			continue
 		}
 		id := string(f.Descriptor().ID)

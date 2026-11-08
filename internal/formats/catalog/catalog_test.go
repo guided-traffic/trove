@@ -189,3 +189,54 @@ func TestR_EP_018_ExposureFactsFailClosed(t *testing.T) {
 		t.Fatalf("exposure = %+v", e.Exposure)
 	}
 }
+
+// The registry root and the credential hosts are facts of the registration (Q-OCI-4, R-OCI-021): at most one format is the root of
+// a host, its base path is the registry's, and a host that receives credentials by default is one of the default extra hosts.
+func TestRegistryRootAndCredentialHostsAreChecked(t *testing.T) {
+	root := func(id string) Entry {
+		e := valid(id)
+		e.RegistryRoot, e.ProtocolBasePath = true, RegistryRootBasePath
+		return e
+	}
+	t.Run("a registry root is accepted once", func(t *testing.T) {
+		r := NewRegistry()
+		r.Register(root("probe-root"))
+		if e, ok := r.Lookup("probe-root"); !ok || !e.RegistryRoot {
+			t.Fatalf("entry = %+v", e)
+		}
+		defer func() {
+			if msg, _ := recover().(string); !strings.Contains(msg, "registry root") {
+				t.Fatalf("panic = %q", msg)
+			}
+		}()
+		r.Register(root("probe-root2"))
+	})
+	t.Run("the root has the base path of the registry", func(t *testing.T) {
+		e := root("probe-badbase")
+		e.ProtocolBasePath = "/api/probe-badbase/{project}/{key}/"
+		defer func() {
+			if recover() == nil {
+				t.Fatal("no panic")
+			}
+		}()
+		NewRegistry().Register(e)
+	})
+	t.Run("a format that is no root may have the base path of an API format", func(t *testing.T) {
+		e := valid("probe-api")
+		e.ProtocolBasePath = "/api/probe-api/{project}/{key}/"
+		NewRegistry().Register(e)
+	})
+	t.Run("a credential host is an extra host", func(t *testing.T) {
+		ok := valid("probe-cred")
+		ok.DefaultExtraHosts, ok.DefaultCredentialHosts = []string{"auth.example.com", "cdn.example.com"}, []string{"auth.example.com"}
+		NewRegistry().Register(ok)
+		bad := valid("probe-cred2")
+		bad.DefaultExtraHosts, bad.DefaultCredentialHosts = []string{"cdn.example.com"}, []string{"auth.example.com"}
+		defer func() {
+			if recover() == nil {
+				t.Fatal("no panic")
+			}
+		}()
+		NewRegistry().Register(bad)
+	})
+}

@@ -25,7 +25,9 @@ func TestEmbeddedSteps(t *testing.T) {
 		}
 		// A contract step is rare and named: it ships one release after the release that stopped using the
 		// object, or only loosens (Q-BAS-48), and a new one is added to this list on purpose.
-		contract := map[string]bool{"00033_bastion_kinds": true}
+		// 00056_key_grammar replaces the key checks of repositories and projects by the OCI component grammar (Q-OCI-3): a DROP, and a
+		// tightening that a release before the one it names would meet as a failing insert.
+		contract := map[string]bool{"00033_bastion_kinds": true, "00056_key_grammar": true}
 		for _, s := range steps {
 			if s.Phase != phaseExpand && !contract[s.Name] {
 				t.Errorf("%s: an unlisted contract step: the migrations are expand steps unless a decision says otherwise, got %s", s.Name, s.Phase)

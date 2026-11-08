@@ -48,10 +48,12 @@ type entry struct {
 	URL          string
 	ETag         string
 	LastModified time.Time
-	FetchedAt    time.Time
-	ValidatedAt  time.Time
-	ExpiresAt    time.Time
-	GoneAt       time.Time
+	// MediaType is the media type stored with a metadata entry ("" for none).
+	MediaType   string
+	FetchedAt   time.Time
+	ValidatedAt time.Time
+	ExpiresAt   time.Time
+	GoneAt      time.Time
 	// TTL is the remaining lifetime of a metadata entry on the database clock;
 	// zero or negative when it has expired.
 	TTL time.Duration
@@ -90,7 +92,7 @@ func (e *Engine) getEntry(ctx context.Context, repoID int64, path, variant strin
 			Kind: r.Kind, ItemID: r.ItemID, Size: r.BlobSize, URL: r.UpstreamUrl, ETag: r.UpstreamEtag,
 			LastModified: micro(r.LastModifiedUs), FetchedAt: micro(r.FetchedUs), ValidatedAt: micro(r.ValidatedUs),
 			ExpiresAt: micro(r.ExpiresUs), GoneAt: micro(r.GoneUs), TTL: time.Duration(r.TtlUs) * time.Microsecond,
-			ContentStatus: r.BlobContentStatus,
+			ContentStatus: r.BlobContentStatus, MediaType: r.MediaType,
 		}
 		copy(en.Digest[:], r.BlobSha256)
 		return nil

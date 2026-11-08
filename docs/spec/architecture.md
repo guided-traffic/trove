@@ -748,7 +748,7 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
 | `GET /{$}` | `302` to `/ui/`; only on an endpoint whose surface holds `ui` ([endpoints.md](endpoints.md) R-EP-005) |
 | anything else | `404` problem (R-ARCH-023) |
 
-- Format IDs match `^[a-z][a-z0-9-]{1,31}$` and MUST NOT match `^v[0-9]+$`, which is reserved for API
+- Format IDs have the shape of a project key and MUST NOT match `^v[0-9]+$`, which is reserved for API
   versions. Registering literal format segments keeps `/api/v1/` and the format routes free of
   ServeMux conflicts. A conflicting registration panics at start-up, so a collision cannot ship.
 - **One parser of repository addresses.** A repository is addressed inside its project
@@ -758,7 +758,7 @@ authorization declarations are looked up by the matched `http.Request.Pattern`
   limits of step 7 and the Bastion ([bastion.md](bastion.md) R-BAS-018) read the format, the project key, the repository
   key with its `~cache` suffix (R-REPO-032) and the rest of a protocol or raw-file path through one parser of the escaped
   path (`qname.ParseAddress`). A project or repository segment that holds `%`, or that does not match its key pattern
-  (project `^[a-z][a-z0-9-]{1,31}$`, [authorization.md](authorization.md) R-AUTHZ-026; repository INV-5), names no
+  (project `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$`, [authorization.md](authorization.md) R-AUTHZ-026; repository INV-5), names no
   repository: the request answers `404` `repository_not_found` without a query. A project that does not exist, or that
   the caller cannot see, answers exactly like a repository that does not exist
   ([authorization.md](authorization.md) R-AUTHZ-016). `~cache` belongs to the repository segment only.
@@ -1189,7 +1189,7 @@ const ContractVersion = 2
 // The types of other packages under the names a format spells them: one type each, no mirrors
 // (Q-ARCH-188, Q-ARCH-189). A format imports this package and nothing else of the core.
 type (
-	ID     = catalog.ID         // "npm", "nuget"; ^[a-z][a-z0-9-]{1,31}$, never ^v[0-9]+$
+	ID     = catalog.ID         // "npm", "nuget"; the shape of a project key (^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$, 2 to 32), never ^v[0-9]+$
 	Class  = catalog.Class      // "local", "remote", "virtual": a string, as stored and served
 	Action = authz.Action       // consts ActionRead, ActionAnnotate, ActionDeploy, ActionOverwrite, ActionDelete, ActionManage
 	Path   = repository.Cleaned // canonical repository path: Path ("" = root) and Folder
@@ -1254,7 +1254,7 @@ type Format interface {
 
 // Descriptor is what a format registers: the catalog facts (R-REPO-003) plus what only the contract needs.
 type Descriptor struct {
-	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ProtocolBasePath ("/api/<id>/{project}/{key}/" for a format with routes), ...
+	catalog.Facts                    // ID, DisplayName, Classes (the authoritative class matrix), Layout, ProtocolBasePath ("/api/<id>/{project}/{key}/" for a format with routes, "/v2/{project}/{key}/" for the one that sets RegistryRoot, Q-OCI-4), RegistryRoot, DefaultCredentialHosts, ...
 	ContractVersion  int             // the literal the format was written against; Register panics on a mismatch
 	Names            catalog.Names   // the one package-name normaliser; nil exactly when !PackageNames
 	Clients          []Client        // native clients and tested versions (FMT-002, FMT-003)
@@ -1281,6 +1281,7 @@ type Route struct {
 	Classes  []Class  // the classes that serve the route; empty is every class of the format
 	Match    func(escapedPath string) (Params, bool) // overrides the template for a grammar it cannot state
 	Handler  HandlerFunc
+	PackageParam string // the placeholder of Params that holds the package name the route acts on ("name" for OCI), "" for none; the core reads the package through it
 	APIKey   bool     // the route accepts a credential in the format's API-key header besides Authorization (NuGet X-NuGet-ApiKey, R-NUGET-012); examined only there, first (Q-ARCH-266)
 }
 
@@ -1308,7 +1309,7 @@ type Request struct {
 }
 
 // Refusal is what the dispatcher hands WriteError through the request it receives, once the repository's name is known
-// (Q-ARCH-263). Registry is Base + "/api/" + Format + "/" + Project + "/" + Key + "/".
+// (Q-ARCH-263). Registry is BaseURL followed by the format's protocol base path of the addressed repository, read from the catalog by Format.
 type Refusal struct {
 	Format  ID
 	Name    qname.Repo // as addressed: the project key and the key (without the "~cache" suffix)
@@ -1316,7 +1317,7 @@ type Refusal struct {
 	BaseURL string     // the response base URL without a trailing slash
 }
 
-func (f Refusal) Registry() string // BaseURL + "/api/" + Format + "/" + Project + "/" + Key + ("~cache" when CacheView) + "/"
+func (f Refusal) Registry() string // BaseURL + the catalog's ProtocolBasePath of Format with {project} and {key} filled (the key with "~cache" when CacheView), "/api/<id>/…" or the registry root's "/v2/…" (Q-OCI-4)
 func WithRefusal(r *http.Request, f Refusal) *http.Request
 func RefusalFrom(r *http.Request) (Refusal, bool)
 
@@ -1445,6 +1446,28 @@ type FactsGate interface {
 	BeforeArtifactWith(ctx context.Context, h Host, rq *Request, p Path, have ServeFacts) (Digests, ServeFacts, error)
 }
 
+// Authenticator (orig is the upstream request that was answered 401, whose URL carries the scope of a catalog or a tags list; p is its
+// repository path, the zero Path for the engine's Get, Query and Exchange): the upstream authenticates with a token handshake, the 401 challenge and the realm of a container
+// registry (R-OCI-021, Q-OCI-13). The format reads the protocol and the engine does the I/O: on a 401 for path p it asks
+// TokenRequest for the realm request (ok false: no handshake, the 401 stands), adds the repository's credential by the host
+// rule of R-REPO-033, sends the request through the repository's upstream client, hands the answer (bounded at 64 KiB) to
+// ReadToken and retries the original request once with the Authorization value it returns. key names the token in the
+// replica's cache, which the engine scopes by the repository id and its configuration version; a ttl of 0 is 60 s.
+type Authenticator interface {
+	TokenRequest(ctx context.Context, rc RemoteContext, orig *http.Request, p Path, status int, challenge http.Header) (req *http.Request, key string, ok bool, err error)
+	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
+}
+
+// Revalidator: an expired stored document is revalidated by a request of the format's own kind (OCI: a HEAD whose digest
+// header says whether a tag still points at the stored manifest, R-OCI-022). RevalidationRequest returns it (ok false: the
+// engine's conditional GET); Unchanged reads the answer: true renews the stored document's freshness without a body, false
+// makes the engine fetch the document. The engine reads a status that is not 2xx itself (401 runs the handshake, 404 and 410 are
+// "gone", 429 and 5xx follow the stale rules) and never asks. RemoteDocument carries the stored SHA-256 and media type for the comparison.
+type Revalidator interface {
+	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument) (req *http.Request, ok bool, err error)
+	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
+}
+
 // RemoteCaps are the optional interfaces Register found on a format's remote adapter; a field is nil for one the
 // adapter lacks. They are the Remote field of Capabilities, and RemoteCapabilities returns them by format ID.
 type RemoteCaps struct {
@@ -1452,6 +1475,8 @@ type RemoteCaps struct {
 	Fill      FillInspector
 	Mirror    MirrorLister
 	Gate      FactsGate
+	Auth       Authenticator // the token handshake with the upstream; nil for a format whose upstreams authenticate by the credential alone
+	Revalidate Revalidator   // the format's own revalidation request; nil for the engine's conditional GET
 }
 
 func RemoteCapabilities(id ID) RemoteCaps
@@ -1593,7 +1618,8 @@ type SetupTemplate struct {
 }
 
 // SetupData: RegistryURL, Repository, Endpoint, Variant (the variant of a configure snippet the request asked for, in the
-// words of the format: npm's scope without "@"), Username and RequiresAuth (the repository is not anonymously readable).
+// words of the format: npm's scope without "@"), ImagePrefix ("<host>/<projectKey>/<repoKey>" for the registry-root format, "" for
+// every other, Q-OCI-4), Username and RequiresAuth (the repository is not anonymously readable).
 // A template that needs the registry URL without its scheme, the key of a keyed credential line, derives it with the
 // template function schemeless (Q-ARCH-257).
 
@@ -1685,7 +1711,7 @@ func (f ViewFields) Has(o ViewFields) bool
 
 Supporting types of the blocks, named here so that the contract has no type the spec does not know
 (`TestR_ARCH_008_EveryExportedTypeOfTheContractIsNamedInTheSpec`): `PackageID` is the id of a package row;
-`URLMapping` (path and upstream URL) and `RemoteDocument` (a stored or fetched upstream document with its times and
+`URLMapping` (path and upstream URL) and `RemoteDocument` (a stored or fetched upstream document with its digest, size, media type, times and
 `CacheStatus`) are what a remote adapter reads and hands over; `Currency` says how current a document is after
 `EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version and the SHA-256 of its content (Q-NUGET-39); `ItemsEvent` is what the removal hook and the restore hook learn; `ShadowPair` names a
 virtual repository and the remote member that serves a package (R-REPO-048); `RemoteBase` gives a `RemoteAdapter` the
@@ -1737,8 +1763,9 @@ R-ARCH-025 says which changes keep the version (Q-ARCH-280).
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there are five: `ItemsRestorer` on the format, `Discoverer`,
-`FillInspector` and `MirrorLister` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284), and
+that assertion in `CapabilitiesOf` alone). Today there are seven: `ItemsRestorer` on the format, `Discoverer`,
+`FillInspector`, `MirrorLister`, `Authenticator` and `Revalidator` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284,
+[ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)), and
 `VulnerabilityAdapter` on the format (`Capabilities.Vulnerability`, R-VULN-009,
 [ADR-150](../decisions.md#adr-150--the-format-contract-gains-the-optional-vulnerability-adapter)). `MirrorLister` also
 derives the catalog fact `Entry.Mirror`, as the vulnerability adapter derives `Entry.Ecosystem`
@@ -1852,7 +1879,70 @@ type Host interface {
 	FormatData(id ID) any        // the data port bound to a format (Q-ARCH-193); nil without Descriptor.DataPort
 	RestoredAt(ctx context.Context) (time.Time, error) // system_state restored_at; zero until a restore ran
 	Vulnerabilities() VulnerabilityData // the scanning's data for the audit routes (R-VULN-017, R-VULN-018); NoVulnerabilityData until wired
+	Uploads() UploadSessions     // the multi-request upload sessions of R-STOR-011 (Q-OCI-12); every call answers not_implemented until they are built
 }
+
+// Ingestor.Link(ctx, rq, from SourceRef, Commit) (Committed, error) commits an item with the content of the item `from` names, with no
+// body (deploy by checksum, R-STOR-008): the mount of an OCI blob from another repository, the link step of a push through a virtual
+// repository, the tag item of a push by tag whose manifest is stored. SourceRef is the qualified name of the source's repository and a
+// path; the host resolves the repository by name (a virtual one through its members, in order) and checks, as the caller of the request,
+// that the item is a live untrashed file whose blob the store serves, that no finding blocks its version and that rq.Subject may read it;
+// anything else is errs.NotFound, the answer for an item that does not exist. Size and digests are those of the blob row; the call does not depend on storage.deploy_by_checksum.
+// It takes no companions. The commit rule stays: a companion goes with a lead that changed, so a push by tag commits the tag item as the
+// lead and the manifest item as its companion, or links the tag when the manifest is stored; a push by digest has the manifest as lead
+// (R-OCI-013).
+//
+// ItemsEvent.Cascade(ctx, paths ...string) error removes the files at the paths of the event's repository in the transaction of the
+// event and runs OnItemsRemoved again for them, as the actor of the removal or as the system actor "removal" when the removal had no
+// request (a retention run, the purge of the trash, a job): the hook of an OCI manifest removes its tags and the manifests nobody else
+// names from there. Route.PackageParam names the placeholder that holds the package of the route, so the core knows the image name
+// format-neutrally. EndpointFacts.Bound is true on a host whose root is bound to the repository, and LinkBuilder.ClientName gives the
+// name as that host's client spells it. Prepared.Aliases are further paths the fetched document is entered under as artifacts in the
+// fill transaction (R-OCI-022).
+
+// The serve-facts kind OCILocal (formats.ServeOCILocal) and Facts.OCIManifest: the item lookup of a download returns the manifest row and
+// whether a tombstone withholds the item's digest in its one statement (R-ARCH-027, Q-OCI-33). ItemsEvent.Cascade follows the reason of
+// its event once the trash can exists. LinkBuilder.ClientName is called with the addressed request, not one derived through Member.
+
+// SessionRef names a session in a call: its id and the binding the format started it with. Every call repeats both.
+type SessionRef struct {
+	ID      uuid.UUID
+	Binding string
+}
+
+// UploadSessions is the port of R-STOR-011 as a format reaches it. The host decides on every call that the principal is the session's,
+// that the binding is the one the session was started with, and that deploy is still allowed on the session's Target; whatever is wrong
+// (another principal or binding, an unknown, expired or finished session, a permission that is gone) is errs.NotFound (OCI
+// BLOB_UPLOAD_UNKNOWN). Start validates target: rq.Repo for a local repository, the deployment target of rq.Repo for a virtual one.
+type UploadSessions interface {
+	Start(ctx context.Context, rq *Request, target RepoRef, binding string) (UploadSession, error)
+	Get(ctx context.Context, rq *Request, ref SessionRef) (UploadSession, error)
+	// Append: an offset below zero appends at the received count; an offset other than the received count, and a claim another request
+	// holds, is an *errs.Error of kind RangeNotSatisfiable (416). received is the recorded count after the call, also on that error, so
+	// the format renders Range from a typed value.
+	Append(ctx context.Context, rq *Request, ref SessionRef, offset int64, body io.Reader) (received int64, err error)
+	// Finalize: a digest other than the computed one is an error of kind Invalid and keeps the session open.
+	Finalize(ctx context.Context, rq *Request, ref SessionRef, sha256 [32]byte, last io.Reader, c Commit) (Committed, error)
+	Abort(ctx context.Context, rq *Request, ref SessionRef) error
+}
+
+type UploadSession struct {
+	ID       uuid.UUID
+	Target   RepoRef // the repository the session writes to
+	Binding  string  // the string the session was started with
+	Received int64   // the byte count recorded so far
+	PartSize int64   // storage.uploads.part_size, fixed when the session started
+}
+
+// discover.Upstream (the leaf internal/mirror/discover) gains Artifact(ctx, path string, max int64) (body []byte, found bool, err error):
+// it fills an artifact of the repository through the format's gate and the remote engine as the host's Fill does for a plan item
+// (a background request of the pass, counted as an item it stored) and returns the stored bytes when they are at most max; found is
+// false when the upstream does not have it. An artifact above max is filled and counted all the same and answers found true with a nil
+// body, so the plan can tell "stored, too large to read" from "not there" (R-OCI-026, Q-OCI-16).
+//
+// catalog.Facts gains RegistryRoot (the one format whose client address is the root of a host: ProtocolBasePath is
+// catalog.RegistryRootBasePath, "/v2/{project}/{key}/"; the catalog refuses a second format that declares it, Q-OCI-4) and
+// DefaultCredentialHosts (the entries of DefaultExtraHosts proposed with sendCredentials: true; each must be among them, R-OCI-021).
 
 type PackageStore interface {
 	Package(ctx context.Context, repo RepoRef, name string) (PackageRow, bool, error)

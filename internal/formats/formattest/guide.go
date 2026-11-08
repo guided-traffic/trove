@@ -151,9 +151,9 @@ func (r *run) guideCoverage(secs []formats.GuideSection, class formats.Class, cl
 func (r *run) guideVariants(class formats.Class, client string) []formats.GuideData {
 	var out []formats.GuideData
 	for _, key := range []string{"main", ""} {
-		registry := DefaultBaseURL + "/api/" + string(r.d.ID) + "/" + key + "/"
+		registry := DefaultBaseURL + strings.NewReplacer("{project}", "main", "{key}", key).Replace(r.d.ProtocolBasePath)
 		if key == "" {
-			registry = DefaultBaseURL + "/api/" + string(r.d.ID) + "/" + formats.GuideProjectPlaceholder + "/" + formats.GuideRepositoryPlaceholder + "/"
+			registry = DefaultBaseURL + strings.NewReplacer("{project}", formats.GuideProjectPlaceholder, "{key}", formats.GuideRepositoryPlaceholder).Replace(r.d.ProtocolBasePath)
 		}
 		targets := []string{""}
 		if key != "" && class != formats.Remote {
@@ -164,7 +164,7 @@ func (r *run) guideVariants(class formats.Class, client string) []formats.GuideD
 				for _, rules := range []bool{false, true} {
 					out = append(out, formats.GuideData{
 						SetupData: formats.SetupData{
-							RegistryURL: registry, Repository: key, Endpoint: "default",
+							RegistryURL: registry, ImagePrefix: imagePrefix(r.d, registry), Repository: key, Endpoint: "default",
 							RequiresAuth: !anonymous,
 						},
 						Class: class, Client: client, PublishTarget: target, Anonymous: anonymous,
@@ -206,4 +206,14 @@ func fencedCode(md string) []string {
 		out = append(out, strings.Join(cur, "\n"))
 	}
 	return out
+}
+
+// imagePrefix is SetupData.ImagePrefix of the registry URL: the host and the path below "/v2" for the registry-root
+// format, "" for every other.
+func imagePrefix(d formats.Descriptor, registry string) string {
+	if !d.RegistryRoot {
+		return ""
+	}
+	rest := strings.TrimPrefix(registry, DefaultBaseURL)
+	return strings.TrimPrefix(DefaultBaseURL, "https://") + strings.TrimSuffix(strings.TrimPrefix(rest, "/v2"), "/")
 }

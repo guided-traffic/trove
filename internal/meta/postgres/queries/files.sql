@@ -16,7 +16,8 @@
 -- too, for the key the caller names (internal/servefacts): facts_kind is '' for a caller that needs none, and the part of the
 -- statement of another kind reads nothing. The tombstone of npm and NuGet, the NuGet version row and the facts of an npm
 -- remote version are the statements NPMTombstoned, NuGetServeState and NPMRemoteTarballFacts, which the check still runs
--- itself when the facts were not read for its key. entry_probe asks whether the cache entry of a remote repository's artifact
+-- itself when the facts were not read for its key. For an OCI repository (oci_local) the tombstone and the manifest row are those of
+-- the image name facts_package and of the digest the item's blob is. entry_probe asks whether the cache entry of a remote repository's artifact
 -- exists at the item's path (variant entry_variant) and is not marked gone: the remote hit is the item and its entry.
 SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.media_type,
        i.declared_sha256, i.declared_sha512, i.declared_sha1, i.declared_md5, i.declared_mismatch,
@@ -30,7 +31,7 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
        COALESCE(blk.advisory_id, '')::text AS block_advisory_id,
        COALESCE(blk.kind, '')::text AS block_kind,
        COALESCE(blk.status, '')::text AS block_status,
-       (CASE WHEN sqlc.arg(facts_kind)::text IN ('npm_local', 'npm_remote', 'nuget_local') THEN sqlc.arg(facts_kind)::text ELSE '' END)::text AS fact_kind,
+       (CASE WHEN sqlc.arg(facts_kind)::text IN ('npm_local', 'npm_remote', 'nuget_local', 'oci_local') THEN sqlc.arg(facts_kind)::text ELSE '' END)::text AS fact_kind,
        (CASE sqlc.arg(facts_kind)::text
             WHEN 'npm_local' THEN EXISTS (
                 SELECT 1 FROM npm_tombstones t
@@ -38,7 +39,13 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
             WHEN 'nuget_local' THEN EXISTS (
                 SELECT 1 FROM nuget_tombstone t
                  WHERE t.repository_id = i.repo_id AND t.lower_id = sqlc.arg(facts_package)::text AND t.lower_version = sqlc.arg(facts_version)::text)
+            WHEN 'oci_local' THEN EXISTS (
+                SELECT 1 FROM oci_tombstones t
+                 WHERE t.repo_id = i.repo_id AND t.name = sqlc.arg(facts_package)::text AND t.digest = i.blob_sha256)
             ELSE false END)::boolean AS fact_tombstoned,
+       (sqlc.arg(facts_kind)::text = 'oci_local' AND EXISTS (
+            SELECT 1 FROM oci_manifests m
+             WHERE m.repo_id = i.repo_id AND m.name = sqlc.arg(facts_package)::text AND m.digest = i.blob_sha256))::boolean AS fact_oci_manifest,
        (ngv.listed IS NOT NULL)::boolean AS fact_nuget_stored,
        COALESCE(ngv.listed, false)::boolean AS fact_nuget_listed,
        COALESCE(nf.known, false)::boolean AS fact_npm_known,

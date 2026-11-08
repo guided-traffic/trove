@@ -297,6 +297,12 @@ func (u *passUpstream) Document(ctx context.Context, path, variant string) ([]by
 	return b, true, nil
 }
 
+// Artifact implements [discover.Upstream]. The fill of an artifact through the gate is the work package of the OCI mirror
+// (R-OCI-026); until it is built the call answers not_implemented, so that no format meets a silent no-op.
+func (u *passUpstream) Artifact(context.Context, string, int64) ([]byte, bool, error) {
+	return nil, false, errs.E(errs.NotImplemented, errs.CodeNotImplemented, "Filling an artifact on behalf of a format's plan is not built yet.")
+}
+
 // mapBackground turns the outcomes of a background request into the errors the mirror engine reads (mirror.Host): a
 // pre-emption wraps mirror.ErrPreempted, a request the shutdown cancelled wraps mirror.ErrShuttingDown, an open circuit and a
 // refused spool admission are a *mirror.WaitError, and a rate-limit answer is left as it is (discover.AsRateLimited finds it). Any

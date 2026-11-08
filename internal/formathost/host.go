@@ -20,6 +20,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastionmain"
+	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/items"
@@ -33,6 +34,7 @@ import (
 type ItemOps interface {
 	Spool(ctx context.Context, body io.Reader, o items.IngestOptions) (*items.Spooled, error)
 	Commit(ctx context.Context, spec items.CommitSpec) (items.CommitResult, error)
+	CommitLinked(ctx context.Context, spec items.CommitSpec, d blob.Digests) (items.CommitResult, error)
 	Live(ctx context.Context, repo items.RepoRef, path string) (items.Item, bool, error)
 	Open(ctx context.Context, it items.Item, rng *items.Range) (io.ReadCloser, error)
 	Usable(ctx context.Context, it items.Item) (items.Item, error)
@@ -63,6 +65,9 @@ type Deps struct {
 	// Refusal decides the remote refusal of a name a global claim covers (R-REPO-023).
 	Refusal RemoteRefuser
 	Signals Signaler
+	// Remover gives the item store that a storage hook removes through ([formats.ItemsEvent.Cascade]). It is a function because
+	// the hooks are built before the item store, which takes them; nil, or a nil answer, makes Cascade fail.
+	Remover func() ItemRemover
 }
 
 // Options configure [New].
@@ -138,6 +143,9 @@ func New(o Options) (*Host, error) {
 // Ingest implements [formats.Host].
 func (h *Host) Ingest() formats.Ingestor { return ingestor{h: h} }
 
+// Uploads implements [formats.Host]: the upload sessions of R-STOR-011.
+func (h *Host) Uploads() formats.UploadSessions { return unsupportedUploads{} }
+
 // Items implements [formats.Host].
 func (h *Host) Items() formats.ItemStore { return itemStore{h: h} }
 
@@ -162,7 +170,18 @@ func (h *Host) RestoredAt(ctx context.Context) (time.Time, error) {
 }
 
 // Links implements [formats.Host].
-func (h *Host) Links(rq *formats.Request) formats.LinkBuilder { return newLinks(rq) }
+func (h *Host) Links(rq *formats.Request) formats.LinkBuilder {
+	return newLinks(rq, h.protocolBase(rq.Repo.Format))
+}
+
+// protocolBase is the protocol base path template of a registered format: "/api/<id>/{project}/{key}/", or the registry
+// root's "/v2/{project}/{key}/". The dispatcher only routes a request to a registered format.
+func (h *Host) protocolBase(id string) string {
+	if f, ok := h.o.Formats(id); ok {
+		return f.Descriptor().ProtocolBasePath
+	}
+	return "/api/" + id + "/{project}/{key}/"
+}
 
 // coordinate completes a target into the coordinate the decision point decides:
 // the repository, its class and format and the request kind of the route come from

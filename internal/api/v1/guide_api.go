@@ -69,7 +69,8 @@ func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKe
 		Format: f, Class: repo.Class, Client: client, Anonymous: acc.Subject.Anonymous, ExposureRules: exposureRules(ctx),
 		TokenEnvVar: ps.TokenEnvVar, MayPublish: mayPublish,
 		Data: formats.SetupData{
-			RegistryURL: registry, Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
+			RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint,
+			RequiresAuth: requiresAuth,
 		},
 	}
 	if target != nil {
@@ -117,7 +118,7 @@ func formatGuide(ctx context.Context, ps PackageServices, format string, class f
 	sub := SubjectFrom(ctx)
 	return renderGuide(ps.Guides, guideInput{
 		Format: f, Class: class, Client: client, Anonymous: sub.Anonymous, ExposureRules: exposureRules(ctx), TokenEnvVar: ps.TokenEnvVar,
-		Data: formats.SetupData{RegistryURL: registry, Endpoint: sub.Endpoint, RequiresAuth: true},
+		Data: formats.SetupData{RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Endpoint: sub.Endpoint, RequiresAuth: true},
 	})
 }
 

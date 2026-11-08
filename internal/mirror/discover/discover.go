@@ -160,6 +160,13 @@ type Upstream interface {
 	// (R-REPO-025 steps 4 to 10): the stored copy while it is fresh, else revalidated or fetched and stored. found is
 	// false when the upstream does not have it (404, 410) or it is gone (R-REPO-029); the format then plans nothing for it.
 	Document(ctx context.Context, path, variant string) (doc []byte, found bool, err error)
+	// Artifact fills an artifact of the repository through the format's gate and the remote engine as the host's Fill does
+	// for a plan item: a background request of the pass, counted as an item it stored (R-REPO-051, R-REPO-054). It returns
+	// the stored bytes when they are at most max; found is false when the upstream does not have the artifact (R-OCI-026). An artifact above max
+	// is filled and counted all the same and answers found true with a nil body: the plan tells "stored, too large to read" from "not there".
+	// A format whose plan names a document that is itself an artifact - an image index's manifests - reads it with this call
+	// before it plans what the index names.
+	Artifact(ctx context.Context, path string, max int64) (body []byte, found bool, err error)
 }
 
 // Lister is the optional interface of a format's remote adapter whose upstream packages can be discovered (ADR-152).

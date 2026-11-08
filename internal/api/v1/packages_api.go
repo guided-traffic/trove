@@ -607,8 +607,8 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey qname.
 	snippets, err := renderSnippets(setupInput{
 		Templates: templates, Client: p.Client, Credentials: creds, TokenEnvVar: ps.TokenEnvVar,
 		Data: formats.SetupData{
-			RegistryURL: registry, Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
-			Bastion: bastion,
+			RegistryURL: registry, ImagePrefix: imagePrefix(f, registry), Repository: repoKey.String(), Endpoint: acc.Subject.Endpoint,
+			RequiresAuth: requiresAuth, Bastion: bastion,
 		},
 		Package: values["package"], Version: values["version"], Scope: scopeName, MayPublish: mayPublish,
 	})
@@ -693,6 +693,19 @@ func placeholderAddress(ctx context.Context, f formats.Format, what string) (reg
 		return "", "", errs.Wrap(err, "api.setupAddress")
 	}
 	return registry, "//" + u.Host + u.Path, nil
+}
+
+// imagePrefix is SetupData.ImagePrefix: "<host>/<projectKey>/<repoKey>" for the format that declares the registry root, derived from
+// its registry URL by dropping the scheme and the "/v2" prefix; "" for every other format.
+func imagePrefix(f formats.Format, registry string) string {
+	if !f.Descriptor().RegistryRoot {
+		return ""
+	}
+	u, err := url.Parse(registry)
+	if err != nil {
+		return ""
+	}
+	return u.Host + strings.TrimSuffix(strings.TrimPrefix(u.Path, "/v2"), "/")
 }
 
 // registryAt is setupAddress over a base URL that is already decided.

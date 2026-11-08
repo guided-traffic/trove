@@ -1543,7 +1543,9 @@ R-NUGET-033). An entry declares `journal: revocation` when its event does one of
 - withdraws published content that a restore would otherwise bring back (npm: `npm.unpublish`,
   [formats/npm.md](formats/npm.md) Q-NPM-12);
 - reserves or withdraws version numbers (NuGet: `package.published` and `package.deleted` of local
-  repositories, [formats/nuget.md](formats/nuget.md) Q-NUGET-10, R-NUGET-033).
+  repositories, [formats/nuget.md](formats/nuget.md) Q-NUGET-10, R-NUGET-033);
+- withdraws an OCI manifest that a restore would otherwise serve again (`oci.manifest.deleted`,
+  [formats/oci.md](formats/oci.md) R-OCI-033).
 
 Every other entry leaves the attribute out. Only an entry with audit mode `transactional` may
 declare it, because the journal row is written in the transaction of the change (R-OPS-015).
@@ -1860,6 +1862,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `proxy.egress_denied` | A | — | Security event: the egress address policy refused the upstream's address; at most once a minute per repository and host (R-REPO-038) | `host` |
 | `package.published` | T | yes | A package version was accepted (npm publish, NuGet push). Journal flag with `journal_entry: optional` (R-OPS-014): journaled for local NuGet repositories only ([formats/nuget.md](formats/nuget.md) R-NUGET-033) | `package`, `version`, `files` |
 | `package.deleted` | T | yes | A package version was deleted or unpublished. Journal flag with `journal_entry: optional`, as for `package.published` | `package`, `version` |
+| `oci.manifest.deleted` | T | yes | A manifest of an OCI image name was deleted, with the cascade of [formats/oci.md](formats/oci.md) R-OCI-018. Journal flag with a required entry `{"repository", "name", "digest"}`, so a restore withholds the image (R-OCI-033, Q-OCI-30); the replay handler is built with the deletion | `name`, `digest`, `deleted` |
 | `npm.reinstate` | T | — | `trove admin npm reinstate` put back a version that a journal replay had withheld ([formats/npm.md](formats/npm.md) R-NPM-044, R-NPM-047); not journaled, because it restores access rather than removing it | `package`, `version`, `integrity`, `journal_entry` (the entry that withheld it) |
 | `package.metadata_changed` | T | yes | Deprecate, undeprecate, unlist, relist, dist-tag set or removed | `package`, `version`, `change` |
 | `artifact.deployed` | T | yes | A file was stored in a local repository by any upload path | `path`, `sha256`, `size`, `overwritten` |

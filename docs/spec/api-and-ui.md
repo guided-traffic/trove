@@ -452,7 +452,7 @@ R-UI-045); API text stays English.
   "code": "validation_failed",
   "requestId": "4bf92f3577b34da6a3ce929d0e0e4736",
   "errors": [
-    {"pointer": "/key", "code": "pattern", "detail": "must match ^[a-z0-9][a-z0-9._-]{1,63}$"}
+    {"pointer": "/key", "code": "pattern", "detail": "must match ^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$"}
   ]
 }
 ```
@@ -4257,7 +4257,7 @@ the model gives the screens:
 - Start page: key, display name, description, the caller's role (for a member), the number of repositories and of members.
   The admin area's list of projects (`/admin/projects`, `projects:read`) keeps the owners, has a column with the logical size the project is
   charged (`logicalBytes`, [R-STOR-049](storage.md#r-stor-049--the-storage-of-a-project)) and creates and edits projects.
-- Create dialog (administrators, `projects:write`): key (`^[a-z][a-z0-9-]{1,31}$`, immutable), display name,
+- Create dialog (administrators, `projects:write`): key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$`, immutable), display name,
   description, and the first Owner; repositories are created in the project afterwards. Edit dialog: display name and
   description, for administrators and the project's Owners. Delete is offered to administrators only, and only for
   projects without repositories, service accounts and CI mappings.

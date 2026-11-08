@@ -43,6 +43,7 @@ func (c *Config) Validate(r *Report) {
 	c.ValidateAuthz(r)
 	c.validateNPMCoupling(r)
 	c.validateNuGetCoupling(r)
+	c.validateOCICoupling(r)
 	c.validateUICoupling(r)
 	c.validateCI(r)
 	c.validateBackupCoupling(r)

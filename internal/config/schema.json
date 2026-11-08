@@ -2735,6 +2735,28 @@
       },
       "type": "object"
     },
+    "oci": {
+      "additionalProperties": false,
+      "properties": {
+        "token_lifetime": {
+          "default": "5m",
+          "description": "Lifetime of a registry token (R-OCI-005); never beyond the expiry of the trove token it was issued for. A longer lifetime keeps a revoked permission alive longer (the bound of R-AUTH-023 applies to the trove token, not to this one).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_OCI_TOKEN_LIFETIME",
+          "x-trove-type": "duration"
+        },
+        "unreferenced_blob_grace": {
+          "default": "24h",
+          "description": "Age a blob of an image name must have before the sweep removes it for being referenced by no manifest of the name (R-OCI-019); must exceed storage.uploads.session_max_age, so a blob pushed before its manifest is never taken.",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+          "type": "string",
+          "x-trove-env": "TROVE_OCI_UNREFERENCED_BLOB_GRACE",
+          "x-trove-type": "duration"
+        }
+      },
+      "type": "object"
+    },
     "process": {
       "additionalProperties": false,
       "properties": {

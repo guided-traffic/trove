@@ -223,7 +223,7 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 		if err != nil {
 			return err
 		}
-		ev := RemovedEvent{Repo: repo, Reason: "delete", Actor: actorID(w.actor), Items: make([]Removed, len(removed))}
+		ev := RemovedEvent{Repo: repo, Reason: "delete", Actor: actorID(w.actor), By: w.actor, Source: w.source, Items: make([]Removed, len(removed))}
 		for j, r := range removed {
 			ev.Items[j] = Removed{Item: Ref{ID: r.ID, Repo: repo, Path: r.Path}, Size: r.Size.Int64, Version: r.VersionID}
 			copy(ev.Items[j].Digest[:], r.BlobSha256)

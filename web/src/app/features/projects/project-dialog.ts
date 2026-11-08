@@ -51,7 +51,7 @@ export interface ProjectDialogData {
           [readonly]="existing() !== null"
           [error]="keyError()"
           i18n-hint="@@project-dialog.key-hint"
-          hint="Lower-case letters, digits and -, two to 32 characters, starting with a letter. Cannot be changed later."
+          hint="Lower-case letters, digits and -, two to 32 characters, starting with a letter and ending with a letter or digit. Cannot be changed later."
         />
         <trove-text-field
           i18n-label="@@project-dialog.display-name"
