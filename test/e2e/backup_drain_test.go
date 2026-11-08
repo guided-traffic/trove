@@ -11,9 +11,97 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// podLog follows the log of a pod from its start, so a test can act on a line the moment it appears and can read what the pod said
+// after it is gone.
+type podLog struct {
+	mu   sync.Mutex
+	text strings.Builder
+	done chan struct{}
+}
+
+func (l *podLog) Write(b []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text.Write(b)
+}
+
+func (l *podLog) has(s string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Contains(l.text.String(), s)
+}
+
+func (l *podLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.text.String()
+}
+
+// followPodLog runs `kubectl logs -f` on the pod, again until the container has started.
+func followPodLog(ns, pod string) *podLog {
+	l := &podLog{done: make(chan struct{})}
+	go func() {
+		defer close(l.done)
+		for range 240 {
+			cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", ns, "logs", "-f", "--all-containers", pod)
+			cmd.Stdout, cmd.Stderr = l, l
+			_ = cmd.Run()
+			if l.has("restore checks passed") || l.has("backup run started") {
+				return
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+	return l
+}
+
+// await polls the log every 20 ms for the text.
+func (l *podLog) await(t testing.TB, text string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for !l.has(text) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the log did not say %q within %s:\n%s", text, within, tail(l.String(), 2000))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// restoreCopyStarted waits for the first restore pod of the Job and returns its log once the blob copy (step 2 of R-BAK-021, after the
+// schema step) has begun, with nothing yet said about its end. The restore logs no progress of the copy, so the start line and the
+// absence of the end line are the bounds; the copy is widened by many small objects (below), and the caller checks after the
+// disturbance that the pod never reached "blobs copied" (copyInterrupted).
+func restoreCopyStarted(t *testing.T) (pod string, l *podLog) {
+	t.Helper()
+	waitFor(t, "the restore pod", 3*time.Minute, 500*time.Millisecond, func() bool {
+		pod = bakPodOf(t, restoreNS, "trove-restore")
+		return pod != ""
+	})
+	l = followPodLog(restoreNS, pod)
+	l.await(t, "schema at the backup's step", 3*time.Minute)
+	if l.has("blobs copied") {
+		t.Fatalf("the blob copy of %s ended before the test could disturb it:\n%s", pod, tail(l.String(), 1500))
+	}
+	return pod, l
+}
+
+// copyInterrupted fails unless the pod ended without ever saying that the blob copy was done: the disturbance landed in the copy.
+func copyInterrupted(t *testing.T, pod string, l *podLog) {
+	t.Helper()
+	select {
+	case <-l.done:
+	case <-time.After(2 * time.Minute):
+		t.Fatalf("the log of %s did not end after the disturbance", pod)
+	}
+	if l.has("blobs copied") {
+		t.Fatalf("the restore pod %s finished its blob copy before the disturbance reached it (it did not interrupt anything):\n%s", pod, tail(l.String(), 1500))
+	}
+}
 
 // bakWorkerNodes lists the worker nodes of the cluster.
 func bakWorkerNodes(t testing.TB) []string {
@@ -101,6 +189,15 @@ func TestBackupDrain(t *testing.T) {
 			return bakPutFile(adm, fmt.Sprintf("drain-%s/%02d.bin", run, i), randomBytes(1<<20))
 		}); err != nil || r.Status != 201 {
 			t.Fatalf("file %d: %v %s", i, err, r)
+		}
+	}
+	// many small objects: the restore streams them one at a time (a request each way per object), so its blob copy lasts seconds on any runner,
+	// where a few large files copy in a blink; the restore has no rate limit to set
+	for i := range 500 {
+		if r, err := retrying(func() (reply, error) {
+			return bakPutFile(adm, fmt.Sprintf("drain-%s/small/%03d.bin", run, i), randomBytes(4<<10))
+		}); err != nil || r.Status != 201 {
+			t.Fatalf("small file %d: %v %s", i, err, r)
 		}
 	}
 	slow := func(prefix string) map[string]string {
@@ -192,11 +289,10 @@ func TestBackupDrain(t *testing.T) {
 			}
 		}
 		restoreWith(t, "0")
-		bakWaitLog(t, restoreNS, "trove-restore", "restore checks passed", 3*time.Minute)
-		if got := podNode(t, restoreNS, bakPodOf(t, restoreNS, "trove-restore")); got != node {
+		pod, rlog := restoreCopyStarted(t)
+		if got := podNodeIfAny(restoreNS, pod); got != node {
 			t.Fatalf("the restore pod runs on %s, not on %s", got, node)
 		}
-		time.Sleep(4 * time.Second) // into step 3
 		start := time.Now()
 		drain := exec.Command("kubectl", "--context", cfg.kubeContext, "drain", node, "--ignore-daemonsets", "--delete-emptydir-data", "--timeout=5m")
 		var drainOut strings.Builder
@@ -216,6 +312,7 @@ func TestBackupDrain(t *testing.T) {
 		if err := drain.Wait(); err != nil {
 			t.Fatalf("kubectl drain: %v\n%s", err, tail(drainOut.String(), 1500))
 		}
+		copyInterrupted(t, pod, rlog)
 		t.Logf("the drain of %s finished in %s while the restore copied blobs", node, time.Since(start).Round(time.Second))
 		end := bakWaitJob(t, restoreNS, "trove-restore", 20*time.Minute)
 		if end.Condition != "Complete" {
@@ -230,12 +327,11 @@ func TestBackupDrain(t *testing.T) {
 	t.Run("R-BAK-021 kill -9 of the restore pod during the blob copy: the next pod resumes and the Job completes", func(t *testing.T) {
 		restoreNSScript(t, "infra")
 		restoreWith(t, "2")
-		bakWaitLog(t, restoreNS, "trove-restore", "restore checks passed", 3*time.Minute)
-		time.Sleep(4 * time.Second)
-		pod := bakPodOf(t, restoreNS, "trove-restore")
+		pod, rlog := restoreCopyStarted(t)
 		if out, err := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", restoreNS, "delete", "pod", pod, "--grace-period=0", "--force").CombinedOutput(); err != nil {
 			t.Fatalf("kill %s: %v: %s", pod, err, out)
 		}
+		copyInterrupted(t, pod, rlog)
 		end := bakWaitJob(t, restoreNS, "trove-restore", 20*time.Minute)
 		if end.Condition != "Complete" {
 			t.Fatalf("the restore Job ended %s (exits %v):\n%s", end.Condition, end.Exits, tail(bakJobLogs(restoreNS, "trove-restore"), 2500))
