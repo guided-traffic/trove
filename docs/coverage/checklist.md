@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 515 of 765 spec requirements are implemented: a passing test names them and no
+**Status.** 522 of 765 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 773 specified (377 of them implemented), 1,466 open.
+**Totals.** 2,239 catalog features on 60 pages: 773 specified (388 of them implemented), 1,466 open.
 765 spec requirements: 603 cover catalog features, 162 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -49,8 +49,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 36 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 35 |
-| [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 33 | 19 | 17 |
-| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 14 | 6 | 8 |
+| [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 33 | 19 | 25 |
+| [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 14 | 6 | 11 |
 | [Helm chart format](#helm-chart-format-pkg-helm) | `PKG-HELM` | 25 | – | 0 | 25 | 0 |
 | [Maven package format](#maven-package-format-pkg-maven) | `PKG-MAVEN` | 39 | – | 0 | 39 | 0 |
 | [PyPI package format](#pypi-package-format-pkg-pypi) | `PKG-PYPI` | 29 | – | 0 | 29 | 0 |
@@ -1906,7 +1906,7 @@ Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by p
 Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by priority: P1 28 of 34 · P2 5 of 13 · Later 0 of 3 · Out of scope 0 of 2
 
 <details>
-<summary>52 features: 33 specified, 19 open, 17 implemented</summary>
+<summary>52 features: 33 specified, 19 open, 25 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1926,12 +1926,12 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 | PKG-DOCKER-014 | Docker client login through an OAuth session | P2 | open | – |
 | PKG-DOCKER-015 | Image pull credentials for Kubernetes | P1 | implemented | [R-OCI-004](../spec/formats/oci.md) (implemented), [R-OCI-030](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-016 | Registry HTTP API v2 | P1 | specified | [R-OCI-001](../spec/formats/oci.md), [R-OCI-003](../spec/formats/oci.md) (implemented), [R-OCI-008](../spec/formats/oci.md) (implemented) |
-| PKG-DOCKER-017 | Pulling images | P1 | specified | [R-OCI-006](../spec/formats/oci.md) (implemented), [R-OCI-009](../spec/formats/oci.md) (implemented), [R-OCI-010](../spec/formats/oci.md) (implemented), [R-OCI-022](../spec/formats/oci.md), [R-OCI-023](../spec/formats/oci.md) |
-| PKG-DOCKER-018 | Pushing image layers | P1 | specified | [R-OCI-006](../spec/formats/oci.md) (implemented), [R-OCI-011](../spec/formats/oci.md), [R-OCI-028](../spec/formats/oci.md) (implemented) |
-| PKG-DOCKER-019 | Layer deduplication | P1 | specified | [R-OCI-007](../spec/formats/oci.md) (implemented), [R-OCI-012](../spec/formats/oci.md), [R-OCI-019](../spec/formats/oci.md) (implemented), [R-OCI-023](../spec/formats/oci.md) |
+| PKG-DOCKER-017 | Pulling images | P1 | implemented | [R-OCI-006](../spec/formats/oci.md) (implemented), [R-OCI-009](../spec/formats/oci.md) (implemented), [R-OCI-010](../spec/formats/oci.md) (implemented), [R-OCI-022](../spec/formats/oci.md) (implemented), [R-OCI-023](../spec/formats/oci.md) (implemented) |
+| PKG-DOCKER-018 | Pushing image layers | P1 | implemented | [R-OCI-006](../spec/formats/oci.md) (implemented), [R-OCI-011](../spec/formats/oci.md) (implemented), [R-OCI-028](../spec/formats/oci.md) (implemented) |
+| PKG-DOCKER-019 | Layer deduplication | P1 | implemented | [R-OCI-007](../spec/formats/oci.md) (implemented), [R-OCI-012](../spec/formats/oci.md) (implemented), [R-OCI-019](../spec/formats/oci.md) (implemented), [R-OCI-023](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-020 | Pushing manifests and tags | P1 | implemented | [R-OCI-013](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-021 | Blocking schema-1 manifests | P1 | implemented | [R-OCI-013](../spec/formats/oci.md) (implemented) |
-| PKG-DOCKER-022 | Catalog and tag listing | P1 | specified | [R-OCI-003](../spec/formats/oci.md) (implemented), [R-OCI-015](../spec/formats/oci.md) (implemented), [R-OCI-017](../spec/formats/oci.md) (implemented), [R-OCI-024](../spec/formats/oci.md) |
+| PKG-DOCKER-022 | Catalog and tag listing | P1 | implemented | [R-OCI-003](../spec/formats/oci.md) (implemented), [R-OCI-015](../spec/formats/oci.md) (implemented), [R-OCI-017](../spec/formats/oci.md) (implemented), [R-OCI-024](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-023 | Manifest lists and image indexes | P1 | implemented | [R-OCI-014](../spec/formats/oci.md) (implemented), [R-OCI-031](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-024 | Operating-system-qualified tag on platform-specific push | P2 | open | – |
 | PKG-DOCKER-025 | Delete a multi-architecture tag | P1 | implemented | [R-OCI-014](../spec/formats/oci.md) (implemented), [R-OCI-018](../spec/formats/oci.md) (implemented) |
@@ -1942,12 +1942,12 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 | PKG-DOCKER-030 | Download statistics shared across tags of one digest | P2 | open | – |
 | PKG-DOCKER-031 | Deleting images and tags | P1 | implemented | [R-OCI-006](../spec/formats/oci.md) (implemented), [R-OCI-018](../spec/formats/oci.md) (implemented), [R-OCI-019](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-032 | Promote an image between repositories | P1 | open | – |
-| PKG-DOCKER-033 | Proxying Docker Hub and other registries | P1 | specified | [R-OCI-021](../spec/formats/oci.md) |
-| PKG-DOCKER-034 | Docker Hub rate limits | P1 | specified | [R-OCI-022](../spec/formats/oci.md), [R-OCI-025](../spec/formats/oci.md) |
-| PKG-DOCKER-035 | Official-image namespace on Docker Hub | P1 | specified | [R-OCI-025](../spec/formats/oci.md) |
+| PKG-DOCKER-033 | Proxying Docker Hub and other registries | P1 | implemented | [R-OCI-021](../spec/formats/oci.md) (implemented) |
+| PKG-DOCKER-034 | Docker Hub rate limits | P1 | implemented | [R-OCI-022](../spec/formats/oci.md) (implemented), [R-OCI-025](../spec/formats/oci.md) (implemented) |
+| PKG-DOCKER-035 | Official-image namespace on Docker Hub | P1 | implemented | [R-OCI-025](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-036 | Foreign layers | P2 | open | – |
 | PKG-DOCKER-037 | Project scope for Google registries | P2 | open | – |
-| PKG-DOCKER-038 | Chaining to another instance | P2 | specified | [R-OCI-021](../spec/formats/oci.md) |
+| PKG-DOCKER-038 | Chaining to another instance | P2 | implemented | [R-OCI-021](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-039 | Virtual Docker registry | P1 | specified | [R-OCI-027](../spec/formats/oci.md), [R-OCI-028](../spec/formats/oci.md) (implemented) |
 | PKG-DOCKER-040 | Resolve tags by latest timestamp | P1 | open | – |
 | PKG-DOCKER-052 | Upstream for a cloud registry's pass-through repository | P2 | implemented | [R-OCI-004](../spec/formats/oci.md) (implemented) |
@@ -1970,19 +1970,19 @@ Catalog page: [formats/docker.md](../features/formats/docker.md) · specified by
 Catalog page: [formats/oci.md](../features/formats/oci.md) · specified by priority: P1 12 of 15 · P2 2 of 4 · Later 0 of 1
 
 <details>
-<summary>20 features: 14 specified, 6 open, 8 implemented</summary>
+<summary>20 features: 14 specified, 6 open, 11 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | PKG-OCI-001 | OCI repositories in all three repository classes | P1 | specified | [R-OCI-001](../spec/formats/oci.md), [R-OCI-002](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-002 | Local OCI repository settings | P1 | open | – |
-| PKG-OCI-003 | Proxying OCI-compliant registries | P1 | specified | [R-OCI-021](../spec/formats/oci.md) |
+| PKG-OCI-003 | Proxying OCI-compliant registries | P1 | implemented | [R-OCI-021](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-004 | Virtual OCI repositories | P1 | specified | [R-OCI-027](../spec/formats/oci.md) |
 | PKG-OCI-005 | How OCI clients address a repository | P1 | specified | [R-OCI-001](../spec/formats/oci.md), [R-OCI-004](../spec/formats/oci.md) (implemented) |
-| PKG-OCI-006 | Distribution specification endpoints | P1 | specified | [R-OCI-008](../spec/formats/oci.md) (implemented), [R-OCI-010](../spec/formats/oci.md) (implemented), [R-OCI-011](../spec/formats/oci.md), [R-OCI-012](../spec/formats/oci.md), [R-OCI-015](../spec/formats/oci.md) (implemented), [R-OCI-018](../spec/formats/oci.md) (implemented) |
+| PKG-OCI-006 | Distribution specification endpoints | P1 | implemented | [R-OCI-008](../spec/formats/oci.md) (implemented), [R-OCI-010](../spec/formats/oci.md) (implemented), [R-OCI-011](../spec/formats/oci.md) (implemented), [R-OCI-012](../spec/formats/oci.md) (implemented), [R-OCI-015](../spec/formats/oci.md) (implemented), [R-OCI-018](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-007 | Manifest kinds and content negotiation | P1 | implemented | [R-OCI-009](../spec/formats/oci.md) (implemented), [R-OCI-013](../spec/formats/oci.md) (implemented), [R-OCI-020](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-008 | Non-image artifacts | P1 | implemented | [R-OCI-007](../spec/formats/oci.md) (implemented), [R-OCI-013](../spec/formats/oci.md) (implemented) |
-| PKG-OCI-009 | Referrers API | P1 | specified | [R-OCI-016](../spec/formats/oci.md) (implemented), [R-OCI-024](../spec/formats/oci.md) |
+| PKG-OCI-009 | Referrers API | P1 | implemented | [R-OCI-016](../spec/formats/oci.md) (implemented), [R-OCI-024](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-010 | Referrer storage and the referrers index | P1 | implemented | [R-OCI-007](../spec/formats/oci.md) (implemented), [R-OCI-016](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-011 | Referrers tag schema | P2 | implemented | [R-OCI-016](../spec/formats/oci.md) (implemented) |
 | PKG-OCI-012 | Moving referrers with their subject | P2 | implemented | [R-OCI-018](../spec/formats/oci.md) (implemented) |
