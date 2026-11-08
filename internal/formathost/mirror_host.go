@@ -330,6 +330,8 @@ func mapFill(err error) error {
 		return err
 	}
 	switch ee.Code {
+	case errs.CodeUpstreamIntegrityMismatch, errs.CodeUpstreamDigestMissing:
+		return &mirror.PermanentError{Cause: err}
 	case errs.CodeNotFound:
 		return refused(mirror.RefusedNotFound, err)
 	case errs.CodeVulnerabilityBlocked, errs.CodeVulnerabilityDataMissing:
@@ -345,6 +347,9 @@ func mapFill(err error) error {
 func mapGate(err error) error {
 	if m := mapBackground(err); m != err { //nolint:errorlint // identity, as in mapFill
 		return m
+	}
+	if ee, ok := errs.As(err); ok && ee.Code == errs.CodeUpstreamDigestMissing {
+		return &mirror.PermanentError{Cause: err} // the document announces nothing the tarball can be compared with
 	}
 	if k := errs.KindOf(err); k == errs.NotFound || k == errs.Forbidden {
 		if ee, ok := errs.As(err); !ok || ee.Code != errs.CodeNotCachedOffline {

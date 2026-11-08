@@ -80,12 +80,16 @@ func (f *Format) Descriptor() formats.Descriptor {
 			// document says otherwise (R-AUTHZ-018, Q-AUTHZ-2).
 			OwnershipDefault: catalog.OwnershipEnforce,
 			SettingsSchema:   settingsSchema,
+			// npm always compares the announced digest (R-REPO-041, R-NPM-025).
+			ChecksumAlwaysVerified: true,
 		},
 		ContractVersion:  formats.ContractVersion,
 		Names:            names{},
 		Clients:          clients(),
 		PropertyPrefix:   "npm.",
 		MaxDocumentBytes: MaxDocumentBytes,
+		// npm always compares the announced digest (R-REPO-041, R-NPM-025).
+		VerifyAnnouncedDigests: true,
 		// The bounds R-NPM-007 and R-ARCH-028 give a package.json: 1 MiB, nesting depth
 		// 64, compression ratio 100:1. The entry count and the unpacked size of a
 		// publish are npm.publish.max_tar_entries and max_unpacked_size, which are above

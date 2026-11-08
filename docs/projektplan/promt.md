@@ -216,18 +216,6 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-08 by the documentation of the remote engine for E5.7 (spec against code):
-
-### Product
-
-- **F-76 · An npm remote whose digest policy is `ignore` or `pass-through` stores tarballs unchecked, although the spec says npm always
-  verifies** (read in the code, not reproduced). R-REPO-041 (`docs/spec/repositories-and-proxy.md` around line 2871) says npm verifies the
-  announced digest whatever the setting; no format sets `VerifyAnnouncedDigests`, so the remote engine follows the repository's setting for
-  npm too. Either the code is wrong (an npm tarball's `dist.integrity` is always checked, as the spec says) or the spec is; decide, fix the
-  side that is wrong, and test an npm remote under each digest setting with a tampered tarball.
-- **F-77 · The spec names `502 upstream_tls_untrusted`, the code answers `tls_untrusted`** (read). R-REPO-035 (around lines 2576 and
-  2596) against `internal/errs/codes.go` (around line 430). Decide the name, change the other side and the error registry's docs, test.
-
 Found on 2026-11-08 while running the drain variants of E5.13 on kind:
 
 ### Tests and tools
@@ -239,6 +227,13 @@ Found on 2026-11-08 while running the drain variants of E5.13 on kind:
   primary). The test now names the case ("variant B caused no failover"). Decide: make the failover deterministic (e.g. hold the
   evicted pod's return past `down-after`, or a shorter `down-after` in the dev profile) or revise the variant's condition with a check
   that still proves trove serves through the loss of its Valkey primary; until then a red B in the nightly is this finding.
+
+- **F-79 · A full mirror pass after a shutdown did not end `complete` within 1 min 30 s once in 50 runs** (seen once on the shared
+  integration stack, 2026-11-08, not reproduced in 30 further runs; no diagnostics kept).
+  `TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarballOnce` (`test/integration/mirror/bound_test.go`) failed with "a
+  full pass … did not end complete within 1m30s" while other agents loaded the shared stack. Whether it is load or a defect of the pass's
+  take-over after a shutdown is not known. Done when a failing run's diagnostics (the pass state and job rows, the engines' logs) name the
+  cause and it is fixed or shown to be the stack's load.
 
 Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay handler outside that change:
 

@@ -115,6 +115,8 @@ type PackageResult struct {
 	Now   time.Time
 	// Error is the message recorded with a failed package.
 	Error string
+	// Permanent makes PackageFailed take the package to MaxPackageAttempts at once: no retry of this pass changes the failure.
+	Permanent bool
 }
 
 // End is the end of a pass or of its job (R-REPO-053 step 4, the stops).

@@ -159,7 +159,7 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 		p.afterError(ctx, name, st, err)
 		return
 	}
-	var failure error
+	var transient, permanent error
 	for _, item := range SelectItems(plan.Items, rs.Mirror.IncludePrereleases, rs.Mirror.MaxVersionsPerPackage) {
 		if p.isHalted() {
 			p.keep(ctx, name, st)
@@ -180,6 +180,7 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 			return e
 		})
 		var refused *RefusedError
+		var perm *PermanentError
 		switch {
 		case err == nil:
 			p.count(&st, res)
@@ -189,19 +190,30 @@ func (p *pass) fillPackage(ctx context.Context, name string) {
 		case errors.Is(err, errHalted), errors.Is(err, ErrPreempted), ctx.Err() != nil:
 			p.afterError(ctx, name, st, err)
 			return
+		case errors.As(err, &perm):
+			// The other items go on; the package fails once, after them (R-REPO-041, R-REPO-053).
+			p.m.item(ResultFailed)
+			if permanent == nil {
+				permanent = err
+			}
 		default:
 			// A transient failure of one item does not keep the others from being stored: the package fails once, after them.
 			p.m.item(ResultFailed)
-			if failure == nil {
-				failure = err
+			if transient == nil {
+				transient = err
 			}
 		}
 	}
 	if ctx.Err() != nil {
 		return
 	}
-	if failure != nil {
-		p.failPackage(ctx, name, st, failure)
+	switch {
+	case transient != nil:
+		// An item that may succeed later keeps the package's retries, and its error is the reason (Q-REPO-252).
+		p.failPackage(ctx, name, st, transient, false)
+		return
+	case permanent != nil:
+		p.failPackage(ctx, name, st, permanent, true)
 		return
 	}
 	p.finishPackage(ctx, name, st)
@@ -279,15 +291,15 @@ func (p *pass) afterError(ctx context.Context, name string, st pkgState, err err
 		p.keep(ctx, name, st)
 	default:
 		p.m.item(ResultFailed)
-		p.failPackage(ctx, name, st, err)
+		p.failPackage(ctx, name, st, err, false)
 	}
 }
 
 // failPackage records one failed attempt of a package: one more attempt and a retry a minute later per attempt; the attempt
 // that reaches the limit leaves it to the next pass and counts it failed (R-REPO-053 step 3).
-func (p *pass) failPackage(ctx context.Context, name string, st pkgState, err error) {
+func (p *pass) failPackage(ctx context.Context, name string, st pkgState, err error, permanent bool) {
 	attempts, ferr := p.e.o.Store.PackageFailed(ctx, p.fence, PackageResult{
-		Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now(), Error: sanitize(err.Error()),
+		Name: name, Items: st.items, Bytes: st.bytes, Now: p.e.o.Clock.Now(), Error: sanitize(err.Error()), Permanent: permanent,
 	})
 	if !p.wrote(ferr) {
 		return

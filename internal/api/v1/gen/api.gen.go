@@ -6942,9 +6942,11 @@ type RemoteSettings struct {
 	// Headers Custom request headers (R-REPO-036, P1). A non-empty list is refused with `not_applicable` until it is built.
 	Headers   *[]map[string]interface{} `json:"headers,omitempty"`
 	Integrity *struct {
-		AllowedContentTypes         *[]string                              `json:"allowedContentTypes,omitempty"`
-		BlockUnexpectedContentTypes *bool                                  `json:"blockUnexpectedContentTypes,omitempty"`
-		ChecksumPolicy              *RemoteSettingsIntegrityChecksumPolicy `json:"checksumPolicy,omitempty"`
+		AllowedContentTypes         *[]string `json:"allowedContentTypes,omitempty"`
+		BlockUnexpectedContentTypes *bool     `json:"blockUnexpectedContentTypes,omitempty"`
+
+		// ChecksumPolicy `require` is refused with `not_applicable` for a format whose upstream announces no digest (NuGet), and `ignore` and `pass-through` for a format that always verifies the digest its metadata announces (npm) (R-REPO-041, Q-ARCH-269, Q-NPM-79).
+		ChecksumPolicy *RemoteSettingsIntegrityChecksumPolicy `json:"checksumPolicy,omitempty"`
 	} `json:"integrity,omitempty"`
 	Limits *struct {
 		// MaxArtifactBytes `null` is the system value `proxy.max_artifact_bytes`.
@@ -7001,7 +7003,7 @@ type RemoteSettingsAvailabilityMode string
 // RemoteSettingsCacheFillAction defines model for RemoteSettings.CacheFillAction.
 type RemoteSettingsCacheFillAction string
 
-// RemoteSettingsIntegrityChecksumPolicy defines model for RemoteSettings.Integrity.ChecksumPolicy.
+// RemoteSettingsIntegrityChecksumPolicy `require` is refused with `not_applicable` for a format whose upstream announces no digest (NuGet), and `ignore` and `pass-through` for a format that always verifies the digest its metadata announces (npm) (R-REPO-041, Q-ARCH-269, Q-NPM-79).
 type RemoteSettingsIntegrityChecksumPolicy string
 
 // RemoteSettingsMode `pullThrough` fetches what clients ask for; `mirror` also stores, in background passes on `worker`, what the

@@ -260,7 +260,7 @@ func (s *PGStore) PackageFailed(ctx context.Context, f Fence, r PackageResult) (
 	err = s.write(ctx, func(qs *q.Queries) error {
 		row, e := qs.MirrorPackageFailed(ctx, q.MirrorPackageFailedParams{
 			RepoID: f.RepoID, JobID: f.JobID, Holder: f.Holder, NowUs: r.Now.UnixMicro(), RetryStepSecs: int32(PackageRetryStep / time.Second),
-			LastError: r.Error, Name: r.Name, MaxAttempts: maxAttempts, Items: r.Items, Bytes: r.Bytes,
+			LastError: r.Error, Name: r.Name, MaxAttempts: maxAttempts, Items: r.Items, Bytes: r.Bytes, Permanent: r.Permanent,
 		})
 		if e != nil {
 			return e

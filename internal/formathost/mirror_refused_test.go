@@ -25,7 +25,6 @@ func TestMapFill(t *testing.T) {
 		"a refused populate check":                      {e(errs.Forbidden, errs.CodePopulateNotPermitted), mirror.RefusedPopulate},
 		"offline is a failure the engine reads by code": {e(errs.NotFound, errs.CodeNotCachedOffline), ""},
 		"an upstream error is a failure of the item":    {e(errs.UpstreamFailed, errs.CodeUpstreamError), ""},
-		"an integrity mismatch is a failure":            {e(errs.UpstreamFailed, errs.CodeUpstreamIntegrityMismatch), ""},
 	} {
 		t.Run("R-REPO-053 "+name, func(t *testing.T) {
 			got := mapFill(tc.err)

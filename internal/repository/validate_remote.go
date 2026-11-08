@@ -408,6 +408,10 @@ func (r *remoteResolver) integrity(s *RemoteSettings, in remoteInput) {
 		r.notApplicable("/remote/integrity/checksumPolicy",
 			"the "+string(r.info.ID)+" format's upstream announces no digest to verify against, so \"require\" would refuse every artifact")
 	}
+	if r.info.ChecksumAlwaysVerified && (s.Integrity.ChecksumPolicy == ChecksumIgnore || s.Integrity.ChecksumPolicy == ChecksumPassThrough) {
+		r.notApplicable("/remote/integrity/checksumPolicy",
+			"the "+string(r.info.ID)+" format always verifies the digest its package document announces, so \""+s.Integrity.ChecksumPolicy+"\" would change nothing")
+	}
 	if len(s.Integrity.AllowedContentTypes) > maxContentTypes {
 		r.v.add("/remote/integrity/allowedContentTypes", codeOutOfRange, "at most "+strconv.Itoa(maxContentTypes)+" entries")
 	}

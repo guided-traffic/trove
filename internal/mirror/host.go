@@ -27,6 +27,9 @@ import (
 //   - a *RefusedError: the artifact cannot be stored by a background fill until something outside the pass changes (the
 //     upstream does not have it, the vulnerability scanning blocks the version, the format's gate or the populate check
 //     refuses it); the engine counts it and goes on with the next item, and the package is not a failure;
+//   - a *PermanentError: the artifact came back wrong (a digest that does not match the announced one, none to compare it
+//     with) and a retry of the pass would fetch it wrong again: the item and the package fail at once, with the reason, and the
+//     next pass tries again;
 //   - an error wrapping ErrShuttingDown: the process is shutting down and cancelled the request; the pass stops as if its
 //     own context had ended and writes nothing (R-REPO-053, drain);
 //   - any other error: a failure of the item (R-REPO-053).
@@ -98,6 +101,19 @@ type RefusedError struct {
 }
 
 func (e *RefusedError) Error() string { return "mirror: background fill refused: " + e.Reason }
+
+// PermanentError says that a background fill failed in a way the attempts of the pass do not change: the package is counted
+// failed after this attempt instead of after MaxPackageAttempts, so a tampered upstream does not keep a pass busy.
+type PermanentError struct {
+	// Cause is the engine's error; its message is what the package records.
+	Cause error
+}
+
+func (e *PermanentError) Error() string {
+	return "mirror: background fill failed permanently: " + e.Cause.Error()
+}
+
+func (e *PermanentError) Unwrap() error { return e.Cause }
 
 // The reasons of a RefusedError.
 const (

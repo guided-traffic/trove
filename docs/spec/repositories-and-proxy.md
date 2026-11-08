@@ -2574,9 +2574,10 @@ Priority: **P1** · Covers: RMT-008
   store again at most every 10 s on use (`DefaultTrustCheckEvery`), so the bound holds with margin, and the
   object store's `storage.s3.ca_file` takes the same path ([R-STOR-030](storage.md)). The mechanism is
   described in [security/transport-encryption.md](../security/transport-encryption.md).
-- A verification failure answers 502 `upstream_tls_untrusted`, is logged as a security event and does
+- A verification failure answers 502 `tls_untrusted`, is logged as a security event and does
   not count toward the circuit (R-REPO-029): a certificate that suddenly fails to verify may be an
   interception attempt, not an outage.
+  The code is `tls_untrusted`, as in the result of the repository test, the event `proxy.tls_untrusted` and the registry (Q-REPO-251).
 - TLS 1.2 is the minimum version.
 
 Configuration:
@@ -2594,7 +2595,7 @@ proxy:
 Acceptance criteria:
 
 - A remote to a stub whose certificate comes from a private CA fails with 502
-  `upstream_tls_untrusted`; after the CA file is added to the mounted Secret, a request within 60 s
+  `tls_untrusted`; after the CA file is added to the mounted Secret, a request within 60 s
   succeeds without a pod restart.
 
 ### R-REPO-036 · Custom upstream request headers
@@ -2890,8 +2891,8 @@ Priority: **MVP** · Covers: RMT-022
 | `ignore` | Announced digests are not compared. |
 | `pass-through` | As `ignore`; for formats with separate checksum files, the upstream's checksum files are served unchanged. |
 
-- A format page MAY make its rule stricter than the policy and say so (npm always verifies,
-  R-NPM-026). Digests that are part of a protocol's addressing are always verified.
+- A format page MAY make its rule stricter than the policy and say so (npm always verifies and
+  refuses `ignore` and `pass-through`, R-NPM-025, Q-NPM-79). Digests that are part of a protocol's addressing are always verified.
 - **Withheld tail.** The leader MAY stream the body to its own client while fetching, but MUST withhold
   the final 64 KiB until verification has passed and, when the artifact is stored, until its entry
   has committed: a duplicate flight on another replica may have committed different bytes first,
@@ -3359,8 +3360,14 @@ Priority: **MVP** · Covers: trove-only
      the format's gate or the populate check refuses it) is counted `refused` and the next artifact goes on; a transient failure
      of an artifact does not keep the others of the package from being stored, and the package then fails once
      (Q-REPO-185): it keeps its row with one more attempt and `not_before` one minute later per attempt (other than by
-     throttling, R-REPO-054); after three attempts it is left to the next pass and counted as failed.
-  4. **End.** When discovery has ended and every pending row is done or left, one transaction writes the summary of the pass,
+     throttling, R-REPO-054); after three attempts it is left to the next pass and counted as failed. An artifact that came back
+     with a digest other than the announced one, or whose document announces none to compare with (`*PermanentError`:
+     `upstream_integrity_mismatch`, `upstream_digest_missing`), is fetched wrong again by a retry: the package is counted failed
+     after that attempt, with the reason, and the next pass tries it again (Q-REPO-252); when another artifact of the package failed
+     transiently in the same attempt, the package keeps its retries and that failure is the recorded reason.
+  4. **End.** (The summary and the job are two writes: the end of the pass is written first and the job is marked
+     `succeeded` when the pass returns, so a reader may see the outcome while the job is still `running`; the pass does not
+     depend on its job, Q-REPO-135.) When discovery has ended and every pending row is done or left, one transaction writes the summary of the pass,
      the format's cursor for the next incremental pass, the time of the last full pass, the fingerprint of the patterns,
      clears the pass, resets the failure count and sets `next_pass_at` to the pass's start plus `intervalSeconds`, or now when
      that has passed. The outcome is `complete`, or `partial` when packages were left; the audit event
@@ -7668,6 +7675,42 @@ which an overlapping claim takes nothing and lets nothing through. The developme
 volume of first publishes became a cost.
 **Applied:** R-REPO-061, R-REPO-023; `internal/audit/events_repository.go`, `recordClaims` in `internal/repository/claims.go`.
 
+
+### Q-REPO-251 · The refusal of an untrusted upstream certificate keeps the code `tls_untrusted`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-035 named the download answer `upstream_tls_untrusted`; the code, the result of the upstream test (R-REPO-024), the audit event `proxy.tls_untrusted` and the error registry all say `tls_untrusted` (F-77).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rename the code to `upstream_tls_untrusted` | The download code gets the prefix the other download codes have | Uniform `upstream_` prefix on download codes | The test endpoint, the event and the OpenAPI enum say `tls_untrusted` for the same condition: two names or four renames |
+| (b) Keep `tls_untrusted` and fix the spec (chosen) | One name for the condition wherever it appears | The condition has one name in the test result, the event, the registry and the answer | Not every download code carries the prefix |
+| (c) Two codes | One for the test result, one for the download | Each surface keeps its own convention | One condition, two names, a mapping to remember |
+
+**Choice:** (b). The rule is one name per TLS, egress or source-network condition (`tls_untrusted`, `egress_denied`, `source_network_unavailable`) on every surface. It is not a rule for all upstream failures: a timeout is `timeout` in the test result and `upstream_timeout` on a download.
+
+**Rationale:** the three conditions have no other meaning on a download than in the test, and an operator who reads the event, the test result and the answer finds the same word. The development agent would revisit it if the codes of the test result were to be prefixed as a whole.
+
+**Applied in the spec:** R-REPO-035 (the answer and its acceptance criterion). The error registry ([codes.go](../../internal/errs/codes.go)) and the OpenAPI enum already said `tls_untrusted`. Test: the classification table in [proxy_test.go](../../internal/proxy/proxy_test.go) (`tls_untrusted`, 502, security event, not counted).
+
+### Q-REPO-252 · A fill that came back with the wrong digest fails its package at once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the mirror pass treated `upstream_integrity_mismatch` like any failure of an item: three attempts, a minute longer apart each, so a pass over a tampered tarball stayed busy for about three minutes and fetched the tampered bytes three times (found by the test of F-76).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `*mirror.PermanentError` for `upstream_integrity_mismatch` and `upstream_digest_missing`; the package fails at once (chosen) | `PackageFailed` takes the attempts to the limit in one write; the pass goes on with the other packages | A tampered upstream costs one fetch per pass; the reason is recorded | A mismatch that was a broken transfer waits for the next pass |
+| (b) `*mirror.RefusedError` | Counted refused, the package is done | No retry | The package is not a failure: the status shows nothing wrong with a mirror of a tampered upstream |
+| (c) Keep the retries | Three attempts | A broken transfer heals within the pass | Three fetches of the same wrong bytes, a busy pass |
+
+**Choice:** (a). `PermanentError` in [host.go](../../internal/mirror/host.go), `fillPackage` and `failPackage` in [fill.go](../../internal/mirror/fill.go), `mapFill` and `mapGate` in [mirror_host.go](../../internal/formathost/mirror_host.go), the `permanent` argument of `MirrorPackageFailed`.
+
+**Rationale:** the engine already verifies the digest while the body is spooled, so a second fetch can only repeat the answer of a tampered upstream. The development agent would revisit it if mismatches caused by transfer faults are seen in practice (retry once).
+
+**Applied in the spec:** R-REPO-053 step 3. Tests: `TestR_REPO_053_APermanentlyFailedFillFailsThePackageAtOnceAndThePassEnds`, `TestR_REPO_053_AnIntegrityFailureOfAFillIsPermanentForThePass`, and the mirror integration test `TestR_REPO_041_AMirrorPassOfAnNpmRemoteStoresNoTarballThatDoesNotMatchItsAnnouncedIntegrityAndEnds`.
 
 ## What this does not cover
 

@@ -1267,7 +1267,8 @@ type Descriptor struct {
 	NotifyAreas []string
 	DataPort         reflect.Type    // the interface type of the format's side-table port; nil without side tables (Q-ARCH-193)
 	// VerifyAnnouncedDigests: the protocol addresses artifacts by the digests its metadata announces, so a remote fill
-	// compares them whatever integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-026).
+	// compares them whatever integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-025). Held equal to
+	// Facts.ChecksumAlwaysVerified, which makes the repository validation refuse `ignore` and `pass-through` (Q-NPM-79).
 	VerifyAnnouncedDigests bool
 }
 

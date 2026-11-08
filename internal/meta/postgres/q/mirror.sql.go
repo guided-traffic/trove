@@ -625,17 +625,17 @@ WITH f AS (
        FOR UPDATE
 ), p AS (
     UPDATE mirror_pending m
-       SET attempts = m.attempts + 1,
-           not_before = to_timestamp($4::bigint / 1000000.0) + (m.attempts + 1) * make_interval(secs => $5::int),
-           last_error = left($6::text, 1024)
+       SET attempts = CASE WHEN $4::boolean THEN GREATEST(m.attempts + 1, $5::int) ELSE m.attempts + 1 END,
+           not_before = to_timestamp($6::bigint / 1000000.0) + (m.attempts + 1) * make_interval(secs => $7::int),
+           last_error = left($8::text, 1024)
       FROM f
-     WHERE m.repo_id = f.repo_id AND m.name = $7::text
+     WHERE m.repo_id = f.repo_id AND m.name = $9::text
  RETURNING m.attempts
 ), u AS (
     UPDATE mirror_state s
-       SET pass_packages_failed = s.pass_packages_failed + CASE WHEN COALESCE((SELECT max(attempts) FROM p), 0) >= $8::int THEN 1 ELSE 0 END,
-           pass_items_stored = s.pass_items_stored + $9::bigint,
-           pass_bytes_stored = s.pass_bytes_stored + $10::bigint,
+       SET pass_packages_failed = s.pass_packages_failed + CASE WHEN COALESCE((SELECT max(attempts) FROM p), 0) >= $5::int THEN 1 ELSE 0 END,
+           pass_items_stored = s.pass_items_stored + $10::bigint,
+           pass_bytes_stored = s.pass_bytes_stored + $11::bigint,
            updated_at = now()
       FROM f
      WHERE s.repo_id = f.repo_id
@@ -648,11 +648,12 @@ type MirrorPackageFailedParams struct {
 	RepoID        int64
 	JobID         string
 	Holder        string
+	Permanent     bool
+	MaxAttempts   int32
 	NowUs         int64
 	RetryStepSecs int32
 	LastError     string
 	Name          string
-	MaxAttempts   int32
 	Items         int64
 	Bytes         int64
 }
@@ -663,18 +664,19 @@ type MirrorPackageFailedRow struct {
 }
 
 // A package that failed keeps its row with one more attempt and a retry one step of the back-off later per attempt; the
-// attempt that reaches the limit leaves it to the next pass and counts it as failed (R-REPO-053 step 3). The counters grow
-// by what the attempt stored before it failed.
+// attempt that reaches the limit leaves it to the next pass and counts it as failed (R-REPO-053 step 3). A permanent failure
+// (a tampered artifact) takes the package to the limit at once. The counters grow by what the attempt stored before it failed.
 func (q *Queries) MirrorPackageFailed(ctx context.Context, arg MirrorPackageFailedParams) (MirrorPackageFailedRow, error) {
 	row := q.db.QueryRow(ctx, mirrorPackageFailed,
 		arg.RepoID,
 		arg.JobID,
 		arg.Holder,
+		arg.Permanent,
+		arg.MaxAttempts,
 		arg.NowUs,
 		arg.RetryStepSecs,
 		arg.LastError,
 		arg.Name,
-		arg.MaxAttempts,
 		arg.Items,
 		arg.Bytes,
 	)

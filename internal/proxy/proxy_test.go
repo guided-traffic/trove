@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net/http"
@@ -443,6 +444,7 @@ func TestClassification(t *testing.T) {
 			"source":      {outbound.ErrSourceNetworkUnavailable, errs.CodeSourceNetworkUnavailable, false},
 			"redirects":   {outbound.ErrTooManyRedirects, errs.CodeTooManyRedirects, false},
 			"insecure":    {outbound.ErrInsecureRedirect, errs.CodeInsecureRedirect, false},
+			"certificate": {x509.UnknownAuthorityError{}, errs.CodeTLSUntrusted, false},
 			"refused":     {errors.New("dial tcp: connection refused"), errs.CodeUpstreamUnreachable, true},
 			"deadline":    {context.DeadlineExceeded, errs.CodeUpstreamTimeout, true},
 			"secret":      {errs.E(errs.UpstreamFailed, errs.CodeUpstreamSecretUnavailable, "x"), errs.CodeUpstreamSecretUnavailable, false},
@@ -453,6 +455,10 @@ func TestClassification(t *testing.T) {
 			if f.err.Code != tc.code || f.count != tc.count {
 				t.Errorf("%s: %s count=%v, want %s %v", name, f.err.Code, f.count, tc.code, tc.count)
 			}
+		}
+		// R-REPO-035: an untrusted certificate answers 502 tls_untrusted, is logged as a security event and is not counted.
+		if f := e.classifyError(rem, target, x509.UnknownAuthorityError{}, false); f.err.Code != "tls_untrusted" || f.err.Status() != http.StatusBadGateway || f.event != "tls" {
+			t.Errorf("an untrusted certificate: %s %d event=%q", f.err.Code, f.err.Status(), f.event)
 		}
 		if f := e.classifyError(rem, target, errors.New("x"), true); f.err.Code != errs.CodeUpstreamTimeout || !f.count {
 			t.Errorf("a silent body: %+v", f)

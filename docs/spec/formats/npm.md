@@ -1421,12 +1421,17 @@ Priority: **MVP** · Covers: PKG-NPM-038, PKG-NPM-062, RMT-022
   open, offline, a failure of R-REPO-029), the stored marks decide, as stale serving does. The
   check is one more indexed row in the lookup that serves the tarball, on any replica, and costs at
   most one conditional upstream request per package and metadata period.
-- Expected digests handed to the integrity check (R-REPO-041): the `sha512` entries of
-  `dist.integrity`, else `dist.shasum` (SHA-1): only when the document announces no `sha512`, so a
-  legacy or wrong `shasum` next to a valid `sha512` refuses nothing. With the default `verify-if-available` policy a
-  mismatch refuses the tarball with 502 `upstream_integrity_mismatch`; `ignore` and `pass-through`
-  SHOULD NOT be used on npm remotes, because clients would then fail with `EINTEGRITY` on bytes
-  trove had cached for good.
+- Expected digests handed to the integrity check (R-REPO-041): the `sha512` entry of
+  `dist.integrity`; when it has none, the strongest other entry the blob pass computes (`sha256`, then `sha1`); `dist.shasum`
+  (SHA-1) only when `dist.integrity` carries no entry at all, so a legacy or wrong `shasum` next to a valid
+  `integrity` refuses nothing. An `integrity` whose strongest entry is `sha384`, with no `sha512` or `sha256`, cannot be compared, because the blob pass computes
+  no `sha384`; the tarball is refused with 502 `upstream_digest_missing`, since storing it unchecked is what this rule forbids
+  (Q-NPM-79). A mismatch refuses the tarball with 502 `upstream_integrity_mismatch` and stores nothing, whatever
+  `remote.integrity.checksumPolicy` says, because clients would otherwise fail with `EINTEGRITY` on bytes trove had cached
+  for good; for that reason the policies `ignore` and `pass-through` are refused on an npm remote with 422 `not_applicable`
+  at `/remote/integrity/checksumPolicy` (`Facts.ChecksumAlwaysVerified`). A document that announces no digest at all is stored
+  and served under every policy but `require`, which refuses it with 502 `upstream_digest_missing`; `require` also refuses a
+  mismatch.
 - Hosts other than the upstream origin need `remote.extraHosts` (R-REPO-043, `foreign_host_denied`);
   every connection passes the egress policy (R-REPO-038) and the redirect rules (R-REPO-039).
   Cached tarballs never expire.
@@ -4863,6 +4868,24 @@ Context: the exchange client of Q-NPM-77 has no overall timeout and no stall bou
 **Rationale:** the largest bound a format sets is the safe default. The development agent would revisit it if a format needs an exchange with a body that streams for longer.
 
 **Applied in the spec:** R-NPM-038 reads unchanged (its forward sets its own deadline).
+
+### Q-NPM-79 · npm always verifies the announced digest, and the policies that would not are refused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-041 says npm verifies the announced digest whatever `remote.integrity.checksumPolicy` says, and the code followed the repository's policy (no format set `VerifyAnnouncedDigests`), so a remote with `ignore` or `pass-through` stored tarballs unchecked; this page said such remotes SHOULD NOT be used (F-76). The digest taken from `dist.integrity` was the `sha512` entry or, without one, the `shasum`, so a document that announced `sha256` only was checked against the legacy SHA-1.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) npm always verifies and refuses `ignore` and `pass-through` with 422 `not_applicable` (chosen) | `Descriptor.VerifyAnnouncedDigests` and `Facts.ChecksumAlwaysVerified` for npm; the validation answers as it does for NuGet `require` (Q-ARCH-269) | The spec and the code agree; no setting promises what it does not do; the clients' `EINTEGRITY` case cannot be produced by trove | Two flags that must agree (`Validate` holds them equal) |
+| (b) npm always verifies and the two policies stay accepted | They would be accepted and change nothing | One flag | A setting that looks like a choice and is none |
+| (c) The policy decides, the spec yields | `ignore` stores unchecked tarballs | Operators can store what a broken upstream serves | Clients fail on bytes trove cached for good (R-REPO-041) |
+
+**Choice:** (a). The digest handed to the check is the strongest the blob pass computes: `sha512`, then `sha256`, then `sha1` of `dist.integrity`, then `dist.shasum`. An `integrity` with `sha384` as its only usable entry is refused with `upstream_digest_missing`: the blob pass computes no `sha384`, a fifth hash on every blob of every format would cost more than a form no registry publishes, and ignoring it would store the tarball unchecked.
+
+**Rationale:** the policy exists for formats that may announce nothing; npm's protocol addresses tarballs by the digest, so a choice would only produce the failure it is meant to avoid. The development agent would revisit the `sha384` refusal if an upstream announces it (compute it in the blob pass for a request that needs it).
+
+**Applied in the spec:** R-NPM-025 (the digests and the two sentences on a document without digest and on `require`), [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-041 (reference corrected to R-NPM-025), [architecture.md](../architecture.md) R-ARCH-008 (`VerifyAnnouncedDigests`), the manual row of `integrity.checksumPolicy`. The catalog fact is [ADR-160](../../decisions.md#adr-160--the-catalog-says-which-formats-always-verify-the-announced-digest). Code: [format.go](../../../internal/formats/npm/format.go), [remote.go](../../../internal/formats/npm/remote.go) `announcedDigests`, [validate_remote.go](../../../internal/repository/validate_remote.go). Tests: `TestR_REPO_041_*` in [test/integration/npm](../../../test/integration/npm/remote_digest_test.go), [test/integration/mirror](../../../test/integration/mirror/digest_test.go) and [checksum_always_test.go](../../../internal/repository/checksum_always_test.go).
 
 ## What this does not cover
 

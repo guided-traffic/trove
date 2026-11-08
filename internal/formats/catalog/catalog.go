@@ -103,6 +103,12 @@ type Facts struct {
 	// updated with that policy: 422 not_applicable (R-REPO-041, R-NUGET-015). False: the
 	// policy is supported, which is what every format that announces digests holds.
 	ChecksumRequireUnsupported bool
+	// ChecksumAlwaysVerified is true for a format that compares the digest its metadata announces
+	// whatever integrity.checksumPolicy says (R-REPO-041: npm, R-NPM-025). The policies ignore and
+	// pass-through would do nothing for it, so a remote repository of the format cannot be created
+	// or updated with them: 422 not_applicable (Q-NPM-79). Register holds it equal to
+	// formats.Descriptor.VerifyAnnouncedDigests.
+	ChecksumAlwaysVerified bool
 	// PatternSubject is what include and exclude patterns match.
 	PatternSubject PatternSubject
 	// PackageNames is true for a format whose content has package names:

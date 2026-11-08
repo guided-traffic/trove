@@ -122,9 +122,7 @@ func TestR_REPO_053_AShutdownReleasesTheJobAndASecondEngineEndsThePass(t *testin
 	w.setGate(nil)
 	e.start("rep-b", "all")
 	e.waitOutcome("complete", 60*time.Second)
-	if got := e.st.Text(`SELECT state::text FROM job WHERE kind = 'mirror-pass' ORDER BY created_at DESC LIMIT 1`); got != "succeeded" {
-		t.Fatalf("the job is %s", got)
-	}
+	waitLatestPassJob(t, e.st, "succeeded", 30*time.Second)
 	for _, n := range w.names {
 		if got := w.times(pathOf(n)); got != 1 {
 			t.Errorf("%s stored %d times", n, got)

@@ -7245,6 +7245,7 @@ export interface components {
             };
             integrity?: {
                 /**
+                 * @description `require` is refused with `not_applicable` for a format whose upstream announces no digest (NuGet), and `ignore` and `pass-through` for a format that always verifies the digest its metadata announces (npm) (R-REPO-041, Q-ARCH-269, Q-NPM-79).
                  * @default verify-if-available
                  * @enum {string}
                  */

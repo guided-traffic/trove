@@ -233,12 +233,29 @@ func (a remoteAdapter) BeforeArtifactWith(ctx context.Context, h formats.Host, r
 	if !facts.Known {
 		return formats.Digests{}, current, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
 	}
-	// The sha512 of dist.integrity decides; dist.shasum (SHA-1) only when the document has none
-	// (R-NPM-025). A tarball is not refused for a legacy shasum a stronger digest outvotes.
+	d, err := announcedDigests(facts)
+	return d, current, err
+}
+
+// announcedDigests is what R-NPM-025 hands to the integrity check: the strongest digest of dist.integrity among those the
+// spool computes (sha512, then sha256, then sha1), dist.shasum (SHA-1) only when dist.integrity carries none, so a legacy
+// shasum a stronger digest outvotes refuses nothing. An integrity that announces sha384 and nothing the spool computes is
+// refused: storing the tarball unchecked is what the rule forbids.
+func announcedDigests(facts rows.TarballFacts) (formats.Digests, error) {
 	if sum := remote.SHA512(facts.Integrity); sum != nil {
-		return formats.Digests{SHA512: sum}, current, nil
+		return formats.Digests{SHA512: sum}, nil
 	}
-	return formats.Digests{SHA1: remote.SHA1(facts.Shasum)}, current, nil
+	if sum := remote.SHA256(facts.Integrity); sum != nil {
+		return formats.Digests{SHA256: sum}, nil
+	}
+	if remote.HasSHA384(facts.Integrity) {
+		return formats.Digests{}, errs.E(errs.UpstreamFailed, errs.CodeUpstreamDigestMissing,
+			"The package document announces the tarball's integrity as sha384 only, which cannot be verified.")
+	}
+	if sum := remote.SHA1Integrity(facts.Integrity); sum != nil {
+		return formats.Digests{SHA1: sum}, nil
+	}
+	return formats.Digests{SHA1: remote.SHA1(facts.Shasum)}, nil
 }
 
 // refuseRemoved is the rule of R-NPM-026: with serveRemovedVersions off, a version the

@@ -31,6 +31,10 @@ type Mode struct {
 	Gone []string `json:"gone,omitempty"`
 	// BadIntegrity lists packages whose documents promise an integrity the tarballs do not have.
 	BadIntegrity []string `json:"bad_integrity,omitempty"`
+	// IntegrityAlgorithm maps package names to the algorithm ("sha256", "sha384" or "sha1") of the only
+	// dist.integrity their documents announce, computed over the real tarball; together with BadIntegrity
+	// the digest is one no tarball has. dist.shasum stays the real SHA-1.
+	IntegrityAlgorithm map[string]string `json:"integrity_algorithm,omitempty"`
 	// WrongName lists packages whose documents carry another name than the one requested.
 	WrongName []string `json:"wrong_name,omitempty"`
 	// DropTarballs makes the tarballs of dropped versions answer 404, as a registry that unpublished

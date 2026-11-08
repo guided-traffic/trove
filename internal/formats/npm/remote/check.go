@@ -291,6 +291,31 @@ func SHA512(integrity string) []byte {
 	return nil
 }
 
+// sriDigest returns the digest of the first field of an SRI string that has the algorithm prefix and the
+// length of its algorithm, nil when there is none.
+func sriDigest(integrity, algo string, n int) []byte {
+	for _, f := range strings.Fields(integrity) {
+		sum, ok := strings.CutPrefix(f, algo+"-")
+		if !ok {
+			continue
+		}
+		sum, _, _ = strings.Cut(sum, "?")
+		if raw, err := base64.StdEncoding.DecodeString(sum); err == nil && len(raw) == n {
+			return raw
+		}
+	}
+	return nil
+}
+
+// SHA256 returns the sha256 digest an SRI string announces, nil when it has none.
+func SHA256(integrity string) []byte { return sriDigest(integrity, "sha256", 32) }
+
+// SHA1Integrity returns the sha1 digest an SRI string announces, nil when it has none.
+func SHA1Integrity(integrity string) []byte { return sriDigest(integrity, "sha1", 20) }
+
+// HasSHA384 reports whether an SRI string announces a sha384 digest.
+func HasSHA384(integrity string) bool { return sriDigest(integrity, "sha384", 48) != nil }
+
 // SHA1 returns the digest of a dist.shasum, nil for text that is no SHA-1.
 func SHA1(shasum string) []byte {
 	if !validShasum(shasum) {

@@ -12,6 +12,9 @@
 package npmstub
 
 import (
+	"crypto/sha1" //nolint:gosec // the stub computes the legacy digests an npm document announces
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -341,7 +344,8 @@ func (s *Server) viewLocked(name string) (*corpus.Package, bool) {
 	}
 	drops := s.dropped[name]
 	bad := s.mode.has(s.mode.BadIntegrity, name)
-	if len(drops) == 0 && !bad {
+	algo := s.mode.IntegrityAlgorithm[name]
+	if len(drops) == 0 && !bad && algo == "" {
 		return base, true
 	}
 	p := base.Clone()
@@ -351,13 +355,39 @@ func (s *Server) viewLocked(name string) (*corpus.Package, bool) {
 	if t, ok := s.touched[name]; ok && t.After(p.Modified) {
 		p.Modified = t
 	}
-	if bad {
-		for i := range p.Versions {
-			p.Versions[i].Dist.Integrity = badIntegrity
+	for i := range p.Versions {
+		v := &p.Versions[i]
+		switch {
+		case algo != "":
+			v.Dist.Integrity = integrityOf(algo, corpus.PaddedTarball(name, v.Version, v.Dependencies, v.Pad), bad)
+		case bad:
+			v.Dist.Integrity = badIntegrity
 		}
 	}
 	p.Retag()
 	return p, true
+}
+
+// integrityOf is the SRI of the tarball in the algorithm, or the SRI of a digest no tarball has.
+func integrityOf(algo string, tarball []byte, bad bool) string {
+	var sum []byte
+	switch algo {
+	case "sha1":
+		s := sha1.Sum(tarball) //nolint:gosec // see the import
+		sum = s[:]
+	case "sha256":
+		s := sha256.Sum256(tarball)
+		sum = s[:]
+	case "sha384":
+		s := sha512.Sum384(tarball)
+		sum = s[:]
+	default:
+		panic("npmstub: unknown integrity algorithm " + algo)
+	}
+	if bad {
+		sum = make([]byte, len(sum))
+	}
+	return algo + "-" + base64.StdEncoding.EncodeToString(sum)
 }
 
 // badIntegrity is a well-formed sha512 integrity that no tarball has.

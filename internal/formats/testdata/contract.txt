@@ -585,6 +585,7 @@ catalog.Exposure: field Tags bool
 catalog.Exposure: field Versioning Versioning
 catalog.Exposure: field Versions bool
 catalog.Facts: field Caps bool
+catalog.Facts: field ChecksumAlwaysVerified bool
 catalog.Facts: field ChecksumRequireUnsupported bool
 catalog.Facts: field Classes []Class
 catalog.Facts: field DefaultExtraHosts []string

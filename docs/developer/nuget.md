@@ -180,7 +180,7 @@ The tests that drive them against the local, remote and virtual repositories and
 | Spool a multipart part with its own length | `IngestOptions.Length` (Q-ARCH-264) |
 | A snippet per shell, `dotnet add package <id> --version <v>` | `SetupTemplate.VersionSpec`, the `powershell` and `cmd` languages (Q-API-187 to Q-API-189) |
 | `X-NuGet-ApiKey` accepted as a credential | `APIKey: true` on the push, delete, relist and symbol-push routes; the authentication stage reads the header only there, through the dispatcher's match, and never takes the session cookie there (Q-ARCH-266, Q-AUTH-186, Q-AUTH-187; [identity.md](identity.md#request-path)) |
-| `checksumPolicy: require` refused | `catalog.Facts.ChecksumRequireUnsupported` (Q-ARCH-269) |
+| `checksumPolicy: require` refused | `catalog.Facts.ChecksumRequireUnsupported` (Q-ARCH-269); npm has the counterpart `ChecksumAlwaysVerified`, which refuses `ignore` and `pass-through` (Q-NPM-79) |
 
 ## The write side
 

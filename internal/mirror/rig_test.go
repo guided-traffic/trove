@@ -343,6 +343,9 @@ func (s *memStore) PackageFailed(_ context.Context, f Fence, r PackageResult) (i
 	}
 	p := s.pending[f.RepoID][r.Name]
 	p.attempts++
+	if r.Permanent {
+		p.attempts = max(p.attempts, MaxPackageAttempts)
+	}
 	p.notBefore = r.Now.Add(time.Duration(p.attempts) * PackageRetryStep)
 	p.lastError = r.Error
 	if p.attempts >= MaxPackageAttempts {

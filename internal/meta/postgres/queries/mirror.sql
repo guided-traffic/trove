@@ -223,8 +223,8 @@ SELECT (SELECT count(*) FROM u)::bigint AS fenced;
 
 -- name: MirrorPackageFailed :one
 -- A package that failed keeps its row with one more attempt and a retry one step of the back-off later per attempt; the
--- attempt that reaches the limit leaves it to the next pass and counts it as failed (R-REPO-053 step 3). The counters grow
--- by what the attempt stored before it failed.
+-- attempt that reaches the limit leaves it to the next pass and counts it as failed (R-REPO-053 step 3). A permanent failure
+-- (a tampered artifact) takes the package to the limit at once. The counters grow by what the attempt stored before it failed.
 WITH f AS (
     SELECT repo_id FROM mirror_state
      WHERE repo_id = sqlc.arg(repo_id)::bigint
@@ -232,7 +232,7 @@ WITH f AS (
        FOR UPDATE
 ), p AS (
     UPDATE mirror_pending m
-       SET attempts = m.attempts + 1,
+       SET attempts = CASE WHEN sqlc.arg(permanent)::boolean THEN GREATEST(m.attempts + 1, sqlc.arg(max_attempts)::int) ELSE m.attempts + 1 END,
            not_before = to_timestamp(sqlc.arg(now_us)::bigint / 1000000.0) + (m.attempts + 1) * make_interval(secs => sqlc.arg(retry_step_secs)::int),
            last_error = left(sqlc.arg(last_error)::text, 1024)
       FROM f

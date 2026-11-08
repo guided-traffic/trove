@@ -458,6 +458,7 @@ behind it. Specified in R-REPO-054, R-REPO-055 and R-REPO-057; the decisions are
 | a pre-emption | wraps `mirror.ErrPreempted` | fetches the item later |
 | an open circuit, a refused spool admission | `*mirror.WaitError` | waits `After`, repeats |
 | a rate-limit answer (`RateLimitError`, with `HTTPStatus()`) | the error as it is | waits, halves the window |
+| `upstream_integrity_mismatch`, `upstream_digest_missing` (the fetched bytes do not match what the document announced, or it announces nothing to compare with) | `*mirror.PermanentError` | a failure of the item; the package fails at once with the reason, no retry in the pass (R-REPO-041) |
 | anything else | the error as it is | a failure of the item |
 
 A `*mirror.RefusedError` keeps the engine's error as its cause: read it with `errors.As`, not a type assertion.

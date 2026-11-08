@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/test/integration/testenv"
@@ -139,8 +140,6 @@ func TestR_REPO_053_AShutdownReleasesThePassAndASecondProcessFetchesEveryTarball
 		if twice > concurrency {
 			t.Errorf("%d tarballs were fetched twice, at most the %d that were in flight at the shutdown may be", twice, concurrency)
 		}
-		if got := r.st.Text(`SELECT state::text FROM job WHERE kind = 'mirror-pass' ORDER BY created_at DESC LIMIT 1`); got != "succeeded" {
-			t.Errorf("the job is %s", got)
-		}
+		waitLatestPassJob(t, r.st, "succeeded", 30*time.Second)
 	})
 }

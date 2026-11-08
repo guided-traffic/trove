@@ -173,7 +173,8 @@ type Descriptor struct {
 	MaxDocumentBytes int64
 	// VerifyAnnouncedDigests says that the format's protocol addresses artifacts by
 	// the digests its metadata announces, so a remote fill compares them whatever
-	// integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-026).
+	// integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-025). It
+	// is held equal to Facts.ChecksumAlwaysVerified, which the repository validation reads.
 	VerifyAnnouncedDigests bool
 	// Limits tighten untrusted.DefaultLimits; a zero field keeps the default.
 	Limits Limits
@@ -317,6 +318,9 @@ func Validate(f Format) error {
 	}
 	if d.PropertyPrefix != "" && !strings.HasSuffix(d.PropertyPrefix, ".") {
 		return fmt.Errorf("%q: property prefix %q does not end in a dot", id, d.PropertyPrefix)
+	}
+	if d.VerifyAnnouncedDigests != d.ChecksumAlwaysVerified {
+		return fmt.Errorf("%q: VerifyAnnouncedDigests (%t) and Facts.ChecksumAlwaysVerified (%t) must agree", id, d.VerifyAnnouncedDigests, d.ChecksumAlwaysVerified)
 	}
 	if d.DataPort != nil && d.DataPort.Kind() != reflect.Interface {
 		return fmt.Errorf("%q: the data port %v is no interface type", id, d.DataPort)

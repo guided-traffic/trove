@@ -187,7 +187,7 @@ The `remote` section of an npm remote repository:
 | `forwardAuthOnRedirect` | `false` | Send credentials to a redirect target |
 | `outboundProxy.mode` | `default` | `default` or `direct` |
 | `sourceNetwork` | none | A CIDR prefix the upstream requests come from, for your firewall rules |
-| `integrity.checksumPolicy` | `verify-if-available` | `verify-if-available`, `require`, `ignore` or `pass-through` |
+| `integrity.checksumPolicy` | `verify-if-available` | `verify-if-available`, `require`, `ignore` or `pass-through`. An npm remote always compares a tarball with the digest its package document announces and refuses a mismatch with `upstream_integrity_mismatch`, so `ignore` and `pass-through` are refused for it (422 `not_applicable`) |
 | `integrity.blockUnexpectedContentTypes`, `allowedContentTypes` | `true`, `[]` | Refuse upstream answers of unexpected content types |
 | `limits.maxArtifactBytes`, `maxMetadataBytes` | system value | Largest upstream answer |
 | `limits.maxConcurrentFetches` | `64` | Budget of upstream requests of the repository in flight at once. Each replica takes `ceil(budget ÷ n)` of it for the n replicas that fill client misses, so the cluster-wide total stays within `budget + n − 1`, plus the background share B of a mirror (R-REPO-040). A fetch counts until the upstream's answer has been read, not while trove stores it |
