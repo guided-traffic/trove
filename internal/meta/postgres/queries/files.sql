@@ -117,7 +117,7 @@ SELECT i.id, i.repo_id, i.path, i.parent_path, i.kind, i.blob_sha256, i.size, i.
 -- name: LockLiveItem :many
 -- The first statement of a deploy's link step: two uploads to one path serialise
 -- here, and the second is an overwrite (R-STOR-005).
-SELECT id, kind, blob_sha256, size, explicit_folder
+SELECT id, kind, blob_sha256, size, explicit_folder, generated
   FROM items
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(path)::text AND trashed_at IS NULL
    FOR UPDATE;
@@ -163,12 +163,13 @@ SELECT id, path
 -- and the caller locks the winner and treats its own upload as an overwrite.
 INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size, media_type,
                    declared_sha256, declared_sha512, declared_sha1, declared_md5, upstream_url,
-                   generated, created_by, modified_by)
+                   generated, created_by, modified_by, modified_at)
 VALUES (sqlc.arg(repo_id)::bigint, sqlc.arg(path)::text, sqlc.arg(parent)::text, 'file',
         sqlc.arg(blob_sha256)::bytea, sqlc.arg(size)::bigint, NULLIF(sqlc.arg(media_type)::text, ''),
         sqlc.narg(declared_sha256)::bytea, sqlc.narg(declared_sha512)::bytea, sqlc.narg(declared_sha1)::bytea, sqlc.narg(declared_md5)::bytea,
         NULLIF(sqlc.arg(upstream_url)::text, ''), sqlc.arg(generated)::boolean,
-        NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
+        NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid,
+        COALESCE(NULLIF(sqlc.arg(modified_at)::text, '')::timestamptz, now()))
 ON CONFLICT (repo_id, path) WHERE trashed_at IS NULL DO NOTHING
 RETURNING id;
 
@@ -190,8 +191,22 @@ UPDATE items
        declared_sha1 = sqlc.narg(declared_sha1)::bytea, declared_md5 = sqlc.narg(declared_md5)::bytea,
        declared_mismatch = false, upstream_url = NULLIF(sqlc.arg(upstream_url)::text, ''),
        generated = sqlc.arg(generated)::boolean,
-       modified_at = now(), updated_at = now(), modified_by = NULLIF(sqlc.arg(actor)::text, '')::uuid
+       modified_at = COALESCE(NULLIF(sqlc.arg(modified_at)::text, '')::timestamptz, now()), updated_at = now(),
+       modified_by = NULLIF(sqlc.arg(actor)::text, '')::uuid
  WHERE id = sqlc.arg(id)::bigint
+RETURNING id;
+
+-- name: TouchGeneratedItem :execrows
+-- A generated file published again with the content it has (the publication port, Q-STOR-182): nothing changes but modified_at,
+-- which the caller sets, so that two generations never share a Last-Modified.
+UPDATE items SET modified_at = sqlc.arg(modified_at)::text::timestamptz, updated_at = now(), generated = true
+ WHERE id = sqlc.arg(id)::bigint;
+
+-- name: DeleteGeneratedItem :many
+-- A generated file the publication port is told to remove. A path that holds a client's file is not touched. The statement trigger of
+-- 00002 queues the released blob for collection.
+DELETE FROM items
+ WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(path)::text AND trashed_at IS NULL AND kind = 'file' AND generated
 RETURNING id;
 
 -- name: MarkFolderExplicit :execrows
@@ -207,12 +222,21 @@ SELECT count(*)::bigint
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND trashed_at IS NULL
    AND (path = sqlc.arg(path)::text OR (path >= sqlc.arg(lo)::text AND (sqlc.arg(hi)::text = '' OR path < sqlc.arg(hi)::text)));
 
+-- name: HasGeneratedInSubtree :one
+-- Whether a generated item is at a path or below it: a client's delete of it answers 409 generated_item (R-STOR-018). Same bounds as
+-- CountSubtree.
+SELECT EXISTS (
+  SELECT 1 FROM items
+   WHERE repo_id = sqlc.arg(repo_id)::bigint AND trashed_at IS NULL AND generated
+     AND (path = sqlc.arg(path)::text OR (path >= sqlc.arg(lo)::text AND (sqlc.arg(hi)::text = '' OR path < sqlc.arg(hi)::text)))
+) AS found;
+
 -- name: ListSubtreeBatch :many
 -- A keyset batch of the subtree in path order, files and folders. The delete
 -- checks every item of it before anything is removed. With bounded, max_id bounds
 -- the batch to the items that existed when the delete was authorized (Q-STOR-143,
 -- Q-STOR-192); the request's own listing and the erasure of a cache are unbounded.
-SELECT id, path, kind, blob_sha256, size
+SELECT id, path, kind, blob_sha256, size, generated
   FROM items
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND trashed_at IS NULL
    AND (path = sqlc.arg(path)::text OR (path >= sqlc.arg(lo)::text AND (sqlc.arg(hi)::text = '' OR path < sqlc.arg(hi)::text)))

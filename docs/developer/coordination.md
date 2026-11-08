@@ -170,6 +170,13 @@ the log says the write was given up and the lease is left to expire, which the r
 `attempt` counts claims. A release subtracts the interrupted claim, so a drain costs a job its progress since the last checkpoint and nothing else.
 A coalesced job that would return to `queued` while another waits ends `cancelled` with `error.code = superseded`.
 
+An enqueue of a `coalesce` kind that meets the waiting job of its key **adjusts** it (`insertJob` / `adjustWaiting` in
+[queue.go](../../internal/jobs/queue.go), Q-ARCH-384): under `LockWaitingJobByKey` it runs `AdjustWaitingJob` (`run_at = LEAST(run_at,
+now() + delay)`, the arguments replaced when `EnqueueSpec.MergeArgs` returned a change), reports `Result.Moved` / `Result.Merged` and, for a
+move, wakes the workers. Nothing moves later; a running job is never touched (the enqueue waits as the one job behind it); `exclusive` returns
+the existing job as before; a kind that is not `coalesce` refuses `MergeArgs`. `Queue.Running(ctx, tx, key)` reads the running job of a key, for
+a caller that must tell it from the waiting one (the Debian reindex).
+
 Liveness: the loops are watched as `jobs.claim`, `jobs.reaper`, `jobs.scheduler` (while the lease is held), `cluster.leases`, `cluster.changes`,
 `cluster.signals`, `cluster.registry` and, on `worker` and `all`, `blob.usage_fold` (the usage fold of R-STOR-003, which beats while it waits, so `storage.usage.fold_interval` needs no validation against the bound). Each call carries a deadline of `min(health.watchdog_timeout / 2, 10 s)` (`cluster.CallTimeout`), and the claim
 loop records progress when the replica is unready or every slot is busy. A loop that records progress once per iteration needs its cadence below
@@ -349,6 +356,7 @@ go test -tags integration -race ./test/integration/coordination/...
 | File | Covers |
 |---|---|
 | `leases_test.go` | one holder across two workers, web holds no lease connection, session termination, fencing, explicit release |
+| `coalesce_test.go` | a coalesced enqueue moves the waiting job earlier and never later, merges arguments, leaves a running job alone, and exclusive is unchanged |
 | `jobs_test.go` | web never in `locked_by`, exclusive and coalesce keys, backoff, attempts, reaper, lost lease, cancel, readiness gate, unknown kinds |
 | `latency_test.go` | P-13, P-14 |
 | `changes_test.go` | epoch order, regression, reused epoch, gap, unknown payload, prune, `PollNow`, the fill rule against the log |

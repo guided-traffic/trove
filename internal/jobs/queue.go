@@ -71,6 +71,11 @@ type EnqueueSpec struct {
 	// Traceparent is the W3C trace context of the enqueuing request or job. It
 	// holds trace context only, never a credential.
 	Traceparent string
+	// MergeArgs, for a kind in the Coalesce mode only, is called with the arguments of the job that waits under the key when this
+	// enqueue finds one, and returns the arguments the waiting job gets and whether they differ: the way a request for more work (a
+	// full rebuild where an incremental one waits) upgrades the waiting job instead of queuing a second (Q-ARCH-384). It is not
+	// called for a job that is running, and not for a waiting job of another kind. A kind in another mode refuses it.
+	MergeArgs func(waiting json.RawMessage) (merged json.RawMessage, changed bool)
 }
 
 // Result is the outcome of an enqueue.
@@ -79,6 +84,11 @@ type Result struct {
 	// Created is false when a conflicting job with the same key already
 	// exists and Job is that job. The API answers 409 with it.
 	Created bool
+	// Moved is true when the job is the waiting job of a Coalesce key and this enqueue moved its run time earlier: the work was
+	// asked for sooner than the waiting job would have run (Q-ARCH-384). Job carries the new run time.
+	Moved bool
+	// Merged is true when the waiting job's arguments were replaced by EnqueueSpec.MergeArgs.
+	Merged bool
 }
 
 func (qu *Queue) params(e EnqueueSpec) (q.InsertJobParams, KindSpec, error) {
@@ -107,6 +117,9 @@ func paramsFor(spec KindSpec, e EnqueueSpec) (q.InsertJobParams, error) {
 	}
 	if spec.DedupMode == NoDedup && key != "" {
 		return q.InsertJobParams{}, kindError(e.Kind, "has no dedup mode, so an enqueue cannot carry a key")
+	}
+	if e.MergeArgs != nil && spec.DedupMode != Coalesce {
+		return q.InsertJobParams{}, kindError(e.Kind, "is not a coalesce kind, so an enqueue cannot merge into a waiting job")
 	}
 	prio := spec.Priority
 	if e.Priority != 0 {
@@ -143,7 +156,7 @@ func EnqueueTx(ctx context.Context, tx meta.Tx, spec KindSpec, e EnqueueSpec) (R
 	if err != nil {
 		return Result{}, err
 	}
-	return insertJob(ctx, q.New(ptx), p, DedupMode(p.DedupMode))
+	return insertJob(ctx, q.New(ptx), p, e)
 }
 
 // Enqueue inserts a job in the caller's transaction, so the job exists exactly
@@ -159,14 +172,28 @@ func (qu *Queue) Enqueue(ctx context.Context, tx meta.Tx, e EnqueueSpec) (Result
 	if err != nil {
 		return Result{}, err
 	}
-	res, err := insertJob(ctx, q.New(ptx), p, DedupMode(p.DedupMode))
+	res, err := insertJob(ctx, q.New(ptx), p, e)
 	if err != nil {
 		return Result{}, err
 	}
-	if res.Created && qu.sig != nil {
+	if (res.Created || res.Moved) && qu.sig != nil {
 		qu.sig.Notify(tx, "jobs", spec.Queue)
 	}
 	return res, nil
+}
+
+// Running returns the job that runs under a dedup key, read in the caller's transaction; ok is false when none runs. A caller that
+// must tell a running job of a coalesce key from the one that waits behind it asks here (Q-ARCH-384): Enqueue reports the waiting one.
+func (qu *Queue) Running(ctx context.Context, tx meta.Tx, key string) (j Job, ok bool, err error) {
+	ptx, isPG := postgres.Unwrap(tx)
+	if !isPG {
+		return Job{}, false, errors.New("jobs: Running needs a transaction of internal/meta/postgres")
+	}
+	rows, err := q.New(ptx).FindRunningJobByKey(ctx, key)
+	if err != nil || len(rows) == 0 {
+		return Job{}, false, err
+	}
+	return fromRow(rows[0]), true, nil
 }
 
 // EnqueueNow inserts a job in a transaction of its own, for callers that have no
@@ -176,20 +203,25 @@ func (qu *Queue) EnqueueNow(ctx context.Context, e EnqueueSpec) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	res, err := insertJob(ctx, q.New(qu.db), p, DedupMode(p.DedupMode))
+	res, err := insertJob(ctx, q.New(qu.db), p, e)
 	if err != nil {
 		return Result{}, err
 	}
-	if res.Created && qu.sig != nil {
+	if (res.Created || res.Moved) && qu.sig != nil {
 		qu.sig.Publish("jobs", spec.Queue)
 	}
 	return res, nil
 }
 
-// insertJob runs the insert and resolves a conflict on the dedup key to the
-// existing job. A job that ended between the refusal and the lookup lets the
-// insert run again.
-func insertJob(ctx context.Context, qs *q.Queries, p q.InsertJobParams, mode DedupMode) (Result, error) {
+// insertJob runs the insert and resolves a conflict on the dedup key to the existing job. A job that ended between the refusal and
+// the lookup lets the insert run again.
+//
+// A conflict in the Exclusive mode returns the active job unchanged. A conflict in the Coalesce mode finds the waiting job, locked,
+// and adjusts it (Q-ARCH-384): an enqueue that asks for an earlier run time moves the job there, and an enqueue with MergeArgs
+// replaces the job's arguments with the merged ones. Nothing is ever moved later, and a job that is running is never touched: the
+// work that arrives during a run waits as the one job behind it.
+func insertJob(ctx context.Context, qs *q.Queries, p q.InsertJobParams, e EnqueueSpec) (Result, error) {
+	mode := DedupMode(p.DedupMode)
 	for range 3 {
 		rows, err := qs.InsertJob(ctx, p)
 		if err != nil {
@@ -205,16 +237,38 @@ func insertJob(ctx context.Context, qs *q.Queries, p q.InsertJobParams, mode Ded
 		if mode == Exclusive {
 			existing, err = qs.FindActiveJobByKey(ctx, p.DedupKey)
 		} else {
-			existing, err = qs.FindWaitingJobByKey(ctx, p.DedupKey)
+			existing, err = qs.LockWaitingJobByKey(ctx, p.DedupKey)
 		}
 		if err != nil {
 			return Result{}, err
 		}
 		if len(existing) == 1 {
+			if mode == Coalesce {
+				return adjustWaiting(ctx, qs, existing[0], p, e)
+			}
 			return Result{Job: fromRow(existing[0])}, nil
 		}
 	}
 	return Result{}, errors.New("jobs: the dedup key kept conflicting with a job that kept ending")
+}
+
+// adjustWaiting moves the waiting job of a coalesce key to the run time of the enqueue when that is earlier, and merges the
+// enqueue's arguments into it.
+func adjustWaiting(ctx context.Context, qs *q.Queries, waiting q.Job, p q.InsertJobParams, e EnqueueSpec) (Result, error) {
+	old := fromRow(waiting)
+	args, merged := json.RawMessage(nil), false
+	if e.MergeArgs != nil && old.Kind == p.Kind {
+		args, merged = e.MergeArgs(old.Args)
+	}
+	rows, err := qs.AdjustWaitingJob(ctx, q.AdjustWaitingJobParams{ID: old.ID, DelaySecs: p.DelaySecs, SetArgs: merged, Args: string(args)})
+	if err != nil {
+		return Result{}, err
+	}
+	if len(rows) == 0 {
+		return Result{Job: old}, nil
+	}
+	job := fromRow(rows[0])
+	return Result{Job: job, Moved: job.RunAt.Before(old.RunAt), Merged: merged}, nil
 }
 
 // Get returns a job; ok is false if it does not exist.

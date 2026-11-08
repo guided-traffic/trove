@@ -261,6 +261,23 @@ import rules, the rotation with the signing path of the build, the permissions, 
 `signing-key.asc`, and the replay in every case of the table of the security page. Run it through the slot wrapper
 (`go test -tags integration ./test/integration/debkeys/`).
 
+## Publication, builds and the reindex
+
+What the index builder (T-17 WP4) stands on, built ahead of it:
+
+| What | Where |
+|---|---|
+| the publication port `items.Publisher` for both classes, and the 409 `generated_item` for a client | [items/publish.go](../../internal/items/publish.go), [items.md](items.md#the-publication-port), Q-STOR-182, Q-STOR-210 |
+| the coalesce enqueue that moves the waiting job earlier and merges arguments | [jobs/queue.go](../../internal/jobs/queue.go), [coordination.md](coordination.md#job-framework), Q-ARCH-384 |
+| `Store.EnqueueBuild(ctx, tx, repoID, delay)`: an automatic `deb-index` job under the key `index:<repository id>`; the writers of rows that need a build call it with `deb.index_delay`; a key change calls it with no delay (the default of `Options.KeysChanged`) | [formatdata/deb/enqueue.go](../../internal/formatdata/deb/enqueue.go) |
+| `Store.Reindex`: the full build of the reindex endpoint; `IndexJobArgs{Full, Reindex}` are the arguments the builder reads (`Reindex` implies `Full`) | the same file |
+| `POST …/reindex`: 202 with the job, 409 `reindex_running`, 405 `not_applicable`; `v1.Reindexer` is implemented by a format's data port and offered by `App.reindexers` | [api/v1/reindex.go](../../internal/api/v1/reindex.go), [app/wire_formats.go](../../internal/app/wire_formats.go) |
+
+The index builder replaces `RunIndexJob` (`build.go`): it reads `IndexJobArgs` from `run.Args`, publishes with `Publish` (its `commit` writes the generation
+rows and returns `ErrSuperseded` when a newer generation exists), and registers nothing else: the endpoint and the enqueues need no change. Tests: the area
+[test/integration/debkeys](../../test/integration/debkeys/reindex_test.go) (`TestR_REPO_016_…`), [itempublish](../../test/integration/itempublish/publish_test.go) and
+the queue test in [coordination](../../test/integration/coordination/coalesce_test.go).
+
 ## test/debstub: the counting stub archive
 
 A deterministic APT archive that is not trove: it serves generated content over TLS only, counts every request, and fails on

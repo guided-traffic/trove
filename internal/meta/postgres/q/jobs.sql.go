@@ -11,6 +11,78 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adjustWaitingJob = `-- name: AdjustWaitingJob :many
+UPDATE job
+   SET run_at = LEAST(run_at, now() + make_interval(secs => $1::float8)),
+       args = CASE WHEN $2::bool THEN $3::text::jsonb ELSE args END
+ WHERE id = $4::text::uuid AND state = 'queued'
+RETURNING id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by
+`
+
+type AdjustWaitingJobParams struct {
+	DelaySecs float64
+	SetArgs   bool
+	Args      string
+	ID        string
+}
+
+// Moves a waiting job to an earlier run time and replaces its arguments (Q-ARCH-384). LEAST keeps a run time that is earlier already;
+// the arguments change only when set_args says so. A job that was claimed meanwhile is left alone and no row comes back.
+func (q *Queries) AdjustWaitingJob(ctx context.Context, arg AdjustWaitingJobParams) ([]Job, error) {
+	rows, err := q.db.Query(ctx, adjustWaitingJob,
+		arg.DelaySecs,
+		arg.SetArgs,
+		arg.Args,
+		arg.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Job{}
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Queue,
+			&i.Args,
+			&i.State,
+			&i.Priority,
+			&i.RunAt,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.DedupKey,
+			&i.DedupMode,
+			&i.Task,
+			&i.ScheduledFor,
+			&i.TargetKind,
+			&i.TargetKey,
+			&i.LockedBy,
+			&i.LockedUntil,
+			&i.ProgressDone,
+			&i.ProgressTotal,
+			&i.ProgressUnit,
+			&i.Checkpoint,
+			&i.Result,
+			&i.Error,
+			&i.CreatedBy,
+			&i.Traceparent,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.RanBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const cancelJob = `-- name: CancelJob :many
 UPDATE job
    SET state = CASE WHEN state = 'queued' THEN 'cancelled'::job_state ELSE 'cancelling'::job_state END,
@@ -387,6 +459,62 @@ func (q *Queries) FindActiveJobByKey(ctx context.Context, dedupKey string) ([]Jo
 	return items, nil
 }
 
+const findRunningJobByKey = `-- name: FindRunningJobByKey :many
+SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by FROM job
+ WHERE dedup_key = $1::text AND state IN ('running', 'cancelling')
+ LIMIT 1
+`
+
+func (q *Queries) FindRunningJobByKey(ctx context.Context, dedupKey string) ([]Job, error) {
+	rows, err := q.db.Query(ctx, findRunningJobByKey, dedupKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Job{}
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Queue,
+			&i.Args,
+			&i.State,
+			&i.Priority,
+			&i.RunAt,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.DedupKey,
+			&i.DedupMode,
+			&i.Task,
+			&i.ScheduledFor,
+			&i.TargetKind,
+			&i.TargetKey,
+			&i.LockedBy,
+			&i.LockedUntil,
+			&i.ProgressDone,
+			&i.ProgressTotal,
+			&i.ProgressUnit,
+			&i.Checkpoint,
+			&i.Result,
+			&i.Error,
+			&i.CreatedBy,
+			&i.Traceparent,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.RanBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findWaitingJobByKey = `-- name: FindWaitingJobByKey :many
 SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by FROM job
  WHERE dedup_key = $1::text AND state = 'queued'
@@ -684,6 +812,65 @@ func (q *Queries) JobQueueGauges(ctx context.Context) ([]JobQueueGaugesRow, erro
 	for rows.Next() {
 		var i JobQueueGaugesRow
 		if err := rows.Scan(&i.Kind, &i.Queued, &i.OldestAgeSeconds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockWaitingJobByKey = `-- name: LockWaitingJobByKey :many
+SELECT id, kind, queue, args, state, priority, run_at, attempt, max_attempts, dedup_key, dedup_mode, task, scheduled_for, target_kind, target_key, locked_by, locked_until, progress_done, progress_total, progress_unit, checkpoint, result, error, created_by, traceparent, created_at, started_at, finished_at, ran_by FROM job
+ WHERE dedup_key = $1::text AND state = 'queued'
+ LIMIT 1
+   FOR UPDATE
+`
+
+// The waiting job of a coalesce key, locked: an enqueue that finds it changes its run time or its arguments (Q-ARCH-384), and two
+// enqueues doing so wait for each other.
+func (q *Queries) LockWaitingJobByKey(ctx context.Context, dedupKey string) ([]Job, error) {
+	rows, err := q.db.Query(ctx, lockWaitingJobByKey, dedupKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Job{}
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Queue,
+			&i.Args,
+			&i.State,
+			&i.Priority,
+			&i.RunAt,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.DedupKey,
+			&i.DedupMode,
+			&i.Task,
+			&i.ScheduledFor,
+			&i.TargetKind,
+			&i.TargetKey,
+			&i.LockedBy,
+			&i.LockedUntil,
+			&i.ProgressDone,
+			&i.ProgressTotal,
+			&i.ProgressUnit,
+			&i.Checkpoint,
+			&i.Result,
+			&i.Error,
+			&i.CreatedBy,
+			&i.Traceparent,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.RanBy,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

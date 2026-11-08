@@ -198,10 +198,15 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 	if err != nil {
 		return nil, fmt.Errorf("formats: oci data port: %w", err)
 	}
-	deb, err := debdata.New(debdata.Options{
+	debOpts := debdata.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom, Ring: ring,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
-	})
+	}
+	// The index build's queue: the restore's refusing queue has no Running and enqueues no build, as it enqueues no job.
+	if jq, ok := queue.(debdata.Jobs); ok {
+		debOpts.Jobs = jq
+	}
+	deb, err := debdata.New(debOpts)
 	if err != nil {
 		return nil, fmt.Errorf("formats: deb data port: %w", err)
 	}
@@ -399,4 +404,20 @@ func (a *App) debKeyStore() v1.DebKeyStore {
 		return s
 	}
 	return nil
+}
+
+// reindexers are the formats with a job-built index, by format ID: every data port that implements v1.Reindexer (the Debian one,
+// R-REPO-016). A replica without the ports offers none.
+func (a *App) reindexers() map[string]v1.Reindexer {
+	fp := part[formatPortsArea](a.parts)
+	if fp.bindings == nil {
+		return nil
+	}
+	out := map[string]v1.Reindexer{}
+	for _, f := range formats.List() {
+		if rx, ok := fp.bindings.Get(f.Descriptor().ID).(v1.Reindexer); ok {
+			out[string(f.Descriptor().ID)] = rx
+		}
+	}
+	return out
 }

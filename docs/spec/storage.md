@@ -1545,6 +1545,9 @@ Priority: **MVP** · Covers: ART-034, STOR-002
   touched; a repository that is gone or being deleted ends the job as done, because its own deletion
   removes the rest. A disabled repository stops the job unless the caller holds `content:bypass`, as for
   the request (Q-AUTHZ-162).
+- A **generated item** (the files of a job-built index, written by the publication port, Q-STOR-182) is never written, deleted,
+  copied or moved by a client: a delete whose subtree holds one, and an upload to a path that holds one, answer `409 generated_item`
+  and change nothing (Q-STOR-210). The port itself replaces and removes them.
 - Remote repositories: a delete removes the cached copy permanently (no trash can); the next
   request refetches it. Virtual repositories answer `405`.
 - Deleting a whole repository (operation of
@@ -4972,8 +4975,8 @@ together or not at all, and the same job writes rows beside them (the generation
 **Choice:** (a). `modified_at` of every item of a generation is the `Release` date the caller passes, so two generations never share a
 `Last-Modified` and a client's `If-Modified-Since` never gets a stale 304 (R-STOR-012).
 
-**Rationale:** the port is declared with the contract of the Debian format and answers `not_implemented` until its work package builds it for
-both classes. The development agent would revisit it if a second job-built format wanted a different atomicity.
+**Rationale:** the port is declared with the contract of the Debian format and built for both classes in `internal/items/publish.go` (Q-STOR-210).
+The development agent would revisit it if a second job-built format wanted a different atomicity.
 
 **Applied in the spec:** R-STOR-003 (above), [formats/debian.md](formats/debian.md) R-DEB-010. Code: [publish.go](../../internal/items/publish.go).
 
@@ -5134,6 +5137,32 @@ would revisit (b) if jobs that wait longer than a token's retention become commo
 
 **Applied in the spec:** R-STOR-018 (the job's bullet). Code: `internal/auth/standing.go` (`token`, `session`),
 `internal/auth/session/standing.go` (`ErrPurged`). Tests: `TestJobStanding`, `TestR_STOR_018_TheDeleteJobReadsTheSessionThatAskedFromItsRow`.
+
+### Q-STOR-210 · The publication port reuses the blob commit protocol, writes no event and no hook, and a client cannot touch what it wrote
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `items.Publisher.Publish` (Q-STOR-182) is the one writer of generated items. Three questions remained: how the blobs reach the
+store, what a publication records, and how R-STOR-018 keeps a client from deleting or overwriting the result.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `blob.CommitAll` for the blobs, the link function as the publication, no audit event or storage hook per file, a 409 in the item store for a client (chosen) | Objects are written first, outside any transaction; the link transaction holds the share lock of every blob row, upserts the items, removes the generated items it is told to, and runs the caller's function; a failure or `ErrSuperseded` queues the digests for collection | The commit protocol of every other write: no new object-store path, the same garbage-collection rule, equal blobs stored once; a reader sees the previous generation or the new one | A publication of 2,000 files is one long link transaction; the hook of the format never sees its own files |
+| (b) One `Commit` per file | Per-file transactions | Existing code | A reader could see a mixture of two generations (Q-STOR-182 (b)) |
+| (c) Audit event and hook per file | As an upload | Uniform | An index is rewritten every few seconds: the audit trail would hold thousands of events no one asked for, and the format's hook would take its own index for a client's upload |
+
+**Choice:** (a). A path that holds a client's file takes the new content and becomes generated; a path in `remove` that holds a client's file is
+left alone; an identical blob changes only `modified_at`, which the caller sets (the `Release` date), and `updated_at`; a zero `ModifiedAt` is
+the transaction's time. `Publish` takes the repository it is given whatever its class: that a virtual repository accepts generated items from
+this port and from nothing else is the virtual class's rule (T-17 WP8), whose seam is this port. A client's upload to a path that holds a
+generated item and a client's delete of a subtree that holds one answer 409 `generated_item` (checked in the link step and in the delete's
+request and removing transaction); a companion committed as `Generated` replaces it as before.
+
+**Rationale:** nothing here needed a second way to store a blob. The development agent would revisit (c) if the audit trail should show index
+publications.
+
+**Applied in the spec:** R-STOR-018 (above), Q-STOR-182. Code: [publish.go](../../internal/items/publish.go), [commit.go](../../internal/items/commit.go),
+[delete.go](../../internal/items/delete.go), [files.sql](../../internal/meta/postgres/queries/files.sql). Tests: `test/integration/itempublish`.
 
 ## What this does not cover
 

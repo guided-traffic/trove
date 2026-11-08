@@ -105,7 +105,14 @@ func (s *Store) Delete(ctx context.Context, spec DeleteSpec) (DeleteResult, erro
 	lo, hi := subtreeBounds(spec.Path)
 	var count int64
 	if err := s.read(ctx, func(qs *q.Queries) error {
-		var err error
+		// A generated item is never deleted by a client, and a subtree that holds one is refused whole (R-STOR-018).
+		has, err := qs.HasGeneratedInSubtree(ctx, q.HasGeneratedInSubtreeParams{RepoID: repo.ID, Path: spec.Path, Lo: lo, Hi: hi})
+		if err != nil {
+			return err
+		}
+		if has {
+			return GeneratedItem()
+		}
 		count, err = qs.CountSubtree(ctx, q.CountSubtreeParams{RepoID: repo.ID, Path: spec.Path, Lo: lo, Hi: hi})
 		return err
 	}); err != nil {
@@ -122,6 +129,11 @@ func (s *Store) Delete(ctx context.Context, spec DeleteSpec) (DeleteResult, erro
 		rows, err := subtree(ctx, qs, repo.ID, spec.Path, false)
 		if err != nil {
 			return err
+		}
+		for _, r := range rows {
+			if r.Generated {
+				return GeneratedItem()
+			}
 		}
 		// The check and the removal see the same rows, inside one transaction.
 		if err := checkRows(ctx, spec.Check, rows); err != nil {
@@ -157,6 +169,8 @@ type subtreeRow struct {
 	Kind   string
 	Digest []byte
 	Size   int64
+	// Generated marks an item the publication port wrote (Q-STOR-182).
+	Generated bool
 }
 
 // subtree reads the live items at a path and below it, in path order, in keyset
@@ -173,7 +187,7 @@ func subtree(ctx context.Context, qs *q.Queries, rid int64, path string, filesOn
 			return nil, err
 		}
 		for _, r := range rows {
-			out = append(out, subtreeRow{ID: r.ID, Path: r.Path, Kind: r.Kind, Digest: r.BlobSha256, Size: r.Size.Int64})
+			out = append(out, subtreeRow{ID: r.ID, Path: r.Path, Kind: r.Kind, Digest: r.BlobSha256, Size: r.Size.Int64, Generated: r.Generated})
 		}
 		if len(rows) < 1000 {
 			return out, nil

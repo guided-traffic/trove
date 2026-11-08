@@ -517,8 +517,7 @@ The indexes of a suite are signed and stored in several compressed variants, so 
 - **The job.** Kind `deb-index`, queue `index`, `coalesce` under the key `index:<repository id>` (the key R-REPO-016 uses), enqueued
   in the transaction of every change of a suite with the delay `deb.index_delay`. A change during a build leaves one job waiting,
   which builds what the running one missed. An enqueue whose run time is earlier than the waiting job's moves the waiting job to
-  that earlier time, so "without delay" never waits behind a delayed job (Q-ARCH-384; the job queue's insert keeps the waiting
-  job's run time today, and WP4 changes it).
+  that earlier time, so "without delay" never waits behind a delayed job (Q-ARCH-384, built in the job queue).
 - **A build** reads, in one `REPEATABLE READ` snapshot, the suites whose `change_seq` exceeds their `built_seq` (every suite for a
   full build) with their rows; renders each suite's files (R-DEB-011); compresses and signs them (R-DEB-016); and hands them to
   the **publication port** of the item store (Q-STOR-182, ADR-170), which writes every new file's blob (R-STOR-005) outside any

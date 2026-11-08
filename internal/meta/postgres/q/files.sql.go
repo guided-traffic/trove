@@ -40,6 +40,39 @@ func (q *Queries) CountSubtree(ctx context.Context, arg CountSubtreeParams) (int
 	return column_1, err
 }
 
+const deleteGeneratedItem = `-- name: DeleteGeneratedItem :many
+DELETE FROM items
+ WHERE repo_id = $1::bigint AND path = $2::text AND trashed_at IS NULL AND kind = 'file' AND generated
+RETURNING id
+`
+
+type DeleteGeneratedItemParams struct {
+	RepoID int64
+	Path   string
+}
+
+// A generated file the publication port is told to remove. A path that holds a client's file is not touched. The statement trigger of
+// 00002 queues the released blob for collection.
+func (q *Queries) DeleteGeneratedItem(ctx context.Context, arg DeleteGeneratedItemParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, deleteGeneratedItem, arg.RepoID, arg.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteItemByIDOne = `-- name: DeleteItemByIDOne :execrows
 DELETE FROM items WHERE id = $1::bigint
 `
@@ -430,6 +463,35 @@ func (q *Queries) GetLiveItem(ctx context.Context, arg GetLiveItemParams) ([]Get
 	return items, nil
 }
 
+const hasGeneratedInSubtree = `-- name: HasGeneratedInSubtree :one
+SELECT EXISTS (
+  SELECT 1 FROM items
+   WHERE repo_id = $1::bigint AND trashed_at IS NULL AND generated
+     AND (path = $2::text OR (path >= $3::text AND ($4::text = '' OR path < $4::text)))
+) AS found
+`
+
+type HasGeneratedInSubtreeParams struct {
+	RepoID int64
+	Path   string
+	Lo     string
+	Hi     string
+}
+
+// Whether a generated item is at a path or below it: a client's delete of it answers 409 generated_item (R-STOR-018). Same bounds as
+// CountSubtree.
+func (q *Queries) HasGeneratedInSubtree(ctx context.Context, arg HasGeneratedInSubtreeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasGeneratedInSubtree,
+		arg.RepoID,
+		arg.Path,
+		arg.Lo,
+		arg.Hi,
+	)
+	var found bool
+	err := row.Scan(&found)
+	return found, err
+}
+
 const insertExplicitFolder = `-- name: InsertExplicitFolder :many
 INSERT INTO items (repo_id, path, parent_path, kind, explicit_folder, created_by, modified_by)
 VALUES ($1::bigint, $2::text, $3::text, 'folder', true,
@@ -473,12 +535,13 @@ func (q *Queries) InsertExplicitFolder(ctx context.Context, arg InsertExplicitFo
 const insertFileItem = `-- name: InsertFileItem :many
 INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size, media_type,
                    declared_sha256, declared_sha512, declared_sha1, declared_md5, upstream_url,
-                   generated, created_by, modified_by)
+                   generated, created_by, modified_by, modified_at)
 VALUES ($1::bigint, $2::text, $3::text, 'file',
         $4::bytea, $5::bigint, NULLIF($6::text, ''),
         $7::bytea, $8::bytea, $9::bytea, $10::bytea,
         NULLIF($11::text, ''), $12::boolean,
-        NULLIF($13::text, '')::uuid, NULLIF($13::text, '')::uuid)
+        NULLIF($13::text, '')::uuid, NULLIF($13::text, '')::uuid,
+        COALESCE(NULLIF($14::text, '')::timestamptz, now()))
 ON CONFLICT (repo_id, path) WHERE trashed_at IS NULL DO NOTHING
 RETURNING id
 `
@@ -497,6 +560,7 @@ type InsertFileItemParams struct {
 	UpstreamUrl    string
 	Generated      bool
 	Actor          string
+	ModifiedAt     string
 }
 
 // A concurrent upload to the same path wins the unique index; no row comes back
@@ -516,6 +580,7 @@ func (q *Queries) InsertFileItem(ctx context.Context, arg InsertFileItemParams) 
 		arg.UpstreamUrl,
 		arg.Generated,
 		arg.Actor,
+		arg.ModifiedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -803,7 +868,7 @@ func (q *Queries) ListItemKinds(ctx context.Context, arg ListItemKindsParams) ([
 }
 
 const listSubtreeBatch = `-- name: ListSubtreeBatch :many
-SELECT id, path, kind, blob_sha256, size
+SELECT id, path, kind, blob_sha256, size, generated
   FROM items
  WHERE repo_id = $1::bigint AND trashed_at IS NULL
    AND (path = $2::text OR (path >= $3::text AND ($4::text = '' OR path < $4::text)))
@@ -832,6 +897,7 @@ type ListSubtreeBatchRow struct {
 	Kind       string
 	BlobSha256 []byte
 	Size       pgtype.Int8
+	Generated  bool
 }
 
 // A keyset batch of the subtree in path order, files and folders. The delete
@@ -863,6 +929,7 @@ func (q *Queries) ListSubtreeBatch(ctx context.Context, arg ListSubtreeBatchPara
 			&i.Kind,
 			&i.BlobSha256,
 			&i.Size,
+			&i.Generated,
 		); err != nil {
 			return nil, err
 		}
@@ -1030,7 +1097,7 @@ func (q *Queries) LockFoldersShared(ctx context.Context, arg LockFoldersSharedPa
 }
 
 const lockLiveItem = `-- name: LockLiveItem :many
-SELECT id, kind, blob_sha256, size, explicit_folder
+SELECT id, kind, blob_sha256, size, explicit_folder, generated
   FROM items
  WHERE repo_id = $1::bigint AND path = $2::text AND trashed_at IS NULL
    FOR UPDATE
@@ -1047,6 +1114,7 @@ type LockLiveItemRow struct {
 	BlobSha256     []byte
 	Size           pgtype.Int8
 	ExplicitFolder bool
+	Generated      bool
 }
 
 // The first statement of a deploy's link step: two uploads to one path serialise
@@ -1066,6 +1134,7 @@ func (q *Queries) LockLiveItem(ctx context.Context, arg LockLiveItemParams) ([]L
 			&i.BlobSha256,
 			&i.Size,
 			&i.ExplicitFolder,
+			&i.Generated,
 		); err != nil {
 			return nil, err
 		}
@@ -1098,8 +1167,9 @@ UPDATE items
        declared_sha1 = $6::bytea, declared_md5 = $7::bytea,
        declared_mismatch = false, upstream_url = NULLIF($8::text, ''),
        generated = $9::boolean,
-       modified_at = now(), updated_at = now(), modified_by = NULLIF($10::text, '')::uuid
- WHERE id = $11::bigint
+       modified_at = COALESCE(NULLIF($10::text, '')::timestamptz, now()), updated_at = now(),
+       modified_by = NULLIF($11::text, '')::uuid
+ WHERE id = $12::bigint
 RETURNING id
 `
 
@@ -1113,6 +1183,7 @@ type ReplaceFileContentParams struct {
 	DeclaredMd5    []byte
 	UpstreamUrl    string
 	Generated      bool
+	ModifiedAt     string
 	Actor          string
 	ID             int64
 }
@@ -1131,12 +1202,33 @@ func (q *Queries) ReplaceFileContent(ctx context.Context, arg ReplaceFileContent
 		arg.DeclaredMd5,
 		arg.UpstreamUrl,
 		arg.Generated,
+		arg.ModifiedAt,
 		arg.Actor,
 		arg.ID,
 	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const touchGeneratedItem = `-- name: TouchGeneratedItem :execrows
+UPDATE items SET modified_at = $1::text::timestamptz, updated_at = now(), generated = true
+ WHERE id = $2::bigint
+`
+
+type TouchGeneratedItemParams struct {
+	ModifiedAt string
+	ID         int64
+}
+
+// A generated file published again with the content it has (the publication port, Q-STOR-182): nothing changes but modified_at,
+// which the caller sets, so that two generations never share a Last-Modified.
+func (q *Queries) TouchGeneratedItem(ctx context.Context, arg TouchGeneratedItemParams) (int64, error) {
+	result, err := q.db.Exec(ctx, touchGeneratedItem, arg.ModifiedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const touchRepositoryActivity = `-- name: TouchRepositoryActivity :execrows

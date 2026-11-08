@@ -132,6 +132,22 @@ The blob is already in the object store when the transaction starts; a rolled-ba
 collection finds it ([blob-store.md](blob-store.md)). An identical commit (same content at the path) changes no row: `Extra` runs, the
 hook and the audit row do not.
 
+### The publication port
+
+`Publish` ([publish.go](../../internal/items/publish.go), `items.Publisher`, Q-STOR-182, Q-STOR-210) is the fourth writer: the generated
+items of a job-built index, for a local and for a virtual repository. It spools every file's body, then calls `blob.CommitAll`, so the objects
+are written first, outside any transaction, and one link transaction holds the share lock of every blob row. Its link function is the
+publication: `linkGenerated` per file (ancestor folders, then insert / touch / replace of the item with `generated` set and `modified_at` from
+`GeneratedFile.ModifiedAt`), `DeleteGeneratedItem` per path in `remove` with `sweepAncestors`, then the caller's `commit(ctx, tx)` for its own
+rows. `commit` may run again (a restarted transaction), like every link function. `ErrSuperseded` (or any error) from `commit` rolls everything
+back, and the failed commit queues the written digests for collection. It writes no audit event and runs no storage hook. A quota check is not
+part of the store, so there is none. Writing into a virtual repository is allowed here; the rule that only the port may do it is the virtual
+class's (T-17 WP8).
+
+A client cannot undo it: `linkFile` answers `GeneratedItem()` (409 `generated_item`) for an upload over a generated item unless the commit is a
+`Companion` marked `Generated`, and `Delete` answers it before queuing or removing when the subtree holds one (`HasGeneratedInSubtree`, and
+`subtreeRow.Generated` in the removing transaction). `EraseCache` and the deletion of a repository do not go through `Delete`'s request path.
+
 ### Removal
 
 `Store.Delete` counts the subtree. At most `storage.delete.max_sync_items` items are checked (`DeleteSpec.Check`, in batches of 1,000
@@ -180,6 +196,7 @@ removal inside a caller's transaction uses `removeEmptied` and `sweepAncestors`,
 |---|---|---|
 | unit | [items_test.go](../../internal/items/items_test.go), [buffers_test.go](../../internal/items/buffers_test.go) | path helpers and subtree bounds, `RepoOf`, the origin names, no credentials in the upstream URL, the statistics buffer keeps what it could not write |
 | architecture | [archtest_test.go](../../internal/archtest/archtest_test.go) `TestModuleBans` | `items` imports no `authz`; `files` imports no `blob` and no `meta/postgres`; `rawfiles` and `edge` import no `api/v1` |
+| integration | [itempublish](../../test/integration/itempublish/publish_test.go) | the publication port: generated items, one transaction with the caller's rows, an identical file changes only `modified_at`, removals and swept folders, `ErrSuperseded` and an injected failure after the items were written roll back everything (the previous generation stays whole, the caller's row is gone), a body that fails while read publishes nothing, refusals, concurrent overlapping publications, 409 `generated_item` for a client's write and delete |
 | integration | [commit_test.go](../../test/integration/files/commit_test.go) | `TestR_ARCH_009_ItemStoreRunsTheStorageHooksInItsTransaction` (both origins, the order `Extra` → hook → audit, `Extra` sees the new item id, rollback leaves no item, no folder, no `Extra` row, no event; identical commit; overwrite gate; create-only), `TestR_ARCH_008_DeleteRunsOnItemsRemoved` (the hook is told in the synchronous delete and in every batch of the job; a failing hook leaves the files); [sweep_test.go](../../test/integration/files/sweep_test.go) `TestR_STOR_018_ARemovalDoesNotWaitForAFolderAnotherTransactionHolds` (the removal commits under a held folder, the sweep takes it after the holder) |
 
 ## Extending

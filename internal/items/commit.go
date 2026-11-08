@@ -372,6 +372,10 @@ func (s *Store) linkFile(ctx context.Context, tx meta.Tx, repo RepoRef, spec Com
 			out.created = true
 		case rows[0].Kind != KindFile:
 			return PathConflict("the path is a folder")
+		case rows[0].Generated && !spec.generated:
+			// A file trove generates from rows is never written by a client (R-STOR-018, Q-STOR-182); only the publication port and
+			// a format's own companions (Companion.Generated) replace it.
+			return GeneratedItem()
 		case spec.CreateOnly:
 			return CreateOnlyFailed()
 		case bytes.Equal(rows[0].BlobSha256, sp.SHA256[:]):
@@ -435,6 +439,8 @@ type fileParams struct {
 	rid                 int64
 	path, parent, actor string
 	spec                CommitSpec
+	// modified is the modified_at of the item as RFC 3339 text, "" for the transaction's time (the publication port sets it).
+	modified string
 }
 
 func insertFile(ctx context.Context, qs *q.Queries, p fileParams) (id int64, ok bool, err error) {
@@ -442,7 +448,7 @@ func insertFile(ctx context.Context, qs *q.Queries, p fileParams) (id int64, ok 
 	ids, err := qs.InsertFileItem(ctx, q.InsertFileItemParams{
 		RepoID: p.rid, Path: p.path, Parent: p.parent, BlobSha256: p.spec.Spooled.SHA256[:], Size: p.spec.Spooled.Size,
 		MediaType: p.spec.MediaType, DeclaredSha256: d.SHA256, DeclaredSha512: d.SHA512, DeclaredSha1: d.SHA1, DeclaredMd5: d.MD5,
-		UpstreamUrl: p.spec.UpstreamURL, Generated: p.spec.generated, Actor: p.actor,
+		UpstreamUrl: p.spec.UpstreamURL, Generated: p.spec.generated, Actor: p.actor, ModifiedAt: p.modified,
 	})
 	if err != nil || len(ids) != 1 {
 		return 0, false, err
@@ -455,7 +461,7 @@ func replaceFile(ctx context.Context, qs *q.Queries, id int64, p fileParams) err
 	_, err := qs.ReplaceFileContent(ctx, q.ReplaceFileContentParams{
 		ID: id, BlobSha256: p.spec.Spooled.SHA256[:], Size: p.spec.Spooled.Size, MediaType: p.spec.MediaType,
 		DeclaredSha256: d.SHA256, DeclaredSha512: d.SHA512, DeclaredSha1: d.SHA1, DeclaredMd5: d.MD5,
-		UpstreamUrl: p.spec.UpstreamURL, Generated: p.spec.generated, Actor: p.actor,
+		UpstreamUrl: p.spec.UpstreamURL, Generated: p.spec.generated, Actor: p.actor, ModifiedAt: p.modified,
 	})
 	return err
 }

@@ -2808,12 +2808,20 @@ Normative rules:
     `409` with that job ([operations-and-observability.md](operations-and-observability.md)).
   - `coalesce`: at most one job waits while another runs, so work that arrives during a run is not
     lost. Automatic index rebuilds (the job-built exception of R-ARCH-012) use this mode. Jobs with
-    the same key never run at the same time.
-  - A manual reindex ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-016) is
-    `exclusive`, so its trigger answers `409` naming the running job. Both kinds use the key
-    `index:<repository id>`, so a manual reindex and an automatic rebuild of one repository never
-    run at the same time. Neither takes an advisory-lock lease: leases carry registered numbers
-    only (R-ARCH-017).
+    the same key never run at the same time. An enqueue that meets the **waiting** job of its key
+    adjusts it and does not queue a second (Q-ARCH-384): when its run time is earlier, the waiting job
+    moves to that time (never later), and when the enqueue carries a merge of arguments (`MergeArgs`),
+    the waiting job's arguments become the merged ones. The result says `moved` and `merged`. A running
+    job is never touched. `exclusive` is unchanged: its conflicting enqueue returns the existing job as
+    it is.
+  - A manual reindex ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-016) is a
+    `coalesce` enqueue of the same kind and key as the automatic rebuild, `index:<repository id>`,
+    with arguments that mark it a full reindex. A reindex while an automatic rebuild waits upgrades
+    that job to a full reindex and moves it to now; it answers `202` with that job. Only a reindex that
+    meets a waiting or running reindex answers `409 reindex_running` naming the job. A reindex while
+    an automatic rebuild runs waits as the one job behind it. The two never run at the same time, as
+    they share the key. Neither takes an advisory-lock lease: leases carry registered numbers only
+    (R-ARCH-017).
   - If a coalesced job returns to `queued` (retry, reaper) while another waits, it ends
     `cancelled` with `error.code = superseded`.
 - The heartbeat extends `locked_until` every `jobs.heartbeat_interval`. One statement per replica
@@ -9761,6 +9769,32 @@ Context: the deb822 parser and writer, the package archive reader, dpkg's versio
 **Rationale:** the same reason as NuGet's rule libraries. The OpenPGP library (`internal/openpgp`) is a leaf of its own, recorded with its package.
 
 **Applied in the spec:** R-ARCH-002 (the leaf list above). Code: `internal/archtest/layers.go`.
+
+### Q-ARCH-384 · A coalesce enqueue adjusts the waiting job: an earlier run time moves it, a merge of arguments upgrades it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the Debian index build is a `coalesce` job enqueued with a delay (`deb.index_delay`, R-DEB-010). The insert kept the waiting job
+as it was, so a change that must be published at once (a key change, R-DEB-017) waited behind a delayed build, and a manual reindex
+(R-REPO-016) that met a waiting automatic build had nothing to say but "a job exists". Both are the same question: what does a second
+enqueue do to the job that waits?
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The queue moves the waiting job to the earlier run time and offers `EnqueueSpec.MergeArgs` for the kind to merge arguments (chosen) | In the Coalesce mode only, under a row lock of the waiting job: `run_at = LEAST(run_at, now() + delay)`, and the arguments the merge returns replace the old ones; the result reports `Moved` and `Merged`, and a move wakes the workers | One rule for every coalesce kind; the kind decides what an upgrade is; a running job is not touched, so work arriving during a run still waits as the one job behind it | A new member of `EnqueueSpec` and `Result` |
+| (b) A second job beside the waiting one | Two waiting jobs | No queue change | Violates the one waiting job of the unique index (`job_one_waiting`) |
+| (c) The caller cancels the waiting job and enqueues a new one | Two statements | No queue change | Not atomic: a worker may claim the job between them, and two enqueues race |
+| (d) The manual reindex as an `exclusive` job, as R-REPO-016 first said | A second kind of mode on one key | Existing modes | The exclusive index forbids a waiting automatic job while the reindex waits and says nothing about upgrading it |
+
+**Choice:** (a). A kind that is not `coalesce` refuses `MergeArgs`. The Debian reindex marks its arguments `reindex` and `full`
+(formatdata/deb/enqueue.go); the index builder reads them.
+
+**Rationale:** the unique index `job_one_waiting` already makes the waiting job the one place two enqueues meet, and the row lock
+serialises them there. The development agent would revisit (d) if a kind needed a reindex that never merges with automatic work.
+
+**Applied in the spec:** R-ARCH-016 (the enqueue modes), R-REPO-016, [formats/debian.md](formats/debian.md) R-DEB-010 and R-DEB-014.
+Code: [queue.go](../../internal/jobs/queue.go) (`insertJob`, `adjustWaiting`, `Queue.Running`), [jobs.sql](../../internal/meta/postgres/queries/jobs.sql).
+Tests: `TestR_ARCH_016_ACoalescedEnqueueAdjustsTheWaitingJob`.
 
 ### Q-ARCH-403 · The stall deadline runs only while bytes are expected from the peer
 

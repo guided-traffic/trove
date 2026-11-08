@@ -26,10 +26,32 @@ SELECT * FROM job
  ORDER BY (state = 'queued') DESC, created_at
  LIMIT 1;
 
+-- name: FindRunningJobByKey :many
+SELECT * FROM job
+ WHERE dedup_key = sqlc.arg(dedup_key)::text AND state IN ('running', 'cancelling')
+ LIMIT 1;
+
 -- name: FindWaitingJobByKey :many
 SELECT * FROM job
  WHERE dedup_key = sqlc.arg(dedup_key)::text AND state = 'queued'
  LIMIT 1;
+
+-- name: LockWaitingJobByKey :many
+-- The waiting job of a coalesce key, locked: an enqueue that finds it changes its run time or its arguments (Q-ARCH-384), and two
+-- enqueues doing so wait for each other.
+SELECT * FROM job
+ WHERE dedup_key = sqlc.arg(dedup_key)::text AND state = 'queued'
+ LIMIT 1
+   FOR UPDATE;
+
+-- name: AdjustWaitingJob :many
+-- Moves a waiting job to an earlier run time and replaces its arguments (Q-ARCH-384). LEAST keeps a run time that is earlier already;
+-- the arguments change only when set_args says so. A job that was claimed meanwhile is left alone and no row comes back.
+UPDATE job
+   SET run_at = LEAST(run_at, now() + make_interval(secs => sqlc.arg(delay_secs)::float8)),
+       args = CASE WHEN sqlc.arg(set_args)::bool THEN sqlc.arg(args)::text::jsonb ELSE args END
+ WHERE id = sqlc.arg(id)::text::uuid AND state = 'queued'
+RETURNING *;
 
 -- name: GetJob :many
 SELECT * FROM job WHERE id = sqlc.arg(id)::text::uuid;

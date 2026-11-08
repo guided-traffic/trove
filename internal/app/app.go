@@ -547,7 +547,7 @@ func (a *App) startClient() error {
 			// The backup runs, the summary and the backup block of the system information (wire_backup_gauges.go).
 			Backup: a.backupAPI(),
 			// The signing keys of the Debian repositories (wire_formats.go).
-			DebKeys: a.debKeyStore(),
+			DebKeys: a.debKeyStore(), Reindexers: a.reindexers(),
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

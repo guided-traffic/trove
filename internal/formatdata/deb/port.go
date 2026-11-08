@@ -39,10 +39,13 @@ type Options struct {
 	// KeysChanged is called in the transaction of every change of a repository's keys, after change_seq of its suites was raised: the
 	// index build's job enqueues a build without delay there (R-DEB-017). nil does nothing.
 	KeysChanged func(ctx context.Context, tx meta.Tx, repoID int64) error
+	// Jobs enqueues the index build (enqueue.go): after a key change when KeysChanged is nil, and for a reindex. nil enqueues nothing.
+	Jobs Jobs
 }
 
 // Store implements the data port of the format: the groups, each embedded from the file of the package that builds it.
 type Store struct {
+	o Options
 	localStore
 	keysStore
 	buildStore
@@ -61,11 +64,17 @@ func New(o Options) (*Store, error) {
 	if o.Recorder == nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "deb: the data port needs an audit recorder")
 	}
+	st := &Store{}
+	if o.KeysChanged == nil && o.Jobs != nil {
+		// A change of the keys re-signs every suite: the build runs at once, not after deb.index_delay (R-DEB-017).
+		o.KeysChanged = func(ctx context.Context, tx meta.Tx, repoID int64) error { return st.EnqueueBuild(ctx, tx, repoID, 0) }
+	}
 	g := &group{o: o}
-	return &Store{
-		localStore: localStore{g}, keysStore: keysStore{g}, buildStore: buildStore{g}, remoteStore: remoteStore{g},
+	*st = Store{
+		o: o, localStore: localStore{g}, keysStore: keysStore{g}, buildStore: buildStore{g}, remoteStore: remoteStore{g},
 		mirrorStore: mirrorStore{g}, virtualStore: virtualStore{g}, viewStore: viewStore{g}, journalStore: journalStore{g},
-	}, nil
+	}
+	return st, nil
 }
 
 // group is what every group of the port shares: the options. A group embeds a pointer to it, so the composition is one value.

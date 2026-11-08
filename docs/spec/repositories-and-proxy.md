@@ -989,12 +989,18 @@ Priority: **P1** · Covers: REPO-009
   Valkey message and while Valkey is unavailable. The signal area `metadata_changed` of R-REPO-020
   is not enough here: it is delivered at most once, and not at all without Valkey.
   [formats/npm.md](formats/npm.md) R-NPM-035 relies on this.
-- A reindex is an `exclusive` job of [architecture.md](architecture.md) R-ARCH-016 with the key
-  `index:<repository id>`: while one is queued or running, a new request answers 409
-  `reindex_running` naming it. Automatic rebuilds of job-built indexes (R-ARCH-012) are `coalesce`
-  jobs on the same key, so a manual reindex and an automatic rebuild of one repository never run
-  at the same time. Neither takes an advisory-lock lease: leases carry registered numbers only
-  (R-ARCH-017). Clients are served the previous metadata until the rebuilt metadata commits.
+- A reindex is a job of [architecture.md](architecture.md) R-ARCH-016 on the key `index:<repository id>`. For a format with a
+  job-built index (the exception of R-ARCH-012; the Debian format) it is a `coalesce` enqueue of the build's own kind with arguments
+  that mark it a full reindex ([Q-ARCH-384](architecture.md#q-arch-384--a-coalesce-enqueue-adjusts-the-waiting-job-an-earlier-run-time-moves-it-a-merge-of-arguments-upgrades-it)):
+  a reindex while an automatic rebuild waits upgrades that job to a full reindex and moves it to now, and the answer is `202` with
+  that job; a reindex while one runs automatically waits as the one job behind it. Only a reindex that meets a waiting or running
+  reindex answers 409 `reindex_running` naming that job. A manual reindex and an automatic rebuild of one repository never run at the
+  same time (one key). Neither takes an advisory-lock lease: leases carry registered numbers only (R-ARCH-017). Clients are served the
+  previous metadata until the rebuilt metadata commits.
+- The endpoint answers `405 not_applicable` for a repository whose format has no job-built index and for a remote repository (its
+  index is the upstream's). The rebuild of the package and version rows of npm and NuGet described above is not built: those formats
+  answer 405 as well. The request is recorded as the job (its target is the repository and its creator the caller); there is no audit
+  event of its own.
 
 Acceptance criteria:
 

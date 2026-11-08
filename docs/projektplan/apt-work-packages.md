@@ -636,3 +636,20 @@ classes. The browser UI. The manual pages (WP12).
 (`test/integration/deblocal`) cover the upload, the coordinates with the permission per side, the bounds, the deletion, ownership, and
 the store calls of the replay (`Withhold`, `RemoveCoordinatesByJournal`, `ReinstateFile`) against PostgreSQL. They do not run a real
 backup and restore, and they do not run the command `trove admin deb reinstate` itself.
+
+## 14 · WP4a (publication port, coalesce change, reindex endpoint) as built (stage 3)
+
+Built on the base after WP13 and WP2. The half of WP4 that needs nothing of WP1; the renderers, the build job, generations, retention and `waitFor`
+are WP4b (the APT local builder). Pages: [docs/developer/deb.md](../developer/deb.md#publication-builds-and-the-reindex), [items.md](../developer/items.md#the-publication-port),
+[coordination.md](../developer/coordination.md); decisions Q-ARCH-384 (written now, it had been reserved), Q-STOR-210.
+
+- **Built:** `items.Store.Publish` (both classes, `blob.CommitAll`, no event or hook, `modified_at` from the file), the 409 `generated_item` (upload over
+  a generated item, delete of a subtree holding one), the coalesce change (`EnqueueSpec.MergeArgs`, `Result.Moved/Merged`, `Queue.Running`), `v1.Reindexer`,
+  `ReindexRepository` (202, 409 `reindex_running`, 405 `not_applicable`), `debdata.Store.{EnqueueBuild, Reindex}` with `IndexJobArgs`, and the default
+  of `Options.KeysChanged` (an immediate build). The queue is passed to the data port by `formatPorts` when it can answer `Running`.
+- **Seams for WP4b:** replace `RunIndexJob` in `build.go`; read `IndexJobArgs` from the job; call `Publish`; call `EnqueueBuild` with `deb.index_delay` from the
+  writers of suites. The virtual class's rule that only the port writes generated items (WP8) wraps `Publish`; the port itself writes to any repository.
+- **Not built:** the reindex of npm and NuGet rows (R-REPO-016's first rule): those formats answer 405; no audit event for a reindex (the job records
+  caller and target); the `trove admin` commands.
+- **Verified by test:** the new areas `itempublish` and the coalesce test in `coordination`, the reindex tests in `debkeys`; the areas `files`,
+  `coordination`, `ocilocal` and `uploads` once for regressions of the guard and the queue change.
