@@ -300,6 +300,12 @@ jobs:
       - name: make image
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
+      - name: Fetch the dev charts that are GitHub release assets
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
+
       - name: make dev-up
         timeout-minutes: 25
         run: make dev-up
@@ -499,14 +505,21 @@ jobs:
           echo "cert-manager chart $DEV_CERT_MANAGER_CHART_VERSION (images pinned by digest)"
           echo "valkey-operator chart $DEV_VALKEY_OPERATOR_CHART_VERSION, internal-secrets-operator chart $DEV_ISO_CHART_VERSION"
           echo "CloudNativePG chart $CNPG_CHART_VERSION"
-          # up.sh installs the charts from these repositories; fail early, not 5 minutes into make dev-up.
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          # up.sh installs the charts of these repositories; the haproxy-ingress and cloudnative-pg archives are release assets, fetched by make dev-charts. Fail early, not 5 minutes into make dev-up.
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -681,13 +694,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -861,13 +881,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -1031,13 +1058,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -1217,13 +1251,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -1424,13 +1465,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -1623,13 +1671,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -1790,13 +1845,20 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
       - name: make image
         if: steps.leg.outputs.run == 'true'
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        if: steps.leg.outputs.run == 'true'
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         if: steps.leg.outputs.run == 'true'
@@ -1965,7 +2027,7 @@ jobs:
           kubectl version --client
           helm version --short
           # The published releases come from the chart repository of GitHub Pages; the rest is the dev profile's own.
-          for u in https://guided-traffic.github.io/trove https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://guided-traffic.github.io/trove https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
@@ -1975,6 +2037,12 @@ jobs:
       # TestUpgrade_R_HA_020_AcrossTwoBundles installs the commit with its second UI bundle and upgrades to the image above (Q-HA-124).
       - name: make image-marked
         run: make image-marked VERSION=dev
+
+      - name: Fetch the dev charts that are GitHub release assets
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       - name: make dev-up
         timeout-minutes: 25

@@ -439,7 +439,7 @@ jobs:
           kind version
           kubectl version --client
           helm version --short
-          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+          for u in https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator; do
             curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
           done
 
@@ -452,6 +452,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: deploy/dev/step-time.sh verify make release-smoke VERSION="$VERSION"
+
+      - name: Fetch the dev charts that are GitHub release assets
+        env:
+          # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
+          GITHUB_TOKEN: ${{ github.token }}
+        run: make dev-charts
 
       # The chart package from the chart repository and the image by the digest from the step above; nothing is built or loaded
       # from the working tree. The scenarios' profile switches run the same script with the same variables.

@@ -128,8 +128,10 @@ job downloads a pinned archive from a GitHub release, the download can fail on t
 1. the file the Docker CLI resolves (`docker info`: the buildx plugin's `Path`), when its version is the pin and its SHA-256 is the
    pinned digest of the platform: nothing is installed;
 2. otherwise the archive cached under `.bin/buildx-<pin>/` (the cache key holds the pin and the digest of the platform);
-3. otherwise a download of the release asset, six retries 20 s apart, no retry after 600 s in all, and an attempt that stalls
-   under 50 KiB/s for 30 s is aborted;
+3. otherwise a download of the release asset with [tools/github-download.sh](../../tools/github-download.sh): with the job's token
+   (`GITHUB_TOKEN`, sent to github.com only, [Q-ARCH-356](../spec/architecture.md#q-arch-356--how-do-ci-jobs-download-github-release-assets-while-the-release-host-is-degraded)),
+   the bounds of the script: 300 s of retries for the request to github.com, 240 s for the storage host, up to three rounds and
+   900 s in all, and an attempt that stalls under 50 KiB/s for 30 s is aborted;
 4. the archive is used only when its SHA-256 equals `BUILDX_SHA256_LINUX_AMD64` or `_ARM64` of `tools/versions.env`;
 5. the plugin is installed into `${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins`, and the CLI is checked to resolve that file.
 
@@ -150,17 +152,22 @@ of run 42465102401 where a row says so):
 | Helm v4.3.1 | `azure/setup-helm@v5` | get.helm.sh (run 42465102401) | action's own download; no failure seen |
 | kubectl v1.37.2 | `azure/setup-kubectl@v5` | dl.k8s.io (run 42465102401) | action's own download; no failure seen |
 | Node.js | `actions/setup-node@v7` | not checked | action's own download |
-| promtool, Trivy (`make promtool`, `make trivy`) | the Makefile's rules | github.com release assets | SHA-256; Trivy with a retry, promtool without one |
+| promtool, Trivy (`make promtool`, `make trivy`) | the Makefile's rules | github.com release assets | [tools/github-download.sh](../../tools/github-download.sh) with the job's token in CI; SHA-256; retries and stall bound |
 | Trivy action, syft (`anchore/sbom-action`), Docker Scout | the actions | not checked | action's own download |
 | kind, golangci-lint, govulncheck, gocyclo, oasdiff, osv-scanner | `go install` in the workflows and the Makefile | the Go module proxy | not a release asset |
 
 `make dev-up` downloads no tool: `deploy/dev/lib.sh` `check_tools` checks kind, kubectl and Helm against their pins and prints the
-install command when one is missing. It does pull the charts of its releases through `chart_tgz` ([deploy/dev/lib.sh](../../deploy/dev/lib.sh)),
-into `.dev/charts`. A failed pull is retried, 20 s apart, up to seven attempts and until 600 s have passed since the first
+install command when one is missing. The charts of its releases go into `.dev/charts`: `make dev-charts` ([deploy/dev/charts.sh](../../deploy/dev/charts.sh))
+fetches the haproxy-ingress and cloudnative-pg archives, which are GitHub release assets, through `chart_release_tgz` (the release URL of the version,
+the digest of [tools/versions.env](../../tools/versions.env), and the job's token when `GITHUB_TOKEN` is set). In CI that is its own step, before the
+`make dev-up` step, which does not hold the token; `make dev-up` reads the archives from `.dev/charts`, and fetches a missing one itself, without the token.
+The others go through `chart_tgz`, which runs `helm pull`
+([deploy/dev/lib.sh](../../deploy/dev/lib.sh)). A failed pull is retried, 20 s apart, up to seven attempts and until 600 s have passed since the first
 (`CHART_PULL_ATTEMPTS`, `CHART_PULL_SECONDS`); a version the repository does not list is not retried, and release-smoke's wait loop
 runs one attempt per round. The deadline is checked between attempts, so an attempt that is running may end after it. The haproxy-ingress and cloudnative-pg chart archives are
 GitHub release assets (the chart indexes point there); in run 42465102401 their pulls got 504 (haproxy after about a minute,
-cloudnative-pg after about 5 minutes). The cache of those archives in CI and the digests of the archives are not in place yet
+cloudnative-pg after about 5 minutes). Their digests are pinned ([Q-ARCH-356](../spec/architecture.md#q-arch-356--how-do-ci-jobs-download-github-release-assets-while-the-release-host-is-degraded),
+[H-589](../security/data-and-secret-flow.md#h-589--release-downloads-send-the-job-token-to-githubcom-two-residuals) for the cloudnative-pg one). The cache of those archives in CI is not in place yet
 ([Q-ARCH-355](../spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job)).
 
 ### Coverage

@@ -33,8 +33,9 @@ kn() { kubectl --context "$CTX" -n "$NS" "$@"; }
 # later install of the same pin, such as the profile switch an e2e test makes with up.sh, reads the file and needs no
 # network (an unreachable chart host failed `e2e on kind (access-long)` mid-run, Test and Release run 42150467806).
 #
-# Bounds of a pull that fails. Some charts are archives on GitHub releases (haproxy-ingress, cloudnative-pg), whose host
-# answered 504 for minutes on 2026-11-08 (run 42465102401), so a failed pull is retried, 20 s apart, up to
+# Bounds of a pull that fails. The charts that helm pulls here are on GitHub Pages and on their own hosts; the two that are
+# GitHub release assets go through chart_release_tgz instead. The release host failed for minutes on 2026-11-08 (run
+# 42465102401), so a failed pull is retried, 20 s apart, up to
 # CHART_PULL_ATTEMPTS attempts (default 7) and until CHART_PULL_SECONDS (default 600) have passed since the first one. The
 # deadline is checked between attempts, so one attempt that is already running may end after it: a single pull was seen
 # to take 4 min 55 s. A chart version that the repository does not list ("not found in") is not retried. A caller that
@@ -62,6 +63,42 @@ chart_tgz() {
     rm -rf "$tmp"
   fi
   printf '%s\n' "$file"
+}
+
+# chart_release_tgz URL CHART VERSION SHA256 prints the path of a chart archive that is a GitHub release asset, fetched once into
+# $STATE_DIR/charts with tools/github-download.sh (the job's token in CI, Q-ARCH-356) and checked against SHA256. helm pull is
+# not used: it cannot send the token to github.com, and a digest from tools/versions.env is the trust anchor either way. A
+# download that fails, or a file with another digest, fails the call; the file is not kept.
+chart_release_tgz() {
+  local url="$1" chart="$2" version="$3" want="$4" dir="$STATE_DIR/charts" tmp got
+  local file="$dir/$chart-$version.tgz"
+  if [ ! -s "$file" ]; then
+    mkdir -p "$dir"
+    tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
+    if ! "$REPO_ROOT/tools/github-download.sh" "$url" "$tmp/$chart-$version.tgz" >&2; then
+      echo "error: the chart archive $chart $version could not be downloaded from $url" >&2
+      rm -rf "$tmp"; return 1
+    fi
+    if command -v sha256sum >/dev/null; then got="$(sha256sum "$tmp/$chart-$version.tgz" | awk '{print $1}')"
+    else got="$(shasum -a 256 "$tmp/$chart-$version.tgz" | awk '{print $1}')"; fi
+    if [ "$got" != "$want" ]; then
+      echo "error: the chart archive $chart $version has SHA-256 $got, tools/versions.env pins $want" >&2
+      rm -rf "$tmp"; return 1
+    fi
+    mv "$tmp/$chart-$version.tgz" "$file"
+    rm -rf "$tmp"
+  fi
+  printf '%s\n' "$file"
+}
+
+# The two dev charts whose archives are GitHub release assets: the URL of the pinned version and its digest (tools/versions.env).
+haproxy_chart_tgz() {
+  chart_release_tgz "https://github.com/n42-gateway/charts/releases/download/$DEV_HAPROXY_INGRESS_CHART_VERSION/haproxy-ingress-$DEV_HAPROXY_INGRESS_CHART_VERSION.tgz" \
+    haproxy-ingress "$DEV_HAPROXY_INGRESS_CHART_VERSION" "$DEV_HAPROXY_INGRESS_CHART_SHA256"
+}
+cnpg_chart_tgz() {
+  chart_release_tgz "https://github.com/cloudnative-pg/charts/releases/download/cloudnative-pg-v$CNPG_CHART_VERSION/cloudnative-pg-$CNPG_CHART_VERSION.tgz" \
+    cloudnative-pg "$CNPG_CHART_VERSION" "$CNPG_CHART_SHA256"
 }
 
 os() { uname -s | tr '[:upper:]' '[:lower:]'; }

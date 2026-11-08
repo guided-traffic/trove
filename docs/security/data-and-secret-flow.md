@@ -225,6 +225,8 @@ HAProxy Ingress, cert-manager, the CloudNativePG operator, the Valkey operator a
 is not verified here, so the safe reading is that any of them can. The trove pods and the test client pods do not mount it. A
 read-only token for this pull would not close the read; it would limit what a leak of it does ([H-577](#h-577--the-post-release-check-pulls-with-the-token-that-can-push)).
 
+**The job token in release downloads.** The jobs that download a GitHub release asset send their `GITHUB_TOKEN` to github.com, in the request for the release URL (not to the API), and to no other host. The request is the one `actions/setup-go` makes with its default token; github.com does not validate the header on that route (measured during the incident of 2026-11-08), so the token is not what makes the download work, and it is sent anyway. [tools/github-download.sh](../../tools/github-download.sh) sends it on stdin in a request that does not follow redirects, and fetches the redirect target (the storage host) in a second request without it. The steps that hold the token while they run are the buildx installation of a job that needs the pinned plugin, `make dev-charts` (the haproxy-ingress and cloudnative-pg archives), `make promtool`, and `make trivy`; each runs only that download, and the steps of `make dev-up` and `make chart-test` do not hold it. The token's scope is `contents: read` in every job except `build`, where it is `contents: write` ([H-589](#h-589--release-downloads-send-the-job-token-to-githubcom-two-residuals)). The token is never printed or written to a file. Without a token (a local run) the same download is unauthenticated. The digest of the archive, not the request, decides what is used.
+
 No job runs in a GitHub environment with protection rules, so the secrets are bound to nothing but the job that names them.
 
 ## What this does not cover
@@ -413,3 +415,20 @@ containers of the test and release jobs. The pin makes the change visible in the
 
 What would close it: excluding digest-only updates from automerge for the images that enter the release (`RUNTIME_BASE_IMAGE`, `SYFT_IMAGE`) and keeping it for the test images. Whether to do that is
 the owner's policy; the automerge policy is unchanged.
+
+### H-589 · Release downloads send the job token to github.com: two residuals
+
+Stage: the steps that download a GitHub release asset in [build.yml](../../.github/workflows/build.yml), [release.yml](../../.github/workflows/release.yml) and
+[performance.yml](../../.github/workflows/performance.yml): the buildx installation, `make dev-charts`, `make promtool` and `make trivy`.
+
+Residual 1, local: the token is in the environment of the whole step that downloads, so every process of that step can read it (the step is a shell with the job's
+workflow commands, and a third-party action of the same step would see it). The sending itself is not the risk: the token goes to github.com, which issued it. In the
+job `build`, the token has `contents: write` for the release assets, so a process of that step that reads the environment can write to the repository; the buildx
+installation of `build` downloads only when the runner has not the pinned file. Narrowing it needs a read-only token for the download, which no step of a job with
+`contents: write` has. What makes it real is a process of one of these steps that reads or logs its environment.
+
+Residual 2, provenance: `CNPG_CHART_SHA256` and `DEV_HAPROXY_INGRESS_CHART_SHA256` are the digests the chart indexes list and GitHub reports for the release assets. The
+archives' helm provenance files (`.prov`, for example `cloudnative-pg-0.29.1.tgz.prov`) are published next to them and are not verified: no publisher key is pinned. The digest
+check catches a replaced archive unless the index that lists the digest is replaced with it; the provenance file is what would show a signature by another key, and it is
+not checked. What makes it real is a compromise of the chart repository's index together with the release. What would close it: pinning the publisher's key and running
+`helm verify` on the archive (the key is the owner's to choose and to verify with the project).

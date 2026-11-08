@@ -138,6 +138,7 @@ trove/
 ├── Makefile                  # the task runner: build, generate, lint, scans, test, web, chart, image, dev profile, integration, MinIO
 ├── go.mod                    # go 1.27.3; sqlc and oapi-codegen as tool directives
 ├── tools/versions.env        # pins of every tool and image that is not a Go module or an npm package
+├── tools/github-download.sh  # downloads a GitHub release asset, with the job's token when there is one (Q-ARCH-356)
 ├── tools/sbom-generator/     # the BuildKit SBOM generator that runs the pinned syft (registry.sh serves it during the release build), and check-pins.sh for make versions-check
 ├── Containerfile             # the release image: web build, cross-compiled Go build, distroless final stage
 ├── package.json              # release tooling only (semantic-release); its lockfile is package-lock.json, web/ has its own

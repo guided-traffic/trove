@@ -386,9 +386,7 @@ $(PROMTOOL_BIN):
 	  if [ -z "$$want" ]; then echo "promtool: tools/versions.env has no digest for $(PROMTOOL_OS)/$(PROMTOOL_ARCH)"; exit 1; fi; \
 	  tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	  name="prometheus-$(PROMTOOL_VERSION:v%=%).$(PROMTOOL_OS)-$(PROMTOOL_ARCH)"; \
-	  curl --fail --show-error --silent --location --retry 6 --retry-all-errors --retry-delay 20 --retry-max-time 600 \
-	    --connect-timeout 20 --speed-limit 51200 --speed-time 30 \
-	    -o "$$tmp/promtool.tar.gz" "https://github.com/prometheus/prometheus/releases/download/$(PROMTOOL_VERSION)/$$name.tar.gz"; \
+	  tools/github-download.sh "https://github.com/prometheus/prometheus/releases/download/$(PROMTOOL_VERSION)/$$name.tar.gz" "$$tmp/promtool.tar.gz"; \
 	  if command -v sha256sum >/dev/null; then got="$$(sha256sum "$$tmp/promtool.tar.gz" | awk '{print $$1}')"; \
 	  else got="$$(shasum -a 256 "$$tmp/promtool.tar.gz" | awk '{print $$1}')"; fi; \
 	  if [ "$$got" != "$$want" ]; then echo "promtool: $$name.tar.gz has SHA-256 $$got, tools/versions.env pins $$want"; exit 1; fi; \
@@ -398,8 +396,8 @@ $(PROMTOOL_BIN):
 .PHONY: promtool
 promtool: $(PROMTOOL_BIN) ## Fetch promtool at its pin into .bin (the rule tests of the charts use it)
 
-# The release archive of Trivy at its pin, verified against the SHA-256 of the platform in tools/versions.env. curl
-# retries and names the HTTP error, so a failed download says why.
+# The release archive of Trivy at its pin, verified against the SHA-256 of the platform in tools/versions.env. The download
+# is tools/github-download.sh: with the job's token (GITHUB_TOKEN) when there is one, bounded retries, and a named HTTP error.
 $(TRIVY_BIN):
 	@mkdir -p $(TRIVY_DIR)
 	@set -euo pipefail; \
@@ -409,9 +407,7 @@ $(TRIVY_BIN):
 	  case "$(PROMTOOL_ARCH)" in amd64) arch=64bit ;; arm64) arch=ARM64 ;; *) echo "trivy: no archive for $(PROMTOOL_ARCH)"; exit 1 ;; esac; \
 	  name="trivy_$(TRIVY_VERSION:v%=%)_$${os}-$${arch}.tar.gz"; \
 	  tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
-	  curl --fail --show-error --silent --location --retry 6 --retry-all-errors --retry-delay 20 --retry-max-time 600 \
-	    --connect-timeout 20 --speed-limit 51200 --speed-time 30 \
-	    -o "$$tmp/$$name" "https://github.com/aquasecurity/trivy/releases/download/$(TRIVY_VERSION)/$$name"; \
+	  tools/github-download.sh "https://github.com/aquasecurity/trivy/releases/download/$(TRIVY_VERSION)/$$name" "$$tmp/$$name"; \
 	  if command -v sha256sum >/dev/null; then got="$$(sha256sum "$$tmp/$$name" | awk '{print $$1}')"; \
 	  else got="$$(shasum -a 256 "$$tmp/$$name" | awk '{print $$1}')"; fi; \
 	  if [ "$$got" != "$$want" ]; then echo "trivy: $$name has SHA-256 $$got, tools/versions.env pins $$want"; exit 1; fi; \
@@ -424,6 +420,10 @@ trivy: $(TRIVY_BIN) ## Fetch Trivy at its pin into .bin/trivy-<version> (CI: con
 .PHONY: chart-test
 chart-test: $(PROMTOOL_BIN) ## Chart render assertions of E0.7 and the promtool rule tests of the PrometheusRule (test/chart/test.sh); .out/test-chart.json
 	TROVE_PROMTOOL=$(abspath $(PROMTOOL_BIN)) test/chart/test.sh
+
+.PHONY: dev-charts
+dev-charts: ## Fetch the dev charts that are GitHub release assets into .dev/charts with GITHUB_TOKEN when set (deploy/dev/charts.sh; CI runs it before dev-up, Q-ARCH-356)
+	deploy/dev/charts.sh
 
 .PHONY: dev-up
 dev-up: ## Create the kind cluster and install the dev profile (deploy/dev/up.sh)

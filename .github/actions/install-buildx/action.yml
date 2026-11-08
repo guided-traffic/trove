@@ -63,6 +63,8 @@ runs:
         WANT: ${{ inputs.version }}
         ARCH: ${{ steps.probe.outputs.arch }}
         DIGEST: ${{ steps.probe.outputs.digest }}
+        # Read by tools/github-download.sh, which sends it to github.com only.
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         dir=".bin/buildx-${WANT}"
@@ -74,11 +76,10 @@ runs:
         else
           rm -f "$archive"
           mkdir -p "$dir"
-          # Bounded: six retries, 20 s apart, and no retry after 600 s in all. An attempt that stalls under 50 KiB/s for 30 s
-          # is aborted and retried (the stalled-connection case, which --connect-timeout does not cover).
-          curl --fail --show-error --silent --location --retry 6 --retry-all-errors --retry-delay 20 --retry-max-time 600 \
-            --connect-timeout 20 --speed-limit 51200 --speed-time 30 \
-            -o "${archive}.part" "https://github.com/docker/buildx/releases/download/${WANT}/buildx-${WANT}.linux-${ARCH}"
+          # The release asset, authenticated with the job's token when there is one (tools/github-download.sh, Q-ARCH-356):
+          # its bounds are the script's: 300 s of retries for the request to github.com, 240 s for the storage host, up to three
+          # rounds and 900 s in all (the unauthenticated download: 600 s of retries).
+          tools/github-download.sh "https://github.com/docker/buildx/releases/download/${WANT}/buildx-${WANT}.linux-${ARCH}" "${archive}.part"
           got="$(sha256sum "${archive}.part" | awk '{print $1}')"
           if [ "$got" != "$DIGEST" ]; then
             echo "::error::buildx ${WANT} linux/${ARCH} has SHA-256 ${got}, tools/versions.env pins ${DIGEST}"

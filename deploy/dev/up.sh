@@ -131,7 +131,7 @@ task_haproxy() {
   local ref="${DEV_HAPROXY_INGRESS_IMAGE#quay.io/}"           # jcmoraisjr/haproxy-ingress:v0.16.3@sha256:...
   local repo="${ref%%:*}" tag="${ref#*:}"
   helm --kube-context "$CTX" upgrade --install haproxy-ingress \
-    "$(chart_tgz https://haproxy-ingress.github.io/charts haproxy-ingress "$DEV_HAPROXY_INGRESS_CHART_VERSION")" -n ingress-controller --create-namespace -f "$DEV_DIR/haproxy-values.yaml" \
+    "$(haproxy_chart_tgz)" -n ingress-controller --create-namespace -f "$DEV_DIR/haproxy-values.yaml" \
     --set controller.image.registry=quay.io --set controller.image.repository="$repo" --set controller.image.tag="$tag" \
     --wait --timeout 5m
 }
@@ -167,7 +167,7 @@ task_vko() {
 task_postgres() {
   local image="${DEV_CNPG_OPERATOR_IMAGE#*:}"   # 1.30.1@sha256:...
   helm --kube-context "$CTX" upgrade --install cnpg \
-    "$(chart_tgz https://cloudnative-pg.github.io/charts cloudnative-pg "$CNPG_CHART_VERSION")" -n cnpg-system --create-namespace \
+    "$(cnpg_chart_tgz)" -n cnpg-system --create-namespace \
     --set image.repository="${DEV_CNPG_OPERATOR_IMAGE%%:*}" --set image.tag="$image" --wait --timeout 5m
   # helm --wait sees the operator pod ready before its admission webhook answers: the first apply
   # of the Cluster then fails with "failed calling webhook mcluster.cnpg.io ... connection refused".
