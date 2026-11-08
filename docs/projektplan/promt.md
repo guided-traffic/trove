@@ -286,11 +286,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-98 · `TestLeaseRegistry` panics when run more than once** (confirmed by the review of F-94). `go test
   ./internal/cluster/ -count=3` panics with `lease "unit_lease_a" is registered twice`: global state survives between
   runs. Done when repeated runs pass.
-- **F-99 · The proxy's slot-wait test depends on how fast it notices its first fetch** (read by the WP8 code review).
-  `TestR_OPS_011_TheUpstreamRecordOfAFetchCarriesItsSlotWait` (`test/integration/proxy`) recorded 398 ms where it wants at
-  least 400, and on an older commit 117 and 270 ms: the second fetch starts only after polling sees the first, so a
-  polling delay comes out of the expected wait. Done when the test proves the recorded wait against the time the fetch
-  really waited, without a wall-clock constant.
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
   found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"

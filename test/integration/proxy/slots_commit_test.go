@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -654,21 +655,77 @@ func TestR_REPO_055_TheDiscoveryDocumentUnderABackgroundSlotKeepsTheItemsShare(t
 	}
 }
 
+// The slot wait of the record is the time the fetch queued for its slot. The test holds the first fetch's slot at the upstream
+// until the engine itself says that the second fetch queues (the mirror_yield signal a waiting client fetch raises), lets the
+// hold run for a while, and measures the events with its own clock: the second fetch started queueing before the signal and
+// got its slot not before the release, so its wait lies between the time from the signal to the release and the whole duration
+// of the second request. The signal is delivered at most once and throttled to once a second per repository and replica, and every
+// way this coupling can break fails loudly: a lost signal fails the test after 10 s, an earlier signal only tightens the bound.
 func TestR_OPS_011_TheUpstreamRecordOfAFetchCarriesItsSlotWait(t *testing.T) {
 	const a, b = "pkg/a/-/a-1.tgz", "pkg/b/-/b-1.tgz"
 	e := newEnv(t)
 	up := e.upstream()
-	up.Set("/"+a, proxytest.Route{Body: []byte("tarball-a"), Type: "application/octet-stream", Delay: 500 * time.Millisecond})
+	reached, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	up.Set("/"+a, proxytest.Route{Handler: func(w http.ResponseWriter, req *http.Request) {
+		once.Do(func() { close(reached) })
+		select {
+		case <-release:
+		case <-req.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write([]byte("tarball-a"))
+	}})
 	up.Set("/"+b, proxytest.Route{Body: []byte("tarball-b"), Type: "application/octet-stream"})
 	rem := e.remote("slot-wait", up, func(s *repository.RemoteSettings) { s.Limits.MaxConcurrentFetches = 1 })
 	var log syncBuffer
-	r := e.newReplica("a", replicaOpts{upstreamLog: &log})
+	r := e.newReplica("a", replicaOpts{upstreamLog: &log, signals: true})
+
+	queuing := make(chan time.Time, 1)
+	id := strconv.FormatInt(rem.ID(), 10)
+	cancel, err := r.signals.Subscribe(context.Background(), cluster.AreaMirrorYield, func(payloads []string, _ bool) {
+		if len(payloads) > 0 && !slices.Contains(payloads, id) {
+			return // the signal of another repository
+		}
+		select {
+		case queuing <- time.Now():
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
 
 	gotA := make(chan served, 1)
 	go func() { gotA <- r.artifact(rem, a) }()
-	waitFor(t, "the first tarball to reach the upstream", 5*time.Second, func() bool { return up.Count("GET", "/"+a) == 1 })
-	if s := r.artifact(rem, b); s.status != 200 {
-		t.Fatalf("the second tarball: %d (%v)", s.status, s.err)
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first tarball did not reach the upstream")
+	}
+	gotB := make(chan served, 1)
+	startB := time.Now()
+	go func() { gotB <- r.artifact(rem, b) }()
+	var queued time.Time
+	select {
+	case queued = <-queuing:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second fetch did not queue for the slot")
+	}
+	time.Sleep(200 * time.Millisecond) // the interval the slot stays held; the bound below is the measured one
+	released := time.Now()
+	close(release)
+	var sb served
+	select {
+	case sb = <-gotB:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second tarball was not answered")
+	}
+	endB := time.Now()
+	if sb.status != 200 {
+		t.Fatalf("the second tarball: %d (%v)", sb.status, sb.err)
 	}
 	if s := <-gotA; s.status != 200 {
 		t.Fatalf("the first tarball: %d (%v)", s.status, s.err)
@@ -677,10 +734,18 @@ func TestR_OPS_011_TheUpstreamRecordOfAFetchCarriesItsSlotWait(t *testing.T) {
 	if recA == nil || recB == nil {
 		t.Fatalf("records: %v %v", recA, recB)
 	}
-	if v, ok := recA["slot_wait_ms"].(float64); !ok || v > 100 {
-		t.Errorf("slot_wait_ms of the first tarball = %#v, want a wait near 0", recA["slot_wait_ms"])
+	least, most := float64(released.Sub(queued).Microseconds())/1000, float64(endB.Sub(startB).Microseconds())/1000
+	// The first fetch found a free slot: its wait is the time of taking one, far below the hold the second one measured.
+	if v, ok := recA["slot_wait_ms"].(float64); !ok || v >= least {
+		t.Errorf("slot_wait_ms of the first tarball = %#v, want a wait near 0 (below %v)", recA["slot_wait_ms"], least)
 	}
-	if v, ok := recB["slot_wait_ms"].(float64); !ok || v < 400 {
-		t.Errorf("slot_wait_ms of the second tarball = %#v, want at least 400", recB["slot_wait_ms"])
+	v, ok := recB["slot_wait_ms"].(float64)
+	if !ok {
+		t.Fatalf("slot_wait_ms of the second tarball = %#v", recB["slot_wait_ms"])
+	}
+	// The record carries microseconds as a fraction of milliseconds; a microsecond of rounding is no wait.
+	const rounding = 0.001
+	if v < least-rounding || v > most+rounding {
+		t.Errorf("slot_wait_ms of the second tarball = %v, want within [%v (queuing signal to release), %v (whole request)]", v, least, most)
 	}
 }
