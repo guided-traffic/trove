@@ -8,6 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -300,39 +303,253 @@ func TestStallTimeout(t *testing.T) {
 		}
 	})
 
-	t.Run("R-ARCH-005 every successful chunk moves the deadline, so a slow but steady transfer completes", func(t *testing.T) {
-		// The margin is the stall timeout minus the chunk gap: net deadlines are absolute, so a
-		// read whose goroutine is not scheduled before the deadline fails even with the bytes
-		// already in the socket. A loaded runner pauses a process for a few hundred milliseconds,
-		// hence the gap is a sixteenth of the stall timeout (a pause of 15/16 of it is survived)
-		// and the transfer lasts three stall timeouts, so it only completes if every chunk moves
-		// the deadline.
-		const (
-			stall  = 400 * time.Millisecond
-			gap    = stall / 16
-			chunks = int(3 * stall / gap)
-		)
-		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			n, _ := io.Copy(io.Discard, r.Body)
-			_, _ = fmt.Fprint(w, n)
-		})
-		_, addr := start(t, ServerConfig{Handler: h, StallTimeout: stall})
-		pr, pw := io.Pipe()
-		go func() {
-			for range chunks {
-				_, _ = pw.Write([]byte("0123456789"))
-				time.Sleep(gap)
-			}
-			pw.Close()
-		}()
-		resp, err := http.Post("http://"+addr+"/", "application/octet-stream", pr)
+	t.Run("R-ARCH-005 every successful request and response chunk moves the read and write deadline to now plus the stall timeout through the ResponseController", func(t *testing.T) {
+		// The property is "each successful chunk moves the read and the write deadline to
+		// now plus the stall timeout", so the case measures the move itself. A transfer that
+		// lasts several stall timeouts over a real socket also depends on the process not
+		// being paused for longer than the chunk gap (net deadlines are absolute, and a read
+		// fails once its deadline has passed even with the bytes in the socket), which a
+		// loaded host does not guarantee. Every move is bracketed by two readings of the
+		// clock taken by the same goroutine around the call, so a pause cannot break it.
+		const stall = time.Hour
+		s, err := NewServer(ServerConfig{StallTimeout: stall})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
-		b, _ := io.ReadAll(resp.Body)
-		if want := fmt.Sprint(10 * chunks); string(b) != want {
-			t.Fatalf("body = %q, want %q", b, want)
+		w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		var bodyChunks int
+		h := s.track(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := w.(*stallWriter).ResponseWriter.(*deadlineRecorder)
+			if len(rec.reads) != 1 || len(rec.writes) != 1 {
+				t.Fatalf("deadlines set before the first chunk: reads %d, writes %d, want 1 each (the initial deadline)", len(rec.reads), len(rec.writes))
+			}
+			buf := make([]byte, 10)
+			for {
+				before := time.Now()
+				n, err := r.Body.Read(buf)
+				after := time.Now()
+				if n > 0 {
+					bodyChunks++
+					got := rec.reads[len(rec.reads)-1]
+					if got.Before(before.Add(stall)) || got.After(after.Add(stall)) {
+						t.Fatalf("read chunk %d moved the read deadline to %v, want within [%v, %v]", bodyChunks, got, before.Add(stall), after.Add(stall))
+					}
+					if gw := rec.writes[len(rec.writes)-1]; !gw.Equal(got) {
+						t.Fatalf("read chunk %d moved the write deadline to %v, want %v (the read deadline)", bodyChunks, gw, got)
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
+			for i := 1; i <= 3; i++ {
+				before := time.Now()
+				if _, err := w.Write([]byte("0123456789")); err != nil {
+					t.Fatal(err)
+				}
+				after := time.Now()
+				got := rec.writes[len(rec.writes)-1]
+				if got.Before(before.Add(stall)) || got.After(after.Add(stall)) {
+					t.Fatalf("write chunk %d moved the write deadline to %v, want within [%v, %v]", i, got, before.Add(stall), after.Add(stall))
+				}
+			}
+		}))
+		const chunks = 8
+		r := httptest.NewRequest(http.MethodPost, "/", io.NopCloser(&chunkReader{chunks: chunks}))
+		r.ContentLength = -1
+		h.ServeHTTP(w, r)
+		if bodyChunks != chunks {
+			t.Fatalf("read %d chunks, want %d", bodyChunks, chunks)
+		}
+		if got, want := len(w.reads), 1+chunks+3; got != want {
+			t.Fatalf("read deadline set %d times, want %d (initial, one per request chunk, one per response chunk)", got, want)
+		}
+		if got, want := len(w.writes), 1+chunks+3+1; got != want {
+			t.Fatalf("write deadline set %d times, want %d (initial, one per request chunk, one per response chunk, one cleared at the end)", got, want)
+		}
+		if last := w.writes[len(w.writes)-1]; !last.IsZero() {
+			t.Fatalf("the write deadline outlives the request: %v", last)
+		}
+		for i := 1; i < len(w.reads); i++ {
+			if w.reads[i].Before(w.reads[i-1]) {
+				t.Fatalf("read deadline %d (%v) moved back before deadline %d (%v)", i, w.reads[i], i-1, w.reads[i-1])
+			}
 		}
 	})
+
+	t.Run("R-ARCH-005 every successful chunk moves the deadline of the connection, so a slow but steady transfer completes", func(t *testing.T) {
+		// A real socket and a real net/http stack with a stall timeout of an hour: the client
+		// sends chunk i+1 only after the handler has read chunk i, so no wall-clock gap decides
+		// the outcome. Every chunk the handler reads or writes must leave a deadline of now plus
+		// the stall timeout on the accepted connection, which also proves that net/http does not
+		// overwrite ours between chunks, and the write deadline is cleared when the request ends.
+		const (
+			stall  = time.Hour
+			chunks = 8
+		)
+		type bracket struct{ before, after time.Time }
+		var (
+			mu             sync.Mutex
+			reads, writes  []bracket
+			readsInHandler int
+		)
+		next := make(chan struct{}, 4*chunks) // buffered: a chunk split across reads cannot deadlock
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			buf := make([]byte, 10)
+			for {
+				b := time.Now()
+				n, err := r.Body.Read(buf)
+				a := time.Now()
+				if n > 0 {
+					mu.Lock()
+					reads = append(reads, bracket{b, a})
+					readsInHandler += n
+					mu.Unlock()
+					next <- struct{}{}
+				}
+				if err != nil {
+					break
+				}
+			}
+			for range 3 {
+				b := time.Now()
+				_, _ = w.Write([]byte("0123456789"))
+				w.(http.Flusher).Flush()
+				mu.Lock()
+				writes = append(writes, bracket{b, time.Now()})
+				mu.Unlock()
+			}
+		})
+		s, err := NewServer(ServerConfig{Name: "test", Addr: "127.0.0.1:0", Handler: h, StallTimeout: stall})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Bind(); err != nil {
+			t.Fatal(err)
+		}
+		conns := make(chan *recConn, 1)
+		s.ln = &recListener{Listener: s.ln, conns: conns}
+		go func() { _ = s.Serve() }()
+		t.Cleanup(func() { _ = s.Close() })
+
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			for range chunks {
+				if _, err := pw.Write([]byte("0123456789")); err != nil {
+					return
+				}
+				select {
+				case <-next:
+				case <-time.After(30 * time.Second):
+					return
+				}
+			}
+		}()
+		resp, err := http.Post("http://"+s.Addr().String()+"/", "application/octet-stream", pr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if want := strings.Repeat("0123456789", 3); string(body) != want {
+			t.Fatalf("body = %q, want %q", body, want)
+		}
+		c := <-conns
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
+		if readsInHandler != 10*chunks {
+			t.Fatalf("the handler read %d bytes, want %d", readsInHandler, 10*chunks)
+		}
+		in := func(ts []time.Time, br bracket) bool {
+			for _, d := range ts {
+				if !d.Before(br.before.Add(stall)) && !d.After(br.after.Add(stall)) {
+					return true
+				}
+			}
+			return false
+		}
+		for i, br := range reads {
+			if !in(c.reads, br) || !in(c.writes, br) {
+				t.Errorf("request chunk %d moved no deadline of the connection", i)
+			}
+		}
+		for i, br := range writes {
+			if !in(c.reads, br) || !in(c.writes, br) {
+				t.Errorf("response chunk %d moved no deadline of the connection", i)
+			}
+		}
+		if len(writes) != 3 {
+			t.Errorf("the handler wrote %d response chunks, want 3", len(writes))
+		}
+		if len(c.writes) == 0 || !c.writes[len(c.writes)-1].IsZero() {
+			t.Errorf("the last write deadline of the connection is not zero: %v", c.writes)
+		}
+	})
+}
+
+// recConn logs the deadlines set on an accepted connection and passes them on.
+type recConn struct {
+	net.Conn
+	mu            sync.Mutex
+	reads, writes []time.Time
+}
+
+func (c *recConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.reads = append(c.reads, t)
+	c.mu.Unlock()
+	return c.Conn.SetReadDeadline(t)
+}
+
+func (c *recConn) SetWriteDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.writes = append(c.writes, t)
+	c.mu.Unlock()
+	return c.Conn.SetWriteDeadline(t)
+}
+
+// recListener hands every accepted connection, wrapped in a recConn, to conns.
+type recListener struct {
+	net.Listener
+	conns chan *recConn
+}
+
+func (l *recListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	rc := &recConn{Conn: c}
+	l.conns <- rc
+	return rc, nil
+}
+
+// deadlineRecorder records the deadlines http.ResponseController sets on it.
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	reads, writes []time.Time
+}
+
+func (d *deadlineRecorder) SetReadDeadline(t time.Time) error {
+	d.reads = append(d.reads, t)
+	return nil
+}
+
+func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	d.writes = append(d.writes, t)
+	return nil
+}
+
+// chunkReader yields ten bytes per Read, chunks times, then io.EOF.
+type chunkReader struct{ chunks, done int }
+
+func (c *chunkReader) Read(p []byte) (int, error) {
+	if c.done == c.chunks {
+		return 0, io.EOF
+	}
+	c.done++
+	return copy(p, "0123456789"), nil
 }
