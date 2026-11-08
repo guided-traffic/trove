@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"text/template/parse"
 
 	"github.com/guided-traffic/trove/internal/formats"
 )
@@ -95,8 +96,9 @@ func snippetID(t formats.SetupTemplate, scoped bool) string {
 
 // renderSnippets runs the templates of one client. Install snippets are kept for
 // every caller, configure snippets too, publish snippets only for a caller who may
-// publish. With a scope the configure snippets come twice: the default registry and
-// the scoped one.
+// publish. With a scope the configure snippets that have a scoped variant come
+// twice: the default registry and the scoped one (Q-API-235); a configure snippet
+// that does not read the variant is rendered once.
 func renderSnippets(in setupInput) ([]snippet, error) {
 	data := in.Data
 	if in.Credentials == credNone {
@@ -111,7 +113,7 @@ func renderSnippets(in setupInput) ([]snippet, error) {
 			continue
 		}
 		variants := []string{""}
-		if t.Section == "configure" && in.Scope != "" {
+		if in.Scope != "" && hasScopedVariant(t) {
 			variants = append(variants, in.Scope)
 		}
 		for _, scope := range variants {
@@ -136,13 +138,7 @@ func renderSnippets(in setupInput) ([]snippet, error) {
 // reference to a field the data does not have fails, so a template cannot reach for a
 // credential (kit check 8).
 func runTemplate(t formats.SetupTemplate, d formats.SetupData) (string, error) {
-	tm, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{
-		"shell":      shellQuote,
-		"powershell": powershellQuote,
-		"cmd":        cmdQuote,
-		"xml":        html.EscapeString,
-		"schemeless": schemeless,
-	}).Parse(t.Template)
+	tm, err := parseSetupTemplate(t)
 	if err != nil {
 		return "", err
 	}
@@ -151,6 +147,82 @@ func runTemplate(t formats.SetupTemplate, d formats.SetupData) (string, error) {
 		return "", err
 	}
 	return b.String(), nil
+}
+
+// parseSetupTemplate parses a template with the quoting functions.
+func parseSetupTemplate(t formats.SetupTemplate) (*template.Template, error) {
+	return template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{
+		"shell":      shellQuote,
+		"powershell": powershellQuote,
+		"cmd":        cmdQuote,
+		"xml":        html.EscapeString,
+		"schemeless": schemeless,
+	}).Parse(t.Template)
+}
+
+// hasScopedVariant says whether a template is a configure snippet with a scoped
+// variant: it reads SetupData.Variant (Q-API-235). A template that does not read it
+// would render the same text twice, so the format declares a variant by using it and
+// the core needs no second declaration.
+func hasScopedVariant(t formats.SetupTemplate) bool {
+	if t.Section != "configure" {
+		return false
+	}
+	tm, err := parseSetupTemplate(t)
+	if err != nil {
+		return false
+	}
+	// The associated templates hold the bodies of {{define}} and {{block}}.
+	return slices.ContainsFunc(tm.Templates(), func(d *template.Template) bool {
+		return d.Tree != nil && readsVariant(d.Root)
+	})
+}
+
+// readsVariant walks a parse tree for a reference to .Variant, $.Variant or $name.Variant.
+func readsVariant(n parse.Node) bool {
+	switch n := n.(type) {
+	case nil:
+		return false
+	case *parse.ListNode:
+		if n == nil {
+			return false
+		}
+		return slices.ContainsFunc(n.Nodes, readsVariant)
+	case *parse.ActionNode:
+		return readsVariant(n.Pipe)
+	case *parse.PipeNode:
+		if n == nil {
+			return false
+		}
+		return slices.ContainsFunc(n.Cmds, func(c *parse.CommandNode) bool { return readsVariant(c) })
+	case *parse.CommandNode:
+		return slices.ContainsFunc(n.Args, readsVariant)
+	case *parse.FieldNode:
+		return len(n.Ident) > 0 && n.Ident[0] == "Variant"
+	case *parse.VariableNode:
+		return len(n.Ident) > 1 && slices.Contains(n.Ident[1:], "Variant")
+	case *parse.ChainNode:
+		return readsVariant(n.Node) || slices.Contains(n.Field, "Variant")
+	case *parse.IfNode:
+		return readsBranch(&n.BranchNode)
+	case *parse.RangeNode:
+		return readsBranch(&n.BranchNode)
+	case *parse.WithNode:
+		return readsBranch(&n.BranchNode)
+	case *parse.TemplateNode:
+		return readsVariant(n.Pipe)
+	}
+	return false
+}
+
+func readsBranch(b *parse.BranchNode) bool {
+	return readsVariant(b.Pipe) || readsVariant(b.List) || readsVariant(b.ElseList)
+}
+
+// clientHasScopedVariant says whether any configure template of the client has a
+// scoped variant.
+func clientHasScopedVariant(ts []formats.SetupTemplate, client string) bool {
+	return slices.ContainsFunc(ts, func(t formats.SetupTemplate) bool { return t.Client == client && hasScopedVariant(t) })
 }
 
 // schemeless drops the scheme of an http or https URL and keeps the rest from the

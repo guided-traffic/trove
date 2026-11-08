@@ -559,6 +559,11 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey qname.
 	if !slices.Contains(setupClients(templates), p.Client) {
 		return gen.ClientSetup{}, badParam("client", "is not one of "+strings.Join(setupClients(templates), ", "))
 	}
+	if scopeName != "" && !clientHasScopedVariant(templates, p.Client) {
+		// A scope the client has no variant for would be ignored; the caller learns
+		// that instead of receiving the unscoped snippets (Q-API-235).
+		return gen.ClientSetup{}, badParam("scope", "is not offered for the client "+p.Client+" of the format "+repo.Format)
+	}
 	if pkg := values["package"]; pkg != "" {
 		// The package is a name of the format, validated and normalized by the
 		// format's one name rule (R-AUTHZ-005), before it reaches a snippet.

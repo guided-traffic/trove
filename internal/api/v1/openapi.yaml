@@ -9115,7 +9115,10 @@ paths:
             type: string
         - name: scope
           in: query
-          description: An npm scope (`@team-a`); adds the scoped variant of the registry configuration.
+          description: |
+            An npm scope (`@team-a`); adds the scoped variant of the registry configuration. Only a client that has a scoped
+            variant accepts it (the npm clients); for any other client or format it answers `400 malformed_request` whose detail names `scope`
+            instead of returning the unscoped snippets under a scoped id.
           schema:
             type: string
         - name: bastion

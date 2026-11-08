@@ -121,6 +121,7 @@ func setupServerWith(t *testing.T, baseURL string, deploy bool, authn func(*http
 		"npm-remote":  remote,
 		"files":       {Name: qr("files"), Class: repository.Local, Format: "generic"},
 		"nuget-local": {Name: qr("nuget-local"), Class: repository.Local, Format: "nuget"},
+		"oci-local":   {Name: qr("oci-local"), Class: repository.Local, Format: "oci"},
 		"npm-all": repository.Assemble(repository.Repository{Name: qr("npm-all"), Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{local, remote}, &local, 0),
 		"npm-readonly": repository.Assemble(repository.Repository{Name: qr("npm-readonly"), Class: repository.Virtual, Format: "npm"},
@@ -280,10 +281,16 @@ func TestR_API_030_ClientSetupRefusesWhatItCannotAnswer(t *testing.T) {
 		"client=npm&package=" + url.QueryEscape("a%2fb"):      "npm-local",
 		"client=npm":            "files", // the generic format offers curl only
 		"client=curl&package=x": "files", // and has no package names
+		// Q-API-235: a format without a scoped variant refuses a scope instead of ignoring it.
+		"client=curl&scope=acme":   "files",
+		"client=docker&scope=acme": "oci-local",
 	} {
 		w := get(h, "/api/v1/projects/it/repositories/"+repo+"/client-setup?"+q)
 		if w.Code != 400 {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())
+		}
+		if strings.Contains(q, "scope=acme") && !strings.Contains(w.Body.String(), `parameter \"scope\" is not offered`) {
+			t.Errorf("%s: the detail does not name scope: %s", q, w.Body.String())
 		}
 	}
 	if w := get(h, "/api/v1/projects/it/repositories/ghost/client-setup?client=npm"); w.Code != 404 {

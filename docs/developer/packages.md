@@ -74,6 +74,12 @@ the format), a value above 256 bytes, with a control character or in the shape o
 normalized name, and `shellQuote` quotes any value that starts with `-`. It answers `503` without a configured base URL. The registry URL is
 the base URL plus the format's `protocolBasePath`; `endpointPath` is the same without its scheme.
 
+`scope` is accepted only for a client that has a scoped variant (Q-API-235). A configure template has one exactly when it reads `.Variant`: `hasScopedVariant`
+walks the template's parse tree for the reference, so a format declares a scoped variant by using it and has no second field to keep in step. `renderSnippets`
+adds the `-scoped` copy only for such a template; `GetClientSetup` answers `400 malformed_request` (the detail names `scope`) when no configure template of the client has one
+(`clientHasScopedVariant`). Today that is the four npm clients. A new format whose client has a scope-like variant reads `.Variant` in its configure template and
+the ids, the refusal and the UI fixture follow; `TestR_API_030_RenderedSnippetIdsMatchTheUIFixture` renders every format with a scope.
+
 With `bastion=<name>` (R-BAS-007, Q-BAS-97) the base URL is the one the registration reported at its last handshake, read through `PackageServices.Bastions`
 (`bastionBaseURLs` in [bastion_baseurl.go](../../internal/app/bastion_baseurl.go): `BastionGet`, then `BastionLastBaseURL`), provided it is an entry of
 `PackageServices.AdditionalBaseURLs` (`server.additional_base_urls`; a trailing slash and the case of the host are ignored, and the listed entry is what the
@@ -87,6 +93,7 @@ which npm's `npm.npmrc.configure` template turns into `replace-registry-host=alw
 |---|---|---|
 | Unit | [render_test.go](../../internal/packages/readme/render_test.go) | The XSS corpus (26 vectors), raw HTML, GitHub-style Markdown, links, images by policy, origin validation, limits, the fallback, the heading corpus |
 | Unit | [view_test.go](../../internal/packages/view/view_test.go), [visible_test.go](../../internal/authz/visible_test.go) | Ids, topology, latest version, cursors; the classification and its agreement with `DecideOn` over a matrix |
+| Unit | [setup_scope_test.go](../../internal/api/v1/setup_scope_test.go) | `TestR_API_030_OnlyAConfigureTemplate…`, `…TheScopedVariantIsDetected…`: the scoped copy only where `.Variant` is read |
 | Unit | [setup_snippets_test.go](../../internal/api/v1/setup_snippets_test.go), [packages_api_test.go](../../internal/api/v1/packages_api_test.go) | Modes, quoting, ids, publish gate, token refusal, `503` without the read model or a base URL, tags |
 | Unit | [view_test.go](../../internal/formats/npm/view_test.go), [view_test.go](../../internal/formathost/view_test.go), [ui_test.go](../../internal/config/ui_test.go) | npm's metadata members, the bridge, the configuration |
 | Unit | [bastion_setup_test.go](../../internal/api/v1/bastion_setup_test.go), [setup_test.go](../../internal/formats/npm/setup_test.go) | `TestR_BAS_007_…`: the Bastion's address and no publish snippet, the switch for npm only, the `404`, `409` and `503` answers, a lookup that fails |

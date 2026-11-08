@@ -19,7 +19,7 @@ var updateSnippetIDs = flag.Bool("update-snippet-ids", false, "rewrite web/src/a
 
 const snippetIDsFixture = "../../../web/src/app/features/setup/snippet-ids.fixture.ts"
 
-// renderedSnippetIDs renders every client of a format's templates, for a caller who may publish, with the scope given (only npm has scopes, so only its call gives one), and returns the sorted
+// renderedSnippetIDs renders every client of a format's templates, for a caller who may publish, with the scope given (every format is rendered with one: only npm has scoped variants, so only its ids change, Q-API-235), and returns the sorted
 // ids the API sends (snippetID, Q-API-160), per client.
 func renderedSnippetIDs(t *testing.T, scope string, f interface {
 	SetupTemplates() []formats.SetupTemplate
@@ -68,7 +68,7 @@ func renderIDsFixture(t *testing.T) string {
 		f           interface {
 			SetupTemplates() []formats.SetupTemplate
 		}
-	}{{"generic", "", generic.Format{}}, {"npm", "acme", &npm.Format{}}, {"nuget", "", &nuget.Format{}}, {"oci", "", &oci.Format{}}} {
+	}{{"generic", "acme", generic.Format{}}, {"npm", "acme", &npm.Format{}}, {"nuget", "acme", &nuget.Format{}}, {"oci", "acme", &oci.Format{}}} {
 		ids := renderedSnippetIDs(t, fm.scope, fm.f)
 		clients := make([]string, 0, len(ids))
 		for c := range ids {

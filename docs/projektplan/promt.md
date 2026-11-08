@@ -252,12 +252,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   "All versions" shows a few hundred bytes for an image of many MiB; npm and NuGet are unaffected (their lead item is the
   package file). Done when the server reports an image's size (config and layers; an index's children) and a test pushes an
   image and reads it back.
-- **F-87 · A scoped client-setup request duplicates the snippets of every format** (read, dormant). The client-setup API
-  accepts `scope` for every format (`internal/api/v1/packages_api.go`), and the renderer adds a `-scoped` copy of each
-  configure template whether or not it reads the scope: an OCI repository answers `docker.configure.shell-scoped` as an
-  identical copy. Only npm's templates use the scope, and the UI sends none. Done when a scope yields only snippets that use
-  it, or is refused for a format without scoped snippets, with a test.
-
 - **F-91 · The stall deadline cancels a request while the server itself works** (confirmed by the code review of the F-89
   fix). Once a request body reaches its end, or at once for a request without a body, net/http reads the connection in the
   background; that read runs into the read deadline the stall timeout (R-ARCH-005) set at the last chunk and cancels the

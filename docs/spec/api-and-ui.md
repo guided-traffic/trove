@@ -1665,7 +1665,8 @@ on:
   the setup dialog asks for when it creates a token.
 - Every snippet has a stable `id`; the human-readable explanation lives in the UI, translated per
   `id` (R-UI-045). The `id` is `<client>.<tab>[.<name>]`; the scoped variant of a configure snippet appends
-  `-scoped` to its name.
+  `-scoped` to its name. A scoped variant exists only for a configure template that reads the scope (the npm clients);
+  `scope` for a client without one answers `400 malformed_request` whose detail names `scope` (Q-API-235).
 - The credential mode, the package and the quoting are the API's, not the template's (Q-API-168): the template
   spells the token as `${TROVE_TOKEN}` (POSIX shell), `%TROVE_TOKEN%` (a `nuget.config` value or cmd) or
   `$env:TROVE_TOKEN` (PowerShell), whichever the syntax of its file or shell expands, and the package as `<package>`,
@@ -9143,6 +9144,35 @@ Context: `formatIcon` (R-UI-006, R-UI-021) gives `nuget` the puzzle glyph and ev
 **Choice:** (a). The owner may replace the glyph at the walkthrough with the one he wants; it is one line in `web/src/app/shared/format-icon.ts`.
 **Rationale:** the icon font is the one source of glyphs (Q-UI-1), so a format icon is a ligature name; revisited when the owner names another glyph.
 **Applied:** `web/src/app/shared/format-icon.ts`, `package-detail.html`.
+
+### Q-API-235 · A scope is rendered and accepted only where the client has a scoped variant
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `scope` of the client-setup operation was accepted for every format and `renderSnippets` added a `-scoped` copy of every
+configure template, whatever the format. An OCI repository asked for a scope answered `docker.configure.shell-scoped` and
+`docker.configure.kubernetes-scoped`, byte-identical copies of the unscoped snippets under an id that promises something the snippet
+does not do. Only the npm templates read the variant (`SetupData.Variant`). The UI never sends `scope`, so the defect was dormant.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Copy only templates that read the variant | The renderer detects `.Variant` in the parse tree of a configure template; others render once | The ids are true | A request for a scope on OCI still answers 200 and silently ignores it |
+| (b) Refuse `scope` with 400 for a client without a scoped variant | Same detection, used as a check | The caller learns that there is no such variant | Alone, it leaves a client with some templates that read the variant and some that do not rendering copies of the latter |
+| (c) Both (chosen) | The check in the handler, the detection in the renderer | A scoped id always means a different snippet; a scope that cannot be honoured is an error, not a no-op | One walk of the parse tree per template and request |
+| (d) A flag on `SetupTemplate` | The format declares the variant | Explicit | A second declaration that can disagree with the text; a change of the format contract (R-ARCH-025) |
+
+**Choice:** (c), with the detection of (a)/(b) over the parse tree, not a flag (d). A configure template has a scoped variant when it
+references `.Variant` or `$.Variant`; an install or publish template never has one. The handler answers `400 malformed_request` whose detail names `scope`
+when no configure template of the requested client has a scoped variant. Today that is `npm`, `pnpm`, `yarn` and `yarn-classic`.
+
+**Rationale:** an API that answers 200 with the unscoped snippet to a scoped request lets a script believe it configured one scope
+while it bound the whole client. Using the template itself as the declaration cannot disagree with the template. The development
+agent revisits this when a format wants a scoped variant of a template that does not read `.Variant` (none is conceivable: the
+variant is its content), or when the UI offers a scope input and needs to know in advance which clients take one (then the setup answer
+would list them).
+
+**Applied:** `hasScopedVariant`, `clientHasScopedVariant` and the check in `clientSetup` ([setup_snippets.go](../../internal/api/v1/setup_snippets.go), [packages_api.go](../../internal/api/v1/packages_api.go)); the description of `scope` in [openapi.yaml](../../api/openapi.yaml); R-API-030 above;
+[packages.md](../developer/packages.md); `TestR_API_030_OnlyAConfigureTemplateThatReadsTheVariantComesTwice`, `TestR_API_030_TheScopedVariantIsDetectedInEveryTemplateConstruct`, `TestR_API_030_ClientSetupRefusesWhatItCannotAnswer`, and the fixture test `TestR_API_030_RenderedSnippetIdsMatchTheUIFixture`, which renders every format with a scope.
 
 ## What this does not cover
 

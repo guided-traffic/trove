@@ -9306,7 +9306,9 @@ type GetClientSetupParams struct {
 	// Version A version of `package`; ignored without `package`.
 	Version *string `form:"version,omitempty" json:"version,omitempty"`
 
-	// Scope An npm scope (`@team-a`); adds the scoped variant of the registry configuration.
+	// Scope An npm scope (`@team-a`); adds the scoped variant of the registry configuration. Only a client that has a scoped
+	// variant accepts it (the npm clients); for any other client or format it answers `400 malformed_request` whose detail names `scope`
+	// instead of returning the unscoped snippets under a scoped id.
 	Scope *string `form:"scope,omitempty" json:"scope,omitempty"`
 
 	// Bastion The name of a Bastion registration (R-BAS-007). The snippets are rendered on the base URL the Bastion reported at its
