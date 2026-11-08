@@ -61,6 +61,12 @@ func TestRoutesAnswer501UntilTheirHandlerIsRegistered(t *testing.T) {
 		t.Fatal("no routes")
 	}
 	for _, r := range f.Routes() {
+		handlerRegistry.mu.RLock()
+		built := handlerRegistry.by[r.Name] != nil
+		handlerRegistry.mu.RUnlock()
+		if built {
+			continue // a work package registered it: its own tests cover the route
+		}
 		err := r.Handler(context.Background(), nil, nil)
 		var e *errs.Error
 		if !errorsAs(err, &e) || e.Code != errs.CodeDebNotImplemented || e.Status() != http.StatusNotImplemented {

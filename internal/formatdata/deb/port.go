@@ -19,6 +19,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/secrets"
 )
 
 // Options configure [New].
@@ -32,6 +33,12 @@ type Options struct {
 	// Actor gives the actor of the request in ctx. A hook that learns of a removal from the item store knows the principal's id and
 	// nothing else; the actor of the request completes the event. nil keeps what the hook passed.
 	Actor func(ctx context.Context) audit.Actor
+	// Ring seals and opens the private signing keys (R-ARCH-021). A process that never signs or creates a key (the restore's
+	// replay) may leave it nil; the key operations then answer an internal error.
+	Ring *secrets.KeyRing
+	// KeysChanged is called in the transaction of every change of a repository's keys, after change_seq of its suites was raised: the
+	// index build's job enqueues a build without delay there (R-DEB-017). nil does nothing.
+	KeysChanged func(ctx context.Context, tx meta.Tx, repoID int64) error
 }
 
 // Store implements the data port of the format: the groups, each embedded from the file of the package that builds it.

@@ -1,6 +1,8 @@
 package deb
 
 import (
+	"context"
+	"crypto/sha256"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,6 +14,14 @@ import (
 // unbuiltStore is the data port of a test that reaches no handler which reads it: a call would panic on the nil interface. The
 // handlers of the skeleton answer 501 before they reach the port.
 type unbuiltStore struct{ Store }
+
+// armoredKey is the block the fixture's port serves as the repository's public key (R-DEB-018).
+const armoredKey = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nAAAA\n-----END PGP PUBLIC KEY BLOCK-----\n"
+
+// PublicCertificates is the one operation of the port a built handler reads here: signing-key.asc (handlers_keys.go).
+func (unbuiltStore) PublicCertificates(context.Context, int64) ([]byte, [32]byte, error) {
+	return []byte(armoredKey), sha256.Sum256([]byte(armoredKey)), nil
+}
 
 // conformance is the fixture of the kit over the skeleton (apt-work-packages.md, WP0): the routes answer 501, so the checks that need a
 // built protocol are skipped or listed as not built, each with its reason, and the work package that builds the operation removes the
@@ -39,10 +49,10 @@ func conformance() formattest.Fixture {
 			// its package and version alone (it has one file per architecture below the pool directory of its source package). The local
 			// class decides it with its package screens (Q-DEB-46); the skeleton has no version rows to list.
 			{Name: "package file", Path: "pool/h/hello/hello.deb", Status: http.StatusNotImplemented},
-			{Name: "signing key", Path: "signing-key.asc", Status: http.StatusNotImplemented},
+			{Name: "signing key", Path: "signing-key.asc", Status: http.StatusOK},
 		},
 		NoContent: map[string]string{
-			routeDists: notBuilt, routeByHash: notBuilt, routePoolGet: notBuilt, routeSigningKey: notBuilt,
+			routeDists: notBuilt, routeByHash: notBuilt, routePoolGet: notBuilt,
 		},
 		NoRevision: map[string]string{
 			routePoolDelete: notBuilt, routeUpload: notBuilt, "OnCommit": notBuilt, "OnItemsRemoved": notBuilt,

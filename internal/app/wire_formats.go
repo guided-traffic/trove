@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/api/dispatch"
 	"github.com/guided-traffic/trove/internal/api/edge"
+	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/blob"
@@ -29,6 +32,7 @@ import (
 	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/packages"
 	"github.com/guided-traffic/trove/internal/repository"
+	"github.com/guided-traffic/trove/internal/secrets"
 )
 
 // The areas of the format plug-in contract (R-ARCH-008 to R-ARCH-010): the storage
@@ -53,7 +57,7 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 	if err := requireInputs(AreaFormatPorts, given("database", in.db), given("audit recorder", in.rec)); err != nil {
 		return formatPortsArea{}, err
 	}
-	ports, err := formatPorts(in.db, in.rec, in.blobs, in.queue)
+	ports, err := formatPorts(in.db, in.rec, in.blobs, in.queue, in.ring)
 	if err != nil {
 		return formatPortsArea{}, err
 	}
@@ -172,7 +176,7 @@ var _ nugetformat.Scanner = (*nugetdata.Store)(nil)
 // either package, because neither imports the other.
 var _ debformat.Store = (*debdata.Store)(nil)
 
-func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs) (map[formats.ID]any, error) {
+func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nugetdata.Jobs, ring *secrets.KeyRing) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
@@ -195,12 +199,13 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 		return nil, fmt.Errorf("formats: oci data port: %w", err)
 	}
 	deb, err := debdata.New(debdata.Options{
-		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom, Ring: ring,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
 	})
 	if err != nil {
 		return nil, fmt.Errorf("formats: deb data port: %w", err)
 	}
+	bindDebCreateHook(deb)
 	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget, ociformat.ID: oci, debformat.ID: deb}, nil
 }
 
@@ -355,5 +360,43 @@ func (a *App) registerFormats(r *httpserver.Router) error {
 		return nil
 	}
 	disp.Register(r)
+	return nil
+}
+
+// debHook is the Debian creation hook (R-DEB-015, Q-REPO-273). The registry of hooks is process-wide and refuses a second
+// registration, while a process may compose several replicas (the integration tests do): the hook is registered once and follows the
+// store of the replica composed last, which writes to the same database wherever the replicas share one.
+var debHook struct {
+	once  sync.Once
+	store atomic.Pointer[debdata.Store]
+}
+
+// bindDebCreateHook gives every new local and virtual Debian repository its first signing key in the transaction that creates it. A
+// remote repository has none: it verifies its upstream's keys (R-DEB-020).
+func bindDebCreateHook(s *debdata.Store) {
+	debHook.store.Store(s)
+	debHook.once.Do(func() {
+		repository.RegisterCreateHook(string(debformat.ID), func(ctx context.Context, tx meta.Tx, repo repository.CreatedRepo, class string) error {
+			if class == string(repository.Remote) {
+				return nil
+			}
+			st := debHook.store.Load()
+			if st == nil {
+				return fmt.Errorf("formats: the Debian data port is not composed")
+			}
+			return st.CreateFirstKey(ctx, tx, repo.ID, repo.Name.String())
+		})
+	})
+}
+
+// debKeyStore is the Debian data port's key group for the management API, nil on a replica without the port.
+func (a *App) debKeyStore() v1.DebKeyStore {
+	fp := part[formatPortsArea](a.parts)
+	if fp.bindings == nil {
+		return nil
+	}
+	if s, ok := fp.bindings.Get(debformat.ID).(v1.DebKeyStore); ok {
+		return s
+	}
 	return nil
 }

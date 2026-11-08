@@ -96,8 +96,8 @@ documentation (WP12). The format declares no client yet, so it has no setup snip
 
 The Debian format is built in stages (task T-17, [work packages](../projektplan/apt-work-packages.md), spec
 [formats/debian.md](../spec/formats/debian.md)). This page holds what stage 1 added: the OpenPGP leaf package
-[internal/openpgp](../../internal/openpgp) and the counting stub archive [test/debstub](../../test/debstub). The format itself,
-its data port and its key store are described here when they land.
+[internal/openpgp](../../internal/openpgp) and the counting stub archive [test/debstub](../../test/debstub), and what stage 2 added: the
+signing keys (WP2, [below](#signing-keys)). The rest of the format is described here when it lands.
 
 | Part | Where | Requirements |
 |---|---|---|
@@ -168,7 +168,45 @@ either; an imported key whose only self-signature is 30 s old, signing 29 s afte
 the missing key. Not done in this stage: the rotation table through trove's HTTP path (WP10), the key store, API and creation hook
 (WP2's next stage).
 
-### test/debstub: the counting stub archive
+### Signing keys
+
+Every local and virtual Debian repository has a primary signing key from the transaction that creates it, can add a co-signing next
+key, promote it, and has its keys withheld (not erased) by the replay of a restore. The security view is
+[security/deb-signing.md](../security/deb-signing.md); the requirements are R-DEB-015 to R-DEB-018 and R-DEB-032.
+
+| File | Responsibility |
+|---|---|
+| [formatdata/deb/keys_store.go](../../internal/formatdata/deb/keys_store.go) | the key group of the data port (`debformat.KeyStore`): `CreateFirstKey`, `PublicCertificates`, `Keys`, `SigningKeys`, `CreateNext`, `Promote`, `RetireNext`, `ConfirmWithheld`, `ReinstateKey`, `WithholdKey`, `PromoteByJournal` |
+| [formatdata/deb/keys.go](../../internal/formatdata/deb/keys.go) | what the store and the replay share: the rows in the port's words, the repository lookup and its lock (`lockRepo`), the database clock (`dbNow`), sealing (`insertKey`), the audit events and journal entries (`record`), `keysChanged` |
+| [formatdata/deb/keys_journal.go](../../internal/formatdata/deb/keys_journal.go) | the replay handlers of `deb.signing_key.promoted` and `deb.signing_key.retired` (registered with `journal.Register` in `init`) and the functions the port's `PromoteByJournal` and `WithholdKey` call |
+| [formatdata/deb/reseal.go](../../internal/formatdata/deb/reseal.go) | the re-encryption walk of the sealed column (WP0) |
+| [queries/deb_keys.sql](../../internal/meta/postgres/queries/deb_keys.sql) | the statements: times as RFC 3339 text, the private part only in `DebSealedKeys`, the repository lock `DebRepoRefLocked` |
+| [api/v1/deb_keys.go](../../internal/api/v1/deb_keys.go) | the five management operations; `v1.DebKeyStore` is the interface of the port they use (`Options.DebKeys`, wired by `App.debKeyStore`) |
+| [formats/deb/handlers_keys.go](../../internal/formats/deb/handlers_keys.go) | `signing-key.asc` for the local and virtual classes; the remote class's handler (the certificates of `deb.upstreamKeys`) is WP6's |
+| [app/wire_formats.go](../../internal/app/wire_formats.go) | `bindDebCreateHook`: `repository.RegisterCreateHook("deb", …)`, once per process, following the store composed last; the store gets the key ring (`debdata.Options.Ring`) |
+
+**Flows.** *Create a repository:* the repository service runs the hook in its transaction; the hook calls `CreateFirstKey`, which reads the
+database's time, generates the key with `openpgp.Generate(uid, now-1h)`, opens it again with `ParseSecret` (the self-test, and the source
+of the fingerprint and the times), seals the secret under the new row's id, inserts the row as `primary` and records
+`deb.signing_key.created`. A remote repository gets no key. *A change by the API:* the handler resolves the repository from the replica's
+snapshot (400 `not_applicable` for a remote repository or another format), the store opens one transaction, locks the repository row
+(`lockRepo`), reads the keys with `FOR UPDATE`, changes them, raises `change_seq` of every suite, calls `Options.KeysChanged` and records
+the event with the journal entry. *Sign a build:* `SigningKeys` returns the primary first and the next key after it, with the secret
+opened; none when there is no primary. *Replay:* see [security/deb-signing.md](../security/deb-signing.md#the-withheld-state-and-the-replay-of-a-restore).
+
+**For the next packages.** WP4 (the index build) calls `SigningKeys`, signs with `openpgp.ClearSign` and `DetachSign` at a time not before
+`Key.EarliestSignature()` of each key, and sets `Options.KeysChanged` (the seam that enqueues a build without delay; until it is set a key
+change is picked up by the periodic refresh task). WP6 adds the remote branch to `serveSigningKey` and
+`debUpstreamKeysRemoved`. A change of the sealed column must change `reseal.go` too.
+
+**Tests.** Unit: [keys_journal_test.go](../../internal/formatdata/deb/keys_journal_test.go), [deb_keys_test.go](../../internal/api/v1/deb_keys_test.go),
+[handlers_keys_test.go](../../internal/formats/deb/handlers_keys_test.go). Integration, the area [test/integration/debkeys](../../test/integration/debkeys)
+(production composition root, repositories created through the API): the first key and its sealing, which repositories have keys, the
+import rules, the rotation with the signing path of the build, the permissions, concurrent changes, the sealed column's row binding,
+`signing-key.asc`, and the replay in every case of the table of the security page. Run it through the slot wrapper
+(`go test -tags integration ./test/integration/debkeys/`).
+
+## test/debstub: the counting stub archive
 
 A deterministic APT archive that is not trove: it serves generated content over TLS only, counts every request, and fails on
 command. Everything is generated in code (no recorded third-party data); two starts produce the same package, `Packages` and

@@ -858,8 +858,10 @@ and APT 2.4 with `gpgv` ([Client and library behaviour](#client-and-library-beha
   `deb.signing_key.retired` with a journal entry.
 - Every key change raises `change_seq` of every suite of the repository in its transaction and enqueues a build without delay,
   so the re-signed files are published within the delay bound of R-DEB-010.
-- At most one next key: a second create answers 409; a promotion without a next key answers 409 `deb_no_next_key`; the primary
-  cannot be retired directly (409 `deb_key_state`).
+- At most one next key: a second create answers 409 `deb_key_state`; a promotion without a next key answers 409 `deb_no_next_key`; the
+  primary cannot be retired directly (409 `deb_key_state`). The changes of one repository's keys run one after the other (Q-DEB-75).
+- A repository without a primary key (a replay withheld it, R-DEB-032) can still get one: create a next key and promote it. The promotion
+  retires nobody and its event names no old fingerprint (Q-DEB-74).
 
 | Client's keyring holds | Before step 1 | Steps 1 and 2 | After step 3 |
 |---|---|---|---|
@@ -1464,7 +1466,7 @@ Priority: **P2** · Covers: trove-only
 | `deb.coordinates.changed` | coordinates replaced (R-DEB-009) | — |
 | `deb.coordinates.removed` | coordinates removed from a file, beside `deb.coordinates.changed` (R-DEB-009) | yes |
 | `deb.signing_key.created` | R-DEB-015 | — |
-| `deb.signing_key.promoted` | a next key promoted; names the old and the new fingerprint (R-DEB-017) | yes |
+| `deb.signing_key.promoted` | a next key promoted; names the new and, when there was a primary, the old fingerprint (R-DEB-017, Q-DEB-74) | yes |
 | `deb.signing_key.retired` | a next key removed, or the retirement of a withheld key confirmed | yes |
 | `deb.signing_key.reinstated` | a withheld key reinstated (R-DEB-015) | — |
 | `deb.reinstate` | a withheld file reinstated | — |
@@ -2684,6 +2686,78 @@ outside its tests, which verify the stub's output with trove's verifier.
 needs `Packages.xz` from an upstream.
 
 **Applied in the spec:** R-DEB-035, [Client and library behaviour](#client-and-library-behaviour-this-page-relies-on).
+
+### Q-DEB-74 · A repository without a primary key promotes its next key, and the event then names no old fingerprint
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the
+signing keys (T-17 WP2).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A promotion needs a next key and nothing else; with no primary it retires nobody, and `deb.signing_key.promoted` (journaled) carries `newFingerprint` alone (chosen) | The way out of "no primary" without the old key | After the replay of a restore withheld the only key, or an administrator confirmed its retirement, a new generated or imported key can become primary; the replay of the entry makes that key primary again, which is what happened | The event's schema makes `oldFingerprint` optional |
+| (b) Refuse a promotion without a primary | The strict reading | One state fewer | A repository whose key is lost can only get a primary by reinstating a withheld key; once that key is retired the repository can never sign again |
+| (c) Make the new key primary at creation when there is no primary | No promotion | One step fewer | A next key is the only state that a client has time to learn (R-DEB-017); a primary at once skips the overlap |
+
+**Choice:** (a).
+
+**Rationale:** the overlap is about clients' keyring files, which a repository without a primary has no one to protect. The development
+agent would revisit (c) if operators find the two calls tedious.
+
+**Applied in the spec:** R-DEB-017, R-DEB-033; the registry's schema of `deb.signing_key.promoted`.
+
+### Q-DEB-75 · The changes of one repository's keys run one after the other; the loser of a race answers 409
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the
+signing keys (T-17 WP2).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every write operation and every replay step starts by locking the repository row (`FOR NO KEY UPDATE`), then reads the keys; a unique violation that still happens answers 409 `deb_key_state` (chosen) | A mutex per repository in the database | READ COMMITTED gives the statements after the lock the committed state of the winner; two creates give one 201 and the rest 409, two promotions one 200; across replicas | A key change waits for a concurrent update of the same repository's configuration (milliseconds) |
+| (b) Rely on the partial unique indexes | Let the second insert fail | No lock | A 23505 is an internal error unless every statement maps it, and the second request cannot tell why |
+| (c) SERIALIZABLE transactions | The database detects it | No explicit lock | The runner retries only on serialization failures, and the pool runs READ COMMITTED |
+
+**Choice:** (a).
+
+**Rationale:** integration test `TestR_DEB_015_ConcurrentChangesLeaveOneNextKey` found (b) answering 500 under six concurrent creates. The
+development agent would revisit (c) if the transaction runner moves to a stricter isolation level.
+
+**Applied in the spec:** R-DEB-017; [docs/security/deb-signing.md](../../security/deb-signing.md).
+
+### Q-DEB-76 · The first key is made by a hook the composition root binds once; signing-key.asc is decided on the file with no package
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the
+signing keys (T-17 WP2).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The hook of Q-REPO-273 is registered once per process and calls the store of the replica composed last; it makes a key for the local and the virtual class and none for the remote class; `signing-key.asc` asks the decision point for `read` of the file `signing-key.asc` with no package, and answers 404 when the repository has no primary or next key (chosen) | One registration, one store | A process that composes several replicas (the integration tests) does not panic on the second registration; a grant limited to packages does not reach the key, as R-DEB-004 says; a pattern on paths decides on the file's own path (conformance check 13) | The hook follows the last store: replicas of one process share one database, so it makes no difference |
+| (b) Register per composition | One hook per store | Simple | `RegisterCreateHook` panics on the second registration |
+| (c) Serve the key without a decision | The key is public | Cheaper | A repository the caller may not read would be known to exist; the kit's check 13 refuses a served file nobody decided |
+
+**Choice:** (a). The remote class's `signing-key.asc` (the certificates of `deb.upstreamKeys`) stays with the remote class (R-DEB-018).
+
+**Rationale:** the key of a repository is public to its readers, not to everybody. The development agent would revisit (b) if the hook
+registry learns to replace a registration.
+
+**Applied in the spec:** R-DEB-015, R-DEB-018; Q-REPO-273.
+
+### Q-DEB-77 · The replay acts on the key in the state the entry assumes and on nothing else
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with the
+signing keys (T-17 WP2).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `retired` withholds a primary or next key of that repository; `promoted` makes the new key primary and withholds the old one only when the restored repository holds the new key as next and the old one as primary, withholds the old primary when the new key is absent, and finds a primary that is neither the old nor the new key, or a new key that is withheld or retired, "subject unknown"; the replay output notes a repository left without a primary (chosen) | The entry is a claim | A forged or mistaken entry for another repository's key, for a key that is not where the entry says, or for a repository that is no local or virtual Debian repository changes nothing; nothing is erased | An entry that disagrees with the restored state needs an administrator's look |
+| (b) Apply every entry to whatever key has the fingerprint | Simple | Fewer cases | An entry could withhold the key of any repository, whatever it names |
+| (c) Erase on `retired` | Exact | | Against R-HA-054: a forged entry would destroy a signing identity |
+
+**Choice:** (a).
+
+**Rationale:** the replay runs with the owner credential on entries a holder of the object store could write; each step is a check before a
+restriction. The development agent would revisit the "subject unknown" cases if real restores produce them routinely.
+
+**Applied in the spec:** R-DEB-032.
 
 ## What this does not cover
 

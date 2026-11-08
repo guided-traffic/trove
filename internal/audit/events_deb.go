@@ -58,12 +58,13 @@ func init() {
 			`"state":{"type":"string","enum":["primary","next"]},"origin":{"type":"string","enum":["generated","imported"]}},` +
 			`"required":["fingerprint","state","origin"],"additionalProperties":false}`,
 	})
-	// The next key became primary and the old primary was retired (R-DEB-017).
+	// The next key became primary and the old primary was retired (R-DEB-017). A repository that had no primary key (after a
+	// restore's replay withheld it) names no old fingerprint.
 	Register(EventType{
 		Name: EventDebSigningKeyPromoted, Category: CategoryRepository, Mode: Transactional, Webhook: true, Journal: JournalRevocation,
 		Schema: `{"type":"object","properties":{"oldFingerprint":{"type":"string","pattern":` + debFpr + `},` +
 			`"newFingerprint":{"type":"string","pattern":` + debFpr + `}},` +
-			`"required":["oldFingerprint","newFingerprint"],"additionalProperties":false}`,
+			`"required":["newFingerprint"],"additionalProperties":false}`,
 	})
 	// A next key was removed, or the retirement of a withheld key was confirmed: its private key is erased.
 	Register(EventType{

@@ -226,6 +226,11 @@ type Options struct {
 	// with 503.
 	Vuln VulnServices
 	// <<< M4b vulnerabilities
+
+	// >>> T-17 deb
+	// DebKeys is the data port's signing-key group behind the Debian key operations (deb_keys.go); nil answers them with 503.
+	DebKeys DebKeyStore
+	// <<< T-17 deb
 }
 
 // Server implements gen.ServerInterface.

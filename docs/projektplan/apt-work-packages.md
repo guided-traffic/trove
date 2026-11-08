@@ -549,7 +549,28 @@ not built: they are WP2's next stage, after WP0 is on main).
 - Not done: the manifest `deploy/dev/debstub.yaml` is applied by no e2e step (like the other stubs); the stub has not been run in
   kind; the stub does not serve `Packages.xz`; `make deb-stub-image` was built and the container answered once.
 
-## WP13 as built (2026-11-08)
+## 11 · WP2 as built (2026-11-08, stage 2)
+
+Built on the base 82034d88 (WP0 landed). The library was stage 1 (section 10); this stage is the key store, the API, the creation hook,
+the replay and `signing-key.asc` for the local and virtual classes. Page: [docs/developer/deb.md](../developer/deb.md#signing-keys),
+security view [docs/security/deb-signing.md](../security/deb-signing.md), decisions Q-DEB-74 to Q-DEB-77, gap H-735.
+
+- **Built:** `formatdata/deb/{keys_store,keys,keys_journal}.go`, `queries/deb_keys.sql`, `api/v1/deb_keys.go`, `formats/deb/handlers_keys.go`,
+  `App.debKeyStore` and `bindDebCreateHook`, `debdata.Options.{Ring,KeysChanged}`, the audit schema of `deb.signing_key.promoted` (the old
+  fingerprint is optional, Q-DEB-74), the replay handlers in the trove binary (`journal_handlers_test.go` no longer lists the two events as
+  pending), the area `test/integration/debkeys`.
+- **Differences from section 2.2:** `Options.Ring` is a new member of the data port's options (the store seals and opens); `formatPorts`
+  takes the ring (nil for the restore's item store, which never creates a key). No change to the port interfaces or to `rows`. No migration
+  (00061 is complete); the sealed column is unchanged, so `reseal.go` is as WP0 wrote it.
+- **Found and fixed on the way:** concurrent creates of a next key answered 500 on the unique index; the repository row is now locked first
+  (Q-DEB-75).
+- **Not built, for the packages that follow:** the enqueue of a build on a key change (`Options.KeysChanged`, WP4); the remote class's
+  `signing-key.asc` and the `debUpstreamKeysRemoved` narrowing (WP6); the UI key panel (WP11); the rotation row on the four client images
+  (WP10); `trove admin` commands for keys (none are specified).
+- **Not verified:** a restore drill with a real backup (R-BAK-029); the replay is run through its handlers on a live database, not through
+  `trove backup restore`.
+
+## 12 · WP13 as built (2026-11-08)
 
 Built on the base 654f926b, after the OCI mirror landed `Artifact` and `Bounded`; WP13 therefore built only the background upstream.
 
