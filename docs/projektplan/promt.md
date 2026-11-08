@@ -249,8 +249,17 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
 
 
+- **F-101 · Two first publishes can both take an automatic name claim** (read by the review of F-100, not reproduced).
+  `Routing.AutoClaim` (`internal/repository/routing.go`) reads the claims and then inserts without a lock: two first
+  pushes of one name into two local repositories can both pass the "another claim covers it" check and both insert an
+  exact claim, and two first publishes of different names in one repository can exceed `MaxClaims` by one. Neither test
+  tier exercises the real automatic claim (the unit host fakes it, the files fixture stubs it). Done when the check and
+  the insert are serialised and a test with two concurrent first publishes proves one claim.
+
 ### Tests and tools
 
+- **F-102 · `TestR_BAS_014_ThousandWritesToOnePathCauseOneProbe` failed once under host load** (seen once, by the WP5
+  builder; passes alone and three times in a row). Done when the cause is found and fixed.
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
   fixed; until then a recurrence is reported with the test's name and output.
