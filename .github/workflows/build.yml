@@ -73,6 +73,7 @@ jobs:
           echo "host=${host}" >> "$GITHUB_OUTPUT"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -416,6 +417,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -454,6 +456,7 @@ jobs:
         run: deploy/dev/step-time.sh verify make release-smoke VERSION="$VERSION"
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
           GITHUB_TOKEN: ${{ github.token }}

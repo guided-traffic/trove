@@ -130,8 +130,9 @@ job downloads a pinned archive from a GitHub release, the download can fail on t
 2. otherwise the archive cached under `.bin/buildx-<pin>/` (the cache key holds the pin and the digest of the platform);
 3. otherwise a download of the release asset with [tools/github-download.sh](../../tools/github-download.sh): with the job's token
    (`GITHUB_TOKEN`, sent to github.com only, [Q-ARCH-356](../spec/architecture.md#q-arch-356--how-do-ci-jobs-download-github-release-assets-while-the-release-host-is-degraded)),
-   the bounds of the script: 300 s of retries for the request to github.com, 240 s for the storage host, up to three rounds and
-   900 s in all, and an attempt that stalls under 50 KiB/s for 30 s is aborted;
+   the bounds of the script: a hard budget of 900 s for the whole download (each curl call is limited to the time left; the step has a
+   16-minute timeout, and the `versions` and `chart` jobs, which are 20 minutes long, give the download 600 s), up to three rounds for a
+   signed redirect that expires, and an attempt that stalls under 50 KiB/s for 30 s is aborted;
 4. the archive is used only when its SHA-256 equals `BUILDX_SHA256_LINUX_AMD64` or `_ARM64` of `tools/versions.env`;
 5. the plugin is installed into `${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins`, and the CLI is checked to resolve that file.
 

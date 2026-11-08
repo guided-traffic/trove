@@ -428,7 +428,7 @@ installation of `build` downloads only when the runner has not the pinned file. 
 `contents: write` has. What makes it real is a process of one of these steps that reads or logs its environment.
 
 Residual 2, provenance: `CNPG_CHART_SHA256` and `DEV_HAPROXY_INGRESS_CHART_SHA256` are the digests the chart indexes list and GitHub reports for the release assets. The
-archives' helm provenance files (`.prov`, for example `cloudnative-pg-0.29.1.tgz.prov`) are published next to them and are not verified: no publisher key is pinned. The digest
+cloudnative-pg release publishes a helm provenance file next to its archive (`cloudnative-pg-0.29.1.tgz.prov`); the haproxy-ingress 0.16.3 release has only the archive. The provenance file is not verified: no publisher key is pinned. The digest
 check catches a replaced archive unless the index that lists the digest is replaced with it; the provenance file is what would show a signature by another key, and it is
 not checked. What makes it real is a compromise of the chart repository's index together with the release. What would close it: pinning the publisher's key and running
 `helm verify` on the archive (the key is the owner's to choose and to verify with the project).

@@ -69,25 +69,34 @@ chart_tgz() {
 # $STATE_DIR/charts with tools/github-download.sh (the job's token in CI, Q-ARCH-356) and checked against SHA256. helm pull is
 # not used: it cannot send the token to github.com, and a digest from tools/versions.env is the trust anchor either way. A
 # download that fails, or a file with another digest, fails the call; the file is not kept.
+# sha256_file FILE prints the SHA-256 of FILE (sha256sum on Linux runners, shasum on macOS).
+sha256_file() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
 chart_release_tgz() {
   local url="$1" chart="$2" version="$3" want="$4" dir="$STATE_DIR/charts" tmp got
   local file="$dir/$chart-$version.tgz"
-  if [ ! -s "$file" ]; then
-    mkdir -p "$dir"
-    tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
-    if ! "$REPO_ROOT/tools/github-download.sh" "$url" "$tmp/$chart-$version.tgz" >&2; then
-      echo "error: the chart archive $chart $version could not be downloaded from $url" >&2
-      rm -rf "$tmp"; return 1
-    fi
-    if command -v sha256sum >/dev/null; then got="$(sha256sum "$tmp/$chart-$version.tgz" | awk '{print $1}')"
-    else got="$(shasum -a 256 "$tmp/$chart-$version.tgz" | awk '{print $1}')"; fi
-    if [ "$got" != "$want" ]; then
-      echo "error: the chart archive $chart $version has SHA-256 $got, tools/versions.env pins $want" >&2
-      rm -rf "$tmp"; return 1
-    fi
-    mv "$tmp/$chart-$version.tgz" "$file"
-    rm -rf "$tmp"
+  # A file that is there is used only with the pinned digest: the digest is checked on every use, not only on the download.
+  if [ -s "$file" ] && [ "$(sha256_file "$file")" = "$want" ]; then
+    printf '%s\n' "$file"
+    return 0
   fi
+  rm -f "$file"
+  mkdir -p "$dir"
+  tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
+  if ! "$REPO_ROOT/tools/github-download.sh" "$url" "$tmp/$chart-$version.tgz" >&2; then
+    echo "error: the chart archive $chart $version could not be downloaded from $url" >&2
+    rm -rf "$tmp"; return 1
+  fi
+  got="$(sha256_file "$tmp/$chart-$version.tgz")"
+  if [ "$got" != "$want" ]; then
+    echo "error: the chart archive $chart $version has SHA-256 $got, tools/versions.env pins $want" >&2
+    rm -rf "$tmp"; return 1
+  fi
+  mv "$tmp/$chart-$version.tgz" "$file"
+  rm -rf "$tmp"
   printf '%s\n' "$file"
 }
 

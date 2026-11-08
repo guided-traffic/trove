@@ -15,6 +15,10 @@ inputs:
   version:
     description: The pin, BUILDX_VERSION of tools/versions.env
     required: true
+  download-budget:
+    description: Seconds the download of the archive may take in all (tools/github-download.sh); a job with a short timeout passes less
+    required: false
+    default: '900'
 runs:
   using: composite
   steps:
@@ -65,6 +69,7 @@ runs:
         DIGEST: ${{ steps.probe.outputs.digest }}
         # Read by tools/github-download.sh, which sends it to github.com only.
         GITHUB_TOKEN: ${{ github.token }}
+        TROVE_DOWNLOAD_BUDGET: ${{ inputs.download-budget }}
       run: |
         set -euo pipefail
         dir=".bin/buildx-${WANT}"

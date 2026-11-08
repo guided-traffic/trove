@@ -104,9 +104,11 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
+          download-budget: '600'
 
       - name: Show the tool versions in the log
         run: |
@@ -525,7 +527,10 @@ jobs:
         run: make chart-lint
 
       - name: Fetch the pinned promtool
+        timeout-minutes: 16
         env:
+          # The chart job is 20 minutes long: the download gets 10 of them, and the named error comes first.
+          TROVE_DOWNLOAD_BUDGET: "600"
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
           GITHUB_TOKEN: ${{ github.token }}
         run: make promtool
@@ -568,6 +573,7 @@ jobs:
           sudo apt-get install -y build-essential
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -616,6 +622,7 @@ jobs:
           sudo apt-get install -y build-essential jq
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -655,6 +662,7 @@ jobs:
           sudo apt-get install -y build-essential
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -676,6 +684,7 @@ jobs:
       # Trivy at its pin from tools/versions.env, checked against its digest; trivy-action then installs nothing
       # (skip-setup-trivy), so the scan does not depend on setup-trivy's cache or its silent download.
       - name: Install the pinned Trivy
+        timeout-minutes: 16
         id: trivy_install
         env:
           # Read by tools/github-download.sh (the Trivy archive): sent to github.com only (Q-ARCH-356).
@@ -929,6 +938,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -974,6 +984,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
           GITHUB_TOKEN: ${{ github.token }}
@@ -1107,6 +1118,7 @@ jobs:
       # Node.js on the runner and none of the libraries the pinned Node.js loads (Q-ARCH-218).
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -1138,6 +1150,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
           GITHUB_TOKEN: ${{ github.token }}
@@ -1262,6 +1275,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -1296,6 +1310,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
           GITHUB_TOKEN: ${{ github.token }}
@@ -1423,6 +1438,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         uses: ./.github/actions/install-buildx
         with:
           version: ${{ env.BUILDX_VERSION }}
@@ -1460,6 +1476,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
           GITHUB_TOKEN: ${{ github.token }}
@@ -1638,6 +1655,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/install-buildx
         with:
@@ -1682,6 +1700,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         if: steps.scope.outputs.run == 'true'
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
@@ -1872,6 +1891,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/install-buildx
         with:
@@ -1916,6 +1936,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         if: steps.scope.outputs.run == 'true'
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
@@ -2104,6 +2125,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the pinned Docker Buildx
+        timeout-minutes: 16
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/install-buildx
         with:
@@ -2148,6 +2170,7 @@ jobs:
         run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
 
       - name: Fetch the dev charts that are GitHub release assets
+        timeout-minutes: 16
         if: steps.scope.outputs.run == 'true'
         env:
           # Read by tools/github-download.sh: sent to github.com only (Q-ARCH-356).
