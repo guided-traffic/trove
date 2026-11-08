@@ -452,3 +452,49 @@ The re-check of the revision (1cbf0b22) found all 27 resolved and six further po
 
 Also from the re-check, recorded as verified on debian.md: `sqv` and `gpgv` read the module's algorithm-22 signatures (single,
 co-signed, detached) on Debian 13, Debian 12, Ubuntu 24.04 and Ubuntu 22.04; `circl` v1.6.3 is BSD-3-Clause.
+
+## 9 · WP2 (library) and WP5 as built
+
+Built on 2026-11-08, stage 1 of the APT remote feature, from base 081bd9ae and independent of WP0. The page
+[docs/developer/deb.md](../developer/deb.md) describes both parts; the decisions are Q-DEB-70 to Q-DEB-73 in debian.md.
+
+**WP2, the library only** (`internal/openpgp`; the key store, key API, rotation, journal replay and the creation hook's binding are
+not built: they are WP2's next stage, after WP0 is on main).
+
+- The API of section 2.2 as specified, plus `Bits` on `Key` and `Certificate`, `Key.Certificate()`, `Key.SecretArmored()` (the
+  unprotected form to seal), `Key.EarliestSignature()` (the time the build waits for, Q-DEB-40), `DefaultLimits()`, the error
+  classes `ErrInvalid`, `ErrUnsupportedKey`, `ErrTooEarly`, `ErrVerify`, and `Reason(err)` with the `Reason*` constants (the metric
+  label of R-DEB-020). A zero `Limits` field means the bound of R-DEB-034 (Q-DEB-71).
+- Tests as the WP2 note asks: algorithm octet 22, version 4, no expiry, creation as passed, the binding self-signature equal to the
+  creation (so `BoundSince` = `Created`); `BoundSince` of an imported key whose only self-signature is 30 s old and signing that waits
+  for it; import refusals of 2048-bit RSA, algorithm 27, version 6, an expiry, a future creation, a future binding, a signing
+  subkey, a revoked key, a missing or wrong passphrase; the verification rules of R-DEB-020 and Q-DEB-35 (unknown key, co-signing,
+  SHA-1 and SHA-224, an expired key with a backdated signature, a key created after the signature, a signature 9 and 11 minutes
+  ahead, a changed text, the `Hash` header absent, naming another hash and naming two, text before and after the message, 32 and
+  33 signatures); the bounds of R-DEB-034 (256 KiB, 32 certificates across blocks, 16 MiB, 64 KiB); Debian 13's archive keyring
+  (9 certificates, 75,803 armored bytes) as a fixture, its licence (the package's copyright file: the keys "don't fall under any
+  copyright"); three fuzz targets (parsers and verifiers, 15 s each run clean).
+- `internal/openpgp` is a leaf in the archtest layer table. The rule "only importer of the OpenPGP module" (Q-ARCH-383) is held by
+  convention and review: no archtest rule enforces it yet, and `test/debstub` imports the module on purpose.
+- go.mod gains `github.com/ProtonMail/go-crypto` v1.5.2 (direct) and `github.com/cloudflare/circl` v1.6.3 (indirect), pinned once.
+- Verified with the real clients, once: `apt-get update --error-on=any` against `file:` repositories signed by this library on
+  `debian:13` (`sqv`), `debian:12`, `ubuntu:24.04` and `ubuntu:22.04` (`gpgv`): one key, co-signed with either key as the keyring,
+  `Release.gpg` alone, an imported key with a fresh self-signature, and a foreign keyring failing with the key named.
+
+**WP5** (`test/debstub`, `test/debstub/debgen`, Makefile `deb-stub-image` and `DEB_STUB_IMAGE`, `deploy/dev/debstub.yaml`).
+
+- Everything of the WP5 note and of R-DEB-035's list: installable `.deb` files, the suites `stable` and `testing` (also under their
+  codenames), `main` and `contrib`, `amd64`, `arm64` and `all`, a `Sources` index, the flat directory and the flat root (requested as
+  `/./InRelease`, counted as written), the large index as the suite `bulk`, by-hash for four algorithms, pdiffs from the second
+  generation on, validators and 304, and every switch of the list; a control API after `test/ocistub`'s.
+- Differences from the note, all in debian.md: the keys have fixed creation dates instead of "an hour back" (Q-DEB-70); `InRelease`
+  is framed as `gpg` writes it and there are no xz indexes (Q-DEB-73); the flat directory's `Suite` is `binary` so that APT does not
+  warn.
+- The stub's tests verify every document it serves with `internal/openpgp` (an independent signer against trove's verifier) and the
+  digests of every listed file, by-hash path, `Filename` and source file; a generation, its pdiff (the patch is applied in the test)
+  and the history by hash; each switch. Checked once outside the tests: `dpkg -i` of a generated package on `debian:13`; and the
+  four client images ran `apt-get update --error-on=any` and `apt-get install` against copies of the stub's tree (suites `stable`
+  and `testing` with `contrib`, the flat directory, the flat root), installing and running the packages, and failed on a keyring
+  with another key.
+- Not done: the manifest `deploy/dev/debstub.yaml` is applied by no e2e step (like the other stubs); the stub has not been run in
+  kind; the stub does not serve `Packages.xz`; `make deb-stub-image` was built and the container answered once.

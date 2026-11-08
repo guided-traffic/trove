@@ -74,6 +74,9 @@ Verified by the two reviews of the plan with probe scripts in containers (`debia
 | `sqv` and `gpgv` read the module's algorithm-22 signatures: with keys made by the module (v1.5.2; EdDSALegacy, key created now − 1 h, `Date` and signature now − 60 s), one key verifies; an `InRelease` co-signed by k1 and k2 (`clearsign.EncodeMulti`) verifies with a keyring of k1 or of k1 and k2; a `Release.gpg` alone (`ArmoredDetachSign`, no `InRelease`) verifies; a foreign keyring fails | `apt-get update --error-on=any` on Debian 13 (`sqv` 1.3.0), Debian 12 (`gpgv` 2.2.40), Ubuntu 24.04 (`gpgv` 2.4.4) and Ubuntu 22.04 (`gpgv` 2.2.27) | R-DEB-015 to R-DEB-017, Q-DEB-10, Q-DEB-11 |
 | `sqv` checks the signing key against its binding self-signature at the data signature's time and refuses a data signature older than every binding self-signature ("Signing key … is not bound: No binding signature at time …"), even when the key's creation time is older; `gpgv` accepts it | A key created an hour back whose only self-signature is fresh, signing at now − 60 s | The self-signature carries the key's creation time; signatures wait for `BoundSince` (R-DEB-015, R-DEB-016, Q-DEB-40) |
 | The OpenPGP module v1.5.2 requires `github.com/cloudflare/circl` v1.6.3; the OpenPGP module and `github.com/ulikunitz/xz` v0.5.17 are BSD-licensed, `circl` v1.6.3 is BSD-3-Clause | `go mod graph` and the modules' licence files | Q-DEB-24 |
+| The signer of `internal/openpgp` (built 2026-11-08, stage 1 of T-17) makes documents the four clients accept: an `InRelease` (`ClearSign`) and a `Release.gpg` alone (`DetachSign`) by one key, co-signed by two keys with a keyring of the first or of the second, and by an imported key whose only self-signature is 30 s old and which signs 29 s after the key was bound; a keyring holding another key fails with the missing key named | `apt-get update --error-on=any` against `file:` repositories with `signed-by=<armored key>` on `debian:13` (APT 3.0 with `sqv`), `debian:12`, `ubuntu:24.04` and `ubuntu:22.04` (all with `gpgv`) | R-DEB-015 to R-DEB-017, Q-DEB-40 |
+| The counting stub archive (`test/debstub`) is read by the same four clients: its `InRelease` as `gpg` frames it (the signed text lacks the final line ending), its indexes, the flat directory `deb <url> binary/`, the flat root `deb <url> ./` and the suite `testing` with `contrib`; `apt-get install` of its packages installs them and the installed script prints its line. A flat directory's Release names `Suite: binary`, or APT warns "Conflicting distribution" | `apt-get update --error-on=any` and `apt-get install` against `file:` copies of the stub's tree on the four images | R-DEB-035, Q-DEB-73 |
+| `internal/openpgp` accepts Debian 13's archive keyring as `deb.upstreamKeys`: package `debian-archive-keyring` 2025.1 holds 9 certificates, 55,918 bytes binary and 75,803 bytes armored without armor headers (75,839 with the headers of `gpg --enarmor`) | The keyring file of `debian:13` through `ParseCertificates` | R-DEB-020, R-DEB-034 |
 
 Not verified, and to be proven by the package that builds the mechanism:
 
@@ -1526,7 +1529,9 @@ Priority: **P2** · Covers: trove-only
   signature by an unknown key, by an expired key with a backdated signature time, a broken signature, a SHA-1 signature, an older
   `Date`, a `Date` 20 minutes ahead, a passed `Valid-Until`, a `Valid-Until` six days ahead, a suite that answers 404, a package
   file that does not match its index, an index that matches no release, a delay per response, down, and the throttling modes of
-  R-REPO-059.
+  R-REPO-059. The stub as built (T-17 WP5): the large index is the suite `bulk`; the keys a, b, c (valid) and d (expired) have fixed
+  seeds and creation dates (Q-DEB-70); `InRelease` is framed as `gpg` writes it and indexes are plain and gzip (Q-DEB-73); the paths,
+  the switches and the control API are described in [developer/deb.md](../../developer/deb.md).
 - **Integration** (`test/integration/deb`, the stack of R-HA-051: PostgreSQL, Valkey with Sentinel, S3, several replicas): every
   acceptance criterion of this page that names the protocol, over HTTP; `TestR_AUTHZ_007_DebActionMap`; remote and virtual against
   the stub; mirror passes in `test/integration/mirror` (the Debian criteria of [Mirror discovery](#mirror-discovery)); the
@@ -2533,6 +2538,83 @@ only through a change an administrator makes on purpose. The development agent w
 ask for a one-step way.
 
 **Applied in the spec:** R-DEB-025, R-DEB-029 (troubleshooting).
+
+### Q-DEB-70 · The stub's test keys have a fixed creation date, not "an hour back"
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
+the counting stub archive (T-17 WP5).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The keys a, b and c are created on 2026-01-01 00:00:00 UTC, the key d on 2024-01-01 with a one-year lifetime and signs at 2024-06-01 (chosen) | A fixed date in the past, every self-signature at the creation time | The fingerprints are the same in every process, so a test pins them in `deb.upstreamKeys` and the whole certificate is reproducible; the creation time is earlier than every signature the stub makes by more than an hour as long as the clock is past it | Not relative to now: a test host whose clock is before 2026-01-01 would see keys from the future |
+| (b) Created an hour before the stub starts | The wording of the plan | Relative to now | A new fingerprint at every start, which no test can pin; a stub restarted in the middle of a test changes its key |
+| (c) Created at start, signatures one hour after | Nothing is in the past | Relative | Signatures from the future, which is the fault the keys are meant to avoid |
+
+**Choice:** (a).
+
+**Rationale:** the purpose of "an hour back" (R-DEB-015, Q-DEB-30) is that no signature precedes its key; a fixed past date keeps
+that and adds reproducibility. The development agent would revisit (b) if a test needs the key to age relative to the clock.
+
+**Applied in the spec:** R-DEB-035 (the stub's keys), [Client and library behaviour](#client-and-library-behaviour-this-page-relies-on).
+
+### Q-DEB-71 · The OpenPGP library: error classes, bounds that default, and what the key carries
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
+`internal/openpgp` (T-17 WP2, library stage).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Four error classes (`ErrInvalid`, `ErrUnsupportedKey`, `ErrTooEarly`, `ErrVerify`) with the reason in the text; a `VerifyError` that names a `Reason` for the metric label; a zero `Limits` field means the bound of R-DEB-034; `Key` carries `Fingerprint`, `Algorithm`, `Bits`, `Created`, `BoundSince`, prints as its fingerprint and offers `Certificate`, `SecretArmored` and `EarliestSignature`; an imported key keeps its primary key alone (an encryption subkey is accepted and dropped) (chosen) | The API of plan section 2.2 plus what the callers need | The key API maps `ErrInvalid` and `ErrUnsupportedKey` to 422 `deb_key_unsupported` or `invalid_value` without parsing text; the build asks `EarliestSignature` for its wait (R-DEB-016); a log line or `%v` of a `Key` cannot leak the private part; the stored certificate is the same for every client | A caller that wants other bounds passes them |
+| (b) Only the plan's functions, errors as plain text | Exactly 2.2 | Smallest | The callers parse messages; no wait computation without reading two fields |
+| (c) Keep the subkeys of an imported key | Faithful | The certificate is what the operator imported | The sealed secret carries subkeys that never sign; a signing subkey is refused anyway |
+
+**Choice:** (a). Import refusals are the rules of R-DEB-015 in this order: version, algorithm and size, a key whose secret part is
+held elsewhere, revoked, cannot sign, an expiry (the current self-signature of any identity, or the newest direct-key signature),
+created or bound in the future, a signing subkey. A signed test message proves the key before it is accepted, so a corrupt key fails at
+the import and not at the first build.
+
+**Rationale:** the callers (WP2's key store and API, WP4's build, WP6's remote) need to branch on the class and to wait on
+`EarliestSignature`. The development agent would revisit (c) if clients are found to need an encryption subkey in `signing-key.asc`.
+
+**Applied in the spec:** R-DEB-015, R-DEB-016, R-DEB-034.
+
+### Q-DEB-72 · Verification: a hash header that does not match ignores the signature; signing subkeys count; certificates are read strictly
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
+`internal/openpgp` (T-17 WP2, library stage).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A signature whose hash the `Hash` header (when present) does not name is ignored like a signature by an unknown key; a signature by a signing subkey of a configured certificate counts and reports the certificate's fingerprint; `ParseCertificates` refuses any block it cannot read instead of skipping it, and keeps a certificate listed twice once; the text returned is the dash-unescaped lines joined by newlines as signed (chosen) | One rule: a message verifies when one acceptable signature does | A mixed message (one honest signature and one mislabelled) still verifies by the honest one, as APT does; an upstream that signs with a subkey works; an operator learns of a damaged key at the save | An upstream that mislabels every hash fails with `hash_header` |
+| (b) A header that does not match every signature rejects the message | Strict reading of R-DEB-034 | Simplest to state | One mislabelled co-signature blocks a rotation window |
+| (c) The module's default reader (skips unreadable certificates, first armor block only) | Less code | | A damaged key is silently dropped and the remote runs on fewer keys than configured |
+
+**Choice:** (a). `Reason(err)` returns the strongest reason found (`bad_signature` over `key_invalid`, `signature_expired`, `future`,
+`weak_hash`, `hash_header`, `unknown_key`, `malformed`, `no_signature`; `too_many` for a bound) for the metric label of R-DEB-020.
+
+**Rationale:** R-DEB-034 says a `Hash` header, when present, "matches its signatures"; this reads it as a property of each signature
+the verifier relies on. The development agent would revisit (b) if an upstream is found to depend on the header being wrong.
+
+**Applied in the spec:** R-DEB-019, R-DEB-020, R-DEB-034.
+
+### Q-DEB-73 · The stub frames InRelease as gpg does, serves gzip only, and names a flat directory's suite after the directory
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Added with
+the counting stub archive (T-17 WP5).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stub frames and signs `InRelease` by hand the way `gpg --clearsign` writes it (the signed text lacks the final line ending, the armor header follows the last line), indexes in plain text and gzip, no xz, zstd or bzip2, no `Contents` or translations, and a flat directory's Release names `Suite` and `Codename` after the directory (chosen) | The shape real archives have; one module for the signatures | trove's verifier meets gpg's framing, not its own; no second compression module for a test double; no APT warning from the flat directory (verified) | `Packages.xz` handling is not exercised by the stub (WP8's bound test and the unit tests do) |
+| (b) The module's own `clearsign` encoder | Fewer lines | | The same code as trove's signer, so framing mistakes would cancel out |
+| (c) Add xz output to the stub | Complete | Exercises xz | A second owner of the xz module while WP1 adds it |
+
+**Choice:** (a). The stub signs with the module directly (`openpgp.Entity`, `packet.Signature`) and never imports `internal/openpgp`
+outside its tests, which verify the stub's output with trove's verifier.
+
+**Rationale:** the point of the stub is an upstream that is not trove. The development agent would revisit (c) when a remote test
+needs `Packages.xz` from an upstream.
+
+**Applied in the spec:** R-DEB-035, [Client and library behaviour](#client-and-library-behaviour-this-page-relies-on).
 
 ## What this does not cover
 

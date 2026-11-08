@@ -65,6 +65,10 @@ func layerTable() []layerRule {
 		// S3 sink of a restore (internal/blob/s3) can name its digest type without importing a domain package (R-BAK-021).
 		{"internal/backup/format", layerLeaf},
 		{"internal/tlsfiles", layerLeaf},
+		// The OpenPGP signer and verifier of the Debian repositories (R-DEB-015, R-DEB-016, R-DEB-020, Q-ARCH-383): the only importer
+		// of the OpenPGP module, standard library otherwise. A leaf so that the format (edge), its data port (domain) and the
+		// repository service's creation hook can all use it.
+		{"internal/openpgp", layerLeaf},
 		{"internal/formats/catalog", layerLeaf},
 		// The rows a serve-time check decides on, read by the item lookup (R-ARCH-027): plain types, no imports. A leaf so that
 		// the item store, the format contract and the remote engine spell one type.

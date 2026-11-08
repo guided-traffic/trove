@@ -646,3 +646,16 @@ oci-stub-image: ## Build the counting OCI test upstream image (OCI_STUB_IMAGE, I
 	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
 	  -f test/ocistub/Containerfile -t $(OCI_STUB_IMAGE) .out/ocistub
 # <<< T16 oci-stub
+
+# >>> T17 deb-stub
+# The counting Debian archive test upstream (test/debstub, R-DEB-035, docs/developer/deb.md): suites, components, architectures,
+# a Sources index, by-hash, pdiffs, flat repositories and a large index, signed by test keys. Edit only between the markers.
+DEB_STUB_IMAGE ?= trove-e2e-debstub:dev
+
+.PHONY: deb-stub-image
+deb-stub-image: ## Build the counting Debian archive test upstream image (DEB_STUB_IMAGE, IMAGE_ARCH) on the release base image
+	@mkdir -p .out/debstub
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/debstub/debstub-linux-$(IMAGE_ARCH) ./test/debstub/cmd/debstub
+	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+	  -f test/debstub/Containerfile -t $(DEB_STUB_IMAGE) .out/debstub
+# <<< T17 deb-stub
