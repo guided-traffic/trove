@@ -268,24 +268,12 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
-- **F-94 · A replica's shutdown overran its close deadline under load** (seen twice, by the F-90 agent).
-  `TestR_EP_018_FormatsOnAnEndpointWithRules` (`test/integration/endpoints`) failed with `stop a: close phase overran its
-  deadline` while the object-store health probes timed out on an overloaded host. Done when the cause (a close step that
-  waits on something slow, or a deadline that does not fit the test configuration) is found and fixed.
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
   fixed; until then a recurrence is reported with the test's name and output.
 - **F-96 · The registry's anonymous test failed once after 85 s, its message not captured** (seen once, by the WP3
   builder on a loaded host; 10 of 10 later runs passed). The settings wait it was suspected of takes under 1 ms; the test now
   logs that wait and fails with the replica's last answer. Done when a recurrence names its cause and that cause is fixed.
-- **F-97 · The close phase can overrun while a database connection is still held** (read by the review of F-94).
-  `pgxpool.Close` waits for every acquired connection, and the PostgreSQL component's stop ignores its deadline
-  (`internal/app/wire_postgres.go`); a periodic last-used flush (`internal/auth/token/lastused.go`, detached, 10 s) or a
-  detached rollback (`internal/meta/postgres/tx.go`, 5 s) still holding one pushes the shutdown past its deadline. Done
-  when closing the pools is bounded by the phase deadline, with a test that holds a connection past it.
-- **F-98 · `TestLeaseRegistry` panics when run more than once** (confirmed by the review of F-94). `go test
-  ./internal/cluster/ -count=3` panics with `lease "unit_lease_a" is registered twice`: global state survives between
-  runs. Done when repeated runs pass.
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
   found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"

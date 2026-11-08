@@ -9159,6 +9159,53 @@ the hold (33 to 54 s measured, 28 s without it).
 `test/e2e/drain_variants_test.go`; [e2e.md](../developer/e2e.md#variant-b-the-hold).
 
 
+### Q-HA-202 · The final deletion of the registry row runs on the request pool
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-94. `Registry.Stop` deleted the replica's row on the control connection and, because it replaced the close phase's
+context with its own five seconds, outlived the phase deadline (the process was abandoned with `close phase overran its
+deadline`). Bound by the phase's context, the same delete ended with `context deadline exceeded` under load, which
+`closeComponents` turned into an error, so the process exited non-zero where R-ARCH-024 step 6 says `0`. The control pool has one
+connection (Q-HA-20). During step 6 three users share it: the change-log poll (stopped after the registry, by the specified
+order), the `database` and `schema` readiness checks (the check loop runs until after the close phase) and the delete. A poll
+query may hold it for `callTimeout`, up to 10 s.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the delete on the control connection and treat a timeout as no error | The row stays and goes stale | No new pool use | Hides a failed delete; the row of a replica that exited cleanly shows `lost` until the prune |
+| (b) Stop the poll and the checks before the registry | Reorders step 6 | The control connection is free | Changes the specified order, and the check loop is stopped last on purpose (it waits for running checks and feeds the verbose details of the ops listener; `/readyz` itself answers 503 from the draining flag) |
+| (c) Delete on the request pool (chosen) | `RegistryOptions.DeleteDB` is `DB.Main()` | The request pool is idle after step 5, so no competitor exists; the order stays as specified | The delete leaves the connection class R-OPS-003 gives the heartbeat |
+
+**Choice:** (c). **Rationale:** R-OPS-003 puts the heartbeat on the control connection so that a request pool exhausted by load never
+makes a live replica look lost. That reason does not apply to the last statement of a replica that no longer serves requests. The
+development agent would revisit it if the request pool were still in use during step 6.
+**Applied:** R-ARCH-024 step 6; R-OPS-003; `internal/cluster/replica_registry.go` (`DeleteDB`, `Stop`),
+`internal/app/wire_coordination.go`; `docs/developer/coordination.md`.
+
+### Q-HA-203 · The close of the database pools ends with the close phase
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-97. `pgxpool.Pool.Close` returns only after every acquired connection has been returned (pgx v5.11.0 `pool.go`, puddle
+v2.2.3 waits for its destruct group), and `postgresComponent.Stop` ignored its context. Any holder at that moment — a periodic
+flush (`internal/auth/token/lastused.go`, detached, 10 s), the rollback of `InTx` (detached, 5 s), a detached write of a request
+path — pushed the close phase over its deadline.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Make every detached holder end with the close phase | Each holder takes the phase's context | The pool closes cleanly | Many holders in many packages, some deliberately detached so that a write is not cut half way; a new one breaks it again |
+| (b) Close the pools at once and give up at the phase deadline (chosen) | `DB.CloseContext(ctx)`: one goroutine per pool; at the deadline the error names the pools still open and the connections they hold | One place; bounded whatever holds a connection | The pool finishes closing in the background, and pgx does not say who holds the connection |
+| (c) Close the pools without waiting | Fire and forget | Simple | The holder's write is cut without a trace |
+
+**Choice:** (b). **Rationale:** the pod's grace period is the constraint (R-HA-011), and a holder that outlives the phase is cut by
+the process exit either way; the error makes it visible. **Consequence:** the error travels from `closeComponents` through
+`Shutdown`, so `trove serve` exits non-zero when a pool still holds a connection at the close deadline. Exit 0 means every close
+step finished; a pool cannot force-close an acquired connection, so the exit itself cuts the holder. A pool that is open at the
+deadline but holds nothing is not named, and when no pool holds anything the close reports no error. The development agent would revisit (a) for the holders found by
+H-693.
+**Applied:** R-ARCH-024 step 6; `internal/meta/postgres/db.go` (`CloseContext`), `internal/app/wire_postgres.go`.
+
 ## What this does not cover
 
 ### H-37 · A database restore revives revoked credentials and removed grants
@@ -9246,3 +9293,16 @@ design.
 Component: the task `backup-check` and `trove admin backup check` (R-HA-023). Subject: whether a point-in-time restore would work. The check reads `archive_mode`, the bucket's versioning and lifecycle rules and the grace period. `archive_mode = on` says PostgreSQL hands finished WAL segments to its archive command; it does not say that the command succeeds, that a base backup exists or that a restore has ever been tried. A noncurrent-version rule that matches only a prefix of the bucket counts as one that matches the bucket.
 
 Live whenever `backup.recovery_window` is declared. What makes it real: an archive command that fails (an expired credential, a deleted bucket) while `archive_mode` stays `on`, so `trove_backup_check_ok{check="archive_mode"}` stays 1 and `TroveBackupCheckFailed` stays silent. The restore drill of R-HA-025 is the only check of the outcome, and it is not run by the installation.
+
+### H-693 · A connection held at the close deadline is named by pool, not by holder
+
+Component: the close of the database pools (`DB.CloseContext`, Q-HA-203). Subject: which code still holds a connection when the
+close phase ends. pgx exposes the number of acquired connections of a pool, not their holders, so the error says `main pool (1
+connection held)` and the holder has to be found in the goroutine dump.
+
+The readiness check loop is a holder as well: it runs until after the close phase (the check loop stops last), and its `database`
+and `schema` checks hold the control connection for up to `health.check_timeout` each. That loop is not stopped by this decision.
+
+Live whenever a detached write (the periodic token last-used flush, 10 s; the rollback of `InTx`, 5 s; the detached writes of
+the upload paths, up to 30 s, not traced) is running at the close deadline. What makes it real: such a write is cut by the process
+exit, and its effect is lost; the next use records most of them again, a half-finished upload is cleaned up by its sweep.

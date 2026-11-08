@@ -110,7 +110,12 @@ type ReplicaSnapshot struct {
 type RegistryOptions struct {
 	// DB is the replica's control connection (DB.ControlPool): a request pool
 	// exhausted under load must not make a live replica look lost.
-	DB       q.DBTX
+	DB q.DBTX
+	// DeleteDB is the pool the final deletion of the replica's row (Stop) runs on: the request pool, which is idle by then
+	// (R-ARCH-024 step 6). The control connection is busy at that point with the change-log poll and the database and
+	// schema checks, which run until the close phase ends, and a delete queued behind them is cut by the phase deadline
+	// (Q-HA-202). Nil deletes on DB.
+	DeleteDB q.DBTX
 	Identity ReplicaIdentity
 	// Snapshot returns the current state, checks and Valkey view; called on
 	// every heartbeat. Nil reports "ready" with no checks.
@@ -293,10 +298,18 @@ func (r *Registry) StopHeartbeat() {
 }
 
 // Stop ends the heartbeat and deletes the replica's own row (a clean shutdown,
-// R-OPS-003). A replica that is killed leaves the row to go stale.
+// R-OPS-003). A replica that is killed leaves the row to go stale. The deletion
+// is a close step (R-ARCH-024 step 6): it works against ctx, the deadline of the
+// close phase, and against its own five seconds, whichever ends first. A row
+// that could not be deleted in time goes stale like the one of a killed replica;
+// waiting past the phase would cost the pod its termination grace (R-HA-011).
 func (r *Registry) Stop(ctx context.Context) error {
 	r.StopHeartbeat()
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return q.New(r.o.DB).DeleteReplica(dctx, r.o.Identity.UID)
+	db := r.o.DeleteDB
+	if db == nil {
+		db = r.o.DB
+	}
+	return q.New(db).DeleteReplica(dctx, r.o.Identity.UID)
 }

@@ -20,6 +20,15 @@ func bareValkey(prefix, ks string) *Valkey {
 }
 
 func TestKeyRegistry(t *testing.T) {
+	// The families live for this run only: a repeated run (-count) registers them again.
+	t.Cleanup(func() {
+		families.mu.Lock()
+		defer families.mu.Unlock()
+		for _, id := range []string{"testkeys:unit:v1", "testkeys:unit:v2", "testkeys:chan:v1"} {
+			delete(families.keys, id)
+			delete(families.channels, id)
+		}
+	})
 	fam := registerKeyFamily("testkeys:unit", 1, 2*time.Minute)
 	ch := registerChannelFamily("testkeys:chan", 1)
 

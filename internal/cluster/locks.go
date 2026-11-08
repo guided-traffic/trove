@@ -74,42 +74,54 @@ func (l LeaseID) Name() string { return l.name }
 // Number is the registered lease number.
 func (l LeaseID) Number() int32 { return l.number }
 
-var leaseIDs = struct {
+// leaseRegistry holds the registered leases. The process has one (leaseIDs), filled by the package initialisation of the owners;
+// a test builds its own, so a repeated run does not meet the registrations of the one before.
+type leaseRegistry struct {
 	mu     sync.Mutex
 	byName map[string]LeaseID
 	byNum  map[int32]LeaseID
-}{byName: map[string]LeaseID{}, byNum: map[int32]LeaseID{}}
+}
+
+func newLeaseRegistry() *leaseRegistry {
+	return &leaseRegistry{byName: map[string]LeaseID{}, byNum: map[int32]LeaseID{}}
+}
+
+var leaseIDs = newLeaseRegistry()
 
 // RegisterLease registers a lease number. It panics on a duplicate name or
 // number or on a number below 1. Package initialisation of the owning package
 // calls it.
-func RegisterLease(name string, number int32) LeaseID {
+func RegisterLease(name string, number int32) LeaseID { return leaseIDs.register(name, number) }
+
+func (r *leaseRegistry) register(name string, number int32) LeaseID {
 	if !areaPattern.MatchString(name) {
 		panic(fmt.Sprintf("cluster: invalid lease name %q", name))
 	}
 	if number < 1 {
 		panic(fmt.Sprintf("cluster: lease %q needs a number of 1 or more", name))
 	}
-	leaseIDs.mu.Lock()
-	defer leaseIDs.mu.Unlock()
-	if _, ok := leaseIDs.byName[name]; ok {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.byName[name]; ok {
 		panic(fmt.Sprintf("cluster: lease %q is registered twice", name))
 	}
-	if o, ok := leaseIDs.byNum[number]; ok {
+	if o, ok := r.byNum[number]; ok {
 		panic(fmt.Sprintf("cluster: lease number %d is taken by %q", number, o.name))
 	}
 	id := LeaseID{name: name, number: number}
-	leaseIDs.byName[name] = id
-	leaseIDs.byNum[number] = id
+	r.byName[name] = id
+	r.byNum[number] = id
 	return id
 }
 
 // RegisteredLeases lists the registered leases by number.
-func RegisteredLeases() []LeaseID {
-	leaseIDs.mu.Lock()
-	defer leaseIDs.mu.Unlock()
-	out := make([]LeaseID, 0, len(leaseIDs.byNum))
-	for _, id := range leaseIDs.byNum {
+func RegisteredLeases() []LeaseID { return leaseIDs.list() }
+
+func (r *leaseRegistry) list() []LeaseID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]LeaseID, 0, len(r.byNum))
+	for _, id := range r.byNum {
 		out = append(out, id)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].number < out[j].number })

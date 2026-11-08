@@ -40,10 +40,11 @@ func TestLeaseRegistry(t *testing.T) {
 		}
 	})
 	t.Run("R-ARCH-017 lease numbers and names are registered once", func(t *testing.T) {
-		RegisterLease("unit_lease_a", 9001)
-		expectPanic(t, "a duplicate number", func() { RegisterLease("unit_lease_b", 9001) })
-		expectPanic(t, "a duplicate name", func() { RegisterLease("unit_lease_a", 9002) })
-		expectPanic(t, "number 0", func() { RegisterLease("unit_lease_c", 0) })
+		reg := newLeaseRegistry() // not the process registry: a repeated run would register the same lease twice
+		reg.register("unit_lease_a", 9001)
+		expectPanic(t, "a duplicate number", func() { reg.register("unit_lease_b", 9001) })
+		expectPanic(t, "a duplicate name", func() { reg.register("unit_lease_a", 9002) })
+		expectPanic(t, "number 0", func() { reg.register("unit_lease_c", 0) })
 	})
 	t.Run("R-ARCH-017 the categories are the registered numbers", func(t *testing.T) {
 		if LockLease != 1 || LockFetchRetired != 2 || LockMigration != 3 || LockConfig != 4 {
@@ -183,9 +184,21 @@ func TestSignals(t *testing.T) {
 	})
 }
 
+// registerTestArea registers an area for the length of one test and removes it afterwards, so that a repeated run (-count) does
+// not register it twice and no test sees the area of another.
+func registerTestArea(t *testing.T, a Area) {
+	t.Helper()
+	RegisterArea(a)
+	t.Cleanup(func() {
+		areas.mu.Lock()
+		defer areas.mu.Unlock()
+		delete(areas.by, a.Name)
+	})
+}
+
 func TestNotify(t *testing.T) {
-	RegisterArea(Area{Name: "unit_a", Owner: "test", Class: ChangeArea, PayloadVersion: 2})
-	RegisterArea(Area{Name: "unit_b", Owner: "test", Class: ChangeArea, PayloadVersion: 1})
+	registerTestArea(t, Area{Name: "unit_a", Owner: "test", Class: ChangeArea, PayloadVersion: 2})
+	registerTestArea(t, Area{Name: "unit_b", Owner: "test", Class: ChangeArea, PayloadVersion: 1})
 	newChanges := func(t *testing.T, bus Bus) (*Changes, *recordingListener, *prometheus.Registry) {
 		t.Helper()
 		reg := prometheus.NewRegistry()
@@ -302,7 +315,7 @@ func TestNotify(t *testing.T) {
 }
 
 func TestMessages(t *testing.T) {
-	RegisterArea(Area{Name: "unit_msg", Owner: "test", Class: ChangeArea, PayloadVersion: 1})
+	registerTestArea(t, Area{Name: "unit_msg", Owner: "test", Class: ChangeArea, PayloadVersion: 1})
 	newChanges := func(t *testing.T) (*Changes, *recordingListener) {
 		c, err := NewChanges(ChangesOptions{DB: nopDB{}, Config: config.Cluster{EpochPollInterval: time.Second, EpochMaxStaleness: 20 * time.Second}})
 		if err != nil {

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -267,13 +269,72 @@ func (db *DB) Stats() Stats {
 	return Stats{Main: conv(db.main), Control: conv(db.control), Lease: conv(db.lease)}
 }
 
-// Close closes every pool. It is safe to call more than once.
-func (db *DB) Close() {
+// Close closes every pool and waits for every acquired connection to come back. It is safe to call more than once: only the first
+// call closes, so after a CloseContext it returns at once, whatever that call left open.
+func (db *DB) Close() { _ = db.CloseContext(context.Background()) }
+
+// CloseContext closes every pool at once and waits until ctx ends. A pool does not close before every connection that was
+// acquired from it has been returned, so a check, a poll or a detached write that still holds one would hold the close phase of
+// the shutdown (R-ARCH-024 step 6) past its deadline, and the pod past its grace period (R-HA-011). When ctx ends first the
+// error names the pools that are still open with the connections they hold; the pools finish closing in the background as the
+// holders return them. Only the first call closes; a later one returns nil.
+func (db *DB) CloseContext(ctx context.Context) error {
+	var err error
 	db.closeOnce.Do(func() {
-		for _, p := range []*pgxpool.Pool{db.main, db.control, db.lease} {
-			if p != nil {
-				p.Close()
+		var pools []closingPool
+		for _, p := range []struct {
+			name string
+			pool *pgxpool.Pool
+		}{{"main", db.main}, {"control", db.control}, {"lease", db.lease}} {
+			if p.pool != nil {
+				pools = append(pools, closingPool{name: p.name, close: p.pool.Close, held: func() int32 { st := p.pool.Stat(); return st.AcquiredConns() + st.ConstructingConns() }})
 			}
 		}
+		err = closePools(ctx, pools)
 	})
+	return err
+}
+
+// closingPool is one pool as closePools sees it.
+type closingPool struct {
+	name  string
+	close func()
+	// held is the connections the close waits for: acquired ones and ones still under construction.
+	held func() int32
+}
+
+func closePools(ctx context.Context, pools []closingPool) error {
+	open := make([]atomic.Bool, len(pools))
+	var wg sync.WaitGroup
+	for i, p := range pools {
+		open[i].Store(true)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.close()
+			open[i].Store(false)
+		}()
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+	}
+	var held []string
+	for i, p := range pools {
+		if !open[i].Load() {
+			continue
+		}
+		if n := p.held(); n == 1 {
+			held = append(held, p.name+" pool (1 connection held)")
+		} else if n > 1 {
+			held = append(held, fmt.Sprintf("%s pool (%d connections held)", p.name, n))
+		}
+	}
+	if len(held) == 0 { // every pool closed as the deadline passed, or the ones left open hold nothing
+		return nil
+	}
+	return fmt.Errorf("database pools still open at the close deadline: %s: %w", strings.Join(held, ", "), context.Cause(ctx))
 }

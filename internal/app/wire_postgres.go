@@ -102,12 +102,13 @@ func (c *postgresComponent) Start(ctx context.Context) (err error) {
 }
 
 // Stop closes the pools. It runs last of the infrastructure, after the flushes
-// and the release of leases (R-ARCH-024 step 6).
-func (c *postgresComponent) Stop(context.Context) error {
-	if c.db != nil {
-		c.db.Close()
+// and the release of leases (R-ARCH-024 step 6). It ends with ctx, the close
+// phase: a pool does not close while a connection is still acquired from it.
+func (c *postgresComponent) Stop(ctx context.Context) error {
+	if c.db == nil {
+		return nil
 	}
-	return nil
+	return c.db.CloseContext(ctx)
 }
 
 func sleep(ctx context.Context, d time.Duration) bool {

@@ -417,7 +417,8 @@ refresh its row every `system.heartbeat_interval` on its control connection
 ([architecture.md](architecture.md) R-ARCH-019), so that a request pool exhausted under load never
 makes a live replica look lost. A row whose heartbeat is older than `system.heartbeat_stale_after`
 is shown as `lost`. The `replica-registry-prune` task (R-OPS-019) deletes rows that have been stale
-for 24 h. On a clean shutdown the replica deletes its own row. Backup pods, the restore Job and the
+for 24 h. On a clean shutdown the replica deletes its own row, on the request pool: by then the pool is idle, and the control
+connection is still used by the change-log poll and the readiness checks (Q-HA-202 in [ha-and-helm.md](ha-and-helm.md)). Backup pods, the restore Job and the
 migration Job never register ([ha-and-helm.md](ha-and-helm.md) R-HA-003).
 
 Besides the HA mechanisms of [ha-and-helm.md](ha-and-helm.md) R-HA-003, four things on other

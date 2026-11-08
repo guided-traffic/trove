@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/observability/health"
 	"github.com/guided-traffic/trove/internal/secrets"
@@ -102,11 +103,22 @@ func (a *App) wireCoordination(ctx context.Context, keys keysArea, pg postgresAr
 	return area, nil
 }
 
+// registryPools is what the registry takes of the database: the control connection for its heartbeat and the request pool for
+// the final deletion of its row (Q-HA-202). *postgres.DB is one.
+type registryPools[P q.DBTX] interface {
+	ControlPool() P
+	Main() P
+}
+
 // registryOptions describes this replica to the registry (R-OPS-003).
 func (a *App) registryOptions(db *postgres.DB, ring *secrets.KeyRing) cluster.RegistryOptions {
+	return registryOptionsOn(a, db, ring)
+}
+
+func registryOptionsOn[P q.DBTX](a *App, db registryPools[P], ring *secrets.KeyRing) cluster.RegistryOptions {
 	bi := buildinfo.Get()
 	return cluster.RegistryOptions{
-		DB: db.ControlPool(),
+		DB: db.ControlPool(), DeleteDB: db.Main(),
 		Identity: cluster.ReplicaIdentity{
 			UID: a.id.UID, Name: a.id.Instance, Version: bi.Version, Revision: bi.Commit, Role: a.id.Role,
 			Node: a.id.Node, Pool: a.id.Pool, StartedAt: a.startedAt,

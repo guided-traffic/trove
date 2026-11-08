@@ -4274,8 +4274,16 @@ learns of the removal with a delay. The steps cover that delay first:
    audit deduplication summaries, denial summaries included, are written and the asynchronous
    audit buffer is flushed ([operations-and-observability.md](operations-and-observability.md)
    R-OPS-015). Pending signals are published. Then the remaining leases are released (R-ARCH-017),
-   the registry row is deleted, the change-log poll and the grant-index rebuilds stop, and the
-   Valkey client and the pools close. The process exits `0`.
+   the registry row is deleted (on the request pool, which is idle by now: the control connection
+   still serves the change-log poll and the database and schema checks until the phase ends,
+   [Q-HA-202](ha-and-helm.md#q-ha-202--the-final-deletion-of-the-registry-row-runs-on-the-request-pool)),
+   the change-log poll and the grant-index rebuilds stop, and the Valkey client and the pools
+   close. Every one of these steps ends with the close phase: the pools close at once and a
+   connection still held by a detached write is named in the error, not waited for
+   ([Q-HA-203](ha-and-helm.md#q-ha-203--the-close-of-the-database-pools-ends-with-the-close-phase)).
+   The process exits `0` when every close step finished in time. When a pool still holds a
+   connection at the close deadline, the error names it and the process exits non-zero: the exit
+   itself cuts the holder, because a pool cannot force-close an acquired connection.
 
 The pod's termination grace period must exceed `health.shutdown_drain_delay` plus
 `server.shutdown_timeout` plus 5 s. The chart passes the grace period to the process and derives
