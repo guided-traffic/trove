@@ -7,7 +7,9 @@ import (
 	"net/http"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/bastionmain"
+	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -15,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // spooled adapts a spooled body to formats.Spooled and remembers the digests the
@@ -83,6 +86,114 @@ func (i ingestor) Spool(ctx context.Context, rq *formats.Request, body io.Reader
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "The request was not prepared by the format dispatcher.")
 	}
 	return s, nil
+}
+
+// Link implements [formats.Ingestor]: the commit of an item with the content of the item named by from, with no body (R-STOR-008).
+// The host resolves the source repository by its name, finds the item (through the members of a virtual repository, in order), and
+// checks it: a live file whose blob the store serves, with no download block of the vulnerability scanning, and readable by the
+// request's subject on a fresh index. Everything else is errs.NotFound, the answer for an item that does not exist, so a name or a
+// path tells a caller nothing about a repository it may not read. The size and the digests are those of the blob row, read with the
+// item. The commit runs as Commit does, on the same state of the request.
+func (i ingestor) Link(ctx context.Context, rq *formats.Request, from formats.SourceRef, c formats.Commit) (formats.Committed, error) {
+	st := stateOf(rq)
+	if st == nil {
+		return formats.Committed{}, errs.E(errs.Internal, errs.CodeInternal, "The request was not prepared by the format dispatcher.")
+	}
+	if len(c.Companions) > 0 {
+		return formats.Committed{}, errs.E(errs.Internal, errs.CodeInternal, "A linked commit takes no companions.")
+	}
+	src, err := i.h.linkSource(ctx, rq, from)
+	if err != nil {
+		return formats.Committed{}, err
+	}
+	if err := i.h.recheck(ctx, rq); err != nil {
+		return formats.Committed{}, err
+	}
+	var d blob.Digests
+	d.SHA256, d.Size = src.Digest, src.Size
+	copy(d.SHA1[:], src.SHA1)
+	copy(d.MD5[:], src.MD5)
+	copy(d.SHA512[:], src.SHA512)
+	res, err := i.h.o.Items.CommitLinked(ctx, items.CommitSpec{
+		Repo: *rq.Repo, Path: c.Path, MediaType: c.MediaType,
+		Origin: items.OriginUpload, CreateOnly: c.CreateOnly, MayOverwrite: c.MayOverwrite,
+		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,
+		Payload: &commitPayload{req: rq, inspection: c.Inspection, payload: c.Payload},
+		Extra: func(ctx context.Context, tx meta.Tx, _ items.Ref) error {
+			return st.record(ctx, tx, i.h.o.Decider, rq.Subject)
+		},
+		BeginCommit: func() { httpserver.BeginCommit(ctx) },
+	}, d)
+	if errors.Is(err, items.ErrOverwriteDenied) {
+		denied := c.Path.Path
+		var od *items.OverwriteDeniedError
+		if errors.As(err, &od) {
+			denied = od.Path
+		}
+		return formats.Committed{}, errs.E(errs.Forbidden, errs.CodeForbidden,
+			"The action overwrite is not permitted on "+rq.Repo.Name.String()+"/"+denied+".")
+	}
+	if err != nil {
+		return formats.Committed{}, err
+	}
+	return formats.Committed{
+		Item:    formats.ItemRef{ID: res.Item.ID, Repo: repoRef(*rq.Repo), Path: c.Path.Path},
+		Created: res.Created, Overwritten: res.Overwritten, Identical: !res.Created,
+	}, nil
+}
+
+// linkSource resolves the source of a link and checks what R-STOR-008 asks of it.
+func (h *Host) linkSource(ctx context.Context, rq *formats.Request, from formats.SourceRef) (items.Item, error) {
+	gone := errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
+	if h.o.Repos == nil {
+		return items.Item{}, errs.E(errs.Internal, errs.CodeInternal, "This host cannot resolve a repository by name.")
+	}
+	repo, err := h.o.Repos.ByName(ctx, from.Repo)
+	if err != nil {
+		if errs.KindOf(err) == errs.NotFound {
+			return items.Item{}, gone
+		}
+		return items.Item{}, err
+	}
+	// The read decision is the caller's on the named repository, on an index that knows it, before the item is looked up.
+	idx, err := h.o.Decider.Begin(ctx, rq.Subject, from.Repo)
+	if err != nil {
+		return items.Item{}, err
+	}
+	var pkg string
+	if f, ok := h.o.Formats(repo.Format); ok {
+		pkg = f.Classify(formats.Path{Path: from.Path}).Package
+	}
+	d := h.o.Decider.DecideOn(ctx, idx, rq.Subject, authz.Coordinate{
+		Repository: repo.Name, Class: repo.Class, Format: repo.Format,
+		Kind: authz.KindArtifact, Path: from.Path, Package: pkg, Actions: []formats.Action{formats.ActionRead},
+		Addressed: repo.Name,
+	})
+	if !d.Allowed() {
+		return items.Item{}, gone
+	}
+	holders := []repository.Repository{repo}
+	if repo.Class == repository.Virtual {
+		holders = repo.Members()
+	}
+	for _, m := range holders {
+		ref, err := h.liveRef(ctx, repoRef(m))
+		if err != nil {
+			return items.Item{}, err
+		}
+		it, found, err := h.o.Items.Live(ctx, ref, from.Path)
+		if err != nil {
+			return items.Item{}, err
+		}
+		if !found {
+			continue
+		}
+		if it.Kind != items.KindFile || it.ContentStatus != "ok" || it.Block.FindingID != "" {
+			return items.Item{}, gone
+		}
+		return it, nil
+	}
+	return items.Item{}, gone
 }
 
 // Commit implements [formats.Ingestor]: the item store's one commit with the

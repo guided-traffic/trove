@@ -406,7 +406,7 @@ func TestClassification(t *testing.T) {
 	}{
 		"401":   {401, errs.CodeUpstreamAuthFailed, false},
 		"403":   {403, errs.CodeUpstreamAuthFailed, false},
-		"429":   {429, errs.CodeUnavailable, true},
+		"429":   {429, errs.CodeUpstreamRateLimited, true},
 		"500":   {500, errs.CodeUpstreamError, true},
 		"502":   {502, errs.CodeUpstreamError, true},
 		"503":   {503, errs.CodeUpstreamError, true},

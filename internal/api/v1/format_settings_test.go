@@ -26,6 +26,12 @@ func TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
 	settingsSchemaEqualsOpenAPI(t, "nuget", "NugetSettings")
 }
 
+// TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember is the same comparison for the oci
+// member (R-OCI-026).
+func TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
+	settingsSchemaEqualsOpenAPI(t, "oci", "OciSettings")
+}
+
 func settingsSchemaEqualsOpenAPI(t *testing.T, format, schema string) {
 	t.Helper()
 	type property struct {

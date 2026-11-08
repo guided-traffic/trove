@@ -190,7 +190,7 @@ segment; no control characters (U+0000–U+001F, U+007F) and no backslash. Viola
 CREATE TABLE repositories (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     project_id  uuid NOT NULL REFERENCES project (id),   -- authorization.md R-AUTHZ-026: every repository is in one project
-    key         text NOT NULL CHECK (key ~ '^[a-z0-9][a-z0-9._-]{1,63}$'),  -- INV-5; unique within the project
+    key         text NOT NULL CHECK (char_length(key) BETWEEN 2 AND 64 AND key ~ '^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$'),  -- INV-5; unique within the project
     format      text NOT NULL,
     class       text NOT NULL CHECK (class IN ('local', 'remote', 'virtual')),
     config      jsonb NOT NULL DEFAULT '{}',   -- repositories-and-proxy.md; member "storage" defined here
@@ -892,7 +892,9 @@ R-ARCH-032 allows for state in Valkey.
 **State.** One `upload_sessions` row per session and one `upload_session_parts` row per completed
 part hold:
 
-- the repository, the principal, the received byte count and the serialized state of the four
+- the repository the session writes to, the repository the client addressed and the format's binding (the OCI image name),
+  which every request must repeat: a request for another repository or binding answers as for an unknown session
+  (Q-OCI-12); the principal, the received byte count and the serialized state of the four
   hash functions at that count. Go's hash implementations marshal and restore their internal state
   ([`crypto/sha256`](https://pkg.go.dev/crypto/sha256) and the SHA-1, MD5 and SHA-512 packages),
   so any replica continues hashing where the previous request stopped;
@@ -1000,7 +1002,9 @@ left.
 ```sql
 CREATE TABLE upload_sessions (
     id                uuid PRIMARY KEY,            -- random (version 4); appears in upload URLs
-    repo_id           bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+    repo_id           bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,   -- the repository the session writes to
+    addressed_repo_id bigint NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,   -- the repository the client addressed (a virtual one forwards to its deployment target)
+    binding           text CHECK (length(binding) <= 512),   -- a string of the format, repeated by every request: the OCI image name
     principal_id      uuid,                        -- every request must come from this principal
     received          bigint NOT NULL DEFAULT 0,
     hash_state        bytea NOT NULL,              -- SHA-256, SHA-1, MD5, SHA-512 states at `received`
@@ -1038,7 +1042,7 @@ Configuration:
 ```yaml
 storage:
   uploads:
-    part_size: 16MiB        # default (proposed); minimum 5MiB; storage.upload.max_size must not exceed 10,000 parts
+    part_size: 16MiB        # default (proposed); 5MiB to 5GiB (the largest part of an S3 upload); storage.upload.max_size must not exceed 10,000 parts
     writer_lease: 60s       # default (proposed); renewed with every recorded part
     session_ttl: 4h         # default (proposed); idle time after which a session is aborted
     session_max_age: 20h    # default (proposed); must be < storage.orphans.multipart_max_age and the lifecycle rule

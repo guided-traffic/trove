@@ -9,11 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/formattest/testformat"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 func newHost(t *testing.T) *formattest.Host {
@@ -435,3 +438,76 @@ func (r *recorder) Header() http.Header {
 }
 func (r *recorder) Write(p []byte) (int, error) { return r.body.Write(p) }
 func (r *recorder) WriteHeader(int)             {}
+
+// TestR_ARCH_009_InMemoryHostLinkAndUploads: Ingestor.Link commits an item with the content of a live item of the Host, runs the hooks,
+// and answers errs.NotFound for an item that is not there or that the caller may not read (ADR-161); the upload-session port
+// answers not_implemented until a test binds one.
+func TestR_ARCH_009_InMemoryHostLinkAndUploads(t *testing.T) {
+	ctx := context.Background()
+	h := newHost(t)
+	if err := testformat.Publish(ctx, h, "left-pad", "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	body := testformat.Tarball("left-pad", "1.0.0")
+	rq, _ := h.NewRequest(ctx, http.MethodPut, "left-pad/-/left-pad-1.0.0.tgz", nil)
+	from := formats.SourceRef{Repo: h.Ref().Name, Path: "left-pad/-/left-pad-1.0.0.tgz"}
+	t.Run("a live item is linked at another path", func(t *testing.T) {
+		got, err := h.Ingest().Link(ctx, rq, from, formats.Commit{Path: formats.Path{Path: "left-pad/-/copy-1.0.0.tgz"}, CreateOnly: true})
+		if err != nil || !got.Created {
+			t.Fatalf("%+v %v", got, err)
+		}
+		it, ok, _ := h.Items().Stat(ctx, h.Ref(), formats.Path{Path: "left-pad/-/copy-1.0.0.tgz"})
+		if !ok || it.Size != int64(len(body)) {
+			t.Fatalf("stat = %+v, %v", it, ok)
+		}
+	})
+	t.Run("an item that is not there is not found", func(t *testing.T) {
+		_, err := h.Ingest().Link(ctx, rq, formats.SourceRef{Repo: h.Ref().Name, Path: "none"}, formats.Commit{Path: formats.Path{Path: "left-pad/-/none.tgz"}})
+		if errs.KindOf(err) != errs.NotFound {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("a repository the Host does not hold is not found", func(t *testing.T) {
+		_, err := h.Ingest().Link(ctx, rq, formats.SourceRef{Repo: qname.Repo{Project: "other", Key: "elsewhere"}, Path: from.Path}, formats.Commit{Path: formats.Path{Path: "left-pad/-/z.tgz"}})
+		if errs.KindOf(err) != errs.NotFound {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("an item the caller may not read is not found, and companions are refused", func(t *testing.T) {
+		var deny bool
+		g := formattest.NewHost(testformat.New(), formattest.HostOptions{Data: &testformat.MemStore{}, Allow: func(tg formats.Target) error {
+			if deny {
+				return errs.E(errs.Forbidden, errs.CodeForbidden, "no")
+			}
+			return nil
+		}})
+		if err := testformat.Publish(ctx, g, "left-pad", "1.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		grq, _ := g.NewRequest(ctx, http.MethodPut, "left-pad/-/left-pad-1.0.0.tgz", nil)
+		deny = true
+		if _, err := g.Ingest().Link(ctx, grq, formats.SourceRef{Repo: g.Ref().Name, Path: "left-pad/-/left-pad-1.0.0.tgz"}, formats.Commit{Path: formats.Path{Path: "left-pad/-/x.tgz"}}); errs.KindOf(err) != errs.NotFound {
+			t.Fatalf("a source the caller may not read: %v", err)
+		}
+		deny = false
+		if _, err := g.Ingest().Link(ctx, grq, formats.SourceRef{Repo: g.Ref().Name, Path: "left-pad/-/left-pad-1.0.0.tgz"}, formats.Commit{Path: formats.Path{Path: "left-pad/-/y.tgz"}, Companions: []formats.Companion{{}}}); errs.KindOf(err) != errs.Internal {
+			t.Fatalf("companions: %v", err)
+		}
+	})
+	t.Run("the upload sessions are not built unless a test binds them", func(t *testing.T) {
+		ref := formats.SessionRef{ID: uuid.New(), Binding: "app"}
+		if _, err := h.Uploads().Get(ctx, rq, ref); errs.KindOf(err) != errs.NotImplemented {
+			t.Fatalf("err = %v", err)
+		}
+		bound := formattest.NewHost(testformat.New(), formattest.HostOptions{Data: &testformat.MemStore{}, Uploads: fakeUploads{}})
+		if s, err := bound.Uploads().Start(ctx, rq, formats.RepoRef{}, "app"); err != nil || s.Binding != "app" {
+			t.Fatalf("%+v %v", s, err)
+		}
+	})
+}
+
+type fakeUploads struct{ formats.UploadSessions }
+
+func (fakeUploads) Start(_ context.Context, _ *formats.Request, target formats.RepoRef, binding string) (formats.UploadSession, error) {
+	return formats.UploadSession{ID: uuid.New(), Target: target, Binding: binding}, nil
+}

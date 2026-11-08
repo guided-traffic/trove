@@ -419,6 +419,7 @@ const (
 const (
 	CodeNotCachedOffline           = "not_cached_offline"
 	CodeUpstreamAssumedOffline     = "upstream_assumed_offline"
+	CodeUpstreamRateLimited        = "upstream_rate_limited"
 	CodeUpstreamAuthFailed         = "upstream_auth_failed"
 	CodeUpstreamError              = "upstream_error"
 	CodeUpstreamUnreachable        = "upstream_unreachable"
@@ -513,6 +514,35 @@ const (
 	CodeNuGetV2Unsupported      = "nuget_v2_unsupported"
 	CodeNuGetNotImplemented     = "nuget_not_implemented"
 	CodeUpstreamPackageMismatch = "upstream_package_mismatch"
+)
+
+// Codes of the OCI registry protocol (R-OCI-008): the format's WriteError renders each as the distribution specification's code
+// next to it, so a handler names the outcome and the shape of the answer stays the format's.
+const (
+	// CodeOCINameInvalid: NAME_INVALID.
+	CodeOCINameInvalid = "oci_name_invalid"
+	// CodeOCITagInvalid: TAG_INVALID.
+	CodeOCITagInvalid = "oci_tag_invalid"
+	// CodeOCIDigestInvalid: DIGEST_INVALID.
+	CodeOCIDigestInvalid = "oci_digest_invalid"
+	// CodeOCINameUnknown: NAME_UNKNOWN.
+	CodeOCINameUnknown = "oci_name_unknown"
+	// CodeOCIManifestUnknown: MANIFEST_UNKNOWN.
+	CodeOCIManifestUnknown = "oci_manifest_unknown"
+	// CodeOCIBlobUnknown: BLOB_UNKNOWN.
+	CodeOCIBlobUnknown = "oci_blob_unknown"
+	// CodeOCIBlobUploadUnknown: BLOB_UPLOAD_UNKNOWN.
+	CodeOCIBlobUploadUnknown = "oci_blob_upload_unknown"
+	// CodeOCIBlobUploadInvalid: BLOB_UPLOAD_INVALID.
+	CodeOCIBlobUploadInvalid = "oci_blob_upload_invalid"
+	// CodeOCIManifestInvalid: MANIFEST_INVALID.
+	CodeOCIManifestInvalid = "oci_manifest_invalid"
+	// CodeOCIManifestBlobUnknown: MANIFEST_BLOB_UNKNOWN.
+	CodeOCIManifestBlobUnknown = "oci_manifest_blob_unknown"
+	// CodeOCISizeInvalid: SIZE_INVALID.
+	CodeOCISizeInvalid = "oci_size_invalid"
+	// CodeOCIUnsupported: UNSUPPORTED.
+	CodeOCIUnsupported = "oci_unsupported"
 )
 
 // CodeNuGetInvalidUpstreamDocument is the 502 of a document a NuGet upstream served that is not
@@ -735,7 +765,7 @@ var registry = []CodeInfo{
 	// >>> M1 repository
 	{CodeRepositoryDisabled, NotFound, "Repository disabled", "The repository is disabled and takes no part in resolution, download or deploy; the management API still works."},
 	{CodeRepositoryReferenced, Conflict, "Repository referenced", "Virtual repositories list this repository as a member or deploy target; delete with detach=true or remove the references first."},
-	{CodeInvalidKey, Invalid, "Invalid repository key", "A key matches ^[a-z0-9][a-z0-9._-]{1,63}$, contains no \"..\" and does not end in a dot."},
+	{CodeInvalidKey, Invalid, "Invalid repository key", "A key is 2 to 64 characters matching the OCI component grammar ^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$: lower-case letters and digits separated by a dot, an underscore, a double underscore or hyphens, starting and ending with a letter or digit."},
 	{CodeInvalidMember, Invalid, "Invalid member", "A virtual repository member is missing, being deleted, of another format, duplicated or the repository itself."},
 	{CodeInvalidDocument, Invalid, "Invalid document", "The configuration document is not valid JSON of the expected shape, or it names a member that does not exist."},
 	{CodeNotApplicable, Invalid, "Not applicable", "The setting does not apply to the repository's class or format."},
@@ -773,6 +803,7 @@ var registry = []CodeInfo{
 	// >>> M2 proxy
 	{CodeNotCachedOffline, NotFound, "Not cached while offline", "The remote repository is offline (its own mode or the global switch) and the path is not in its cache; trove sends no request. A 404, not a 5xx, because the operator decided the item is not available here."},
 	{CodeUpstreamAssumedOffline, Unavailable, "Upstream assumed offline", "Consecutive failures opened the circuit of the remote repository's upstream and the path is not cached. Retry-After says when the next probe may close it."},
+	{CodeUpstreamRateLimited, Unavailable, "Upstream rate limiting trove", "The upstream answered 429. Retry-After says how long it asked trove to wait; a stored copy, if any, is served instead of this error."},
 	{CodeUpstreamAuthFailed, UpstreamFailed, "Upstream authentication failed", "The upstream answered 401 or 403 to the remote repository's credentials. The status is never forwarded; the repository's administrator checks the credential."},
 	{CodeUpstreamError, UpstreamFailed, "Upstream error", "The upstream answered 500, 502, 503 or 504. A stored copy, if any, is served instead of this error."},
 	{CodeUpstreamUnreachable, UpstreamFailed, "Upstream unreachable", "The connection to the upstream failed (connection, DNS or TLS handshake failure). A stored copy, if any, is served instead of this error."},
@@ -815,6 +846,18 @@ var registry = []CodeInfo{
 	{CodeNPMAuditUnavailable, NotImplemented, "npm audit not available", "The audit endpoint is not available for this repository: no remote of it forwards, it may not contact its upstream, or the endpoint does not allow it; npm 6's audit endpoints always answer it."},
 	{CodeNPMInvalidUpstreamDocument, UpstreamFailed, "Invalid npm upstream document", "The upstream package document failed validation and was not stored."},
 	// <<< M2 npm
+	{CodeOCINameInvalid, Invalid, "Invalid OCI image name", "The image name is not in the component grammar of the OCI distribution specification, or the whole name (project key, repository key and image name) is longer than 255 bytes. Upper-case letters are refused, never folded."},
+	{CodeOCITagInvalid, Invalid, "Invalid OCI tag", "A tag matches [a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}."},
+	{CodeOCIDigestInvalid, Invalid, "Invalid OCI digest", "A digest is sha256: followed by 64 lower-case hexadecimal digits; no other algorithm is accepted. The digest of the content does not equal the digest the request names."},
+	{CodeOCINameUnknown, NotFound, "OCI repository or image name unknown", "The repository does not exist, is not an OCI repository, or the caller may not see it; the answer is the same for all three."},
+	{CodeOCIManifestUnknown, NotFound, "OCI manifest unknown", "No manifest or tag of this name and reference is stored in the repository."},
+	{CodeOCIBlobUnknown, NotFound, "OCI blob unknown", "No blob with this digest is stored under this image name of the repository."},
+	{CodeOCIBlobUploadUnknown, NotFound, "OCI blob upload unknown", "The upload session does not exist, has expired, is finished, or belongs to another principal, repository or image name."},
+	{CodeOCIBlobUploadInvalid, RangeNotSatisfiable, "OCI blob upload out of order", "The chunk does not start at the number of bytes the session has received, or another request holds the session; the Range header names the bytes received."},
+	{CodeOCIManifestInvalid, Invalid, "OCI manifest invalid", "The manifest is not one trove accepts: it is not valid JSON of a supported media type, it is larger than 4 MiB, it uses a digest algorithm other than sha256, or its references break the rules of the repository."},
+	{CodeOCIManifestBlobUnknown, Invalid, "OCI manifest references an unknown blob", "The manifest names a config, a layer or a manifest that the repository does not hold under this image name."},
+	{CodeOCISizeInvalid, TooLarge, "OCI content too large", "The manifest, the blob or the repository's quota exceeds a size limit."},
+	{CodeOCIUnsupported, Invalid, "OCI operation not offered", "The repository does not offer the operation: a write to a remote repository or to a virtual repository without a deployment target, or a parameter trove does not support."},
 	// >>> M3 nuget
 	{CodeNuGetInvalidPackage, Invalid, "Invalid NuGet package", "The .nupkg is not a package trove accepts: not a ZIP archive, a name or entry the archive rules refuse, a missing or repeated .nuspec at the root, a limit of nuget.archive exceeded, or a .nuspec that is not well-formed or declares a DOCTYPE. The detail names the rule."},
 	{CodeNuGetInvalidVersion, Invalid, "Invalid NuGet version", "The version is not a NuGet version trove accepts: one to four numeric parts, an optional pre-release and build metadata, at most 255 bytes as given and normalized."},

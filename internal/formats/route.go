@@ -14,6 +14,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -114,8 +115,13 @@ type Route struct {
 	Classes []Class
 	// Match overrides the template matcher for a grammar a template cannot state
 	// (npm's scoped names). It receives the escaped repository-relative path.
-	Match   func(escapedPath string) (Params, bool)
-	Handler HandlerFunc
+	Match func(escapedPath string) (Params, bool)
+	// PackageParam names the placeholder of Params that holds the package name the route acts on ("name" for an OCI route: the
+	// image name), "" for a route that names none (a catalog, a version check). The core reads it, so that it knows the package
+	// of a request format-neutrally: the grant ceiling of a registry token and the scope of a challenge name the image, and no
+	// code of the core knows how an OCI path is cut.
+	PackageParam string
+	Handler      HandlerFunc
 	// APIKey marks a route that accepts a credential in the API-key header
 	// (NuGet's X-NuGet-ApiKey, R-NUGET-012) besides Authorization. The authentication
 	// stage examines the header only on a route that declares it, and first, and
@@ -341,16 +347,24 @@ type Refusal struct {
 	// BaseURL is the response base URL, "https://trove.example.com", without a
 	// trailing slash.
 	BaseURL string
+	// A refusal on a host whose root is bound to one repository (R-EP-006, R-OCI-029) is still addressed by the repository's
+	// project and key; the link a format builds from it is the one of the shared host. A format that links on a bound host
+	// builds the link through the [LinkBuilder] of a request, which knows the endpoint.
 }
 
-// Registry is "<base>/api/<format>/<project>/<key>/", the URL of the addressed repository
-// ("<key>~cache" for the cache view).
+// Registry is BaseURL followed by the protocol base path of the addressed repository, "<base>/api/<format>/<project>/<key>/"
+// or, for the format that declares the registry root, "<base>/v2/<project>/<key>/" ("<key>~cache" for the cache view). The
+// base path is the catalog's fact for Format ([catalog.Facts.ProtocolBasePath]), so the contract does not grow a field for it.
 func (f Refusal) Registry() string {
 	r := f.Name
 	if f.CacheView {
 		r.Key += qname.CacheSuffix
 	}
-	return f.BaseURL + qname.ProtocolBase("/api/"+string(f.Format)+"/{project}/{key}/", r)
+	base := "/api/" + string(f.Format) + "/{project}/{key}/"
+	if e, ok := catalog.Default().Lookup(string(f.Format)); ok && e.ProtocolBasePath != "" {
+		base = e.ProtocolBasePath
+	}
+	return f.BaseURL + qname.ProtocolBase(base, r)
 }
 
 type refusalKey struct{}
@@ -392,6 +406,10 @@ type EndpointFacts struct {
 	// all, or no endpoint). It is read from rq.Index, like ExposureFingerprint, so a
 	// document is filtered by the rules its validator names (R-EP-018).
 	Exposure ExposureView
+	// Bound is true when the request arrived on a host whose root is bound to the addressed repository (R-EP-006, R-OCI-029): a
+	// client of such a host names the image without the project and the repository key, and the links of the format omit them.
+	// The dispatcher sets it; the zero value is the shared host.
+	Bound bool
 }
 
 // Target is what a format asks the decision point inside the addressed

@@ -214,6 +214,57 @@ func (s *Store) Commit(ctx context.Context, spec CommitSpec) (CommitResult, erro
 	return res, nil
 }
 
+// CommitLinked is Commit for content the blob store already holds (deploy by checksum, R-STOR-008): the file is linked to the blob of the
+// digests in one transaction under the blob row's lock, with no object write and no body. spec.Spooled is ignored (the digests
+// stand for it) and spec.Companions must be empty. The blob must be live: a digest that names nothing, or a blob being collected, is
+// errs.NotFound. The rest is Commit's: the item row, Extra, the storage hook, the audit row, and an identical file changes nothing.
+func (s *Store) CommitLinked(ctx context.Context, spec CommitSpec, d blob.Digests) (CommitResult, error) {
+	switch {
+	case spec.Path.Path == "" || spec.Path.Folder:
+		return CommitResult{}, errs.E(errs.Invalid, errs.CodeInvalidPath, "A file is committed at a path that names a file.")
+	case len(spec.Companions) > 0:
+		return CommitResult{}, errs.E(errs.Internal, errs.CodeInternal, "items: a linked commit takes no companions")
+	case spec.Origin != OriginUpload && spec.Origin != OriginFill:
+		return CommitResult{}, errs.E(errs.Internal, errs.CodeInternal, "items: a commit has an origin")
+	}
+	spec.Spooled = &Spooled{Digests: d}
+	spec.UpstreamURL = withoutUserInfo(spec.UpstreamURL)
+	if spec.BeginCommit != nil {
+		spec.BeginCommit()
+	}
+	var out linkOutcome
+	err := s.blobs.LinkExisting(ctx, d.SHA256, func(ctx context.Context, tx meta.Tx) error {
+		out = linkOutcome{}
+		return s.linkFile(ctx, tx, RepoOf(spec.Repo), spec, &out)
+	})
+	if errors.Is(err, blob.ErrBlobNotFound) {
+		return CommitResult{}, errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
+	}
+	if err != nil {
+		return CommitResult{}, err
+	}
+	s.touch(RepoOf(spec.Repo).ID)
+	return out.result(), nil
+}
+
+// LinkIn links the file of spec to the blob of d inside the transaction of the caller, which holds the blob row's lock (a blob
+// commit's link function): the item row, the storage hook and the audit row of a commit, with no object write. It is the building
+// block of a fill that enters one fetched document under further paths (R-OCI-022). The caller guarantees that the blob is live and
+// referenced under the lock it holds; Origin and the rest of the spec are Commit's.
+func (s *Store) LinkIn(ctx context.Context, tx meta.Tx, spec CommitSpec, d blob.Digests) (CommitResult, error) {
+	if spec.Path.Path == "" || spec.Path.Folder {
+		return CommitResult{}, errs.E(errs.Invalid, errs.CodeInvalidPath, "A file is committed at a path that names a file.")
+	}
+	spec.Spooled, spec.Companions = &Spooled{Digests: d}, nil
+	spec.UpstreamURL = withoutUserInfo(spec.UpstreamURL)
+	var out linkOutcome
+	if err := s.linkFile(ctx, tx, RepoOf(spec.Repo), spec, &out); err != nil {
+		return CommitResult{}, err
+	}
+	s.touch(RepoOf(spec.Repo).ID)
+	return out.result(), nil
+}
+
 // checkCompanions refuses a companion the commit cannot take.
 func checkCompanions(spec CommitSpec) error {
 	seen := map[string]bool{spec.Path.Path: true}

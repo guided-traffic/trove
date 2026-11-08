@@ -34,6 +34,11 @@ func (u *httpUpstream) Get(_ context.Context, target *url.URL, accept string, _ 
 	return &discover.Response{Status: r.status, Header: r.header, Body: r.body}, nil
 }
 
+// Artifact implements discover.Upstream: the fake holds no artifacts.
+func (u *httpUpstream) Artifact(context.Context, string, int64) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
 func (u *httpUpstream) Document(_ context.Context, path, _ string) ([]byte, bool, error) {
 	if path == ".nuget/index.json" {
 		r := u.f.get(u.f.api + "/v3/index.json")

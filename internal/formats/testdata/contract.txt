@@ -1,5 +1,7 @@
 contract version 2
 formats.Action: alias authz.Action
+formats.Authenticator: method ReadToken(context.Context, RemoteContext, int, []byte) (string, time.Duration, error)
+formats.Authenticator: method TokenRequest(context.Context, RemoteContext, *http.Request, Path, int, http.Header) (*http.Request, string, bool, error)
 formats.AutoClaimResult: alias repository.AutoClaimResult
 formats.Base: method Exposure() ExposureAdapter
 formats.Base: method Guide() []GuideSection
@@ -78,6 +80,7 @@ formats.Digests: field SHA256 []byte
 formats.Digests: field SHA512 []byte
 formats.Discoverer: method DiscoveryDocument() (Path, string, bool)
 formats.Discoverer: method ParseDiscovery(context.Context, RemoteContext, []byte) (any, error)
+formats.EndpointFacts: field Bound bool
 formats.EndpointFacts: field CacheFill bool
 formats.EndpointFacts: field Exposure ExposureView
 formats.EndpointFacts: field ExposureFingerprint string
@@ -159,6 +162,7 @@ formats.Host: method Remote() RemoteFetcher
 formats.Host: method Renditions() RenditionCache
 formats.Host: method Resolver() Resolver
 formats.Host: method RestoredAt(context.Context) (time.Time, error)
+formats.Host: method Uploads() UploadSessions
 formats.Host: method Vulnerabilities() VulnerabilityData
 formats.Host: method Write(context.Context, *Request, func(Tx, PackageWriter) error) error
 formats.ID: alias catalog.ID
@@ -168,6 +172,7 @@ formats.IngestOptions: field MaxSize int64
 formats.IngestOptions: field MediaType string
 formats.Ingestor: method Close(Spooled)
 formats.Ingestor: method Commit(context.Context, *Request, Spooled, Commit) (Committed, error)
+formats.Ingestor: method Link(context.Context, *Request, SourceRef, Commit) (Committed, error)
 formats.Ingestor: method Spool(context.Context, *Request, io.Reader, IngestOptions) (Spooled, error)
 formats.InspectInput: field Body Spooled
 formats.InspectInput: field Limits untrusted.Limits
@@ -193,6 +198,7 @@ formats.ItemStore: method Open(context.Context, Item) (io.ReadCloser, error)
 formats.ItemStore: method Serve(context.Context, *Request, http.ResponseWriter, Item, ServeMode) error
 formats.ItemStore: method Stat(context.Context, RepoRef, Path) (Item, bool, error)
 formats.ItemsEvent: field Actor string
+formats.ItemsEvent: field Cascade func(context.Context, ...string) error
 formats.ItemsEvent: field Data any
 formats.ItemsEvent: field Items []RemovedItem
 formats.ItemsEvent: field Packages PackageWriter
@@ -201,6 +207,7 @@ formats.ItemsEvent: field Repo RepoRef
 formats.ItemsRestorer: method OnItemsRestored(context.Context, Tx, ItemsEvent) error
 formats.Limits: alias untrusted.Limits
 formats.LinkBuilder: method Base() string
+formats.LinkBuilder: method ClientName(string) string
 formats.LinkBuilder: method File(qname.Repo, string) string
 formats.LinkBuilder: method Path(string) string
 formats.LinkBuilder: method Registry(qname.Repo) string
@@ -266,6 +273,7 @@ formats.PlannedMember: field MayFill bool
 formats.PlannedMember: field Member RepoRef
 formats.PlannedMember: field Position int
 formats.PlannedMember: field Tier Tier
+formats.Prepared: field Aliases []Path
 formats.Prepared: field Data any
 formats.Prepared: field Mappings []URLMapping
 formats.Query: field Params url.Values
@@ -296,10 +304,12 @@ formats.RemoteAdapter: method UpstreamRequest(context.Context, RemoteContext, Pa
 formats.RemoteBase: method BeforeArtifact(context.Context, Host, *Request, Path) (Digests, error)
 formats.RemoteBase: method ExpectsType(Path, string) bool
 formats.RemoteBase: method UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error)
+formats.RemoteCaps: field Auth Authenticator
 formats.RemoteCaps: field Discovery Discoverer
 formats.RemoteCaps: field Fill FillInspector
 formats.RemoteCaps: field Gate FactsGate
 formats.RemoteCaps: field Mirror MirrorLister
+formats.RemoteCaps: field Revalidate Revalidator
 formats.RemoteContext: field Discovery any
 formats.RemoteContext: field Repo *repository.Repository
 formats.RemoteContext: field Settings json.RawMessage
@@ -309,6 +319,7 @@ formats.RemoteDocument: field Digest [32]byte
 formats.RemoteDocument: field ExpiresAt time.Time
 formats.RemoteDocument: field FetchedAt time.Time
 formats.RemoteDocument: field GoneAt time.Time
+formats.RemoteDocument: field MediaType string
 formats.RemoteDocument: field Size int64
 formats.RemoteDocument: field Stale bool
 formats.RemoteDocument: field Status CacheStatus
@@ -366,6 +377,8 @@ formats.Resolver: method Plan(context.Context, *Request, Path, PathInfo) (*Virtu
 formats.Resolver: method ReadScope(context.Context, *Request, []qname.Repo) (ReadScope, error)
 formats.Resolver: method ShadowCheck(context.Context, *Request, string) (ShadowOutcome, error)
 formats.RevSeq: type int64
+formats.Revalidator: method RevalidationRequest(context.Context, RemoteContext, Path, string, RemoteDocument) (*http.Request, bool, error)
+formats.Revalidator: method Unchanged(Path, RemoteDocument, *http.Response) bool
 formats.Revision: field Digest [32]byte
 formats.Revision: field RevSeq RevSeq
 formats.Route: field APIKey bool
@@ -377,6 +390,7 @@ formats.Route: field Kind RouteKind
 formats.Route: field Match func(string) (Params, bool)
 formats.Route: field Method string
 formats.Route: field Name string
+formats.Route: field PackageParam string
 formats.Route: field Template string
 formats.Route: method ServesClass(Class) bool
 formats.RouteKind: method RequestKind() RequestKind
@@ -391,8 +405,11 @@ formats.ServeKey: alias servefacts.Key
 formats.ServeKind: alias servefacts.Kind
 formats.ServeMode: type uint8
 formats.ServeNPMRemoteFacts: alias servefacts.NPMRemoteFacts
+formats.SessionRef: field Binding string
+formats.SessionRef: field ID uuid.UUID
 formats.SetupData: field Bastion bool
 formats.SetupData: field Endpoint string
+formats.SetupData: field ImagePrefix string
 formats.SetupData: field RegistryURL string
 formats.SetupData: field Repository string
 formats.SetupData: field RequiresAuth bool
@@ -413,6 +430,8 @@ formats.ShadowOutcome: field Shadowed []ShadowPair
 formats.ShadowOutcome: field Undetermined bool
 formats.ShadowPair: field Remote string
 formats.ShadowPair: field Virtual string
+formats.SourceRef: field Path string
+formats.SourceRef: field Repo qname.Repo
 formats.Spooled: method Digests() Digests
 formats.Spooled: method Open() (io.ReadCloser, error)
 formats.Spooled: method ReaderAt() (io.ReaderAt, error)
@@ -432,6 +451,16 @@ formats.Tier: type uint8
 formats.Tx: alias meta.Tx
 formats.URLMapping: field Path Path
 formats.URLMapping: field Upstream string
+formats.UploadSession: field Binding string
+formats.UploadSession: field ID uuid.UUID
+formats.UploadSession: field PartSize int64
+formats.UploadSession: field Received int64
+formats.UploadSession: field Target RepoRef
+formats.UploadSessions: method Abort(context.Context, *Request, SessionRef) error
+formats.UploadSessions: method Append(context.Context, *Request, SessionRef, int64, io.Reader) (int64, error)
+formats.UploadSessions: method Finalize(context.Context, *Request, SessionRef, [32]byte, io.Reader, Commit) (Committed, error)
+formats.UploadSessions: method Get(context.Context, *Request, SessionRef) (UploadSession, error)
+formats.UploadSessions: method Start(context.Context, *Request, RepoRef, string) (UploadSession, error)
 formats.VersionID: type int64
 formats.VersionRow: field Attributes json.RawMessage
 formats.VersionRow: field CreatedAt time.Time
@@ -552,6 +581,7 @@ formats.ServeMayRevalidate: value = (repeated, place 1 of its group)
 formats.ServeNPMLocal: value = servefacts.NPMLocal
 formats.ServeNPMRemote: value = servefacts.NPMRemote
 formats.ServeNuGetLocal: value = servefacts.NuGetLocal
+formats.ServeOCILocal: value = servefacts.OCILocal
 formats.ServeStored: value ServeMode = iota + 1 (place 0 of its group)
 formats.SetupPackageRef: value = "<package>"
 formats.SetupTokenRef: value = "${TROVE_TOKEN}"
@@ -588,6 +618,7 @@ catalog.Facts: field Caps bool
 catalog.Facts: field ChecksumAlwaysVerified bool
 catalog.Facts: field ChecksumRequireUnsupported bool
 catalog.Facts: field Classes []Class
+catalog.Facts: field DefaultCredentialHosts []string
 catalog.Facts: field DefaultExtraHosts []string
 catalog.Facts: field DefaultMetadataTTLSeconds *int
 catalog.Facts: field DefaultNotFoundTTLSeconds *int
@@ -602,6 +633,7 @@ catalog.Facts: field PinsAndClaims bool
 catalog.Facts: field PriorityMembers bool
 catalog.Facts: field ProbePath string
 catalog.Facts: field ProtocolBasePath string
+catalog.Facts: field RegistryRoot bool
 catalog.Facts: field SettingsSchema []byte
 catalog.Facts: method Supports(Class) bool
 catalog.ID: type string
@@ -634,6 +666,7 @@ catalog.Local: value Class = "local"
 catalog.MetadataChangedArea: value = "metadata_changed"
 catalog.OwnershipEnforce: value = "enforce"
 catalog.OwnershipOff: value = "off"
+catalog.RegistryRootBasePath: value = "/v2/{project}/{key}/"
 catalog.Remote: value Class = "remote"
 catalog.SettingInvalid: value = "invalid_value"
 catalog.SettingNotApplicable: value = "not_applicable"
@@ -756,6 +789,7 @@ discover.Response: field Status int
 discover.Scope: field Admits func(string) bool
 discover.Scope: field Exclude []string
 discover.Scope: field Include []string
+discover.Upstream: method Artifact(context.Context, string, int64) ([]byte, bool, error)
 discover.Upstream: method Base() *url.URL
 discover.Upstream: method Document(context.Context, string, string) ([]byte, bool, error)
 discover.Upstream: method Get(context.Context, *url.URL, string, int64) (*Response, error)

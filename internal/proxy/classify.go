@@ -42,7 +42,7 @@ func classifyStatus(rem Remote, resp *http.Response) failure {
 	case http.StatusTooManyRequests:
 		f.count = true
 		f.retryAfter = retryAfterOf(resp.Header, time.Duration(rem.Settings.Availability.CircuitOpenSeconds)*time.Second)
-		f.err = errs.E(errs.Unavailable, errs.CodeUnavailable,
+		f.err = errs.E(errs.Unavailable, errs.CodeUpstreamRateLimited,
 			"The upstream of "+rem.Repo.Name.String()+" is rate limiting trove.", errs.WithRetryAfter(f.retryAfter))
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		f.count = true

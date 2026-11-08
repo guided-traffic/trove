@@ -308,6 +308,9 @@ nuget:
     max_skip: 3000                   # default; 0 to 1000000, a larger skip answers 400
     virtual_merge_window: 1000       # default; 1 to 10000, results per member a virtual repository merges (R-NUGET-018, Q-NUGET-58)
     remote_result_ttl: 60s           # default; 0s to 1h, how long a forwarded search answer is kept (R-NUGET-016, Q-NUGET-16)
+oci:
+  token_lifetime: 300s           # default; 60s to 3600s, the lifetime of a registry token (R-OCI-005)
+  unreferenced_blob_grace: 24h     # default; at least 1m and above storage.uploads.session_max_age, the age before the sweep removes an unreferenced blob (R-OCI-019)
 ui:
   readme:
     max_source_bytes: 512KiB         # default; 1KiB to 16MiB, a longer README is cut and flagged (R-UI-008)

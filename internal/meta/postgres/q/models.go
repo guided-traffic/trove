@@ -625,6 +625,37 @@ type NugetVersion struct {
 	Origin          string
 }
 
+type OciManifest struct {
+	RepoID         int64
+	Name           string
+	Digest         []byte
+	MediaType      string
+	ArtifactType   pgtype.Text
+	Subject        []byte
+	Size           int64
+	ContentSize    int64
+	Annotations    json.RawMessage
+	AnnotationsCut bool
+	CreatedAt      pgtype.Timestamptz
+}
+
+type OciReference struct {
+	RepoID   int64
+	Name     string
+	Manifest []byte
+	Target   []byte
+	Kind     string
+	Platform pgtype.Text
+}
+
+type OciTombstone struct {
+	RepoID     int64
+	Name       string
+	Digest     []byte
+	WithheldAt pgtype.Timestamptz
+	DeletedBy  pgtype.UUID
+}
+
 type OidcLoginFlow struct {
 	StateSha256          []byte
 	ProviderID           string
@@ -728,6 +759,7 @@ type RemoteCacheEntry struct {
 	ExpiresAt            pgtype.Timestamptz
 	UpstreamGoneAt       pgtype.Timestamptz
 	LastUsedAt           pgtype.Timestamptz
+	MediaType            pgtype.Text
 }
 
 type RemoteCacheInvalidation struct {
@@ -898,6 +930,35 @@ type UiSession struct {
 	UserAgent         pgtype.Text
 	EndedAt           pgtype.Timestamptz
 	EndReason         pgtype.Text
+}
+
+type UploadSession struct {
+	ID              pgtype.UUID
+	RepoID          int64
+	AddressedRepoID int64
+	Binding         pgtype.Text
+	PrincipalID     pgtype.UUID
+	Received        int64
+	HashState       []byte
+	PartSize        int64
+	S3UploadID      string
+	TailSize        int64
+	TailWriter      pgtype.UUID
+	TailSha256      []byte
+	Writer          pgtype.UUID
+	WriterUntil     pgtype.Timestamptz
+	Digest          []byte
+	State           string
+	CreatedAt       pgtype.Timestamptz
+	LastActivityAt  pgtype.Timestamptz
+}
+
+type UploadSessionPart struct {
+	SessionID  pgtype.UUID
+	PartNumber int32
+	Size       int64
+	Etag       string
+	Sha256     []byte
 }
 
 type UserAvatar struct {

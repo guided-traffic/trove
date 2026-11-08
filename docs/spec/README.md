@@ -159,8 +159,11 @@ stored in PostgreSQL.
 **INV-5 · Repository model.** Every repository belongs to exactly one project and has a key that is
 unique within its project, exactly one package format and one class: `local` (hosted), `remote` (pull-through proxy and cache of one upstream)
 or `virtual` (ordered aggregation of local and remote repositories of the same format, with one
-default deployment target). Federated repositories are not part of the MVP. Repository keys match
-`^[a-z0-9][a-z0-9._-]{1,63}$`, project keys `^[a-z][a-z0-9-]{1,31}$`. No repository is shared: a virtual repository lists
+default deployment target). Federated repositories are not part of the MVP. A repository key and a project key are
+path components of every container image reference, so both are components in the grammar of the OCI distribution
+specification ([Q-OCI-3](formats/oci.md#q-oci-3--repository-and-project-keys-follow-the-oci-component-grammar-for-every-format)):
+repository keys match `^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$` with 2 to 64 characters, project keys
+`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` with 2 to 32. No repository is shared: a virtual repository lists
 only repositories of its own project. Outside its project a repository is named `<projectKey>/<repoKey>`. Owner's
 decision of 2026-11-06 ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project),
 [authorization.md](authorization.md) R-AUTHZ-026); until then keys were unique in the installation.
@@ -411,6 +414,7 @@ acceptance criteria.
 | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | `R-CI` | GitLab CI OIDC token exchange, identity mappings, `CI_JOB_TOKEN` fallback |
 | [formats/npm.md](formats/npm.md) | `R-NPM` | npm registry protocol, local/remote/virtual behavior |
 | [formats/nuget.md](formats/nuget.md) | `R-NUGET` | NuGet v3 protocol, symbols, local/remote/virtual behavior |
+| [formats/oci.md](formats/oci.md) | `R-OCI` | OCI distribution API under `/v2/` for container images and other OCI content (Docker image manifests included): token service, uploads across replicas, indexes, referrers, deletion, remote in both modes with the mirror's discovery of images, tags and platforms, virtual resolution, bound hosts; specified for phase T-16, not implemented |
 | [formats/generic.md](formats/generic.md) | `R-GENERIC` | Generic format: raw files at free-form paths; the local class (MVP, M1, Q-ROAD-1) with descriptor, flat layout, request classification, deploy, download, patterns and settings; the remote and virtual classes and cross-format copy (P1) |
 | [backup-and-restore.md](backup-and-restore.md) | `R-BAK` | Backup job, backup format in S3, consistency with garbage collection, restore, retention |
 | [ha-and-helm.md](ha-and-helm.md) | `R-HA` | High availability, failure modes, upgrades, backup CronJob and restore Job (chart side), platform backup (PITR, bucket versioning), disaster recovery, Helm chart values |

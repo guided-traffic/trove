@@ -115,6 +115,10 @@ func (a *Adapter) PrepareFill(_ context.Context, path, _ string, body io.ReaderA
 		if len(f) == 3 && f[0] == "map" {
 			p.Mappings = append(p.Mappings, proxy.URLMapping{Path: f[1], Upstream: f[2]})
 		}
+		// "alias <path>" enters the document under another path as an artifact (Prepared.Aliases).
+		if len(f) == 2 && f[0] == "alias" {
+			p.Aliases = append(p.Aliases, f[1])
+		}
 	}
 	return p, nil
 }

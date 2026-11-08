@@ -234,7 +234,7 @@ func (r *run) rewrite() {
 	}
 	h := r.host(formats.Remote)
 	rc := formats.RemoteContext{Repo: h.Repo(), Upstream: up, Settings: fx.Settings}
-	ln := Links("", r.d.ID, h.Repo().Name)
+	ln := LinksAt("", r.d.ProtocolBasePath, h.Repo().Name)
 	ctx := context.Background()
 	meaningful := false
 	for _, d := range fx.Docs {
@@ -666,7 +666,7 @@ func (r *run) setup() {
 	}
 	ids := map[string]bool{}
 	data := formats.SetupData{
-		RegistryURL: DefaultBaseURL + "/api/" + string(r.d.ID) + "/main/", Repository: "main", Endpoint: "default", Variant: "scope", Username: "alice",
+		RegistryURL: DefaultBaseURL + strings.NewReplacer("{project}", "main", "{key}", "main").Replace(r.d.ProtocolBasePath), ImagePrefix: imagePrefix(r.d, DefaultBaseURL+strings.NewReplacer("{project}", "main", "{key}", "main").Replace(r.d.ProtocolBasePath)), Repository: "main", Endpoint: "default", Variant: "scope", Username: "alice",
 	}
 	for _, t := range tpls {
 		switch {

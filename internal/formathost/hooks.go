@@ -7,6 +7,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/qname"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
@@ -100,6 +101,27 @@ func (h *Hooks) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEvent) e
 	return f.OnCommit(ctx, tx, ev)
 }
 
+// systemRemoval is the actor of a cascade of a removal that had no request: a retention run, the purge of the trash, a job.
+var systemRemoval = audit.Actor{Kind: "system", Name: "removal"}
+
+// cascade is [formats.ItemsEvent.Cascade] of a removal event: it removes in tx, as the actor of the removal or as the system.
+func (h *Hooks) cascade(tx meta.Tx, e items.RemovedEvent) func(context.Context, ...string) error {
+	return func(ctx context.Context, paths ...string) error {
+		var rm ItemRemover
+		if h.d.Remover != nil {
+			rm = h.d.Remover()
+		}
+		if rm == nil {
+			return errs.E(errs.Internal, errs.CodeInternal, "This host cannot remove items from a storage hook.")
+		}
+		by := e.By
+		if by == (audit.Actor{}) {
+			by = systemRemoval
+		}
+		return rm.RemoveIn(ctx, tx, items.RemoveSpec{Repo: e.Repo, Paths: paths, Actor: by, Source: e.Source})
+	}
+}
+
 // OnItemsRemoved implements [items.Hooks].
 func (h *Hooks) OnItemsRemoved(ctx context.Context, tx meta.Tx, e items.RemovedEvent) error {
 	f, ok := h.d.lookup(e.Repo.Format)
@@ -111,6 +133,7 @@ func (h *Hooks) OnItemsRemoved(ctx context.Context, tx meta.Tx, e items.RemovedE
 		return err
 	}
 	ev := formats.ItemsEvent{Repo: refOf(e.Repo), Reason: e.Reason, Actor: e.Actor, Packages: w, Data: h.d.Bindings.Get(f.Descriptor().ID)}
+	ev.Cascade = h.cascade(tx, e)
 	ev.Items = make([]formats.RemovedItem, len(e.Items))
 	for i, r := range e.Items {
 		ev.Items[i] = formats.RemovedItem{Item: itemRef(r.Item), Version: formats.VersionID(r.Version), SHA256: slices.Clone(r.Digest[:])}

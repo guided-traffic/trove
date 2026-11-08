@@ -61,6 +61,9 @@ type HostOptions struct {
 	// production Host does until an engine is bound.
 	Remote   formats.RemoteFetcher
 	Resolver formats.Resolver
+	// Uploads is the upload-session port (R-STOR-011); nil answers not_implemented, as the production Host does until
+	// the sessions are built.
+	Uploads formats.UploadSessions
 	// RestoredAt is system_state restored_at.
 	RestoredAt time.Time
 	// Vulnerabilities is the scanning's data an audit route reads (R-VULN-017, R-VULN-018); nil answers
@@ -294,9 +297,17 @@ func (h *Host) Resolver() formats.Resolver {
 	return unsupportedResolver{}
 }
 
+// Uploads implements formats.Host.
+func (h *Host) Uploads() formats.UploadSessions {
+	if h.opts.Uploads != nil {
+		return h.opts.Uploads
+	}
+	return unsupportedUploads{}
+}
+
 // Links implements formats.Host.
 func (h *Host) Links(rq *formats.Request) formats.LinkBuilder {
-	return links{base: h.opts.BaseURL, format: h.f.Descriptor().ID, key: rq.Repo.Name}
+	return links{base: h.opts.BaseURL, template: h.f.Descriptor().ProtocolBasePath, key: rq.Repo.Name}
 }
 
 // Renditions implements formats.Host.
@@ -338,16 +349,21 @@ func (r renditions) Put(k formats.RenditionKey, doc []byte) {
 
 // links builds the URLs of the in-memory Host (C-11).
 type links struct {
-	base   string
-	format formats.ID
-	key    qname.Repo
+	base string
+	// template is the format's protocol base path template (catalog.Facts.ProtocolBasePath).
+	template string
+	key      qname.Repo
 }
 
 func (l links) Base() string { return strings.TrimSuffix(l.base, "/") }
 func (l links) Registry(serving qname.Repo) string {
-	return l.Base() + qname.ProtocolBase("/api/"+string(l.format)+"/{project}/{key}/", serving)
+	return l.Base() + qname.ProtocolBase(l.template, serving)
 }
 func (l links) Repository() string { return l.Registry(l.key) }
+func (l links) ClientName(name string) string {
+	return l.key.Project + "/" + l.key.Key + "/" + name
+}
+
 func (l links) Path(p string) string {
 	return l.Repository() + escapePath(p)
 }
@@ -359,10 +375,16 @@ func (l links) File(repoKey qname.Repo, p string) string {
 // Links returns the link builder the Host hands a request for the key; the
 // kit's rewrite check uses it directly.
 func Links(base string, format formats.ID, key qname.Repo) formats.LinkBuilder {
+	return LinksAt(base, "/api/"+string(format)+"/{project}/{key}/", key)
+}
+
+// LinksAt is Links for a format with the protocol base path template (catalog.Facts.ProtocolBasePath), the registry root's
+// "/v2/{project}/{key}/" among them.
+func LinksAt(base, template string, key qname.Repo) formats.LinkBuilder {
 	if base == "" {
 		base = DefaultBaseURL
 	}
-	return links{base: base, format: format, key: key}
+	return links{base: base, template: template, key: key}
 }
 
 // escapePath escapes every segment once.
@@ -426,6 +448,34 @@ func (unsupportedRemote) GateWith(context.Context, *formats.Request, formats.Pat
 	return formats.ServeFacts{}, notSupported()
 }
 
+type unsupportedUploads struct{}
+
+var _ formats.UploadSessions = unsupportedUploads{}
+
+func uploadsNotBuilt() error {
+	return errs.E(errs.NotImplemented, errs.CodeNotImplemented, "Upload sessions are not supported by this host.")
+}
+
+func (unsupportedUploads) Start(context.Context, *formats.Request, formats.RepoRef, string) (formats.UploadSession, error) {
+	return formats.UploadSession{}, uploadsNotBuilt()
+}
+
+func (unsupportedUploads) Get(context.Context, *formats.Request, formats.SessionRef) (formats.UploadSession, error) {
+	return formats.UploadSession{}, uploadsNotBuilt()
+}
+
+func (unsupportedUploads) Append(context.Context, *formats.Request, formats.SessionRef, int64, io.Reader) (int64, error) {
+	return 0, uploadsNotBuilt()
+}
+
+func (unsupportedUploads) Finalize(context.Context, *formats.Request, formats.SessionRef, [32]byte, io.Reader, formats.Commit) (formats.Committed, error) {
+	return formats.Committed{}, uploadsNotBuilt()
+}
+
+func (unsupportedUploads) Abort(context.Context, *formats.Request, formats.SessionRef) error {
+	return uploadsNotBuilt()
+}
+
 type unsupportedResolver struct{}
 
 func (unsupportedResolver) Plan(context.Context, *formats.Request, formats.Path, formats.PathInfo) (*formats.VirtualPlan, error) {
@@ -468,7 +518,7 @@ func (h *Host) NewRequest(ctx context.Context, method, escapedPath string, body 
 	if err != nil {
 		return nil, err
 	}
-	u := &url.URL{Scheme: "https", Host: strings.TrimPrefix(h.opts.BaseURL, "https://"), Path: qname.ProtocolBase("/api/"+string(h.f.Descriptor().ID)+"/{project}/{key}/", h.repo.Name) + clean.Path, RawPath: ""}
+	u := &url.URL{Scheme: "https", Host: strings.TrimPrefix(h.opts.BaseURL, "https://"), Path: qname.ProtocolBase(h.f.Descriptor().ProtocolBasePath, h.repo.Name) + clean.Path, RawPath: ""}
 	hr, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err

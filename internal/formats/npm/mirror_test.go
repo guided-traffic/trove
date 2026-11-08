@@ -57,6 +57,11 @@ func (f *fakeMirrorUpstream) Get(_ context.Context, u *url.URL, _ string, _ int6
 	return &discover.Response{Status: status, Body: []byte(body)}, nil
 }
 
+// Artifact implements discover.Upstream: the fake holds no artifacts.
+func (f *fakeMirrorUpstream) Artifact(context.Context, string, int64) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
 func (f *fakeMirrorUpstream) Document(_ context.Context, path, variant string) ([]byte, bool, error) {
 	if variant != "full" {
 		return nil, false, fmt.Errorf("variant %q", variant)

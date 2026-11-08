@@ -160,10 +160,13 @@ func TestR_BAS_018_TheBlockListAnswersBeforeThePathIsRead(t *testing.T) {
 
 func TestR_BAS_018_TheKeyRuleIsTheOneOfINV5(t *testing.T) {
 	// The Bastion and the main installation read keys through the one grammar of qname; the pattern of INV-5 is the oracle here.
-	kp := regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
-	for _, k := range []string{"a", "ab", "npm-all", "a.b_c-d", "-npm", "NPM", strings.Repeat("a", 64), strings.Repeat("a", 65), "a~cache", "a b"} {
-		if kp.MatchString(k) != qname.ValidKey(k) {
-			t.Fatalf("qname.ValidKey(%q) = %v differs from the key pattern of INV-5", k, qname.ValidKey(k))
+	kp := regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$`)
+	for _, k := range []string{
+		"a", "ab", "npm-all", "a.b_c-d", "-npm", "NPM", strings.Repeat("a", 64), strings.Repeat("a", 65), "a~cache", "a b",
+		"docker-", "a.-b", "a___b", "a._b", "docker.hub", "a__b",
+	} {
+		if (len(k) >= 2 && len(k) <= 64 && kp.MatchString(k)) != qname.ValidKey(k) {
+			t.Fatalf("qname.ValidKey(%q) = %v differs from the key grammar of INV-5", k, qname.ValidKey(k))
 		}
 	}
 	s := newSiteHarness(t, options{})

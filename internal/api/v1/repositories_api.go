@@ -373,6 +373,7 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		ProtocolBasePath          string   `json:"protocolBasePath"`
 		DefaultUpstreamURL        *string  `json:"defaultUpstreamUrl"`
 		DefaultExtraHosts         []string `json:"defaultExtraHosts"`
+		DefaultCredentialHosts    []string `json:"defaultCredentialHosts"`
 		DefaultMetadataTTLSeconds *int     `json:"defaultMetadataTtlSeconds"`
 		DefaultNotFoundTTLSeconds *int     `json:"defaultNotFoundTtlSeconds"`
 		PatternSubject            string   `json:"patternSubject"`
@@ -398,7 +399,8 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 	for _, d := range formats.Descriptors() {
 		x := descriptor{
 			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Clients: []client{}, Layout: d.Layout, DefaultExtraHosts: append([]string{}, d.DefaultExtraHosts...),
-			ProtocolBasePath: d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
+			DefaultCredentialHosts: append([]string{}, d.DefaultCredentialHosts...),
+			ProtocolBasePath:       d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
 			DefaultNotFoundTTLSeconds: d.DefaultNotFoundTTLSeconds, PatternSubject: string(d.PatternSubject),
 			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps, SettingsSchema: json.RawMessage("null"),
 		}

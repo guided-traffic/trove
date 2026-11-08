@@ -56,6 +56,7 @@ type Expected = blob.Expected
 type Blobs interface {
 	Ingest(ctx context.Context, body io.Reader, o blob.IngestOptions) (*blob.Spooled, error)
 	CommitAll(ctx context.Context, sps []*blob.Spooled, link blob.LinkFunc) ([]blob.CommitResult, error)
+	LinkExisting(ctx context.Context, d blob.Digest, link blob.LinkFunc) error
 	Open(ctx context.Context, d blob.Digest, size int64, o blob.OpenOptions) (io.ReadCloser, error)
 	RecheckMissing(ctx context.Context, d blob.Digest, size int64) bool
 }

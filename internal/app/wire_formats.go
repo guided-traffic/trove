@@ -13,11 +13,13 @@ import (
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/formatdata/npm"
 	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
+	ocidata "github.com/guided-traffic/trove/internal/formatdata/oci"
 	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	npmformat "github.com/guided-traffic/trove/internal/formats/npm"
 	nugetformat "github.com/guided-traffic/trove/internal/formats/nuget"
+	ociformat "github.com/guided-traffic/trove/internal/formats/oci"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -141,7 +143,11 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 	if err != nil {
 		return nil, fmt.Errorf("formats: nuget data port: %w", err)
 	}
-	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget}, nil
+	oci, err := ocidata.New(ocidata.Options{DB: db})
+	if err != nil {
+		return nil, fmt.Errorf("formats: oci data port: %w", err)
+	}
+	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget, ociformat.ID: oci}, nil
 }
 
 // bindFormatPorts binds the ports and checks them against the formats: a format that
@@ -201,7 +207,12 @@ func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr vi
 		return formatsArea{}, err
 	}
 	catalog.Default().Freeze()
-	d := formathost.Deps{Bindings: fp.bindings, Signals: in.signals}
+	d := formathost.Deps{Bindings: fp.bindings, Signals: in.signals, Remover: func() formathost.ItemRemover {
+		if s, ok := a.itemStore.get(); ok {
+			return s
+		}
+		return nil
+	}}
 	// A nil pointer in an interface would not be nil: a seam is set only where its
 	// component exists.
 	if ow.service != nil {

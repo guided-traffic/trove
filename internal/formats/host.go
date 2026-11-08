@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/guided-traffic/trove/internal/qname"
 )
 
@@ -62,6 +64,9 @@ type Host interface {
 	// RestoredAt returns system_state restored_at (C-16), the zero time until a
 	// restore has run (M5).
 	RestoredAt(ctx context.Context) (time.Time, error)
+	// Uploads is the multi-request upload session port of R-STOR-011: a blob sent over several requests and replicas,
+	// whose state is PostgreSQL and one S3 multipart upload and never a replica's memory or spool (INV-18).
+	Uploads() UploadSessions
 	// Vulnerabilities is the scanning's data as an audit route reads it (R-VULN-017, R-VULN-018, ADR-150): the state
 	// of an ecosystem's advisory data, its advisories, the internal names and the matcher. A host that has not wired
 	// the scanning answers [NoVulnerabilityData], so a format never meets nil.
@@ -84,6 +89,72 @@ type Ingestor interface {
 	// Close removes the spool file. The dispatcher closes every spool of a request
 	// on every path.
 	Close(sp Spooled)
+	// Link commits an item at c.Path with the content of the item named by from, with no body (R-STOR-008, deploy by checksum):
+	// the mount of an OCI blob from another repository, the link step of a push through a virtual repository, the tag item of a
+	// push by tag whose manifest is stored. The source is named by the qualified name of its repository and a path, never by a
+	// digest and never by a repository reference the caller supplies: the host resolves the repository by name (its id, class and
+	// format), and for a virtual repository the item through its members in member order, as a read would. It then checks, as the
+	// caller of the request, that the item is a live untrashed file that holds a blob the store serves, that no finding blocks its
+	// version, and that rq.Subject may read it (a read decision on the named repository, taken after the lookup and before anything
+	// is said of it; whatever is wrong answers errs.NotFound, the same for an item or a repository that does not exist and one the
+	// caller may not read). The size and the digests are those of the blob row. It does not depend on storage.deploy_by_checksum, which is
+	// the switch of a client's deploy by checksum header. It is the commit of [Ingestor.Commit] without the body: the item
+	// row, the storage hook, the audit row and the recorded write decisions in one transaction. c.Companions must be empty.
+	// The write decisions (deploy, overwrite) on the target are the caller's, as for Commit.
+	Link(ctx context.Context, rq *Request, from SourceRef, c Commit) (Committed, error)
+}
+
+// SourceRef names the item a link takes its content from: the qualified name of its repository and the canonical path of the item in
+// it. For a virtual repository the item is the first member's that holds the path.
+type SourceRef struct {
+	Repo qname.Repo
+	Path string
+}
+
+// SessionRef names a session in a call: its id and the binding the format started it with. Every call repeats both, so a session
+// of another binding (another OCI image name) is not found, whatever its id.
+type SessionRef struct {
+	ID      uuid.UUID
+	Binding string
+}
+
+// UploadSessions is the multi-request upload port of R-STOR-011 as a format reaches it. The host decides on every call, as the
+// request's subject and on the request's index, that the principal is the session's, that the session was started for the
+// binding of the call, and that `deploy` is still allowed on the session's Target (a permission revoked during an upload
+// ends it); the format decides nothing about a session. Whatever is wrong, a session of another principal or binding, an
+// unknown, expired or finished one, a permission that is gone, answers errs.NotFound (OCI BLOB_UPLOAD_UNKNOWN).
+type UploadSessions interface {
+	// Start opens a session for binding (a string of the format: the OCI image name) that writes to target. The host validates
+	// target against the request: it is rq.Repo for a local repository and the deployment target of rq.Repo for a virtual one
+	// (R-OCI-028), and any other repository is refused with an internal error. The decision of `deploy` on it is the host's.
+	Start(ctx context.Context, rq *Request, target RepoRef, binding string) (UploadSession, error)
+	// Get reads a session.
+	Get(ctx context.Context, rq *Request, ref SessionRef) (UploadSession, error)
+	// Append writes body at offset; an offset below zero appends at the received count. An offset other than the received
+	// count, and a claim another request holds, is an *errs.Error of kind RangeNotSatisfiable (416), and the bytes the request
+	// had read are not recorded. Whatever the outcome, received is the byte count the session has recorded after the call, so
+	// that the format renders the Range header of a 416 from a typed value and not from the error text.
+	Append(ctx context.Context, rq *Request, ref SessionRef, offset int64, body io.Reader) (received int64, err error)
+	// Finalize completes the session with the SHA-256 the client names, after the bytes of last, and commits the blob as
+	// the item c names. A digest that is not the computed one is an error of kind Invalid and keeps the session open; a
+	// finalize cut by a drain is repeated by the client's retry and continues at the recorded state.
+	Finalize(ctx context.Context, rq *Request, ref SessionRef, sha256 [32]byte, last io.Reader, c Commit) (Committed, error)
+	// Abort ends the session and removes what it staged.
+	Abort(ctx context.Context, rq *Request, ref SessionRef) error
+}
+
+// UploadSession is a session as a format sees it.
+type UploadSession struct {
+	ID uuid.UUID
+	// Target is the repository the session writes to.
+	Target RepoRef
+	// Binding is the string the session was started with.
+	Binding string
+	// Received is the byte count recorded so far.
+	Received int64
+	// PartSize is the size of the parts the session cuts the blob into (storage.uploads.part_size, fixed when it started);
+	// a client is told it as the minimum chunk length.
+	PartSize int64
 }
 
 // Commit is one upload to commit.
@@ -175,9 +246,16 @@ type PackageStore interface {
 type LinkBuilder interface {
 	// Base is the response base URL: "https://trove.example.com".
 	Base() string
-	// Registry is "<base>/api/<format>/<project>/<key>/"; the key may be
-	// "<remote>~cache".
+	// Registry is the base URL followed by the protocol base path of the format with the project and the key filled in:
+	// "<base>/api/<format>/<project>/<key>/", or "<base>/v2/<project>/<key>/" for the format that declares the registry
+	// root; the key may be "<remote>~cache".
 	Registry(serving qname.Repo) string
+	// ClientName is the name of a package as the client of the request's host spells it: "<project>/<key>/<name>" on the shared host,
+	// where the repository is part of the image name, and the bare name on a host whose root is bound to the repository
+	// ([EndpointFacts.Bound]). It must be called on the addressed request, the one the dispatcher built, and not on one derived
+	// through [Request.Member] for a member of a virtual repository: the derived request names the member, and the client spelled
+	// the name for the repository it addressed. Registry on such a host renders the base path without the project and the key: "<base>/v2/".
+	ClientName(name string) string
 	// Repository is Registry(rq.Repo.Key).
 	Repository() string
 	// Path is Repository() + p with every segment escaped once.

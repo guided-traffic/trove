@@ -83,6 +83,10 @@ const SetupPackageRef = "<package>"
 type SetupData struct {
 	// RegistryURL is the registry URL of the repository, with its trailing slash.
 	RegistryURL string
+	// ImagePrefix is "<host>/<projectKey>/<repoKey>" for the format that declares the registry root (the form an
+	// image reference starts with, which a template cannot derive from RegistryURL because the address has the
+	// "/v2" prefix, R-OCI-030); "" for every other format.
+	ImagePrefix string
 	Repository  string
 	Endpoint    string
 	// Variant names the variant of a configure snippet the request asked for, in the

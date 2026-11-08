@@ -1045,7 +1045,7 @@ records and audit reference it like any other principal (INV-9). Its principal `
 `gitlab-com/web/release-publish` ([Q-AUTHZ-214](authorization.md#q-authz-214--a-projects-ci-mappings-are-named-within-the-project-like-its-policies-and-service-accounts)):
 
 - Mapping names are unique only per CI issuer and tier. Issuer and mapping names match
-  `^[a-z0-9][a-z0-9._-]{1,63}$` and project keys `^[a-z][a-z0-9-]{1,31}$`, so no part contains `/`, and the composite
+  `^[a-z0-9][a-z0-9._-]{1,63}$` and project keys `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$`, so no part contains `/`, and the composite
   is unique under the table's `UNIQUE (kind, name)` and splits back unambiguously: two parts name a system mapping,
   three a project's.
 - The API reference is `ci:<CI issuer name>/<mapping name>`, for a mapping of a project's tier

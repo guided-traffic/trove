@@ -32,6 +32,11 @@ type Prepared struct {
 	// Mappings are the URL map rows of R-REPO-043. The format builds them from the
 	// package identity; the core checks each against the document's package.
 	Mappings []URLMapping
+	// Aliases are further paths of the repository the fetched document is entered under as artifacts: in the fill transaction
+	// each becomes an item for the same blob and an artifact cache entry, so that a document fetched by one name (an OCI tag) is
+	// served by the other (its digest) without a request to the upstream (R-OCI-022). Only paths derived from the document's
+	// own bytes; a path that holds an entry already keeps it. The storage hook runs for each alias item with [OriginFill].
+	Aliases []Path
 	// Data is format data handed to OnFill: npm's document time, version list and
 	// removal marks.
 	Data any
@@ -173,6 +178,41 @@ type FillInspector interface {
 // format page's section "Mirror discovery".
 type MirrorLister = discover.Lister
 
+// Authenticator is an optional interface of a [RemoteAdapter]: the upstream authenticates with a token handshake, the
+// 401 challenge and the realm of a container registry (R-OCI-021, Q-OCI-13). Register reads it off the adapter once
+// ([RemoteCapabilities]).
+//
+// The format reads the protocol; the engine does the I/O. On a 401 of the upstream for path p the engine asks
+// TokenRequest, adds the repository's credential to the request by the host rule of R-REPO-033, sends it through the
+// repository's upstream client, hands the bounded answer to ReadToken and retries the original request once with the
+// Authorization value it returns. The token is kept in the replica's cache under key.
+type Authenticator interface {
+	// TokenRequest reads an upstream 401. orig is the upstream request that was answered (its method, URL and query: the scope of
+	// a registry token for the catalog or a tags list is read from it, not from a repository path), p the repository path the
+	// request was made for. A fetch of a document or an artifact of the repository has its path; the engine's Get (a mirror pass),
+	// Query and Exchange have none, so p is the zero Path and orig is all there is. ok false: the format knows no handshake for
+	// this answer, and the 401 stands. key names the token in the replica's cache (the engine adds the repository id and its
+	// configuration version). The engine adds the credential by the host rule of R-REPO-033, sends req through the repository's
+	// upstream client, and retries the original request once.
+	TokenRequest(ctx context.Context, rc RemoteContext, orig *http.Request, p Path, status int, challenge http.Header) (req *http.Request, key string, ok bool, err error)
+	// ReadToken reads the realm's answer (the engine bounds it at 64 KiB): the Authorization value to retry with and its
+	// lifetime (0: 60 s).
+	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
+}
+
+// Revalidator is an optional interface of a [RemoteAdapter]: an expired stored document is revalidated by a request of the
+// format's own kind instead of the engine's conditional GET (OCI: a HEAD whose digest header says whether a tag still
+// points at the stored manifest, R-OCI-022). Register reads it off the adapter once ([RemoteCapabilities]).
+type Revalidator interface {
+	// RevalidationRequest returns the request (OCI: a HEAD) for an expired stored document; ok false: the engine's
+	// conditional GET.
+	RevalidationRequest(ctx context.Context, rc RemoteContext, p Path, variant string, stored RemoteDocument) (req *http.Request, ok bool, err error)
+	// Unchanged reads its answer: true renews the stored document's freshness without a body; false makes the engine
+	// fetch it. The engine reads a status that is not 2xx itself and never asks: a 401 runs the handshake, a 404 or 410 is
+	// the upstream's "gone" of R-REPO-029, a 429 or a 5xx follows the stale rules and the circuit.
+	Unchanged(p Path, stored RemoteDocument, resp *http.Response) bool
+}
+
 // RemoteCaps are the optional interfaces a format's remote adapter implements, as Register found them.
 // A field is nil for a capability the adapter does not have.
 type RemoteCaps struct {
@@ -183,6 +223,11 @@ type RemoteCaps struct {
 	Mirror MirrorLister
 	// Gate decides on the rows the item lookup read for a cached artifact (R-ARCH-027, Q-ARCH-291).
 	Gate FactsGate
+	// Auth is the adapter's token handshake with the upstream; nil for a format whose upstreams authenticate by the
+	// credential alone (R-OCI-021).
+	Auth Authenticator
+	// Revalidate is the adapter's own revalidation request; nil for the engine's conditional GET (R-OCI-022).
+	Revalidate Revalidator
 }
 
 // RemoteCapabilities returns the capabilities Register recorded for a format; the zero value for an ID that
@@ -225,6 +270,9 @@ type CacheStatus struct {
 type RemoteDocument struct {
 	Digest [32]byte
 	Size   int64
+	// MediaType is the media type the document was stored with ("" when the upstream sent none); a [Revalidator] reads
+	// it with Digest to judge the upstream's answer.
+	MediaType string
 	// Bytes reads the document, bounded by MaxDocumentBytes and
 	// proxy.max_metadata_bytes.
 	Bytes                             func(ctx context.Context) ([]byte, error)

@@ -46,6 +46,7 @@ const (
 	ServeNPMLocal   = servefacts.NPMLocal
 	ServeNPMRemote  = servefacts.NPMRemote
 	ServeNuGetLocal = servefacts.NuGetLocal
+	ServeOCILocal   = servefacts.OCILocal
 )
 
 // ServeFactsKeyer is an optional interface of a [Format] whose ServeCheck reads rows besides the item: ServeFactsKey names,
@@ -192,6 +193,19 @@ type ItemsEvent struct {
 	Actor    string
 	Packages PackageWriter
 	Data     any
+	// Cascade removes the files at the canonical paths of Repo, a path of a folder with its subtree, in the transaction of the
+	// event, and runs [Format.OnItemsRemoved] again for the files it removed, so a format that removes what hangs on a removed
+	// item (an OCI manifest takes its tags, a tag takes the manifest nobody else names) does it from the hook and not only
+	// from a route that has a request. The removal is recorded as the actor of the event, or as the system actor "removal"
+	// when the removal had no request (a retention run, a purge of the trash, a job). Nothing is decided: the format has
+	// decided the cascade by its own rules before it calls. A path that holds nothing is skipped. It answers an internal error on
+	// a host that cannot remove in the transaction (the restore of a backup replays no hook).
+	//
+	// A cascade follows the Reason of the event. Cascade removes permanently today, because the trash can does not exist yet
+	// (R-STOR-022); once it does, a hook whose event has the reason "trash" must not remove its dependents permanently: a manifest
+	// that goes to the trash takes its tags to the trash, and only "delete" and "purge" remove them for good. A hook that cascades
+	// on every reason would make a trashed manifest unrecoverable.
+	Cascade func(ctx context.Context, paths ...string) error
 }
 
 // PackageRef names a package row.

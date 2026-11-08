@@ -70,6 +70,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   protocolBasePath: '/files/{project}/{key}/',
   defaultUpstreamUrl: null,
   defaultExtraHosts: [],
+  defaultCredentialHosts: [],
   defaultMetadataTtlSeconds: null,
   defaultNotFoundTtlSeconds: 1800,
   patternSubject: 'path',

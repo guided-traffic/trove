@@ -99,7 +99,8 @@ const (
 type Format interface {
 	Descriptor() Descriptor
 
-	// Routes lists every protocol operation below /api/<id>/<projectKey>/<repoKey>/. It is empty
+	// Routes lists every protocol operation below /api/<id>/<projectKey>/<repoKey>/ (below /v2/<projectKey>/<repoKey>/ for
+	// the format that declares [catalog.Facts.RegistryRoot]). It is empty
 	// for a format whose protocol is /files/ alone: generic (Q-GENERIC-7).
 	Routes() []Route
 	// Match resolves method and the repository-relative path, still
@@ -240,6 +241,8 @@ func CapabilitiesOf(f Format) Capabilities {
 		c.Remote.Fill, _ = ra.(FillInspector)
 		c.Remote.Mirror, _ = ra.(MirrorLister)
 		c.Remote.Gate, _ = ra.(FactsGate)
+		c.Remote.Auth, _ = ra.(Authenticator)
+		c.Remote.Revalidate, _ = ra.(Revalidator)
 	}
 	return c
 }
@@ -370,7 +373,11 @@ func checkRoutes(f Format, d Descriptor) error {
 	if len(routes) == 0 {
 		return nil
 	}
-	if want := "/api/" + string(d.ID) + "/{project}/{key}/"; d.ProtocolBasePath != want {
+	want := "/api/" + string(d.ID) + "/{project}/{key}/"
+	if d.RegistryRoot {
+		want = catalog.RegistryRootBasePath
+	}
+	if d.ProtocolBasePath != want {
 		return fmt.Errorf("%q has routes and protocol base path %q, not %q", d.ID, d.ProtocolBasePath, want)
 	}
 	names := map[string]bool{}

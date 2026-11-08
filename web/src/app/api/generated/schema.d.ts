@@ -773,7 +773,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -836,7 +836,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -889,7 +889,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -933,7 +933,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -1188,7 +1188,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -1435,7 +1435,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -1519,7 +1519,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
                 name: string;
@@ -1773,7 +1773,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -1813,7 +1813,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -1838,7 +1838,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
                 principalRef: string;
@@ -1875,7 +1875,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -1931,7 +1931,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -1982,7 +1982,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -2047,7 +2047,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -2424,7 +2424,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -2447,7 +2447,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -2474,7 +2474,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -2509,7 +2509,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -2534,7 +2534,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -2562,7 +2562,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -2591,7 +2591,7 @@ export interface paths {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -2634,7 +2634,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -2663,7 +2663,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -2689,7 +2689,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -2760,7 +2760,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -3129,7 +3129,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -3166,7 +3166,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -3273,7 +3273,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -3309,7 +3309,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -3337,7 +3337,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -3372,7 +3372,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -3398,7 +3398,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -3443,7 +3443,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The key of a virtual repository (R-REPO-002). */
                 repoKey: string;
@@ -3478,7 +3478,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -3524,7 +3524,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -4068,7 +4068,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -4095,7 +4095,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -4125,7 +4125,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -6374,11 +6374,16 @@ export interface components {
              */
             clients: components["schemas"]["FormatClient"][];
             layout: string;
-            /** @description The client address template; `{key}` is the repository key. */
+            /** @description The client address template; `{project}` and `{key}` are the project and the repository key. `/api/<format>/{project}/{key}/`, or `/v2/{project}/{key}/` for the format that serves the registry root (R-OCI-001). */
             protocolBasePath: string;
             defaultUpstreamUrl: string | null;
             /** @description The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any. */
             defaultExtraHosts: string[];
+            /**
+             * @description The entries of `defaultExtraHosts` that a remote repository of the format proposes with `sendCredentials: true`, because the
+             *     upstream's token realm lives there (R-OCI-021); each is also in `defaultExtraHosts`. Empty for a format without any.
+             */
+            defaultCredentialHosts: string[];
             defaultMetadataTtlSeconds: number | null;
             defaultNotFoundTtlSeconds: number | null;
             /** @enum {string} */
@@ -6425,12 +6430,12 @@ export interface components {
          *     any difference; no list of formats per class is kept by hand anywhere.
          * @enum {string}
          */
-        FormatName: "generic" | "npm" | "nuget";
+        FormatName: "generic" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `local`. The create form offers these for a local repository.
          * @enum {string}
          */
-        LocalFormatName: "generic" | "npm" | "nuget";
+        LocalFormatName: "generic" | "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
@@ -6490,6 +6495,7 @@ export interface components {
             };
             npm?: components["schemas"]["NpmSettings"];
             nuget?: components["schemas"]["NugetSettings"];
+            oci?: components["schemas"]["OciSettings"];
             vulnerabilities?: components["schemas"]["VulnerabilitySettings"];
             /** @enum {string} */
             readonly lifecycle?: "active" | "deleting";
@@ -6598,6 +6604,37 @@ export interface components {
              * @enum {string}
              */
             vulnerabilityInfo?: "local" | "off";
+        };
+        /**
+         * @description The settings of the OCI format, the `oci` member of a repository document (R-REPO-004, R-OCI-026). The document of the
+         *     format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember`
+         *     fails on any difference between the two. Local and virtual repositories have no settings of the format: a setting that
+         *     does not apply to the class of the repository answers 422 `not_applicable`. An omitted setting takes its default.
+         */
+        OciSettings: {
+            /**
+             * @description Remote repositories (R-OCI-026, Q-OCI-16). What a mirror of a registry keeps; present in both modes and effective in mode
+             *     `mirror`. A caller without `repositories:write-config` on the project cannot change it on a mirror (R-REPO-050, Q-OCI-22).
+             */
+            mirror?: {
+                /**
+                 * @description Tag patterns (`*` and `?`) a tag must match to be mirrored; a pattern without a wildcard names a tag that is always kept.
+                 * @default [
+                 *       "latest"
+                 *     ]
+                 */
+                tags: string[];
+                /**
+                 * @description Tag patterns that are never mirrored.
+                 * @default []
+                 */
+                excludeTags: string[];
+                /**
+                 * @description Platforms (`os/arch` or `os/arch/variant`) of an index whose manifests are mirrored; empty is every platform.
+                 * @default []
+                 */
+                platforms: string[];
+            };
         };
         /** @description What a caller sees who may read a repository but not its configuration (R-REPO-010). */
         RepositoryConsumerView: {
@@ -8630,7 +8667,7 @@ export interface components {
         };
     };
     parameters: {
-        /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+        /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
         ProjectKey: string;
         /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
         RepoKey: string;
@@ -10151,7 +10188,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -10185,7 +10222,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -10335,7 +10372,7 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -10373,7 +10410,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -10404,7 +10441,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -10478,7 +10515,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -10539,7 +10576,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -10990,7 +11027,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -11033,7 +11070,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 name: string;
             };
@@ -11558,7 +11595,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -11647,7 +11684,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -11886,7 +11923,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
                 name: string;
@@ -11930,7 +11967,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
                 name: string;
@@ -11977,7 +12014,7 @@ export interface operations {
                 "If-Match"?: components["parameters"]["IfMatchOptional"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
                 name: string;
@@ -12013,7 +12050,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The policy name (`^[a-z0-9][a-z0-9._-]{0,127}$`); immutable. */
                 name: string;
@@ -12419,6 +12456,7 @@ export interface operations {
                      *           "protocolBasePath": "/files/{project}/{key}/",
                      *           "defaultUpstreamUrl": null,
                      *           "defaultExtraHosts": [],
+                     *           "defaultCredentialHosts": [],
                      *           "defaultMetadataTtlSeconds": null,
                      *           "defaultNotFoundTtlSeconds": 1800,
                      *           "patternSubject": "path",
@@ -12558,7 +12596,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -12592,7 +12630,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -12636,7 +12674,7 @@ export interface operations {
                 "If-Match"?: components["parameters"]["IfMatchOptional"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -12667,7 +12705,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -12717,7 +12755,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
                 principalRef: string;
@@ -12773,7 +12811,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The percent-encoded reference of a user or a group, for example `group%3Aweb-leads`. A service account, a CI mapping, `anonymous` and `authenticated` are never members of a project (`422`). */
                 principalRef: string;
@@ -12812,7 +12850,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -12931,7 +12969,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -12984,7 +13022,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -13039,7 +13077,7 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -13096,7 +13134,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -13146,7 +13184,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -13193,7 +13231,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -13243,7 +13281,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002), unique within its project (Q-REPO-212). */
                 repoKey: components["parameters"]["RepoKey"];
@@ -13973,7 +14011,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -14002,7 +14040,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -14031,7 +14069,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -14071,7 +14109,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -14108,7 +14146,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -14156,7 +14194,7 @@ export interface operations {
                 "If-Match"?: components["parameters"]["IfMatchOptional"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -14189,7 +14227,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -14233,7 +14271,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
                 /** @description The CI issuer name. */
                 issuer: string;
@@ -14279,7 +14317,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. */
                 projectKey: string;
             };
             cookie?: never;
@@ -14315,7 +14353,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -14383,7 +14421,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -14434,7 +14472,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -14488,7 +14526,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -14535,7 +14573,7 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -14613,7 +14651,7 @@ export interface operations {
                 "If-None-Match"?: string;
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -14681,7 +14719,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -14727,7 +14765,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -14785,7 +14823,7 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -14861,7 +14899,7 @@ export interface operations {
                 "If-None-Match"?: string;
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -14927,7 +14965,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -15822,7 +15860,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -15887,7 +15925,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -16095,7 +16133,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -16152,7 +16190,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
             };
@@ -16203,7 +16241,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -16251,7 +16289,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
             };
             cookie?: never;
@@ -16299,7 +16337,7 @@ export interface operations {
                 "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -16352,7 +16390,7 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatch"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -16414,7 +16452,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The key of a virtual repository (R-REPO-002). */
                 repoKey: string;
@@ -16474,7 +16512,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -16530,7 +16568,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -16593,7 +16631,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 repoKey: string;
                 /**
@@ -17569,7 +17607,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -17605,7 +17643,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;
@@ -17698,7 +17736,7 @@ export interface operations {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path: {
-                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
+                /** @description The project key (`^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters)), immutable. A project the caller cannot see answers `404`, exactly as a project that does not exist. */
                 projectKey: components["parameters"]["ProjectKey"];
                 /** @description The repository key (R-REPO-002). */
                 repoKey: string;

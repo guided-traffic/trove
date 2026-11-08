@@ -1607,7 +1607,7 @@
         <note category="location">src/app/core/http/problem-messages.ts:84</note>
       </notes>
       <segment>
-        <source>The key must have 2 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or digit, without two dots in a row and not ending in a dot.</source>
+        <source>The key must have 2 to 64 characters: lower-case letters and digits, separated by a single dot or underscore, a double underscore or hyphens; it starts and ends with a letter or digit.</source>
       </segment>
     </unit>
     <unit id="problem.reserved_name">
@@ -12558,7 +12558,7 @@
         <note category="location">src/app/features/projects/project-dialog.ts:54,56</note>
       </notes>
       <segment>
-        <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter. Cannot be changed later.</source>
+        <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter and ending with a letter or digit. Cannot be changed later.</source>
       </segment>
     </unit>
     <unit id="project-dialog.display-name">
@@ -15289,7 +15289,7 @@
         <note category="location">src/app/features/repositories/repository-wizard.html:162,164</note>
       </notes>
       <segment>
-        <source> 2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part of every address and cannot be changed later. It is unique within the project. </source>
+        <source> 2 to 64 characters: lower-case letters and digits, separated by a dot, an underscore, a double underscore or hyphens. It is part of every address and cannot be changed later. It is unique within the project. </source>
       </segment>
     </unit>
     <unit id="repo.key.checking">

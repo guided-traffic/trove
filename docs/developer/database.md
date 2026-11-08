@@ -474,6 +474,23 @@ itself (a duplicate panics at start-up). The tables of the M3 migration are regi
 migrated schema against a registry that holds them, and the integration tests that compare the schema with the registry import it
 (`test/integration/postgres/owners_test.go`).
 
+## OCI tables, upload sessions and the key grammar
+
+Three migrations of phase T-16 ([oci.md](oci.md)). [00054_upload_sessions](../../internal/meta/postgres/migrations/00054_upload_sessions.sql) and
+[00055_oci](../../internal/meta/postgres/migrations/00055_oci.sql) are expand steps that create tables no earlier release knows:
+
+| Table | Export class | Registered in | Meaning |
+|---|---|---|---|
+| `upload_sessions`, `upload_session_parts` | `transient` | [tables_uploads.go](../../internal/meta/postgres/tables_uploads.go) | The multi-request upload sessions of R-STOR-011 with the repository written to (`repo_id`), the repository the client addressed (`addressed_repo_id`) and the format's `binding` (the OCI image name); the tables are not read or written by any code yet |
+| `oci_manifests`, `oci_references` | `data` | [tables.go](../../internal/formatdata/oci/tables.go) | A row per manifest of an image name and the references of a manifest to manifests and blobs of the same name (R-OCI-007); no blob column, so they never hold a blob against garbage collection |
+
+[00056_key_grammar](../../internal/meta/postgres/migrations/00056_key_grammar.sql) is a **contract** step (`requires-app >= 0.1.0`, so the compatibility floor does not move: pre-alpha, no replica of an older release has to keep serving): it
+replaces the checks `repositories_key_check` and `project_key_check` (and drops `repositories_key_dots`, which the grammar says by itself)
+with the OCI component grammar for every format (Q-OCI-3) and validates them in the same step. A key the earlier grammar allowed and this one
+refuses (`docker-`, `a.-b`, `web-`) stops the migration; the operator renames or removes that repository or project first. The checks are
+added `NOT VALID` and validated with `VALIDATE CONSTRAINT`, which lets reads and writes through. The statements the data port reads are in
+[oci.sql](../../internal/meta/postgres/queries/oci.sql); `test/integration/postgres/oci_test.go` pins the tables, the phases and both grammars at the database.
+
 ## M3 tables
 
 Migration [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) creates every table of the NuGet format

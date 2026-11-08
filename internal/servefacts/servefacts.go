@@ -22,6 +22,10 @@ const (
 	NPMRemote Kind = "npm_remote"
 	// NuGetLocal is the version row and the tombstone of a version in a local NuGet repository (R-NUGET-007).
 	NuGetLocal Kind = "nuget_local"
+	// OCILocal is the manifest row and the withheld mark of a manifest in a local OCI repository (R-OCI-033, Q-OCI-33). The key
+	// names the image name (Package); the digest is the item's own blob, so a tag item and a manifest item of one digest read the
+	// same rows.
+	OCILocal Kind = "oci_local"
 )
 
 // Key names the rows to read: a kind and the package and version, in the spelling the format's own queries use.
@@ -50,8 +54,10 @@ type NPMRemoteFacts struct {
 // Facts are the rows read for a key. Key is zero when nothing was read.
 type Facts struct {
 	Key Key
-	// Tombstoned: the version has a tombstone (NPMLocal, NuGetLocal).
+	// Tombstoned: the version has a tombstone (NPMLocal, NuGetLocal), or the manifest of the item is withheld (OCILocal).
 	Tombstoned bool
+	// OCIManifest: the repository holds the row of the manifest the item's blob is, under the key's image name (OCILocal).
+	OCIManifest bool
 	// Stored and Listed: the repository holds a live NuGet row for the version, and it is listed (NuGetLocal).
 	Stored, Listed bool
 	NPMRemote      NPMRemoteFacts

@@ -4,7 +4,7 @@ Every repository belongs to a project, and a project lets a team hold and admini
 
 ## What a project is
 
-- A project has a **Key**, a **Display name** and a **Description**. The key matches `^[a-z][a-z0-9-]{1,31}$` and cannot be changed; the display name has 1 to 128 characters, the description at most 1024.
+- A project has a **Key**, a **Display name** and a **Description**. The key matches `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` (2 to 32 characters: lower-case letters, digits and hyphens, starting with a letter and ending with a letter or digit) and cannot be changed; the display name has 1 to 128 characters, the description at most 1024.
 - **Every repository belongs to exactly one project** and is addressed inside it. The key of a repository is unique within its project only: projects `web` and `mobile` can each have a repository `npm-remote`. No repository is shared between projects; a public registry is proxied by a remote repository in each project that needs it, and the blob store keeps the content once.
 - The project is part of every address of a repository:
 
@@ -72,7 +72,7 @@ The system roles act in every project as they do outside projects: `admin` and `
 
 ## Repositories of a project
 
-A repository is created in its project: `POST /api/v1/projects/<projectKey>/repositories`, with the key of the repository in the body. Its key matches `^[a-z0-9][a-z0-9._-]{1,63}$` and is unique within the project; a key the project already holds answers `409 already_exists`. The members and the deployment target of a virtual repository are repositories of the same project, named by their bare keys; a repository of another project cannot be a member (`invalid_member`).
+A repository is created in its project: `POST /api/v1/projects/<projectKey>/repositories`, with the key of the repository in the body. Its key matches `^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$` (2 to 64 characters) and is unique within the project; a key the project already holds answers `409 already_exists`. The members and the deployment target of a virtual repository are repositories of the same project, named by their bare keys; a repository of another project cannot be a member (`invalid_member`).
 
 ### Remote repositories of an Owner
 

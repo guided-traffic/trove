@@ -336,7 +336,7 @@ func (r *remote) document(rq *formats.Request, d *proxy.Document, err error) (*f
 		max = f.Descriptor().MaxDocumentBytes
 	}
 	out := &formats.RemoteDocument{
-		Digest: d.Digest, Size: d.Size, FetchedAt: d.FetchedAt, ValidatedAt: d.ValidatedAt, ExpiresAt: d.ExpiresAt,
+		Digest: d.Digest, Size: d.Size, MediaType: d.MediaType, FetchedAt: d.FetchedAt, ValidatedAt: d.ValidatedAt, ExpiresAt: d.ExpiresAt,
 		GoneAt: d.GoneAt, Stale: d.Stale,
 		Status: formats.CacheStatus{
 			Hit: d.Status.Hit, Stale: d.Status.Stale, Stored: d.Status.Stored, Negative: d.Status.Negative,
@@ -407,6 +407,9 @@ func (a *adapter) PrepareFill(ctx context.Context, path, variant string, body io
 	out := proxy.Prepared{Data: p}
 	for _, m := range p.Mappings {
 		out.Mappings = append(out.Mappings, proxy.URLMapping{Path: m.Path.Path, Upstream: m.Upstream})
+	}
+	for _, al := range p.Aliases {
+		out.Aliases = append(out.Aliases, al.Path)
 	}
 	return out, nil
 }

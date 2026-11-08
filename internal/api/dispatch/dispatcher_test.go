@@ -528,3 +528,27 @@ func TestR_NUGET_001_ARepositoryOfAnotherFormatSaysSo(t *testing.T) {
 func (r *fakeRepos) ListProject(context.Context, string) ([]repository.Repository, error) {
 	return nil, nil
 }
+
+// rooted is a format with routes that declares the registry root: its address is /v2/<project>/<key>/, so the dispatcher gives it no
+// prefix below /api/ (Q-OCI-4). Its mount at /v2/ is the work package of the registry root.
+type rooted struct{ probe }
+
+func (rooted) Descriptor() formats.Descriptor {
+	d := probe{}.Descriptor()
+	d.ID, d.Layout, d.ProtocolBasePath, d.RegistryRoot = "rooted", "rooted", catalog.RegistryRootBasePath, true
+	return d
+}
+
+func TestR_ARCH_005_TheRegistryRootFormatGetsNoPrefixBelowAPI(t *testing.T) {
+	r := newRig(t)
+	d, err := New(Options{
+		Host: fakeHost{begun: &r.calls}, Decider: r.decider, Repos: r.repos,
+		Formats: func() []formats.Format { return []formats.Format{probe{}, rooted{}} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(d.Prefixes(), ","); got != "probe" {
+		t.Fatalf("prefixes = %s", got)
+	}
+}

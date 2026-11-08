@@ -947,8 +947,8 @@ Q-BAS-17). Each request passes these steps in order; the first that answers ends
    `/files/<projectKey>/<repoKey>/…` answer `404 bastion_not_served` (R-BAS-003): a protocol path needs four segments before
    its rest, a raw path three. `<projectKey>/<repoKey>` is the addressed repository's qualified name for the Bastion's
    bookkeeping (answer keys, the check, cache entries) until the main installation's `Trove-Bastion-Repository` confirms it; a
-   project segment that does not match `^[a-z][a-z0-9-]{1,31}$` or a key that does not match
-   `^[a-z0-9][a-z0-9._-]{1,63}$` (INV-5) answers `404` without a request, and so does `/api/npm/web` with one segment after
+   project segment that does not match `^[a-z][a-z0-9]*(?:-+[a-z0-9]+)*$` or a key that does not match
+   `^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$` (INV-5) answers `404` without a request, and so does `/api/npm/web` with one segment after
    the format. The Bastion reads no other part of a path. A family, format, project or key segment that is percent-encoded
    and a `.` or `..` segment are not classified: the path answers `404 bastion_not_served` (Q-BAS-121).
 4. **Per-address limits** (R-BAS-035) and **credentials** (R-BAS-019), including the failed-authentication timeout (R-BAS-036).

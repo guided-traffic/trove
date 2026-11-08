@@ -1524,8 +1524,8 @@
         <note category="location">src/app/core/http/problem-messages.ts:84</note>
       </notes>
       <segment>
-        <source>The key must have 2 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or digit, without two dots in a row and not ending in a dot.</source>
-        <target>Der Schlüssel muss 2 bis 64 Zeichen lang sein: Kleinbuchstaben, Ziffern, Punkt, Unterstrich oder Bindestrich, beginnend mit einem Buchstaben oder einer Ziffer, ohne zwei Punkte hintereinander und nicht mit einem Punkt endend.</target>
+        <source>The key must have 2 to 64 characters: lower-case letters and digits, separated by a single dot or underscore, a double underscore or hyphens; it starts and ends with a letter or digit.</source>
+        <target>Der Schlüssel muss 2 bis 64 Zeichen lang sein: Kleinbuchstaben und Ziffern, getrennt durch einen einzelnen Punkt oder Unterstrich, einen doppelten Unterstrich oder Bindestriche; er beginnt und endet mit einem Buchstaben oder einer Ziffer.</target>
       </segment>
     </unit>
     <unit id="problem.reserved_name">
@@ -13658,8 +13658,8 @@
         <note category="location">src/app/features/projects/project-dialog.ts:54,56</note>
       </notes>
       <segment>
-        <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter. Cannot be changed later.</source>
-        <target>Kleinbuchstaben, Ziffern und -, zwei bis 32 Zeichen, beginnt mit einem Buchstaben. Kann später nicht geändert werden.</target>
+        <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter and ending with a letter or digit. Cannot be changed later.</source>
+        <target>Kleinbuchstaben, Ziffern und -, zwei bis 32 Zeichen, beginnt mit einem Buchstaben und endet mit einem Buchstaben oder einer Ziffer. Kann später nicht geändert werden.</target>
       </segment>
     </unit>
     <unit id="project-dialog.display-name">
@@ -16724,8 +16724,8 @@
         <note category="location">src/app/features/repositories/repository-wizard.html:162,164</note>
       </notes>
       <segment>
-        <source> 2 to 64 characters: lower-case letters, digits, dot, underscore and hyphen. It is part of every address and cannot be changed later. It is unique within the project. </source>
-        <target> 2 bis 64 Zeichen: Kleinbuchstaben, Ziffern, Punkt, Unterstrich und Bindestrich. Er ist Teil jeder Adresse und lässt sich später nicht ändern. Er ist im Projekt eindeutig. </target>
+        <source> 2 to 64 characters: lower-case letters and digits, separated by a dot, an underscore, a double underscore or hyphens. It is part of every address and cannot be changed later. It is unique within the project. </source>
+        <target> 2 bis 64 Zeichen: Kleinbuchstaben und Ziffern, getrennt durch einen Punkt, einen Unterstrich, einen doppelten Unterstrich oder Bindestriche. Er ist Teil jeder Adresse und lässt sich später nicht ändern. Er ist im Projekt eindeutig. </target>
       </segment>
     </unit>
     <unit id="repo.key.checking">

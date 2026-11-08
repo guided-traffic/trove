@@ -81,7 +81,7 @@ export function describeProblem(error: ApiError): ProblemText {
     case 'repository_referenced':
       return known($localize`:@@problem.repository_referenced:Other repositories still include this one.`);
     case 'invalid_key':
-      return known($localize`:@@problem.invalid_key:The key must have 2 to 64 characters: lower-case letters, digits, dot, underscore or hyphen, starting with a letter or digit, without two dots in a row and not ending in a dot.`);
+      return known($localize`:@@problem.invalid_key:The key must have 2 to 64 characters: lower-case letters and digits, separated by a single dot or underscore, a double underscore or hyphens; it starts and ends with a letter or digit.`);
     case 'reserved_name':
       return known($localize`:@@problem.reserved_name:This name is reserved.`);
     case 'invalid_pattern':

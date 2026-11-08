@@ -200,6 +200,9 @@ type Request struct {
 type Document struct {
 	Digest [32]byte
 	Size   int64
+	// MediaType is the media type of the upstream's answer that the document was stored from, without parameters; "" when the
+	// upstream sent none.
+	MediaType string
 	// Bytes reads the document, from the replica's cache by digest or the object
 	// store.
 	Bytes                             func(ctx context.Context) ([]byte, error)
@@ -297,6 +300,11 @@ func (b UpstreamBase) Segments(segs ...string) (*url.URL, error) {
 type Prepared struct {
 	// Mappings are the URL-map rows of R-REPO-043, for the document's own package.
 	Mappings []URLMapping
+	// Aliases are further repository paths the fetched document is entered under, as artifacts of the repository: in the fill
+	// transaction each becomes an item for the same blob and an artifact cache entry of the path, so that a document fetched under
+	// one name (a tag) is served under the other (its digest) without a request to the upstream (R-OCI-022). The format names
+	// only paths it derived from the document's own bytes. A path that is stored already is left as it is.
+	Aliases []string
 	// Data is format data handed to OnFill.
 	Data any
 }

@@ -15,24 +15,37 @@ import (
 // endpoint and host resolved (R-EP-003, R-ARCH-006, R-ARCH-007). It is the one place
 // a format's links come from: nothing reads the Host header.
 type linkBuilder struct {
-	base   string
-	format formats.ID
-	key    qname.Repo
+	base string
+	// template is the protocol base path of the request's format (catalog.Facts.ProtocolBasePath).
+	template string
+	key      qname.Repo
+	// bound is true on a host whose root is bound to the repository (EndpointFacts.Bound).
+	bound bool
 }
 
 var _ formats.LinkBuilder = linkBuilder{}
 
-func newLinks(rq *formats.Request) linkBuilder {
+func newLinks(rq *formats.Request, template string) linkBuilder {
 	return linkBuilder{
-		base:   strings.TrimSuffix(httpserver.InfoFrom(rq.Context()).BaseURL, "/"),
-		format: formats.ID(rq.Repo.Format), key: rq.Repo.Name,
+		base:     strings.TrimSuffix(httpserver.InfoFrom(rq.Context()).BaseURL, "/"),
+		template: template, key: rq.Repo.Name, bound: rq.Endpoint.Bound,
 	}
 }
 
 func (l linkBuilder) Base() string { return l.base }
 
 func (l linkBuilder) Registry(serving qname.Repo) string {
-	return l.base + qname.ProtocolBase("/api/"+string(l.format)+"/{project}/{key}/", serving)
+	if l.bound {
+		return l.base + strings.Replace(l.template, "{project}/{key}/", "", 1)
+	}
+	return l.base + qname.ProtocolBase(l.template, serving)
+}
+
+func (l linkBuilder) ClientName(name string) string {
+	if l.bound {
+		return name
+	}
+	return l.key.Project + "/" + l.key.Key + "/" + name
 }
 
 func (l linkBuilder) Repository() string { return l.Registry(l.key) }

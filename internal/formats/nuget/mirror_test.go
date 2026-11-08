@@ -54,6 +54,11 @@ func newFakeUpstream(catalog, search bool) *fakeUpstream {
 
 func (f *fakeUpstream) Base() *url.URL { u, _ := url.Parse(fakeBase + "/index.json"); return u }
 
+// Artifact implements discover.Upstream: the fake holds no artifacts.
+func (f *fakeUpstream) Artifact(context.Context, string, int64) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
 func (f *fakeUpstream) Settings() json.RawMessage { return nil }
 
 func (f *fakeUpstream) Get(_ context.Context, u *url.URL, _ string, max int64) (*discover.Response, error) {

@@ -75,7 +75,7 @@ func itemFrom(repoKey qname.Repo, key servefacts.Key, r q.GetLiveItemRow) Item {
 	// with the key and the serve check reads the rows itself.
 	if !key.Zero() && string(key.Kind) == r.FactKind {
 		it.Facts = servefacts.Facts{
-			Key: key, Tombstoned: r.FactTombstoned, Stored: r.FactNugetStored, Listed: r.FactNugetListed,
+			Key: key, Tombstoned: r.FactTombstoned, OCIManifest: r.FactOciManifest, Stored: r.FactNugetStored, Listed: r.FactNugetListed,
 			NPMRemote: servefacts.NPMRemoteFacts{
 				Known: r.FactNpmKnown, Listed: r.FactNpmListed, Integrity: r.FactNpmIntegrity, Shasum: r.FactNpmShasum,
 				DocStored: r.FactNpmDocStored, DocCurrent: r.FactNpmDocCurrent, DocGoneUs: r.FactNpmGoneUs, ServeRemoved: r.FactNpmServeRemoved,

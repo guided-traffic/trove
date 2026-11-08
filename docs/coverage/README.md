@@ -19,11 +19,11 @@ regenerated.
 |---|---|---|
 | **Implemented** | **15.6%** (350 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (394 of 394) | measured from `Covers:` lines |
-| P1 features covered by spec requirements | 56.4% (290 of 514) | measured from `Covers:` lines |
-| In-scope features covered (MVP, P1, P2, Later) | 32.5% (704 of 2,167) | measured from `Covers:` lines |
+| P1 features covered by spec requirements | 64.2% (330 of 514) | measured from `Covers:` lines |
+| In-scope features covered (MVP, P1, P2, Later) | 34.6% (750 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 695 on 16 pages (545 MVP, 144 P1, 6 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 149 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 730 on 17 pages (545 MVP, 179 P1, 6 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 154 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
 **What the owner constraints of 2026-10-28 changed.** The tables were regenerated on 2026-10-29,
@@ -52,11 +52,11 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 394 | 394 | 0 | 100% | 394 | 280 |
-| **P1** | 514 | 290 | 224 | 56.4% | 68 | 61 |
-| **P2** | 885 | 20 | 865 | 2.3% | 12 | 9 |
+| **P1** | 514 | 330 | 184 | 64.2% | 68 | 61 |
+| **P2** | 885 | 26 | 859 | 2.9% | 12 | 9 |
 | **Later** | 374 | 0 | 374 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 704 | 1,535 | 31.4% | 474 | 350 |
+| **Total** | 2,239 | 750 | 1,489 | 33.5% | 474 | 350 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -97,7 +97,7 @@ Each page name links to that page's section of the checklist.
 | [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 9 | 5 |
 | [Beyond the baseline: further formats and capabilities](checklist.md#beyond-the-baseline-further-formats-and-capabilities-beyond) | 34 | 0 | 5 | 26 | 3 | 0 | 2 | 32 |
 
-Per-format pages (38 pages, 782 features, 106 specified):
+Per-format pages (38 pages, 782 features, 152 specified):
 
 <details>
 <summary>38 format pages</summary>
@@ -106,8 +106,8 @@ Per-format pages (38 pages, 782 features, 106 specified):
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | [npm package format](checklist.md#npm-package-format-pkg-npm) | 62 | 37 | 15 | 8 | 1 | 1 | 52 | 10 |
 | [NuGet](checklist.md#nuget-pkg-nuget) | 56 | 35 | 7 | 12 | 2 | 0 | 42 | 14 |
-| [Docker image format](checklist.md#docker-image-format-pkg-docker) | 52 | 0 | 34 | 13 | 3 | 2 | 1 | 51 |
-| [OCI images and artifacts](checklist.md#oci-images-and-artifacts-pkg-oci) | 20 | 0 | 15 | 4 | 1 | 0 | 0 | 20 |
+| [Docker image format](checklist.md#docker-image-format-pkg-docker) | 52 | 0 | 34 | 13 | 3 | 2 | 33 | 19 |
+| [OCI images and artifacts](checklist.md#oci-images-and-artifacts-pkg-oci) | 20 | 0 | 15 | 4 | 1 | 0 | 14 | 6 |
 | [Helm chart format](checklist.md#helm-chart-format-pkg-helm) | 25 | 0 | 18 | 6 | 1 | 0 | 0 | 25 |
 | [Maven package format](checklist.md#maven-package-format-pkg-maven) | 39 | 0 | 23 | 15 | 1 | 0 | 0 | 39 |
 | [PyPI package format](checklist.md#pypi-package-format-pkg-pypi) | 29 | 0 | 23 | 6 | 0 | 0 | 0 | 29 |

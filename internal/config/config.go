@@ -43,6 +43,8 @@ type Config struct {
 
 	// The M3 sections.
 	NuGet NuGet `yaml:"nuget"`
+	// The OCI registry (oci.go).
+	OCI OCI `yaml:"oci"`
 
 	// The M4 section: the GitLab CI OIDC federation (ci.go).
 	CI CI `yaml:"ci"`

@@ -699,6 +699,34 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 
 func (i ingestor) Close(formats.Spooled) {}
 
+// Link commits an item with the content of the item named by from (the Host's own repository only), which the Host must hold live and the caller (HostOptions.Allow) may
+// read; anything else is errs.NotFound, as the production host answers (ADR-161). The commit is Commit's, hooks included.
+func (i ingestor) Link(ctx context.Context, rq *formats.Request, from formats.SourceRef, c formats.Commit) (formats.Committed, error) {
+	h := i.h
+	if from.Repo != h.ref.Name { // the in-memory Host holds one repository
+		return formats.Committed{}, errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
+	}
+	h.mu.Lock()
+	rec := h.items[from.Path]
+	var data []byte
+	if rec != nil && !rec.removed {
+		data = append([]byte(nil), rec.data...)
+	}
+	h.mu.Unlock()
+	if rec == nil || rec.removed {
+		return formats.Committed{}, errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
+	}
+	if h.opts.Allow != nil {
+		if err := h.opts.Allow(formats.Target{Path: from.Path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+			return formats.Committed{}, errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
+		}
+	}
+	if len(c.Companions) > 0 {
+		return formats.Committed{}, errs.E(errs.Internal, errs.CodeInternal, "A linked commit takes no companions.")
+	}
+	return i.Commit(ctx, rq, Spool(data), c)
+}
+
 // Remove removes the items at the paths and runs OnItemsRemoved in the same
 // transaction; reason is "delete", "trash", "move" or "purge".
 func (h *Host) Remove(ctx context.Context, rq *formats.Request, reason string, paths ...string) error {

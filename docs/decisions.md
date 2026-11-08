@@ -194,6 +194,7 @@ checked every earlier decision against them:
 | [ADR-158](#adr-158--a-journal-object-is-an-envelope-around-the-producers-entry-and-replay-is-a-registry-of-handlers) | A journal object is an envelope around the producer's entry, and replay is a registry of handlers | Decided by the development agent — owner review at the walkthrough |
 | [ADR-159](#adr-159--the-data-state-the-format-contract-carries-says-whether-the-ecosystem-has-synced-since-the-last-restore) | The data state the format contract carries says whether the ecosystem has synced since the last restore | Decided by the development agent — owner review at the walkthrough |
 | [ADR-160](#adr-160--the-catalog-says-which-formats-always-verify-the-announced-digest) | The catalog says which formats always verify the announced digest | Decided by the development agent — owner review at the walkthrough |
+| [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) | The format contract gains the registry root, the upstream handshake, HEAD revalidation and upload sessions | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6062,6 +6063,76 @@ download); the evaluation reading `restored_at` itself on each miss (a query per
 
 **Spec:** [spec/formats/npm.md](spec/formats/npm.md) R-NPM-025, Q-NPM-79; [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-041.
 
+### ADR-161 · The format contract gains the registry root, the upstream handshake, HEAD revalidation and upload sessions
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The OCI registry ([formats/oci.md](spec/formats/oci.md), T-16) needs things the frozen format contract (ADR-141,
+R-ARCH-025) does not say: a client address at the root of a host (`/v2/<project>/<key>/`, [Q-OCI-4](spec/formats/oci.md#q-oci-4--the-registry-root-is-mounted-through-the-format-contract-its-repository-less-routes-are-the-cores)),
+a token handshake with the upstream, a revalidation by `HEAD` and a manifest entered under its digest
+([Q-OCI-13](spec/formats/oci.md#q-oci-13--remotes-the-handshakes-io-in-the-core-revalidation-by-head-a-namespace-prefix-in-the-url),
+[Q-OCI-25](spec/formats/oci.md#q-oci-25--a-remote-manifest-keeps-its-media-type-in-the-cache-entry-and-is-entered-under-its-digest-in-the-fill-transaction)),
+uploads over several requests and replicas and the commit of an item for a blob that is stored already
+([Q-OCI-12](spec/formats/oci.md#q-oci-12--uploads-use-the-sessions-of-r-stor-011-mounts-name-their-source-no-automatic-mount),
+[Q-OCI-26](spec/formats/oci.md#q-oci-26--upload-session-calls-repeat-a-session-reference-the-host-decides-and-a-416-carries-the-received-count-as-a-value),
+[Q-OCI-27](spec/formats/oci.md#q-oci-27--a-link-names-the-source-item-and-the-host-checks-it)), a removal that cascades without a request
+([Q-OCI-24](spec/formats/oci.md#q-oci-24--a-storage-hook-cascades-through-the-host-and-a-removal-without-a-request-has-a-system-actor)), the package of a route
+([Q-OCI-29](spec/formats/oci.md#q-oci-29--a-route-declares-its-package-parameter-and-the-link-builder-knows-a-bound-host)), and a plan of a mirror that reads a child manifest
+through the engine ([Q-OCI-16](spec/formats/oci.md#q-oci-16--what-a-mirror-of-a-registry-discovers-and-keeps)).
+
+**Decision.** Additions only, so `ContractVersion` stays 2 and no format changes:
+
+- `catalog.Facts` gains `RegistryRoot` (the one format whose `ProtocolBasePath` is `catalog.RegistryRootBasePath`,
+  `/v2/{project}/{key}/`; the catalog refuses a second one and a base path that differs) and `DefaultCredentialHosts` (the entries of
+  `DefaultExtraHosts` proposed with `sendCredentials: true`; each must be one of them). `formats.Validate` takes the registry's base
+  path for the format that declares the root and `/api/<id>/{project}/{key}/` for every other.
+- `Refusal` gains no field: `Refusal.Registry()` reads the protocol base path from the catalog by `Format`, and the host's link
+  builder takes it from the descriptor. `SetupData` gains `ImagePrefix` (`<host>/<projectKey>/<repoKey>` for the registry-root format,
+  empty for every other). `LinkBuilder` gains `ClientName` (the package name as the client of the request's host spells it) and renders
+  the registry without project and key on a host whose root is bound to the repository (`EndpointFacts.Bound`, set by the dispatcher).
+  `Route` gains `PackageParam`, the placeholder that holds the route's package, so that the core knows the image name format-neutrally.
+- `RemoteAdapter` gains the optional interfaces `Authenticator` (its `TokenRequest` receives the upstream request that was answered
+  401) and `Revalidator`, found by `CapabilitiesOf` into `RemoteCaps.Auth` and `RemoteCaps.Revalidate`; the engine reads a revalidation
+  answer that is not 2xx itself. `RemoteDocument` carries `MediaType` next to the digest it has, filled from the new column
+  `remote_cache_entries.media_type`; `Prepared` gains `Aliases`, the paths the engine enters a fetched document under, as artifacts
+  and items for the same blob, in the fill transaction.
+- `ItemsEvent` gains `Cascade`, which removes in the transaction of the event and runs the hook again, as the actor of the removal or
+  as the system actor `removal`.
+- `Host` gains `Uploads() UploadSessions` (`UploadSessions`, `UploadSession`, `SessionRef`: the port of R-STOR-011; every call repeats
+  the id and the binding, and the host decides principal, binding and `deploy` on the session's target), and `Ingestor` gains
+  `Link(ctx, rq, from SourceRef, c Commit)`, the commit of an item with the content of a source item named by the qualified name of its
+  repository and a path ([Q-OCI-32](spec/formats/oci.md#q-oci-32--a-link-names-its-source-by-repository-name-and-path-and-the-host-resolves-it)): the host resolves the repository by name (a virtual one
+  through its members), and checks the item (live, untrashed, served, not blocked, readable by the caller), without a body.
+- `servefacts` gains the kind `oci_local` (`formats.ServeOCILocal`) and `Facts.OCIManifest`: the item lookup of a download returns the
+  manifest row and whether a tombstone withholds the item's digest in its one statement (R-ARCH-027,
+  [Q-OCI-33](spec/formats/oci.md#q-oci-33--a-manifest-the-journal-replay-withheld-is-refused-by-the-serve-check-from-facts-read-with-the-item-and-an-administrator-reinstates-it)); the format's `ServeCheck` refuses a withheld manifest. The journal replay of
+  `oci.manifest.deleted` withholds and never deletes (R-HA-054); `trove admin oci reinstate` is the way back.
+- `discover.Upstream` gains `Artifact`, the fill of an artifact through the format's gate and the engine as a background request of
+  the pass; an artifact above `max` answers `found` with no body.
+
+The surface file is regenerated with `go test ./internal/formats -run TestR_ARCH_025 -update-contract`, and the blocks of R-ARCH-008
+and R-ARCH-009 name the additions. The production host builds `Link` and `Cascade` with the work package of the contract (item store
+`CommitLinked` and `LinkIn`, blob store `LinkExisting`); `Host.Uploads` and `discover.Upstream.Artifact` answer `not_implemented` until
+their work packages land. The in-memory host of the conformance kit implements `Link` and takes an `UploadSessions` in its options.
+The audit event `oci.manifest.deleted` carries the revocation journal flag, and its replay (which withholds), the reinstate command and the
+push refusal for a withheld digest are the work package of the deletion
+([Q-OCI-30](spec/formats/oci.md#q-oci-30--the-deletion-of-a-manifest-is-journaled-so-a-restore-does-not-serve-a-deleted-image-again)).
+An upstream 429 has the error code `upstream_rate_limited` (kind unavailable), so that a format can tell it from an overload of trove.
+
+**Consequences.** The facts `RegistryRoot` and `DefaultCredentialHosts` are checked at registration, so a second format cannot take
+`/v2/`. The dispatcher mounts the prefix `/api/<id>/` of the formats that do not declare the root and none for the one that does; the
+mount of `/v2/` is the work package of the registry root, and until it exists the format `oci` registers with the class `local`, its
+routes are served nowhere and answer 501 in the conformance kit. Migration 00056 tightens the key grammar of every format
+([Q-OCI-31](spec/formats/oci.md#q-oci-31--the-key-grammar-migration-adds-its-checks-directly-and-folds-the-composite-names)) as a contract step.
+
+**Alternatives considered.** A rewrite at the edge from `/v2/` to `/api/oci/` (R-HA-041 forbids edge rewrites); a second dispatcher for
+`/v2/` (every check of the dispatcher twice); an upload port owned by the format (the sessions and their claims would be written once per
+format); a field `Refusal.Base` (a new member for a fact the catalog holds); a bare digest for `Link` (a caller could link any blob).
+
+**Revisit condition:** a second format needs the root of a host, or an upload session needs more than one blob per session.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) Q-OCI-3, Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16, Q-OCI-24 to Q-OCI-34; [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009; [spec/storage.md](spec/storage.md) R-STOR-011.
+
 ### ADR-167 · The pinned tools of a CI job come from a verified cache, not from a live release download
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -6905,6 +6976,40 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NUGET-110](spec/formats/nuget.md#q-nuget-110--a-feed-page-without-a-name-is-a-page-and-its-cursor-is-the-progress) | May a feed call return no name? | (a) yes, with the moved cursor | — |
 | [Q-NUGET-111](spec/formats/nuget.md#q-nuget-111--the-fixture-of-the-nuget-drain-load-repositories-restore-project-and-pushed-archives) | What is the fixture of the NuGet drain load? | (a) three repositories of their own, a 61-package project of one corpus root, pushed archives built beforehand by the test upstream's generator | — |
 | [Q-NUGET-112](spec/formats/nuget.md#q-nuget-112--two-replayed-additions-of-one-version-that-name-different-bytes-leave-its-number-refusing-every-package) | What does the replay do with two additions of one version that name different bytes? | (c) the reservation becomes `removed`, so the number refuses every package, and the replay warns with both digests; rejected: first entry wins, admitting every digest, a tombstone kind of its own, the restored row, authenticated entries, an administrator release | — |
+| [Q-OCI-1](spec/formats/oci.md#q-oci-1--one-format-oci-serves-docker-and-oci-content-on-the-page-formatsocimd-with-the-prefix-r-oci) | Does one format serve Docker images and OCI content? | (a) One format `oci`, display name "OCI (Docker)", one page `oci.md` | — |
+| [Q-OCI-2](spec/formats/oci.md#q-oci-2--what-this-phase-builds-and-what-stays-in-f4) | What does the Docker registry phase build and what stays in F4? | (a) The registry for Docker CLI and Podman in full, remote in both modes, virtual, bound hosts, Kubernetes pulls and Buildx push; BuildKit caches, ORAS, Cosign and the other clients stay in F4 | — |
+| [Q-OCI-3](spec/formats/oci.md#q-oci-3--repository-and-project-keys-follow-the-oci-component-grammar-for-every-format) | Which grammar do repository and project keys follow? | (a) The OCI component grammar for every format, applied with migration 00056 and the OpenAPI patterns | — |
+| [Q-OCI-4](spec/formats/oci.md#q-oci-4--the-registry-root-is-mounted-through-the-format-contract-its-repository-less-routes-are-the-cores) | How is the registry root mounted? | (a) `ProtocolBasePath` `/v2/{project}/{key}/` for the one format that declares `RegistryRoot`, the dispatcher mounts it like `/api/<id>/`; `/v2/`, `/v2/_catalog` and `/v2/_token` are core routes; `SetupData.ImagePrefix` | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-5](spec/formats/oci.md#q-oci-5--bearer-token-service-with-short-lived-self-contained-registry-tokens-trove-tokens-also-accepted-directly) | How do clients authenticate against the registry? | (a) A `Bearer` challenge and a token service at `/v2/_token` issuing short-lived self-contained registry tokens; trove tokens also accepted directly | — |
+| [Q-OCI-6](spec/formats/oci.md#q-oci-6--a-token-grant-is-the-coarse-check-per-scope-entry-and-a-ceiling-only) | What does a token grant mean? | (a) The coarse check of the route kind per scope entry, a ceiling only; each request is decided again | — |
+| [Q-OCI-7](spec/formats/oci.md#q-oci-7--manifests-tags-and-blobs-are-items-a-tag-item-holds-the-manifests-bytes-and-two-side-tables-hold-the-graph) | How are manifests, tags and blobs stored? | (a) Items `_manifests`, `_tags`, `_blobs`; a tag item holds the manifest's bytes; `oci_manifests` and `oci_references` hold the graph | — |
+| [Q-OCI-8](spec/formats/oci.md#q-oci-8--four-manifest-types-no-schema-1-no-conversion-4-mib) | Which manifest types are accepted? | (a) OCI manifest and index, Docker schema 2 and manifest list; no schema 1, no conversion, 4 MiB | — |
+| [Q-OCI-9](spec/formats/oci.md#q-oci-9--sha-256-is-the-only-digest-algorithm) | Which digest algorithms are accepted? | (a) `sha256` only | — |
+| [Q-OCI-10](spec/formats/oci.md#q-oci-10--references-must-exist-except-a-subject-and-foreign-layers) | Which references must exist at a manifest push? | (a) Every config, layer and index entry, except a `subject` and foreign layers | — |
+| [Q-OCI-11](spec/formats/oci.md#q-oci-11--delete-is-supported-with-cascades-and-refusals-untagged-manifests-stay) | What does `DELETE` do? | (a) Tags, manifests and unreferenced blobs with cascades and refusals; untagged manifests stay; unreferenced blob items are swept after a grace | — |
+| [Q-OCI-12](spec/formats/oci.md#q-oci-12--uploads-use-the-sessions-of-r-stor-011-mounts-name-their-source-no-automatic-mount) | How are blobs uploaded and mounted? | (a) The sessions of R-STOR-011 for uploads across requests, a single-request `POST` without a session, a mount names its source with `from`, no automatic mount | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-13](spec/formats/oci.md#q-oci-13--remotes-the-handshakes-io-in-the-core-revalidation-by-head-a-namespace-prefix-in-the-url) | How does a remote authenticate against and revalidate at a registry? | (a) The optional interfaces `Authenticator` and `Revalidator` of the remote adapter, a namespace prefix in the URL, the catalog fact `DefaultCredentialHosts` | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-14](spec/formats/oci.md#q-oci-14--library-only-for-the-docker-hub-upstream) | When is `library/` added to a name? | (a) Only for the Docker Hub upstream | — |
+| [Q-OCI-15](spec/formats/oci.md#q-oci-15--a-remotes-tags-list-is-a-cached-document-its-referrers-are-passed-through) | How are a remote's tags list and referrers served? | (a) The tags list as a cached document `_taglist`, referrers passed through | — |
+| [Q-OCI-16](spec/formats/oci.md#q-oci-16--what-a-mirror-of-a-registry-discovers-and-keeps) | What does a mirror of a registry discover and keep? | (a) Names from the catalog or the include patterns, tags by `oci.mirror`, platforms; `SelectItems` counts versions, `discover.Upstream.Artifact` | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-17](spec/formats/oci.md#q-oci-17--the-tag-order-of-the-format) | In which order are tags? | (a) Version-aware: versions by number, then by suffix, other tags after them | — |
+| [Q-OCI-18](spec/formats/oci.md#q-oci-18--virtual-resolution-tags-by-member-order-with-locals-first-digests-by-tiers-lists-merged-missing-blobs-linked-from-members) | How does a virtual repository resolve? | (a) Tags by member order with locals first, digests by tiers, lists merged, missing blobs linked from members | — |
+| [Q-OCI-19](spec/formats/oci.md#q-oci-19--the-catalog-lists-readable-names-of-local-and-remote-repositories) | Which names does the catalog list? | (a) Readable names of local repositories and remote caches | — |
+| [Q-OCI-20](spec/formats/oci.md#q-oci-20--the-version-check-answers-401-to-a-caller-without-credentials) | What does the version check answer without credentials? | (a) 401 with the challenge | — |
+| [Q-OCI-21](spec/formats/oci.md#q-oci-21--the-real-clients-and-the-conformance-suite-in-the-test-tiers) | Which clients and suites test the registry? | (a) Docker with Buildx and Podman in a privileged client pod, the conformance suite v1.1.1 in the integration tier | — |
+| [Q-OCI-22](spec/formats/oci.md#q-oci-22--a-formats-mirror-settings-live-in-mirror-and-are-kept-like-the-patterns) | Where do a format's mirror settings live? | (a) The member `<format>.mirror`, kept from Owners like the patterns | — |
+| [Q-OCI-23](spec/formats/oci.md#q-oci-23--no-exposure-rules-and-no-bastion-for-the-format-in-this-phase) | Do exposure rules and the Bastion cover the format? | (a) No: `Exposure()` returns nil and the Bastion does not serve `/v2/` | — |
+| [Q-OCI-24](spec/formats/oci.md#q-oci-24--a-storage-hook-cascades-through-the-host-and-a-removal-without-a-request-has-a-system-actor) | Does a storage hook cascade, and as whom? | (a) `ItemsEvent.Cascade` removes in the transaction of the event; the system actor `removal` when there was no request | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-25](spec/formats/oci.md#q-oci-25--a-remote-manifest-keeps-its-media-type-in-the-cache-entry-and-is-entered-under-its-digest-in-the-fill-transaction) | Where does a remote manifest keep its media type, and how is it entered under its digest? | (a) `remote_cache_entries.media_type` and `Prepared.Aliases` entered in the fill transaction | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-26](spec/formats/oci.md#q-oci-26--upload-session-calls-repeat-a-session-reference-the-host-decides-and-a-416-carries-the-received-count-as-a-value) | How are the calls of an upload session checked? | (a) `SessionRef{ID, Binding}` on every call, the host decides, a 416 carries the received count as a value | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-27](spec/formats/oci.md#q-oci-27--a-link-names-the-source-item-and-the-host-checks-it) | What does a link take its content from? | (a) A source item the host checks, not a bare digest | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-28](spec/formats/oci.md#q-oci-28--the-platform-is-a-fact-of-the-reference-from-an-index-to-a-child-a-few-schema-rules-for-the-port) | Where does the platform of a child live, and which schema rules does the port follow? | (a) On the reference from the index; `annotations_cut`, the referrers index with the digest, one row per target, rows kept across the trash | — |
+| [Q-OCI-29](spec/formats/oci.md#q-oci-29--a-route-declares-its-package-parameter-and-the-link-builder-knows-a-bound-host) | How does the core learn the image name, and how do links work on a bound host? | (a) `Route.PackageParam`, `EndpointFacts.Bound`, `LinkBuilder.ClientName` | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-30](spec/formats/oci.md#q-oci-30--the-deletion-of-a-manifest-is-journaled-so-a-restore-does-not-serve-a-deleted-image-again) | Is the deletion of a manifest journaled? | (a) The event `oci.manifest.deleted` with the journal flag and the table `oci_tombstones` for what the replay withheld; the replay is built with the deletion | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-31](spec/formats/oci.md#q-oci-31--the-key-grammar-migration-adds-its-checks-directly-and-folds-the-composite-names) | How does the key grammar migration shape its checks? | (a) Direct checks, the composite names folded in, floor 0.1.0, no rename as the remedy | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-32](spec/formats/oci.md#q-oci-32--a-link-names-its-source-by-repository-name-and-path-and-the-host-resolves-it) | How does a link name its source? | (a) `SourceRef{Repo, Path}`; the host resolves the repository by name, through the members of a virtual one, and checks the item | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-33](spec/formats/oci.md#q-oci-33--a-manifest-the-journal-replay-withheld-is-refused-by-the-serve-check-from-facts-read-with-the-item-and-an-administrator-reinstates-it) | How is a withheld manifest refused, and how does it come back? | (a) The serve-facts kind `oci_local` in the one statement of the lookup; the replay withholds, `trove admin oci reinstate` reinstates; a push of the digest is refused meanwhile | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) |
+| [Q-OCI-34](spec/formats/oci.md#q-oci-34--the-rows-of-a-remote-manifest-are-tied-to-its-alias-item) | What owns the rows of a remote manifest? | (a) The alias item `<name>/_manifests/<digest>`; tag documents own none | — |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

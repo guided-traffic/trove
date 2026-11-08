@@ -37,8 +37,8 @@ Every repository belongs to exactly one project, for example the project `web` o
 
 Keys are set when the repository is created and cannot be renamed:
 
-- 2 to 64 characters: lower-case letters, digits, `.`, `_` and `-`
-- it starts with a letter or a digit, does not end with `.` and does not contain `..`
+- 2 to 64 characters: lower-case letters and digits, separated by one `.`, one `_`, two `_` or any number of `-`
+- it starts and ends with a letter or a digit, so `docker-local` and `docker.hub` are accepted and `docker-` and `a.-b` are not
 
 Your client reaches a repository at an address built from the installation's address, the project key and the repository key:
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // Metadata is the request path of R-REPO-025 for a metadata document, steps 4 to 10.
@@ -265,7 +267,7 @@ func (e *Engine) storedStatus(en entry) CacheStatus {
 // fills the entry again (Q-REPO-202).
 func (e *Engine) document(en entry, cs CacheStatus) *Document {
 	d := &Document{
-		Digest: en.Digest, Size: en.Size, FetchedAt: en.FetchedAt, ValidatedAt: en.ValidatedAt,
+		Digest: en.Digest, Size: en.Size, MediaType: en.MediaType, FetchedAt: en.FetchedAt, ValidatedAt: en.ValidatedAt,
 		ExpiresAt: en.ExpiresAt, GoneAt: en.GoneAt, Stale: cs.Stale, Status: cs,
 	}
 	digest, size := en.Digest, en.Size
@@ -522,7 +524,7 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 			rows, err := qs.ProxyMetadataUpsert(ctx, q.ProxyMetadataUpsertParams{
 				RepoID: rem.id, Path: rq.Path, Variant: rq.Variant, BlobSha256: sp.SHA256[:], UpstreamUrl: stripUser(f.finalURL(resp)),
 				UpstreamEtag: ev.ETag, LastModifiedUs: unixMicro(ev.LastModified), FetchedUs: fetchedUs, TtlSeconds: ttl,
-				Force: decision == FillReplaceStored,
+				Force: decision == FillReplaceStored, MediaType: mediaType(resp.Header.Get("Content-Type")),
 			})
 			if err != nil {
 				return err
@@ -540,6 +542,9 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 		// stored, and a signal of the engine would carry no package (R-REPO-020).
 		if !renewed && !out.keptNewer {
 			if err := f.recordMappings(ctx, qs, prepared); err != nil {
+				return err
+			}
+			if err := f.enterAliases(ctx, tx, qs, resp, sp, prepared); err != nil {
 				return err
 			}
 		}
@@ -573,6 +578,52 @@ func lastModified(h http.Header) time.Time {
 		return time.Time{}
 	}
 	return t.UTC()
+}
+
+// mediaType is the media type of a Content-Type value without its parameters, "" when the value is none.
+func mediaType(ct string) string {
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return ""
+	}
+	return mt
+}
+
+// enterAliases enters the fetched document under the further paths the format named (Prepared.Aliases): an item of the repository for
+// the same blob and an artifact entry that names it, in the fill transaction, so that the document is served under each of the
+// paths without a request to the upstream. A path that holds an entry already keeps it (an entry is never replaced, R-REPO-041).
+func (f *fetcher) enterAliases(ctx context.Context, tx meta.Tx, qs *q.Queries, resp *http.Response, sp *items.Spooled, prepared Prepared) error {
+	rq := f.rq
+	rem := rq.Remote
+	if len(prepared.Aliases) == 0 {
+		return nil
+	}
+	final := stripUser(f.finalURL(resp))
+	for _, path := range prepared.Aliases {
+		if path == rq.Path {
+			continue
+		}
+		if held, err := qs.ProxyEntryLock(ctx, q.ProxyEntryLockParams{RepoID: rem.id, Path: path, Variant: ""}); err != nil {
+			return err
+		} else if len(held) > 0 {
+			continue
+		}
+		res, err := f.e.o.Items.LinkIn(ctx, tx, items.CommitSpec{
+			Repo: rem.Repo, Path: repository.Cleaned{Path: path}, MediaType: mediaType(resp.Header.Get("Content-Type")),
+			Origin: items.OriginFill, UpstreamURL: final, MayOverwrite: true,
+			Actor: auditActor(rq.Caller), Source: rq.Caller.Source, Endpoint: rq.Caller.Endpoint,
+		}, sp.Digests)
+		if err != nil {
+			return err
+		}
+		if _, err := qs.ProxyArtifactInsert(ctx, q.ProxyArtifactInsertParams{
+			RepoID: rem.id, Path: path, Variant: "", ItemID: res.Item.ID, BlobSha256: sp.SHA256[:], UpstreamUrl: final,
+			UpstreamEtag: resp.Header.Get("ETag"), LastModifiedUs: unixMicro(lastModified(resp.Header)),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // recordMappings writes the URL-map rows of a document (R-REPO-043): only for paths

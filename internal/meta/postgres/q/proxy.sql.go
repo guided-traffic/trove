@@ -279,6 +279,7 @@ SELECT e.kind,
        b.content_status AS blob_content_status,
        e.upstream_url,
        COALESCE(e.upstream_etag, '')::text AS upstream_etag,
+       COALESCE(e.media_type, '')::text AS media_type,
        COALESCE((extract(epoch FROM e.upstream_last_modified) * 1000000)::bigint, 0)::bigint AS last_modified_us,
        (extract(epoch FROM e.fetched_at) * 1000000)::bigint AS fetched_us,
        (extract(epoch FROM e.validated_at) * 1000000)::bigint AS validated_us,
@@ -306,6 +307,7 @@ type ProxyEntryGetRow struct {
 	BlobContentStatus string
 	UpstreamUrl       string
 	UpstreamEtag      string
+	MediaType         string
 	LastModifiedUs    int64
 	FetchedUs         int64
 	ValidatedUs       int64
@@ -335,6 +337,7 @@ func (q *Queries) ProxyEntryGet(ctx context.Context, arg ProxyEntryGetParams) ([
 			&i.BlobContentStatus,
 			&i.UpstreamUrl,
 			&i.UpstreamEtag,
+			&i.MediaType,
 			&i.LastModifiedUs,
 			&i.FetchedUs,
 			&i.ValidatedUs,
@@ -594,24 +597,26 @@ func (q *Queries) ProxyMetadataRenew(ctx context.Context, arg ProxyMetadataRenew
 
 const proxyMetadataUpsert = `-- name: ProxyMetadataUpsert :many
 INSERT INTO remote_cache_entries
-       (repo_id, path, variant, kind, blob_sha256, upstream_url, upstream_etag, upstream_last_modified,
+       (repo_id, path, variant, kind, blob_sha256, upstream_url, upstream_etag, media_type, upstream_last_modified,
         fetched_at, validated_at, expires_at, upstream_gone_at, last_used_at)
 VALUES ($1::bigint, $2::text, $3::text, 'metadata',
         $4::bytea, $5::text, NULLIF($6::text, ''),
-        CASE WHEN $7::bigint = 0 THEN NULL
-             ELSE timestamptz 'epoch' + $7::bigint * interval '1 microsecond' END,
-        timestamptz 'epoch' + $8::bigint * interval '1 microsecond',
+        NULLIF($7::text, ''),
+        CASE WHEN $8::bigint = 0 THEN NULL
+             ELSE timestamptz 'epoch' + $8::bigint * interval '1 microsecond' END,
+        timestamptz 'epoch' + $9::bigint * interval '1 microsecond',
         clock_timestamp(),
-        clock_timestamp() + $9::bigint * interval '1 second',
+        clock_timestamp() + $10::bigint * interval '1 second',
         NULL,
-        timestamptz 'epoch' + $8::bigint * interval '1 microsecond')
+        timestamptz 'epoch' + $9::bigint * interval '1 microsecond')
 ON CONFLICT (repo_id, path, variant) DO UPDATE
    SET blob_sha256 = EXCLUDED.blob_sha256, upstream_url = EXCLUDED.upstream_url,
-       upstream_etag = EXCLUDED.upstream_etag, upstream_last_modified = EXCLUDED.upstream_last_modified,
+       upstream_etag = EXCLUDED.upstream_etag, media_type = EXCLUDED.media_type,
+       upstream_last_modified = EXCLUDED.upstream_last_modified,
        fetched_at = EXCLUDED.fetched_at, validated_at = EXCLUDED.validated_at, expires_at = EXCLUDED.expires_at,
        upstream_gone_at = NULL
  WHERE remote_cache_entries.kind = 'metadata'
-   AND ($10::boolean OR remote_cache_entries.fetched_at <= EXCLUDED.fetched_at)
+   AND ($11::boolean OR remote_cache_entries.fetched_at <= EXCLUDED.fetched_at)
 RETURNING (extract(epoch FROM validated_at) * 1000000)::bigint AS validated_us,
           (extract(epoch FROM expires_at) * 1000000)::bigint AS expires_us
 `
@@ -623,6 +628,7 @@ type ProxyMetadataUpsertParams struct {
 	BlobSha256     []byte
 	UpstreamUrl    string
 	UpstreamEtag   string
+	MediaType      string
 	LastModifiedUs int64
 	FetchedUs      int64
 	TtlSeconds     int64
@@ -639,7 +645,8 @@ type ProxyMetadataUpsertRow struct {
 // (R-REPO-026: the upsert keeps the newer fetched_at), unless force is set: the format
 // recorded the document as the newer one by an order of its own (npm: time.modified), so
 // the entry follows its records whatever fetch time it has. validated_at is the database
-// clock now, expires_at is that plus the period. A gone mark is cleared by a 2xx.
+// clock now, expires_at is that plus the period. A gone mark is cleared by a 2xx. media_type is the
+// media type of the answer without parameters (RemoteDocument.MediaType), NULL when it sent none.
 func (q *Queries) ProxyMetadataUpsert(ctx context.Context, arg ProxyMetadataUpsertParams) ([]ProxyMetadataUpsertRow, error) {
 	rows, err := q.db.Query(ctx, proxyMetadataUpsert,
 		arg.RepoID,
@@ -648,6 +655,7 @@ func (q *Queries) ProxyMetadataUpsert(ctx context.Context, arg ProxyMetadataUpse
 		arg.BlobSha256,
 		arg.UpstreamUrl,
 		arg.UpstreamEtag,
+		arg.MediaType,
 		arg.LastModifiedUs,
 		arg.FetchedUs,
 		arg.TtlSeconds,

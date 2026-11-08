@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/qname"
+
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -118,6 +120,10 @@ type fakeDecider struct {
 	decision authz.Decision
 	got      authz.Coordinate
 	recorded []authz.Coordinate
+}
+
+func (d *fakeDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
+	return nil, nil
 }
 
 func (d *fakeDecider) DecideOn(_ context.Context, _ *authz.Index, _ authz.Subject, c authz.Coordinate) authz.Decision {
@@ -290,7 +296,7 @@ func TestR_AUTHZ_018_CheckOwnershipFailsClosed(t *testing.T) {
 }
 
 func TestR_ARCH_007_LinksComeFromTheBaseURL(t *testing.T) {
-	l := linkBuilder{base: "https://trove.example.com", format: "npm", key: qr("npm-local")}
+	l := linkBuilder{base: "https://trove.example.com", template: "/api/npm/{project}/{key}/", key: qr("npm-local")}
 	for got, want := range map[string]string{
 		l.Base():                           "https://trove.example.com",
 		l.Registry(qr("npm-remote~cache")): "https://trove.example.com/api/npm/it/npm-remote~cache/",
