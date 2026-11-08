@@ -79,7 +79,7 @@ func (a *App) registerRegistry(rt *endpointRuntime, router *httpserver.Router) e
 	}
 	token, err := registry.NewToken(registry.TokenOptions{
 		Authenticate: a.registryTokenAuth(rt, stage), Signer: au.registry, Decider: decider, Repos: repos,
-		Format: string(f.Descriptor().ID), ValidName: ociformat.ValidName, Metrics: metrics, Audit: a.auditRecorder(),
+		Format: string(f.Descriptor().ID), ValidName: ociformat.ValidName, Documents: registry.NewDocuments(f), Metrics: metrics, Audit: a.auditRecorder(),
 		WriteError: f.WriteError, Bound: disp.BoundRepository, Log: a.log.With("component", "registry-token"),
 	})
 	if err != nil {
@@ -90,7 +90,7 @@ func (a *App) registerRegistry(rt *endpointRuntime, router *httpserver.Router) e
 		return fmt.Errorf("registry root: the data port of %s offers no page of image names for the catalog", f.Descriptor().ID)
 	}
 	catalog, err := registry.NewCatalog(registry.CatalogOptions{
-		Repos: repos, Decider: decider, Store: store, Format: string(f.Descriptor().ID), Bound: disp.BoundRepository, WriteError: f.WriteError,
+		Repos: repos, Decider: decider, Store: store, Format: string(f.Descriptor().ID), Documents: registry.NewDocuments(f), Bound: disp.BoundRepository, WriteError: f.WriteError,
 	})
 	if err != nil {
 		return err

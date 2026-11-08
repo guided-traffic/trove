@@ -125,11 +125,17 @@ func newOCIFixture(t *testing.T) *ociFixture {
 	e.user("nobody")
 	e.user("scoped")
 	e.user("teamonly")
+	e.user("hidetags")
+	e.user("itemfolders")
+	e.user("digestonly")
 	e.grant(f.r, "oci-write", []string{"oci-local"}, authz.PatternLists{}, map[string][]string{
 		"user:writer": {"read", "deploy"}, "user:mover": {"read", "deploy", "overwrite"}, "user:reader": {"read"},
 	})
 	e.grant(f.r, "oci-scoped", []string{"oci-local"}, authz.PatternLists{Exclude: []string{"secret/**"}}, map[string][]string{"user:scoped": {"read", "deploy"}})
 	e.grant(f.r, "oci-team", []string{"oci-local"}, authz.PatternLists{Include: []string{"team/**"}}, map[string][]string{"user:teamonly": {"read", "deploy"}})
+	e.grant(f.r, "oci-hidetags", []string{"oci-local"}, authz.PatternLists{Exclude: []string{"team/app/_tags/internal-*"}}, map[string][]string{"user:hidetags": {"read", "deploy"}})
+	e.grant(f.r, "oci-itemfolders", []string{"oci-local"}, authz.PatternLists{Include: []string{"team/app/_tags/**", "team/app/_manifests/**", "team/app/_blobs/**"}}, map[string][]string{"user:itemfolders": {"read", "deploy"}})
+	e.grant(f.r, "oci-digestonly", []string{"oci-local"}, authz.PatternLists{Include: []string{"**/_manifests/**", "**/_blobs/**"}}, map[string][]string{"user:digestonly": {"read"}})
 	// A caller without the action is refused 403 before the body is looked at, one with it gets as far as the content type.
 	waitFor(t, "the policies", 10*time.Second, func() bool {
 		for who, name := range map[string]string{"writer": "probe", "mover": "probe", "scoped": "probe", "teamonly": "team/probe"} {
@@ -484,6 +490,70 @@ func TestR_OCI_006_PathScopedPoliciesApplyToTheProtocolRoutes(t *testing.T) {
 	wantOCI(t, f.pull("teamonly", "team/app", "1"), 200, "")
 	denied(f.pull("teamonly", "app", "1"), "pull outside the include list")
 	denied(f.push("teamonly", "app", "2", m, ociCT), "push outside the include list")
+}
+
+// A grant with an include path set pushes team/app by tag and by digest, reads its tags list and referrers, and is refused for
+// other/app (R-AUTHZ-005, R-OCI-006). The pattern `team/**` admits the old gates as well; the test after this one tells them apart.
+func TestR_OCI_006_AnIncludePathSetPushesByTagAndByDigestAndReadsTheLists(t *testing.T) {
+	f := newOCIFixture(t)
+	denied := func(res response, what string) {
+		t.Helper()
+		if res.status != 403 && res.status != 404 {
+			t.Fatalf("%s: %d %s", what, res.status, res.body)
+		}
+	}
+	cfgT, cfgO := f.blob("team/app", []byte("{}")), f.blob("other/app", []byte("{}"))
+	layerT, layerO := f.blob("team/app", []byte("team layer")), f.blob("other/app", []byte("other layer"))
+	mt, mo := ociManifest(cfgT, layerT), ociManifest(cfgO, layerO)
+	wantOCI(t, f.push("teamonly", "team/app", "1", mt, ociCT), 201, "")
+	mt2 := ociManifest(cfgT, layerT, f.blob("team/app", []byte("second layer")))
+	wantOCI(t, f.push("teamonly", "team/app", shaOf(mt2), mt2, ociCT), 201, "")
+	denied(f.push("teamonly", "other/app", "1", mo, ociCT), "tag push outside the include list")
+	denied(f.push("teamonly", "other/app", shaOf(mo), mo, ociCT), "digest push outside the include list")
+	wantOCI(t, f.push("writer", "other/app", "1", mo, ociCT), 201, "")
+	wantOCI(t, f.r.get("teamonly", "/api/oci/it/oci-local/team/app/tags/list"), 200, "")
+	wantOCI(t, f.r.get("teamonly", "/api/oci/it/oci-local/team/app/referrers/"+shaOf(mt)), 200, "")
+	denied(f.r.get("teamonly", "/api/oci/it/oci-local/other/app/tags/list"), "tags list outside the include list")
+	denied(f.r.get("teamonly", "/api/oci/it/oci-local/other/app/referrers/"+shaOf(mo)), "referrers outside the include list")
+	wantOCI(t, f.r.get("writer", "/api/oci/it/oci-local/other/app/tags/list"), 200, "")
+}
+
+// Path sets that tell the gates of the lists apart (R-AUTHZ-005, R-OCI-006, Q-OCI-140): the tags list is decided on the package document
+// `<name>/_taglist` and each tag on its own path, a referrers request on its subject's manifest path.
+func TestR_OCI_006_TheListsAreDecidedOnThePackageDocumentAndTheSubjectsPath(t *testing.T) {
+	f := newOCIFixture(t)
+	cfg := f.blob("team/app", []byte("{}"))
+	m := ociManifest(cfg, f.blob("team/app", []byte("layer")))
+	wantOCI(t, f.push("writer", "team/app", "1", m, ociCT), 201, "")
+	wantOCI(t, f.push("writer", "team/app", "internal-x", m, ociCT), 201, "")
+	tags := func(who string) response { return f.r.get(who, "/api/oci/it/oci-local/team/app/tags/list") }
+	t.Run("an exclude of some tag paths leaves the list and hides those tags", func(t *testing.T) {
+		res := tags("hidetags")
+		wantOCI(t, res, 200, "")
+		if !strings.Contains(string(res.body), `"1"`) || strings.Contains(string(res.body), "internal-x") {
+			t.Fatalf("tags list: %s", res.body)
+		}
+		wantOCI(t, f.pull("hidetags", "team/app", "1"), 200, "")
+		if res := f.pull("hidetags", "team/app", "internal-x"); res.status != 403 && res.status != 404 {
+			t.Fatalf("pull of the excluded tag: %d %s", res.status, res.body)
+		}
+	})
+	t.Run("a path set that covers the item folders and not the package document pushes and pulls and lists no tags", func(t *testing.T) {
+		m2 := ociManifest(cfg, f.blob("team/app", []byte("layer two")))
+		wantOCI(t, f.push("itemfolders", "team/app", "2", m2, ociCT), 201, "")
+		wantOCI(t, f.push("itemfolders", "team/app", shaOf(m2), m2, ociCT), 201, "")
+		wantOCI(t, f.pull("itemfolders", "team/app", "1"), 200, "")
+		wantOCI(t, f.r.get("itemfolders", "/api/oci/it/oci-local/team/app/blobs/"+cfg), 200, "")
+		if res := tags("itemfolders"); res.status != 403 && res.status != 404 {
+			t.Fatalf("tags list: %d %s", res.status, res.body)
+		}
+	})
+	t.Run("a grant for digests only lists the referrers of a subject", func(t *testing.T) {
+		wantOCI(t, f.r.get("digestonly", "/api/oci/it/oci-local/team/app/referrers/"+shaOf(m)), 200, "")
+		if res := tags("digestonly"); res.status != 403 && res.status != 404 {
+			t.Fatalf("tags list: %d %s", res.status, res.body)
+		}
+	})
 }
 
 // A tag push and a push by digest of the same new manifest take their locks in different orders (the tag item, then the package row,

@@ -92,7 +92,7 @@ func (f *Format) commitTagItem(ctx context.Context, tx formats.Tx, c formats.Com
 		existing = nil
 	}
 	// A tag that moved is a change by an owner or a writer and never a claim; a new tag publishes a version.
-	if err := c.Packages.Claim(ctx, formats.Target{Package: p.name, Version: p.tag, Actions: []formats.Action{formats.ActionDeploy}},
+	if err := c.Packages.Claim(ctx, formats.Target{Package: p.name, Version: p.tag, Path: TagPath(p.name, p.tag), Actions: []formats.Action{formats.ActionDeploy}},
 		formats.OwnershipWrite{Publish: existing == nil, FirstVersion: first}); err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (f *Format) commitManifestItem(ctx context.Context, tx formats.Tx, c format
 		if first && p.shadowSkipped {
 			return retryShadow(p.name)
 		}
-		if err := c.Packages.Claim(ctx, formats.Target{Package: p.name, Actions: []formats.Action{formats.ActionDeploy}},
+		if err := c.Packages.Claim(ctx, formats.Target{Package: p.name, Path: ManifestPath(p.name, p.m.Digest), Actions: []formats.Action{formats.ActionDeploy}},
 			formats.OwnershipWrite{Publish: true, FirstVersion: first}); err != nil {
 			return err
 		}

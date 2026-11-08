@@ -46,6 +46,8 @@ type CatalogOptions struct {
 	Store CatalogStore
 	// Format is the ID of the format whose repositories the registry serves ("oci").
 	Format string
+	// Documents gives the path a name is decided on: its package document (Q-OCI-140).
+	Documents Documents
 	// Bound is the dispatcher's reading of the host root's binding (dispatch.Dispatcher.BoundRepository): on a bound host the
 	// catalog lists the bound repository only, without its prefix (R-OCI-017, R-OCI-029).
 	Bound func(*http.Request) (qname.Repo, bool, error)
@@ -60,6 +62,9 @@ type Catalog struct{ o CatalogOptions }
 func NewCatalog(o CatalogOptions) (*Catalog, error) {
 	if o.Repos == nil || o.Decider == nil || o.Format == "" || o.Bound == nil || o.WriteError == nil {
 		return nil, errors.New("registry: the catalog needs the repository reader, the decision point, the format, the bound-host function and an error writer")
+	}
+	if err := o.Documents.check(); err != nil {
+		return nil, err
 	}
 	return &Catalog{o: o}, nil
 }
@@ -187,8 +192,14 @@ func (h *Catalog) page(r *http.Request, n int, last string) (names []string, mor
 			}
 			if len(batch) > 0 {
 				after = batch[len(batch)-1]
-				ok, err := acc.PathsAllowed(ctx, authz.Coordinate{Repository: c.repo.Name}, authz.Read, batch,
-					func(name string) (string, string) { return name, "" })
+				// A name is decided on the path of its package document, which the format places in the image (Q-AUTHZ-250, Q-OCI-140).
+				docs := make([]string, len(batch))
+				for i, name := range batch {
+					if docs[i], _ = h.o.Documents.Path(name); docs[i] == "" {
+						docs[i] = name // no package document: a path no pattern admits
+					}
+				}
+				ok, err := acc.PathsAllowed(ctx, authz.Coordinate{Repository: c.repo.Name}, authz.Read, docs, h.o.Documents.Classify)
 				if err != nil {
 					return nil, false, err
 				}

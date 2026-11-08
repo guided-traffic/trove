@@ -29,8 +29,12 @@ func TestR_OCI_006_EveryDecisionNamesTheCanonicalPathOfTheItem(t *testing.T) {
 	fx.wantStatus(fx.get("app/blobs/"+layer), http.StatusOK, "")
 	fx.wantStatus(fx.put("app/manifests/2", m, ctImage), http.StatusCreated, "")
 	fx.wantStatus(fx.put("app/manifests/"+d, m, ctImage), http.StatusCreated, "")
+	fx.wantStatus(fx.get("app/tags/list"), http.StatusOK, "")
+	subject := sha([]byte("a subject nothing was pushed for"))
+	fx.wantStatus(fx.get("app/referrers/"+subject), http.StatusOK, "")
 	want := map[string]bool{
 		TagPath("app", "1"): true, TagPath("app", "2"): true, ManifestPath("app", d): true, BlobPath("app", layer): true,
+		TaglistPath("app"): true, ManifestPath("app", subject): true, // the tags list: the package document; referrers: the subject (Q-OCI-140)
 	}
 	got := map[string]bool{}
 	for _, tg := range seen {
@@ -43,6 +47,20 @@ func TestR_OCI_006_EveryDecisionNamesTheCanonicalPathOfTheItem(t *testing.T) {
 		if !got[p] {
 			t.Errorf("no decision for %s (decided: %v)", p, got)
 		}
+	}
+	// The ownership claim of a push names the item it writes: the tag path, or the manifest path for a push by digest (Q-OCI-140).
+	m3 := imageManifestBytes(fx.blob("app", []byte("{}")), fx.blob("app", []byte("digest layer")))
+	d3 := sha(m3)
+	fx.wantStatus(fx.put("app/manifests/"+d3, m3, ctImage), http.StatusCreated, "")
+	claimed := map[string]bool{}
+	for _, c := range fx.h.Claims() {
+		if c.Target.Path == "" {
+			t.Errorf("a claim without a path: %+v", c.Target)
+		}
+		claimed[c.Target.Path] = true
+	}
+	if !claimed[TagPath("app", "2")] || !claimed[ManifestPath("app", d3)] {
+		t.Errorf("claimed paths = %v, want the tag path and the manifest path", claimed)
 	}
 	// A path the policy excludes is refused on pulls and pushes alike.
 	cfg := fx.blob("secret/app", []byte("{}"))

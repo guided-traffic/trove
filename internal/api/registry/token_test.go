@@ -26,6 +26,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/oci"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/qname"
@@ -157,7 +158,7 @@ func newFixture(t *testing.T, anonymous bool) *fixture {
 		return httpserver.Principal{}, errs.E(errs.Unauthenticated, errs.CodeInvalidToken, "x", errs.WithChallenge(`Basic realm="trove"`))
 	}
 	f.h, err = NewToken(TokenOptions{
-		Authenticate: authenticate, Signer: f.signer, Decider: decider{allow: f.allow}, Format: "oci", ValidName: nameRE.MatchString,
+		Authenticate: authenticate, Signer: f.signer, Decider: decider{allow: f.allow}, Format: "oci", ValidName: nameRE.MatchString, Documents: NewDocuments(oci.New()),
 		Repos: repos{
 			local: {Format: "oci", Lifecycle: repository.Active}, hub: {Format: "oci", Lifecycle: repository.Active},
 			{Project: "web", Key: "npm-local"}: {Format: "npm", Lifecycle: repository.Active},

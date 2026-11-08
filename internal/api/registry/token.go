@@ -52,6 +52,8 @@ type TokenOptions struct {
 	Format string
 	// ValidName is the image-name grammar of the format (R-OCI-002).
 	ValidName func(string) bool
+	// Documents gives the path a name is decided on: its package document (Q-OCI-140).
+	Documents Documents
 	// Metrics counts the answers (R-OCI-034); nil counts nothing.
 	Metrics *registrytoken.Metrics
 	// Audit records auth.registry_token.denied (R-OCI-034); nil records nothing.
@@ -85,6 +87,9 @@ func NewToken(o TokenOptions) (*Token, error) {
 	case o.Format == "":
 		return nil, errors.New("registry: the token service needs the format of the registry")
 	}
+	if err := o.Documents.check(); err != nil {
+		return nil, err
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -97,7 +102,7 @@ func NewToken(o TokenOptions) (*Token, error) {
 	if o.Endpoint == nil {
 		o.Endpoint = func(r *http.Request) string { return httpserver.EndpointFrom(r.Context()).Name() }
 	}
-	return &Token{o: o, grantor: Grantor{Repos: o.Repos, Format: o.Format}}, nil
+	return &Token{o: o, grantor: Grantor{Repos: o.Repos, Format: o.Format, Documents: o.Documents}}, nil
 }
 
 // tokenRequest is what a token request asks: the scope values, the service and the one credential, with the label of how

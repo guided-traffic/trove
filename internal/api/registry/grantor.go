@@ -69,11 +69,13 @@ type Grantor struct {
 	Repos repository.Reader
 	// Format is the ID of the format whose repositories the registry serves ("oci").
 	Format string
+	// Documents gives the path a name is decided on: its package document (Q-OCI-140).
+	Documents Documents
 }
 
 // Grant runs the coarse check of the route kind for each scope entry (R-OCI-006): pull asks read, push asks deploy,
-// delete asks delete, each with the image name as the package, so a grant scoped to a package pattern covers exactly the
-// names it matches. A repository that does not exist, is not of the format, is disabled or being deleted, or is hidden
+// delete asks delete, each on the path of the image name's package document (Q-OCI-140), so a grant scoped to a package or path
+// pattern covers exactly the names it matches. A repository that does not exist, is not of the format, is disabled or being deleted, or is hidden
 // from the caller grants nothing and is not reported (Q-OCI-6). The catalog is granted to every caller that reached the
 // token service, the anonymous one included where the endpoint lets it in (R-OCI-006); what the catalog lists is decided
 // per name (R-OCI-017).
@@ -89,10 +91,12 @@ func (g *Grantor) Grant(ctx context.Context, ask Asker, scopes []registrytoken.S
 			continue
 		}
 		var allowed registrytoken.Actions
-		name := s.Name
-		classify := func(string) (string, string) { return name, "" }
+		doc, named := g.Documents.Path(s.Name)
+		if !named {
+			continue
+		}
 		for _, act := range authzActions(s.Actions) {
-			ok, err := ask.PathsAllowed(ctx, authz.Coordinate{Repository: s.Repo}, act, []string{""}, classify)
+			ok, err := ask.PathsAllowed(ctx, authz.Coordinate{Repository: s.Repo}, act, []string{doc}, g.Documents.Classify)
 			if err != nil {
 				if e, isErr := errs.As(err); isErr && e.Kind == errs.Unauthenticated {
 					return registrytoken.Grant{}, nil

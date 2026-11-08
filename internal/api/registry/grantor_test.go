@@ -3,11 +3,13 @@ package registry
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/auth/registrytoken"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/oci"
 	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -28,7 +30,7 @@ func (f *fakeAsker) PathsAllowed(_ context.Context, base authz.Coordinate, act a
 		pkg, _ := classify(p)
 		key := base.Repository.String() + " " + pkg + " " + string(act)
 		f.asked = append(f.asked, key)
-		out[i] = f.allow[key] && p == ""
+		out[i] = f.allow[key] && p == pkg+"/_taglist"
 	}
 	return out, nil
 }
@@ -71,7 +73,7 @@ func TestGrantIsTheCoarseCheck(t *testing.T) {
 		gone:  {Format: "oci", Lifecycle: repository.Deleting},
 		off:   {Format: "oci", Lifecycle: repository.Active, Disabled: true},
 	}}
-	g := Grantor{Repos: repos, Format: "oci"}
+	g := Grantor{Repos: repos, Format: "oci", Documents: NewDocuments(oci.New())}
 	ctx := context.Background()
 
 	t.Run("pull asks read, push asks deploy, delete asks delete, each with the image name as the package", func(t *testing.T) {
@@ -86,6 +88,16 @@ func TestGrantIsTheCoarseCheck(t *testing.T) {
 		want := []string{"web/docker-local app read", "web/docker-local app deploy", "web/docker-local app delete"}
 		if len(ask.asked) != 3 || ask.asked[0] != want[0] || ask.asked[1] != want[1] || ask.asked[2] != want[2] {
 			t.Fatalf("asked %v", ask.asked)
+		}
+	})
+	t.Run("a path set decides a name on its package document: team/** grants team/app and not other/app", func(t *testing.T) {
+		ask := pathAsker{include: "team/"}
+		got, err := g.Grant(ctx, ask, []registrytoken.Scope{
+			{Repo: local, Name: "team/app", Actions: registrytoken.Pull},
+			{Repo: local, Name: "other/app", Actions: registrytoken.Pull},
+		})
+		if err != nil || len(got.Entries) != 1 || got.Entries[0].Name != "team/app" {
+			t.Fatalf("%+v %v", got, err)
 		}
 	})
 	t.Run("a caller with read only is granted pull, never push", func(t *testing.T) {
@@ -146,4 +158,16 @@ func TestGrantIsTheCoarseCheck(t *testing.T) {
 			t.Fatal("a failed lookup granted")
 		}
 	})
+}
+
+// pathAsker is a decision point with one include pattern on paths: a coordinate without a path is refused, as the engine refuses it.
+type pathAsker struct{ include string }
+
+func (a pathAsker) PathsAllowed(_ context.Context, _ authz.Coordinate, _ authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
+	out := make([]bool, len(paths))
+	for i, p := range paths {
+		pkg, _ := classify(p)
+		out[i] = pkg != "" && strings.HasPrefix(p, a.include)
+	}
+	return out, nil
 }

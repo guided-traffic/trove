@@ -62,9 +62,10 @@ func (f *Format) handleTagsList(ctx context.Context, rq *formats.Request, w http
 		return notImplemented("list the tags of a remote or a virtual repository (R-OCI-024, R-OCI-027)")
 	}
 	name := rq.Params.Get("name")
-	// The gate is the folder that holds the tags of the name; each tag is decided by its own path below (R-AUTHZ-005), as a pull by tag is.
+	// The gate is the package document of the name, its tags list (R-AUTHZ-005, Q-OCI-140); each tag is decided by its own path below,
+	// as a pull by tag is.
 	read := []formats.Action{formats.ActionRead}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: name + "/" + dirTags, Actions: read}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: TaglistPath(name), Actions: read}); err != nil {
 		return err
 	}
 	query := rq.URL.Query()

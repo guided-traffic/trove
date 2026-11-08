@@ -56,13 +56,13 @@ func (f *Format) handleReferrers(ctx context.Context, rq *formats.Request, w htt
 		return notImplemented("list referrers of a remote or a virtual repository (R-OCI-024, R-OCI-027)")
 	}
 	name := rq.Params.Get("name")
-	// The gate is the folder that holds the manifests of the name; each referrer is decided by its own path (R-AUTHZ-005).
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: name + "/" + dirManifests, Actions: []formats.Action{formats.ActionRead}}); err != nil {
-		return err
-	}
 	subject, ok := digestFromText(rq.Params.Get("digest"))
 	if !ok {
 		return errs.E(errs.Invalid, errs.CodeOCIDigestInvalid, "The digest is not a sha256 digest.")
+	}
+	// The gate is the subject's manifest path, the item the request asks about (R-AUTHZ-005, Q-OCI-140); each referrer is decided by its own path.
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: ManifestPath(name, digestText(subject)), Actions: []formats.Action{formats.ActionRead}}); err != nil {
+		return err
 	}
 	query := rq.URL.Query()
 	artifactType := query.Get("artifactType")

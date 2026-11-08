@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/registry"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/oci"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -70,6 +71,7 @@ func TestTheVersionCheckAnswersAccordingToTheCredential(t *testing.T) {
 type catalogDecider struct {
 	authz.Decider
 	repos map[qname.Repo]func(name string) bool
+	seen  *[]string // the paths the catalog asked about
 }
 
 func (d catalogDecider) Begin(context.Context, authz.Subject, ...qname.Repo) (*authz.Index, error) {
@@ -89,6 +91,9 @@ func (d catalogDecider) ReadableOn(_ context.Context, _ *authz.Index, _ authz.Su
 func (d catalogDecider) PathsAllowedOn(_ context.Context, _ *authz.Index, _ authz.Subject, base authz.Coordinate, _ authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
 	out := make([]bool, len(paths))
 	for i, p := range paths {
+		if d.seen != nil {
+			*d.seen = append(*d.seen, p)
+		}
 		pkg, _ := classify(p)
 		out[i] = d.repos[base.Repository](pkg)
 	}
@@ -139,14 +144,15 @@ func TestTheCatalogPagesOverRepositoriesInByteOrder(t *testing.T) {
 		{ID: "x", Name: qname.Repo{Project: "web", Key: "nonum"}, Class: repository.Local, Format: "oci"},
 	}}
 	store := &namesStore{names: map[int64][]string{1: {"app", "team/x", "team/y", "zed"}, 2: {"lib"}, 3: {"nope"}, 4: {"secret"}, 6: {"dead"}}}
-	decider := catalogDecider{repos: map[qname.Repo]func(string) bool{
+	var asked []string
+	decider := catalogDecider{seen: &asked, repos: map[qname.Repo]func(string) bool{
 		a:    func(n string) bool { return n != "team/y" }, // a grant scoped to a package pattern: one name of the repository is hidden
 		ab:   func(string) bool { return true },
 		virt: func(string) bool { return true }, gone: func(string) bool { return true },
 	}}
 	var bound qname.Repo
 	c, err := registry.NewCatalog(registry.CatalogOptions{
-		Repos: repos, Decider: decider, Store: store, Format: "oci", WriteError: writeError,
+		Repos: repos, Decider: decider, Store: store, Format: "oci", Documents: registry.NewDocuments(oci.New()), WriteError: writeError,
 		Bound: func(*http.Request) (qname.Repo, bool, error) { return bound, !bound.IsZero(), nil },
 	})
 	if err != nil {
@@ -169,6 +175,22 @@ func TestTheCatalogPagesOverRepositoriesInByteOrder(t *testing.T) {
 	t.Run("the names the caller may read, in byte order; virtual, other-format, deleting, disabled and hidden repositories give none", func(t *testing.T) {
 		if got, link, code := get(""); code != 200 || !slices.Equal(got, all) || link != "" {
 			t.Fatalf("%d %v %q", code, got, link)
+		}
+	})
+	t.Run("R-OCI-017 each name is decided on the path of its package document, the tags list", func(t *testing.T) {
+		asked = nil // the decision of Q-OCI-140: the package document, not the bare name
+		if got, _, code := get(""); code != 200 || !slices.Equal(got, all) {
+			t.Fatalf("%d %v", code, got)
+		}
+		for _, p := range []string{"app/_taglist", "team/x/_taglist", "zed/_taglist"} {
+			if !slices.Contains(asked, p) {
+				t.Errorf("the catalog did not decide %q (decided: %v)", p, asked)
+			}
+		}
+		for _, p := range asked {
+			if !strings.HasSuffix(p, "/_taglist") {
+				t.Errorf("the catalog decided the path %q, which is no package document", p)
+			}
 		}
 	})
 	t.Run("every page boundary continues exactly after its last name", func(t *testing.T) {
@@ -236,7 +258,7 @@ func TestTheCatalogPagesOverRepositoriesInByteOrder(t *testing.T) {
 	})
 	t.Run("a port without a page answers 501", func(t *testing.T) {
 		noStore, _ := registry.NewCatalog(registry.CatalogOptions{
-			Repos: repos, Decider: decider, Format: "oci", WriteError: writeError,
+			Repos: repos, Decider: decider, Format: "oci", Documents: registry.NewDocuments(oci.New()), WriteError: writeError,
 			Bound: func(*http.Request) (qname.Repo, bool, error) { return qname.Repo{}, false, nil },
 		})
 		w := httptest.NewRecorder()

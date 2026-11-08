@@ -301,13 +301,19 @@ The coordinate of every request is the repository, the image name as the package
 - Writes pass the ownership check of R-AUTHZ-018 with the image name as the package, as npm and NuGet do; the repository's
   `packageOwnership` decides.
 - **How the token service grants.** For each scope entry it runs the coarse check of the route kind on the named repository
-  (R-ARCH-008: may the caller do this action anywhere in the repository, with the name as package when the repository's
-  patterns or the caller's grants are per package): `pull` → `read`, `push` → `deploy`, `delete` → `delete`, `*` → all three.
+  (R-ARCH-008: may the caller do this action for the image, decided on the path of its package document
+  `<name>/_taglist` with the name as package, Q-OCI-140): `pull` → `read`, `push` → `deploy`, `delete` → `delete`, `*` → all three.
   It asks it as a question on the request's index that writes no audit event (Q-OCI-55): a grant that leaves an entry out is
   no refusal, and the request that later needs the action is decided and audited on its own.
   A repository that does not exist, is not of the format or is hidden from the caller grants nothing and is not reported
   (Q-OCI-6). `registry:catalog:*` is granted to every authenticated caller and to anonymous where the endpoint allows anonymous
   requests; what the catalog lists is decided per name (R-OCI-017).
+- **Paths (Q-OCI-140).** A decision names the canonical path of the item: a manifest `<name>/_manifests/sha256:<hex>`, a tag
+  `<name>/_tags/<tag>`, a blob `<name>/_blobs/sha256:<hex>`. The tags list and each catalog name are decided on the package
+  document `<name>/_taglist`, referrers on the manifest path of their subject; each tag and each referrer is still filtered on its
+  own path. A push by tag is decided on the tag path and on the manifest path, and its ownership claim names the tag path (a push by
+  digest the manifest path). A path set that covers the item folders and not `<name>/_taglist` therefore pushes and pulls with a trove token directly, lists
+  no tags and is granted no registry token.
 - A grant is a ceiling only; each request is decided again (R-OCI-005). `push` covers `overwrite` as a ceiling; the decision
   point still requires `overwrite` for a moved tag.
 - Image names visible to a reader are the names it may read: the catalog and the tags list never show a name a path- or
@@ -2405,6 +2411,45 @@ challenged.
 [architecture.md](../architecture.md). Code: `Engine.preemptive`, `Engine.token`, `Engine.authenticate` in
 [authenticator.go](../../../internal/proxy/authenticator.go). Tests: `TestR_REPO_033_SecondRequestOfAColdPullCarriesItsTokenWithoutAChallenge`,
 `TestR_REPO_033_ARememberedChallengeBelongsToItsConfigurationVersion`, `TestR_REPO_033_RejectedPreemptiveTokenIsReplacedOnce`.
+
+### Q-OCI-140 · Every OCI decision and claim names a path Classify places in the image: the tags list and the catalog on the tags list document, referrers on the subject, a push on the tag or the manifest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: kit check 13 of R-ARCH-010 (Q-AUTHZ-250, finding F-82) fails the OCI format on the combined tree. The tags list and the
+referrers gate named the folders `<name>/_tags` and `<name>/_manifests`, which `Classify` places in no package, and the ownership
+claim of a manifest push named the image and no path. The claim without a path was not refused: `CheckTx` and `PrecheckWrite` complete a
+coordinate that names a package and no path onto the package document's path `<name>/_taglist`. The defect was that the pre-check
+decided the push on the tag or manifest path and the commit's claim on `<name>/_taglist`, so one push was decided on two paths; a path set
+that admits the item folders and not the package document would have passed the pre-check and failed the commit. The catalog (R-OCI-017)
+decided each name on the bare name, and the grant of the token service (R-OCI-006) asked with the name as package and no path, which
+the layout does not classify and a path set refuses: a caller with any path pattern got an empty grant for every image.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Lists on the package document, claims on the item written | The tags list is decided on `<name>/_taglist`, the package document of R-OCI-001 (`PackageDocumentPath`), which `Classify` places in the image; each tag is still decided on its own path. A claim names the tag path for a push by tag and the manifest path for a push by digest | The rule of Q-AUTHZ-250 unchanged; one rule for npm, NuGet and OCI; nothing in `Classify` changes | A path set that covers the item folders (`<name>/_tags/**`, `_manifests/**`, `_blobs/**`) and not `<name>/_taglist` pushes and pulls with a trove token directly, lists no tags, and is granted no registry token (the grant is asked on the package document); a pattern that excludes only `**/_tags/**` does not refuse the list gate, the tags it holds are filtered one by one so none is shown. Referrers on this path would refuse a grant for digests only, which the per-referrer decision admits |
+| (b) Classify the collection folders | `<name>/_tags` and `<name>/_manifests` become paths of the image | The decision path is the folder it lists | A folder is no item; the layout of R-OCI-007 gains two paths no item has, and `/files/` would have to explain them |
+| (c) Weaken check 13 for OCI | Accept a target without a path or outside `Classify` | No code change | Path patterns would admit or refuse OCI by accident: rejected |
+| (d) Option (a) for the tags list and the catalog, the subject's manifest path for referrers (chosen) | A referrers request has an item of its own, the subject digest: its gate is `<name>/_manifests/sha256:<hex>` of the subject, parsed before the decision; each referrer is still filtered on its own path. The catalog decides each name of a repository, and the token service each scope entry, on `<name>/_taglist`, as a listing row is decided on its package document (Q-AUTHZ-250) | Every gate is a path in the image; a signature verifier with `**/_manifests/**` and `**/_blobs/**` lists referrers; the pre-check and the claim of a push agree | The same Against as (a) for the tags list and the catalog; a request for the referrers of a subject the repository does not hold is decided on a path with no item (it answers an empty index either way) |
+
+**Choice:** (d). A push by tag is decided on the tag path and, as a companion of the same transaction, on the manifest path (both
+`deploy`; the tag path also `overwrite` when it moves), and its claim names the tag path; a push by digest is decided and claimed on the
+manifest path. So each file a push writes is decided on its own path and the operation is not on the list of H-586 in
+[permissions.md](../../security/permissions.md).
+
+**Rationale:** the tags list is the document a client fetches for the image, as npm's package document is, and the catalog lists
+packages; deciding both on the package document keeps a listing equal to what Q-AUTHZ-250 does for the other package formats. A referrers
+request asks about one item, its subject, so its path is that item's. The development agent would revisit the choice if an operator needs
+to hide the tags list of an image while its tags stay pullable by name, or if a path set over the item folders only becomes common (the
+list would then move to a path every item folder covers).
+
+**Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation) and R-AUTHZ-005 in [authorization.md](../authorization.md).
+Code: `handleTagsList`, `handleReferrers`, the claims of `commitTagItem` and `commitManifestItem` in
+[hooks.go](../../../internal/formats/oci/hooks.go), the catalog in [catalog.go](../../../internal/api/registry/catalog.go) and the grant in [grantor.go](../../../internal/api/registry/grantor.go), both through `registry.Documents` ([documents.go](../../../internal/api/registry/documents.go)) from the format's `PackageDocumentPath` and `Classify`. Tests:
+`TestR_OCI_006_EveryDecisionNamesTheCanonicalPathOfTheItem`, `TestR_ARCH_010_Conformance` of the format,
+`TestR_OCI_006_AnIncludePathSetPushesByTagAndByDigestAndReadsTheLists` and
+`TestR_OCI_006_TheListsAreDecidedOnThePackageDocumentAndTheSubjectsPath` and `TestR_OCI_006_APathScopedCallerGetsARegistryTokenForTheImagesItsPatternsAdmit` (integration), the catalog subtest of
+`TestTheCatalogPagesOverRepositoriesInByteOrder`.
 
 ## What this does not cover
 

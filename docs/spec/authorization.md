@@ -378,10 +378,11 @@ metadata, its files, its dist-tags and its deprecation state, so the trap where 
 admits the tarball but not the separately stored metadata (PKG-NPM-047) cannot arise
 ([formats/npm.md](formats/npm.md) relies on this). Path patterns are matched against the paths
 the format plug-in reports: on a protocol route the canonical path of the document or file the route serves or writes,
-so the protocol and `/files/` decide one file on one path (Q-AUTHZ-250). A path pattern that admits a package of an npm
-or NuGet repository has to cover its package document and its files: `@acme/**` covers `@acme/ui` and
-`@acme/ui/-/ui-1.0.0.tgz`, and NuGet's `acme.core/**` covers `acme.core/index.json`,
-`acme.core/.registration/index.json` and the files below `acme.core/<version>/`. A pattern finer than a package's folder
+so the protocol and `/files/` decide one file on one path (Q-AUTHZ-250). A path pattern that admits a package of an npm,
+NuGet or OCI repository has to cover its package document and its files: `@acme/**` covers `@acme/ui` and
+`@acme/ui/-/ui-1.0.0.tgz`, NuGet's `acme.core/**` covers `acme.core/index.json`,
+`acme.core/.registration/index.json` and the files below `acme.core/<version>/`, and OCI's `team/app/**` covers the tags list document
+`team/app/_taglist` and the items below `team/app/_tags/`, `_manifests/` and `_blobs/` (Q-OCI-140). A pattern finer than a package's folder
 (`<name>/-/**`, `acme.core/1.0.0/**`, a single file) decides some of a package's paths and not others: it hides the files
 it names, while the package document, the search and the package screens still show what those files hold
 ([permissions.md](../security/permissions.md) H-647). When a policy with any path pattern, include or exclude, covers an
