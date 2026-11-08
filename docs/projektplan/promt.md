@@ -261,6 +261,10 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   (a lookup took 360 ms against a 300 ms poll), `TestVirtualMembers` (a member-order change took 2.45 s against 2 s),
   `TestR_BAK_005_MigrationLock` (a migration gave up after its 1 s lock wait); all three passed alone on the same tree. Done when
   each bound is either structural or its cause under load is known.
+- **F-116 · `TestBastion_R_BAS_049_RoutingByPath` failed once on CI** (Test and Release 42530616876, e2e-bastion): "0 hits for 36
+  paths requested twice"; each repeated tarball request went to the main installation as a revalidation (304) instead of being a hit
+  on the Bastion replica of its path. Green in the runs before and after with no Bastion change in between. Done when the cause of
+  the revalidations is known.
 - **F-105 · `TestR_NPM_007_ASlowPublishOf200MiB` fails under load** (seen twice: by the F-83 builder, an S3 UploadPart
   cancellation followed by the package timeout, and by the F-101 builder, "1 connections held a transaction older than 1 s
   while the body arrived"; passes alone). The test asserts that no database transaction stays open longer than 1 s while
