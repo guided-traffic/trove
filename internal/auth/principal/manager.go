@@ -657,6 +657,11 @@ func (m *Manager) DisableUser(ctx context.Context, c Caller, name string, o Disa
 		if err != nil {
 			return err
 		}
+		// The sessions that had ended already are withdrawn too, in a statement of their own that sees one that ended while the
+		// first waited for it (Q-AUTHZ-262).
+		if _, err := qs.WithdrawEndedSessionsOfPrincipal(ctx, id); err != nil {
+			return err
+		}
 		revoked := 0
 		if o.RevokeTokens {
 			// One token.revoked with its journal entry per token (Q-AUTH-198): the replay of user.disabled disables

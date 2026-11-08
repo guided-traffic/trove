@@ -11,11 +11,13 @@ package audit
 // Event.Path (the columns of the same names); the data below repeats the path,
 // because a webhook delivery carries the data and not the columns.
 
-// Names of the artifact events, for the producers.
+// Names of the artifact events, for the producers. artifact.delete_stopped is asynchronous: the delete job records it when its guard
+// stopped it (a refused item, a withdrawn principal or credential), with the subject that asked as the actor (R-STOR-018, Q-STOR-193).
 const (
-	EventArtifactDeployed   = "artifact.deployed"
-	EventArtifactDeleted    = "artifact.deleted"
-	EventArtifactDownloaded = "artifact.downloaded"
+	EventArtifactDeployed      = "artifact.deployed"
+	EventArtifactDeleted       = "artifact.deleted"
+	EventArtifactDownloaded    = "artifact.downloaded"
+	EventArtifactDeleteStopped = "artifact.delete_stopped"
 )
 
 func init() {
@@ -32,6 +34,12 @@ func init() {
 			`"path":{"type":"string"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},` +
 			`"size":{"type":"integer","minimum":0}},` +
 			`"required":["path","sha256","size"],"additionalProperties":false}`,
+	})
+	Register(EventType{
+		Name: EventArtifactDeleteStopped, Category: CategoryContent, Mode: Async,
+		Schema: `{"type":"object","properties":{` +
+			`"path":{"type":"string"},"reason":{"type":"string"},"job":{"type":"string"},"removed":{"type":"integer","minimum":0}},` +
+			`"required":["path","reason","job","removed"],"additionalProperties":false}`,
 	})
 	Register(EventType{
 		Name: EventArtifactDownloaded, Category: CategoryContent, Mode: Async,

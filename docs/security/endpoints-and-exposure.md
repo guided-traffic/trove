@@ -154,9 +154,10 @@ The gaps of the spec pages whose mechanism this page describes:
 
 Stage: a background job or a command that decides for a request after the request is over.
 
-Dormant: no job decides today. The request-driven work that decides off the request's context, a collapsed fetch and a fan-out
+Dormant: one job decides today, and it keeps the endpoint. The request-driven work that decides off the request's context, a collapsed fetch and a fan-out
 over the members of a virtual repository, decides with the subject it was given, and the subject carries the endpoint, so it keeps
-the ceiling; the item-delete job runs what the request decided. A subject without an endpoint, which a job or a command has,
+the ceiling; the item-delete job carries the endpoint and its cache-fill policy in the subject it stores (`authz.JobSubject`) and decides
+every batch under that ceiling (Q-STOR-190, [file-transfer.md](file-transfer.md#a-delete-and-its-job)). A subject without an endpoint, which a job or a command has,
 decides without an exposure ceiling, which is right for a maintenance job and wrong for one that serves a request's content
 later. What makes it real: a job that decides on behalf of a request, started by a request on an endpoint with exposure rules,
 and whose payload does not record the endpoint and does not put it on the job's subject.

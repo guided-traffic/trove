@@ -277,6 +277,24 @@ func (e *env) authenticate(r *http.Request) (httpserver.Principal, error) {
 	return out, nil
 }
 
+// Standing is the delete job's standing of a subject as the test stage sees it (files.Standings): the person the principal ID names,
+// with the groups the stage hands that person's requests, and no token scope, as the stage hands none. A principal the stage does not
+// know is withdrawn. The production reader, over the principal cache and the token and session rows, is tested on the harness of the
+// composition root (test/integration/transfer).
+func (e *env) Standing(_ context.Context, j authz.JobSubject) (authz.Standing, error) {
+	if j.Anonymous {
+		return authz.Standing{}, nil
+	}
+	e.peopleMu.Lock()
+	defer e.peopleMu.Unlock()
+	for _, p := range e.people {
+		if p.ID == j.ID {
+			return authz.Standing{Groups: append([]principal.GroupRef(nil), p.Groups...)}, nil
+		}
+	}
+	return authz.Standing{}, errs.E(errs.Unauthenticated, errs.CodePrincipalDisabled, "The principal that asked for this delete is no longer active; the job stopped.")
+}
+
 // s3Env is the object store under test: a prefix of its own in the shared bucket.
 type s3Env struct {
 	cfg    config.Storage
@@ -462,6 +480,9 @@ type replicaOpts struct {
 	// routes adds routes to the replica's router (the format dispatcher), once the
 	// item store and the generic layer exist.
 	routes func(r *replica, router *httpserver.Router)
+	// guard wraps the guard of the delete job the replica installs (a test that watches or refuses what a batch asks); nil installs
+	// the files service's guard as it is.
+	guard func(items.JobGuard) items.JobGuard
 }
 
 // replica is one in-process web replica with a listener of its own.
@@ -586,9 +607,6 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.worker.Start(ctx); err != nil {
-			t.Fatalf("worker.Start: %v", err)
-		}
 	}
 	if r.repos, err = repository.NewService(repository.Options{
 		Runner: r.db, Catalog: catalog.Default(), Recorder: r.rec, Notifier: r.changes, Jobs: r.queue, Log: quiet,
@@ -628,7 +646,17 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if r.files, err = files.New(files.Options{Items: r.items, Repos: r.reader, Formats: o.formats, Log: quiet}); err != nil {
 		t.Fatal(err)
 	}
-	r.items.SetJobGuard(r.files.DeleteJobGuard(r.engine))
+	guard := r.files.DeleteJobGuard(r.engine, e)
+	if o.guard != nil {
+		guard = o.guard(guard)
+	}
+	r.items.SetJobGuard(guard)
+	// The worker starts once everything its handlers reach exists: a job picked up earlier would meet a replica half built.
+	if r.worker != nil {
+		if err := r.worker.Start(ctx); err != nil {
+			t.Fatalf("worker.Start: %v", err)
+		}
+	}
 
 	r.serve(o)
 	return r

@@ -1841,7 +1841,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `auth.registry_token.denied` | A | — | The OCI token service refused a token request with 401 ([formats/oci.md](formats/oci.md) R-OCI-034); the endpoint in the event's column; deduplicated per client address, endpoint, reason and credential | `reason`, `credential`, `count`, `repeat_of` (summaries only) |
 | `token.created` | T | — | Any trove token was issued, including CI exchanges | `token_type`, `scope`, `expires_at`, `ci_mapping`, `ci_claims` |
 | `token.revoked` | T | — | A token was revoked | `token_type`, `revoked_by` |
-| `auth.session.ended` | T | — | An administrator ended another user's session (`details.reason` `admin`) | `session_id`, `reason` |
+| `auth.session.ended` | T | — | An administrator ended another user's session (`details.reason` `admin`); the sessions the end withdrew after they had ended are named apart, as `withdrawn_ids` and `withdrawn_count` (Q-AUTHZ-262) | `session_id`, `reason`, `withdrawn_ids` |
 | `user.created` | T | — | A user was created (just in time from ID-token claims, or by an administrator) | `source` (`jit`, `api`) |
 | `user.updated` | T | — | Profile or group membership changed, including changes from claims at login; carries the journal flag with the pending identity links the update removed ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-041, Q-AUTH-205) | `changes` |
 | `user.disabled`, `user.enabled`, `user.deleted` | T | — | User state change | — |
@@ -1879,6 +1879,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `package.metadata_changed` | T | yes | Deprecate, undeprecate, unlist, relist, dist-tag set or removed | `package`, `version`, `change` |
 | `artifact.deployed` | T | yes | A file was stored in a local repository by any upload path | `path`, `sha256`, `size`, `overwritten` |
 | `artifact.deleted` | T | yes | A file was removed | `path`, `sha256`, `size` |
+| `artifact.delete_stopped` | A | — | The job of a large delete stopped because a batch was refused or the subject that asked was withdrawn ([storage.md](storage.md) R-STOR-018, Q-STOR-193); the subject as actor, the reason code as `reason`, outcome `denied`; what earlier batches removed stays removed | `path` (the root the request named), `reason`, `job`, `removed` |
 | `artifact.downloaded` | A | — | Only with `audit.record_downloads` | `path`, `sha256` |
 | `system.config_applied` | T | — | Configuration document applied (R-OPS-030, R-OPS-031) | `document`, `digest`, `summary`, `source` |
 | `system.config_exported` | A | — | R-OPS-032 | `kinds` |
@@ -2206,7 +2207,9 @@ A job's `error` is `null` until an attempt failed or the job was cancelled, and 
 (`job_failed`, `job_timeout`, `attempts_exhausted`, `cancelled`, `superseded`), the `detail` when the writer has one, and the
 `attempt` the detail belongs to when a worker wrote it (Q-OPS-186). The `detail` is the text of the failed attempt's error as the
 handler returned it, cut to 2,000 bytes: a handler whose error could carry a secret or a full URL reduces it before it returns, as
-the mirror's does. A job that returns to `queued` for another attempt keeps the `error` of the attempt that failed, also while
+the mirror's does. The first problem of R-API-009 (an `errs.Error`) in the error's chain shows its `code` and its `detail` only,
+never the operation or the cause behind it, which can hold a database's text; a wrapper's own words before it stay, and the cause is
+in the replica's log ([storage.md](storage.md) Q-STOR-193). A job that returns to `queued` for another attempt keeps the `error` of the attempt that failed, also while
 the next attempt runs, so its `attempt` member and the job's `attempt` differ then.
 
 A job's `result` is `null` until the job succeeded and then a JSON object, the same shape for every kind: `vuln-sync-osv`

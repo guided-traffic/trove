@@ -1061,10 +1061,11 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
   and the same hook writes the tombstone, the tags and the audit event (Q-NPM-27).
 - A raw delete, through `/files/` or the items API, of a tarball, a package folder or a scope asks
   the ownership question for every package whose files it removes, under the package row lock in
-  the removing transaction (or the one that queues the job `items-delete`), and needs `delete` on
-  each file's package and version; a deleter who does not own one of the packages gets `403
-  package_owned_by_other_owner` and nothing is removed ([authorization.md](../authorization.md)
-  R-AUTHZ-018, Q-AUTHZ-161).
+  the removing transaction (or the one that queues the job `items-delete`, and again in each batch of
+  that job), and needs `delete` on each file's package and version; a deleter who does not own one of
+  the packages gets `403 package_owned_by_other_owner` and nothing is removed, or, in a batch of the
+  job, the job fails and keeps what is left ([authorization.md](../authorization.md) R-AUTHZ-018,
+  Q-AUTHZ-161, [storage.md](../storage.md) Q-STOR-190).
 - Remote repositories answer 405; their cached items are removed through the cache API of
   [repositories-and-proxy.md](../repositories-and-proxy.md). Virtual repositories route to the
   deployment target (R-NPM-029). No time window applies.

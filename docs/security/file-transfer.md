@@ -139,6 +139,51 @@ loses at most one interval of one replica. No request reads them. A request that
 still arriving leaves nothing behind (the spool file is removed); one whose body has arrived runs on for the commit grace
 (R-ARCH-024).
 
+## A delete and its job
+
+A delete decides `delete` on every item of the subtree, each on the coordinate its format gives it, and, for a package format, the
+ownership of every package whose files it removes; one refusal refuses the whole delete before anything is removed (R-STOR-018,
+Q-AUTHZ-161). A subtree up to `storage.delete.max_sync_items` is decided and removed in one transaction, on the rows that transaction
+removes. A larger one is decided in full at the request and removed by the job `items-delete`, which removes only items up to the
+highest id the request saw (Q-STOR-143). A subtree that empties between the count and the check queues no job, and a job that names
+no such id, or no subject, removes nothing (Q-STOR-192).
+
+The job acts for the caller only while a request of that caller would be allowed (Q-STOR-190). It carries who asked: the principal,
+the ID of the token or the session, and the endpoint ([authz.JobSubject](../../internal/authz/jobsubject.go)), never a grant and never a
+secret. Before each batch it reads what that caller holds then ([auth.JobStanding](../../internal/auth/standing.go), Q-AUTHZ-260): the
+principal's status, kind, name and groups from the principal cache under the freshness gate of R-AUTH-023, and the token's or the
+session's row by its ID from PostgreSQL, from which the token's scope and a CI token's frozen bundle come; for a session it follows the
+sessions a re-authentication replaced it by (Q-AUTHZ-262). It finds the repository by its ID: a repository moved to another project is
+decided, and named, where it is now, one created under the old name is never touched, and one that is gone or being deleted ends the job
+as done; a disabled repository stops it unless the caller holds `content:bypass`; and a batch whose index still holds another
+repository under that name waits for the next attempt rather than decide on it (Q-STOR-191). On that subject, and on the index
+installed at that moment, the batch decides `delete` on each of its items, the ownership of the packages of its files and every path a
+storage hook cascades to ([items/delete.go](../../internal/items/delete.go) `BatchGuard`, [files/delete.go](../../internal/files/delete.go)
+`DeleteJobGuard`). The job stops without a further attempt, keeping what is left, naming the reason in its error and recording
+`artifact.delete_stopped` with the caller as the actor (Q-STOR-193), when:
+
+| Change | The job's error | Seen by the next batch |
+|---|---|---|
+| The token was revoked, for any reason | `invalid_token` | at once: the row is read by ID |
+| The token's row was purged after it ended (`auth.tokens.retention_after_end`) | `invalid_token`, "no longer exists" | at once (Q-STOR-194) |
+| The session was withdrawn: a sign-out (also the end of a user's other sessions), an administrator's end, a disable or a changed break-glass password, of the session itself or of a session that replaced it (a re-authentication, a sign-in of the same principal in the same browser), also after it had ended by time or by the session limit | `session_expired` | at once: the rows are read by ID |
+| The session's row was purged, 30 days after its end | `session_expired`, "no longer exists" | at once (Q-STOR-194) |
+| The principal was disabled, deleted or changed its kind (its sessions end with it; its tokens need not be revoked) | `principal_disabled` | within `auth.revocation_bound` |
+| The principal left the group whose grant covered an item | `forbidden`, naming the root path | within `auth.revocation_bound` |
+| A policy, a role binding or the endpoint's exposure no longer covers an item, the repository moved where the caller has no grant, or it was disabled | `forbidden`, naming the root path | within the bound of the index ([permissions.md](permissions.md)) or of the snapshot |
+| A format refuses the removal of a batch's files (the package ownership of R-AUTHZ-018) | the format's code, `package_owned_by_other_owner` | in the batch's transaction |
+
+A 403 names the path the request named, never the refused item, which may be one the caller cannot read: the job's error is read by
+its creator and by every holder of `settings:read`. A cause behind an error, a database's text among them, goes to the replica's log and
+never into the job's error (Q-STOR-193). A token that reached its expiry and a session that timed out, was evicted by the session limit
+or was replaced by a re-authentication do not stop the job: nobody withdrew them, and the request they authenticated was accepted while
+they lived (Q-AUTHZ-261, H-659). A store that does not answer, or an index that is not current, fails only the attempt; the queue
+retries it. A job is never run without the guard. The integration tests withdraw each case before the job's first batch and revoke a
+token while a running worker is between two batches (`TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject`), stop
+a job between two batches through the component test stage (`TestR_STOR_018_AWithdrawalBetweenTwoBatchesStopsTheJobAtTheNext`), move
+and delete the repository between two batches (`TestR_STOR_018_TheDeleteJobFollowsItsRepositoryByID`), and refuse a later batch's
+ownership and a folder batch (`TestR_STOR_018_EveryBatchOfTheDeleteJobAsksTheFormatAndDecidesItsFolders`).
+
 ## What this does not cover
 
 The gaps of the spec pages whose mechanism this page describes:
@@ -150,20 +195,35 @@ The gaps of the spec pages whose mechanism this page describes:
 - [H-14](../spec/storage.md#h-14--no-per-principal-limit-on-concurrent-uploads-or-spool-use): no per-principal limit on concurrent uploads or spool use.
 - [H-131](../spec/formats/generic.md#h-131--generic-content-is-served-as-stored-to-whoever-can-read-it): generic content is served as stored, to whoever can read it.
 
-### H-154 · An insert that was in flight when the delete was checked is removed without a decision
+### H-658 · The batch in flight when a withdrawal commits still removes its items
 
-Component: the job `items-delete` (R-STOR-018, Q-STOR-143). Subject: `delete` on a subtree larger than `storage.delete.max_sync_items`.
-Live with milestone M1, narrowed from "any item added during the job". The request decides `delete` for every item of the subtree, and
-for a package format the ownership of every package whose files it saw (Q-AUTHZ-161), and
-enqueues the job with the highest item id it saw; the job removes only items up to that id, so a file that a holder of `deploy` adds
-afterwards stays, and so do the folders above it. What stays open: an item whose id lies below that maximum and whose transaction
-commits after the check read the subtree (an insert in flight at that instant) is removed although the caller of the delete had no
-`delete` grant on it; in an npm repository such an insert is a publish, and a first version of a new package in the subtree is then
-unpublished without its ownership having been asked. A subtree up to the synchronous limit is checked and removed in one
-transaction and has no such window. What makes it real: a deploy or a publish into the folder that commits within the few
-milliseconds between the check's read and the enqueue. The job
-does not decide again, so a grant removed after the request does not stop it either. The trash can (R-STOR-022, P1) makes it
-recoverable.
+Component: the job `items-delete` (R-STOR-018, Q-STOR-190). Subject: the items of one batch of a delete larger than
+`storage.delete.max_sync_items`. Live for every such job. A batch reads the standing of its subject and takes its index before its
+transaction opens, and removes its items in that transaction; a revocation, a disable, a group left or a grant removed that commits
+after the read does not stop that batch. So up to `storage.delete.batch_size` files (5,000 by default), or one batch of folders, go
+after the change, and for a disable or a group left, whose reach goes through the principal cache, the batches that begin within
+`auth.revocation_bound` after it as well. A batch whose transaction fails over is tried again by the transaction runner for up to
+`database.retry.max_elapsed` on the standing it read before the first try (R-ARCH-019), so its window is that long. Every later batch
+removes nothing. What makes it real: a stolen credential that queued a large delete, revoked while a batch is running. A request has
+the same window between its decision and its commit (H-104 in [permissions.md](permissions.md)); the trash can (R-STOR-022, P1) makes
+it recoverable. Reading the token or session row `FOR SHARE` inside the batch's transaction would close the window for those two.
+
+### H-659 · A delete job outlives the expiry of the credential that queued it
+
+Component: the job `items-delete` (R-STOR-018, Q-AUTHZ-261). Subject: a delete queued with a token that expires, or a session that
+times out, before the job ends. Live for every such job. The job stops when the credential is withdrawn, not when it reaches its end
+of life: a token past its expiry, and a session past its idle or absolute deadline, evicted by the session limit or replaced by a
+re-authentication, keep the job running, on the principal's groups and status as they are at each batch. A credential that no longer
+authenticates any request so still has one job acting for it. The bound is the credential's row (Q-STOR-194): a token's row is purged
+`auth.tokens.retention_after_end` after its expiry (default 2160 h, at least 1 h), a session's 30 days after its end (R-AUTH-043), and
+the next batch then stops the job with "no longer exists". A CI token's contributions of a project tier that end before the token
+(`ExpiresAt`) stop counting while the job runs, but the contribution of the mapping that owns the token has no such end, so the owner's
+grants act for the job until the row is purged. The rules of the endpoint the request arrived on are not asked again either: the
+token types it accepts, its bound-tokens-only rule, its anonymous admission and a scope's endpoint binding are decided at the request
+only, while the endpoint's exposure ceiling is applied to every batch (dormant: a change of an endpoint's authentication rules needs a
+restart, which the job may outlive). What makes it real: a short-lived token (a CI token, a token about to expire) that queues a large
+delete behind other jobs, so that the job begins after the expiry; the owner of a leaked token stops it by revoking the token, as for
+every other use of it, and an administrator by disabling the principal, removing its grants or cancelling the job.
 
 ### H-155 · The first request for an unknown repository key costs a query that a known key does not
 

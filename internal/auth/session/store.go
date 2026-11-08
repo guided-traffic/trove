@@ -559,14 +559,18 @@ func (s *Store) Create(ctx context.Context, n NewSession) (Created, error) {
 		// cookie's: it ends first, with its own reason, so the cookie's end below
 		// finds nothing live.
 		if n.ReplaceID != "" {
-			rows, err := s.endOwnSession(ctx, qs, n.ReplaceID, n.PrincipalID)
+			rows, err := s.endOwnSession(ctx, qs, n.ReplaceID, n.PrincipalID, c.ID)
 			if err != nil {
 				return err
 			}
 			ended = append(ended, rows...)
 		}
 		if WellFormed(n.ReplaceCookie) {
-			rows, err := qs.EndSessionBySecret(ctx, q.EndSessionBySecretParams{SecretSha256: Hash(n.ReplaceCookie), Reason: EndRevoked})
+			// A sign-in of the same principal in the same browser continues the session it replaces; the session of another
+			// principal, one planted in the browser, is withdrawn (Q-AUTHZ-262).
+			rows, err := qs.EndSessionBySecret(ctx, q.EndSessionBySecretParams{
+				SecretSha256: Hash(n.ReplaceCookie), Reason: EndRevoked, SuccessorID: c.ID, PrincipalID: n.PrincipalID,
+			})
 			if err != nil {
 				return err
 			}
@@ -598,15 +602,16 @@ func (s *Store) Create(ctx context.Context, n NewSession) (Created, error) {
 }
 
 // endOwnSession ends the session a re-authentication replaces, only if it is a
-// live session of the same principal.
-func (s *Store) endOwnSession(ctx context.Context, qs *q.Queries, id, principalID string) ([]endedSession, error) {
+// live session of the same principal, and names its successor: a withdrawal of the
+// successor reaches a delete job the replaced session queued (Q-AUTHZ-262).
+func (s *Store) endOwnSession(ctx context.Context, qs *q.Queries, id, principalID, successor string) ([]endedSession, error) {
 	own, err := qs.LiveSessionsOfPrincipal(ctx, principalID)
 	if err != nil {
 		return nil, err
 	}
 	for _, o := range own {
 		if o == id {
-			rows, err := qs.EndSessionsByID(ctx, q.EndSessionsByIDParams{Ids: []string{id}, Reason: EndReauthRotated})
+			rows, err := qs.EndSessionReplaced(ctx, q.EndSessionReplacedParams{ID: id, PrincipalID: principalID, SuccessorID: successor})
 			if err != nil {
 				return nil, err
 			}
@@ -631,7 +636,7 @@ func (s *Store) evict(ctx context.Context, tx meta.Tx, qs *q.Queries, principalI
 	if over <= 0 {
 		return nil, nil
 	}
-	rows, err := qs.EndSessionsByID(ctx, q.EndSessionsByIDParams{Ids: live[:over], Reason: EndEvicted})
+	rows, err := qs.EndSessionsByID(ctx, q.EndSessionsByIDParams{Ids: live[:over], Reason: EndEvicted, Withdrawn: false})
 	if err != nil {
 		return nil, err
 	}
@@ -642,7 +647,7 @@ func (s *Store) evict(ctx context.Context, tx meta.Tx, qs *q.Queries, principalI
 		ids = append(ids, r.ID)
 	}
 	if len(ids) > 0 {
-		if err := s.o.Audit.RecordTx(ctx, tx, endedEvent(audit.Actor{Kind: "system"}, EndEvicted, principalID, ids)); err != nil {
+		if err := s.o.Audit.RecordTx(ctx, tx, endedEvent(audit.Actor{Kind: "system"}, EndEvicted, principalID, ids, nil)); err != nil {
 			return nil, err
 		}
 	}

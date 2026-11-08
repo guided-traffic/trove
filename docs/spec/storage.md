@@ -1517,7 +1517,24 @@ Priority: **MVP** · Covers: ART-034, STOR-002
   (`202 Accepted` with the job URL, job API per [architecture.md](architecture.md)); the
   permission check still completes before the first removal. The job removes in transactions of
   `storage.delete.batch_size` items; a crash resumes with the remainder. The job removes only
-  items the check saw (Q-STOR-143): one that is deployed into the subtree afterwards stays.
+  items the check saw (Q-STOR-143): one that is deployed into the subtree afterwards stays. A
+  subtree that empties between the count and the check queues no job, and a job that names no
+  highest item id or no subject removes nothing (Q-STOR-192).
+- The job acts for the caller only while a request of that caller would be allowed (Q-STOR-190). Every
+  batch decides again, on what the caller holds when the batch begins, `delete` on each item it removes,
+  the ownership question above for its files, and every path a storage hook cascades to: the principal
+  must still be active and of its kind, its name and groups are those it has then, and the credential
+  that asked must not have been withdrawn ([authorization.md](authorization.md) Q-AUTHZ-260, Q-AUTHZ-261,
+  Q-AUTHZ-262). A refused item, a principal that is no longer active and a credential that was revoked,
+  withdrawn or purged fail the job without a further attempt, with the reason in the job's error and in
+  the audit event `artifact.delete_stopped`; what earlier batches removed stays removed (Q-STOR-193,
+  Q-STOR-194). A refusal names the path the request named, never the refused item. A batch that begins
+  later than `auth.revocation_bound` after such a change removes nothing.
+- The job holds its repository by its ID (Q-STOR-191): a repository moved to another project is decided,
+  and named in the job's events, where it is now, and a repository created under the old name is never
+  touched; a repository that is gone or being deleted ends the job as done, because its own deletion
+  removes the rest. A disabled repository stops the job unless the caller holds `content:bypass`, as for
+  the request (Q-AUTHZ-162).
 - Remote repositories: a delete removes the cached copy permanently (no trash can); the next
   request refetches it. Virtual repositories answer `405`.
 - Deleting a whole repository (operation of
@@ -1544,6 +1561,18 @@ Acceptance criteria:
   `package_owned_by_other_owner` and removes nothing, through the job path as well
   (`TestR_AUTHZ_018_RawRemovalsAskOwnership`,
   `TestR_STOR_018_ARawRemovalAboveTheSyncLimitAsksOwnershipBeforeItsJob`).
+- A delete large enough for the job is queued; then the caller's token is revoked, the caller is
+  disabled, or the caller leaves the group whose policy grants `delete`. The job fails with the reason
+  and removes none of the files; a token that merely expired lets the job finish
+  (`TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject`). A token revoked while a
+  running worker is between two batches stops the job at the next one, and the files of the earlier
+  batches stay removed (the same test, and `TestR_STOR_018_AWithdrawalBetweenTwoBatchesStopsTheJobAtTheNext`
+  for a principal). The job records `artifact.delete_stopped` with the reason code.
+- A repository moved to another project between two batches of the job is decided where it is now, and a
+  repository created under the old name keeps its files; a repository deleted between two batches ends
+  the job as done (`TestR_STOR_018_TheDeleteJobFollowsItsRepositoryByID`). An ownership refusal of a
+  later batch, and a refused folder batch, stop the job at its first attempt
+  (`TestR_STOR_018_EveryBatchOfTheDeleteJobAsksTheFormatAndDecidesItsFolders`).
 
 ### R-STOR-019 · Copy and move
 Priority: **P1** · Covers: ART-032, ART-033, STOR-002
@@ -3600,6 +3629,13 @@ keep their own interval keys. There is no storage key for Valkey: storage uses i
   so the session ID, which appears in URLs and logs, must not authorize anything by itself. Every
   request of a session is checked against the session's principal and authorized for `deploy`
   again; another principal gets the same `404` as for an unknown session.
+- **A delete job acts only while its caller could.** The job of a large delete stores who asked and
+  with which credential, never a grant, and decides every batch again on what that caller holds then
+  (R-STOR-018, Q-STOR-190): a revoked token, a withdrawn session, a disabled principal or a group the
+  caller left stops it within `auth.revocation_bound`, and records `artifact.delete_stopped`. It
+  holds its repository by ID, so a repository created under a moved one's old name is never touched
+  (Q-STOR-191). The batch in flight at that moment still finishes (H-658 in
+  [file-transfer.md](../security/file-transfer.md)).
 - **Integrity.** Uploads are verified against declared digests and, where the store supports it,
   by the store against the payload checksum (R-STOR-006); full downloads are verified before the
   last bytes leave (R-STOR-013); the scrub catches damage at rest (R-STOR-027).
@@ -4230,7 +4266,7 @@ R-STOR-003 says implicit folders are created as parents of a file and removed wh
 
 ### Q-STOR-19 · A delete is permanent in M1, one event per file, a large subtree by the job items-delete
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-STOR-190](#q-stor-190--the-delete-job-decides-every-batch-again-on-what-the-subject-that-asked-holds-then)**: the job decides every batch again, on what the caller holds then (option (a), with the subject the job carries).
 
 R-STOR-018 deletes into the trash can where it is enabled (P1, R-STOR-022), writes the format hook in the same transaction, and removes a subtree above `storage.delete.max_sync_items` by a background job after the permission check.
 
@@ -4306,7 +4342,7 @@ other purposes exists.
 
 ### Q-STOR-143 · The delete job removes only the items its permission check saw
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-STOR-190](#q-stor-190--the-delete-job-decides-every-batch-again-on-what-the-subject-that-asked-holds-then)**: the bound by the highest id stays, and every batch is decided again on what the caller holds then, so the insert in flight is decided too and H-154 is closed.
 
 R-STOR-018 decides `delete` for every item of a subtree larger than `storage.delete.max_sync_items` at the request and removes in a
 job. The job listed what it found, so a file that a holder of `deploy` added below the folder between the check and the batch that
@@ -4888,6 +4924,164 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** the cap is the bound where the work is created, and the immediate removal keeps a start-and-cancel loop from growing the table at all, which the run alone could not (it removes at a rate, an attacker starts at another). What the cap does not bound is a caller that starts sessions and leaves them open: each holds a place for `session_ttl` (4 h), so one principal blocks itself, and, for an **anonymous** caller, every anonymous caller of the repository, with 100 starts per 4 h (H-590, H-592). A CI job is keyed on its token (`Subject.TokenID`: each exchange issues one), so the sessions of one token do not fill the cap of another token under the same mapping; a job can hold several tokens (several id_tokens), and an issuer that does not make an id_token single-use lets one be exchanged several times, so the token is a finer key than the mapping and not a guarantee of one cap per job. A shorter idle time for sessions that never received a byte was considered and not taken: a caller that sends one byte per session keeps it at `session_ttl` anyway, and the extra key would be a second knob for the same exposure. The index on `(repo_id, COALESCE(principal_id, all-zero uuid))` serves the count (`IS NOT DISTINCT FROM` cannot use an index; a session without a principal is the all-zero uuid for the count), and `(state, last_activity_at)` serves the listing in order; `TestR_STOR_011_TheCapCountAndTheCleaningListingUseTheirIndexes` runs `EXPLAIN` over 60,000 rows and requires both indexes and no sort. The locks of a start are taken in one order, a key share on the addressed repository (a virtual one whose configuration may be updated at the same time locks its row and then its members) before the lock on the target row, so a start through a virtual repository and the update of its configuration never wait for each other in a cycle (`TestR_STOR_011_AStartThroughAVirtualRepositoryDoesNotDeadlockWithItsConfigurationUpdate`); an advisory lock is not used (R-ARCH-017). The development agent would revisit a global cap, or a per-endpoint one for anonymous callers, if H-590 or H-592 shows up in a real installation.
 
 **Applied:** R-STOR-011 (configuration, *Expiry*), `internal/uploads/service.go` (`Start`, `endAndRemove`), `internal/uploads/finalize.go` (`complete`), `internal/formathost/uploads.go` (`scopeOf`), `internal/meta/postgres/queries/uploads.sql` (`UploadLockRepository`, `UploadInsertSession`, `UploadListAborted`, `UploadListDone`, `UploadDeleteCleanedBulk`, `UploadMarkCleaned`, `UploadBumpActivity`), migration 00058, `internal/blob/gc_uploads.go` (`cleanSessions`, `inBudget`), `internal/config/storage.go`. Tests: `TestR_STOR_011_AStartAboveTheCapOfOpenSessionsIsRefused`, `TestR_STOR_011_ConcurrentStartsNeverExceedTheCapOfOpenSessions`, `TestR_STOR_011_AnAbortThatRemovedTheObjectsDeletesTheRowAndOneThatDidNotLeavesItForTheRun`, `TestR_STOR_011_ASessionOfACIJobIsKeyedOnItsToken`.
+
+### Q-STOR-190 · The delete job decides every batch again, on what the subject that asked holds then
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-STOR-018 decides `delete` on every item of a subtree at the request and finishes a subtree above `storage.delete.max_sync_items`
+in the job `items-delete`. The job carried the subject of the request in full and decided only what a storage hook cascades to
+(the tags of an OCI manifest, Q-OCI-76), on the groups, the token scope and the CI grants of the moment of the request; the items
+of the subtree were never decided again (Q-STOR-143). Removing the caller from the group that granted `delete`, revoking the
+token or disabling the principal therefore neither stopped nor narrowed a running or a queued job, and a job queued behind others
+can start long after its request. The integration test `TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject`
+reproduced it: each of the three changes, made before the job's first batch, left the job to remove all 14 files.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The request's decision holds (Q-STOR-143) | The job removes what the request decided | One decision; the job holds no authority | A withdrawn token or principal keeps deleting until the job ends |
+| (b) Decide the cascade only, on the subject as the request saw it (as built) | The job carries the whole subject and decides the paths a hook cascades to | The cascade stays inside the request's grants | The subtree is never decided again, and the frozen groups, scope and CI grants outlive every withdrawal |
+| (c) Decide every batch again on the subject as it stands then (chosen) | The job carries who asked, with which credential, on which endpoint, and no grant; each batch reads what that subject holds now, takes the index installed now and decides on it `delete` on every item of the batch, the ownership question of R-AUTHZ-018 for its files and every path a hook cascades to | A withdrawal or a narrowed grant stops the job at the next batch, within `auth.revocation_bound`; an insert in flight at the request (H-154) is decided too | One principal lookup and one token or session row read per batch; a refusal leaves a partly removed subtree; a job fails where (a) would have finished |
+| (d) Cancel the job when a change could concern it | A listener on the change areas `auth` and `authz` cancels the jobs of the principal | No work per batch | It needs a map from changes to jobs; a change that does not touch the subtree cancels too; a missed event lets the job run on |
+
+**Choice:** (c). A batch is one transaction of the files (`storage.delete.batch_size`) or of the folders; the standing is read
+once per batch, before its transaction, and every question of the batch is answered on one index. A folder is decided by its
+path; the files below it were decided in their batches. The bound of Q-STOR-143 stays: the job removes only items up to the
+highest id the request saw. A refused item, a principal that is no longer active and a withdrawn credential fail the job without
+a further attempt (`jobs.Permanent`) with the 403 or the 401 a request would get now; a store that does not answer, or an index
+that is not current, fails the attempt and the queue retries it. A job that carries a subject is never run unguarded: on a replica
+without the guard it fails. What the job reads, and which ends of a credential stop it, are
+[authorization.md](authorization.md) Q-AUTHZ-260 and Q-AUTHZ-261.
+
+**Rationale:** the job is the continuation of the request, so it may do for the caller what a request of that caller may do at
+that moment and no more. A request with a revoked token, or of a disabled principal, or after the group was left, is refused
+within the revocation bound; a job that went on deleting for it would be the one path around that bound. The cost per batch is
+the standing (a principal lookup, usually a cache hit, and one indexed read of the token or session row, plus one per
+re-authentication a session went through), the index taken by `Begin`, and, in a repository of a format with package names, the
+ownership question for every package the batch's files belong to: per package an `INSERT … ON CONFLICT` of the package row, its
+lock `FOR UPDATE` and the reads of its owners, as the request did for the whole subtree. That is a few statements per package beside a
+batch of thousands of row deletions. The development agent would revisit the refusal when the trash
+can (R-STOR-022) makes a delete recoverable (a refused batch could then put back what the job took), or if the reads per batch
+show up in the cost of a large delete.
+
+**Applied in the spec:** R-STOR-018 (the job's bullet, two acceptance criteria) and the security note on delete jobs; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 (the bound for the job); Q-STOR-19 and Q-STOR-143 are superseded in
+part; [authorization.md](authorization.md) Q-AUTHZ-260, Q-AUTHZ-261, R-AUTHZ-018 (the batches ask the ownership again), Q-AUTHZ-161 superseded in part; [formats/npm.md](formats/npm.md) R-NPM-017 (the raw delete);
+[formats/oci.md](formats/oci.md) H-653; [file-transfer.md](../security/file-transfer.md) (the delete job, H-154 closed, H-658,
+H-659). Code: `internal/items/delete.go` (`JobGuard`, `BatchGuard`, `batchGuard`, `refusal`), `internal/files/delete.go`
+(`DeleteJobGuard`, `Standings`), `internal/authz/jobsubject.go`, `internal/auth/standing.go`, `internal/auth/token/standing.go`,
+`internal/auth/session/standing.go`, `internal/meta/postgres/queries/login.sql` (`SessionStandingChain`),
+`internal/app/wire_files.go`. Tests: `TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject`,
+`TestR_STOR_018_AWithdrawalBetweenTwoBatchesStopsTheJobAtTheNext`, `TestR_STOR_018_TheDeleteJobReadsTheSessionThatAskedFromItsRow`,
+`TestR_OCI_018_ADeleteJobHoldsTheCascadeToTheGrantsOfTheCaller`, the unit tests `TestJobSubject`, `TestJobStanding`,
+`TestDeleteJobGuard`, `TestStanding`.
+
+### Q-STOR-191 · The delete job finds its repository by ID, and a repository that is gone ends it as done
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The guard of Q-STOR-190 looked the job's repository up by the name the job carries, while the job removes by the repository's ID
+([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060: a running job holds its repository by the ID, which a move does
+not change). A repository moved to another project made the lookup fail and the job retry; a repository created under the old name
+in that time was then decided on, its grants, its classifier and its package owners, while the job went on removing the moved
+repository's items. The guard also ignored the repository's `disabled` flag, which refuses a request's delete for every caller
+without `content:bypass`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) By name, refusing a name that no longer leads to the job's ID | Compare the ID behind the name | One lookup | A moved repository stops every job of it, for a reason the caller cannot see |
+| (b) By ID, deciding on the name the repository has now (chosen) | `repos.ByID(DeleteArgs.RepoID)`; `Begin`, the coordinate of every path and the events name the current name; NotFound or lifecycle `deleting` ends the job as done; a disabled repository stops it unless the batch's subject holds `content:bypass` | The job decides on the repository it removes from, where it is now; a move to a project the caller has no grant in stops the job there | A move is a narrowing the caller does not see until the job's error |
+| (c) Refuse a move while a delete job runs | A check in the move | The question does not arise | One more coupling between the project and the item store; a job queued behind others blocks a move for its whole wait |
+
+**Choice:** (b). `ErrRepositoryGone` is the guard's answer for a repository that is gone or being deleted; the job returns success,
+because the repository's deletion job removes the rest of its items, and never retries. The disabled flag is decided on the batch's
+index with `HoldsOn(content:bypass)`, as a request's delete in its strict form refuses a disabled repository to every caller without it.
+The repository snapshot and the authorization index follow the change log each on its own, so for a moment after a move one can hold
+another repository under the name the other gives: after `Begin` the guard compares the ID the index holds under the current name
+(`Index.RepositoryID`) with the job's, and a difference fails the attempt, which the queue retries, instead of deciding the batch on
+the other repository.
+
+**Rationale:** the ID is what the job removes by, so it is what the job must decide on; deciding on a name is deciding on whatever
+holds the name now. The development agent would revisit (c) if a move ever has to wait for the work of its repository.
+
+**Applied in the spec:** R-STOR-018 (the bullet on the repository, an acceptance criterion). Code: `internal/files/delete.go`
+(`DeleteJobGuard`), `internal/items/delete.go` (`ErrRepositoryGone`, `BatchGuard.Name`, `RunDeleteJob`), `internal/authz/project.go`
+(`Index.RepositoryID`, `Engine.RepositoryIDOn`). Tests: `TestR_STOR_018_TheDeleteJobFollowsItsRepositoryByID`, `TestDeleteJobGuard`.
+
+### Q-STOR-192 · A delete job always carries its bound and its subject, and an empty subtree queues none
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`DeleteArgs.MaxID` zero meant "no bound", a reading kept for jobs queued before the field existed; a subtree that emptied between the
+count and the check queued a job with that zero, which then removed whatever a deploy had put below the folder since, undecided. A
+job without a subject ran without the guard.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep zero as no bound | As it was | No change | Removes items nobody decided, through a reading nothing needs before the first stable release |
+| (b) No job for an empty listing; a job needs a bound and a subject; the erasure of a cache says so explicitly (chosen) | `enqueueDelete` answers `Done` when the check listed nothing; `RunDeleteJob` refuses, permanently, a job without `MaxID` or `Subject`; the queries take `bounded` beside `max_id`, and `EraseCache`, which no request asks for, sets the unexported `all` | Every item a job removes was listed by the check that queued it; no job runs unguarded | None that matters before the first stable release |
+
+**Choice:** (b).
+
+**Rationale:** the bound and the subject are what make the job a continuation of a decided request; a job without them is a removal
+nobody decided. The development agent would revisit it only if a job ever has to remove more than a request listed.
+
+**Applied in the spec:** R-STOR-018 (the job's bullet). Code: `internal/items/delete.go` (`enqueueDelete`, `RunDeleteJob`,
+`batchGuard`, `DeleteArgs.all`), `internal/items/erase.go`, `internal/meta/postgres/queries/files.sql` (`ListSubtreeBatch`,
+`ItemInRemovalScope`). Tests: `TestBatchGuardOfTheDeleteJob`.
+
+### Q-STOR-193 · A stopped delete job records why, and a job's error never carries a database's text
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A job its guard stopped left its reason in the job's row only, which the job retention prunes, and no audit trail named the subject
+whose withdrawal stopped it. The job's error is read through `GET /api/v1/system/jobs/{id}` by the job's creator and by every
+holder of `settings:read`: a 403 named the refused item, which may be one the caller cannot read, and a 503 carried its whole cause
+chain, database text included, in `detail`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job's error is enough | As it was | No new event | Pruned with the job; names a hidden item; leaks a database's text |
+| (b) An audit event, the root path in the 403, a generic text for causes (chosen) | `artifact.delete_stopped` (asynchronous; the subject as actor, outcome `denied`, the reason code, the job, the root path, the items removed); the guard's 403 names `DeleteArgs.Path`; the worker shows the first `errs.Error` in a job's error chain as code and detail only, a wrapper's own words before it kept, and the delete job reports every error but a refusal and its own permanent ones with a generic text, its cause in the log | The audit trail keeps who stopped a delete and why; the job's error says no more than the request's answer would | One more event type |
+
+**Choice:** (b). The shared worker change holds for every job kind: the first error written for a caller in the chain, wherever a
+wrapper put it, keeps its code and detail in the job's error and its operation and cause go to the log only; the rest of the text
+stays as its producer wrote it for the reader (R-OPS-019). A wrapper that rewords the text so that the error's own words are not in
+it shows the code and detail alone. The worker logs the error also when the lease was lost and when the failure could not be
+written.
+
+**Rationale:** a stop is a security-relevant outcome of a request the caller made, so it belongs to the audit trail with the actor
+of that request; the job's error is read by others than the caller and says what the request's own answer would say. The development
+agent would revisit the generic text if operators need the cause in the job API rather than in the log.
+
+**Applied in the spec:** R-STOR-018 (the job's bullet); [operations-and-observability.md](operations-and-observability.md) the
+event table (`artifact.delete_stopped`) and R-OPS-019 (the `detail` of a job's error). Code: `internal/items/delete.go`
+(`recordStopped`, `jobFailure`), `internal/files/delete.go` (`DeleteJobGuard`), `internal/jobs/worker.go` (`jobDetail`),
+`internal/audit/events_files.go`. Tests: `TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject` (the event),
+`TestDeleteJobGuard`, `TestBatchGuardOfTheDeleteJob`, `TestJobDetail`.
+
+### Q-STOR-194 · A credential whose row is gone stops the job with a reason of its own, and that is the bound of an expired credential
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A token or a session that ended by time does not stop its job (Q-AUTHZ-261). Its row is purged later: a token
+`auth.tokens.retention_after_end` after its expiry or revocation (default 2160 h, at least 1 h), a session 30 days after its end
+(R-AUTH-043). The job then could no longer tell an expiry from a revocation, and stopped with "the token … was revoked", a reason
+that was not true.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The purge as the bound, with its own reason (chosen) | A missing row stops the job: "no longer exists: its row was removed after it ended" (`invalid_token`, `session_expired`) | One rule (a credential the job can check), and the operator sets the bound with the retention | The bound follows a setting made for another purpose: 1 h to 90 days and more for a token, 30 days for a session |
+| (b) A grace of its own after the end by time | A setting `storage.delete.credential_grace`; the job stops once the credential ended longer ago | A bound that says what it is for | One more setting; a job queued behind others stops for its wait, not for anyone's decision |
+| (c) No bound | A missing row is ignored | A job always finishes | A job would act for a credential nothing records any more |
+
+**Choice:** (a). The bound is stated in H-659 of [file-transfer.md](../security/file-transfer.md).
+
+**Rationale:** the job acts only while it can check the credential that asked; once the row is gone it cannot, and it says so. A
+delete job runs minutes, rarely hours, so the bound matters only for a job that waited behind a long queue. The development agent
+would revisit (b) if jobs that wait longer than a token's retention become common.
+
+**Applied in the spec:** R-STOR-018 (the job's bullet). Code: `internal/auth/standing.go` (`token`, `session`),
+`internal/auth/session/standing.go` (`ErrPurged`). Tests: `TestJobStanding`, `TestR_STOR_018_TheDeleteJobReadsTheSessionThatAskedFromItsRow`.
 
 ## What this does not cover
 

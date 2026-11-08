@@ -104,6 +104,9 @@ func replayDisableUser(ctx context.Context, tx meta.Tx, env journal.Env, o journ
 	if _, err := qs.IdentityEndSessions(ctx, q.IdentityEndSessionsParams{ID: u.ID, Reason: "principal_disabled"}); err != nil {
 		return journal.Result{}, err
 	}
+	if _, err := qs.WithdrawEndedSessionsOfPrincipal(ctx, u.ID); err != nil {
+		return journal.Result{}, err
+	}
 	return o.Result(journal.Applied, u.Name), NotifyPrincipals(env, tx, ChangePrincipal, u.ID)
 }
 

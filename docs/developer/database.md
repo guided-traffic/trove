@@ -491,6 +491,14 @@ refuses (`docker-`, `a.-b`, `web-`) stops the migration; the operator renames or
 added `NOT VALID` and validated with `VALIDATE CONSTRAINT`, which lets reads and writes through. The statements the data port reads are in
 [oci.sql](../../internal/meta/postgres/queries/oci.sql); `test/integration/postgres/oci_test.go` pins the tables, the phases and both grammars at the database.
 
+## Session withdrawal (00059)
+
+[00059_session_withdrawal](../../internal/meta/postgres/migrations/00059_session_withdrawal.sql) is an expand step that adds
+`ui_session.withdrawn_at` and `ui_session.successor_id` with a partial index on the successor (Q-AUTHZ-262). The withdrawal statements
+of [login.sql](../../internal/meta/postgres/queries/login.sql) and `IdentityEndSessions` mark the live sessions they end, and the
+`WithdrawEnded…` statements that follow them mark the ended ones; `EndSessionReplaced` and `EndSessionBySecret` name the successor of a
+re-authentication and of a sign-in in the same browser; only `SessionStandingChain`, the delete job's read, reads either column. The table stays `transient`; a restore ends and withdraws every session.
+
 ## M3 tables
 
 Migration [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) creates every table of the NuGet format

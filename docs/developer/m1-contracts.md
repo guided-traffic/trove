@@ -170,7 +170,7 @@ that each step's inputs are built earlier by a step of an enabled area, and each
 instead of reading them from a shared bag. At step 8: the exposure ceiling and rule service, the repository snapshot
 and service, the identity stores and the metrics (`wireIdentity`), the grant index (`wireAuthz`: it needs the
 repository snapshot, the principal store and the anonymous-access switch of the identity area), the item store and
-files service (`wireFiles`: it needs the decision point), and on a replica with a client listener the limiter
+files service (`wireFiles`: it needs the decision point, and the principal store and the token service for the standing of a delete job, Q-STOR-190), and on a replica with a client listener the limiter
 set, the session store (`wireSessions`, the `session.Validator` of the authentication stage), the OIDC and
 break-glass login (`wireLogin`, which calls the provisioner and takes the limiter `auth.flow_starts`), the
 authentication stage (`wireAuth`), the endpoints' rate-limit classes and last the API stage. A replica refuses to

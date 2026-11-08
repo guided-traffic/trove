@@ -166,6 +166,11 @@ Principal kinds and their reference syntax in this page's API:
   removes the catalog's widening of CI tokens through default groups (TOK-015, CIOIDC-014).
 - A disabled or deleted principal's credentials are refused by authentication
   ([identity-and-authentication.md](identity-and-authentication.md)); authorization never sees them.
+- A job that continues a request after it ended (the delete job of [storage.md](storage.md) R-STOR-018) carries the
+  principal, the credential and the endpoint of the request and no principal set: before each step it reads the
+  principal's status and groups, and the token's scope and bundle, as they are then, and stops when the principal is no
+  longer active or the credential was withdrawn ([Q-AUTHZ-260](#q-authz-260--a-job-carries-who-asked-and-reads-what-that-subject-holds-for-every-batch),
+  [Q-AUTHZ-261](#q-authz-261--a-withdrawn-credential-stops-a-job-a-credential-that-reached-its-end-of-life-does-not)).
 
 Acceptance criteria:
 
@@ -1411,7 +1416,9 @@ When ownership is checked:
   operation on every package whose files it removes: a file, a package folder or a whole scope. The
   question is asked for each of those packages, in name order under its package row lock, in the
   transaction that removes the files or that queues the job removing them, before anything is
-  removed; one refusal refuses the whole delete (Q-AUTHZ-161).
+  removed; one refusal refuses the whole delete (Q-AUTHZ-161). The job asks it again for the files
+  of each of its batches, in the batch's transaction, on the caller as it stands then; a refusal
+  there fails the job and keeps what is left ([storage.md](storage.md) Q-STOR-190).
 - Ownership is recorded per ownership domain and normalized package name. In the MVP the domain is
   the repository (`repo:<repositories.id>`); P1 adds shared domains (R-AUTHZ-020), and until then
   `ownershipDomain` is refused with 422 `not_applicable` rather than ignored (Q-AUTHZ-155). Remote
@@ -4120,7 +4127,7 @@ whose one lookup before a decision is the repository's, is kept), [endpoints.md]
 
 ### Q-AUTHZ-161 · A removal of format content through `/files/` and the items API asks the ownership question
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [storage.md Q-STOR-190](storage.md#q-stor-190--the-delete-job-decides-every-batch-again-on-what-the-subject-that-asked-holds-then)**: the delete job asks the ownership question again for the files of every batch, on the caller as it stands then, so the window of H-154 for an insert in flight is closed.
 
 Context: the npm routes that change a package ask the ownership question under the package row lock; a delete through
 `/files/` or the items API removed a tarball, a package folder or a whole scope (through the job `items-delete` above
@@ -5700,6 +5707,133 @@ gains paths whose case carries meaning.
 code `internal/authz/{pattern.go,index.go,decide.go,ci.go,exposure.go,exposure_service.go}`. Tests: the folding cases of
 `TestR_AUTHZ_005_AnUpperCasePathPatternOnALowerCaseFormatIsRefused`, the upper-case case of
 `TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths` (integration).
+
+### Q-AUTHZ-260 · A job carries who asked, and reads what that subject holds for every batch
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The delete job of [storage.md](storage.md) R-STOR-018 decides every batch again on the caller ([storage.md](storage.md)
+Q-STOR-190). It needs a subject outside any request. The job stored the request's whole subject (`authz.EncodeSubject`): the
+groups the stage resolved, the token's scope, a CI token's frozen bundle, the endpoint. Decided again on that, a batch kept the
+authority of the moment of the request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The whole subject of the request (as built) | The job decodes the stored subject and decides on it | No read per batch | The groups, the scope and the bundle are frozen; a disabled principal and a revoked token are not seen at all |
+| (b) Who asked, the credential and the endpoint; the rest read again per batch (chosen) | `authz.JobSubject` holds the principal (kind, ID, name), the token ID or the session ID, the method and the endpoint with its cache-fill policy; each batch reads the standing (`authz.Standing`): the principal from the principal cache (status, groups), the token or the session by its ID from PostgreSQL (the token's scope and a CI token's bundle from its row) | Every input the authentication stage reads at a request is read again at the same freshness; the job holds no authority of its own | One principal lookup and one row read per batch |
+| (c) Keep the credential and run the authentication stage again | Store the token's hash or the session's and validate it per batch | The stage's code unchanged | A credential, or the key to its cache entry, in a job's arguments (INV-8); the session's CSRF and path rules have no meaning without a request |
+
+**Choice:** (b). The subject a batch decides on is built in `internal/authz` from the two halves (`JobSubject.Subject`), so the
+architecture test of R-EP-013 still finds no subject built elsewhere. What is fixed by design is read from where it is fixed: a
+token's scope does not change for the token, and a CI token's inline grants, caps and contributing mappings are frozen at the
+exchange (Q-CI-17), so both come from the token's row, which says the same as the request did; the state of a contributing
+mapping is the index's, as for a request (Q-CI-47). What is live is read live: the principal's status, kind, name and groups,
+the token's revocation and the session's end or withdrawal (Q-AUTHZ-262). The batch's subject takes the principal's current name,
+because an ownership is decided by name (R-AUTHZ-018) and a rename by the login's username sync (R-AUTH-007) must not keep the old
+name's packages inside the job; a principal whose kind changed is refused. The principal comes through the cache of R-AUTH-023 under
+its freshness gate, so a disable, a rename or a membership change reaches the next batch within `auth.revocation_bound`; the token
+and the session rows are read by ID and never cached, so their revocation is seen at once. The endpoint and its cache-fill policy stay the request's: the job
+decides under the request's exposure ceiling (R-EP-013, H-166 in [endpoints-and-exposure.md](../security/endpoints-and-exposure.md)). An anonymous caller has no
+principal and no credential to read; the decision point reads the runtime switch of R-AUTH-037 for each batch. A subject that
+names no credential and is not anonymous cannot be asked again and is refused. `authz.EncodeSubject` and
+`Engine.PathsAllowedFor` are removed.
+
+**Rationale:** the authentication stage resolves the groups and checks the credential when a request is evaluated
+(R-AUTHZ-002, R-AUTH-023); a step of a job is evaluated later, so it reads them then. Storing only references keeps a job's
+arguments free of authority and of secrets. The development agent would revisit (b) if another job decides for a request and
+needs a credential this reader does not know.
+
+**Applied in the spec:** R-AUTHZ-002 (the bullet on jobs); [storage.md](storage.md) R-STOR-018, Q-STOR-190; [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 (the bound for the job). Code:
+`internal/authz/jobsubject.go`, `internal/auth/standing.go` (`JobStanding`), `internal/auth/token/standing.go`,
+`internal/auth/session/standing.go`, `internal/api/edge/access.go` (`Access.JobSubject`), `internal/files/delete.go`. Tests:
+`TestJobSubject`, `TestJobStanding`, `TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject`.
+
+### Q-AUTHZ-261 · A withdrawn credential stops a job, a credential that reached its end of life does not
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-AUTHZ-260 reads the credential that queued a job for every batch. A request with a credential that ended is refused,
+whatever ended it (R-AUTH-023). A job is not a request: it was accepted while the credential lived, and it runs later, for
+seconds or, behind other jobs, longer.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every end of the credential stops the job | An expired token and a session ended for any reason refuse as a revoked token does | One rule with R-AUTH-023 | A CI token (minutes to an hour) that expires while its job waits stops a delete nobody withdrew; a session timeout, a sign-in elsewhere that evicts the session and a re-authentication stop the user's own delete |
+| (b) Only the principal's status counts | The job ignores its credential | Nothing to read but the principal | A revoked token keeps deleting; the answer to a leaked token is its revocation, not the disabling of its owner |
+| (c) A withdrawal stops the job, an end by time does not (chosen) | Stops it: a token revoked for any reason (by its owner or an administrator, a rotation without overlap, a revoked parent, a deleted mapping) or deleted; a session ended by a sign-out, the end of a user's other sessions, an administrator's end, a disable or a changed break-glass password, or whose row is gone, or whose end reason this build does not know; a principal that is not active or no longer exists. Does not: a token past its expiry (also the end of a rotation's overlap); a session past its idle or absolute deadline, evicted by the session limit or replaced by a re-authentication | Someone's decision that the credential must stop acting stops it; the job finishes where nobody decided anything | A user's own sign-out stops the user's delete; a job may outlive the credential's expiry (H-659 in [file-transfer.md](../security/file-transfer.md)) |
+
+**Choice:** (c). The reasons are those of the session row (R-AUTH-010, `ui_session.end_reason`) and the token row (`revoked_at`
+set). A session that ended by time, by the session limit or by a re-authentication is still reached by a later withdrawal: the
+withdrawals mark the sessions they reach, ended ones included, and a re-authentication names its successor (Q-AUTHZ-262). The
+refusals are the 401 a request would get now: `invalid_token` for a revoked token, `session_expired` for a withdrawn session,
+`principal_disabled` for a principal that is not active; a credential whose row is gone is refused with a reason of its own
+([storage.md](storage.md) Q-STOR-194); the job's error carries them with the reason. A token or a session that names another
+principal than the job's subject is refused like a withdrawn one.
+
+**Rationale:** an expiry and a timeout are no one's decision about a credential, and the request it authenticated was accepted
+while it lived; a revocation, a sign-out and a disable are decisions that the credential, or its principal, must stop acting,
+and the job is that credential acting. The sign-out joins the withdrawals because the end of a user's other sessions, the answer
+to a session that is not the user's, records the same reason (R-AUTH-010) and the two cannot be told apart. The development agent
+would revisit the sign-out if the end of other sessions gets a reason of its own.
+
+**Applied in the spec:** R-AUTHZ-002 (the bullet on jobs); [storage.md](storage.md) R-STOR-018, Q-STOR-190. Code:
+`internal/auth/session/standing.go` (`stillStands`), `internal/auth/token/standing.go`, `internal/auth/standing.go`, the query
+`SessionStandingChain`. Tests: `TestStanding`, `TestJobStanding`, `TestR_STOR_018_TheDeleteJobReadsTheSessionThatAskedFromItsRow`,
+`TestR_STOR_018_TheDeleteJobDecidesEveryBatchOnTheStandingOfItsSubject` (an expired token lets the job finish).
+
+### Q-AUTHZ-262 · A withdrawal reaches a session that had ended already, and a re-authentication hands its job to its successor
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-AUTHZ-261 keeps a job running when its session ended by time, by the session limit or by a re-authentication. Every statement that
+withdraws sessions matched live rows only (`ended_at IS NULL`), so such a session could no longer be withdrawn: a user who
+re-authenticated and then signed out, a user whose evicted session queued the delete and who then ended the other sessions, or an
+administrator who changed the break-glass password after a stolen break-glass session idled out, stopped nothing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Document it in H-659 with the remedies | Disable the principal, remove the grants, cancel the job | No change | The answers a user and an administrator reach for do not work for exactly the sessions that ended quietly |
+| (b) A withdrawal marker and the re-authentication's successor (chosen) | `ui_session.withdrawn_at`, set by every withdrawal on every session it reaches, ended ones included (a sign-out, the end of one or of the other sessions, an administrator's end, a disable, the end of every session, a break-glass password change or rotation); `ui_session.successor_id`, set when a re-authentication replaces a session; `session.Standing` follows the successors and refuses a withdrawn session at any link | Every withdrawal of Q-AUTHZ-261 holds for every session, whatever ended it before | Two columns (migration 00059); a chain of successors, read recursively |
+| (c) Withdraw by principal and time | A per-principal "sessions withdrawn at" that the reader compares with a session's creation | One column | A sign-out of one session would withdraw every session of the principal |
+
+**Choice:** (b). Every withdrawal ends the live sessions in its scope with the marker and then, in a second statement of the same
+transaction, marks the sessions in its scope that had ended already: under READ COMMITTED the second statement reads anew, so a
+session that ended while the first statement waited for its row (a deadline, an eviction, a re-authentication) is marked too. The
+end of one session, of the other sessions and of every session of a principal take the principal's row lock first, as a sign-in
+and a re-authentication do, so no session of the principal starts or is replaced in between. The end of every session marks the
+ended ones in batches of 1,000 (`WithdrawEndedSessions`), also after a restore. The end of the other sessions keeps only the kept
+session itself and withdraws the sessions it replaced, by a sign-in or a re-authentication, with the rest: an ended predecessor
+authenticates nothing, so keeping it would keep only the delete jobs queued with it, and those are what a stolen copy of the
+browser's earlier session carries. The price is deliberate: a user's own delete jobs queued before a sign-in or a re-authentication in
+the same browser stop when the user ends the other sessions, which is an action taken for security. Without that action a chain of
+replacements carries a job on as before. The end of every break-glass session takes the break-glass principal's row lock first, as
+a break-glass sign-in does. A sign-in of the same principal in the same browser (the fixation rule of R-AUTH-010) names its
+successor on the session it ends, as a re-authentication does, and continues it; the session of another principal it ends, one
+planted in the browser, is withdrawn. An eviction, a timeout and a re-authentication set no marker. `auth.session.ended` names the
+sessions a withdrawal ended (`session_ids`) and, apart, those it withdrew after they had ended (`withdrawn_ids`), and is written when
+there is either; the end of one own session answers that it found a session when it withdrew one that had ended, so a repeated end of
+an own session that had ended by time, by the session limit or by a re-authentication answers `204` once and `404` after that. One statement reads a session's chain of successors,
+up to 1,000 links past the first (a link exists only while the replaced session lives, so a chain grows by one link per sign-in or
+re-authentication of a live session); a longer chain is withdrawn, a missing link is purged ([storage.md](storage.md) Q-STOR-194).
+A session that a re-authentication replaced before migration 00059 has no successor and stands like one that ended by time; such rows
+are gone 30 days after their end.
+
+**Rationale:** a withdrawal is a decision about the sessions it reaches, not only about the live ones; recording it on the row is
+what lets a later reader honour it. The re-authenticated session is the same browser's continuation, so the job of its predecessor
+lives and ends with it. The development agent would revisit it if sessions get an end reason of their own for the end of other
+sessions (Q-AUTHZ-261).
+
+**Applied in the spec:** [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-010 (the data model and the
+withdrawal of ended sessions); [storage.md](storage.md) R-STOR-018. Code: migration 00059, `internal/meta/postgres/queries/login.sql`
+(`EndSessionsByID`, `EndSessionReplaced`, `EndSessionBySecret`, `EndSessionsOfPrincipal`, `WithdrawEndedSessionsOfPrincipal`,
+`EndAllSessions`, `WithdrawEndedSessions`, `EndBreakGlassSessions`, `WithdrawEndedBreakGlassSessions`, `EndSessionOfPrincipal`,
+`WithdrawEndedSessionOfPrincipal`, `EndSessionsOfPrincipalExcept`, `WithdrawEndedSessionsOfPrincipalExcept`, `SessionStandingChain`),
+`internal/meta/postgres/queries/identity.sql` (`IdentityEndSessions`), `internal/auth/session/{standing.go,store.go,end.go}`,
+`internal/backup/postrestore/postrestore.go`, `internal/auth/principal/{manager.go,journal_replay.go}`. Tests:
+`TestR_STOR_018_TheDeleteJobReadsTheSessionThatAskedFromItsRow` (a re-authentication then a sign-out, a sign-in in the same browser
+then a sign-out, a planted session of another principal, the end of one own session that had ended, an eviction then the end of the
+other sessions, an administrator's end of an idle session, a break-glass session that idled out then a password change), the unit
+test `TestStanding` (the chain).
 
 ## What this does not cover
 

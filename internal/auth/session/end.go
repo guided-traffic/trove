@@ -51,7 +51,7 @@ func (s *Store) Logout(r *http.Request) (LoggedOut, error) {
 		if err != nil {
 			return err
 		}
-		ended, err := qs.EndSessionsByID(ctx, q.EndSessionsByIDParams{Ids: []string{row.ID}, Reason: EndLogout})
+		ended, err := qs.EndSessionsByID(ctx, q.EndSessionsByIDParams{Ids: []string{row.ID}, Reason: EndLogout, Withdrawn: true})
 		if err != nil {
 			return err
 		}
@@ -66,92 +66,117 @@ func (s *Store) Logout(r *http.Request) (LoggedOut, error) {
 }
 
 // EndForPrincipal ends every session of a principal on the caller's
-// transaction, with the change in the area auth, and returns their IDs. The
+// transaction, with the change in the area auth, and returns the IDs of the
+// sessions it ended and of those it withdrew after they had ended (Q-AUTHZ-262).
+// It takes the principal's row lock first, as a sign-in and a re-authentication
+// do, so no session of the principal starts or is replaced while it runs. The
 // identity area calls it when it disables or deletes a user (R-AUTH-016); the
 // caller records its own event. reason is one of the End constants.
-func (s *Store) EndForPrincipal(ctx context.Context, tx meta.Tx, principalID, reason string) ([]string, error) {
+func (s *Store) EndForPrincipal(ctx context.Context, tx meta.Tx, principalID, reason string) (ended, withdrawn []string, err error) {
 	qs, err := queries(tx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if _, err := qs.LockPrincipal(ctx, principalID); err != nil {
+		return nil, nil, err
 	}
 	rows, err := qs.EndSessionsOfPrincipal(ctx, q.EndSessionsOfPrincipalParams{PrincipalID: principalID, Reason: reason})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	ids := make([]string, 0, len(rows))
-	es := make([]endedSession, 0, len(rows))
-	for _, r := range rows {
-		ids = append(ids, r.ID)
-		es = append(es, endedSession{r.ID, r.SecretSha256Hex})
+	ended, es := endedOf(rows)
+	if withdrawn, err = qs.WithdrawEndedSessionsOfPrincipal(ctx, principalID); err != nil {
+		return nil, nil, err
 	}
-	return ids, notifyEnded(s.o.Changes, tx, es)
+	return ended, withdrawn, notifyEnded(s.o.Changes, tx, es)
 }
 
 // EndPrincipalSessions is EndForPrincipal in a transaction of its own, with the
 // event auth.session.ended (trove admin sessions end --user, R-AUTH-015; the
-// session API of wave 2).
+// session API of wave 2). It returns the IDs of the sessions it ended and of
+// those it withdrew after they had ended; the event names both, apart, and is
+// written when there is either.
 func (s *Store) EndPrincipalSessions(ctx context.Context, principalID string, actor audit.Actor) ([]string, error) {
 	var ids []string
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
-		var err error
-		if ids, err = s.EndForPrincipal(ctx, tx, principalID, EndRevoked); err != nil || len(ids) == 0 {
+		ended, withdrawn, err := s.EndForPrincipal(ctx, tx, principalID, EndRevoked)
+		if ids = append(ended, withdrawn...); err != nil || len(ids) == 0 {
 			return err
 		}
-		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, EndRevoked, principalID, ids))
+		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, EndRevoked, principalID, ended, withdrawn))
 	})
 	return ids, err
 }
 
-// EndOne ends one live session of a principal (DELETE /users/me/sessions/{id},
-// R-AUTH-010) and reports whether there was one: a session of another principal
-// or an ended one matches nothing. reason is one of the End constants; the event
-// auth.session.ended names the actor.
+// EndOne ends one session of a principal (DELETE /users/me/sessions/{id},
+// R-AUTH-010) and reports whether there was one: a live session ends, a session
+// that had ended already is withdrawn (Q-AUTHZ-262), and either is found; a
+// session of another principal, and one withdrawn already, matches nothing, so a
+// repeated end answers found once and then not. reason is one of the End
+// constants; the event auth.session.ended names the actor.
 func (s *Store) EndOne(ctx context.Context, principalID, sessionID, reason string, actor audit.Actor) (bool, error) {
 	found := false
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		found = false
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		rows, err := qs.EndSessionOfPrincipal(ctx, q.EndSessionOfPrincipalParams{ID: sessionID, PrincipalID: principalID, Reason: reason})
-		if err != nil || len(rows) == 0 {
-			found = false
+		if _, err := qs.LockPrincipal(ctx, principalID); err != nil {
 			return err
 		}
+		rows, err := qs.EndSessionOfPrincipal(ctx, q.EndSessionOfPrincipalParams{ID: sessionID, PrincipalID: principalID, Reason: reason})
+		if err != nil {
+			return err
+		}
+		ended, es := endedOf(rows)
+		withdrawn, err := qs.WithdrawEndedSessionOfPrincipal(ctx, q.WithdrawEndedSessionOfPrincipalParams{ID: sessionID, PrincipalID: principalID})
+		if err != nil {
+			return err
+		}
+		if len(ended)+len(withdrawn) == 0 {
+			return nil
+		}
 		found = true
-		es := []endedSession{{rows[0].ID, rows[0].SecretSha256Hex}}
 		if err := notifyEnded(s.o.Changes, tx, es); err != nil {
 			return err
 		}
-		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, principalID, []string{rows[0].ID}))
+		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, principalID, ended, withdrawn))
 	})
 	return found, err
 }
 
-// EndExcept ends every open session of a principal but keepID (DELETE
-// /users/me/sessions?keepCurrent=true) and returns the IDs it ended.
+// EndExcept ends every session of a principal but keepID (DELETE
+// /users/me/sessions?keepCurrent=true), withdraws every one that had ended
+// already, the sessions keepID replaced included (Q-AUTHZ-262), and returns the
+// IDs of both, under the principal's row lock.
 func (s *Store) EndExcept(ctx context.Context, principalID, keepID, reason string, actor audit.Actor) ([]string, error) {
 	var ids []string
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		ids = nil
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
-		rows, err := qs.EndSessionsOfPrincipalExcept(ctx, q.EndSessionsOfPrincipalExceptParams{PrincipalID: principalID, KeepID: keepID, Reason: reason})
-		if err != nil || len(rows) == 0 {
-			ids = nil
+		if _, err := qs.LockPrincipal(ctx, principalID); err != nil {
 			return err
 		}
-		ids = make([]string, 0, len(rows))
-		es := make([]endedSession, 0, len(rows))
-		for _, r := range rows {
-			ids = append(ids, r.ID)
-			es = append(es, endedSession{r.ID, r.SecretSha256Hex})
+		rows, err := qs.EndSessionsOfPrincipalExcept(ctx, q.EndSessionsOfPrincipalExceptParams{PrincipalID: principalID, KeepID: keepID, Reason: reason})
+		if err != nil {
+			return err
+		}
+		ended, es := endedOf(rows)
+		withdrawn, err := qs.WithdrawEndedSessionsOfPrincipalExcept(ctx, q.WithdrawEndedSessionsOfPrincipalExceptParams{PrincipalID: principalID, KeepID: keepID})
+		if err != nil {
+			return err
+		}
+		if ids = append(ended, withdrawn...); len(ids) == 0 {
+			return nil
 		}
 		if err := notifyEnded(s.o.Changes, tx, es); err != nil {
 			return err
 		}
-		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, principalID, ids))
+		return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, principalID, ended, withdrawn))
 	})
 	return ids, err
 }
@@ -167,26 +192,53 @@ func (s *Store) EndBreakGlass(ctx context.Context, reason string, actor audit.Ac
 }
 
 // EndBreakGlassTx is EndBreakGlass on the caller's transaction: the rotation
-// hold ends the sessions in the transaction that opens it (Q-AUTH-14).
+// hold ends the sessions in the transaction that opens it (Q-AUTH-14). It takes
+// the break-glass principal's row lock first, as a break-glass sign-in does. The
+// break-glass sessions that had ended already are withdrawn as well
+// (Q-AUTHZ-262); the event names both, apart.
 func (s *Store) EndBreakGlassTx(ctx context.Context, tx meta.Tx, reason string, actor audit.Actor) ([]string, error) {
 	qs, err := queries(tx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := qs.EndBreakGlassSessions(ctx, reason)
-	if err != nil || len(rows) == 0 {
+	if _, err := qs.LockBreakGlassPrincipal(ctx); err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(rows))
-	es := make([]endedSession, 0, len(rows))
-	for _, r := range rows {
-		ids = append(ids, r.ID)
-		es = append(es, endedSession{r.ID, r.SecretSha256Hex})
+	rows, err := qs.EndBreakGlassSessions(ctx, reason)
+	if err != nil {
+		return nil, err
+	}
+	ended, es := endedOf(rows)
+	withdrawn, err := qs.WithdrawEndedBreakGlassSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := append(ended, withdrawn...)
+	if len(ids) == 0 {
+		return nil, nil
 	}
 	if err := notifyEnded(s.o.Changes, tx, es); err != nil {
 		return nil, err
 	}
-	return ids, s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, "", ids))
+	return ids, s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, reason, "", ended, withdrawn))
+}
+
+// endStatementRow is what every end statement returns of a session it ended: its ID and the hash of its secret.
+type endStatementRow = struct {
+	ID              string
+	SecretSha256Hex string
+}
+
+// endedOf lists the IDs of the sessions an end statement returned and what the change of the area auth names of them.
+func endedOf[R ~endStatementRow](rows []R) ([]string, []endedSession) {
+	ids := make([]string, 0, len(rows))
+	es := make([]endedSession, 0, len(rows))
+	for _, r := range rows {
+		row := endStatementRow(r)
+		ids = append(ids, row.ID)
+		es = append(es, endedSession{row.ID, row.SecretSha256Hex})
+	}
+	return ids, es
 }
 
 // EndAll ends every session, in batches of at most 1000 per transaction
@@ -215,14 +267,34 @@ func (s *Store) EndAll(ctx context.Context, actor audit.Actor) (int, error) {
 			if err := notifyEnded(s.o.Changes, tx, es); err != nil {
 				return err
 			}
-			return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, EndRevoked, "", ids))
+			return s.o.Audit.RecordTx(ctx, tx, endedEvent(actor, EndRevoked, "", ids, nil))
 		})
 		if err != nil {
 			return total, err
 		}
 		total += n
 		if n < 1000 {
-			return total, nil
+			return total, s.withdrawEnded(ctx)
+		}
+	}
+}
+
+// withdrawEnded withdraws the sessions that had ended before an end of every session, in batches of at most 1000 per
+// transaction, so that a delete job one of them queued stops too (Q-AUTHZ-262). Nothing is cached of an ended session and no
+// event names it again.
+func (s *Store) withdrawEnded(ctx context.Context) error {
+	for {
+		var n int64
+		err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+			qs, err := queries(tx)
+			if err != nil {
+				return err
+			}
+			n, err = qs.WithdrawEndedSessions(ctx)
+			return err
+		})
+		if err != nil || n < 1000 {
+			return err
 		}
 	}
 }
@@ -256,13 +328,21 @@ func (s *Store) LiveBreakGlassSessions(ctx context.Context) (int64, error) {
 }
 
 // endedEvent is auth.session.ended for sessions ended by someone other than
-// their user (R-AUTH-041). The details name at most 1000 session IDs.
-func endedEvent(actor audit.Actor, reason, principalID string, ids []string) audit.Event {
-	shown := ids
-	if len(shown) > 1000 {
-		shown = shown[:1000]
+// their user (R-AUTH-041): the sessions it ended, and apart from them the
+// sessions it withdrew after they had ended (Q-AUTHZ-262). The details name at
+// most 1000 session IDs of each.
+func endedEvent(actor audit.Actor, reason, principalID string, ended, withdrawn []string) audit.Event {
+	firstK := func(ids []string) []string {
+		if len(ids) > 1000 {
+			return ids[:1000]
+		}
+		return ids
 	}
-	details, _ := json.Marshal(map[string]any{"reason": reason, "session_ids": shown, "count": len(ids)})
+	d := map[string]any{"reason": reason, "session_ids": firstK(ended), "count": len(ended)}
+	if len(withdrawn) > 0 {
+		d["withdrawn_ids"], d["withdrawn_count"] = firstK(withdrawn), len(withdrawn)
+	}
+	details, _ := json.Marshal(d)
 	ev := audit.Event{Type: audit.EventAuthSessionEnded, Actor: actor, Outcome: audit.Success, Details: details}
 	if principalID != "" {
 		ev.Subject = audit.Subject{Kind: "user", ID: principalID}

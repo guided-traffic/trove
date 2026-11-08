@@ -3428,7 +3428,9 @@ paths:
       tags: [sessions]
       summary: End all of the caller's sessions
       description: |
-        Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010).
+        Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010). Sessions
+        that had ended already, the ones the current session replaced by a sign-in or a re-authentication included, are withdrawn, so
+        that no delete job queued with one of them goes on (Q-AUTHZ-262).
         A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
       x-trove-permission:
         authenticated: true
@@ -3461,7 +3463,9 @@ paths:
       tags: [sessions]
       summary: End one of the caller's sessions
       description: |
-        Ends a session of the caller; another user's session, an ended one and an unknown ID answer `404` (R-AUTH-010).
+        Ends a session of the caller. A session of the caller that had ended already by its deadlines, the session limit or a
+        re-authentication is withdrawn and answers `204` too, so that a delete job it queued stops (Q-AUTHZ-262); a repeated request
+        for it then answers `404`, as do another user's session, a session already withdrawn and an unknown ID (R-AUTH-010).
         A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
       x-trove-permission:
         authenticated: true
@@ -12671,7 +12675,7 @@ components:
           enum: [job_failed, job_timeout, attempts_exhausted, cancelled, superseded]
         detail:
           type: string
-          description: The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. Not translated.
+          description: The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. A problem the error carries (the first errs.Error in its chain) shows its code and its detail only, never the operation or the cause behind it, which can hold a database's text; the cause is in the replica's log (Q-STOR-193). Not translated.
         attempt:
           type: integer
           minimum: 1

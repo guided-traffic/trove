@@ -2751,13 +2751,13 @@ opaque, sealed cursor would close it and needs a new Host method and a key deriv
 ### H-653 · The cascade of a retention run is not held to a subject's grants
 
 The cascade of a hook is held to the grants of the caller for a removal a request makes (the registry routes and `/files/`) and for the
-delete job that finishes a large `/files/` delete: the job carries the encoded subject of the request and decides every path a hook
-cascades to in a batch for `delete`, on the authorization index installed at that moment; the first refusal fails the batch and the job with
-the 403 of the path. What remains is a removal that has no subject: a retention run or a purge removes by policy, and the cascade of
-the OCI hook (a removed manifest takes its tags and referrers) is not decided for anyone. Dormant: no retention run reaches the OCI
-hook today, and when one does it acts as the system, not as a caller whose grant could be exceeded. That the delete job decides on the
-subject's groups, scope and CI grants as of the request (a withdrawn membership, a revoked token or a disabled principal does not narrow
-a running job) is a finding of the items-delete job for every format, F-84 in the project plan, not part of this gap.
+delete job that finishes a large `/files/` delete: the job carries who asked and with which credential, reads what that caller holds
+when each batch begins (an active principal, its groups then, a credential nobody withdrew) and decides every path a hook cascades to in
+the batch for `delete` on that, on the authorization index installed at that moment; the first refusal, and a withdrawn principal or
+credential, fail the job with the 403 or the 401 a request would get ([storage.md](../storage.md) Q-STOR-190,
+[authorization.md](../authorization.md) Q-AUTHZ-260). What remains is a removal that has no subject: a retention run or a purge removes
+by policy, and the cascade of the OCI hook (a removed manifest takes its tags and referrers) is not decided for anyone. Dormant: no
+retention run reaches the OCI hook today, and when one does it acts as the system, not as a caller whose grant could be exceeded.
 
 ### Q-OCI-100 · Everything below `/v2/` is one handler and one match, on the patterns `/v2` and `/v2/{rest...}`
 

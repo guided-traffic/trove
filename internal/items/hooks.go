@@ -106,7 +106,8 @@ type Hooks interface {
 
 // CascadeGuard decides the paths a storage hook cascades to (RemovedEvent's Cascade): the caller of a removal that has a subject installs
 // one in the context, and the host refuses the cascade when it returns an error, so the items a hook takes besides the ones the caller
-// named are held to the grants of the caller (Q-OCI-76). A removal without a guard (a job, a retention run) cascades unchecked.
+// named are held to the grants of the caller (Q-OCI-76). The delete job installs the check of its batch, on what its subject holds
+// then (BatchGuard, Q-STOR-190). A removal without a guard (a retention run, a job no subject asked for) cascades unchecked.
 type CascadeGuard func(ctx context.Context, paths []string) error
 
 type cascadeGuardKey struct{}

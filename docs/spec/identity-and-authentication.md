@@ -879,13 +879,28 @@ CREATE TABLE ui_session (
   user_agent          text,
   ended_at            timestamptz,
   end_reason          text CHECK (end_reason IN ('logout', 'idle', 'absolute', 'evicted', 'revoked',
-                                                 'principal_disabled', 'reauth_rotated', 'password_changed'))
+                                                 'principal_disabled', 'reauth_rotated', 'password_changed')),
+  withdrawn_at        timestamptz,                       -- set by every withdrawal, ended sessions included (Q-AUTHZ-262)
+  successor_id        uuid                               -- the session a re-authentication replaced this one by
 );
 CREATE INDEX ui_session_principal ON ui_session (principal_id) WHERE ended_at IS NULL;
 ```
 
 The table has the backup export class `transient` ([backup-and-restore.md](backup-and-restore.md)
 R-BAK-004): it holds raw ID tokens, and a restore ends every session.
+
+A sign-out, the end of one or of the other own sessions, an administrator's end of a user's sessions, a disable, the end of every
+session and a change or rotation of the break-glass password withdraw the sessions they reach: the live ones end, and every one of
+them, a session that had already ended by time, by the session limit or by a re-authentication included, is marked `withdrawn_at`,
+in a second statement of the same transaction, under the principal's row lock where the withdrawal is of one principal's sessions.
+The end of the other own sessions keeps only the current session and withdraws the sessions it replaced as well, so a user's own
+delete jobs queued before a sign-in or a re-authentication in the same browser stop with it. A re-authentication, and a sign-in of the
+same principal in the same browser, name their successor (`successor_id`) on the session they replace; the session of another
+principal that a sign-in ends is withdrawn. `auth.session.ended` names the withdrawn sessions apart (`withdrawn_ids`). The end of one
+own session that had already ended by time, by the session limit or by a re-authentication answers `204` once, because it withdraws
+the session, and `404` after that. Nothing that authenticates a request reads the two columns; the delete job of
+[storage.md](storage.md) R-STOR-018 does, to stop when the session that queued it was withdrawn ([authorization.md](authorization.md)
+Q-AUTHZ-261, Q-AUTHZ-262).
 
 API:
 
@@ -1879,6 +1894,12 @@ or carrying forged messages. It also holds for a replica cut off from PostgreSQL
 it started ([READ COMMITTED](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)),
 which is why a poll younger than the bound proves it. Startup MUST fail, naming both keys, if
 `auth.revocation_bound` is below 2 × `cluster.epoch_poll_interval` or above 10 s.
+
+The bound also holds for the job that finishes a large delete for a request ([storage.md](storage.md) R-STOR-018):
+before each batch it reads the token or the session that queued it by its ID from PostgreSQL, and the principal through
+the principal cache under the freshness gate, so a batch that begins later than the bound after a revocation, a
+withdrawing end of the session or a disable removes nothing ([storage.md](storage.md) Q-STOR-190,
+[authorization.md](authorization.md) Q-AUTHZ-260, Q-AUTHZ-261).
 
 **Retention.** The `token-cleanup` task (R-AUTH-043) deletes token rows `retention_after_end`
 after expiry or revocation. A deleted row means an unknown token. The audit trail keeps the

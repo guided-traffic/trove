@@ -6336,7 +6336,12 @@ request header by the adapter (the hop policy removes it); a token guessed from 
 
 ### ADR-168 · The OCI data port reads and removes for the deletion, the sweep and the replay
 
-**Status:** Decided by the development agent — owner review at the walkthrough.
+**Status:** Decided by the development agent — owner review at the walkthrough. **Superseded in part by
+[Q-STOR-190](spec/storage.md#q-stor-190--the-delete-job-decides-every-batch-again-on-what-the-subject-that-asked-holds-then) and
+[Q-AUTHZ-260](spec/authorization.md#q-authz-260--a-job-carries-who-asked-and-reads-what-that-subject-holds-for-every-batch)**: the delete
+job no longer carries the encoded subject of the request; it carries who asked (`authz.JobSubject`), reads what that subject holds for
+every batch, and decides on it the batch's own items, the ownership of its files and the cascade, with a 403 that names the path the
+request named.
 
 **Context.** ADR-161 gave the OCI format the cascade of a removal (`ItemsEvent.Cascade`), the audit event `oci.manifest.deleted` with
 its journal flag and the table of withheld manifests, and left the behaviour behind them to the work package of the deletion. That

@@ -261,6 +261,16 @@ func (p *PostRestorer) cleanUp(ctx context.Context, fx []fixup.Fixup, t string, 
 			}
 			sessions += len(ended)
 		}
+		// The sessions that had ended before are withdrawn as well, so that no delete job one of them queued goes on (Q-AUTHZ-262).
+		for {
+			n, err := qs.WithdrawEndedSessions(ctx)
+			if err != nil {
+				return fmt.Errorf("withdrawing ended sessions: %w", err)
+			}
+			if n == 0 {
+				break
+			}
+		}
 		step(fmt.Sprintf("ended %d sessions", sessions))
 		for _, f := range fx {
 			if err := f.Apply(ctx, tx, env); err != nil {

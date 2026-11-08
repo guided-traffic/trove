@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -43,11 +44,15 @@ type DeleteArgs struct {
 	Actor  audit.Actor `json:"actor"`
 	// MaxID is the highest item id the permission check saw. The job removes only
 	// items up to it: an item that a deploy adds to the subtree afterwards was
-	// never decided and stays (R-STOR-018). Zero (a job enqueued before the field
-	// existed) bounds nothing.
-	MaxID int64 `json:"maxId,omitempty"`
-	// Subject is the caller encoded for the job's guard (JobGuard); empty for a job asked by no subject.
-	Subject json.RawMessage `json:"subject,omitempty"`
+	// never decided and stays (R-STOR-018). A job without it removes nothing
+	// (Q-STOR-192).
+	MaxID int64 `json:"maxId"`
+	// Subject names the caller for the job's guard (JobGuard): who asked, with which credential, on which endpoint, and none of the
+	// grants the request was decided with, which the guard reads again for every batch. A job without it removes nothing.
+	Subject json.RawMessage `json:"subject"`
+	// all removes every item of the subtree whatever its id, with no guard: EraseCache only, which no request asks for. A job's
+	// arguments never carry it.
+	all bool
 }
 
 // DeleteSpec is the removal of a file, or of a folder with its subtree.
@@ -58,7 +63,7 @@ type DeleteSpec struct {
 	Actor    audit.Actor
 	Source   audit.Source
 	Endpoint string
-	// Subject is the caller in the form the job guard decides for (see JobGuard); it is carried into the job.
+	// Subject names the caller in the form the job guard decides for (see JobGuard); it is carried into the job.
 	Subject json.RawMessage
 	// Check is asked with the paths of the subtree, in batches of at most 1,000,
 	// before anything is removed; an error stops the delete with nothing changed.
@@ -347,10 +352,14 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 	if err != nil {
 		return DeleteResult{}, err
 	}
+	if maxID == 0 {
+		// The subtree emptied between the count and the listing: there is nothing to remove and no job to queue (Q-STOR-192).
+		return DeleteResult{Done: true}, nil
+	}
 	var res DeleteResult
 	err = s.run.InTx(ctx, func(tx meta.Tx) error {
-		// The job removes only items up to MaxID, so what is asked of the files here
-		// covers the removal that follows (but for the insert in flight of H-154).
+		// The job removes only items up to MaxID, and decides each of its batches again on the subject that asked, an insert in
+		// flight at this listing included (Q-STOR-190).
 		if spec.Extra != nil {
 			if err := spec.Extra(ctx, tx, files); err != nil {
 				return err
@@ -370,57 +379,133 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 	return res, err
 }
 
-// RunDeleteJob is the handler of [DeleteJobKind]. It decides nothing: the request
-// that queued it decided every item up to DeleteArgs.MaxID. It is idempotent and
-// resumable: every batch is a transaction of its own and the files go before the
-// folders, so a replica that dies or drains leaves the remainder to the next
-// attempt, which lists what is left (R-STOR-018: a crash resumes with the
-// remainder). The storage hooks learn of each batch of files in its transaction.
+// RunDeleteJob is the handler of [DeleteJobKind]. The request that queued it decided every item up to DeleteArgs.MaxID; the job
+// decides every batch again, through the guard the composition root installs ([JobGuard]), on what the subject that asked holds when
+// the batch begins: the batch's own items, the package ownership of its files and what a storage hook cascades to (Q-STOR-190). A
+// job without a subject or without a bound removes nothing (Q-STOR-192). A refusal, or a principal or credential that was withdrawn,
+// fails the job without a further attempt, keeps what is left and records artifact.delete_stopped (Q-STOR-193); a repository that is
+// gone or being deleted ends the job as done, because the repository's own deletion removes the rest (Q-STOR-191). It is idempotent
+// and resumable: every batch is a transaction of its own and the files go before the folders, so a replica that dies or drains leaves
+// the remainder to the next attempt, which lists what is left (R-STOR-018: a crash resumes with the remainder). The storage hooks
+// learn of each batch of files in its transaction.
 func (s *Store) RunDeleteJob(ctx context.Context, run *jobs.Run) error {
 	var a DeleteArgs
 	if err := json.Unmarshal(run.Args, &a); err != nil {
 		return jobs.Permanent(fmt.Errorf("items-delete: arguments: %w", err))
 	}
+	if len(a.Subject) == 0 || a.MaxID <= 0 {
+		return jobs.Permanent(errors.New("items-delete: the job names no subject that asked for it or no highest item id it may remove; it removes nothing"))
+	}
+	st := &deleteRun{run: run, name: a.Key}
+	err := s.runDelete(ctx, a, st)
+	switch {
+	case errors.Is(err, ErrRepositoryGone):
+		return nil
+	case err != nil && jobs.IsPermanent(err) && refused(err):
+		s.recordStopped(ctx, run.ID, a, st, err)
+	}
+	return jobFailure(ctx, err)
+}
+
+// deleteRun is the state of one run of the delete: the items removed so far, the name the repository had at the last batch, and
+// the job whose progress it reports (nil for EraseCache).
+type deleteRun struct {
+	run   *jobs.Run
+	done  int64
+	total int64
+	name  qname.Repo
+}
+
+// progress reports the items removed so far.
+func (st *deleteRun) progress(ctx context.Context) error {
+	if st.run == nil {
+		return nil
+	}
+	return st.run.SaveProgress(ctx, st.done, max(st.total, st.done), "items")
+}
+
+// runDelete removes the subtree of a in batches: the files, then the folders.
+func (s *Store) runDelete(ctx context.Context, a DeleteArgs, st *deleteRun) error {
 	batch := max(s.cfg.Delete.BatchSize, 1)
 	lo, hi := subtreeBounds(a.Path)
-	var total int64
 	if err := s.read(ctx, func(qs *q.Queries) error {
 		var err error
-		total, err = qs.CountSubtree(ctx, q.CountSubtreeParams{RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi})
+		st.total, err = qs.CountSubtree(ctx, q.CountSubtreeParams{RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi})
 		return err
 	}); err != nil {
 		return err
 	}
-	var done int64
 	for { // the files, in batches; the rows are gone after each, so the next list starts over
 		if err := ctx.Err(); err != nil {
 			return context.Cause(ctx)
 		}
-		n, err := s.deleteFileBatch(ctx, a, lo, hi, batch)
+		n, err := s.deleteFileBatch(ctx, a, st, lo, hi, batch)
 		if err != nil {
 			return err
 		}
-		done += n
-		if err := run.SaveProgress(ctx, done, max(total, done), "items"); err != nil {
+		st.done += n
+		if err := st.progress(ctx); err != nil {
 			return err
 		}
 		if n < int64(batch) {
 			break
 		}
 	}
-	return s.deleteFolders(ctx, run, a, lo, hi, batch, done, total)
+	return s.deleteFolders(ctx, a, st, lo, hi, batch)
 }
 
-func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi string, batch int) (int64, error) {
+// refused reports whether err is a refusal of the job's guard: a refused path or a withdrawn principal or credential.
+func refused(err error) bool {
+	k := errs.KindOf(err)
+	return k == errs.Forbidden || k == errs.Unauthenticated
+}
+
+// jobFailure is the error the job reports for err (Q-STOR-193): a refusal and the job's own permanent errors keep their text, which
+// the job's error shows; every other error, an errs.Error of a store and a database's text among them, is reported with a generic
+// text, and its cause stays in the replica's log, which the worker writes. A cancellation or a lost lease passes as it is.
+func jobFailure(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() != nil || jobs.IsPermanent(err) {
+		return err
+	}
+	return errs.E(errs.Unavailable, errs.CodeUnavailable, "The delete job could not complete this attempt; it is tried again.", errs.WithCause(err))
+}
+
+// recordStopped records artifact.delete_stopped for a job its guard stopped (Q-STOR-193): the subject that asked as the actor, the
+// reason code, the job, the root path and the items removed before it stopped.
+func (s *Store) recordStopped(ctx context.Context, jobID string, a DeleteArgs, st *deleteRun, err error) {
+	code := errs.CodeForbidden
+	if e, ok := errs.As(err); ok {
+		code = e.Code
+	}
+	raw, mErr := json.Marshal(map[string]any{"path": a.Path, "reason": code, "job": jobID, "removed": st.done})
+	if mErr != nil {
+		return
+	}
+	s.rec.Record(ctx, audit.Event{
+		Type: audit.EventArtifactDeleteStopped, Actor: a.Actor, Outcome: audit.Denied, Reason: code,
+		Subject:    audit.Subject{Kind: "repository", Name: st.name.String()},
+		Repository: st.name.String(), Project: st.name.Project, Path: a.Path, Details: raw,
+	})
+}
+
+func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, st *deleteRun, lo, hi string, batch int) (int64, error) {
+	guard, err := s.batchGuard(ctx, a)
+	if err != nil {
+		return 0, err
+	}
 	var n int64
-	repo := RepoRef{ID: a.RepoID, Name: a.Key, Class: a.Class, Format: a.Format}
-	err := s.run.InTx(ctx, func(tx meta.Tx) error {
+	repo := RepoRef{ID: a.RepoID, Name: st.name, Class: a.Class, Format: a.Format}
+	if guard != nil && !guard.Name.IsZero() {
+		repo.Name, st.name = guard.Name, guard.Name
+	}
+	err = s.run.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
 		rows, err := qs.ListSubtreeBatch(ctx, q.ListSubtreeBatchParams{
-			RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, FilesOnly: true, MaxID: a.MaxID, RowLimit: int32(batch), //nolint:gosec // storage.delete.batch_size
+			RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, FilesOnly: true, Bounded: !a.all, MaxID: a.MaxID,
+			RowLimit: int32(batch), //nolint:gosec // storage.delete.batch_size
 		})
 		if err != nil {
 			return err
@@ -430,14 +515,11 @@ func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi string
 			items[i] = subtreeRow{ID: r.ID, Path: r.Path, Kind: r.Kind, Digest: r.BlobSha256, Size: r.Size.Int64}
 		}
 		n = int64(len(items))
-		if g := s.jobGuard.Load(); g != nil && len(a.Subject) > 0 {
-			ctx = WithCascadeGuard(ctx, func(ctx context.Context, paths []string) error {
-				err := (*g)(ctx, a, paths)
-				if errs.KindOf(err) == errs.Forbidden {
-					return jobs.Permanent(err) // a refusal does not change by trying again
-				}
+		if guard != nil && n > 0 {
+			if err := guard.files(ctx, tx, items); err != nil {
 				return err
-			})
+			}
+			ctx = WithCascadeGuard(ctx, func(ctx context.Context, paths []string) error { return refusal(guard.Check(ctx, paths)) })
 		}
 		return s.removeRows(ctx, tx, qs, who{actor: a.Actor}, repo, items, jobScope(qs, a))
 	})
@@ -446,7 +528,7 @@ func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi string
 
 // deleteFolders removes the folders of the subtree deepest first, each in a
 // transaction of its own batch, and then the implicit folders above it.
-func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, lo, hi string, batch int, done, total int64) error {
+func (s *Store) deleteFolders(ctx context.Context, a DeleteArgs, st *deleteRun, lo, hi string, batch int) error {
 	var folders []string
 	after := ""
 	err := s.read(ctx, func(qs *q.Queries) error {
@@ -454,7 +536,7 @@ func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, 
 		after = ""
 		for {
 			rows, err := qs.ListSubtreeBatch(ctx, q.ListSubtreeBatchParams{
-				RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, After: after, MaxID: a.MaxID, RowLimit: 1000,
+				RepoID: a.RepoID, Path: a.Path, Lo: lo, Hi: hi, After: after, Bounded: !a.all, MaxID: a.MaxID, RowLimit: 1000,
 			})
 			if err != nil {
 				return err
@@ -477,7 +559,10 @@ func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, 
 			return context.Cause(ctx)
 		}
 		part := folders[i:min(i+batch, len(folders))]
-		err := s.run.InTx(ctx, func(tx meta.Tx) error {
+		if err := s.checkFolders(ctx, a, st, part); err != nil {
+			return err
+		}
+		err = s.run.InTx(ctx, func(tx meta.Tx) error {
 			qs, err := queries(tx)
 			if err != nil {
 				return err
@@ -492,11 +577,8 @@ func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, 
 		if err != nil {
 			return err
 		}
-		done += int64(len(part))
-		if run == nil {
-			continue
-		}
-		if err := run.SaveProgress(ctx, done, max(total, done), "items"); err != nil {
+		st.done += int64(len(part))
+		if err := st.progress(ctx); err != nil {
 			return err
 		}
 	}
@@ -507,6 +589,19 @@ func (s *Store) deleteFolders(ctx context.Context, run *jobs.Run, a DeleteArgs, 
 		}
 		return cleanAncestors(ctx, qs, a.RepoID, ParentOf(a.Path))
 	})
+}
+
+// checkFolders decides a batch of folders of the job before its transaction: a folder holds no file of its own, so only its path is
+// decided; the files below it were, in their batches.
+func (s *Store) checkFolders(ctx context.Context, a DeleteArgs, st *deleteRun, part []string) error {
+	guard, err := s.batchGuard(ctx, a)
+	if err != nil || guard == nil {
+		return err
+	}
+	if !guard.Name.IsZero() {
+		st.name = guard.Name
+	}
+	return refusal(guard.Check(ctx, part))
 }
 
 // RemoveSpec is the removal of files inside a transaction of the caller.
@@ -581,7 +676,7 @@ func scopeOf(rows []subtreeRow) func(context.Context, string) (bool, error) {
 func jobScope(qs *q.Queries, a DeleteArgs) func(context.Context, string) (bool, error) {
 	lo, hi := subtreeBounds(a.Path)
 	return func(ctx context.Context, p string) (bool, error) {
-		return qs.ItemInRemovalScope(ctx, q.ItemInRemovalScopeParams{RepoID: a.RepoID, ItemPath: p, Path: a.Path, Lo: lo, Hi: hi, MaxID: a.MaxID})
+		return qs.ItemInRemovalScope(ctx, q.ItemInRemovalScopeParams{RepoID: a.RepoID, ItemPath: p, Path: a.Path, Lo: lo, Hi: hi, Bounded: !a.all, MaxID: a.MaxID})
 	}
 }
 
@@ -598,9 +693,79 @@ func joinScope(own, outer func(context.Context, string) (bool, error)) func(cont
 	}
 }
 
-// JobGuard decides the paths a storage hook cascades to in a batch of the delete job, for the subject the job carries ([DeleteArgs.Subject]);
-// an error fails the batch and the job. The composition root installs it ([Store.SetJobGuard]) once the files service exists.
-type JobGuard func(ctx context.Context, a DeleteArgs, paths []string) error
+// JobGuard opens the guard of one batch of the delete job for the subject the job carries ([DeleteArgs.Subject]): it reads what that
+// subject holds now - whether its principal is still active and its credential was not withdrawn, its groups, its token's scope - and
+// returns the decisions of the batch on it (Q-STOR-190, Q-AUTHZ-260). The composition root installs it ([Store.SetJobGuard]) once the
+// files service exists. An error of kind Forbidden or Unauthenticated ends the job: a refusal and a withdrawal do not change by trying
+// again. Any other error (a database that does not answer, an index that is not current) fails the attempt, and the queue retries it.
+type JobGuard func(ctx context.Context, a DeleteArgs) (BatchGuard, error)
+
+// ErrRepositoryGone is what a [JobGuard] answers when the job's repository no longer exists or is being deleted: the job ends as
+// done, because the repository's own deletion removes what is left (Q-STOR-191).
+var ErrRepositoryGone = errors.New("items: the repository of the delete job is gone")
+
+// BatchGuard is what one batch of the delete job asks before it removes anything, all on the one standing the guard read.
+type BatchGuard struct {
+	// Name is the repository's name when the batch began: a moved repository is decided, and named in its events, where it is now
+	// (Q-STOR-191). The zero name keeps the name the job carries.
+	Name qname.Repo
+	// Check decides `delete` on paths for the subject: the batch's own items before they are removed, and every path a storage hook
+	// cascades to while they are (the cascade of an OCI manifest takes its tags, Q-OCI-76).
+	Check func(ctx context.Context, paths []string) error
+	// Removal asks the format about the files the batch removes, in its transaction, as the request asked about the whole subtree
+	// (the package ownership of R-AUTHZ-018, Q-AUTHZ-161); nil asks nothing.
+	Removal func(ctx context.Context, tx meta.Tx, files []string) error
+}
+
+// files decides the files of a batch of the job in its transaction: `delete` on each, then what the format asks about them.
+func (g *BatchGuard) files(ctx context.Context, tx meta.Tx, rows []subtreeRow) error {
+	paths := make([]string, len(rows))
+	for i, r := range rows {
+		paths[i] = r.Path
+	}
+	if err := refusal(g.Check(ctx, paths)); err != nil {
+		return err
+	}
+	if g.Removal == nil {
+		return nil
+	}
+	return refusal(g.Removal(ctx, tx, filePaths(rows)))
+}
 
 // SetJobGuard installs the guard of the delete job; it is set once, before the worker runs.
 func (s *Store) SetJobGuard(g JobGuard) { s.jobGuard.Store(&g) }
+
+// batchGuard opens the guard of one batch of the job: nil for EraseCache, which no request asks for. A job is never run unguarded: on
+// a replica without a guard it fails, and so does a job that names no subject. ErrRepositoryGone passes through unmarked.
+func (s *Store) batchGuard(ctx context.Context, a DeleteArgs) (*BatchGuard, error) {
+	if a.all {
+		return nil, nil
+	}
+	if len(a.Subject) == 0 {
+		return nil, jobs.Permanent(errors.New("items-delete: the job names no subject that asked for it; it removes nothing"))
+	}
+	g := s.jobGuard.Load()
+	if g == nil {
+		return nil, jobs.Permanent(errors.New("items-delete: the job carries the subject that asked for it, and this replica has no guard that decides for it"))
+	}
+	bg, err := (*g)(ctx, a)
+	if errors.Is(err, ErrRepositoryGone) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, refusal(err)
+	}
+	if bg.Check == nil {
+		return nil, jobs.Permanent(errors.New("items-delete: the guard of the job decides nothing"))
+	}
+	return &bg, nil
+}
+
+// refusal marks what a further attempt of the job would not change: a refused path, and a principal or credential that was withdrawn.
+func refusal(err error) error {
+	switch errs.KindOf(err) {
+	case errs.Forbidden, errs.Unauthenticated:
+		return jobs.Permanent(err)
+	}
+	return err
+}

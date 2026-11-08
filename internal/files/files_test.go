@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -78,7 +79,7 @@ func (a *access) PathsAllowed(_ context.Context, base authz.Coordinate, act auth
 
 func (a *access) Index() *authz.Index { return a.idx }
 
-func (a *access) EncodedSubject() ([]byte, error) { return []byte(`{}`), nil }
+func (a *access) JobSubject() authz.JobSubject { return authz.JobSubject{} }
 
 func (a *access) RecordAllowed(_ context.Context, _ meta.Tx, c authz.Coordinate, _ authz.Decision) error {
 	a.recorded = append(a.recorded, c)
@@ -184,7 +185,12 @@ func (r repos) ByName(_ context.Context, name qname.Repo) (repository.Repository
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 }
 
-func (r repos) ByID(context.Context, int64) (repository.Repository, error) {
+func (r repos) ByID(_ context.Context, id int64) (repository.Repository, error) {
+	for _, repo := range r {
+		if repo.ID == strconv.FormatInt(id, 10) {
+			return repo, nil
+		}
+	}
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no repository")
 }
 

@@ -149,11 +149,16 @@ func (s *Service) rawDeploy(repo repository.Repository) error {
 	return s.formats.RawDeploy(repo)
 }
 
-// checkRemoval asks the format about the files a delete removes, in its
-// transaction.
-func (s *Service) checkRemoval(ctx context.Context, tx meta.Tx, c Caller, repo repository.Repository, files []string) error {
+// checkRemoval asks the format about the files a removal takes away, in its transaction, on the index and for the subject the removal
+// is decided on: the request's for a delete, the batch's for a batch of the delete job (Q-STOR-190).
+func (s *Service) checkRemoval(ctx context.Context, tx meta.Tx, repo repository.Repository, files []string, idx *authz.Index, sub authz.Subject) error {
 	if s.formats == nil || len(files) == 0 {
 		return nil
 	}
-	return s.formats.CheckRemoval(ctx, tx, Removal{Repo: repo, Files: files, Index: c.Access.Index(), Subject: c.Subject})
+	return s.formats.CheckRemoval(ctx, tx, newRemoval(repo, files, idx, sub))
+}
+
+// newRemoval is the one place a [Removal] is built, so that a field the seam needs is set for every removal alike.
+func newRemoval(repo repository.Repository, files []string, idx *authz.Index, sub authz.Subject) Removal {
+	return Removal{Repo: repo, Files: files, Index: idx, Subject: sub}
 }

@@ -2,8 +2,6 @@ package authz
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 )
 
 // Classifier gives the package and the version a path of a repository belongs to:
@@ -64,25 +62,4 @@ func (e *Engine) PathsAllowedOn(ctx context.Context, idx *Index, sub Subject, ba
 		out[i] = e.evaluate(idx, sub, c).Outcome == Allow
 	}
 	return out, nil
-}
-
-// EncodeSubject returns the subject in a form that [Engine.PathsAllowedFor] decides for later, outside the request: the job that finishes
-// a large delete re-decides what the removal cascades to for the caller that asked. It holds the principal, its groups, the credential's
-// scope ceiling and the frozen bundle of a CI token, and no secret.
-func EncodeSubject(s Subject) ([]byte, error) {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return nil, fmt.Errorf("authz: encode subject: %w", err)
-	}
-	return b, nil
-}
-
-// PathsAllowedFor is [Engine.PathsAllowed] for a subject encoded by [EncodeSubject]: the decision is made on the index installed now, not
-// on the one the request began with, so a grant withdrawn since the request is withdrawn for the job too.
-func (e *Engine) PathsAllowedFor(ctx context.Context, encoded []byte, base Coordinate, a Action, paths []string, classify Classifier) ([]bool, error) {
-	var sub Subject
-	if err := json.Unmarshal(encoded, &sub); err != nil {
-		return nil, fmt.Errorf("authz: decode subject: %w", err)
-	}
-	return e.PathsAllowed(ctx, sub, base, a, paths, classify)
 }

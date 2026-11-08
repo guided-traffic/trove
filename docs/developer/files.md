@@ -59,8 +59,8 @@ quotas are P1.
 | [httpserver/router.go](../../internal/httpserver/router.go) | `Router.HandleUncleaned`: paths `ServeMux` would redirect reach the handler; `Router.HideMethods`: the fallback's 404 instead of a 405 for a caller a route hides itself from |
 | [api/v1/items_api.go](../../internal/api/v1/items_api.go) | `GetItem`, `DeleteItem` (strict for every caller without `content:bypass`, Q-AUTHZ-162), `ListChildren`, `GetItemStats`; `filesCaller`, `filesAccess` |
 | [formathost/hooks.go](../../internal/formathost/hooks.go) | `FilesSeam`, the `Formats` of the composition root: `Classify` over the registry, `ServeCheck`, `RawDeploy` (`/files/` deploys only into a format whose protocol is `/files/`, Q-ARCH-223), `CheckRemoval` (the ownership of the packages a delete removes, Q-AUTHZ-161) |
-| [app/wire_files.go](../../internal/app/wire_files.go) | `wireFiles` (the store, then the service), `filesComponent` (flush loops, `Flusher`), `registerFiles`, `registerFilesJobs`, `filesDecider`, `repositoryAPI` |
-| [audit/events_files.go](../../internal/audit/events_files.go) | `artifact.deployed`, `artifact.deleted` (transactional), `artifact.downloaded` (asynchronous) |
+| [app/wire_files.go](../../internal/app/wire_files.go) | `wireFiles` (the store, then the service, then the delete job's guard over `auth.JobStanding`), `filesComponent` (flush loops, `Flusher`), `registerFiles`, `registerFilesJobs`, `filesDecider`, `repositoryAPI` |
+| [audit/events_files.go](../../internal/audit/events_files.go) | `artifact.deployed`, `artifact.deleted` (transactional), `artifact.downloaded` and `artifact.delete_stopped` (asynchronous; a delete job its guard stopped, Q-STOR-193) |
 
 ## The content routes
 
@@ -179,9 +179,19 @@ sent), deletes the files by id, tells the storage hook, writes one `artifact.del
 (each only if it is empty then) and the empty implicit folders above. It takes a folder only when no other transaction holds it: a folder a
 deploy holds `FOR SHARE` (the deploy may wait for a package row the delete locked in `Extra`) is removed after the commit, when it is still
 empty then (`removeEmptied`, Q-NUGET-88). A larger subtree is checked in full at the request and
-removed by the job `items-delete` (the store's `RunDeleteJob`, which decides nothing) in batches of `storage.delete.batch_size` (files first, then the folders), answered `202` with
+removed by the job `items-delete` (the store's `RunDeleteJob`) in batches of `storage.delete.batch_size` (files first, then the folders), answered `202` with
 the job. The job carries the highest item id the check saw (`DeleteArgs.MaxID`) and removes only items up to it, so a file that is
-deployed into the subtree afterwards stays (Q-STOR-143). A virtual repository holds no items: a delete there is `405`, as a deploy
+deployed into the subtree afterwards stays (Q-STOR-143). It also carries who asked (`Access.JobSubject`, an `authz.JobSubject`: the
+principal, the token or session ID and the endpoint, no grant), and `DeleteJobGuard` decides every batch again on it (Q-STOR-190): it
+finds the repository with `repos.ByID` (a moved repository is decided where it is now; NotFound or lifecycle `deleting` answers
+`items.ErrRepositoryGone`, Q-STOR-191), reads the standing through `Standings` (the composition root binds `auth.JobStanding`: the
+principal cache for status, kind, name and groups, the token and session rows by ID, Q-AUTHZ-260 to Q-AUTHZ-262), builds the batch's
+subject with `JobSubject.Subject`, takes one index with `Begin` on the repository's current name, fails the attempt when the index holds
+another repository under that name (`RepositoryIDOn`, a snapshot and an index that applied a move at different moments), refuses a disabled repository unless
+the subject `HoldsOn` `content:bypass`, and decides on that index `delete` on the batch's items and the cascade (`PathsAllowedOn`) and
+the format's `CheckRemoval` for its files (`checkRemoval`, which builds the `Removal` with `newRemoval`, the one constructor the request's
+delete uses too). A refusal is the 403 of the path the request named (`DeleteArgs.Path`), never of the refused item; a withdrawn
+principal or credential is the 401 a request would get, and both end the job. A virtual repository holds no items: a delete there is `405`, as a deploy
 is. Items are deleted for good: the trash can is P1 (Q-STOR-19). The `Extra` of a job runs in the transaction that queues it, with
 the files the check saw, so an ownership refusal queues nothing. The items API deletes with `Strict` (patterns and the disabled flag,
 as `/files/`) for every caller who does not hold `content:bypass` (Q-AUTHZ-162).

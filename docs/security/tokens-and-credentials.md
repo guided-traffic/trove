@@ -76,6 +76,14 @@ bound on two replicas with Valkey running (about 15 ms) and with Valkey stopped 
 The payload of a change names a token by ID and by the SHA-256 of its secret; it can confirm a guess of a secret that
 already is a full 256-bit value, which nobody can make, and cannot authenticate anyone.
 
+A revocation also reaches the work a credential left behind: the job that finishes a large delete stores the ID of the token or
+the session that queued it, never the secret, and reads that row by ID before each batch. A revoked token, a withdrawn session and an
+owner that is no longer active stop the job; a session is withdrawn by a sign-out, the end of the user's other sessions, an
+administrator's end, a disable or a change of the break-glass password, also when it had already ended by its deadlines, by the
+session limit or by a re-authentication, whose successor carries it on (Q-AUTHZ-260, Q-AUTHZ-261, Q-AUTHZ-262,
+[file-transfer.md](file-transfer.md#a-delete-and-its-job)). An expiry, a timeout, an eviction and a re-authentication alone do not, and
+a row that is gone stops the job with a reason of its own (H-659 there).
+
 ## Last use of a token
 
 Every successful authentication by a token, from the cache or from PostgreSQL, notes the token ID, the time and the client address

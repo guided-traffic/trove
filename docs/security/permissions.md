@@ -161,7 +161,10 @@ read under a row lock (`FOR UPDATE`), so two blind writes journal one after the 
 | Client that sent `Trove-Authz-Min-Epoch` with the epoch of its change | the change is in force on the replica that answers, or the request waits or fails (503, 412) |
 
 A holder of a valid credential can keep using a removed right for that long and no longer. Revoking the credential ends it
-on the timeline of the identity area, independently of the index.
+on the timeline of the identity area, independently of the index. The same holds for the job that finishes a large delete: it
+decides every batch on the index installed then and on the groups and the credential of its caller as they are then, so a removed
+grant, a group left or a revoked credential stops it at the next batch ([file-transfer.md](file-transfer.md#a-delete-and-its-job),
+Q-STOR-190).
 
 `Trove-Authz-Min-Epoch` can only make a replica wait or refuse; it cannot widen a permission. A malformed value is 400, an
 anonymous request ignores the header, so the epoch cannot be probed without a credential, and the replica reads the

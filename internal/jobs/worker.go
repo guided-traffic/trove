@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
@@ -530,7 +532,7 @@ func (w *Worker) settle(rj *runningJob, err error, cause error, took time.Durati
 		if errors.Is(cause, ErrTimeout) {
 			code = "job_timeout"
 		}
-		body, _ := json.Marshal(map[string]any{"code": code, "detail": truncate(err.Error(), 2000), "attempt": j.Attempt})
+		body, _ := json.Marshal(map[string]any{"code": code, "detail": truncate(jobDetail(err), 2000), "attempt": j.Attempt})
 		var rows []q.FailOrRetryJobRow
 		e := w.writeWithRetry(ctx, log, "fail", func() (e error) {
 			rows, e = qs.FailOrRetryJob(ctx, q.FailOrRetryJobParams{Error: string(body), Permanent: perm, ID: j.ID, LockedBy: w.o.UID, Attempt: attempt})
@@ -538,10 +540,11 @@ func (w *Worker) settle(rj *runningJob, err error, cause error, took time.Durati
 		})
 		switch {
 		case e != nil:
-			log.Error("job failure not written after retries; giving up, the lease will expire", "error", e)
+			log.Error("job failure not written after retries; giving up, the lease will expire", "error", e, "cause", err)
 			outcome = OutcomeFailed
 		case len(rows) == 0:
 			outcome = OutcomeLost
+			log.Warn("job attempt failed after the lease was lost; the failure is not written", "error", err)
 		case rows[0].State == StateQueued:
 			outcome = OutcomeRetried
 			log.Warn("job attempt failed; it will run again after the backoff", "error", err)
@@ -552,6 +555,31 @@ func (w *Worker) settle(rj *runningJob, err error, cause error, took time.Durati
 	}
 	w.m.completed.WithLabelValues(j.Kind, outcome).Inc()
 	w.m.duration.WithLabelValues(j.Kind).Observe(took.Seconds())
+}
+
+// jobDetail is what a failed job tells the readers of GET /api/v1/system/jobs/{id} (Q-STOR-193): the error's text as its producer
+// wrote it, except that the first *errs.Error in the chain, wherever it is, shows its code and its detail, which are written for a
+// caller, and never its operation or its cause, which can hold a database's text. A wrapper's own words before it stay. The whole
+// chain goes to the log.
+func jobDetail(err error) string {
+	full := err.Error()
+	var e *errs.Error
+	if !errors.As(err, &e) {
+		return full
+	}
+	safe := e.Code
+	if e.Detail != "" {
+		safe += ": " + e.Detail
+	}
+	raw := e.Error()
+	if raw == safe {
+		return full
+	}
+	if i := strings.Index(full, raw); i >= 0 {
+		return full[:i] + safe + full[i+len(raw):]
+	}
+	// A wrapper that reworded the error's text: nothing of it can be shown without risking the cause.
+	return safe
 }
 
 func truncate(s string, n int) string {

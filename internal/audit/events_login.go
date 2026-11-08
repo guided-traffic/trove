@@ -73,7 +73,8 @@ func init() {
 		Name: EventAuthSessionEnded, Category: CategoryAuth, Mode: Transactional,
 		Schema: `{"type":"object","properties":{` +
 			`"reason":{"enum":["revoked","evicted","principal_disabled","password_changed"]},` +
-			`"session_ids":{"type":"array","items":{"type":"string"},"maxItems":1000},"count":{"type":"integer"}},` +
+			`"session_ids":{"type":"array","items":{"type":"string"},"maxItems":1000},"count":{"type":"integer"},` +
+			`"withdrawn_ids":{"type":"array","items":{"type":"string"},"maxItems":1000},"withdrawn_count":{"type":"integer"}},` +
 			`"required":["reason"],"additionalProperties":false}`,
 	})
 	// At most one per session and minute on each replica (R-AUTH-041).

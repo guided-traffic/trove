@@ -215,6 +215,24 @@ func mayAdminister(sub Subject) bool {
 // decisions are made on.
 func (x *Index) HasProject(key string) bool { return x != nil && x.projects[key] != nil }
 
+// RepositoryID returns the ID of the repository the index holds under name, and false for a name it does not hold. The delete job
+// compares it with the repository it removes from, so that a batch is never decided on another repository of the same name, which
+// the index and the repository snapshot can hold for a moment when one of them has applied a move and the other not (Q-STOR-191).
+func (x *Index) RepositoryID(name qname.Repo) (int64, bool) {
+	if x == nil {
+		return 0, false
+	}
+	if r := x.repos[name]; r != nil {
+		return r.ID, true
+	}
+	return 0, false
+}
+
+// RepositoryIDOn is [Index.RepositoryID] through the engine, for a caller that holds an index the engine gave it.
+func (e *Engine) RepositoryIDOn(idx *Index, name qname.Repo) (int64, bool) {
+	return idx.RepositoryID(name)
+}
+
 // ProjectOf returns the key of the project of a repository on this index, "" for an unknown one.
 func (x *Index) ProjectOf(name qname.Repo) string {
 	if r := x.repos[name]; r != nil {

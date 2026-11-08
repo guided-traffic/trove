@@ -14,22 +14,6 @@ import (
 // format learns of them (so the format's rows and packages.rev_seq follow), then the folders. It is idempotent and
 // resumable: a call after an interrupted one removes what is left. The actor of the events is the nil actor.
 func (s *Store) EraseCache(ctx context.Context, repoID int64, name qname.Repo, format string) error {
-	a := DeleteArgs{RepoID: repoID, Key: name, Class: "remote", Format: format, Actor: audit.Actor{Kind: "system", Name: "restore"}}
-	batch := max(s.cfg.Delete.BatchSize, 1)
-	lo, hi := subtreeBounds(a.Path)
-	var done int64
-	for {
-		if err := ctx.Err(); err != nil {
-			return context.Cause(ctx)
-		}
-		n, err := s.deleteFileBatch(ctx, a, lo, hi, batch)
-		if err != nil {
-			return err
-		}
-		done += n
-		if n < int64(batch) {
-			break
-		}
-	}
-	return s.deleteFolders(ctx, nil, a, lo, hi, batch, done, done)
+	a := DeleteArgs{RepoID: repoID, Key: name, Class: "remote", Format: format, Actor: audit.Actor{Kind: "system", Name: "restore"}, all: true}
+	return s.runDelete(ctx, a, &deleteRun{name: name})
 }

@@ -75,9 +75,9 @@ type Access interface {
 	// decided in a write transaction (package ownership, R-AUTHZ-018) is decided
 	// on it too.
 	Index() *authz.Index
-	// EncodedSubject is the subject in the form a job re-decides for after the request has ended: a delete too large to run in the
-	// request is finished by a job that holds what its hook cascades to to the grants of the caller (H-653).
-	EncodedSubject() ([]byte, error)
+	// JobSubject is the subject in the form a job carries after the request has ended: a delete too large to run in the request is
+	// finished by a job that decides every batch again on what that subject holds then (R-STOR-018, Q-STOR-190).
+	JobSubject() authz.JobSubject
 }
 
 // Options configure [New].

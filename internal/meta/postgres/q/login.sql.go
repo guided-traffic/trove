@@ -142,7 +142,7 @@ func (q *Queries) DeleteOldSessions(ctx context.Context) (int64, error) {
 }
 
 const endAllSessions = `-- name: EndAllSessions :many
-UPDATE ui_session SET ended_at = now(), end_reason = 'revoked'
+UPDATE ui_session SET ended_at = now(), end_reason = 'revoked', withdrawn_at = now()
  WHERE id IN (SELECT id FROM ui_session WHERE ended_at IS NULL LIMIT 1000)
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
@@ -152,7 +152,7 @@ type EndAllSessionsRow struct {
 	SecretSha256Hex string
 }
 
-// trove admin sessions end --all (R-AUTH-015), in batches.
+// trove admin sessions end --all (R-AUTH-015), in batches; WithdrawEndedSessions then marks the sessions that had ended already.
 func (q *Queries) EndAllSessions(ctx context.Context) ([]EndAllSessionsRow, error) {
 	rows, err := q.db.Query(ctx, endAllSessions)
 	if err != nil {
@@ -174,7 +174,7 @@ func (q *Queries) EndAllSessions(ctx context.Context) ([]EndAllSessionsRow, erro
 }
 
 const endBreakGlassSessions = `-- name: EndBreakGlassSessions :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text, withdrawn_at = now()
  WHERE auth_method = 'break_glass' AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
@@ -184,8 +184,8 @@ type EndBreakGlassSessionsRow struct {
 	SecretSha256Hex string
 }
 
-// Every open break-glass session (R-AUTH-014: rotation, disabled account,
-// trove admin break-glass end-sessions).
+// Every open break-glass session (R-AUTH-014: rotation, disabled account, trove admin break-glass end-sessions) ends with a reason
+// that withdraws it; WithdrawEndedBreakGlassSessions then marks the ones that had ended already (Q-AUTHZ-262).
 func (q *Queries) EndBreakGlassSessions(ctx context.Context, reason string) ([]EndBreakGlassSessionsRow, error) {
 	rows, err := q.db.Query(ctx, endBreakGlassSessions, reason)
 	if err != nil {
@@ -207,13 +207,16 @@ func (q *Queries) EndBreakGlassSessions(ctx context.Context, reason string) ([]E
 }
 
 const endSessionBySecret = `-- name: EndSessionBySecret :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
- WHERE secret_sha256 = $2::bytea AND ended_at IS NULL
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text, successor_id = $2::text::uuid,
+                      withdrawn_at = CASE WHEN principal_id = $3::text::uuid THEN NULL ELSE now() END
+ WHERE secret_sha256 = $4::bytea AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
 
 type EndSessionBySecretParams struct {
 	Reason       string
+	SuccessorID  string
+	PrincipalID  string
 	SecretSha256 []byte
 }
 
@@ -222,9 +225,16 @@ type EndSessionBySecretRow struct {
 	SecretSha256Hex string
 }
 
-// The fixation rule of R-AUTH-010: the cookie presented at sign-in is ended.
+// The fixation rule of R-AUTH-010: the cookie presented at sign-in is ended, and names the new session as its successor. A sign-in
+// of the same principal in the same browser continues the session, as a re-authentication does, so a delete job it queued goes on
+// (Q-AUTHZ-262); the session of another principal, one that was planted in the browser, is withdrawn.
 func (q *Queries) EndSessionBySecret(ctx context.Context, arg EndSessionBySecretParams) ([]EndSessionBySecretRow, error) {
-	rows, err := q.db.Query(ctx, endSessionBySecret, arg.Reason, arg.SecretSha256)
+	rows, err := q.db.Query(ctx, endSessionBySecret,
+		arg.Reason,
+		arg.SuccessorID,
+		arg.PrincipalID,
+		arg.SecretSha256,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +308,7 @@ func (q *Queries) EndSessionIfIdle(ctx context.Context, id string) ([]string, er
 }
 
 const endSessionOfPrincipal = `-- name: EndSessionOfPrincipal :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text, withdrawn_at = now()
  WHERE id = $2::text::uuid AND principal_id = $3::text::uuid AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
@@ -314,8 +324,8 @@ type EndSessionOfPrincipalRow struct {
 	SecretSha256Hex string
 }
 
-// One live session of a principal (DELETE /users/me/sessions/{id}, R-AUTH-010); a
-// session of another principal or an ended one matches nothing.
+// One live session of a principal (DELETE /users/me/sessions/{id}, R-AUTH-010) ends with a reason that withdraws it; a session of
+// another principal matches nothing. WithdrawEndedSessionOfPrincipal then marks it when it had ended already (Q-AUTHZ-262).
 func (q *Queries) EndSessionOfPrincipal(ctx context.Context, arg EndSessionOfPrincipalParams) ([]EndSessionOfPrincipalRow, error) {
 	rows, err := q.db.Query(ctx, endSessionOfPrincipal, arg.Reason, arg.ID, arg.PrincipalID)
 	if err != nil {
@@ -336,15 +346,56 @@ func (q *Queries) EndSessionOfPrincipal(ctx context.Context, arg EndSessionOfPri
 	return items, nil
 }
 
+const endSessionReplaced = `-- name: EndSessionReplaced :many
+UPDATE ui_session SET ended_at = now(), end_reason = 'reauth_rotated', successor_id = $1::text::uuid
+ WHERE id = $2::text::uuid AND principal_id = $3::text::uuid AND ended_at IS NULL
+RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
+`
+
+type EndSessionReplacedParams struct {
+	SuccessorID string
+	ID          string
+	PrincipalID string
+}
+
+type EndSessionReplacedRow struct {
+	ID              string
+	SecretSha256Hex string
+}
+
+// The session a re-authentication replaces ends with reason reauth_rotated and names its successor, so that a withdrawal of the
+// successor reaches a delete job the replaced session queued (Q-AUTHZ-262). A re-authentication withdraws nothing.
+func (q *Queries) EndSessionReplaced(ctx context.Context, arg EndSessionReplacedParams) ([]EndSessionReplacedRow, error) {
+	rows, err := q.db.Query(ctx, endSessionReplaced, arg.SuccessorID, arg.ID, arg.PrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EndSessionReplacedRow{}
+	for rows.Next() {
+		var i EndSessionReplacedRow
+		if err := rows.Scan(&i.ID, &i.SecretSha256Hex); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const endSessionsByID = `-- name: EndSessionsByID :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
- WHERE id = ANY($2::text[]::uuid[]) AND ended_at IS NULL
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text,
+                      withdrawn_at = CASE WHEN $2::bool THEN now() END
+ WHERE id = ANY($3::text[]::uuid[]) AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
 
 type EndSessionsByIDParams struct {
-	Reason string
-	Ids    []string
+	Reason    string
+	Withdrawn bool
+	Ids       []string
 }
 
 type EndSessionsByIDRow struct {
@@ -352,8 +403,10 @@ type EndSessionsByIDRow struct {
 	SecretSha256Hex string
 }
 
+// Ends live sessions with a reason; withdrawn says whether the reason withdraws them (a sign-out does, an eviction does not), which
+// stops a delete job they queued (Q-AUTHZ-261, Q-AUTHZ-262).
 func (q *Queries) EndSessionsByID(ctx context.Context, arg EndSessionsByIDParams) ([]EndSessionsByIDRow, error) {
-	rows, err := q.db.Query(ctx, endSessionsByID, arg.Reason, arg.Ids)
+	rows, err := q.db.Query(ctx, endSessionsByID, arg.Reason, arg.Withdrawn, arg.Ids)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +426,7 @@ func (q *Queries) EndSessionsByID(ctx context.Context, arg EndSessionsByIDParams
 }
 
 const endSessionsOfPrincipal = `-- name: EndSessionsOfPrincipal :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text, withdrawn_at = now()
  WHERE principal_id = $2::text::uuid AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
@@ -388,6 +441,8 @@ type EndSessionsOfPrincipalRow struct {
 	SecretSha256Hex string
 }
 
+// Every live session of a principal ends with a reason that withdraws it (an administrator's end, a disable, a deletion);
+// WithdrawEndedSessionsOfPrincipal then marks the ones that had ended already (Q-AUTHZ-262).
 func (q *Queries) EndSessionsOfPrincipal(ctx context.Context, arg EndSessionsOfPrincipalParams) ([]EndSessionsOfPrincipalRow, error) {
 	rows, err := q.db.Query(ctx, endSessionsOfPrincipal, arg.Reason, arg.PrincipalID)
 	if err != nil {
@@ -409,9 +464,8 @@ func (q *Queries) EndSessionsOfPrincipal(ctx context.Context, arg EndSessionsOfP
 }
 
 const endSessionsOfPrincipalExcept = `-- name: EndSessionsOfPrincipalExcept :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
- WHERE principal_id = $2::text::uuid AND ended_at IS NULL
-   AND id <> $3::text::uuid
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text, withdrawn_at = now()
+ WHERE principal_id = $2::text::uuid AND ended_at IS NULL AND id <> $3::text::uuid
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex
 `
 
@@ -426,7 +480,8 @@ type EndSessionsOfPrincipalExceptRow struct {
 	SecretSha256Hex string
 }
 
-// Every open session of a principal but one (DELETE /users/me/sessions?keepCurrent=true).
+// Every open session of a principal but one (DELETE /users/me/sessions?keepCurrent=true) ends with a reason that withdraws it;
+// WithdrawEndedSessionsOfPrincipalExcept then marks the ones that had ended already (Q-AUTHZ-262).
 func (q *Queries) EndSessionsOfPrincipalExcept(ctx context.Context, arg EndSessionsOfPrincipalExceptParams) ([]EndSessionsOfPrincipalExceptRow, error) {
 	rows, err := q.db.Query(ctx, endSessionsOfPrincipalExcept, arg.Reason, arg.PrincipalID, arg.KeepID)
 	if err != nil {
@@ -682,6 +737,35 @@ SELECT id::text AS id
 // The sessions that count against max_per_user, oldest first (R-AUTH-010).
 func (q *Queries) LiveSessionsOfPrincipal(ctx context.Context, principalID string) ([]string, error) {
 	rows, err := q.db.Query(ctx, liveSessionsOfPrincipal, principalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockBreakGlassPrincipal = `-- name: LockBreakGlassPrincipal :many
+SELECT p.id::text AS id
+  FROM app_user u JOIN principal p ON p.id = u.principal_id
+ WHERE u.is_break_glass
+   FOR UPDATE OF p
+`
+
+// The row lock of the break-glass principal, taken before its sessions end, as a sign-in takes it (LockPrincipal), so no break-glass
+// session starts while they do (Q-AUTHZ-262).
+func (q *Queries) LockBreakGlassPrincipal(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, lockBreakGlassPrincipal)
 	if err != nil {
 		return nil, err
 	}
@@ -1060,6 +1144,68 @@ func (q *Queries) SessionForLogout(ctx context.Context, secretSha256 []byte) ([]
 	return items, nil
 }
 
+const sessionStandingChain = `-- name: SessionStandingChain :many
+WITH RECURSIVE chain(id, depth) AS (
+    SELECT $1::text::uuid, 0
+    UNION ALL
+    SELECT s.successor_id, c.depth + 1
+      FROM chain c JOIN ui_session s ON s.id = c.id
+     WHERE s.successor_id IS NOT NULL AND s.withdrawn_at IS NULL AND c.depth < $2::int
+)
+SELECT c.depth::int AS depth, (s.id IS NOT NULL)::bool AS found, coalesce(s.principal_id::text, '')::text AS principal_id,
+       (s.ended_at IS NOT NULL)::bool AS ended, coalesce(s.end_reason, '')::text AS end_reason,
+       (s.withdrawn_at IS NOT NULL)::bool AS withdrawn, coalesce(s.successor_id::text, '')::text AS successor_id
+  FROM chain c LEFT JOIN ui_session s ON s.id = c.id
+ ORDER BY c.depth
+`
+
+type SessionStandingChainParams struct {
+	ID       string
+	MaxLinks int32
+}
+
+type SessionStandingChainRow struct {
+	Depth       int32
+	Found       bool
+	PrincipalID string
+	Ended       bool
+	EndReason   string
+	Withdrawn   bool
+	SuccessorID string
+}
+
+// A session for a job that continues a request it authenticated (Q-AUTHZ-261, Q-AUTHZ-262), with the sessions that replaced it, in
+// order: each link's principal, whether and why it ended, whether a withdrawal reached it, and its successor. One statement follows
+// the chain up to max_links links past the first; a link whose row is gone comes back with found false. Read from the table and never
+// from the session cache, so an end or a withdrawal that committed before the read is seen.
+func (q *Queries) SessionStandingChain(ctx context.Context, arg SessionStandingChainParams) ([]SessionStandingChainRow, error) {
+	rows, err := q.db.Query(ctx, sessionStandingChain, arg.ID, arg.MaxLinks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionStandingChainRow{}
+	for rows.Next() {
+		var i SessionStandingChainRow
+		if err := rows.Scan(
+			&i.Depth,
+			&i.Found,
+			&i.PrincipalID,
+			&i.Ended,
+			&i.EndReason,
+			&i.Withdrawn,
+			&i.SuccessorID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const takeLoginFlow = `-- name: TakeLoginFlow :many
 DELETE FROM oidc_login_flow WHERE state_sha256 = $1::bytea
 RETURNING provider_id, browser_binding_sha256, code_verifier, nonce_sha256, purpose,
@@ -1213,6 +1359,148 @@ SELECT id::text AS id FROM principal WHERE kind = 'user' AND name = $1::text
 
 func (q *Queries) UserIDByName(ctx context.Context, name string) ([]string, error) {
 	rows, err := q.db.Query(ctx, userIDByName, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const withdrawEndedBreakGlassSessions = `-- name: WithdrawEndedBreakGlassSessions :many
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE auth_method = 'break_glass' AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+RETURNING id::text AS id
+`
+
+// The second statement of the end of every break-glass session, in the same transaction after the first: it marks the ones that had
+// ended already, also one that ended while the first statement waited for it (Q-AUTHZ-262).
+func (q *Queries) WithdrawEndedBreakGlassSessions(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, withdrawEndedBreakGlassSessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const withdrawEndedSessionOfPrincipal = `-- name: WithdrawEndedSessionOfPrincipal :many
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE id = $1::text::uuid AND principal_id = $2::text::uuid
+   AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+RETURNING id::text AS id
+`
+
+type WithdrawEndedSessionOfPrincipalParams struct {
+	ID          string
+	PrincipalID string
+}
+
+// The second statement of the end of one session: a session of the principal that had ended already, or ended while the first
+// statement waited for it, is withdrawn all the same, so that a delete job it queued stops (Q-AUTHZ-262).
+func (q *Queries) WithdrawEndedSessionOfPrincipal(ctx context.Context, arg WithdrawEndedSessionOfPrincipalParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, withdrawEndedSessionOfPrincipal, arg.ID, arg.PrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const withdrawEndedSessions = `-- name: WithdrawEndedSessions :execrows
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE id IN (SELECT id FROM ui_session WHERE withdrawn_at IS NULL AND ended_at IS NOT NULL LIMIT 1000)
+`
+
+// The second half of ending every session: the sessions that had ended before are withdrawn too, in batches, so that no delete job
+// one of them queued goes on (Q-AUTHZ-262).
+func (q *Queries) WithdrawEndedSessions(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, withdrawEndedSessions)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const withdrawEndedSessionsOfPrincipal = `-- name: WithdrawEndedSessionsOfPrincipal :many
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE principal_id = $1::text::uuid AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+RETURNING id::text AS id
+`
+
+// The second statement of a withdrawal of every session of a principal, after the end of the live ones in the same transaction: under
+// READ COMMITTED it sees a session that ended concurrently, by a deadline, an eviction or a re-authentication, while the first
+// statement waited for it, and marks it with the rest of the ended ones, so that a delete job one of them queued stops (Q-AUTHZ-262).
+func (q *Queries) WithdrawEndedSessionsOfPrincipal(ctx context.Context, principalID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, withdrawEndedSessionsOfPrincipal, principalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const withdrawEndedSessionsOfPrincipalExcept = `-- name: WithdrawEndedSessionsOfPrincipalExcept :many
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE principal_id = $1::text::uuid AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+   AND id <> $2::text::uuid
+RETURNING id::text AS id
+`
+
+type WithdrawEndedSessionsOfPrincipalExceptParams struct {
+	PrincipalID string
+	KeepID      string
+}
+
+// The second statement of the end of the other sessions, in the same transaction after the first: every session of the principal that
+// had ended already, or ended while the first statement waited for it, is withdrawn, the sessions the kept one replaced by a sign-in or
+// a re-authentication included. Only the kept session itself stays: an ended predecessor authenticates nothing, and keeping it would
+// keep only the delete jobs queued with it, which is what a stolen copy of the browser's earlier session carries (Q-AUTHZ-262).
+func (q *Queries) WithdrawEndedSessionsOfPrincipalExcept(ctx context.Context, arg WithdrawEndedSessionsOfPrincipalExceptParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, withdrawEndedSessionsOfPrincipalExcept, arg.PrincipalID, arg.KeepID)
 	if err != nil {
 		return nil, err
 	}

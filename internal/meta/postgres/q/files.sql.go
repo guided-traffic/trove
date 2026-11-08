@@ -545,7 +545,7 @@ SELECT EXISTS (
   SELECT 1 FROM items
    WHERE repo_id = $1::bigint AND path = $2::text AND kind = 'file' AND trashed_at IS NULL
      AND (path = $3::text OR (path >= $4::text AND ($5::text = '' OR path < $5::text)))
-     AND ($6::bigint = 0 OR id <= $6::bigint)
+     AND (NOT $6::bool OR id <= $7::bigint)
 )::boolean AS in_scope
 `
 
@@ -555,11 +555,13 @@ type ItemInRemovalScopeParams struct {
 	Path     string
 	Lo       string
 	Hi       string
+	Bounded  bool
 	MaxID    int64
 }
 
 // Whether the live file at the path belongs to the removal of the subtree (root path, bounds lo and hi) that was authorized at max_id
-// (0: no bound): a storage hook asks it of an item that another batch of the same removal takes (R-OCI-018).
+// (with bounded; the erasure of a cache is unbounded): a storage hook asks it of an item that another batch of the same removal takes
+// (R-OCI-018).
 func (q *Queries) ItemInRemovalScope(ctx context.Context, arg ItemInRemovalScopeParams) (bool, error) {
 	row := q.db.QueryRow(ctx, itemInRemovalScope,
 		arg.RepoID,
@@ -567,6 +569,7 @@ func (q *Queries) ItemInRemovalScope(ctx context.Context, arg ItemInRemovalScope
 		arg.Path,
 		arg.Lo,
 		arg.Hi,
+		arg.Bounded,
 		arg.MaxID,
 	)
 	var in_scope bool
@@ -784,10 +787,10 @@ SELECT id, path, kind, blob_sha256, size
  WHERE repo_id = $1::bigint AND trashed_at IS NULL
    AND (path = $2::text OR (path >= $3::text AND ($4::text = '' OR path < $4::text)))
    AND path > $5::text
-   AND ($6::bigint = 0 OR id <= $6::bigint)
-   AND (NOT $7::bool OR kind = 'file')
+   AND (NOT $6::bool OR id <= $7::bigint)
+   AND (NOT $8::bool OR kind = 'file')
  ORDER BY path
- LIMIT $8::int
+ LIMIT $9::int
 `
 
 type ListSubtreeBatchParams struct {
@@ -796,6 +799,7 @@ type ListSubtreeBatchParams struct {
 	Lo        string
 	Hi        string
 	After     string
+	Bounded   bool
 	MaxID     int64
 	FilesOnly bool
 	RowLimit  int32
@@ -810,8 +814,9 @@ type ListSubtreeBatchRow struct {
 }
 
 // A keyset batch of the subtree in path order, files and folders. The delete
-// checks every item of it before anything is removed. max_id bounds the batch to
-// the items that existed when the delete was authorized (0: no bound).
+// checks every item of it before anything is removed. With bounded, max_id bounds
+// the batch to the items that existed when the delete was authorized (Q-STOR-143,
+// Q-STOR-192); the request's own listing and the erasure of a cache are unbounded.
 func (q *Queries) ListSubtreeBatch(ctx context.Context, arg ListSubtreeBatchParams) ([]ListSubtreeBatchRow, error) {
 	rows, err := q.db.Query(ctx, listSubtreeBatch,
 		arg.RepoID,
@@ -819,6 +824,7 @@ func (q *Queries) ListSubtreeBatch(ctx context.Context, arg ListSubtreeBatchPara
 		arg.Lo,
 		arg.Hi,
 		arg.After,
+		arg.Bounded,
 		arg.MaxID,
 		arg.FilesOnly,
 		arg.RowLimit,

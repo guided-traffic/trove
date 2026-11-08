@@ -392,7 +392,7 @@ func (q *Queries) IdentityDeletePrincipal(ctx context.Context, id string) ([]str
 }
 
 const identityEndSessions = `-- name: IdentityEndSessions :many
-UPDATE ui_session SET ended_at = now(), end_reason = $1::text
+UPDATE ui_session SET ended_at = now(), end_reason = $1::text, withdrawn_at = now()
  WHERE principal_id = $2::text::uuid AND ended_at IS NULL
 RETURNING id::text AS id
 `
@@ -402,6 +402,8 @@ type IdentityEndSessionsParams struct {
 	ID     string
 }
 
+// A disable ends every live session of the principal with a reason that withdraws it; WithdrawEndedSessionsOfPrincipal then marks the
+// ones that had ended already, in the same transaction (Q-AUTHZ-262).
 func (q *Queries) IdentityEndSessions(ctx context.Context, arg IdentityEndSessionsParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, identityEndSessions, arg.Reason, arg.ID)
 	if err != nil {

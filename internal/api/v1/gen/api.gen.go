@@ -5830,7 +5830,7 @@ type JobError struct {
 	// Code Stable snake_case identifier; clients match on it.
 	Code JobErrorCode `json:"code"`
 
-	// Detail The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. Not translated.
+	// Detail The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. A problem the error carries (the first errs.Error in its chain) shows its code and its detail only, never the operation or the cause behind it, which can hold a database's text; the cause is in the replica's log (Q-STOR-193). Not translated.
 	Detail *string `json:"detail,omitempty"`
 }
 

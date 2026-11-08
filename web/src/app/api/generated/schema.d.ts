@@ -1310,7 +1310,9 @@ export interface paths {
         post?: never;
         /**
          * End all of the caller's sessions
-         * @description Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010).
+         * @description Ends every session of the caller, or with `keepCurrent=true` every one but the session of this request (R-AUTH-010). Sessions
+         *     that had ended already, the ones the current session replaced by a sign-in or a re-authentication included, are withdrawn, so
+         *     that no delete job queued with one of them goes on (Q-AUTHZ-262).
          *     A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
          */
         delete: operations["endOwnSessions"];
@@ -1331,7 +1333,9 @@ export interface paths {
         post?: never;
         /**
          * End one of the caller's sessions
-         * @description Ends a session of the caller; another user's session, an ended one and an unknown ID answer `404` (R-AUTH-010).
+         * @description Ends a session of the caller. A session of the caller that had ended already by its deadlines, the session limit or a
+         *     re-authentication is withdrawn and answers `204` too, so that a delete job it queued stops (Q-AUTHZ-262); a repeated request
+         *     for it then answers `404`, as do another user's session, a session already withdrawn and an unknown ID (R-AUTH-010).
          *     A token whose scope does not inherit its owner's rights answers `403` (`x-trove-owner-rights`, R-API-021).
          */
         delete: operations["endOwnSession"];
@@ -4710,7 +4714,7 @@ export interface components {
              * @enum {string}
              */
             code: "job_failed" | "job_timeout" | "attempts_exhausted" | "cancelled" | "superseded";
-            /** @description The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. Not translated. */
+            /** @description The text of the failed attempt's error as the handler returned it, cut to 2,000 bytes; a handler whose error could carry a secret or a full URL reduces it before it returns. A problem the error carries (the first errs.Error in its chain) shows its code and its detail only, never the operation or the cause behind it, which can hold a database's text; the cause is in the replica's log (Q-STOR-193). Not translated. */
             detail?: string;
             /** @description The attempt the detail belongs to; absent where the reaper or a cancel wrote the error. A job queued or running again keeps the error of the attempt before. */
             attempt?: number;
@@ -15851,7 +15855,11 @@ export interface operations {
                 package?: string;
                 /** @description A version of `package`; ignored without `package`. */
                 version?: string;
-                /** @description An npm scope (`@team-a`); adds the scoped variant of the registry configuration. */
+                /**
+                 * @description An npm scope (`@team-a`); adds the scoped variant of the registry configuration. Only a client that has a scoped
+                 *     variant accepts it (the npm clients); for any other client or format it answers `400 malformed_request` whose detail names `scope`
+                 *     instead of returning the unscoped snippets under a scoped id.
+                 */
                 scope?: string;
                 /**
                  * @description The name of a Bastion registration (R-BAS-007). The snippets are rendered on the base URL the Bastion reported at its

@@ -131,8 +131,9 @@ func (a *Access) Exposed(keys []qname.Repo) []qname.Repo {
 	return a.D.ExposedOn(a.Index(), a.Subject, keys)
 }
 
-// EncodedSubject is the subject of the request in the form a job decides for later ([authz.EncodeSubject]).
-func (a *Access) EncodedSubject() ([]byte, error) { return authz.EncodeSubject(a.Subject) }
+// JobSubject is the subject of the request in the form a job carries it ([authz.JobSubjectOf]): the job reads what it holds again
+// for every batch (Q-AUTHZ-260).
+func (a *Access) JobSubject() authz.JobSubject { return authz.JobSubjectOf(a.Subject) }
 
 // PathsAllowed decides one action for many paths of one repository, each on the
 // coordinate classify gives it.

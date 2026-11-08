@@ -127,9 +127,9 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		}
 	})
 
-	t.Run("R-ARCH-024 the files step refuses a missing decision point by name", func(t *testing.T) {
-		_, err := (&App{}).wireFiles(t.Context(), infra{}, repositoryArea{}, authzArea{}, formatsArea{}, vulnArea{})
-		if err == nil || !strings.HasPrefix(err.Error(), "files: no repository reader, no authorizer, no format hooks, no format seam") {
+	t.Run("R-ARCH-024 the files step refuses a missing decision point and identity store by name", func(t *testing.T) {
+		_, err := (&App{}).wireFiles(t.Context(), infra{}, repositoryArea{}, identityArea{}, authzArea{}, formatsArea{}, vulnArea{})
+		if err == nil || !strings.HasPrefix(err.Error(), "files: no repository reader, no principal store, no token service, no authorizer, no format hooks, no format seam") {
 			t.Fatalf("err = %v", err)
 		}
 	})

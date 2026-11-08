@@ -35,6 +35,24 @@ SELECT s.id::text AS id, s.csrf_sha256, s.principal_id::text AS principal_id,
   LEFT JOIN app_user u ON u.principal_id = s.principal_id
  WHERE s.secret_sha256 = sqlc.arg(secret_sha256)::bytea;
 
+-- name: SessionStandingChain :many
+-- A session for a job that continues a request it authenticated (Q-AUTHZ-261, Q-AUTHZ-262), with the sessions that replaced it, in
+-- order: each link's principal, whether and why it ended, whether a withdrawal reached it, and its successor. One statement follows
+-- the chain up to max_links links past the first; a link whose row is gone comes back with found false. Read from the table and never
+-- from the session cache, so an end or a withdrawal that committed before the read is seen.
+WITH RECURSIVE chain(id, depth) AS (
+    SELECT sqlc.arg(id)::text::uuid, 0
+    UNION ALL
+    SELECT s.successor_id, c.depth + 1
+      FROM chain c JOIN ui_session s ON s.id = c.id
+     WHERE s.successor_id IS NOT NULL AND s.withdrawn_at IS NULL AND c.depth < sqlc.arg(max_links)::int
+)
+SELECT c.depth::int AS depth, (s.id IS NOT NULL)::bool AS found, coalesce(s.principal_id::text, '')::text AS principal_id,
+       (s.ended_at IS NOT NULL)::bool AS ended, coalesce(s.end_reason, '')::text AS end_reason,
+       (s.withdrawn_at IS NOT NULL)::bool AS withdrawn, coalesce(s.successor_id::text, '')::text AS successor_id
+  FROM chain c LEFT JOIN ui_session s ON s.id = c.id
+ ORDER BY c.depth;
+
 -- name: TouchSession :many
 -- The conditional touch of R-AUTH-010: at most one change per session and minute
 -- whatever the number of replicas. It returns the row's last_seen_at age whether
@@ -71,13 +89,26 @@ SELECT id::text AS id
  ORDER BY created_at, id;
 
 -- name: EndSessionsByID :many
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+-- Ends live sessions with a reason; withdrawn says whether the reason withdraws them (a sign-out does, an eviction does not), which
+-- stops a delete job they queued (Q-AUTHZ-261, Q-AUTHZ-262).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text,
+                      withdrawn_at = CASE WHEN sqlc.arg(withdrawn)::bool THEN now() END
  WHERE id = ANY(sqlc.arg(ids)::text[]::uuid[]) AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
 
+-- name: EndSessionReplaced :many
+-- The session a re-authentication replaces ends with reason reauth_rotated and names its successor, so that a withdrawal of the
+-- successor reaches a delete job the replaced session queued (Q-AUTHZ-262). A re-authentication withdraws nothing.
+UPDATE ui_session SET ended_at = now(), end_reason = 'reauth_rotated', successor_id = sqlc.arg(successor_id)::text::uuid
+ WHERE id = sqlc.arg(id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL
+RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
+
 -- name: EndSessionBySecret :many
--- The fixation rule of R-AUTH-010: the cookie presented at sign-in is ended.
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+-- The fixation rule of R-AUTH-010: the cookie presented at sign-in is ended, and names the new session as its successor. A sign-in
+-- of the same principal in the same browser continues the session, as a re-authentication does, so a delete job it queued goes on
+-- (Q-AUTHZ-262); the session of another principal, one that was planted in the browser, is withdrawn.
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text, successor_id = sqlc.arg(successor_id)::text::uuid,
+                      withdrawn_at = CASE WHEN principal_id = sqlc.arg(principal_id)::text::uuid THEN NULL ELSE now() END
  WHERE secret_sha256 = sqlc.arg(secret_sha256)::bytea AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
 
@@ -99,22 +130,45 @@ SELECT s.id::text AS id, s.csrf_sha256, s.principal_id::text AS principal_id,
  WHERE s.secret_sha256 = sqlc.arg(secret_sha256)::bytea;
 
 -- name: EndSessionsOfPrincipal :many
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+-- Every live session of a principal ends with a reason that withdraws it (an administrator's end, a disable, a deletion);
+-- WithdrawEndedSessionsOfPrincipal then marks the ones that had ended already (Q-AUTHZ-262).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text, withdrawn_at = now()
  WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
 
+-- name: WithdrawEndedSessionsOfPrincipal :many
+-- The second statement of a withdrawal of every session of a principal, after the end of the live ones in the same transaction: under
+-- READ COMMITTED it sees a session that ended concurrently, by a deadline, an eviction or a re-authentication, while the first
+-- statement waited for it, and marks it with the rest of the ended ones, so that a delete job one of them queued stops (Q-AUTHZ-262).
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+RETURNING id::text AS id;
+
 -- name: EndAllSessions :many
--- trove admin sessions end --all (R-AUTH-015), in batches.
-UPDATE ui_session SET ended_at = now(), end_reason = 'revoked'
+-- trove admin sessions end --all (R-AUTH-015), in batches; WithdrawEndedSessions then marks the sessions that had ended already.
+UPDATE ui_session SET ended_at = now(), end_reason = 'revoked', withdrawn_at = now()
  WHERE id IN (SELECT id FROM ui_session WHERE ended_at IS NULL LIMIT 1000)
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
 
+-- name: WithdrawEndedSessions :execrows
+-- The second half of ending every session: the sessions that had ended before are withdrawn too, in batches, so that no delete job
+-- one of them queued goes on (Q-AUTHZ-262).
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE id IN (SELECT id FROM ui_session WHERE withdrawn_at IS NULL AND ended_at IS NOT NULL LIMIT 1000);
+
 -- name: EndBreakGlassSessions :many
--- Every open break-glass session (R-AUTH-014: rotation, disabled account,
--- trove admin break-glass end-sessions).
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+-- Every open break-glass session (R-AUTH-014: rotation, disabled account, trove admin break-glass end-sessions) ends with a reason
+-- that withdraws it; WithdrawEndedBreakGlassSessions then marks the ones that had ended already (Q-AUTHZ-262).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text, withdrawn_at = now()
  WHERE auth_method = 'break_glass' AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
+
+-- name: WithdrawEndedBreakGlassSessions :many
+-- The second statement of the end of every break-glass session, in the same transaction after the first: it marks the ones that had
+-- ended already, also one that ended while the first statement waited for it (Q-AUTHZ-262).
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE auth_method = 'break_glass' AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+RETURNING id::text AS id;
 
 -- name: ListLiveSessionsOfPrincipal :many
 -- The session list of R-AUTH-010 (wave 2 API) and of trove admin.
@@ -249,6 +303,14 @@ ON CONFLICT (account_key) DO UPDATE SET password_changed_at = now()
  WHERE l.password_changed_at IS NULL OR l.password_changed_at <= now() - make_interval(secs => sqlc.arg(hold_s)::float8)
 RETURNING account_key;
 
+-- name: LockBreakGlassPrincipal :many
+-- The row lock of the break-glass principal, taken before its sessions end, as a sign-in takes it (LockPrincipal), so no break-glass
+-- session starts while they do (Q-AUTHZ-262).
+SELECT p.id::text AS id
+  FROM app_user u JOIN principal p ON p.id = u.principal_id
+ WHERE u.is_break_glass
+   FOR UPDATE OF p;
+
 -- name: BreakGlassUser :many
 SELECT p.id::text AS id, p.name, p.status
   FROM app_user u JOIN principal p ON p.id = u.principal_id
@@ -275,15 +337,33 @@ SELECT p.id::text AS id, coalesce(u.is_break_glass, false)::bool AS is_break_gla
  WHERE p.kind = 'user' AND p.name = sqlc.arg(name)::text;
 
 -- name: EndSessionOfPrincipal :many
--- One live session of a principal (DELETE /users/me/sessions/{id}, R-AUTH-010); a
--- session of another principal or an ended one matches nothing.
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+-- One live session of a principal (DELETE /users/me/sessions/{id}, R-AUTH-010) ends with a reason that withdraws it; a session of
+-- another principal matches nothing. WithdrawEndedSessionOfPrincipal then marks it when it had ended already (Q-AUTHZ-262).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text, withdrawn_at = now()
  WHERE id = sqlc.arg(id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
 
+-- name: WithdrawEndedSessionOfPrincipal :many
+-- The second statement of the end of one session: a session of the principal that had ended already, or ended while the first
+-- statement waited for it, is withdrawn all the same, so that a delete job it queued stops (Q-AUTHZ-262).
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE id = sqlc.arg(id)::text::uuid AND principal_id = sqlc.arg(principal_id)::text::uuid
+   AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+RETURNING id::text AS id;
+
 -- name: EndSessionsOfPrincipalExcept :many
--- Every open session of a principal but one (DELETE /users/me/sessions?keepCurrent=true).
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
- WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL
-   AND id <> sqlc.arg(keep_id)::text::uuid
+-- Every open session of a principal but one (DELETE /users/me/sessions?keepCurrent=true) ends with a reason that withdraws it;
+-- WithdrawEndedSessionsOfPrincipalExcept then marks the ones that had ended already (Q-AUTHZ-262).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text, withdrawn_at = now()
+ WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NULL AND id <> sqlc.arg(keep_id)::text::uuid
 RETURNING id::text AS id, encode(secret_sha256, 'hex')::text AS secret_sha256_hex;
+
+-- name: WithdrawEndedSessionsOfPrincipalExcept :many
+-- The second statement of the end of the other sessions, in the same transaction after the first: every session of the principal that
+-- had ended already, or ended while the first statement waited for it, is withdrawn, the sessions the kept one replaced by a sign-in or
+-- a re-authentication included. Only the kept session itself stays: an ended predecessor authenticates nothing, and keeping it would
+-- keep only the delete jobs queued with it, which is what a stolen copy of the browser's earlier session carries (Q-AUTHZ-262).
+UPDATE ui_session SET withdrawn_at = now()
+ WHERE principal_id = sqlc.arg(principal_id)::text::uuid AND ended_at IS NOT NULL AND withdrawn_at IS NULL
+   AND id <> sqlc.arg(keep_id)::text::uuid
+RETURNING id::text AS id;

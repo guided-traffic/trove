@@ -90,6 +90,17 @@ lock or a rotation reaches every replica.
   only if the row says so (Q-AUTH-13).
 - **Ends** (`Logout`, `EndForPrincipal`, `EndBreakGlass`, `EndAll`): the end and its change message of the area `auth` commit
   together, so every replica drops the session within the revocation bound whatever Valkey does.
+- **Withdrawals and successors** ([end.go](../../internal/auth/session/end.go), [standing.go](../../internal/auth/session/standing.go),
+  Q-AUTHZ-262): a sign-out, the end of one or of the other own sessions, an administrator's end, a disable, the end of every session
+  and a change or rotation of the break-glass password mark every session they reach `withdrawn_at`, ended ones included, in a
+  second statement of their transaction that reads anew, under the principal's row lock for one principal's sessions; a
+  re-authentication and a sign-in of the same principal in the same browser name their successor on the session they replace, and a
+  planted session of another principal that a sign-in ends is withdrawn. No request reads either: the delete job of R-STOR-018 does,
+  so that a session that ended quietly (by a deadline, the session limit or a re-authentication) and then was withdrawn stops the job
+  it queued. The end of the other own sessions keeps only the current session and withdraws the sessions it replaced too, so a stolen
+  copy of the browser's earlier session loses its delete jobs (the user's own jobs queued before the sign-in stop with it). The end of
+  every break-glass session takes the break-glass principal's row lock first. `auth.session.ended` names the sessions a withdrawal
+  ended and, apart (`withdrawn_ids`), those it withdrew after they had ended.
 
 ## CSRF
 
@@ -136,7 +147,9 @@ decoder. The tests `TestR_AUTH_014_LocalLoginEdge` pin the order.
 - A user lists and ends its own sessions (`/users/me/sessions`) through a session or a personal token that inherits the owner's rights; a
   token whose scope does not (`inherit: false`) answers `403` from the shared authorization step (`x-trove-owner-rights`, Q-API-214), and
   so do a service account and a CI token. The list names the addresses and user agents of the other logins, which no scope names.
-  A session of another user, an ended one and an unknown ID answer `404`, so session IDs are not probed.
+  A session of another user, an unknown ID and an own session that was withdrawn already answer `404`, so session IDs are not probed.
+  An own session that had ended by time, by the session limit or by a re-authentication answers `204` once, because the end withdraws
+  it (Q-AUTHZ-262), and `404` after that.
   `current` marks the session that made the request.
 - An administrator reads the sessions of a user with `identities:read` and ends them with `identities:write`
   (`auth.session.ended`, reason `revoked`). The list shows the source address and user agent of each session: personal data that the

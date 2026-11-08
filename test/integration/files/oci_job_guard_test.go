@@ -86,8 +86,9 @@ func jobState(t *testing.T, f *ociFixture) string {
 }
 
 // TestR_OCI_018_ADeleteJobHoldsTheCascadeToTheGrantsOfTheCaller: a delete of `<name>/_manifests` large enough for the job cascades to the
-// tags of the name, which lie outside the subtree the caller was checked on; the job decides them for the caller (H-653), so a deleter whose
-// grant excludes a tag cannot remove it through the job, while a deleter without the exclusion can.
+// tags of the name, which lie outside the subtree the caller was checked on; the job decides them for the caller (Q-OCI-76, Q-STOR-190),
+// so a deleter whose grant excludes a tag cannot remove it through the job, while a deleter without the exclusion can. The job's error
+// names the path the request named, not the excluded tag.
 func TestR_OCI_018_ADeleteJobHoldsTheCascadeToTheGrantsOfTheCaller(t *testing.T) {
 	f := newOCIJobFixture(t)
 	cfg, layer := f.blob("app", []byte("{}")), f.blob("app", []byte("layer"))
@@ -102,8 +103,8 @@ func TestR_OCI_018_ADeleteJobHoldsTheCascadeToTheGrantsOfTheCaller(t *testing.T)
 		t.Fatalf("DELETE app/_manifests: %d %s", res.status, res.body)
 	}
 	job := jobState(t, f)
-	if !strings.HasPrefix(job, "failed") || !strings.Contains(job, "release-1") {
-		t.Fatalf("the job must fail naming the tag it may not remove: %s", job)
+	if !strings.HasPrefix(job, "failed") || !strings.Contains(job, "it/oci-local/app/_manifests.") || strings.Contains(job, "release-1") {
+		t.Fatalf("the job must fail naming the path the request named, and not the tag it may not remove: %s", job)
 	}
 	if left := f.count(`SELECT count(*) FROM items WHERE path = 'app/_tags/release-1'`); left != 1 {
 		t.Errorf("the excluded tag was removed by the job (%d left)", left)

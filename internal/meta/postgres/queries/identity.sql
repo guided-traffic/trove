@@ -165,7 +165,9 @@ UPDATE app_user SET disabled_reason = NULLIF(sqlc.arg(reason)::text, ''),
 SELECT coalesce(disabled_reason, '')::text AS reason, is_break_glass FROM app_user WHERE principal_id = sqlc.arg(id)::text::uuid;
 
 -- name: IdentityEndSessions :many
-UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text
+-- A disable ends every live session of the principal with a reason that withdraws it; WithdrawEndedSessionsOfPrincipal then marks the
+-- ones that had ended already, in the same transaction (Q-AUTHZ-262).
+UPDATE ui_session SET ended_at = now(), end_reason = sqlc.arg(reason)::text, withdrawn_at = now()
  WHERE principal_id = sqlc.arg(id)::text::uuid AND ended_at IS NULL
 RETURNING id::text AS id;
 

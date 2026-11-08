@@ -7,6 +7,8 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/rawfiles"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/auth"
+	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -81,8 +83,9 @@ func (c *filesComponent) Sync(ctx context.Context) error {
 // The files service names its decision point through the entry points that
 // serve it, so the area takes the authz area: a role that serves /files/ without
 // a decision point is refused at start-up instead of answering 503 on the route.
-func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az authzArea, fm formatsArea, vz vulnArea) (filesArea, error) {
-	if err := requireInputs(AreaFiles, given("repository reader", repo.reader), given("authorizer", az.engine), given("format hooks", fm.hooks), given("format seam", fm.seam)); err != nil {
+func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, id identityArea, az authzArea, fm formatsArea, vz vulnArea) (filesArea, error) {
+	if err := requireInputs(AreaFiles, given("repository reader", repo.reader), given("principal store", id.principals), given("token service", id.tokens),
+		given("authorizer", az.engine), given("format hooks", fm.hooks), given("format seam", fm.seam)); err != nil {
 		return filesArea{}, err
 	}
 	log := a.log.With("component", "files")
@@ -99,7 +102,11 @@ func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az a
 	if err != nil {
 		return filesArea{}, err
 	}
-	store.SetJobGuard(svc.DeleteJobGuard(az.engine))
+	// The delete job decides every batch on what the subject that asked holds then (Q-STOR-190, Q-AUTHZ-260).
+	standing := auth.NewJobStanding(id.principals, id.tokens, func(ctx context.Context, sid string) (string, error) {
+		return session.Standing(ctx, in.db, sid)
+	})
+	store.SetJobGuard(svc.DeleteJobGuard(az.engine, standing))
 	if err := a.startComponent(ctx, &filesComponent{stats: stats, activity: activity}); err != nil {
 		return filesArea{}, err
 	}
@@ -162,8 +169,8 @@ func (a *App) repositoryAPI() v1.RepositoryServices {
 // registerFilesJobs registers the job that deletes a large subtree (R-STOR-018).
 // The handler finds the item store through a late value, because the registry is
 // built, and frozen, before the files area is wired. The request that queued the job
-// decided every item of the subtree; the job decides only what a hook cascades to, for the
-// requesting subject, through the job guard (items.Store.SetJobGuard, H-653).
+// decided every item of the subtree; the job decides every batch again, on what the subject
+// that asked holds then, through the job guard (items.Store.SetJobGuard, Q-STOR-190).
 func (a *App) registerFilesJobs(r *jobs.Registry) {
 	r.RegisterKind(items.DeleteJobKind, items.DeleteJobSpec(
 		a.itemStore.handler("item store", func(ctx context.Context, store *items.Store, run *jobs.Run) error {

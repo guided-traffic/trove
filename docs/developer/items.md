@@ -141,7 +141,23 @@ layer records the allowed write and asks the format's `CheckRemoval`, the owners
 deepest first. A larger subtree is checked in full before the job `items-delete` is queued (the highest id the check saw is
 `DeleteArgs.MaxID`, Q-STOR-143), `Extra` runs in the transaction that queues it with the files the check saw, and the job
 removes files in batches of `storage.delete.batch_size`, each batch in its own transaction with its own hook call, then the folders.
-The job decides nothing. A hook that fails stops the batch, rolls it back, and the job is retried.
+A hook that fails stops the batch, rolls it back, and the job is retried.
+
+The store decides nothing in the job either; every job carries the subject that asked (`DeleteArgs.Subject`, the JSON of an
+`authz.JobSubject`) and the highest item id the check saw (`DeleteArgs.MaxID`), and `RunDeleteJob` refuses, permanently, a job without
+either (Q-STOR-192); `enqueueDelete` queues no job when the check listed nothing. The job is guarded by the `JobGuard` the composition
+root installs (`SetJobGuard`, the files service's `DeleteJobGuard`, Q-STOR-190). Before each batch, outside its transaction,
+`batchGuard` opens a `BatchGuard`: the guard finds the repository by its ID, reads what the subject holds then and takes the index
+installed then; `BatchGuard.Name` is the repository's name at that moment, which the batch's hook event and audit rows use. Inside the
+batch's transaction, after the rows are listed, `BatchGuard.files` decides `delete` on every listed file (`Check`) and asks the format
+about them (`Removal`, the ownership of R-AUTHZ-018); the cascade guard of the hook calls `Check` too. A folder batch decides its paths
+with `Check` before its transaction (`checkFolders`). `refusal` turns an error of kind `Forbidden` or `Unauthenticated` into
+`jobs.Permanent`, so a refused path and a withdrawn principal or credential end the job, while a database or an index that does not
+answer fails only the attempt. `ErrRepositoryGone` (the repository is gone or being deleted, Q-STOR-191) ends the job as done. A stop
+by the guard records `artifact.delete_stopped` (`recordStopped`, the subject as actor, the reason code, the job, the root path, the
+items removed so far in `deleteRun`); `jobFailure` reports any error that is not an `errs.Error` with a generic text, its cause in the
+log (Q-STOR-193). `EraseCache` removes with the unexported `DeleteArgs.all` set: no bound and no guard, because no request asks for it;
+a job's arguments never carry it. The queries take the bound as `bounded` beside `max_id`.
 
 `Store.RemoveIn` is the same removal inside a transaction of the caller, for a format's route that removes the files of a version together with its own rows
 (`PackageWriter.DeleteItems`, [formats.md](formats.md), [npm.md](npm.md)): it lists the files of the given paths (a folder path takes its subtree), removes them by id, tells

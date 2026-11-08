@@ -14,7 +14,9 @@ perspective.
   on `/files/`; it passes the ownership check of the name in the transaction that removes. A delete by digest also decides `delete` for the
   tags that point at the manifest, its referrers and the children it lists, and everything the cascade goes on to remove (a referrer's
   tags, at every depth): the host decides every path a hook cascades to with the listing form of the decision (no audit event) and refuses
-  the whole removal (403, rolled back) at the first one the caller may not delete; `/files/` is guarded the same way (Q-OCI-76). The tags list and the referrers answer leave out the entries whose path the caller may not read, decide them in a batch that writes no
+  the whole removal (403, rolled back) at the first one the caller may not delete; `/files/` is guarded the same way (Q-OCI-76), and so is
+  every batch of the job that finishes a large `/files/` delete, on what the caller holds when the batch begins
+  ([file-transfer.md](file-transfer.md#a-delete-and-its-job), Q-STOR-190). The tags list and the referrers answer leave out the entries whose path the caller may not read, decide them in a batch that writes no
   audit event, and never name a hidden entry in a Link. Authorization runs before the
   existence check, so a caller who may not delete learns nothing of what the name holds.
 - The routes are registered for local repositories only. A remote repository is a cache and a virtual repository routes no deletes;

@@ -2,6 +2,8 @@ package files
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/qname"
 
@@ -58,7 +60,7 @@ func (s *Service) Delete(ctx context.Context, c Caller, req DeleteRequest) (item
 	if !found || (req.Strict && !admits(repo, req.Path, it.Kind == items.KindFolder, t.class)) {
 		return items.DeleteResult{}, notFound()
 	}
-	subject, err := c.Access.EncodedSubject()
+	subject, err := json.Marshal(c.Access.JobSubject())
 	if err != nil {
 		return items.DeleteResult{}, err
 	}
@@ -95,37 +97,89 @@ func (s *Service) Delete(ctx context.Context, c Caller, req DeleteRequest) (item
 			if err := record(ctx, tx); err != nil {
 				return err
 			}
-			return s.checkRemoval(ctx, tx, c, repo, files)
+			return s.checkRemoval(ctx, tx, repo, files, c.Access.Index(), c.Subject)
 		},
 	})
 }
 
-// JobDecider decides for the subject a delete job carries ([authz.Engine.PathsAllowedFor]).
+// JobDecider is the decision point as a batch of a delete job uses it: an index taken once per batch, and every question of the batch
+// asked of it. *authz.Engine implements it.
 type JobDecider interface {
-	PathsAllowedFor(ctx context.Context, encoded []byte, base authz.Coordinate, a authz.Action, paths []string, classify authz.Classifier) ([]bool, error)
+	Begin(ctx context.Context, sub authz.Subject, names ...qname.Repo) (*authz.Index, error)
+	PathsAllowedOn(ctx context.Context, idx *authz.Index, sub authz.Subject, base authz.Coordinate, a authz.Action, paths []string, classify authz.Classifier) ([]bool, error)
+	HoldsOn(idx *authz.Index, sub authz.Subject, permission string) bool
+	RepositoryIDOn(idx *authz.Index, name qname.Repo) (int64, bool)
 }
 
-// DeleteJobGuard returns the guard of the delete job: the paths a storage hook cascades to in a batch are decided for `delete` for the
-// subject that asked, on the index installed now, and the first refusal fails the job with the 403 of the path. A job that carries no
-// subject (none is queued without one) is not guarded.
-func (s *Service) DeleteJobGuard(d JobDecider) items.JobGuard {
-	return func(ctx context.Context, a items.DeleteArgs, paths []string) error {
-		if len(a.Subject) == 0 {
-			return nil
+// Standings reads what the principal and the credential of a job's subject hold now (Q-AUTHZ-260): the kind, the name, the groups, the
+// token's scope and a CI token's bundle. It refuses with an error of kind Unauthenticated when the principal is no longer active or
+// the credential was withdrawn (Q-AUTHZ-261, Q-AUTHZ-262). The composition root binds the authentication layer's reader.
+type Standings interface {
+	Standing(ctx context.Context, j authz.JobSubject) (authz.Standing, error)
+}
+
+// DeleteJobGuard returns the guard of the delete job (Q-STOR-190, Q-STOR-191): every batch reads the standing of the subject that
+// asked, finds the job's repository by its ID - a moved repository is decided where it is now, one that is gone or being deleted ends
+// the job as done ([items.ErrRepositoryGone]) - takes the index installed now, and decides on that subject `delete` on the batch's own
+// items, the format's question about its files (the package ownership of R-AUTHZ-018) and every path a storage hook cascades to. A
+// disabled repository stops the job unless the subject holds content:bypass, as a request's delete does (Q-AUTHZ-162). A refusal
+// fails the job with a 403 that names the path the request named, never the refused item; a withdrawn principal or credential with
+// the 401 the request would get now.
+func (s *Service) DeleteJobGuard(d JobDecider, st Standings) items.JobGuard {
+	return func(ctx context.Context, a items.DeleteArgs) (items.BatchGuard, error) {
+		var j authz.JobSubject
+		if err := json.Unmarshal(a.Subject, &j); err != nil {
+			return items.BatchGuard{}, errs.E(errs.Forbidden, errs.CodeForbidden, "The delete job carries no subject that can be decided for.", errs.WithCause(err))
 		}
-		repo, err := s.repos.ByName(ctx, a.Key)
+		repo, err := s.repos.ByID(ctx, a.RepoID)
+		switch {
+		case errs.KindOf(err) == errs.NotFound:
+			return items.BatchGuard{}, items.ErrRepositoryGone
+		case err != nil:
+			return items.BatchGuard{}, err
+		case repo.Lifecycle == repository.Deleting:
+			return items.BatchGuard{}, items.ErrRepositoryGone
+		}
+		now, err := st.Standing(ctx, j)
 		if err != nil {
-			return err
+			return items.BatchGuard{}, err
 		}
-		ok, err := d.PathsAllowedFor(ctx, a.Subject, authz.Coordinate{Repository: a.Key, Kind: authz.KindWrite}, authz.Delete, paths, s.classifier(repo))
+		sub := j.Subject(now)
+		idx, err := d.Begin(ctx, sub, repo.Name)
 		if err != nil {
-			return err
+			return items.BatchGuard{}, err
 		}
-		for i, allowed := range ok {
-			if !allowed {
-				return errForbidden(authz.Delete, a.Key, paths[i])
-			}
+		if id, ok := d.RepositoryIDOn(idx, repo.Name); !ok || id != a.RepoID {
+			// The repository snapshot and the index follow the change log each on its own; for a moment after a move one can name
+			// another repository than the other. The batch waits for the next attempt rather than decide on that one.
+			return items.BatchGuard{}, errs.E(errs.Unavailable, errs.CodeUnavailable,
+				"The authorization index does not hold the job's repository under its current name yet; the batch is tried again.",
+				errs.WithRetryAfter(time.Second))
 		}
-		return nil
+		if repo.Disabled && !d.HoldsOn(idx, sub, string(authz.ContentBypass)) {
+			return items.BatchGuard{}, errs.E(errs.Forbidden, errs.CodeForbidden,
+				"The repository "+repo.Name.String()+" is disabled, and the subject that asked for this delete does not hold content:bypass; the job stopped.")
+		}
+		classify := s.classifier(repo)
+		return items.BatchGuard{
+			Name: repo.Name,
+			Check: func(ctx context.Context, paths []string) error {
+				ok, err := d.PathsAllowedOn(ctx, idx, sub, authz.Coordinate{Repository: repo.Name, Kind: authz.KindWrite}, authz.Delete, paths, classify)
+				if err != nil {
+					return err
+				}
+				for _, allowed := range ok {
+					if !allowed {
+						// The path the request named, as the request's own check names it: the refused item may be one the subject
+						// cannot read, and the job's error is read by others than the subject (R-AUTHZ-016).
+						return errForbidden(authz.Delete, repo.Name, a.Path)
+					}
+				}
+				return nil
+			},
+			Removal: func(ctx context.Context, tx meta.Tx, files []string) error {
+				return s.checkRemoval(ctx, tx, repo, files, idx, sub)
+			},
+		}, nil
 	}
 }

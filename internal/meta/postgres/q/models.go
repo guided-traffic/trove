@@ -930,6 +930,8 @@ type UiSession struct {
 	UserAgent         pgtype.Text
 	EndedAt           pgtype.Timestamptz
 	EndReason         pgtype.Text
+	WithdrawnAt       pgtype.Timestamptz
+	SuccessorID       pgtype.UUID
 }
 
 type UploadSession struct {
