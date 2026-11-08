@@ -7,10 +7,12 @@ package e2e
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +35,7 @@ const installBudget = 1.2
 func TestMirror_R_REPO_055_ClientsFirst(t *testing.T) {
 	e := mirrorFx(t)
 	t.Run("npm", func(t *testing.T) { e.clientsFirstNPM(t) })
+	t.Run("preemption", func(t *testing.T) { e.clientsFirstPreemption(t) })
 	t.Run("nuget", func(t *testing.T) { e.clientsFirstNuGet(t) })
 	e.jobs.check(t)
 }
@@ -55,8 +58,9 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 	rd := startReadings(t)
 	var bases, loads []time.Duration
 	var key string
-	// A client fetch pre-empts the background fetches that are running when it has to wait, and whether the pass has one in flight at that
-	// moment depends on where it is in its cycle (one pair of the dozen that were measured showed none), so the counter is judged over the pairs.
+	// A client fetch pre-empts a background fetch that is in its upstream exchange when the client has to wait for a slot. Since the share of a
+	// slot ends with the exchange (Q-REPO-235) the clients of the pairs rarely wait, so the counter of the pairs is logged; the rule itself is
+	// proved with forced contention by the subtest preemption (Q-REPO-253).
 	var preemptions float64
 	maxOpen := 0
 	for i := range clientsFirstPairs {
@@ -128,9 +132,6 @@ func (e *mirrorEnv) clientsFirstNPM(t *testing.T) {
 	// processes (they ran the pass) and the PostgreSQL log with its slow statements still exist. No pass condition depends on it.
 	if slices.ContainsFunc(loads, func(d time.Duration) bool { return float64(d) > installBudget*float64(bestBase) }) {
 		captureClusterLogs(t)
-	}
-	if preemptions == 0 {
-		t.Errorf("R-REPO-055: trove_mirror_preempted_total did not grow in any of the %d pairs: no client fetch took a background slot", clientsFirstPairs)
 	}
 	// The time of an install is the CPU of the runner as much as trove's: per change the ratio is logged, and the nightly run
 	// enforces it with TROVE_PERF_GATE=1, as the latency bounds of Q-ARCH-220 (Q-REPO-197). The bound on the upstream's open
@@ -224,4 +225,58 @@ func (e *mirrorEnv) clientsFirstNuGet(t *testing.T) {
 	e.mu.Lock()
 	e.nugetMirror = key
 	e.mu.Unlock()
+}
+
+// clientsFirstPreemption is the pre-emption half of the e2e criterion of R-REPO-055, with the contention forced (Q-REPO-253): a pass runs
+// through a remote of the private test upstream whose tarballs take 1.5 s, so its background fetches sit in their upstream exchange; then
+// more distinct tarballs are requested through the three client-serving replicas than their slots hold (3 each, 9 in all). The clients that
+// find no slot raise mirror_yield and the pool's processes pre-empt the pass's fetches: trove_mirror_preempted_total grows, and every
+// client is served. The request counts are small enough for the queue timeout (10 s) of 36 requests over 9 slots at 1.5 s.
+func (e *mirrorEnv) clientsFirstPreemption(t *testing.T) {
+	s := stub(t)
+	const passNames, burst = 60, 36
+	var names []string
+	for i := 0; i < passNames+burst; i++ {
+		name := fmt.Sprintf("e2e-preempt-%s-%03d", e.run, i)
+		s.publish(t, name, "1.0.0", nil)
+		names = append(names, name)
+	}
+	s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 20, "tarball": 1500}})
+	t.Cleanup(func() { s.setMode(t, npmstub.Mode{}) })
+
+	key := e.create(t, e.npmNamesBody("npm-mirror-preempt-"+e.run, names))
+	e.run_(t, key, false)
+	st := e.awaitPassStarted(t, key, 2)
+	t.Logf("the pass runs (%s, %d packages filled) when the clients arrive", st.Pass.Method, st.Pass.PackagesDone)
+	before := preempted(t, key)
+
+	// the last names: the pass takes the names in order and is far from them
+	asked := names[passNames:]
+	a := e.adm.withToken(e.token)
+	statuses := make([]int, len(asked))
+	var wg sync.WaitGroup
+	for i, name := range asked {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := a.send(http.MethodGet, "/api/npm/"+repoRef(key)+"/"+name+"/-/"+name+"-1.0.0.tgz", nil)
+			if err == nil {
+				statuses[i] = r.Status
+			}
+		}()
+	}
+	wg.Wait()
+	var after float64
+	waitFor(t, "trove_mirror_preempted_total to grow", 30*time.Second, time.Second, func() bool {
+		after = preempted(t, key)
+		return after > before
+	})
+	t.Logf("%d client fetches of tarballs the pass had not stored: trove_mirror_preempted_total %v -> %v", len(asked), before, after)
+	for i, code := range statuses {
+		if code != http.StatusOK {
+			t.Errorf("R-REPO-055: the client fetch of %s answered %d, want 200", asked[i], code)
+		}
+	}
+	e.drop(t, key)
+	e.awaitNoPassRunning(t)
 }

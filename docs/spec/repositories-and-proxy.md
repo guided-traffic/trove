@@ -3569,8 +3569,10 @@ Acceptance criteria:
   background fetches, and 1 s later the stub has at most eight tarball fetches in flight (Q-REPO-171).
 - e2e (set `mirror`, R-REPO-059): a pass of 300 packages runs while `npm ci` of the 400-dependency fixture runs through the
   same remote on three client-serving replicas; `npm ci` succeeds within 120 % of its time without the pass, the stub never has more
-  than `maxConcurrentFetches + n − 1 + B` connections open, and `trove_mirror_preempted_total` grew. The time ratio is enforced
-  by the nightly run, the other two in every run (Q-REPO-197).
+  than `maxConcurrentFetches + n − 1 + B` connections open. The time ratio is enforced by the nightly run, the bound in every run
+  (Q-REPO-197). Pre-emption is proved by a second part with the contention forced (Q-REPO-253): a pass whose tarballs the stub holds
+  1.5 s runs, 36 clients ask the three client-serving replicas for distinct tarballs the pass has not stored (their slots hold 9), all are served
+  with 200, and `trove_mirror_preempted_total` grew.
 
 ### R-REPO-056 · Mirror status and operations
 Priority: **MVP** · Covers: API-084, API-085
@@ -7492,6 +7494,35 @@ lock, CPU in the database, the machine, or trove between statements. The develop
 [roundtripper.go](../../internal/outbound/roundtripper.go). Tests: `TestR_OPS_011_TheSlotWaitIsARemoteRecordsField` (unit),
 `TestR_OPS_011_TheUpstreamRecordOfAFetchCarriesItsSlotWait` (integration). Elsewhere: [developer/e2e.md](../developer/e2e.md#the-mirror-tests),
 [developer/local-profile.md](../developer/local-profile.md), [developer/observability.md](../developer/observability.md).
+
+### Q-REPO-253 · The e2e criterion "pre-emptions grew" is proved with forced contention, not by the install of the ratio
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: since the repository's share of a slot ends with the upstream exchange (Q-REPO-235), the clients of `npm ci` rarely find the slots full,
+so they rarely pre-empt: Test and Release run 42445876912 measured the ratio at 99 % (82 %, 97 %, 97 %) with `trove_mirror_preempted_total` at 0 over
+the three pairs, and the criterion "grew" of R-REPO-055 failed although the rule it checks is intact. A client that finds no slot still
+pre-empts a background fetch that is in its upstream exchange (Q-REPO-235 only exempts one that is storing), which the unit and integration
+tests of R-REPO-055 prove with contention they force. The pairs of the ratio cannot force any: their stub delays, the number of requests in
+flight and the settings are the estimator's, and a change there changes what is measured.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep "grew over the three pairs" | As built | No change | Fails whenever the install is fast enough that no client waits: it asserts the opposite of what the split achieves |
+| (b) Slow the pass's upstream requests in the pairs, or lower the pairs' slot budget | Contention by configuration | The assertion stays where it is | The stub cannot tell the pass from the clients, so the clients' fetches slow too and the ratio is inflated; a lower budget changes the bound |
+| (c) A second part of the e2e test forces the contention on its own remote; the pairs log the counter (chosen) | `TestMirror_R_REPO_055_ClientsFirst/preemption`: a pass over 96 names runs while the stub holds a tarball 1.5 s (the pass's two background fetches sit in their exchange), then 36 clients ask the three replicas for 36 other tarballs of the remote at once (the replicas' slots hold 9) | Deterministic: the clients wait, raise `mirror_yield`, and the pool's processes pre-empt; the estimator, the bound and the pair structure are untouched; the criterion "`trove_mirror_preempted_total` grew" is asserted as specified | A second remote and about a minute of the set |
+| (d) Drop the criterion | Pre-emption is proved by the unit and integration tests | Simplest | The e2e would no longer show the rule across processes and replicas, which only kind has |
+
+**Choice:** (c). The pairs log `trove_mirror_preempted_total` and assert nothing about it; the subtest `preemption` asserts that it grew and that every
+client fetch was answered 200.
+
+**Rationale:** the criterion was written when a slot was held through the commit, so that contention was common; it checks that the client-first
+rule works across processes, which contention alone shows. The development agent would revisit (c) if the pairs show a client waiting behind a
+background fetch's exchange (`trove_remote_fetch_queue_wait_seconds` of the repository above the pass-free pairs'), which would be a regression of
+the rule that this subtest does not see.
+
+**Applied in the spec:** R-REPO-055 (the e2e criterion). Code: [test/e2e/mirror_clients_test.go](../../test/e2e/mirror_clients_test.go)
+(`clientsFirstPreemption`). Elsewhere: [developer/e2e.md](../developer/e2e.md#the-mirror-tests).
 
 ### Q-REPO-245 · A narrowing update records `repository.narrowed` beside `repository.updated`, with only the parts that narrowed
 
