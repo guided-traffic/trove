@@ -192,13 +192,20 @@ func mustParse(raw string) *url.URL {
 }
 
 // probeURL is the probe resource of a format below the upstream URL: its probe
-// path, or the URL itself.
-func probeURL(base *url.URL, probePath string) *url.URL {
+// path, or the URL itself. For the format that declares the registry root the probe
+// resource is at the root of the host: the path of the URL is a namespace prefix of
+// image names there (R-OCI-021), not a base of the API, and the version check is
+// /v2/ (Q-REPO-281).
+func probeURL(base *url.URL, probePath string, registryRoot bool) *url.URL {
 	u := *base
 	if probePath == "" {
 		return &u
 	}
-	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + strings.TrimPrefix(probePath, "/")
+	if registryRoot {
+		u.Path, u.RawQuery = "/"+strings.TrimPrefix(probePath, "/"), ""
+	} else {
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + strings.TrimPrefix(probePath, "/")
+	}
 	u.RawPath = ""
 	return &u
 }
@@ -206,10 +213,11 @@ func probeURL(base *url.URL, probePath string) *url.URL {
 // probe sends the request and reports what came back.
 func (c *Clients) probe(ctx context.Context, cl *Client, format string) repository.UpstreamTestResult {
 	var probePath string
+	var challengeReachable, registryRoot bool
 	if e, ok := c.cat.Lookup(format); ok {
-		probePath = e.ProbePath
+		probePath, challengeReachable, registryRoot = e.ProbePath, e.ProbeChallengeReachable, e.RegistryRoot
 	}
-	target := probeURL(cl.origin, probePath)
+	target := probeURL(cl.origin, probePath, registryRoot)
 	s := cl.settings
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.ConnectTimeoutMs+s.ReadTimeoutMs)*time.Millisecond+probeSlack)
 	defer cancel()
@@ -241,9 +249,25 @@ func (c *Clients) probe(ctx context.Context, cl *Client, format string) reposito
 	status := resp.StatusCode
 	authed := status != http.StatusUnauthorized && status != http.StatusForbidden
 	res.Reachable, res.HTTPStatus, res.Authenticated = true, &status, &authed
+	if status == http.StatusUnauthorized && challengeReachable && bearerChallenged(resp.Header) && cl.settings.AuthMode != repository.AuthBearer {
+		// A registry's 401 with a Bearer challenge asks for the token handshake; the credential is judged by the realm, which the
+		// test does not run, so the answer says reachable and gives no verdict on the credential. A repository with authMode
+		// bearer runs no handshake and sends its stored token as it is: the same answer says the registry refused that token.
+		res.Authenticated = nil
+	}
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 		leaf := resp.TLS.PeerCertificates[0]
 		res.TLS = &repository.UpstreamTLS{PeerSubject: leaf.Subject.String(), NotAfter: leaf.NotAfter.UTC()}
 	}
 	return res
+}
+
+// bearerChallenged reports whether a 401 carries a Bearer challenge.
+func bearerChallenged(h http.Header) bool {
+	for _, v := range h.Values("Www-Authenticate") {
+		if len(v) >= 6 && strings.EqualFold(v[:6], "bearer") && (len(v) == 6 || v[6] == ' ') {
+			return true
+		}
+	}
+	return false
 }

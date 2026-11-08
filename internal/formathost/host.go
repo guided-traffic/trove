@@ -256,6 +256,12 @@ func (h *Host) PathsAllowed(ctx context.Context, rq *formats.Request, a formats.
 	if err != nil {
 		return nil, err
 	}
+	return h.rules(ctx, rq, a, paths, out, classify)
+}
+
+// rules narrows out (what the decision point allowed, or everything) by the repository's patterns and the refusal of a claimed name.
+func (h *Host) rules(ctx context.Context, rq *formats.Request, a formats.Action, paths []string, out []bool, classify authz.Classifier) ([]bool, error) {
+	var err error
 	actions := []formats.Action{a}
 	refused := map[string]bool{}
 	for i, p := range paths {

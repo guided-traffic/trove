@@ -583,6 +583,7 @@ func (p *populate) Endpoint() (string, bool) { return p.rq.Subject.Endpoint, p.r
 // authenticator is the engine's view of a format's token handshake ([formats.Authenticator]).
 type authenticator struct {
 	auth     formats.Authenticator
+	stood    formats.StoodChallengeReader
 	repo     *repository.Repository
 	settings json.RawMessage
 	disc     any
@@ -596,13 +597,18 @@ func handshakeOf(caps formats.RemoteCaps, repo *repository.Repository, settings 
 	if caps.Auth == nil {
 		return nil
 	}
-	return &authenticator{auth: caps.Auth, repo: repo, settings: settings, disc: disc}
+	return &authenticator{auth: caps.Auth, stood: caps.Stood, repo: repo, settings: settings, disc: disc}
 }
 
 // TokenRequest implements [proxy.Authenticator]: the request path is the zero [formats.Path] when the engine has none.
 func (a *authenticator) TokenRequest(ctx context.Context, b proxy.UpstreamBase, orig *http.Request, path string, status int, challenge http.Header) (*http.Request, string, bool, error) {
 	rc := formats.RemoteContext{Repo: a.repo, Upstream: b.URL, Settings: a.settings, Discovery: a.disc}
 	return a.auth.TokenRequest(ctx, rc, orig, formats.Path{Path: path}, status, challenge)
+}
+
+// StoodMissing implements [proxy.StoodReader] over the format's [formats.StoodChallengeReader].
+func (a *authenticator) StoodMissing(path string, header http.Header) bool {
+	return a.stood != nil && a.stood.StoodMissing(formats.Path{Path: path}, header)
 }
 
 // ReadToken implements [proxy.Authenticator].
@@ -638,6 +644,12 @@ func (a *adapter) ReadToken(ctx context.Context, status int, body []byte) (strin
 		return "", 0, errs.E(errs.Internal, errs.CodeInternal, "The format has no token handshake.")
 	}
 	return h.ReadToken(ctx, status, body)
+}
+
+// StoodMissing implements [proxy.StoodReader]: a format without a handshake, or whose handshake reads no stood challenge, answers false.
+func (a *adapter) StoodMissing(path string, header http.Header) bool {
+	sr, ok := a.handshake().(proxy.StoodReader)
+	return ok && sr.StoodMissing(path, header)
 }
 
 var _ proxy.Revalidator = (*adapter)(nil)

@@ -115,7 +115,7 @@ the result. The probe is one GET of the format's `ProbePath` below the upstream 
 client, with `outbound.Call{Repo, FlightRole: "probe"}` for the upstream log. The local address of the connection (`httptrace.GotConn`) is the
 `sourceAddress`, reported only when the repository has a `sourceNetwork`. `Classify(err)` maps an error to the stable code (`egress_denied`,
 `source_network_unavailable`, `dns_error`, `tls_untrusted`, `connection_refused`, `timeout`, `too_many_redirects`, `insecure_redirect`,
-`upstream_secret_unavailable`, `request_failed`); the engine uses it too. The messages are built from the code and the host, never from the
+`upstream_secret_unavailable`, `request_failed`); the engine uses it too. The `401` of a format with `Facts.ProbeChallengeReachable` that carries a Bearer challenge is reachable with `authenticated: null` (Q-REPO-280). The messages are built from the code and the host, never from the
 error text of the request, which repeats the URL. An offline repository and `proxy.global_offline` are not contacted. The test touches no
 circuit state: this package has no handle on it.
 

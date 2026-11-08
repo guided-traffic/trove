@@ -1753,7 +1753,8 @@ egress rules, proxy and credentials that real fetches use (Q-REPO-90).
 - The answer is always 200 for a repository that can be tested: an upstream that fails is a result
   with `reachable: false` and the reason in `error`. `reachable` is true when the upstream answered
   with an HTTP response, whatever its status; `authenticated` is false for 401 and 403 and `null`
-  when there was no response; `tls` describes the leaf certificate of the host that answered and is
+  when there was no response, and for the `401` of a format whose upstream authenticates with a token handshake and whose
+  probe resource answers it with a Bearer challenge, unless the repository's `authMode` is `bearer` (OCI, [Q-REPO-280](#q-repo-280--the-upstream-test-reads-a-bearer-challenge-of-a-handshake-format-as-reachable)); `tls` describes the leaf certificate of the host that answered and is
   `null` over plain `http`; `outboundProxy` is `null` until named proxies exist.
 - `error` is `null` or `{"code", "message"}` with one of `dns_error`, `connection_refused`,
   `timeout`, `tls_untrusted`, `egress_denied`, `source_network_unavailable`,
@@ -7841,6 +7842,49 @@ for that wait to show in the publish latency; the narrower key would then be a r
 [locks.go](../../internal/cluster/locks.go), queries `RepositoryIsMember` and `LockRepositoryForAutoClaim`
 ([claims.sql](../../internal/meta/postgres/queries/claims.sql)). Tests: `TestAutoClaimConcurrentPublishes`
 (`test/integration/repository`).
+
+### Q-REPO-280 · The upstream test reads a Bearer challenge of a handshake format as reachable
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the probe of an OCI remote requests `/v2/`. A registry answers it `401` with `WWW-Authenticate: Bearer realm=…` to every client that holds no
+token, the repository's credential included, because the credential is judged by the realm and not by the registry. R-REPO-024 reads a `401` as
+`authenticated: false`, which would tell every administrator of a working Docker Hub remote that its credential was refused.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A catalog fact `ProbeChallengeReachable`: the `401` of such a format with a Bearer challenge is reachable and `authenticated` is `null` (chosen) | The test says what it knows: the registry answered and wants a token | No false verdict; no new field of the result (`authenticated` is nullable already) | A refused credential is not found by the test; a fact in the catalog (an addition to the contract surface, ADR-176) |
+| (b) The probe runs the handshake | The test judges the credential | The administrator learns about a wrong password | A second request to a second host in a test of one resource, with the credential rules of R-REPO-033; the format would have to build it |
+| (c) `authenticated: true` for the challenge | Reads as success | Nothing to build | A statement the test did not check |
+
+**Choice:** (a). The fact is `catalog.Facts.ProbeChallengeReachable`, set for OCI with `ProbePath: "v2/"`; the `Www-Authenticate` of the answer is read for
+the scheme `Bearer` only, so a `401` with Basic is still `authenticated: false`.
+
+**Rationale:** the development agent would revisit it when the test is to judge the credential of a registry (option (b) then runs the handshake of the
+format's `Authenticator`).
+
+**Applied in the spec:** R-REPO-024, [formats/oci.md](formats/oci.md) R-OCI-021. Code: `Clients.probe` in [probe.go](../../internal/proxy/upstream/probe.go). Tests:
+`TestR_REPO_024_ABearerChallengeOfAHandshakeFormatIsReachable`, `TestR_REPO_024_TheUpstreamTestReadsABearerChallengeAsReachable`.
+
+### Q-REPO-281 · The probe of the registry-root format is at the root of the host
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-REPO-280's probe resource for OCI is `/v2/`, and the generic probe appends the probe path to the path of the upstream URL. For a registry the path of
+`remote.url` is a namespace prefix of image names (R-OCI-021), so `https://ghcr.io/acme` probed `/acme/v2/`, a path no registry serves, and the `404` read as
+`authenticated: true`: a false verdict on the credential. The audit also asked what a Bearer challenge means with `authMode: bearer`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) For the format that declares `RegistryRoot`, the probe path is joined at the root of the host; with `authMode: bearer` a Bearer challenge is a refusal of the stored token (chosen) | `/v2/` is asked where the registry has it | The verdict is the registry's | A rule keyed on a catalog fact other than the probe path |
+| (b) A catalog fact for the probe's base | Explicit | | A second fact for the one format that has a prefix |
+
+**Choice:** (a).
+
+**Rationale:** the development agent would revisit it for a second format whose URL path is not a base of its API.
+
+**Applied in the spec:** R-REPO-024, [formats/oci.md](formats/oci.md) R-OCI-021. Code: `probeURL` in [probe.go](../../internal/proxy/upstream/probe.go). Test:
+`TestR_REPO_024_TheProbeOfTheRegistryRootFormatIsAtTheRootOfTheHost`, `TestR_REPO_024_TheUpstreamTestOfAPrefixedRegistryAsksTheRootOfTheHost`.
 
 ## What this does not cover
 

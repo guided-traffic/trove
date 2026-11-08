@@ -3352,7 +3352,7 @@ export interface paths {
         put?: never;
         /**
          * Test the saved upstream of a remote repository
-         * @description Sends one request to the format's probe resource (npm: `-/ping`; a format whose URL is its
+         * @description Sends one request to the format's probe resource (npm: `-/ping`; OCI: `v2/`; a format whose URL is its
          *     service index: the URL itself) through the client, the egress address rules, the source
          *     network and the credentials that real fetches use (R-REPO-024). The answer is always `200`:
          *     an upstream that cannot be reached is a result with `reachable: false` and the reason in
@@ -6444,7 +6444,7 @@ export interface components {
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
          */
-        RemoteFormatName: "npm" | "nuget";
+        RemoteFormatName: "npm" | "nuget" | "oci";
         /**
          * @description The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
          * @enum {string}
@@ -7372,7 +7372,7 @@ export interface components {
             /** @description The upstream answered with an HTTP response, whatever its status. */
             reachable: boolean;
             httpStatus: number | null;
-            /** @description `false` for `401` and `403`; `null` when there was no response. */
+            /** @description `false` for `401` and `403`; `null` when there was no response, and for the `401` of a container registry that asks for a token (a Bearer challenge): the credential is judged by the registry's token service, which the test does not ask. */
             authenticated: boolean | null;
             /** Format: int64 */
             durationMs: number;

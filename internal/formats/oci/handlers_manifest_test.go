@@ -763,8 +763,8 @@ func TestR_OCI_013_AManifestOrTagReachingTheRepositoryAnyOtherWayIsRefused(t *te
 	}
 }
 
-func TestR_OCI_013_TheRemoteAndTheVirtualClassAreNotBuiltYet(t *testing.T) {
-	fx := newFixture(t, formattest.HostOptions{Class: formats.Remote})
+func TestTheVirtualClassIsNotBuiltYet(t *testing.T) {
+	fx := newFixture(t, formattest.HostOptions{Class: formats.Virtual})
 	fx.wantStatus(fx.get("app/manifests/1"), http.StatusNotImplemented, "UNSUPPORTED")
 	fx.wantStatus(fx.get("app/blobs/"+sha([]byte("x"))), http.StatusNotImplemented, "UNSUPPORTED")
 }

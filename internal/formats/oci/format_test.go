@@ -28,11 +28,14 @@ func TestDescriptorDeclaresTheRegistryRoot(t *testing.T) {
 	if d.ID != "oci" || !d.RegistryRoot || d.ProtocolBasePath != "/v2/{project}/{key}/" {
 		t.Fatalf("descriptor = %+v", d.Facts)
 	}
-	if !d.Supports(formats.Local) || d.Supports(formats.Remote) || d.Supports(formats.Virtual) {
-		t.Errorf("classes = %v; the skeleton registers local only", d.Classes)
+	if !d.Supports(formats.Local) || !d.Supports(formats.Remote) || d.Supports(formats.Virtual) {
+		t.Errorf("classes = %v; the format registers local and remote", d.Classes)
 	}
 	if d.DefaultUpstreamURL != "https://registry-1.docker.io/" || !reflect.DeepEqual(d.DefaultCredentialHosts, []string{"auth.docker.io"}) {
 		t.Errorf("upstream %q, credential hosts %v", d.DefaultUpstreamURL, d.DefaultCredentialHosts)
+	}
+	if !reflect.DeepEqual(d.DefaultExtraHosts, []string{"auth.docker.io"}) || d.ProbePath != "v2/" || !d.ProbeChallengeReachable {
+		t.Errorf("extra hosts %v, probe %q reachable on challenge %v", d.DefaultExtraHosts, d.ProbePath, d.ProbeChallengeReachable)
 	}
 	for _, h := range d.DefaultCredentialHosts {
 		found := false

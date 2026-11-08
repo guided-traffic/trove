@@ -137,6 +137,39 @@ func TestR_ARCH_010_RegisterChecksTheContractVersion(t *testing.T) {
 	}
 }
 
+// TestR_ARCH_010_RegisterChecksTheProbeChallengeFact: ProbeChallengeReachable needs the class remote, a probe path and a remote adapter with
+// the token handshake (Q-REPO-280).
+func TestR_ARCH_010_RegisterChecksTheProbeChallengeFact(t *testing.T) {
+	d := valid("probe-chal")
+	d.ProbeChallengeReachable = true
+	t.Run("without the class", func(t *testing.T) { mustPanic(t, fake{d: d}, "ProbeChallengeReachable") })
+	d.Classes = []Class{Local, Remote}
+	t.Run("without a probe path", func(t *testing.T) {
+		mustPanic(t, fake{d: d, remote: stubRemote{}}, "ProbeChallengeReachable")
+	})
+	d.ProbePath = "v2/"
+	t.Run("without the handshake", func(t *testing.T) {
+		mustPanic(t, fake{d: d, remote: stubRemote{}}, "ProbeChallengeReachable")
+	})
+	t.Run("with all three registers", func(t *testing.T) {
+		Register(fake{d: d, remote: handshakeRemote{}})
+		if e, ok := catalog.Default().Lookup("probe-chal"); !ok || !e.ProbeChallengeReachable {
+			t.Fatalf("entry = %+v", e)
+		}
+	})
+}
+
+// handshakeRemote is a remote adapter that implements the token handshake.
+type handshakeRemote struct{ stubRemote }
+
+func (handshakeRemote) TokenRequest(context.Context, RemoteContext, *http.Request, Path, int, http.Header) (*http.Request, string, bool, error) {
+	return nil, "", false, nil
+}
+
+func (handshakeRemote) ReadToken(context.Context, RemoteContext, int, []byte) (string, time.Duration, error) {
+	return "", 0, nil
+}
+
 // TestR_ARCH_010_RegisterChecksTheClassMatrix: a class without its adapter, and
 // an adapter without its class, stop the process (R-ARCH-010).
 func TestR_ARCH_010_RegisterChecksTheClassMatrix(t *testing.T) {
@@ -475,6 +508,36 @@ func (authRemote) RevalidationRequest(context.Context, RemoteContext, Path, stri
 }
 
 func (authRemote) Unchanged(Path, RemoteDocument, *http.Response) bool { return true }
+
+// stoodRemote implements the reading of a stood 401 with or without a handshake.
+type stoodRemote struct{ stubRemote }
+
+func (stoodRemote) StoodMissing(Path, http.Header) bool { return true }
+
+type stoodAuthRemote struct{ authRemote }
+
+func (stoodAuthRemote) StoodMissing(Path, http.Header) bool { return true }
+
+// TestR_ARCH_008_RegisterReadsTheStoodChallengeAndRefusesItWithoutAHandshake: StoodChallengeReader is an optional interface found once at
+// Register (Q-OCI-127), and an adapter that has it without an Authenticator is refused.
+func TestR_ARCH_008_RegisterReadsTheStoodChallengeAndRefusesItWithoutAHandshake(t *testing.T) {
+	d := valid("probe-stood")
+	d.Classes = []Class{Local, Remote}
+	mustPanic(t, fake{d: d, remote: stoodRemote{}}, "without an Authenticator")
+	d2 := valid("probe-stood2")
+	d2.Classes = []Class{Local, Remote}
+	Register(fake{d: d2, remote: stoodAuthRemote{}})
+	got := RemoteCapabilities("probe-stood2")
+	if got.Stood == nil || got.Auth == nil || !got.Stood.StoodMissing(Path{}, nil) {
+		t.Fatalf("capabilities = %+v, want both", got)
+	}
+	d3 := valid("probe-nostood")
+	d3.Classes = []Class{Local, Remote}
+	Register(fake{d: d3, remote: authRemote{}})
+	if c := RemoteCapabilities("probe-nostood"); c.Stood != nil {
+		t.Errorf("capabilities = %+v, want no stood reader", c)
+	}
+}
 
 // TestR_ARCH_008_RegisterReadsTheHandshakeAndTheRevalidation: Authenticator and Revalidator are optional interfaces of the remote
 // adapter, found once at Register (ADR-161); an adapter without them has none.

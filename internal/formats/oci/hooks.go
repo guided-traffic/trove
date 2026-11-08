@@ -37,8 +37,9 @@ func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEv
 	}
 	switch {
 	case c.Origin == formats.OriginFill && c.Repo.Class == formats.Remote:
-		// The fill of a remote repository: its rows are written by the remote adapter.
-		return nil
+		// The fill of a remote repository: the rows of a manifest fetched by digest are written from its inspection; those of a tag's
+		// manifest were written by OnFill, and the alias item carries none (remote.go).
+		return f.remoteCommit(ctx, tx, c)
 	case c.Repo.Class == formats.Local && admitSeeded(c.Payload):
 		return nil
 	}

@@ -52,8 +52,12 @@ func referrersLink(rq *formats.Request, artifactType, last string) string {
 // answered with OCI-Filters-Applied. A page holds at most 1,000 descriptors and 4 MiB; a longer list continues with a Link. The
 // referrers tag schema is not maintained (R-OCI-016): the API exists from the start, so a client never falls back to it.
 func (f *Format) handleReferrers(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	if rq.Repo.Class != formats.Local {
-		return notImplemented("list referrers of a remote or a virtual repository (R-OCI-024, R-OCI-027)")
+	switch rq.Repo.Class {
+	case formats.Remote:
+		return f.remoteReferrers(ctx, rq, w)
+	case formats.Local:
+	default:
+		return notImplemented("list referrers of a virtual repository (R-OCI-027)")
 	}
 	name := rq.Params.Get("name")
 	subject, ok := digestFromText(rq.Params.Get("digest"))

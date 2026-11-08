@@ -51,24 +51,30 @@ func New() *Format {
 
 // Descriptor returns the catalog entry of R-OCI-001 and the contract facts.
 //
-// The format registers the class local; remote and virtual join with their adapters, which are work packages of their own
-// (Q-NUGET-28 did the same). The facts that only a remote repository reads (the upstream, the extra hosts, the periods) are
-// declared now, so the catalog answers for the whole format from the start.
+// The format registers the classes local and remote; virtual joins with its adapter, which is a work package of its own
+// (Q-NUGET-28 did the same). The facts that only a remote repository reads (the upstream, the extra hosts, the periods) were declared
+// from the start, so the catalog answers for the whole format.
 func (f *Format) Descriptor() formats.Descriptor {
 	metadataTTL, notFoundTTL := 300, 300
 	return formats.Descriptor{
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "OCI (Docker)",
-			Classes:          []formats.Class{formats.Local},
+			Classes:          []formats.Class{formats.Local, formats.Remote},
 			Layout:           Layout,
 			ProtocolBasePath: catalog.RegistryRootBasePath,
 			RegistryRoot:     true,
-			// Docker Hub's token realm receives the repository's credential (R-OCI-021); the hosts Docker Hub redirects blob
-			// downloads to are added by the remote work package once confirmed against Docker Hub.
-			DefaultUpstreamURL:        DefaultUpstreamURL,
-			DefaultExtraHosts:         []string{"auth.docker.io"},
-			DefaultCredentialHosts:    []string{"auth.docker.io"},
+			// Docker Hub's token realm receives the repository's credential (R-OCI-021). The host it redirects blob downloads to
+			// (production.cloudfront.docker.com, seen on 2026-11-08 with an anonymous request) is not a default: a redirect is followed
+			// whatever extraHosts says and carries no credential (R-REPO-039), so listing it would only widen the hosts a realm may
+			// name (Q-OCI-125).
+			DefaultUpstreamURL:     DefaultUpstreamURL,
+			DefaultExtraHosts:      []string{"auth.docker.io"},
+			DefaultCredentialHosts: []string{"auth.docker.io"},
+			// The upstream test requests /v2/, the version check of the distribution API; a registry answers it 401 with a Bearer
+			// challenge, which reads as reachable (R-REPO-024).
+			ProbePath:                 "v2/",
+			ProbeChallengeReachable:   true,
 			DefaultMetadataTTLSeconds: &metadataTTL,
 			DefaultNotFoundTTLSeconds: &notFoundTTL,
 			ChecksumAlwaysVerified:    true,

@@ -26,7 +26,8 @@ type UpstreamTestResult struct {
 	Reachable  bool `json:"reachable"`
 	HTTPStatus *int `json:"httpStatus"`
 	// Authenticated is false for 401 and 403, the upstream's refusal of the
-	// credentials sent (or of none), and true for any other response.
+	// credentials sent (or of none), and true for any other response; nil
+	// for the 401 of a registry that asks for a token (Q-REPO-280).
 	Authenticated *bool `json:"authenticated"`
 	DurationMs    int64 `json:"durationMs"`
 	// TLS describes the certificate the upstream presented; nil over plain http.

@@ -782,7 +782,8 @@ Every manifest, pushed or fetched, is untrusted input (R-ARCH-028):
 - Every digest in a descriptor is validated by the grammar of R-OCI-002 before it is used as a path segment; nothing of a
   manifest is ever used as a file-system path.
 - A fetched manifest is accepted only when its SHA-256 equals the digest it was asked by, or the `Docker-Content-Digest` the
-  upstream announced for a tag; otherwise the fill answers 502 and stores nothing (R-REPO-041).
+  upstream announced for a tag; otherwise the fill answers 502 and stores nothing (R-REPO-041,
+  [Q-OCI-120](#q-oci-120--the-digest-a-tag-announces-is-checked-by-a-reader-around-the-response-body)).
 - Tags list and catalog documents of an upstream are read within 4 MiB and 100,000 entries; a referrers answer of an upstream
   within 4 MiB.
 - Token responses of an upstream's realm are read within 64 KiB; a token longer than 16 KiB is refused.
@@ -818,9 +819,15 @@ Priority: **P1** · Covers: PKG-DOCKER-033, PKG-DOCKER-038, PKG-OCI-003
   a fresh token that is refused leaves the `401` as the answer when the `401`'s own challenge names the same token service and key.
   The token goes to the registry's origin only (R-REPO-033).
 - **Default extra hosts** proposed for the well-known upstream (R-REPO-024): `auth.docker.io` with `sendCredentials: true`
-  (Docker Hub's realm), and, without credentials, the hosts Docker Hub redirects blob downloads to. The remote work package
-  confirms the current redirect hosts against Docker Hub and records them here before the default ships (Q-OCI-13); the catalog
-  gains the list of default hosts that receive credentials (`catalog.Facts.DefaultCredentialHosts`, an additive fact).
+  (Docker Hub's realm). The host Docker Hub redirects blob downloads to (`production.cloudfront.docker.com`, seen on 2026-11-08 with one
+  anonymous request: a blob `GET` answered `307` to it) is not listed, because `extraHosts` does not gate redirects
+  ([Q-OCI-125](#q-oci-125--extrahosts-do-not-gate-redirects-so-the-docker-hub-defaults-list-the-realm-only));
+  the catalog lists the default hosts that receive credentials (`catalog.Facts.DefaultCredentialHosts`, Q-OCI-13).
+- **The upstream test** (R-REPO-024) requests `/v2/` at the root of the host: the path of `remote.url` is the namespace prefix of image names, not a
+  base of the API ([Q-REPO-281](../repositories-and-proxy.md#q-repo-281--the-probe-of-the-registry-root-format-is-at-the-root-of-the-host)). A registry answers it `401` with a
+  Bearer challenge to a client with no token; that is reported as reachable with `authenticated: null`, because the credential is
+  judged by the realm, which the test does not ask; with `authMode: bearer` there is no handshake and the same answer means the stored token was
+  refused (`authenticated: false`) ([Q-REPO-280](../repositories-and-proxy.md#q-repo-280--the-upstream-test-reads-a-bearer-challenge-of-a-handshake-format-as-reachable)).
 - `authMode: bearer` sends the stored secret as a static bearer token and runs no handshake.
 - A write (blob upload, manifest push) to a remote repository answers 405 `UNSUPPORTED`.
 
@@ -869,8 +876,8 @@ Priority: **P1** · Covers: PKG-DOCKER-017, PKG-DOCKER-019
 - A blob is content `<name>/_blobs/<digest>`, filled through the remote request path (R-REPO-025) with the cross-replica
   flight of R-REPO-026: concurrent pulls of one layer on several replicas cause one upstream request. The fill verifies the
   SHA-256 against the digest (R-REPO-041, `VerifyAnnouncedDigests`).
-- Upstream redirects (R-REPO-039) are followed within the host rules; credentials never go to a redirect target that is not a
-  `sendCredentials` host.
+- Upstream redirects (R-REPO-039) are followed up to `proxy.max_redirects` hops, over `https`, through the egress rules; `extraHosts` does not
+  gate them (Q-OCI-125). Credentials never go to a redirect target that is not a `sendCredentials` host, and a token goes to the origin only.
 - `HEAD` of a blob that is not cached is answered from the upstream's `HEAD` without a fill.
 - A foreign layer (a digest the upstream does not serve) answers what the upstream answers; trove does not fetch `urls`
   (Deferred, PKG-DOCKER-036).
@@ -884,14 +891,20 @@ Acceptance criteria:
 Priority: **P1** · Covers: PKG-DOCKER-022, PKG-OCI-009
 
 - The tags list of a name is the metadata document `<name>/_taglist`: the upstream's answer to `tags/list?n=10000`, kept for the
-  metadata period. It is the package document of the format (R-ARCH-008): an upstream 404 marks the name gone (R-REPO-029) and
+  metadata period, with the member `x-trove-truncated` added when the upstream cut its answer
+  ([Q-OCI-122](#q-oci-122--a-stored-tags-list-records-that-the-upstream-cut-it)). It is the package document of the format (R-ARCH-008): an upstream 404 marks the name gone (R-REPO-029) and
   it is what the shadowing check probes (R-REPO-048).
-- A client's `tags/list` with `n` and `last` is answered from that document when it holds the requested window; a window
-  beyond a document the upstream truncated (its answer had a `Link`) is passed through to the upstream as a volatile query
-  (R-ARCH-013), with the upstream's `Link` rewritten to trove's address. Offline or with the circuit open, the stored document
-  answers.
-- Referrers of a remote are passed through to the upstream's referrers API as a volatile query, cached for the metadata period;
-  an upstream 404 is answered 404, so that the client falls back to the tag schema through the same remote (Q-OCI-15). The
+- A client's `tags/list` with `n` and `last` is answered from that document. The page is filled from the tags the caller may read, in
+  chunks, as the local class does (Q-OCI-76): a tag the caller may not read is in no page and its name in no `Link`, and the `Link` names the last
+  tag listed. When the upstream cut its answer and the window reaches the end of the stored tags, the page is continued with the upstream's own
+  pages after the last tag taken, at most eight for one request of a client (Q-OCI-150), passed through as volatile queries (R-ARCH-013, `n` 1,000, kept for the metadata period); the upstream's `Link`
+  does not reach the format, so trove's `Link` is set whenever the stored list was cut or a pass-through page was used, and a page that is empty
+  ends the list. Offline, with the circuit open, or for a caller who may not fill the repository, the stored window answers and no
+  pass-through is sent ([Q-OCI-128](#q-oci-128--a-remote-that-cannot-ask-its-upstream-answers-with-what-it-stores)).
+- Referrers of a remote are passed through to the upstream's referrers API as a volatile query, cached for the metadata period, limited to
+  1,000 descriptors as the local class's page is and filtered for the caller (Q-OCI-123);
+  an upstream 404 is answered 404, so that the client falls back to the tag schema through the same remote (Q-OCI-15), and so is an answer that
+  cannot be had (offline, circuit open, a caller who may not fill): an empty index would say that nothing refers to the digest (Q-OCI-128). The
   manifests a client then fetches by digest are cached like every manifest.
 
 Acceptance criteria:
@@ -905,7 +918,8 @@ Priority: **P1** · Covers: PKG-DOCKER-034, PKG-DOCKER-035
 
 - **`library/`.** For a remote whose upstream host is `registry-1.docker.io`, a one-component name `<n>` is the name
   `library/<n>`: in the upstream request, in the cached path and in the package row, so `…/docker-hub/nginx` and
-  `…/docker-hub/library/nginx` resolve to one cached copy (Q-OCI-14). No other upstream gets the mapping.
+  `…/docker-hub/library/nginx` resolve to one cached copy (Q-OCI-14). No other upstream gets the mapping, and neither does a Docker Hub URL with a
+  namespace prefix (`https://registry-1.docker.io/bitnami`: `nginx` is `bitnami/nginx`). A read is allowed on both spellings, `nginx` and `library/nginx`: the grants, the include and exclude patterns, the exposure rules and the claims ([Q-OCI-129](#q-oci-129--the-library-mapping-is-for-docker-hub-itself-and-a-read-is-decided-on-both-spellings-of-the-name)).
 - **Rate limits.** An upstream `429` reaches clients as R-REPO-029 says (the stored copy while it lasts, else 503 with
   `Retry-After`, code `TOOMANYREQUESTS`, R-OCI-008) and reaches a mirror as a rate-limit answer of R-REPO-054. The quota header
   `RateLimit-Remaining` is read by its integer before the first `;`, so Docker Hub's `0;w=21600` counts as 0 (a correction of the
@@ -1370,7 +1384,7 @@ R-ARCH-009 by `TestR_ARCH_008_TheWrittenContractEqualsTheCode`):
 | [identity-and-authentication.md](../identity-and-authentication.md) | R-AUTH-001: the registry token as a credential of the `Authorization` header on `/v2/`, no session cookie there, `/v2/_token` among the routes whose credential the handler presents; R-AUTH-002: the `/v2/` rows of the challenge table; R-AUTH-022: the registry token, its form and that it is not a reference token; R-AUTH-023: a registry token enters the validation at step 2 with the hash it carries; R-AUTH-033: the Basic switch covers the token service; R-AUTH-041: the event `auth.registry_token.denied` (made with the token service) | Q-OCI-5, Q-OCI-50, Q-OCI-51, Q-OCI-53, Q-OCI-57 |
 | [authorization.md](../authorization.md) | R-AUTHZ-007: the OCI table of R-OCI-006 (made with the token service); R-AUTHZ-026: the project key grammar | Q-OCI-3, Q-OCI-6 |
 | [operations-and-observability.md](../operations-and-observability.md) | R-OPS-015: `auth.registry_token.denied` deduplicated like `token.rejected`; the event registry's row of `auth.registry_token.denied`; the metric `trove_oci_registry_tokens_total` (made with the token service) | Q-OCI-53 |
-| [repositories-and-proxy.md](../repositories-and-proxy.md) | R-REPO-002: the key grammar; R-REPO-033: the token handshake's credential rule; R-REPO-050: `<format>.mirror` kept for an Owner without `repositories:write-config`, OCI among the formats that can mirror; R-REPO-051: versions are counted per version, not per item; R-REPO-054: the quota header is read by its integer before `;` | Q-OCI-3, Q-OCI-13, Q-OCI-16, Q-OCI-22 |
+| [repositories-and-proxy.md](../repositories-and-proxy.md) | R-REPO-002: the key grammar; R-REPO-033: the token handshake's credential rule; R-REPO-050: `<format>.mirror` kept for an Owner without `repositories:write-config`, OCI among the formats that can mirror; R-REPO-051: versions are counted per version, not per item; R-REPO-054: the quota header is read by its integer before `;`; R-REPO-024: the probe reads a Bearer challenge as reachable, at the root of the host for the registry-root format | Q-OCI-3, Q-OCI-13, Q-OCI-16, Q-OCI-22, Q-REPO-280, Q-REPO-281 |
 | [storage.md](../storage.md) | R-STOR-011: status built, with the OCI page as its first user; the session row gains the repository the client addressed and a binding the format names (the OCI image name), both checked on every request | Q-OCI-12 |
 | [endpoints.md](../endpoints.md) | R-EP-007: the Docker Engine mirror points at R-OCI-029 | — |
 | [ha-and-helm.md](../ha-and-helm.md) | R-HA-041: the acceptance criterion points at the e2e set `oci` | — |
@@ -2658,6 +2672,269 @@ Context: a session has no blob yet, but the host decides `deploy` on every call 
 
 **Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation). Code: `sessions.decide` in [uploads.go](../../../internal/formathost/uploads.go), `startSession`. Tests:
 `TestR_AUTHZ_005_ASessionStartIsDecidedOnAPathOfThePackage` (an exclude and an include pattern, three replicas), `TestR_OCI_006_ADecisionThatRefusesComesBeforeTheOwnershipQuestion`.
+
+### Q-OCI-120 · The digest a tag announces is checked by a reader around the response body
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-020 refuses a tag whose bytes are not the `Docker-Content-Digest` the upstream announced. `AcceptResponse` receives the
+headers and no body, `PrepareFill` the body and no headers, and a metadata fill verifies no digest of its own (the engine's check is for
+artifacts).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `AcceptResponse` puts a reader around the body that hashes what passes and fails at its end when the digest differs (chosen) | The check runs while the document is spooled, before anything is stored | No contract change; the failure is an upstream integrity error | The format replaces a field of the response it was only to inspect |
+| (b) An additive optional interface that gives the format the response headers (found by `CapabilitiesOf`, [architecture.md](../architecture.md) Q-ARCH-284: an addition keeps the contract version and touches no other adapter) | The natural place | No wrapper | One more interface for a check one reader makes; the headers would reach `PrepareFill` for one format |
+| (c) No check for a tag | The alias by digest is content-addressed | Nothing to build | A tag served with bytes of another digest is stored; R-OCI-020's acceptance criterion fails |
+
+**Choice:** (a). The error is `upstream_integrity_mismatch` (502), nothing is stored, no entry and no row.
+
+**Rationale:** the reader does not change a byte, so the announced length stays true, and its failure path holds: the error is an `*errs.Error`, which the spool
+and `bodyFailure` return as it is, in memory and for a chunked body alike. It gives the verdict when the body ends, so it relies on the consumer reading to the end
+(the spool reads a body of a known length through a reader that stops one byte past it, [blob/spool.go](../../../internal/blob/spool.go)); the test
+`TestR_OCI_020_TheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead` pins that. Option (b) is open (an addition, not a change of the frozen surface); the development
+agent would take it when a second format needs the headers in `PrepareFill`. A mismatch raises the `proxy.integrity_mismatch` event and the counter an artifact's
+mismatch has (`bodyFailure`), and counts nothing toward the circuit.
+
+**Applied in the spec:** [R-OCI-020](#r-oci-020--limits-for-untrusted-content), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest). Code: `digestBody` in
+[remote.go](../../../internal/formats/oci/remote.go). Tests: `TestR_OCI_020_AManifestWhoseDigestIsNotTheOneTheUpstreamAnnouncedIsRefused`,
+`TestR_OCI_020_AManifestWhoseBytesAreNotTheirAnnouncedDigestIsNotStored`.
+
+### Q-OCI-121 · The rows of a remote's manifest are written by `OnFill` for a tag and by `OnCommit` for a digest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-007 and Q-OCI-34 tie the rows of a remote's manifest to its alias item. The alias item the engine enters in the fill transaction
+is committed without an inspection or a payload, so its `OnCommit` cannot know the manifest.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `OnFill` of the tag document writes the rows from what `PrepareFill` parsed; a manifest fetched by digest carries its parsed form from `InspectFill` to `OnCommit` (chosen) | Each road writes the rows where it has the manifest | The rows and the entry commit together; the stored-later rule of `FillEvent` keeps rows and entry in step | Two places write rows |
+| (b) The alias item re-reads its blob in `OnCommit` | One place | Reads the object store inside the transaction | The commit transaction reads an object |
+| (c) No rows for a remote | Nothing to keep | The package screens and the catalog would show nothing of a cache | R-OCI-007, R-OCI-017, R-OCI-031 |
+
+**Choice:** (a). A fill that lost to a later fetch (the stored entry is newer) writes no row. The media type a manifest is read as is its own
+`mediaType` member, and for a document without one an index when it has `manifests` and an image manifest otherwise, because neither hook is told
+the `Content-Type` (the member is optional in the image specification). The rows raise the revision of the image name's package; no version row is
+written for a tag of a remote (the tag document is a metadata entry).
+
+**Rationale:** the development agent would revisit it when the engine hands the alias commit a payload.
+
+**Applied in the spec:** [R-OCI-007](#r-oci-007--storage-layout-packages-and-the-formats-tables), [R-OCI-022](#r-oci-022--remote-repository-manifests-by-tag-and-by-digest). Code: `OnFill`, `InspectFill`, `remoteCommit`.
+Tests: `TestR_OCI_022_AFetchedTagIsEnteredUnderItsDigest`, `TestR_OCI_022_AManifestFetchedByTagIsServedByItsDigestWithoutARequest`.
+
+### Q-OCI-122 · A stored tags list records that the upstream cut it
+
+Status: **Decided by the development agent**; the way the fact is recorded is superseded by [Q-OCI-126](#q-oci-126--the-wrapper-that-records-the-cut-of-a-tags-list-drops-the-announced-length). The owner reviews it at the walkthrough.
+
+Context: R-OCI-024 answers a window from the stored document when it holds it and passes a window beyond a cut document through. Whether the
+upstream cut its answer is the `Link` header, which neither `PrepareFill` nor the stored document keeps.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `AcceptResponse` adds the member `x-trove-truncated: true` to a document whose answer had a `Link` with `rel="next"` (chosen) | The fact is stored with the document | Every replica reads it from the entry; the grammar of a tags list names `name` and `tags` only | The stored bytes are the upstream's plus a member |
+| (b) Pass every window with a `last` through | Nothing stored | Simple | A client paging a short list asks the upstream at every page |
+| (c) Treat a document of 700 tags or more as cut | A heuristic | Nothing stored | The cut is at the upstream's choice (Docker Hub, GHCR and distribution differ) |
+
+**Choice:** (a). A passed-through window is the engine's answer, kept per replica for the metadata period; its `Link` is trove's, set when the page is full,
+because the upstream's does not reach the format. The tags of a cut document are assumed to be in byte order (H-666).
+
+**Rationale:** the development agent would revisit it when the pass-through carries the response headers.
+
+**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `truncatedBody`, `remoteTagsList`. Test: `TestR_OCI_024_ATagsListTheUpstreamCutIsMarked`,
+`TestR_OCI_024_TheTagsListIsOneStoredDocumentAndAWindowBeyondItIsPassedThrough`.
+
+### Q-OCI-123 · Referrers of a remote are filtered here for the caller and for `artifactType`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the pass-through returns the upstream's index as received, which names manifests the caller may not read under a path-scoped grant, and
+which an older registry may not have filtered by `artifactType`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Parse the index, drop a descriptor whose digest is not a digest, whose `artifactType` differs from the filter, or whose manifest path the caller may not read; send `OCI-Filters-Applied` when a filter was asked (chosen) | The answer is what the header says and what the caller may see | The same rule as the local class (R-OCI-016, Q-OCI-76) | The answer is re-encoded; unknown members of the index (not of its descriptors) are not kept |
+| (b) Pass the bytes through | Cheapest | Byte for byte | A descriptor the caller may not read is listed; the header can be false |
+
+**Choice:** (a).
+
+**Rationale:** the development agent would revisit it for an index member that clients need.
+
+**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `remoteReferrers`, `readableReferrers`. Test:
+`TestR_OCI_024_ReferrersArePassedThroughAndFiltered`.
+
+### Q-OCI-124 · The default extra hosts of Docker Hub are the hosts it was seen to use
+
+Status: **Superseded by [Q-OCI-125](#q-oci-125--extrahosts-do-not-gate-redirects-so-the-docker-hub-defaults-list-the-realm-only)** (decided by the development agent; the owner reviews it at the walkthrough). The check of the redirect host stands; listing it does not.
+
+Context: R-OCI-021 proposes the hosts Docker Hub redirects blob downloads to, to be confirmed before the default ships.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host of one anonymous request on 2026-11-08: a blob `GET` answered `307` to `production.cloudfront.docker.com` (chosen) | Only what was seen | Nothing the registry did not do | Docker Hub has used other hosts before and can again |
+| (b) Also the hosts older documentation names (`production.cloudflare.docker.com`, `*.r2.cloudflarestorage.com`) | Wider | Survives a change back | A default that trusts hosts nobody confirmed |
+
+**Choice:** (a). The check was a token request to `auth.docker.io`, a `GET` of the index of `library/hello-world:latest` and of its linux/amd64 manifest, and a
+`GET` of its first layer (2 manifest `GET` requests of the pull limit). A repository whose blob redirects go elsewhere answers 502 `foreign_host_denied`
+and its owner adds the host.
+
+**Rationale:** the development agent would revisit it when a pull of a current Docker Hub image through trove is refused for a host.
+
+**Applied in the spec:** [R-OCI-021](#r-oci-021--remote-repository-upstream-and-its-token-handshake). Code: `Descriptor` in [format.go](../../../internal/formats/oci/format.go). Test:
+`TestDescriptorDeclaresTheRegistryRoot`.
+
+### Q-OCI-125 · `extraHosts` do not gate redirects, so the Docker Hub defaults list the realm only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Supersedes [Q-OCI-124](#q-oci-124--the-default-extra-hosts-of-docker-hub-are-the-hosts-it-was-seen-to-use).
+
+Context: the audit of the first build found that `extraHosts` gates the hosts a token realm may name and the addresses a document names
+(R-REPO-043), and not the redirects of a download: the redirect check of the upstream client counts hops and refuses `https` to `http`
+([factory.go](../../../internal/outbound/factory.go)), as R-REPO-039 says. Q-OCI-124 and the security page said the CDN host had to be listed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The defaults list `auth.docker.io` only; the CDN host is named in the spec as the host seen (chosen) | What the list does is what it says | A list an operator reads is not longer than what it gates; one trusted host less for a realm to name | A repository whose operator expects the CDN host in the list finds it absent |
+| (b) Keep the CDN host with the true rationale | A default that matches what Docker Hub did | Nothing changes for an existing repository | A host listed that gates nothing, and that widens the hosts a realm may name |
+| (c) Make `extraHosts` gate redirects | The list means what the documents said | The operator decides where downloads may come from | A change of R-REPO-039 for every format, and of every registry that redirects to a signed URL on a host nobody lists |
+
+**Choice:** (a). `TestR_OCI_023_ABlobRedirectIsFollowedWhateverExtraHostsSaysAndTheDefaultsListNoCDN` pulls through a repository that lists the realm only.
+
+**Rationale:** the development agent would revisit it if R-REPO-039 gates redirects by `extraHosts`; the CDN host then returns to the defaults.
+
+**Applied in the spec:** [R-OCI-021](#r-oci-021--remote-repository-upstream-and-its-token-handshake), [R-OCI-023](#r-oci-023--remote-repository-blobs).
+Code: `Descriptor` in [format.go](../../../internal/formats/oci/format.go).
+
+### Q-OCI-126 · The wrapper that records the cut of a tags list drops the announced length
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Supersedes the recording of Q-OCI-122.
+
+Context: the review of the first build showed that the reader which adds `x-trove-truncated` makes the body longer than the `Content-Length` the
+upstream announced, and the spool's strict length check refused it with 400: a cut list sent with a length (every small page has one) could not be stored.
+The 700-tag page of the test was chunked and hid it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An additive optional interface that gives the format the response headers or lets it annotate the stored document | The upstream's bytes stay as they are | No wrapper that changes bytes | An interface and a field of `Capabilities` for one fact of one format |
+| (b) Keep the wrapper, set `resp.ContentLength` to -1 and delete the `Content-Length` header; `AcceptResponse` may wrap the body (chosen) | The body is no longer announced with a length it does not have | A few lines; the spool reads a body of unknown length to its end, bounded by the size limit | The stored tags list is the upstream's plus a member |
+| (c) Store the fact elsewhere (a table, the entry) | The document stays the upstream's | | A migration and a row for a fact of a cache entry |
+
+**Choice:** (b). An upstream defect (a list that is no JSON object, above the bound) is a 502 from `PrepareFill`, never a 400.
+`TestR_OCI_024_ACutPageSentWithAContentLengthIsStoredAndFollowedByTheUpstreamsPages` sends a cut page with a length through the whole application.
+
+**Rationale:** option (a) is open and would keep the stored bytes the upstream's; the development agent would take it for a second fact of this kind. ADR-176
+records that `AcceptResponse` may wrap the body.
+
+**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `truncatedBody` and `AcceptResponse` in
+[remote.go](../../../internal/formats/oci/remote.go). Test: `TestR_OCI_024_ACutTagsListHasNoLengthTheSpoolCouldCheck`.
+
+### Q-OCI-127 · A stood `401` with `insufficient_scope` is a missing image and keeps the remembered challenge
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Docker Hub answers `401` with `error="insufficient_scope"` to a valid token for a repository that does not exist or is private. The engine let
+the `401` stand (`upstream_auth_failed`, 502), forgot the challenge it had remembered for the repository, and wrote no negative entry, so every repeat cost a
+token request and two registry requests and the repository went back to the challenge-every-request path.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An optional interface `StoodChallengeReader` on the `Authenticator`: the format says that a stood `401` means "missing"; the engine then answers a 404 with a negative entry and keeps the challenge (chosen) | The registry's convention stays in the format | `MANIFEST_UNKNOWN` as Docker clients expect; the repeat is a negative entry | An additive interface (the contract version stays 2) |
+| (b) The engine reads `insufficient_scope` itself | No interface | Smaller | Registry knowledge in the engine |
+| (c) Leave the 502 | | Nothing to build | A pull of a typo costs three requests every time |
+
+**Choice:** (a). `StoodMissing` is true for a Bearer challenge with `error="insufficient_scope"` and nothing else. The credential's own failure
+(`invalid_token`, a Basic challenge, a token service that refuses) stays `upstream_auth_failed`. Three limits of the reading, from the re-audit:
+
+- It is asked only when the handshake sent a token and the upstream refused it (`handshake.refused`): with `authMode: bearer`, with a challenge that has no
+  realm and with a request that carried no token, the same header says nothing of the resource.
+- It answers a miss only: a request that revalidates a stored document is not read as missing, so the 401 stays a failure of the revalidation and the stored
+  copy keeps serving stale, and no gone mark is set from a 401 (a gone tags list would stop serving the cached manifests and blobs of the image, R-REPO-029).
+- The negative entry it writes is keyed as every negative entry is, by repository and path, without the credential: a credential that was the cause (a
+  token for another account) is not forgotten at once when the secret is rotated, and the entry ends with the not-found period or with
+  `POST …/cache/invalidate` of the repository (`invalidateRepositoryCache`), which is the remedy; keying the entry on the credential's fingerprint would add a
+  column and a lookup to every negative entry of every format for a case that one call clears.
+
+`Register` reads the interface into `RemoteCaps.Stood` and refuses an adapter that has it without an `Authenticator`.
+
+**Rationale:** the development agent would revisit it for a registry that answers `insufficient_scope` for a repository that exists and is allowed once the
+token is refreshed.
+
+**Applied in the spec:** [R-OCI-021](#r-oci-021--remote-repository-upstream-and-its-token-handshake), R-ARCH-008 (the interface). Code: `StoodChallengeReader` in
+[remote.go](../../../internal/formats/remote.go), `fetcher.stoodMissing` in [fetch.go](../../../internal/proxy/fetch.go). Test:
+`TestR_OCI_021_AnImageTheRegistryDeniesToAValidTokenIsMissingAndTheChallengeIsKept`, `TestR_OCI_021_AStoodChallengeWithInsufficientScopeIsAMissingImage`.
+
+### Q-OCI-128 · A remote that cannot ask its upstream answers with what it stores
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-024 says that, offline or with the circuit open, the stored tags list answers. The pass-through of a window and the referrers got
+`formats.ErrOffline` (a repository in offline mode, `proxy.global_offline`, a caller without the fill permission with nothing cached) or
+`upstream_assumed_offline` (the circuit open) and answered 500.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A tags list ends at the stored window, without a `Link`; referrers answer 404 (chosen) | The client falls back to the tag schema through the same remote, whose manifests are cached | The answer is true to what is known; an empty index would say that nothing refers to the digest | A client that reads the 404 as "no referrers" sees fewer signatures |
+| (b) Referrers answer an empty index | The client sees "none" | Looks complete | A verifier that treats "none" as "unsigned" is told something nobody found out |
+| (c) 503 `UNAVAILABLE` | The truth | The client retries | The distribution API has no "not asked yet" for referrers, and clients stop at an error |
+
+**Choice:** (a), for the repository offline, the installation offline, a caller who may not fill and the circuit open alike.
+
+**Rationale:** the development agent would revisit the referrers answer when clients handle `503` there.
+
+**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `tagSource.pass`, `unreachable`, `remoteReferrers`. Test:
+`TestR_OCI_024_OfflineTheStoredWindowAnswersAndReferrersAre404`.
+
+### Q-OCI-129 · The `library/` mapping is for Docker Hub itself, and a read is decided on both spellings of the name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the mapping turned `nginx` into `library/nginx` for any URL whose host is `registry-1.docker.io`, so a Docker Hub URL with a namespace prefix
+(`https://registry-1.docker.io/bitnami`) asked for `bitnami/library/nginx`. The cache, the package rows, the screens and the audit trail know the image
+as `library/nginx`, and the populate check of a fill is decided on it, while the client types `nginx` or `library/nginx`. A read that is decided on the
+typed spelling only let an exclusion written for `library/nginx` (a token scope, a policy, an exposure rule) be passed by `…/hub/nginx` for a cached image, and
+the reverse for an exclusion written for `nginx`; a grant on `nginx` read a cached image and was refused for an uncached one.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Map only a URL without a namespace prefix; every read is allowed on **both** spellings: `Authorize` on the typed one, and a non-auditing decision-point check (`PathsAllowed`: grants, patterns, claims) on the other, for each route and for each tag and referrer a list shows; the populate check stays on the mapped name (chosen) | An exclusion written for either spelling holds whatever the client types, cold or warm | Fails closed; one rule, no spelling that is preferred; the screens' `library/<n>` and the client's `<n>` are both honoured | A path- or package-scoped grant on a Docker Hub remote has to name both spellings (an include-all grant covers both anyway) |
+| (b) One canonical spelling, `library/<n>`, for every decision (the token service maps the scope name) | One name to write rules for | Matches the cache and the screens | An exclusion written on the short name is never asked, so the bypass remains in the other direction; the token service must know each repository's upstream |
+| (c) The typed spelling only (the first build) | Nothing to build | | The bypass above, in both directions |
+
+**Choice:** (a). The tags list is gated on its document `<name>/_taglist` and the referrers on the subject's manifest path (Q-OCI-140), each tag and each
+referrer on its own path, on both spellings. The token service keeps deciding on the typed name, as a ceiling: the handler decides both, so a token that the
+service grants for `nginx` is still refused where an exclusion holds for `library/nginx`. A cross-repository mount whose source is a Docker Hub remote's cache applies
+the same rule to the source through the format's `SourceSpeller` (`linkSource` asks `SourceSpellings` for the other paths and checks each with `PathsAllowed`).
+
+**Rationale:** the development agent rejected (b) because the exclusion written for the spelling nobody asks about is the one that would be missed. The cost of
+(a) is on the operator who writes a narrow grant: for `nginx` on a Docker Hub remote it names `nginx` and `library/nginx`. The development agent would revisit it for
+an operator who wants one grant to cover both spellings.
+
+**Applied in the spec:** [R-OCI-025](#r-oci-025--remote-repository-docker-hub), [R-OCI-012](#r-oci-012--cross-repository-blob-mount). Code: `libraryName`, `otherSpelling`, `gateRemote`, `bothAllow`,
+`Format.SourceSpellings` in [remote_handlers.go](../../../internal/formats/oci/remote_handlers.go), `linkSource` in [ingest.go](../../../internal/formathost/ingest.go). Tests:
+`TestR_OCI_025_TheLibraryMappingNeedsDockerHubWithoutANamespacePrefix`, `TestR_OCI_025_ADecisionOnADockerHubRemoteIsMadeOnBothSpellings`,
+`TestR_OCI_025_AnExcludeForOneSpellingHoldsForTheOther`, `TestR_OCI_012_AMountFromADockerHubRemoteIsDecidedOnBothSpellingsOfTheSource`.
+
+### Q-OCI-150 · One request of a client costs at most eight pages of the upstream's tags list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a page of the tags list a client asks for is filled from the stored document and, when the upstream cut its answer, from the upstream's own pages.
+The tags the caller may not read are walked past, and the registry decides how large its pages are (a few hundred; two in the test stub), so one page can cost
+(n + hidden tags) / page size requests, limited only by the 10,000-tag scan budget of the local class: about 500 requests for `n=1000` against a page size of two.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) At most eight upstream pages per client request; the ninth is not asked and the page ends early with a `Link` (chosen) | One request costs eight upstream requests at most | A bound that does not depend on the registry's page size or on what is hidden; the client continues | A page can be shorter than `n` while more follow (the `Link` says so) |
+| (b) Only the scan budget | The local class's rule | One rule | Hundreds of upstream requests for one client request |
+| (c) A bound in tags scanned | Close to the budget | | The cost in requests still depends on the page size |
+
+**Choice:** (a), `maxPassPages` = 8. The `Link` names the last tag listed, never a tag the caller may not read; a page with no readable tag at all after eight
+upstream pages is refused as the local class refuses it. Eight is what a page of 1,000 tags needs at the usual page size of 500 or more with a few hidden tags.
+
+**Rationale:** the development agent would revisit the number if a registry with a small page size is a real upstream of a remote that is paged by clients.
+
+**Applied in the spec:** [R-OCI-024](#r-oci-024--remote-repository-tags-list-and-referrers). Code: `maxPassPages` in
+[remote_handlers.go](../../../internal/formats/oci/remote_handlers.go). Test: `TestR_OCI_024_APageEndsEarlyWithALinkAfterTheAllowedUpstreamPages`
+([remote_paging_cap_test.go](../../../internal/formats/oci/remote_paging_cap_test.go)).
 
 ## What this does not cover
 

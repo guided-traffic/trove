@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/items"
@@ -466,8 +467,14 @@ func (f *fetcher) bodyFailure(ctx context.Context, err error, idle *atomic.Bool)
 	case idle.Load():
 		return f.transportFailure(ctx, err, true)
 	}
-	if _, ok := errs.As(err); ok {
-		return flightResult{err: err} // the spool's own refusal (R-STOR-004)
+	if ee, ok := errs.As(err); ok {
+		if ee.Code == errs.CodeUpstreamIntegrityMismatch {
+			// A format's reader around the body found the bytes are not the digest the upstream announced (OCI: a tag's
+			// Docker-Content-Digest, Q-OCI-120): the event and the counter an artifact's mismatch has, and no circuit count.
+			f.e.m.integrity.WithLabelValues(rem.Repo.Name.String(), "mismatch").Inc()
+			f.e.o.Audit.Record(ctx, f.e.event(f.rq, audit.EventProxyIntegrityMismatch, map[string]any{"path": f.rq.Path}))
+		}
+		return flightResult{err: err} // the spool's own refusal (R-STOR-004), or a format's reader
 	}
 	return f.transportFailure(ctx, err, false)
 }

@@ -59,8 +59,10 @@ type fetcher struct {
 	sentAt time.Time
 	target *url.URL
 	// stored is the entry this fetch revalidates, if it is not marked gone.
-	stored      entry
-	haveStored  bool
+	stored     entry
+	haveStored bool
+	// hs is the handshake the request ran, nil when it ran none (Q-OCI-127).
+	hs          *handshake
 	conditional bool
 
 	// hold is the slot hold whose repository share the fetch returns when its upstream exchange ends (Q-REPO-235): its own, or
@@ -338,6 +340,7 @@ func (f *fetcher) send(ctx context.Context, req *http.Request) (resp *http.Respo
 	if h == nil {
 		return f.sendOnce(ctx, req)
 	}
+	f.hs = h
 	used := f.e.preemptive(ctx, h, req)
 	sctx := ctx
 	if used != nil {
@@ -482,6 +485,10 @@ func (f *fetcher) respond(ctx context.Context, resp *http.Response, idle *atomic
 		return f.metadata(ctx, resp, idle)
 	case s == http.StatusNotFound || s == http.StatusGone:
 		return f.notFound(ctx, resp)
+	case !f.haveStored && f.stoodMissing(resp):
+		// A miss: a negative entry. A document that is stored keeps serving stale (the 401 is a failure of the revalidation), and no gone
+		// mark is set from a 401, which would stop the cached manifests and blobs of the image being served (R-REPO-029, Q-OCI-127).
+		return f.notFound(ctx, resp)
 	}
 	if f.rq.background() {
 		// The mirror's own classification of a throttling answer (R-REPO-054); a client keeps R-REPO-029's.
@@ -498,6 +505,14 @@ func (f *fetcher) success(ctx context.Context) {
 	if !f.rq.background() {
 		f.e.circuitSuccess(ctx, f.rq.Remote)
 	}
+}
+
+// stoodMissing reports whether the format reads a 401 that stood after the handshake as the upstream's missing resource.
+func (f *fetcher) stoodMissing(resp *http.Response) bool {
+	if resp.StatusCode != http.StatusUnauthorized {
+		return false
+	}
+	return f.hs != nil && f.hs.stoodMissing(resp)
 }
 
 // notFound records the upstream's 404 or 410: a negative entry before the flight is

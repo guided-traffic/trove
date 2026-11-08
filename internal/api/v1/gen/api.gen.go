@@ -1910,6 +1910,7 @@ func (e ProjectRole) Valid() bool {
 const (
 	RemoteFormatNameNpm   RemoteFormatName = "npm"
 	RemoteFormatNameNuget RemoteFormatName = "nuget"
+	RemoteFormatNameOci   RemoteFormatName = "oci"
 )
 
 // Valid indicates whether the value is a known member of the RemoteFormatName enum.
@@ -1918,6 +1919,8 @@ func (e RemoteFormatName) Valid() bool {
 	case RemoteFormatNameNpm:
 		return true
 	case RemoteFormatNameNuget:
+		return true
+	case RemoteFormatNameOci:
 		return true
 	default:
 		return false
@@ -7842,7 +7845,7 @@ type UpstreamTestRequest struct {
 
 // UpstreamTestResult defines model for UpstreamTestResult.
 type UpstreamTestResult struct {
-	// Authenticated `false` for `401` and `403`; `null` when there was no response.
+	// Authenticated `false` for `401` and `403`; `null` when there was no response, and for the `401` of a container registry that asks for a token (a Bearer challenge): the credential is judged by the registry's token service, which the test does not ask.
 	Authenticated *bool `json:"authenticated"`
 	DurationMs    int64 `json:"durationMs"`
 	Error         *struct {

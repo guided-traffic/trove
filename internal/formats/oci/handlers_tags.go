@@ -58,8 +58,12 @@ type tagsDoc struct {
 // withheld is not listed (R-OCI-033). A name the repository holds a manifest or a blob of, but no tag, answers an empty list; a name
 // it holds nothing of answers 404 NAME_UNKNOWN.
 func (f *Format) handleTagsList(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	if rq.Repo.Class != formats.Local {
-		return notImplemented("list the tags of a remote or a virtual repository (R-OCI-024, R-OCI-027)")
+	switch rq.Repo.Class {
+	case formats.Remote:
+		return f.remoteTagsList(ctx, rq, w)
+	case formats.Local:
+	default:
+		return notImplemented("list the tags of a virtual repository (R-OCI-027)")
 	}
 	name := rq.Params.Get("name")
 	// The gate is the package document of the name, its tags list (R-AUTHZ-005, Q-OCI-140); each tag is decided by its own path below,

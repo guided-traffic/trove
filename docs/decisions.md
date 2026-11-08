@@ -6614,6 +6614,42 @@ documents get per-caller filtering (H-655).
 R-ARCH-008, R-ARCH-010, R-ARCH-027; [spec/formats/npm.md](spec/formats/npm.md) Q-NPM-82, Q-NPM-83;
 [spec/formats/nuget.md](spec/formats/nuget.md) Q-NUGET-120, Q-NUGET-121; [spec/endpoints.md](spec/endpoints.md) Q-EP-85.
 
+### ADR-176 · The OCI remote adapter works inside the contract and adds a catalog fact and an optional interface
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** ADR-161 and ADR-165 gave the engine the token handshake and the revalidation by `HEAD`; the remote adapter of the OCI format
+(R-OCI-021 to R-OCI-025) is what implements them. Its checks need the response headers where the hooks have the body and the body where the hooks have the
+headers (the digest a tag announces, the cut of a tags list, the media type of a fetched manifest), and its upstream test meets an answer the generic probe
+reads wrongly (a registry's `401` with a Bearer challenge).
+
+**Decision.**
+
+- The contract stays at version 2. The checks that need both read a body through a reader that `AcceptResponse` may put around it (it may wrap the body, and when
+  the wrapper changes the length it drops the announced one, [Q-OCI-126](spec/formats/oci.md#q-oci-126--the-wrapper-that-records-the-cut-of-a-tags-list-drops-the-announced-length)), and a manifest is read as
+  the type its own `mediaType` member names ([Q-OCI-120](spec/formats/oci.md#q-oci-120--the-digest-a-tag-announces-is-checked-by-a-reader-around-the-response-body),
+  [Q-OCI-122](spec/formats/oci.md#q-oci-122--a-stored-tags-list-records-that-the-upstream-cut-it), [Q-OCI-121](spec/formats/oci.md#q-oci-121--the-rows-of-a-remotes-manifest-are-written-by-onfill-for-a-tag-and-by-oncommit-for-a-digest)).
+- A stood `401` is read by the optional interface `StoodChallengeReader` of the `Authenticator`: `insufficient_scope` is a missing image ([Q-OCI-127](spec/formats/oci.md#q-oci-127--a-stood-401-with-insufficient_scope-is-a-missing-image-and-keeps-the-remembered-challenge)).
+- The catalog gains one fact, `Facts.ProbeChallengeReachable`, an addition to the surface file of the contract, and `Register` checks it
+  ([Q-REPO-280](spec/repositories-and-proxy.md#q-repo-280--the-upstream-test-reads-a-bearer-challenge-of-a-handshake-format-as-reachable)).
+- The rows of a remote's manifests are written by `OnFill` and by `OnCommit` from the inspection; referrers and the windows of the tags list beyond the stored
+  document are passed through, filtered for the caller ([Q-OCI-123](spec/formats/oci.md#q-oci-123--referrers-of-a-remote-are-filtered-here-for-the-caller-and-for-artifacttype)).
+- The default extra hosts of Docker Hub are the realm; the CDN host that was seen is not listed, because `extraHosts` do not gate redirects ([Q-OCI-125](spec/formats/oci.md#q-oci-125--extrahosts-do-not-gate-redirects-so-the-docker-hub-defaults-list-the-realm-only)).
+- A remote that cannot ask its upstream answers with what it stores ([Q-OCI-128](spec/formats/oci.md#q-oci-128--a-remote-that-cannot-ask-its-upstream-answers-with-what-it-stores)); the `library/` mapping is Docker Hub's itself ([Q-OCI-129](spec/formats/oci.md#q-oci-129--the-library-mapping-is-for-docker-hub-itself-and-a-read-is-decided-on-both-spellings-of-the-name)); the probe of the registry root is at the host ([Q-REPO-281](spec/repositories-and-proxy.md#q-repo-281--the-probe-of-the-registry-root-format-is-at-the-root-of-the-host)).
+- A read of a Docker Hub remote is decided on both spellings of its name through the existing `PathsAllowed`, and the optional `SourceSpeller` gives a mount's source the other spelling
+  ([Q-OCI-129](spec/formats/oci.md#q-oci-129--the-library-mapping-is-for-docker-hub-itself-and-a-read-is-decided-on-both-spellings-of-the-name)); `RemoteCaps` gains `Stood`, and `Register` refuses a `StoodChallengeReader` without an `Authenticator`.
+
+**Consequences.** No format changes. The stored tags list of a remote carries one member of the format's own. A refused tag raises the engine's integrity event. A read of a Docker Hub remote is decided on both spellings of its name, and the contract gains the optional `SourceSpeller` for the source of a mount (`Capabilities.SourceSpeller`, Q-OCI-129); one request costs at most eight upstream pages of a tags list (Q-OCI-150).
+
+**Alternatives considered.** An additive optional interface that gives the format the response headers (an addition keeps the contract version, Q-ARCH-284; open, taken
+when a second format needs it); a handshake in the probe (a request to a second host in a test of one resource); a heuristic for a cut tags list; the engine reading
+`insufficient_scope` itself (registry knowledge in the engine).
+
+**Revisit condition:** a second format needs the headers in `PrepareFill`, or the probe is to judge the credential.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-020 to R-OCI-025, Q-OCI-120 to Q-OCI-129; [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-024, Q-REPO-280, Q-REPO-281;
+[spec/architecture.md](spec/architecture.md) R-ARCH-008.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -7540,6 +7576,19 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-114](spec/formats/oci.md#q-oci-114--the-grant-on-the-source-of-a-mount-is-the-registry-roots-check-the-read-right-is-the-hosts-link) | Who checks the grant on the source of a mount? | (a) The root checks the token's `pull` with `oci.MountSource`; the host's link checks `read` | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
 | [Q-OCI-115](spec/formats/oci.md#q-oci-115--blob-uploads-and-mounts-ask-the-ownership-rule-without-a-publish-before-a-body-is-read) | Do blob uploads and mounts pass the ownership rule? | (b) `CheckOwnership` without a publish, `FirstVersion` from the live versions, at the start of a session, a monolithic upload, a mount and the finish of a session | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
 | [Q-OCI-116](spec/formats/oci.md#q-oci-116--a-session-is-decided-on-the-packages-document-path) | On which path is a session decided? | (a) The package's document path `<name>/_taglist`, before the ownership question | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-120](spec/formats/oci.md#q-oci-120--the-digest-a-tag-announces-is-checked-by-a-reader-around-the-response-body) | How is the `Docker-Content-Digest` of a tag checked against its bytes? | (a) By a reader `AcceptResponse` puts around the body | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-121](spec/formats/oci.md#q-oci-121--the-rows-of-a-remotes-manifest-are-written-by-onfill-for-a-tag-and-by-oncommit-for-a-digest) | Who writes the rows of a remote's manifest? | (a) `OnFill` for a tag, `OnCommit` from the inspection for a digest | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-122](spec/formats/oci.md#q-oci-122--a-stored-tags-list-records-that-the-upstream-cut-it) | How does a stored tags list know the upstream cut it? | (a) A member the format adds | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-123](spec/formats/oci.md#q-oci-123--referrers-of-a-remote-are-filtered-here-for-the-caller-and-for-artifacttype) | Are the referrers of a remote passed through as bytes? | (a) No: filtered for the caller and for `artifactType` | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-124](spec/formats/oci.md#q-oci-124--the-default-extra-hosts-of-docker-hub-are-the-hosts-it-was-seen-to-use) | Which blob hosts of Docker Hub are default extra hosts? | (a) The one seen on 2026-11-08 | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-REPO-280](spec/repositories-and-proxy.md#q-repo-280--the-upstream-test-reads-a-bearer-challenge-of-a-handshake-format-as-reachable) | How does the upstream test read a registry's `401` with a Bearer challenge? | (a) Reachable, `authenticated` null | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-125](spec/formats/oci.md#q-oci-125--extrahosts-do-not-gate-redirects-so-the-docker-hub-defaults-list-the-realm-only) | Does the CDN host belong to the Docker Hub defaults? | (a) No: `extraHosts` do not gate redirects | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-126](spec/formats/oci.md#q-oci-126--the-wrapper-that-records-the-cut-of-a-tags-list-drops-the-announced-length) | How is the cut of a tags list recorded without a length that the spool refuses? | (b) The wrapper drops the announced length | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-127](spec/formats/oci.md#q-oci-127--a-stood-401-with-insufficient_scope-is-a-missing-image-and-keeps-the-remembered-challenge) | What is a stood `401` with `insufficient_scope`? | (a) A missing image, read by an optional interface | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-128](spec/formats/oci.md#q-oci-128--a-remote-that-cannot-ask-its-upstream-answers-with-what-it-stores) | What does a remote answer that cannot ask its upstream? | (a) The stored window; referrers 404 | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-129](spec/formats/oci.md#q-oci-129--the-library-mapping-is-for-docker-hub-itself-and-a-read-is-decided-on-both-spellings-of-the-name) | When is `nginx` `library/nginx`, and which spelling do rules see? | (a) Docker Hub without a prefix; every read is allowed on both spellings | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-REPO-281](spec/repositories-and-proxy.md#q-repo-281--the-probe-of-the-registry-root-format-is-at-the-root-of-the-host) | Where does the upstream test of a registry probe? | (a) `/v2/` at the root of the host | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
+| [Q-OCI-150](spec/formats/oci.md#q-oci-150--one-request-of-a-client-costs-at-most-eight-pages-of-the-upstreams-tags-list) | How many pages of the upstream's tags list may one client request cost? | (a) Eight | [ADR-176](#adr-176--the-oci-remote-adapter-works-inside-the-contract-and-adds-a-catalog-fact-and-an-optional-interface) |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

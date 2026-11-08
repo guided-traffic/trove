@@ -204,6 +204,14 @@ type ItemsRestorer interface {
 	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
 }
 
+// SourceSpeller is the optional hook of a format whose items have more than one canonical spelling in a repository (OCI on a Docker Hub remote:
+// `nginx` and `library/nginx` are one cached copy). SourceSpellings returns the other paths under which the item at p of a remote repository whose upstream is upstreamURL ("" for another class) is decided; a link
+// whose source is that item (a cross-repository mount) must be allowed to read each of them as well as p, so that an exclusion written for either
+// spelling holds for a link as it does for a read (Q-OCI-129). [CapabilitiesOf] finds it.
+type SourceSpeller interface {
+	SourceSpellings(upstreamURL string, p Path) []Path
+}
+
 // RemovalLocker is the optional hook of a format whose writers take a lock of their own first (a package row): LockRemoval runs in the
 // transaction of a removal, before the item store deletes the rows of the files at paths, with the writer of the transaction, so that the
 // removal waits in the order a commit does (OCI: a manifest push takes the package row and then holds the rows of the layers it names).
@@ -231,6 +239,8 @@ type Capabilities struct {
 	// ServeFacts names the rows the format's serve check decides on for a path, so that the item lookup of a download reads
 	// them in its own statement (R-ARCH-027, Q-ARCH-291); nil for a format whose check reads nothing besides the item.
 	ServeFacts ServeFactsKeyer
+	// SourceSpeller names the other spellings of an item that a link's source is decided on (Q-OCI-129); nil for a format whose items have one.
+	SourceSpeller SourceSpeller
 	// ViewSizer reports the size of a version that is not the sum of its files (ADR-177); nil for a format whose versions are.
 	ViewSizer ViewSizer
 	// VersionPath gives the path of the file that holds a version's content (Q-AUTHZ-255); nil for a format whose
@@ -262,6 +272,9 @@ func CapabilitiesOf(f Format) Capabilities {
 	if v, ok := f.(VulnerabilityAdapter); ok {
 		c.Vulnerability = v
 	}
+	if s, ok := f.(SourceSpeller); ok {
+		c.SourceSpeller = s
+	}
 	if k, ok := f.(ServeFactsKeyer); ok {
 		c.ServeFacts = k
 	}
@@ -277,6 +290,7 @@ func CapabilitiesOf(f Format) Capabilities {
 		c.Remote.Mirror, _ = ra.(MirrorLister)
 		c.Remote.Gate, _ = ra.(FactsGate)
 		c.Remote.Auth, _ = ra.(Authenticator)
+		c.Remote.Stood, _ = ra.(StoodChallengeReader)
 		c.Remote.Revalidate, _ = ra.(Revalidator)
 	}
 	return c
@@ -386,6 +400,17 @@ func Validate(f Format) error {
 	}
 	if err := checkAdapter(id, "Virtual", d.Supports(Virtual), f.Virtual() != nil); err != nil {
 		return err
+	}
+	if caps := CapabilitiesOf(f).Remote; caps.Stood != nil && caps.Auth == nil {
+		// The reading of a stood 401 belongs to a handshake: without an Authenticator the engine never asks it (Q-OCI-127).
+		return fmt.Errorf("%q implements StoodChallengeReader on its remote adapter without an Authenticator", id)
+	}
+	if d.ProbeChallengeReachable {
+		// The upstream test reads a Bearer challenge of the probe resource as reachable: that is true only for a format whose upstream
+		// is probed and answers the challenge by a token handshake the format implements (R-REPO-024, Q-REPO-280).
+		if !d.Supports(Remote) || d.ProbePath == "" || CapabilitiesOf(f).Remote.Auth == nil {
+			return fmt.Errorf("%q declares ProbeChallengeReachable and needs the class remote, a ProbePath and a remote adapter that implements Authenticator", id)
+		}
 	}
 	if x := f.Exposure(); x != nil {
 		if dim := x.Dimensions(); (dim.Packages || dim.Versions || dim.Tags) && !d.PackageNames {

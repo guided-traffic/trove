@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -139,9 +140,26 @@ func conformance() formattest.Fixture {
 				return nil
 			},
 		},
+		// A remote's tags list is rendered with the name of this host; some registries answer with a name that carries their own host
+		// ("registry.example.org/acme/app"), which must not reach a client (R-OCI-024). A manifest holds no address of the upstream and
+		// is served as stored.
+		Remote: &formattest.RemoteFixture{
+			Upstream: "https://registry.example.org",
+			Docs: []formattest.RemoteDoc{
+				{Name: "tags list", Path: "acme/app/_taglist", Request: "acme/app/tags/list", Body: []byte(`{"name":"registry.example.org/acme/app","tags":["1","2","latest"]}`)},
+			},
+			DownloadLinks: func(doc []byte) []string {
+				var d struct {
+					Name string `json:"name"`
+				}
+				if json.Unmarshal(doc, &d) != nil || !strings.Contains(strings.SplitN(d.Name, "/", 2)[0], ".") {
+					return nil
+				}
+				return []string{"https://" + d.Name}
+			},
+		},
 		Skip: map[formattest.Check]string{
-			formattest.CheckRewrite: "local class only: the remote adapter joins with its work package (R-OCI-021)",
-			formattest.CheckMerge:   "local class only: the virtual adapter joins with its work package (R-OCI-027)",
+			formattest.CheckMerge: "local class only: the virtual adapter joins with its work package (R-OCI-027)",
 		},
 	}
 }

@@ -388,3 +388,34 @@ WP0 ──┬─ WP1 ─────────────┐
   adapter tests may copy; the stub registry of WP7 is the OCI-shaped counterpart.
 - Security: [remote-repositories.md](../security/remote-repositories.md) (the handshake section, H-610 to H-612).
 
+
+## WP8 as built (the OCI remote adapter)
+
+- Built: `internal/formats/oci/remote.go` (upstream request with the namespace prefix, `Accept` of the four manifest types, `UpstreamQuery`, `AcceptResponse`,
+  `PrepareFill` with the alias under the digest, `OnFill` and `InspectFill`/`OnCommit` rows, `BeforeArtifact`, `Rewrite`), `remote_auth.go` (the challenge
+  parser, the scope from the request, the token document), `remote_revalidate.go` (the `HEAD` derived from the engine's `GET`, `Unchanged` by digest),
+  `remote_handlers.go` (manifests, blobs, the tags list window with the pass-through, referrers, the `library/` mapping); the class `remote` in the
+  descriptor, `ProbePath: "v2/"` and `catalog.Facts.ProbeChallengeReachable` (a `401` with a Bearer challenge is reachable, `authenticated: null`). ADR-176,
+  Q-OCI-120 to Q-OCI-124, Q-REPO-280, H-665 to H-668 ([oci-remote.md](../security/oci-remote.md)).
+- Docker Hub's blob host, checked on 2026-11-08 with an anonymous request: a blob `GET` was answered `307` to `production.cloudfront.docker.com`; the default
+  extra hosts are `auth.docker.io` (credentials) only: `extraHosts` do not gate redirects, so the CDN host is not listed (Q-OCI-125). The check cost a token request, two manifest `GET` requests (the index and the amd64 manifest of
+  `library/hello-world`) and one blob `GET`.
+- Touched outside the owned files: the four read handlers of WP4 (`handlers_manifest.go`, `handlers_blob.go`, `handlers_tags.go`, `handlers_referrers.go`: the remote
+  class is handed to the remote handlers), `hooks.go` (`OnCommit` writes the rows of a remote manifest from its inspection), `catalog.Facts` and
+  `internal/formats/testdata/contract.txt` (one fact), `internal/proxy/upstream/probe.go`, `internal/repository/upstream.go` (a comment), `api/openapi.yaml`
+  and its generated copies (a description) (round 2b: `SourceSpeller`, `RemoteCaps.Stood`, the engine's stood-401 hook; `app.Options.DispatchFormats` of round 1 is gone).
+- Left to others: the virtual
+  class (WP9) calls the same handlers for a remote member through `Request.Member`; the mirror (WP10) uses `UpstreamQuery`'s path shapes and the
+  `Authenticator`; the e2e rows and the cross-replica flight criterion (six concurrent pulls on three replicas) are WP11's.
+
+### WP8 round 2 (hand-offs and what changed)
+
+- Reviewed and audited as `726d7ab1`; round 2a is `wip: T-16 WP8 round 2a` (ADR-176 revised, Q-OCI-125 to Q-OCI-129, Q-REPO-281, H-669; H-665 closed by the
+  integrity event).
+- Not proven by the `/v2/` harness, with the reason, and handed to the packages named: the criteria that run `docker pull`, `crane` or six concurrent pulls on
+  three replicas (R-OCI-022 to R-OCI-024) are WP11's e2e rows; the harness drives the same requests over HTTP but is no client.
+- Handed to WP10: the remote half of R-OCI-025's second criterion (`quota_header` in `trove_mirror_rate_limited_total`) and the mirror's use of `UpstreamQuery`'s path shapes.
+- Handed to WP4/WP12: the remote half of R-OCI-031 (the package screens of a remote's cache: image names and manifests through the format's tables; a tag of a
+  remote has no version row, Q-OCI-121, so the tag list of the screen is empty).
+- Phase B (round 2b, on the `/v2/` mount): the harness goes through `/v2/` with registry tokens; `DispatchFormats` and the wrapper are gone; the remote gates follow the
+  package document path (`<name>/_taglist`, the subject's manifest path); the grant sees the name the client typed (Q-OCI-129).

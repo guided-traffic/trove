@@ -27,6 +27,7 @@ formats.Capabilities: field ItemsRestorer ItemsRestorer
 formats.Capabilities: field Remote RemoteCaps
 formats.Capabilities: field RemovalLocker RemovalLocker
 formats.Capabilities: field ServeFacts ServeFactsKeyer
+formats.Capabilities: field SourceSpeller SourceSpeller
 formats.Capabilities: field VersionPath VersionPather
 formats.Capabilities: field ViewSizer ViewSizer
 formats.Capabilities: field Vulnerability VulnerabilityAdapter
@@ -318,6 +319,7 @@ formats.RemoteCaps: field Fill FillInspector
 formats.RemoteCaps: field Gate FactsGate
 formats.RemoteCaps: field Mirror MirrorLister
 formats.RemoteCaps: field Revalidate Revalidator
+formats.RemoteCaps: field Stood StoodChallengeReader
 formats.RemoteContext: field Discovery any
 formats.RemoteContext: field Repo *repository.Repository
 formats.RemoteContext: field Settings json.RawMessage
@@ -441,10 +443,12 @@ formats.ShadowPair: field Remote string
 formats.ShadowPair: field Virtual string
 formats.SourceRef: field Path string
 formats.SourceRef: field Repo qname.Repo
+formats.SourceSpeller: method SourceSpellings(string, Path) []Path
 formats.Spooled: method Digests() Digests
 formats.Spooled: method Open() (io.ReadCloser, error)
 formats.Spooled: method ReaderAt() (io.ReaderAt, error)
 formats.Spooled: method Size() int64
+formats.StoodChallengeReader: method StoodMissing(Path, http.Header) bool
 formats.Stored: field Tags map[string]string
 formats.Stored: field Versions []string
 formats.StoredQuery: field Limit int
@@ -650,6 +654,7 @@ catalog.Facts: field PackageNames bool
 catalog.Facts: field PatternSubject PatternSubject
 catalog.Facts: field PinsAndClaims bool
 catalog.Facts: field PriorityMembers bool
+catalog.Facts: field ProbeChallengeReachable bool
 catalog.Facts: field ProbePath string
 catalog.Facts: field ProtocolBasePath string
 catalog.Facts: field RegistryRoot bool

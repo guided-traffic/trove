@@ -289,7 +289,7 @@ func (e *Engine) queryFetch(ctx context.Context, rq QueryRequest, cl *upstream.C
 	switch s := resp.StatusCode; {
 	case s >= 200 && s < 300:
 		return f.queryBody(ctx, rq, resp, idle, ttl)
-	case s == http.StatusNotFound || s == http.StatusGone:
+	case s == http.StatusNotFound || s == http.StatusGone || f.stoodMissing(resp):
 		return nil, errs.E(errs.NotFound, errs.CodeNotFound, "The upstream of "+rem.Repo.Name.String()+" has no such resource.", errs.WithAbsent())
 	}
 	return nil, f.failed(ctx, classifyStatus(rem, resp)).err

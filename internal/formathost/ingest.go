@@ -193,6 +193,19 @@ func (h *Host) linkSource(ctx context.Context, rq *formats.Request, from formats
 		}
 		return items.Item{}, err
 	}
+	// A source with more than one spelling (a Docker Hub remote's `nginx` and `library/nginx`) is decided on each: an exclusion written for
+	// either holds for a link (Q-OCI-129). PathsAllowed asks the decision point, the patterns and the claims and writes no audit event.
+	if sp := formats.CapabilitiesOf(f).SourceSpeller; sp != nil {
+		for _, alt := range sp.SourceSpellings(upstreamURLOf(repo), formats.Path{Path: from.Path}) {
+			ok, err := h.PathsAllowed(ctx, srq, formats.ActionRead, []string{alt.Path})
+			if err != nil {
+				return items.Item{}, err
+			}
+			if !ok[0] {
+				return items.Item{}, gone
+			}
+		}
+	}
 	holders := []repository.Repository{repo}
 	if repo.Class == repository.Virtual {
 		if holders, err = h.routedMembers(ctx, srq, idx, repo, info.Package, from.Path); err != nil {
@@ -486,4 +499,12 @@ func (p packageStore) RevSeqs(ctx context.Context, repos []formats.RepoRef, name
 		out[id] = formats.RevSeq(r)
 	}
 	return out, nil
+}
+
+// upstreamURLOf is the upstream URL of a remote repository, "" for another class.
+func upstreamURLOf(repo repository.Repository) string {
+	if st, ok := repo.Remote(); ok {
+		return st.URL
+	}
+	return ""
 }

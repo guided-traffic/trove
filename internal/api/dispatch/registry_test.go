@@ -45,7 +45,7 @@ func newOCIRig(t *testing.T) *ociRig {
 		{Project: "web", Key: "docker-off"}: {ID: "4", Name: qname.Repo{Project: "web", Key: "docker-off"}, Class: repository.Local, Format: "oci", Disabled: true},
 	}}}
 	d, err := New(Options{
-		Host: fakeHost{}, Decider: r.decider, Repos: r.repos,
+		Host: remoteHost{}, Decider: r.decider, Repos: r.repos,
 		Label: func(_ context.Context, name string) { r.labels = append(r.labels, name) },
 	})
 	if err != nil {
@@ -231,7 +231,8 @@ func TestABoundHostFixesTheRepositoryAndTheWholePathIsTheImage(t *testing.T) {
 	t.Run("a host bound to a repository of the format serves the image path under it", func(t *testing.T) {
 		r := newOCIRig(t)
 		rec := r.do("GET", "/v2/library/alpine/manifests/3", ociHub)
-		if rec.Code != http.StatusNotImplemented || len(r.labels) != 1 || r.labels[0] != "oci.manifest.get.tag" {
+		// The rig's repository is a remote one whose engine finds no document: the handler of the format is reached and answers a missing manifest.
+		if rec.Code != http.StatusNotFound || ociCode(t, rec) != "MANIFEST_UNKNOWN" || len(r.labels) != 1 || r.labels[0] != "oci.manifest.get.tag" {
 			t.Fatalf("%d, labels %v", rec.Code, r.labels)
 		}
 		if len(r.decider.asked) != 1 || r.decider.asked[0].Repository != ociHub {
@@ -249,7 +250,7 @@ func TestABoundHostFixesTheRepositoryAndTheWholePathIsTheImage(t *testing.T) {
 			t.Fatalf("target %+v %v", got, ok)
 		}
 		rec := r.do("GET", "/v2/web/docker-hub/library/alpine/manifests/3", ociHub)
-		if rec.Code != http.StatusNotImplemented {
+		if rec.Code != http.StatusNotFound || ociCode(t, rec) != "MANIFEST_UNKNOWN" { // the handler is reached (see above)
 			t.Fatalf("%d", rec.Code)
 		}
 	})

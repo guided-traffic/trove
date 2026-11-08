@@ -1405,7 +1405,11 @@ func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool)
 type RemoteAdapter interface {
 	// UpstreamRequest maps a repository path to the upstream request.
 	UpstreamRequest(ctx context.Context, rc RemoteContext, p Path, variant string) (*http.Request, error)
-	// AcceptResponse checks status, headers and declared type before a byte is stored or sent.
+	// AcceptResponse checks status, headers and declared type before a byte is stored or sent. It may also put a reader around
+	// resp.Body to check or annotate the bytes as they pass (OCI: the digest a tag announces, the cut of a tags list); a reader that
+	// changes the length of the body must drop the announced one (resp.ContentLength -1 and the Content-Length header deleted), because
+	// the spool refuses a body that differs from its declared length with 400, and a reader that fails must fail with an *errs.Error
+	// (an upstream error, 502), which the engine returns as it is (Q-OCI-126).
 	AcceptResponse(p Path, resp *http.Response) error
 	// PrepareFill validates a fetched metadata document before anything is stored, outside every
 	// transaction (R-ARCH-019); an error keeps the previous entry and answers 502 in the format's shape.
@@ -1488,6 +1492,14 @@ type Authenticator interface {
 	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
 }
 
+// StoodChallengeReader: an optional interface of the Authenticator, found by type assertion. A 401 that stood after the handshake (a
+// fresh token that the upstream refused) is read by the format: StoodMissing true says the upstream does not have the resource (a
+// registry's 401 with error="insufficient_scope" for a repository that does not exist or is private, which Docker Hub sends), and the
+// engine then answers the request as a 404 of the upstream, with a negative entry, and keeps the remembered challenge (Q-OCI-127).
+type StoodChallengeReader interface {
+	StoodMissing(p Path, header http.Header) bool
+}
+
 // Revalidator: an expired stored document is revalidated by a request of the format's own kind (OCI: a HEAD whose digest
 // header says whether a tag still points at the stored manifest, R-OCI-022). RevalidationRequest returns it (ok false: the
 // engine's conditional GET; get is the GET the engine would send, and the request derives from it: the same URL and Accept);
@@ -1507,6 +1519,7 @@ type RemoteCaps struct {
 	Mirror    MirrorLister
 	Gate      FactsGate
 	Auth       Authenticator // the token handshake with the upstream; nil for a format whose upstreams authenticate by the credential alone
+	Stood      StoodChallengeReader // the reading of a 401 that stood after the handshake; nil for none
 	Revalidate Revalidator   // the format's own revalidation request; nil for the engine's conditional GET
 }
 
@@ -1572,6 +1585,15 @@ type Capabilities struct {
 	ServeFacts    ServeFactsKeyer      // nil for a format whose serve check reads nothing besides the item (Q-ARCH-291)
 	ViewSizer     ViewSizer            // nil for a format whose versions are the sum of their files (ADR-177)
 	VersionPath   VersionPather        // nil for a format whose versions have no file of their own (Q-AUTHZ-255, ADR-174)
+	SourceSpeller SourceSpeller        // nil for a format whose items have one spelling (Q-OCI-129)
+}
+
+// SourceSpeller is the optional interface of a Format whose items have more than one canonical spelling in a repository (OCI on a Docker Hub
+// remote: `nginx` and `library/nginx` are one cached copy). SourceSpellings returns the other paths under which the item at p of a remote repository whose upstream is upstreamURL ("" for another class) is decided;
+// a link whose source is that item (a cross-repository mount) must be allowed to read each of them as well as p, so that an exclusion written
+// for either spelling holds for a link as it does for a read (Q-OCI-129).
+type SourceSpeller interface {
+	SourceSpellings(upstreamURL string, p Path) []Path
 }
 
 // ViewSizer is the optional interface of a Format whose version has a size that is not the sum of the version's files (an OCI tag:
@@ -2021,6 +2043,10 @@ type UploadSession struct {
 // catalog.Facts gains RegistryRoot (the one format whose client address is the root of a host: ProtocolBasePath is
 // catalog.RegistryRootBasePath, "/v2/{project}/{key}/"; the catalog refuses a second format that declares it, Q-OCI-4) and
 // DefaultCredentialHosts (the entries of DefaultExtraHosts proposed with sendCredentials: true; each must be among them, R-OCI-021).
+// Facts also gains ProbeChallengeReachable (the upstream test reads a 401 with a Bearer challenge of the probe resource as reachable, with
+// authenticated null; Register refuses the fact for a format without the class remote, a ProbePath or a remote adapter that implements
+// Authenticator, Q-REPO-280). For the format that declares RegistryRoot the probe resource is at the root of the host, not below the
+// path of the upstream URL, which is a namespace prefix there (Q-REPO-281).
 
 type PackageStore interface {
 	Package(ctx context.Context, repo RepoRef, name string) (PackageRow, bool, error)
@@ -2471,7 +2497,7 @@ The order on a miss:
    slot, parses it with `ParseDiscovery` and gives the result to every later call of the fetch as
    `RemoteContext.Discovery`; the request for the document itself carries none (Q-ARCH-268). The URL map
    (R-REPO-043) addresses metadata paths as it does artifacts.
-3. `RemoteAdapter.AcceptResponse` checks status and declared type before any byte is stored or
+3. `RemoteAdapter.AcceptResponse` checks status and declared type (and may wrap the body, dropping the announced length when it changes the length, Q-OCI-126) before any byte is stored or
    sent.
 4. The body enters the upload pipeline of [storage.md](storage.md): spool and single-pass digests.
    The leader's own client MAY receive the body while it arrives, with its tail withheld until

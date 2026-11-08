@@ -165,6 +165,8 @@ type hsWorld struct {
 	valid  map[string]bool
 	seen   []string // the Authorization header of every request the registry got
 	denyAl bool     // the registry refuses every token
+	// scopeErr adds error="insufficient_scope" to the challenge of a refused token.
+	scopeErr bool
 }
 
 type staticClients struct{ cl *upstream.Client }
@@ -340,7 +342,13 @@ func (w *hsWorld) serveRegistry(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !good {
-		rw.Header().Set("WWW-Authenticate", `Bearer realm="`+w.challenge()+`",service="test"`)
+		c := `Bearer realm="` + w.challenge() + `",service="test"`
+		w.mu.Lock()
+		if w.scopeErr && ok {
+			c += `,error="insufficient_scope"`
+		}
+		w.mu.Unlock()
+		rw.Header().Set("WWW-Authenticate", c)
 		http.Error(rw, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -706,6 +714,7 @@ func TestR_REPO_033_TokenIsNotReusedUnderAnotherCredentialOrTokenService(t *test
 		"another scheme":        tokenKeyOf(h, "k", mustURL("http://auth.example.com/token?service=a")),
 		"another path":          tokenKeyOf(h, "k", mustURL("https://auth.example.com/other?service=a")),
 		"another service":       tokenKeyOf(h, "k", mustURL("https://auth.example.com/token?service=b")),
+		"another realm query":   tokenKeyOf(h, "k", mustURL("https://auth.example.com/token?service=a&account=other")),
 		"another configuration": tokenKeyOf(handshake{cl: cl, rem: func() Remote { r := w.rem; r.Repo.Version++; return r }()}, "k", u1),
 	} {
 		if other == base {

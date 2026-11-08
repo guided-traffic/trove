@@ -339,7 +339,7 @@ bounded by `Allowed` and the hop policy ([outbound/hop.go](../../internal/outbou
 Subject: the upstream credential of a repository with `authMode: basic` (a `bearer` repository runs no handshake) and the hosts the operator
 listed with `sendCredentials: true`.
 
-Live today in the engine, for a remote whose adapter implements the handshake (none registered yet). The upstream's `401` names the realm;
+Live today in the engine, for a remote whose adapter implements the handshake (the OCI format, [oci-remote.md](oci-remote.md)). The upstream's `401` names the realm;
 the engine sends the token request there with the repository's credential when the realm is the origin or a `sendCredentials` entry.
 A hostile or compromised upstream can therefore make trove send the credential to any of those hosts, with a path and a query of the
 upstream's choosing, as often as it can make trove ask (once per token). Hosts without `sendCredentials`, and every host not on the list,

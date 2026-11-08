@@ -110,8 +110,12 @@ func serveStored(ctx context.Context, rq *formats.Request, w http.ResponseWriter
 // handleManifestGet is GET and HEAD of a manifest by tag or by digest (R-OCI-009): the stored bytes with their media type, whatever
 // Accept says, so the digest stays the one the client verifies (Q-OCI-8).
 func (f *Format) handleManifestGet(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	if rq.Repo.Class != formats.Local {
-		return notImplemented("pull a manifest through a remote or a virtual repository (R-OCI-022, R-OCI-027)")
+	switch rq.Repo.Class {
+	case formats.Remote:
+		return f.remoteManifestGet(ctx, rq, w)
+	case formats.Local:
+	default:
+		return notImplemented("pull a manifest through a virtual repository (R-OCI-027)")
 	}
 	name, ref := rq.Params.Get("name"), rq.Params.Get("reference")
 	var path, version string

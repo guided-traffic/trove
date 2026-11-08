@@ -374,7 +374,7 @@ func (e *Engine) head(ctx context.Context, rq Request, w http.ResponseWriter) er
 		h.Set("Cache-Status", CacheStatus{Forwarded: "uri-miss", FwdStatus: s}.Header())
 		w.WriteHeader(s)
 		return nil
-	case s == http.StatusNotFound || s == http.StatusGone:
+	case s == http.StatusNotFound || s == http.StatusGone || f.stoodMissing(resp):
 		return withStatus(errs.E(errs.NotFound, errs.CodeNotFound, "The item does not exist upstream.", errs.WithAbsent()), CacheStatus{Forwarded: "uri-miss", FwdStatus: s})
 	}
 	res := f.failed(ctx, classifyStatus(rem, resp))

@@ -90,8 +90,11 @@ type FillEvent struct {
 type RemoteAdapter interface {
 	// UpstreamRequest maps a repository path to the upstream request.
 	UpstreamRequest(ctx context.Context, rc RemoteContext, p Path, variant string) (*http.Request, error)
-	// AcceptResponse checks status, headers and declared type before a byte is
-	// stored or sent.
+	// AcceptResponse checks status, headers and declared type before a byte is stored or sent. It may also put a reader around
+	// resp.Body to check or annotate the bytes as they pass (OCI: the digest a tag announces, the cut of a tags list); a reader that
+	// changes the length of the body must drop the announced one (resp.ContentLength -1 and the Content-Length header deleted), because
+	// the spool refuses a body that differs from its declared length with 400, and a reader that fails must fail with an *errs.Error
+	// (an upstream error, 502), which the engine returns as it is (Q-OCI-126).
 	AcceptResponse(p Path, resp *http.Response) error
 	// PrepareFill validates a fetched metadata document before anything is stored
 	// and outside every transaction (R-ARCH-019); an error keeps the previous entry
@@ -208,6 +211,16 @@ type Authenticator interface {
 	ReadToken(ctx context.Context, rc RemoteContext, status int, body []byte) (authorization string, ttl time.Duration, err error)
 }
 
+// StoodChallengeReader is an optional interface of an [Authenticator]: the format reads a 401 that stood after the handshake. A
+// registry answers 401 with error="insufficient_scope" to a valid token that is not allowed the resource (Docker Hub: a repository
+// that does not exist or is private). When StoodMissing says so the engine answers the request as a 404 of the upstream, with a
+// negative entry, and keeps the remembered challenge (Q-OCI-127). Register reads it off the remote adapter into RemoteCaps.Stood and refuses an adapter that has it without an Authenticator.
+type StoodChallengeReader interface {
+	// StoodMissing reports whether the stood 401 with these headers means the upstream does not have the resource. p is the
+	// repository path the request was made for, the zero Path when it had none.
+	StoodMissing(p Path, header http.Header) bool
+}
+
 // Revalidator is an optional interface of a [RemoteAdapter]: an expired stored document is revalidated by a request of the
 // format's own kind instead of the engine's conditional GET (OCI: a HEAD whose digest header says whether a tag still
 // points at the stored manifest, R-OCI-022). Register reads it off the adapter once ([RemoteCapabilities]).
@@ -236,6 +249,8 @@ type RemoteCaps struct {
 	// Auth is the adapter's token handshake with the upstream; nil for a format whose upstreams authenticate by the
 	// credential alone (R-OCI-021).
 	Auth Authenticator
+	// Stood is the adapter's reading of a 401 that stood after the handshake (Q-OCI-127); nil for an adapter that has none.
+	Stood StoodChallengeReader
 	// Revalidate is the adapter's own revalidation request; nil for the engine's conditional GET (R-OCI-022).
 	Revalidate Revalidator
 }

@@ -46,8 +46,9 @@ func (viewAdapter) Compare(a, b string) int {
 	return tagorder.Compare(a, b)
 }
 
-// Stored lists the tags a local repository serves of an image name, newest push first. A remote repository's cache and a virtual
-// repository list none yet: their adapters join with their work packages.
+// Stored lists the tags a local repository serves of an image name, newest push first. A remote repository lists none: its tag
+// documents are metadata entries and own no version row (Q-OCI-34, Q-OCI-121), so the screens show the image names and manifests of its
+// cache through the format's tables; a virtual repository lists none yet (its adapter is a work package of its own).
 func (viewAdapter) Stored(ctx context.Context, ports formats.DataPorts, q formats.StoredQuery) (formats.Stored, error) {
 	if q.Repo.Class != formats.Local || q.Limit <= 0 {
 		return formats.Stored{}, nil

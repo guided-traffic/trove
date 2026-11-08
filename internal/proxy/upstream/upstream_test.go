@@ -158,6 +158,14 @@ func testCatalog() *catalog.Registry {
 		PatternSubject: catalog.SubjectPath, ProbePath: "-/ping",
 	}})
 	r.Register(catalog.Entry{Facts: catalog.Facts{
+		ID: "handshakefmt", Classes: []catalog.Class{catalog.Remote}, Layout: "handshakefmt", ProtocolBasePath: catalog.RegistryRootBasePath,
+		RegistryRoot: true, PatternSubject: catalog.SubjectPath, ProbePath: "v2/", ProbeChallengeReachable: true,
+	}})
+	r.Register(catalog.Entry{Facts: catalog.Facts{
+		ID: "basicfmt", Classes: []catalog.Class{catalog.Remote}, Layout: "basicfmt", ProtocolBasePath: "/api/basicfmt/{project}/{key}/",
+		PatternSubject: catalog.SubjectPath, ProbePath: "v2/",
+	}})
+	r.Register(catalog.Entry{Facts: catalog.Facts{
 		ID: "indexfmt", Classes: []catalog.Class{catalog.Remote}, Layout: "indexfmt", ProtocolBasePath: "/api/indexfmt/{project}/{key}/",
 		PatternSubject: catalog.SubjectPath,
 	}})
@@ -856,6 +864,80 @@ func TestSourceNetwork(t *testing.T) {
 	})
 }
 
+func TestR_REPO_024_ABearerChallengeOfAHandshakeFormatIsReachable(t *testing.T) {
+	var asked []string
+	challenge := `Bearer realm="https://auth.example.com/token",service="registry"`
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		switch r.URL.Path {
+		case "/v2/":
+			w.Header().Set("Www-Authenticate", challenge)
+			w.WriteHeader(http.StatusUnauthorized)
+		case "/basic/v2/":
+			w.Header().Set("Www-Authenticate", `Basic realm="registry"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	f := newFixture(t, fixtureOpts{servers: []*httptest.Server{srv}})
+	handshake := func(id int64, key, format string) repository.Repository {
+		r := repo(id, key, 1)
+		r.Format = format
+		return r
+	}
+
+	res := f.clients.TestSaved(t.Context(), handshake(101, "reg", "handshakefmt"), settings(srv.URL+"/", repository.AuthNone))
+	if !res.Reachable || res.HTTPStatus == nil || *res.HTTPStatus != http.StatusUnauthorized || res.Authenticated != nil || res.Error != nil {
+		t.Fatalf("a Bearer challenge: %+v", res)
+	}
+	// With a stored bearer token there is no handshake: the same answer says the registry refused the token.
+	f.seal(104, "tok-static")
+	res = f.clients.TestSaved(t.Context(), handshake(104, "static", "handshakefmt"), settings(srv.URL+"/", repository.AuthBearer))
+	if !res.Reachable || res.Authenticated == nil || *res.Authenticated {
+		t.Fatalf("a refused static token: %+v", res)
+	}
+	// A format without the fact reads a Basic or Bearer 401 as a refusal.
+	res = f.clients.TestSaved(t.Context(), handshake(102, "basic", "basicfmt"), settings(srv.URL+"/basic/", repository.AuthNone))
+	if !res.Reachable || res.Authenticated == nil || *res.Authenticated {
+		t.Fatalf("a Basic challenge is the refusal of a credential: %+v", res)
+	}
+	if len(asked) != 3 || asked[0] != "/v2/" || asked[1] != "/v2/" || asked[2] != "/basic/v2/" {
+		t.Errorf("the probe asked %v", asked)
+	}
+}
+
+// The probe resource of the registry-root format is at the root of the host: the path of the URL is a namespace prefix of image names, and
+// probing below it asked a path no registry answers, which read as an authenticated 404 (Q-REPO-281).
+func TestR_REPO_024_TheProbeOfTheRegistryRootFormatIsAtTheRootOfTheHost(t *testing.T) {
+	var asked []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.RequestURI())
+		if r.URL.Path == "/v2/" {
+			w.Header().Set("Www-Authenticate", `Bearer realm="https://auth.example.com/token"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	f := newFixture(t, fixtureOpts{servers: []*httptest.Server{srv}})
+	r := repo(111, "reg", 1)
+	r.Format = "handshakefmt"
+	res := f.clients.TestSaved(t.Context(), r, settings(srv.URL+"/acme/team/?x=1", repository.AuthNone))
+	if !res.Reachable || res.Authenticated != nil || res.HTTPStatus == nil || *res.HTTPStatus != http.StatusUnauthorized {
+		t.Fatalf("result = %+v", res)
+	}
+	if len(asked) != 1 || asked[0] != "/v2/" {
+		t.Errorf("the probe asked %v, want /v2/ at the root", asked)
+	}
+	u, _ := url.Parse("https://ghcr.io/org/")
+	if got := probeURL(u, "v2/", true).String(); got != "https://ghcr.io/v2/" {
+		t.Errorf("probeURL = %s", got)
+	}
+}
+
 func TestUpstreamTest(t *testing.T) {
 	srv, got := stubRegistry(t)
 	f := newFixture(t, fixtureOpts{servers: []*httptest.Server{srv}})
@@ -893,7 +975,7 @@ func TestUpstreamTest(t *testing.T) {
 			"https://r.example/npm/?x=1": "https://r.example/npm/-/ping?x=1",
 		} {
 			u, _ := url.Parse(in)
-			if got := probeURL(u, "-/ping").String(); got != want {
+			if got := probeURL(u, "-/ping", false).String(); got != want {
 				t.Errorf("probeURL(%s) = %s, want %s", in, got, want)
 			}
 		}

@@ -79,6 +79,24 @@ type Authenticator interface {
 	ReadToken(ctx context.Context, status int, body []byte) (authorization string, ttl time.Duration, err error)
 }
 
+// StoodReader is an optional interface of an [Authenticator]: the format reads a 401 that stood after the handshake. A registry
+// answers 401 with error="insufficient_scope" to a valid token that is not allowed the resource, which for Docker Hub is a repository
+// that does not exist or is private; the format says that such an answer means the upstream does not have the resource, and the
+// engine then answers it like a 404 (a negative entry) and keeps the remembered challenge, which was not at fault (Q-OCI-127).
+type StoodReader interface {
+	// StoodMissing reports whether the stood 401 with these headers is the upstream's "no such resource". path is the repository path
+	// of the request, "" when it has none.
+	StoodMissing(path string, header http.Header) bool
+}
+
+// stoodMissing reports whether the format reads the 401 of resp as a missing resource. It is asked only when the handshake sent a token and
+// the upstream refused it (refused): a repository with a static bearer token, a challenge the format has no handshake for and a request
+// that carried no token say nothing of the resource (R2-3).
+func (h *handshake) stoodMissing(resp *http.Response) bool {
+	sr, ok := h.auth.(StoodReader)
+	return ok && h.refused && resp.StatusCode == http.StatusUnauthorized && sr.StoodMissing(h.path, resp.Header)
+}
+
 // handshakeError is an error of the handshake that is the fetch's answer as it is: it is not an unreachable upstream, and it
 // does not count toward the circuit, which describes the registry and not its token service.
 type handshakeError struct {
@@ -162,6 +180,8 @@ type handshake struct {
 	jobID  string
 	// background: the request is a mirror's, so a rate-limit answer of the token service is the mirror's rate limit.
 	background bool
+	// refused is set by authenticate when the upstream refused the token the handshake sent for the request (the 401 stands).
+	refused bool
 }
 
 // attempt is a token and where it came from.
@@ -254,7 +274,7 @@ func (e *Engine) token(ctx context.Context, h handshake, orig *http.Request, cha
 }
 
 // tokenKeyOf digests what a token is valid for: the format's key, the token service (scheme, host, effective port, path and the
-// service it names), and the credential in effect (a rotated secret moves no configuration version).
+// query it carries, the service among it), and the credential in effect (a rotated secret moves no configuration version).
 func tokenKeyOf(h handshake, key string, u *url.URL) tokenKey {
 	port := u.Port()
 	if port == "" {
@@ -264,8 +284,12 @@ func tokenKeyOf(h handshake, key string, u *url.URL) tokenKey {
 		}
 	}
 	fp := h.cl.CredentialFingerprint()
+	// The whole query of the realm is part of the key, the service and any other parameter the upstream put in its address; the scope is
+	// not, because it is the format's key (R2-5).
+	q := u.Query()
+	q.Del("scope")
 	d := sha256.New()
-	for _, part := range []string{key, strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), port, u.EscapedPath(), u.Query().Get("service"), string(fp[:])} {
+	for _, part := range []string{key, strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), port, u.EscapedPath(), q.Encode(), string(fp[:])} {
 		_, _ = fmt.Fprintf(d, "%d:%s", len(part), part)
 	}
 	k := tokenKey{repo: h.rem.id, version: h.rem.Repo.Version}
@@ -521,7 +545,10 @@ func (e *Engine) authenticate(ctx context.Context, h *handshake, req *http.Reque
 		}
 		if !ok {
 			if used != nil {
-				e.forgetChallenge(*h)
+				h.refused = true
+				if !h.stoodMissing(resp) {
+					e.forgetChallenge(*h)
+				}
 				e.dropToken(used.key, used.value)
 			}
 			return resp, rcancel, idle, nil
@@ -542,7 +569,10 @@ func (e *Engine) authenticate(ctx context.Context, h *handshake, req *http.Reque
 			return resp, rcancel, idle, nil
 		}
 		if !a.cached {
-			e.forgetChallenge(*h)
+			h.refused = true
+			if !h.stoodMissing(resp) {
+				e.forgetChallenge(*h)
+			}
 			return resp, rcancel, idle, nil
 		}
 		rejected = a.value

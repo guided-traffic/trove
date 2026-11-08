@@ -7,7 +7,7 @@ manifests (WP4a, [ADR-164](../decisions.md#adr-164--the-oci-push-path-is-one-tra
 the tags list, referrers, deletion, sweep and replay (WP4b, ADR-168). The specification is [formats/oci.md](../spec/formats/oci.md); the decision for the contract is
 [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions).
 The registry tokens and the token service ([Registry tokens and the token service](#registry-tokens-and-the-token-service)) and the port of the
-[Upload sessions](#upload-sessions-r-stor-011) and the [blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) are built; the mount of `/v2/`, the remote and virtual classes, the mirror and the clients are not; the section
+[Upload sessions](#upload-sessions-r-stor-011) and the [blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) are built; and [the remote class](#the-remote-class-r-oci-021-to-r-oci-025) are built; the virtual class, the mirror and the clients are not; the section
 [What is built and what is not](#what-is-built-and-what-is-not) lists them.
 
 ## What has to be in your head first
@@ -38,6 +38,9 @@ The registry tokens and the token service ([Registry tokens and the token servic
 | [errors.go](../../internal/formats/oci/errors.go) | `WriteError`: the distribution specification's error list `{"errors":[{"code":…}]}` for every row of R-OCI-008; a conflict is `409 DENIED` |
 | [handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) | The pull of a manifest and the push by tag or by digest: the order of the checks, the tag decision (`commitTag`), the reference check (`checkReferences`), the validator translation |
 | [handlers_blob.go](../../internal/formats/oci/handlers_blob.go) | The pull of a blob of a name (local class) |
+| [remote.go](../../internal/formats/oci/remote.go) | The remote adapter: `UpstreamRequest` (namespace prefix, `Accept`), `UpstreamQuery`, `AcceptResponse`, `PrepareFill`, `OnFill`, `InspectFill`, `BeforeArtifact`, `Rewrite`; see [the remote class](#the-remote-class-r-oci-021-to-r-oci-025) |
+| [remote_auth.go](../../internal/formats/oci/remote_auth.go), [remote_revalidate.go](../../internal/formats/oci/remote_revalidate.go) | The `Authenticator` (challenge parser, scope from the request, token document) and the `Revalidator` (the `HEAD` and its digest) |
+| [remote_handlers.go](../../internal/formats/oci/remote_handlers.go) | What a client sees of a remote repository: manifests, blobs, the tags list window, referrers; the `library/` mapping |
 | [hooks.go](../../internal/formats/oci/hooks.go) | `OnCommit`: the package row, the claim, the version of a tag and the manifest rows, in the commit transaction |
 | [view.go](../../internal/formats/oci/view.go) | The package view adapter: tags newest push first, the platform table of an index, the withheld tags |
 | [handlers_upload.go](../../internal/formats/oci/handlers_upload.go) | The blob upload protocol over the host's session port: start, monolithic `POST`, `PATCH`, `PUT`, status, abort; `chunkStart` (the strict `Content-Range`), `outOfOrder` (the headers of a 416) |
@@ -308,7 +311,71 @@ target, a source of the wrong content, a withheld manifest digest, a bound host,
 (each its own blob store, spool and session service, requests pinned per replica) against PostgreSQL and S3:
 [oci_upload_test.go](../../test/integration/files/oci_upload_test.go) (`make test-integration`; the format is mounted at `/api/oci/` as in
 `oci_host_test.go` until `/v2/` is mounted).
+## The remote class (R-OCI-021 to R-OCI-025)
 
+The engine owns the request path, the freshness, the flights, the negative cache, the circuit, the handshake's I/O and the redirects; the format
+([remote.go](../../internal/formats/oci/remote.go) and its neighbours) answers four questions of it. The routes are the local class's: the four
+read handlers of WP4 hand a request addressed to a remote repository to `remoteManifestGet`, `remoteBlobGet`, `remoteTagsList` and `remoteReferrers`
+([remote_handlers.go](../../internal/formats/oci/remote_handlers.go)); a write answers 405 because the route is `Classes: local`.
+
+| Resource | Kind | Canonical path | Upstream request | Stored as |
+|---|---|---|---|---|
+| Manifest by tag | metadata (`Metadata`) | `<name>/_tags/<tag>` | `GET /v2/<prefix/name>/manifests/<tag>`, `Accept` the four manifest types | the cache entry, with the upstream's `Content-Type` in `media_type`, and the alias item `<name>/_manifests/<digest>` for the same blob |
+| Manifest by digest | content (`Artifact`) | `<name>/_manifests/<digest>` | the same URL with the digest | an item; verified against the digest of the path (`BeforeArtifact`) |
+| Blob | content (`Artifact`) | `<name>/_blobs/<digest>` | `GET /v2/<prefix/name>/blobs/<digest>`, redirects followed by the engine | an item; verified against the digest of the path |
+| Tags list | metadata | `<name>/_taglist` | `GET …/tags/list?n=10000` | the cache entry |
+| A window of the tags list beyond the stored one, referrers | pass-through (`Query`) | `<name>/tags/list`, `<name>/referrers/<digest>` | `UpstreamQuery` | the engine's per-replica answer cache, for the metadata period |
+
+- **The namespace prefix** is the path of `remote.url`: `registryURL` puts it between `/v2/` and the image name, and `scopeOf` names the prefixed
+  name in the token scope. The `library/` mapping is the handler's (`remoteName`): the name, the canonical path, the cache entry and the package are
+  `library/<n>`, so the adapter never sees the unmapped name.
+- **What a response is checked for.** `AcceptResponse` sees the headers and not the body, `PrepareFill` and `InspectFill` the body and not the
+  headers. Two checks need both: the digest a tag announces in `Docker-Content-Digest` is checked by a reader `AcceptResponse` puts around the
+  body (`digestBody`: the SHA-256 of what passed against the header, failing at the end of the body with `upstream_integrity_mismatch`, so nothing
+  is stored; the engine raises the integrity event and counter for it in `bodyFailure`; the verdict is given when the body ends, which the spool's reads reach,
+  `TestR_OCI_020_TheDigestOfATagIsCheckedWhicheverWayTheBodyIsRead`), and the cut of a tags list is recorded by a reader that adds the member
+  `x-trove-truncated` (`truncatedBody`), which makes the body longer than the length the upstream announced, so `AcceptResponse` sets `ContentLength` to -1 and
+  deletes the header (Q-OCI-126). A manifest is bounded before it is spooled (`boundedBody`, and the announced length). The media type of a
+  fetched manifest is the document's own `mediaType` member, and for a document without one an index when it has `manifests` and an image manifest
+  otherwise (`fetchedMediaType`). Schema 1 is refused by type in `AcceptResponse` and by `schemaVersion` in `readFetched`. Everything the parser
+  refuses is 502 with `MANIFEST_INVALID` in the detail.
+- **Where the rows come from.** A tag's manifest is parsed in `PrepareFill` (outside any transaction) and its rows are written by `OnFill`, unless the
+  stored entry was fetched later (R-REPO-026); the engine then enters the alias item and its artifact entry. A manifest fetched by digest is parsed
+  by `InspectFill` before it is stored and its rows are written by `OnCommit` (`remoteCommit` in [hooks.go](../../internal/formats/oci/hooks.go)),
+  from the inspection. Both raise the revision of the image name's package. The alias item commit carries no inspection and writes no row; removing it
+  removes the rows (`onCacheRemoved`, Q-OCI-34).
+- **The handshake.** `TokenRequest` reads the Bearer challenge's realm and service and builds `GET <realm>?service=…&scope=repository:<prefixed name>:pull`
+  from `orig` and the path (`registry:catalog:*` for the catalog); the key is `scope=<scope>`, to which the engine adds the repository, the
+  configuration version, the token service and the credential. A Basic challenge or none is `ok` false. `ReadToken` accepts `token` or
+  `access_token`, refuses a token above 16 KiB or with a character that is no header value, and returns `expires_in`.
+- **Revalidation.** `RevalidationRequest` clones the engine's `GET` into a `HEAD` (same URL and `Accept`) for a tag; `Unchanged` compares
+  `Docker-Content-Digest` with the stored digest (and the type, when the `HEAD` names one). The tags list is revalidated by the engine's conditional `GET`.
+- **The tags list.** `remoteTagsList` fills the page from a `tagSource`: the stored document's window after `last` (byte order, deduplicated, tags outside the
+  grammar dropped), decided in chunks with the listing-form check until `n` readable tags are found (the `Link` names the last tag listed, never a hidden one;
+  the scan budget is the local class's), and, when the stored list was cut, the upstream's pages after the last tag taken (`pass`, `n` 1,000, passed through as
+  queries). The upstream's `Link` does not reach the format, so the `Link` is trove's: set whenever the stored list was cut or a pass-through page was used,
+  and a page that is empty ends the list. When the upstream cannot be asked (`unreachable`: offline, the circuit open, a caller who may not fill) the stored
+  window answers; referrers answer 404 (Q-OCI-128).
+- **The upstream test** requests `/v2/` at the root of the host (Q-REPO-281); a `401` with a Bearer challenge reads as reachable with `authenticated: null`
+  (`catalog.Facts.ProbeChallengeReachable`, Q-REPO-280), unless `authMode` is `bearer`. `Register` refuses the fact without the class remote, a probe path and a
+  remote adapter that implements `Authenticator`.
+- **A stood `401`.** `StoodMissing` (the optional `formats.StoodChallengeReader` of the `Authenticator`) reads a Bearer challenge with
+  `error="insufficient_scope"` as a missing image: the engine answers it as a 404 with a negative entry and keeps the remembered challenge (Q-OCI-127).
+- **Docker Hub.** The default extra host is `auth.docker.io` (a credential host). The blob host Docker Hub answered with on 2026-11-08
+  (`production.cloudfront.docker.com`) is not listed: `extraHosts` do not gate redirects (Q-OCI-125). `libraryName` maps only a URL without a namespace prefix, and
+  `gateRemote` allows every read on both spellings (`Authorize` on the typed one, `PathsAllowed` on the other, `bothAllow` for the entries of a list) and `SourceSpellings` gives a mount's source the other one (Q-OCI-129).
+
+Tests: [remote_test.go](../../internal/formats/oci/remote_test.go) (the adapter and the handlers over the kit's in-memory engine) and
+[test/integration/ociremote](../../test/integration/ociremote) (the whole application against the stub registry, below).
+
+### Testing the remote class through the application
+
+[env_test.go](../../test/integration/ociremote/env_test.go) sends its requests to `/v2/<project>/<key>/` of a running replica with the registry token the token
+service issues to the trove token for the scope of the image (`registryToken`, cached for a minute), as a container client does, so the enforcement point and the grant
+check are in the path. Everything is the application's: the engine, the egress rules, the storage hooks, the data port,
+the repository validation. The stub runs in the test process on TLS; `Running.DialOverride()` reaches its three names (`registry.localhost`,
+`auth.localhost`, `cdn.localhost`) and a second stub answers as Docker Hub's three (`registry-1.docker.io`, `auth.docker.io`,
+`production.cloudfront.docker.com`), so no name is resolved. 
 ## Configuration
 
 | Key | Default | Rule |
@@ -378,6 +445,8 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [handlers_manifest_test.go](../../internal/formats/oci/handlers_manifest_test.go) with the in-memory twin [twin_test.go](../../internal/formats/oci/twin_test.go) | Pulls, pushes, refusals, tag moves, concurrent pushes, the failed transaction, the first-version check, the view, through the kit's in-memory host |
 | [store_test.go](../../test/integration/oci/store_test.go) | The data port's statements against PostgreSQL: rows, references, `FOR SHARE`, the annotation bound against the column, the view reads |
 | [oci_upload_test.go](../../test/integration/files/oci_upload_test.go), [handlers_upload_test.go](../../internal/formats/oci/handlers_upload_test.go) | The upload protocol and the mount: see [Blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) |
+| `TestR_OCI_02[1-5]_…` ([remote_test.go](../../internal/formats/oci/remote_test.go)) | The upstream request per kind and prefix, the four `Accept` types, the `HEAD` derived from the `GET`, schema 1 by type and by content, the announced digest against the bytes, the alias of a tag, the inspection of a manifest by digest, the token request (scope from the request, realm and service from the challenge, Basic is no handshake, a bad realm), the token document, the cut tags list, the tags list windows and the pass-through, referrers with the filter and 404 |
+| `TestR_OCI_02[1-5]_…` ([test/integration/ociremote](../../test/integration/ociremote)) | Against the stack and the stub: the credential only to the realm of a credential host and the token only to the registry, a foreign realm refused, one challenged request per replica, tokens reused and not shared, one manifest `GET` per tag, `HEAD` revalidation and a moved tag, the digest of a fetched tag without a request, a wrong digest, schema 1, a missing tag, a multi-platform pull with each layer once and nothing sent to the CDN, tags list windows, referrers, `library/`, the quota answer, the upstream test |
 | [oci_host_test.go](../../test/integration/files/oci_host_test.go) | The routes on the production host (real dispatcher, item store, hooks, S3), mounted at `/api/oci/` through a wrapper because `/v2/` is not mounted yet |
 | `TestR_OCI_015_…`, `TestR_OCI_016_…`, `TestR_OCI_018_…`, `TestR_OCI_030_…` ([handlers_lists_test.go](../../internal/formats/oci/handlers_lists_test.go), [handlers_delete_test.go](../../internal/formats/oci/handlers_delete_test.go), [hooks_remove_test.go](../../internal/formats/oci/hooks_remove_test.go), [setup_test.go](../../internal/formats/oci/setup_test.go)) | The lists, the deletion routes, the cascade and the refusals of the hook against an in-memory twin of the data port ([store_twin_test.go](../../internal/formats/oci/store_twin_test.go)), and the setup snippets |
 | [test/integration/ocilocal](../../test/integration/ocilocal) | Against the stack: 2,500 tags in pages, the referrers, a raw delete of an index through a running replica (cascade, events, journal entries), the sweep (grace, sessions, the lock against a push, the job on a worker), the replay and the reinstate. The registry routes are not mounted yet, so the state is what a push leaves: items committed through the item store and the rows by SQL |
@@ -417,7 +486,9 @@ Built by the registry root's work package: the mount of `/v2/` (one pattern, the
 table's checks), the version check, the catalog over the data port's `CatalogNames`, the bound host and the 404 shapes (R-OCI-001 mount,
 R-OCI-003, R-OCI-017, R-OCI-029).
 
-Not built here (each is a work package of T-16): the remote and virtual classes and the mirror, the package screens' remaining parts.
+Built (WP8): the remote class (R-OCI-021 to R-OCI-025): the adapter, the handshake, the revalidation, the pass-through of the tags list window and of referrers.
+
+Not built here (each is a work package of T-16): the virtual class and the mirror, the package screens' remaining parts.
 
 ## The counting stub registry
 
