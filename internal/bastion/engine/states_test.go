@@ -709,3 +709,34 @@ func TestR_BAS_019_AnAnonymousRequestBeforeTheFirstHandshakeIs503(t *testing.T) 
 		t.Fatalf("anonymous access off after the handshake: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestR_BAS_040_AFreshAndAReplayedProbeAnswerRaiseTheSameReadOnlyCounter(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   float64
+	}{
+		{name: "403 is a refusal of a write", status: 403, want: 1},
+		{name: "404 is the main installation's own answer", status: 404, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSiteHarness(t, options{})
+			s.site.probe = func(mainclient.Forward) (*mainclient.Response, error) {
+				return resp(tc.status, marking(iface.ClassPass, "", "", iface.Subject{Kind: iface.SubjectAnonymous}), nil, `{"code":"x"}`), nil
+			}
+			const path = "/api/npm/web/npm-all/x"
+			// The fresh answer, then the replay of the kept answer: each raises the counter by tc.want.
+			for i, calls := range []float64{1, 2} {
+				if w := s.do(http.MethodPut, path, nil); w.Code != tc.status {
+					t.Fatalf("call %d: %d", i, w.Code)
+				}
+				if got := counterValue(t, s.harness, "refused", metrics.RefusedReadOnly); got != tc.want*calls {
+					t.Fatalf("after call %d (%s): refused read_only %v, want %v", i, map[int]string{0: "fresh", 1: "replayed"}[i], got, tc.want*calls)
+				}
+			}
+			if s.main.count() != 1 {
+				t.Fatalf("%d probes, want 1: the second answer must be a replay", s.main.count())
+			}
+		})
+	}
+}

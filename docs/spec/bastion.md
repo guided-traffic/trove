@@ -1725,6 +1725,10 @@ carries an address, a token, a path or a repository's name):
 | `trove_bastion_audit_buffer_events` | gauge | — |
 | `trove_bastion_audit_events_dropped_total` | counter | — |
 
+- `trove_bastion_refused_total` counts requests the Bastion refused itself. `reason="read_only"` counts a write refused with `403
+  bastion_read_only` (R-BAS-014), whether the probe answered it or the kept answer replayed it, and a body above
+  `bastion.main.max_forwarded_body`; a `404` that the main installation answers to a probe (a path with no route) is its own answer,
+  relayed, and raises no counter either fresh or replayed ([Q-BAS-147](#q-bas-147--only-a-403-bastion_read_only-counts-as-a-read_only-refusal-fresh-or-replayed)).
 - The cache hit rate is `trove_bastion_requests_total{result="hit"}` over all; bytes served from the cache are
   `trove_bastion_bytes_served_total{source="cache"}`; requests to the main installation are
   `trove_bastion_main_requests_total` (the observability item of phase 5b).
@@ -5339,6 +5343,26 @@ remote member served (R-REPO-048's exposure set), which is the only case with a 
 **Rationale:** these changes alter which bytes answer a URL, not who may read a repository, which is what `content` drops. The
 development agent would revisit this if a `content` entry could name every virtual repository of a format.
 **Applied in the spec:** R-BAS-015 table; code: `internal/bastionmain/feed.go`.
+
+### Q-BAS-147 · Only a 403 `bastion_read_only` counts as a `read_only` refusal, fresh or replayed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the Bastion keeps a `403` or `404` probe answer of a write (R-BAS-014). The probe that first saw the answer counted only a
+`403` in `trove_bastion_refused_total{reason="read_only"}`; the replay from the kept answer counted every kept answer, so one `404`
+raised the counter when replayed and not when fresh (F-104). The metric's definition (R-BAS-040) did not say whether a `404` counts.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only a `403` counts, fresh and replayed (chosen) | The counter says "the Bastion refused a write"; a `404` is the main installation's answer for a path with no route | Matches the metric's help text ("requests the Bastion refused itself") and the name `read_only`; a `404` is no refusal of a write | A write to a path with no route is visible only in `trove_bastion_requests_total{class="pass"}` |
+| (b) Both `403` and `404` count, fresh and replayed | Every kept probe answer is a refusal | One rule, no branch | A `404` is not read-only-ness; the counter would rise for a typo in a URL and alert on a client's mistake |
+
+**Choice:** (a). The deny reason of the request log follows the counter: set for the `403` only.
+
+**Rationale:** `read_only` names the cause of a refusal, and the cause of a `404` is a missing route. The development agent would revisit
+this if an operator needs the number of writes to unrouted paths; it would be a reason of its own, not a widening of `read_only`.
+
+**Applied in the spec:** R-BAS-040; code: `engine.countReadOnly`, `TestR_BAS_040_AFreshAndAReplayedProbeAnswerRaiseTheSameReadOnlyCounter`.
 
 ## What this does not cover
 

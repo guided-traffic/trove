@@ -70,10 +70,7 @@ func (e *engine) write(q *rq) {
 	case pr.cached:
 		e.replayRefusal(q, *pr.ref)
 	case pr.ref != nil:
-		q.reason = metrics.RefusedReadOnly
-		if pr.ref.Status == http.StatusForbidden {
-			e.d.Metrics.Refused.WithLabelValues(metrics.RefusedReadOnly).Inc()
-		}
+		e.countReadOnly(q, pr.ref)
 		q.finish(metrics.ClassPass, metrics.ResultMiss)
 		e.writeRefusal(q, pr.ref, metrics.SourceMain)
 	case pr.withBody:
@@ -100,10 +97,20 @@ func (e *engine) replayProbe(q *rq, key string) bool {
 
 // replayRefusal replays a kept refusal of a write without a request to the main installation.
 func (e *engine) replayRefusal(q *rq, ref refusal) {
-	q.reason = metrics.RefusedReadOnly
-	e.d.Metrics.Refused.WithLabelValues(metrics.RefusedReadOnly).Inc()
+	e.countReadOnly(q, &ref)
 	q.finish(metrics.ClassPass, metrics.ResultHit)
 	e.writeRefusal(q, &ref, metrics.SourceCache)
+}
+
+// countReadOnly counts a probe answer, fresh or replayed, in trove_bastion_refused_total{reason="read_only"} and sets
+// the deny reason of the request log when it is the main installation's 403 bastion_read_only. Any other kept
+// answer (the 404 of a path with no route) is the main installation's own and no refusal of the Bastion
+// (R-BAS-040, Q-BAS-147).
+func (e *engine) countReadOnly(q *rq, ref *refusal) {
+	if ref.Status == http.StatusForbidden {
+		q.reason = metrics.RefusedReadOnly
+		e.d.Metrics.Refused.WithLabelValues(metrics.RefusedReadOnly).Inc()
+	}
 }
 
 // probe sends the bodiless probe and keeps a 403 or 404 answer (R-BAS-014).
