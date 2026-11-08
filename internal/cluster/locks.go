@@ -44,13 +44,17 @@ const (
 	// ConfigBastionRegistrations serialises the creation of Bastion registrations, so that two creates on
 	// different replicas cannot both pass bastions.max_registrations (R-BAS-004).
 	ConfigBastionRegistrations int32 = 4
+	// ConfigAutoClaims serialises the automatic name claims of first publishes into repositories that are members of a
+	// virtual repository, so that two publishes of one name into two members cannot both pass the check that no other
+	// member's claim covers it (R-REPO-023).
+	ConfigAutoClaims int32 = 5
 )
 
 // LockConfigObject takes the transaction-scoped configuration lock of an
 // object type as the first statement of a configuration transaction. It ends
 // with the transaction and works through a transaction-mode pooler.
 func LockConfigObject(ctx context.Context, tx meta.Tx, object int32) error {
-	if object != ConfigVirtualMembership && object != ConfigDocuments && object != ConfigProjects && object != ConfigBastionRegistrations {
+	if object != ConfigVirtualMembership && object != ConfigDocuments && object != ConfigProjects && object != ConfigBastionRegistrations && object != ConfigAutoClaims {
 		return fmt.Errorf("cluster: %d is not a registered configuration lock object", object)
 	}
 	ptx, ok := postgres.Unwrap(tx)

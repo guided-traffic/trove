@@ -1343,6 +1343,12 @@ patterns.
   claims in a shared virtual repository. Taking a name over on purpose is a manual claim, which
   needs `manage` and is reported as `claim_overlaps`. A manual claim of a pattern that an automatic claim of the same
   repository holds turns that claim into a manual one.
+- The decision of an auto claim is serialised: it takes the configuration lock of the auto claims
+  (`pg_advisory_xact_lock(4, 5)`, R-ARCH-017) when the repository is a member of a virtual repository, then the row of the
+  repository (`FOR NO KEY UPDATE`), and it reads the claims after both. Two first publishes of one name into two members of one
+  virtual repository therefore create one claim (the second records `autoClaim: skipped`), and two first publishes into one
+  repository cannot pass the limit of 1000 ([Q-REPO-285](#q-repo-285--the-decision-of-an-auto-claim-takes-the-auto-claim-configuration-lock-for-a-virtual-member-and-the-row-of-the-repository)).
+  Both locks end with the publish's transaction, so a publish that rolls back leaves no claim and no lock.
 - Claims for names that do not exist yet are created explicitly; this reserves a scope or prefix
   before its first publish.
 - **Claim scope.** Every claim has a scope. `members` (the default, and the only scope an auto
@@ -7801,6 +7807,40 @@ it for an upstream that sends a list.
 
 **Applied in the spec:** R-REPO-054, [formats/oci.md](formats/oci.md) R-OCI-025. Code: `upstream.QuotaRemaining` in
 [ratelimit.go](../../internal/proxy/upstream/ratelimit.go). Test: `TestR_REPO_054_QuotaHeaderParse`.
+
+### Q-REPO-285 · The decision of an auto claim takes the auto-claim configuration lock for a virtual member, and the row of the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Routing.AutoClaim` read the claims, decided on "another repository's claim covers the name" and on the limit of 1000, and
+inserted, without a lock. Two first publishes of one name into two members of one virtual repository touch different rows, so both
+passed the check and both inserted the exact claim (the claim of one repository would then be in effect against the other's). Two
+first publishes of different names into one repository one claim below the limit both passed the count. A unique constraint cannot
+express the first rule (the claims of two repositories that share no virtual repository may name the same name), and the count is no
+constraint either.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The configuration lock `(4, 5)` for a repository that is a virtual member, then the repository row `FOR NO KEY UPDATE` (chosen) | Both end with the publish's transaction; the claims are read after both | Fits the lock categories of R-ARCH-017 (no hashed key); a repository outside every virtual repository takes no global lock; the row lock also orders the count; one fixed order | The first publishes of virtual members run their decision one after the other for the rest of their transaction, across all formats |
+| (b) A row lock on every virtual repository containing the repository | The shared virtual repository orders the two publishes | Narrower than a global lock | The delete of a repository locks its row before the virtual repositories and a virtual repository's write locks itself before its members: no order of the two row locks fits both, and either one deadlocks with one of them |
+| (c) An advisory lock keyed by a hash of the name | One lock per name | Only publishes of one name wait | R-ARCH-017 forbids a hashed second key, and the count of the limit is not covered |
+| (d) Check again after the insert and delete the second claim | No lock | None | A claim visible for a moment can already have been honoured by the routing of another replica, and a delete is a second write the journal records |
+
+**Choice:** (a).
+
+**Rationale:** (a) is the only option that decides on committed claims without a lock order that a delete or a virtual write can
+reverse: the configuration lock comes first, the row second, and no other writer takes either after a row it holds in the other order
+(the rows a publish holds before, its package and the foreign keys of the repository, conflict with neither lock; `FOR UPDATE` on the
+repository would deadlock two publishers that both hold the foreign keys, hence `FOR NO KEY UPDATE`, which the claims-version update
+needs anyway). The cost is bounded: only a first publish of a name into a virtual member takes the global lock, and it holds it for
+the rest of its transaction. The development agent would revisit it when first publishes into virtual members are frequent enough
+for that wait to show in the publish latency; the narrower key would then be a registered object type per virtual repository.
+
+**Applied in the spec:** R-REPO-023 (the serialisation bullet), R-ARCH-017 (the `config` category lists object type 5). Code:
+`lockAutoClaim` in [routing.go](../../internal/repository/routing.go), `ConfigAutoClaims` in
+[locks.go](../../internal/cluster/locks.go), queries `RepositoryIsMember` and `LockRepositoryForAutoClaim`
+([claims.sql](../../internal/meta/postgres/queries/claims.sql)). Tests: `TestAutoClaimConcurrentPublishes`
+(`test/integration/repository`).
 
 ## What this does not cover
 

@@ -249,12 +249,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   the token's revocation per batch and fails permanently when they are withdrawn, with a test for each.
 
 
-- **F-101 · Two first publishes can both take an automatic name claim** (read by the review of F-100, not reproduced).
-  `Routing.AutoClaim` (`internal/repository/routing.go`) reads the claims and then inserts without a lock: two first
-  pushes of one name into two local repositories can both pass the "another claim covers it" check and both insert an
-  exact claim, and two first publishes of different names in one repository can exceed `MaxClaims` by one. Neither test
-  tier exercises the real automatic claim (the unit host fakes it, the files fixture stubs it). Done when the check and
-  the insert are serialised and a test with two concurrent first publishes proves one claim.
 
 - **F-104 · The Bastion counts a replayed 404 as refused but a fresh one not** (read by the review of F-102). A kept 404
   answer replayed from the probe cache raises `trove_bastion_refused_total{reason="read_only"}`, while the probe path that

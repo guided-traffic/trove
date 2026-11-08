@@ -475,8 +475,10 @@ const (
 // per name and repository, never for a later version: a name that is claimed
 // already changes nothing. The deploy's audit event records the result.
 //
-// The reads run in tx, so the decision is made on committed claims and a
-// concurrent first publish of the same name inserts one claim, not two.
+// The decision is serialised by lockAutoClaim (Q-REPO-285) and its reads run in
+// tx, so it is made on the claims the earlier publishes committed: two first
+// publishes of one name into two members of a virtual repository insert one claim,
+// and a repository does not pass MaxClaims. A rolled-back publish leaves no claim.
 func (rt *Routing) AutoClaim(ctx context.Context, tx meta.Tx, local Repository, name string, by Caller) (AutoClaimResult, error) {
 	info, ok := rt.cat.Lookup(local.Format)
 	if !ok || local.Class != Local || !info.PinsAndClaims || !info.PackageNames || !local.autoClaim {
@@ -488,6 +490,9 @@ func (rt *Routing) AutoClaim(ctx context.Context, tx meta.Tx, local Repository, 
 	}
 	qs, err := queries(tx)
 	if err != nil {
+		return AutoClaimResult{}, err
+	}
+	if err := lockAutoClaim(ctx, tx, qs, local.rid); err != nil {
 		return AutoClaimResult{}, err
 	}
 	own, err := qs.ListRepositoryClaims(ctx, local.rid)
@@ -524,6 +529,27 @@ func (rt *Routing) AutoClaim(ctx context.Context, tx meta.Tx, local Repository, 
 		return AutoClaimResult{}, err
 	}
 	return AutoClaimResult{Created: true, Pattern: pat}, nil
+}
+
+// lockAutoClaim serialises the decision of an auto claim with the others that could change its outcome, until the
+// transaction ends (Q-REPO-285). Two locks, always taken in this order: the configuration lock of the auto claims, only
+// for a repository that is a member of a virtual repository (a claim of another repository is in effect together with
+// this one's only through a virtual repository, so a repository outside every virtual repository takes no global lock),
+// and the row of the repository, which orders the claim count against MaxClaims. A publish holds no other claim lock, so
+// the order cannot be reversed; the rows the publish holds before (its package, the foreign keys of the repository) do
+// not conflict with either lock. The decision then reads the claims committed by the publishes that held the locks first.
+func lockAutoClaim(ctx context.Context, tx meta.Tx, qs *q.Queries, rid int64) error {
+	member, err := qs.RepositoryIsMember(ctx, rid)
+	if err != nil {
+		return err
+	}
+	if member {
+		if err := cluster.LockConfigObject(ctx, tx, cluster.ConfigAutoClaims); err != nil {
+			return err
+		}
+	}
+	_, err = qs.LockRepositoryForAutoClaim(ctx, rid)
+	return err
 }
 
 // ownClaimCovers reports whether a claim of the repository itself covers the name: the first of the two checks of the auto

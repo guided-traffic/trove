@@ -244,6 +244,35 @@ func (q *Queries) ListRepositoryClaims(ctx context.Context, repoID int64) ([]Lis
 	return items, nil
 }
 
+const lockRepositoryForAutoClaim = `-- name: LockRepositoryForAutoClaim :one
+SELECT id FROM repositories WHERE id = $1::bigint FOR NO KEY UPDATE
+`
+
+// The row lock of the claim count: two auto claims of one repository decide one after the
+// other, so the repository cannot pass MaxClaims. FOR NO KEY UPDATE conflicts with itself and
+// with the claims_version update that follows, and not with the FOR KEY SHARE of the foreign
+// keys that every publish of the repository holds already (FOR UPDATE would deadlock two
+// publishers that both hold them).
+func (q *Queries) LockRepositoryForAutoClaim(ctx context.Context, repoID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, lockRepositoryForAutoClaim, repoID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const repositoryIsMember = `-- name: RepositoryIsMember :one
+SELECT EXISTS (SELECT 1 FROM virtual_members WHERE member_id = $1::bigint) AS is_member
+`
+
+// Whether any virtual repository lists the repository as a member: only then can another
+// repository's claim be in effect together with its own (R-REPO-023).
+func (q *Queries) RepositoryIsMember(ctx context.Context, repoID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, repositoryIsMember, repoID)
+	var is_member bool
+	err := row.Scan(&is_member)
+	return is_member, err
+}
+
 const upsertManualClaim = `-- name: UpsertManualClaim :exec
 INSERT INTO namespace_claims (repo_id, pattern, source, scope, created_by)
 VALUES ($1::bigint, $2::text, 'manual', $3::text,

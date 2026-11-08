@@ -51,6 +51,19 @@ ON CONFLICT (repo_id, pattern) DO UPDATE
    SET source = 'manual', scope = EXCLUDED.scope, created_by = EXCLUDED.created_by, created_at = now()
  WHERE namespace_claims.source <> 'manual' OR namespace_claims.scope <> EXCLUDED.scope;
 
+-- name: RepositoryIsMember :one
+-- Whether any virtual repository lists the repository as a member: only then can another
+-- repository's claim be in effect together with its own (R-REPO-023).
+SELECT EXISTS (SELECT 1 FROM virtual_members WHERE member_id = sqlc.arg(repo_id)::bigint) AS is_member;
+
+-- name: LockRepositoryForAutoClaim :one
+-- The row lock of the claim count: two auto claims of one repository decide one after the
+-- other, so the repository cannot pass MaxClaims. FOR NO KEY UPDATE conflicts with itself and
+-- with the claims_version update that follows, and not with the FOR KEY SHARE of the foreign
+-- keys that every publish of the repository holds already (FOR UPDATE would deadlock two
+-- publishers that both hold them).
+SELECT id FROM repositories WHERE id = sqlc.arg(repo_id)::bigint FOR NO KEY UPDATE;
+
 -- name: InsertAutoClaim :execrows
 -- The auto claim of a first publish: an existing claim of the pattern stays
 -- as it is, so a second publish of the name changes nothing.
