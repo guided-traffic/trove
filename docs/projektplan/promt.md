@@ -259,10 +259,11 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   first byte took three, both saw `context canceled`; with the default 60 s, a commit or an upstream fetch longer than a
   minute is cancelled. Not yet verified: whether the commit paths abort on it. Done when quiet server work is never cut by
   the stall timeout, with a test on the real server.
-- **F-92 · Deleting a whole OCI name answered 500 under load** (seen once). `TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval`
-  (`test/integration/ocilocal`) got a 500 while a race-detector build loaded the host, and passed when the area ran alone.
-  An internal error is a product answer, not a test's timing. Done when the cause is found and fixed with a test that fails
-  before.
+- **F-92 · Deleting a whole OCI name answered 500 under load** (confirmed: a consequence of F-91).
+  `TestR_OCI_018_ADeleteOfAWholeNameBeyondOneEventIsOneRemoval` (`test/integration/ocilocal`) deletes 5,004 files with a
+  body-less `DELETE`; under CPU load the request ran past the 60 s stall timeout, its context was cancelled and the next
+  statement failed (`audit: insert artifact.deleted: context canceled`, 500 at 60.0 s in 6 of 6 failing runs); with the
+  F-91 change the same runs pass at 131 to 201 s. Closes with F-91; the test is its regression check under load.
 
 ### Tests and tools
 
