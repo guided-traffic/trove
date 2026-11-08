@@ -16,23 +16,29 @@ import (
 	"time"
 )
 
-// statusWriter remembers the status an answer was given.
+// statusWriter remembers the status an answer was given and reports it to the counters at that moment: the answer is not on the wire
+// before the handler has set its status or written its first byte, and a test that reads the counters when its client has the
+// answer must find the status counted. Reporting it when the handler returns would race with the client.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	note   func(status int)
+}
+
+func (w *statusWriter) set(code int) {
+	if w.status == 0 {
+		w.status = code
+		w.note(code)
+	}
 }
 
 func (w *statusWriter) WriteHeader(code int) {
-	if w.status == 0 {
-		w.status = code
-	}
+	w.set(code)
 	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w *statusWriter) Write(b []byte) (int, error) {
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
+	w.set(http.StatusOK)
 	return w.ResponseWriter.Write(b)
 }
 
@@ -46,8 +52,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	rt := parseRoute(r.URL.Path)
 	key, mode := s.record(r, rt)
-	sw := &statusWriter{ResponseWriter: w}
-	defer s.noteStatus(key, sw)
+	sw := &statusWriter{ResponseWriter: w, note: func(status int) { s.noteStatus(key, status) }}
+	defer func() {
+		if sw.status == 0 {
+			sw.note(0) // cut before any answer
+		}
+	}()
 	defer s.fl.enter()()
 	s.cfg.Logger.Info("request", "method", r.Method, "host", r.Host, "path", r.URL.EscapedPath(), "query", r.URL.RawQuery,
 		"auth", authScheme(r.Header.Get("Authorization")))
@@ -88,12 +98,12 @@ func (s *Server) record(r *http.Request, rt route) (countKey, Mode) {
 	return key, s.mode
 }
 
-// noteStatus adds the status an answer ended with to its counter; an answer that was cut counts as 0.
-func (s *Server) noteStatus(key countKey, w *statusWriter) {
+// noteStatus adds an answer's status to its counter; an answer that was cut counts as 0.
+func (s *Server) noteStatus(key countKey, status int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if e := s.counts[key]; e != nil {
-		e.Statuses[strconv.Itoa(w.status)]++
+		e.Statuses[strconv.Itoa(status)]++
 	}
 }
 
