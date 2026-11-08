@@ -277,6 +277,9 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 - **F-95 · One Angular unit test failed once in 1,080, its name not recorded** (seen once, by the F-86 builder on a loaded
   host; the second run and the reviewer's run passed all 1,080). Done when the failing test is identified and its cause
   fixed; until then a recurrence is reported with the test's name and output.
+- **F-96 · The registry's anonymous test failed once after 85 s, its message not captured** (seen once, by the WP3
+  builder on a loaded host; 10 of 10 later runs passed). The settings wait it was suspected of takes under 1 ms; the test now
+  logs that wait and fails with the replica's last answer. Done when a recurrence names its cause and that cause is fixed.
 - **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
   found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
   clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
