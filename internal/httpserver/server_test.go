@@ -462,6 +462,36 @@ func TestStallTimeout(t *testing.T) {
 			t.Fatalf("body = %q, want %q", body, want)
 		}
 		c := <-conns
+		// The client has the whole response, but net/http clears the write deadline after the
+		// response is out, which can happen after the client's last read: wait until the
+		// connection has recorded a deadline armed after the last response chunk and a clear
+		// after it, instead of reading the records at once.
+		cleared := func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if len(writes) == 0 {
+				return false
+			}
+			floor, armed := writes[len(writes)-1].after.Add(stall), false
+			for _, d := range c.writes {
+				switch {
+				case d.IsZero() && armed:
+					return true
+				case !d.IsZero() && !d.Before(floor):
+					armed = true
+				}
+			}
+			return false
+		}
+		for wait := time.After(30 * time.Second); !cleared(); {
+			select {
+			case <-c.changed:
+			case <-wait:
+				t.Fatal("net/http never cleared the write deadline after the deadline armed for the final flush")
+			}
+		}
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		mu.Lock()
@@ -509,6 +539,7 @@ type recConn struct {
 	net.Conn
 	mu            sync.Mutex
 	reads, writes []time.Time
+	changed       chan struct{} // signalled after a write deadline was recorded
 }
 
 func (c *recConn) SetReadDeadline(t time.Time) error {
@@ -522,6 +553,10 @@ func (c *recConn) SetWriteDeadline(t time.Time) error {
 	c.mu.Lock()
 	c.writes = append(c.writes, t)
 	c.mu.Unlock()
+	select {
+	case c.changed <- struct{}{}:
+	default:
+	}
 	return c.Conn.SetWriteDeadline(t)
 }
 
@@ -536,7 +571,7 @@ func (l *recListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	rc := &recConn{Conn: c}
+	rc := &recConn{Conn: c, changed: make(chan struct{}, 1)}
 	l.conns <- rc
 	return rc, nil
 }

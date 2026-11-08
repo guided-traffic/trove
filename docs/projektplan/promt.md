@@ -263,10 +263,6 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
 
 ### Tests and tools
 
-- **F-107 · The real-socket case of `TestStallTimeout` reads the deadlines before net/http has cleared them** (CI, Test and
-  Release 42510193386, unit tests on a 32-core runner). The case added by F-91 asserts the connection's last write deadline
-  as soon as the client has the response; net/http clears it after the request ends, which a fast host can do after the
-  read. Done when the case waits for the end of the request deterministically and holds on many cores.
 - **F-106 · `TestR_OPS_014_RegistryRules` panics when run more than once** (seen by the F-103 builder). `go test -count=3
   ./internal/audit/` panics with "registered twice": the test's registrations survive between runs. Done when repeated
   runs pass.
