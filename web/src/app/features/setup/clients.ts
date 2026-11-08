@@ -10,7 +10,8 @@ export interface ClientChoice {
  * The clients per format (R-UI-016, R-UI-009). The server owns the snippets and rejects a client
  * it does not know; this table only decides what the pickers offer. A format without an entry has
  * no setup screen yet and is not offered. NuGet offers the .NET CLI, nuget.exe
- * and Visual Studio (R-UI-018, Q-UI-93).
+ * and Visual Studio (R-UI-018, Q-UI-93). OCI offers the Docker CLI and Podman (R-OCI-030); a Kubernetes cluster
+ * signs in with the image pull secret of the Docker CLI's configure section.
  */
 export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> = {
   generic: [{ id: 'curl', label: 'curl' }],
@@ -24,6 +25,10 @@ export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> =
     { id: 'dotnet', label: '.NET CLI (dotnet)' },
     { id: 'nuget', label: 'NuGet CLI (nuget.exe)' },
     { id: 'visual-studio', label: 'Visual Studio' },
+  ],
+  oci: [
+    { id: 'docker', label: 'Docker CLI (with Buildx)' },
+    { id: 'podman', label: 'Podman' },
   ],
 };
 
@@ -45,6 +50,8 @@ export function snippetExplanation(id: string): string | null {
     case 'pnpm.configure.npmrc-scoped':
     case 'yarn-classic.configure.npmrc-scoped':
       return $localize`:@@setup.snippet.npmrc-scoped:Use this variant to take only the packages of one scope from this repository. All other packages still come from npm's default registry.`;
+    case 'yarn.configure.yarnrc-scoped':
+      return $localize`:@@setup.snippet.yarnrc-scoped:Add this to .yarnrc.yml to take only the packages of one scope from this repository. All other packages still come from npm's default registry.`;
     case 'npm.configure.cli':
       return $localize`:@@setup.snippet.npm-cli:Writes the same settings into your user configuration file ~/.npmrc. Your shell fills in the token, so it is stored in that file.`;
     case 'yarn.configure.yarnrc':
@@ -91,6 +98,19 @@ export function snippetExplanation(id: string): string | null {
       return $localize`:@@setup.snippet.curl-install:Downloads a file of this repository with trove_curl. Replace <path> with the path of the file in the repository.`;
     case 'curl.publish':
       return $localize`:@@setup.snippet.curl-publish:Uploads a file to the path you give. Replacing a file with other bytes also needs the overwrite permission.`;
+    case 'docker.configure.shell':
+    case 'podman.configure.shell':
+      return $localize`:@@setup.snippet.oci-login:Signs the client in to this repository. A token is read from standard input, so it appears neither in the process list nor in the shell history; without a token the client asks for the password. The images of this repository begin with the address in the login.`;
+    case 'docker.configure.kubernetes':
+      return $localize`:@@setup.snippet.oci-pull-secret:For a Kubernetes cluster: creates an image pull secret that holds the token. A snippet without a token is only a comment, because a secret needs a credential. Name the secret under imagePullSecrets of the pods that pull images of this repository.`;
+    case 'docker.install':
+    case 'podman.install':
+      return $localize`:@@setup.snippet.oci-pull:Pulls an image of this repository by its tag. Replace <package> with the image name. Use the digest instead of the tag to pull exactly these bytes.`;
+    case 'docker.publish':
+    case 'podman.publish':
+      return $localize`:@@setup.snippet.oci-push:Names a local image below this repository and pushes it to the repository that receives uploads.`;
+    case 'docker.publish.buildx':
+      return $localize`:@@setup.snippet.oci-buildx:Builds the image for two platforms from the Dockerfile in the current directory and pushes the result as one multi-platform image.`;
     default:
       return null;
   }

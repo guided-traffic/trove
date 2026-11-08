@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { PackagesApi } from '../../api/packages-api';
-import { FakePackagesApi } from '../../api/testing/fakes-packages';
+import { FakePackagesApi, ociFixture } from '../../api/testing/fakes-packages';
 import { expectAccessible, inProject, renderScreen, settle, text } from '../../testing/screen';
 import { PackageDetail } from './package-detail';
 import { PackageMemory } from './package-memory';
@@ -288,6 +288,142 @@ describe('Package details', () => {
         for (const v of fake.versionList) if (v.format === 'nuget') v.metadata = {};
       });
       expect(text(bare.root)).toContain('This version declares no further metadata.');
+    });
+  });
+
+  describe('OCI', () => {
+    const image = (inputs: Record<string, unknown> = {}, setup?: (fake: FakePackagesApi) => void) =>
+      open(
+        { format: 'oci', name: 'team/app', ...inputs },
+        (fake) => {
+          ociFixture(fake);
+          setup?.(fake);
+        },
+        'team/app',
+      );
+    const cells = (r: Opened) =>
+      [...r.root.querySelectorAll('.pkg-tabs table tbody tr')].map((tr) => [...tr.children].map((c) => text(c)));
+    const pairs = (r: Opened) =>
+      [...r.root.querySelectorAll('.pkg-tabs dl.facts')].flatMap((dl) =>
+        [...dl.querySelectorAll('dt')].map((dt) => `${text(dt)} ${text(dt.nextElementSibling!)}`),
+      );
+    const copyButtons = (r: Opened) => [...r.root.querySelectorAll<HTMLButtonElement>('.pkg-tabs trove-copy-button button')];
+    const nameOf = (b: HTMLElement) => b.getAttribute('aria-label') ?? text(b);
+
+    it('R-UI-007 R-OCI-031 the image is a package, the tags are its versions, and the header shows the container glyph', async () => {
+      const r = await image({ version: '1.2.0' });
+      expect(text(r.root.querySelector('h1')!)).toBe('team/app');
+      expect(versionInput(r).value).toBe('1.2.0');
+      expect(options(r)).toEqual(expect.arrayContaining(['1.1.0', '1.2.0']));
+      expect(text(r.root.querySelector('.type-badge')!)).toContain('view_in_ar');
+      expect(text(r.root.querySelector('.type-badge')!)).toContain('oci');
+      expect(r.root.querySelector('.chips')?.textContent).toContain('oci-local');
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-007 R-OCI-031 the Files tab lists the tag item, whose checksum is the manifest digest', async () => {
+      const r = await image({ version: '1.1.0', tab: 'files' });
+      const rows = cells(r);
+      expect(rows.map((c) => c[0])).toEqual(['team/app/_tags/1.1.0']);
+      expect(rows[0]?.[2]).toContain('a4d64'.padEnd(64, 'f'));
+    });
+
+    it('R-UI-007 R-OCI-031 the Metadata tab shows the digest, media type, artifact type and summed size of the tag', async () => {
+      const r = await image({ version: '1.1.0', tab: 'metadata' });
+      const p = pairs(r);
+      expect(p.some((x) => x.startsWith('Digest sha256:') && x.includes('a4d64'))).toBe(true);
+      expect(p).toEqual(
+        expect.arrayContaining([
+          'Media type application/vnd.oci.image.manifest.v1+json',
+          'Artifact type application/vnd.oci.image.config.v1+json',
+          'Size 30.0 MiB',
+        ]),
+      );
+      expect(text(r.root)).not.toContain('This version declares no further metadata.');
+      expect(r.root.querySelector('.pkg-tabs table')).toBeNull();
+      expect([...r.root.querySelectorAll('.pkg-tabs h2')].map((h) => text(h))).toEqual(['Image']);
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-007 R-OCI-031 an index lists its platforms with the digest, media type and size of each child, and shows no artifact type', async () => {
+      const r = await image({ version: '1.2.0', tab: 'metadata' });
+      expect(pairs(r).join('|')).not.toContain('Artifact type');
+      expect([...r.root.querySelectorAll('.pkg-tabs h2')].map((h) => text(h))).toEqual(['Image', 'Platforms']);
+      expect(text(r.root.querySelector('.pkg-tabs table caption')!)).toBe('Platforms of this image index');
+      expect([...r.root.querySelectorAll('.pkg-tabs table thead th')].map((th) => text(th))).toEqual([
+        'Platform',
+        'Digest',
+        'Media type',
+        'Size',
+      ]);
+      const rows = cells(r);
+      expect(rows).toHaveLength(5);
+      expect(rows[0]?.[0]).toBe('linux/amd64');
+      expect(rows[0]?.[1]).toMatch(/^sha256:[0-9a-f]{64}/);
+      expect(rows[0]?.[2]).toContain('application/vnd.oci.image.manifest.v1+json');
+      expect(rows[0]?.[3]).toContain('30.0 MiB');
+      expect(rows[2]?.[3]).toContain('280 B');
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-007 R-OCI-031 a child without a platform reads "No platform", and repeated or empty platforms are told apart by a short digest', async () => {
+      const r = await image({ version: '1.2.0', tab: 'metadata' });
+      const headers = [...r.root.querySelectorAll('.pkg-tabs table tbody th')].map((th) => text(th));
+      expect(headers).toHaveLength(5);
+      expect(new Set(headers).size).toBe(5);
+      expect(headers[0]).toBe('linux/amd64');
+      expect(headers[2]).toMatch(/^unknown\/unknown \(sha256:[0-9a-f]{12}\)$/);
+      expect(headers[4]).toMatch(/^No platform \(sha256:[0-9a-f]{12}\)$/);
+      const names = copyButtons(r).map(nameOf);
+      expect(names).toHaveLength(6);
+      expect(new Set(names).size).toBe(6);
+      expect(names[0]).toBe('Copy digest');
+      expect(names[1]).toBe('Copy digest of linux/amd64');
+      expect(names[3]).toMatch(/^Copy digest of unknown\/unknown \(sha256:[0-9a-f]{12}\)$/);
+      expect(names[5]).toMatch(/^Copy digest of the child without a platform \(sha256:[0-9a-f]{12}\)$/);
+    });
+
+    it('R-UI-007 R-OCI-031 each copy button copies the digest of its own row', async () => {
+      const written: string[] = [];
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (t: string) => void written.push(t) },
+      });
+      const r = await image({ version: '1.2.0', tab: 'metadata' });
+      const buttons = copyButtons(r);
+      const arm = buttons.find((b) => nameOf(b) === 'Copy digest of linux/arm64')!;
+      arm.click();
+      await settle(r.fixture);
+      expect(written).toEqual(['sha256:' + 'a4c64'.padEnd(64, 'f')]);
+      written.length = 0;
+      buttons[0]!.click();
+      await settle(r.fixture);
+      expect(written).toEqual(['sha256:' + '1d3a'.padEnd(64, 'f')]);
+    });
+
+    it('R-UI-007 a tag whose metadata lacks a digest shows the empty-state sentence', async () => {
+      const bare = await image({ version: '1.1.0', tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) if (v.format === 'oci') v.metadata = {};
+      });
+      expect(text(bare.root)).toContain('This version declares no further metadata.');
+    });
+
+    it('R-UI-007 R-OCI-031 members of the wrong type are skipped: a child without a digest is not listed, a size that is no number is a dash', async () => {
+      const odd = await image({ version: '1.2.0', tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) {
+          if (v.format === 'oci') {
+            v.metadata = {
+              digest: 'sha256:' + 'a'.repeat(64),
+              size: 'big',
+              platforms: ['x', { platform: 'linux/riscv64', size: 1 }, { platform: 'linux/amd64', digest: 'sha256:' + 'b'.repeat(64), size: 'n' }],
+            };
+          }
+        }
+      });
+      expect(pairs(odd).join('|')).not.toContain('Size');
+      expect(pairs(odd).join('|')).not.toContain('Artifact type');
+      expect(cells(odd).map((c) => c[0])).toEqual(['linux/amd64']);
+      expect(cells(odd)[0]?.[3]).toBe('–');
     });
   });
 });

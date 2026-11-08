@@ -14,6 +14,7 @@ import { InstallPanel } from './install-panel';
 import { EXTERNAL_REL, packageCommands, safeHttpUrl } from './package-links';
 import { PackageMemory } from './package-memory';
 import { PackageReadmeView } from './package-readme';
+import { formatIcon } from '../../shared/format-icon';
 // >>> M4b vulnerabilities
 import { VulnerabilitiesApi, VulnerabilityPackageReport, VulnerabilitySeverity, VulnerabilityVersionReport } from '../../api/vulnerabilities-api';
 import { blockedRepositories, highestOpen, openFindings, PackageVulnerabilities } from '../vulnerabilities/package-vulnerabilities';
@@ -45,6 +46,74 @@ function stringRecord(value: unknown): [string, string][] {
   return Object.entries(value).flatMap(([k, v]): [string, string][] =>
     typeof v === 'string' ? [[k, v]] : [],
   );
+}
+
+/** One platform of an OCI image index (R-OCI-031): the child manifest it names, with its digest, media type and size. */
+interface ImagePlatform {
+  /** The platform as the server sends it, or the words for none (a child without a platform). */
+  readonly platform: string;
+  readonly digest: string;
+  readonly mediaType: string;
+  readonly size: number | null;
+  /**
+   * The start of the digest, read by assistive technology only, when the platform alone does not tell the row from another: it is
+   * empty, or another child has the same one (a provenance attestation per platform is `unknown/unknown` every time).
+   */
+  readonly hint: string;
+  /** The name of the copy button of the row. */
+  readonly copyLabel: string;
+}
+
+/** The facts of an OCI tag the view API sends as the version's metadata (R-OCI-031). */
+interface ImageFacts {
+  readonly digest: string;
+  readonly mediaType: string;
+  readonly artifactType: string;
+  readonly size: number | null;
+  readonly platforms: readonly ImagePlatform[];
+}
+
+/** The algorithm and the first twelve hex digits of a digest, which tell two digests apart. */
+function shortDigest(digest: string): string {
+  const i = digest.indexOf(':');
+  return digest.slice(0, i + 1) + digest.slice(i + 1, i + 13);
+}
+
+/**
+ * Reads the metadata of an OCI tag; `null` when it carries no digest (any other format's version). Members of the wrong type are
+ * skipped: a child without a string digest is not listed, a size that is no number is shown as a dash.
+ */
+function imageFacts(m: Record<string, unknown>): ImageFacts | null {
+  const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+  const digest = text(m['digest']);
+  if (digest === '') return null;
+  const children = (Array.isArray(m['platforms']) ? m['platforms'] : []).flatMap((p): Record<string, unknown>[] => {
+    if (typeof p !== 'object' || p === null) return [];
+    const c = p as Record<string, unknown>;
+    return typeof c['digest'] === 'string' && c['digest'] !== '' ? [c] : [];
+  });
+  const count = new Map<string, number>();
+  for (const c of children) count.set(text(c['platform']), (count.get(text(c['platform'])) ?? 0) + 1);
+  const platforms = children.map((c): ImagePlatform => {
+    const raw = text(c['platform']);
+    const platform = raw === '' ? $localize`:@@pkg.image.no-platform:No platform` : raw;
+    const hint = raw === '' || (count.get(raw) ?? 0) > 1 ? shortDigest(text(c['digest'])) : '';
+    return {
+      platform,
+      digest: text(c['digest']),
+      mediaType: text(c['mediaType']),
+      size: num(c['size']),
+      hint,
+      copyLabel:
+        raw === ''
+          ? $localize`:@@pkg.image.copy-no-platform-digest:Copy digest of the child without a platform (${hint}:digest:)`
+          : hint === ''
+            ? $localize`:@@pkg.image.copy-platform-digest:Copy digest of ${platform}:platform:`
+            : $localize`:@@pkg.image.copy-platform-digest-short:Copy digest of ${platform}:platform: (${hint}:digest:)`,
+    };
+  });
+  return { digest, mediaType: text(m['mediaType']), artifactType: text(m['artifactType']), size: num(m['size']), platforms };
 }
 
 function strings(value: unknown): string[] {
@@ -287,8 +356,11 @@ export class PackageDetail {
         : [],
     );
   });
+  /** The digest, media type, artifact type and size of an OCI tag, and the platforms of an index (R-OCI-031). */
+  protected readonly image = computed(() => imageFacts(this.detail()?.metadata ?? {}));
   protected readonly hasMetadata = computed(
     () =>
+      this.image() !== null ||
       this.distTags().length > 0 ||
       this.dependencyGroups().length > 0 ||
       this.frameworkGroups().length > 0 ||
@@ -342,6 +414,15 @@ export class PackageDetail {
     { id: 'published', label: $localize`:@@pkg.repo.published:Published` },
     { id: 'browse', label: $localize`:@@pkg.repo.browse:Browse`, hideLabel: true },
   ];
+  protected readonly formatIcon = formatIcon;
+  protected readonly platformColumns: readonly TableColumn[] = [
+    { id: 'platform', label: $localize`:@@pkg.image.platform:Platform` },
+    { id: 'digest', label: $localize`:@@pkg.image.digest:Digest` },
+    { id: 'mediaType', label: $localize`:@@pkg.image.media-type:Media type` },
+    { id: 'size', label: $localize`:@@pkg.image.size:Size`, numeric: true },
+  ];
+  protected readonly tableCaptionPlatforms = $localize`:@@pkg.image.platforms-caption:Platforms of this image index`;
+  protected readonly copyImageDigest = $localize`:@@pkg.image.copy-digest:Copy digest`;
   protected readonly tableCaptionFiles = $localize`:@@pkg.file.caption:Files of this version`;
   protected readonly tableCaptionVersions = $localize`:@@pkg.ver.caption:All versions`;
   protected readonly tableCaptionRepositories = $localize`:@@pkg.repo.caption:Repositories that hold this version`;

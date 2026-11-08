@@ -982,7 +982,7 @@ local repository and by fetch time in a remote one (the list of versions is orde
 platforms with each child's digest and size, from the rows of R-OCI-007. Layer history and labels are not shown (Deferred).
 The version `metadata` of a tag holds `digest`, `mediaType`, `size` (the summed size of the config and the layers; of an index the
 sum over its children) and `artifactType` (the manifest's own, else the media type of its config, so every image shows its config type); an index adds `platforms`, one object per child with
-`platform` (`os/arch[/variant]`, `unknown/unknown` for an attestation), `digest`, `mediaType` and `size`. `Compare` is the tag order
+`platform` (`os/arch[/variant]`, `unknown/unknown` for an attestation, `""` for a child the index names without a platform), `digest`, `mediaType` and `size`. `Compare` is the tag order
 of the format (Q-OCI-17, Q-OCI-64), and a string that is no tag sorts before every tag; a tag whose manifest the journal replay withheld is not listed (R-OCI-033).
 
 Acceptance criteria:

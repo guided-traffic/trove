@@ -90,3 +90,5 @@ before using a new term in a German text.
 | backup, backup run, stored backup, backup target | Backup, Backup-Lauf, gespeichertes Backup, Backup-Ziel |
 | blob, snapshot, pod (as in the backups screen) | Blob, Snapshot, Pod |
 | avatar | Avatar |
+| pull (an image), image index, multi-platform image | ziehen, Image-Index, Multi-Plattform-Image |
+| image (OCI), tag, digest, media type, artifact type, platform (of an image index), image pull secret | Image, Tag, Digest, Medientyp, Artefakttyp, Plattform, Image-Pull-Secret |

@@ -1,7 +1,7 @@
 <header class="page-header">
   <h1 tabindex="-1" translate="no">{{ name() }}</h1>
   <span class="type-badge">
-    <span class="material-icons" aria-hidden="true">inventory_2</span>
+    <span class="material-icons" aria-hidden="true">{{ formatIcon(format()) }}</span>
     <span translate="no">{{ format() }}</span>
   </span>
   <a class="btn btn-tertiary" [routerLink]="['/projects', project(), 'packages']" i18n="@@pkg.detail.back">All packages</a>
@@ -110,6 +110,53 @@
                 @case ('metadata') {
                   @if (!hasMetadata()) {
                     <p class="empty" i18n="@@pkg.meta.none">This version declares no further metadata.</p>
+                  }
+                  @if (image(); as img) {
+                    <h2 i18n="@@pkg.image.heading">Image</h2>
+                    <dl class="facts">
+                      <dt i18n="@@pkg.image.digest">Digest</dt>
+                      <dd>
+                        <code translate="no">{{ img.digest }}</code>
+                        <trove-copy-button [value]="img.digest" [label]="copyImageDigest" />
+                      </dd>
+                      @if (img.mediaType !== '') {
+                        <dt i18n="@@pkg.image.media-type">Media type</dt>
+                        <dd translate="no">{{ img.mediaType }}</dd>
+                      }
+                      @if (img.artifactType !== '') {
+                        <dt i18n="@@pkg.image.artifact-type">Artifact type</dt>
+                        <dd translate="no">{{ img.artifactType }}</dd>
+                      }
+                      @if (img.size !== null) {
+                        <dt i18n="@@pkg.image.total-size">Size</dt>
+                        <dd [attr.title]="img.size + ' B'">{{ size(img.size) }}</dd>
+                      }
+                    </dl>
+                    @if (img.platforms.length > 0) {
+                      <h2 i18n="@@pkg.image.platforms">Platforms</h2>
+                      <trove-data-table [caption]="tableCaptionPlatforms" [columns]="platformColumns" [empty]="false">
+                        @for (p of img.platforms; track $index) {
+                          <tr>
+                            <th scope="row">
+                              <span translate="no">{{ p.platform }}</span>
+                              @if (p.hint !== '') {
+                                <span class="visually-hidden" translate="no">{{ ' (' + p.hint + ')' }}</span>
+                              }
+                            </th>
+                            <td>
+                              <code class="ellipsis" translate="no" [attr.title]="p.digest">{{ p.digest }}</code>
+                              <trove-copy-button [value]="p.digest" [label]="p.copyLabel" />
+                            </td>
+                            <td translate="no">{{ p.mediaType }}</td>
+                            @if (p.size !== null) {
+                              <td class="num" [attr.title]="p.size + ' B'">{{ size(p.size) }}</td>
+                            } @else {
+                              <td class="num">–</td>
+                            }
+                          </tr>
+                        }
+                      </trove-data-table>
+                    }
                   }
                   @if (links().length > 0) {
                     <h2 i18n="@@pkg.meta.links">Links</h2>

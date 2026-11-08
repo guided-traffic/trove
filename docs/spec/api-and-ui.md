@@ -2997,7 +2997,8 @@ Priority: **MVP** · Covers: UI-009, ART-049
 - Tabs: README (default when the version has one, `hasReadme`; a version without one has no README
   tab and the README is not requested, R-UI-008); Metadata (format-specific: npm dist-tags and
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
-  link with an external-link marker; the members the page reads are in Q-UI-93, among them the unlisted state); Files (files of the version with size, SHA-256 copy button,
+  link with an external-link marker; the members the page reads are in Q-UI-93, among them the unlisted state; OCI the digest, media type, artifact type and
+  size of the tag and the platforms of an index, Q-UI-177); Files (files of the version with size, SHA-256 copy button,
   download); Repositories (each with "show in browser"); Owners (R-API-048, P1); Builds (P1).
 - From M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-023): a Vulnerabilities
   tab (`tab=vulnerabilities`) with the selected version's evaluation state, block and findings per
@@ -3300,7 +3301,7 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
   1. format (generic, npm and NuGet in the MVP; further formats appear as they ship, from
      `GET /api/v1/formats`, in its order, the first preselected);
   2. client (curl; npm, pnpm, Yarn Berry, Yarn classic; .NET CLI, NuGet CLI, Visual Studio,
-     `nuget.config`);
+     `nuget.config`; Docker CLI with Buildx, Podman);
   3. repository: readable repositories of that format, each named with its project (`web/npm-all`), virtual
      repositories marked as recommended, publish availability shown per repository;
   4. credentials, one of:
@@ -9109,6 +9110,39 @@ Context: the review of Q-UI-173 found two things that the number of scans (`MaxS
 
 **Rationale:** the cost of a progressive JPEG is the area times the scans times the work of a scan, and only the header says the first two, so the budget is what the header can prove; the deadline stays as the bound for what the header cannot (H-640). The development agent revisits the constant when ordinary progressive photos are refused (the allowance is five times a typical photo's), when the floor of the file that spends it exceeds 1 s, or when the standard decoder gets a cheaper scan.
 **Applied:** R-API-055 (the size and cost bullet, Bounded cost); [user-avatars.md](../security/user-avatars.md) (steps 6 and 8, the cost section, H-640); `internal/avatar/process.go` (`MaxBlockVisits`, `walkJPEG`, `scanVisits`, `readChunk`, `ctxReader`); `internal/avatar/budget_test.go`, `bounds_test.go`.
+
+
+### Q-UI-177 · The facts of an OCI tag and the platforms of an index sit in the Metadata tab of the package page
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-031 gives an image name as a package and its tags as versions; the version `metadata` holds `digest`, `mediaType`, `size`, `artifactType` and, for an index, `platforms` (one object per child with `platform`, `digest`, `mediaType` and `size`). R-UI-007 names the tabs and says the Metadata tab is format-specific. An OCI tag has no README and no license, and the page's files tab lists the manifest the tag points at.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An "Image" block and a "Platforms" table in the Metadata tab (chosen) | `dl` with digest (copy button), media type, artifact type, size; below it a table of the platforms | No new tab or route; the tab already is "the format's facts"; the same tab ids and `?tab=metadata` link for every format | The facts are not visible in the header: an image has no README, so the Metadata tab is its first tab and one click opens them |
+| (b) A separate "Platforms" tab for indexes | One more tab id, shown only for an index | The table is one click from the header | A tab that exists for one format and for some versions; the tab list of R-UI-007 and its link vocabulary grow for it |
+| (c) Put the digest and size in the header facts | The header shows them for every format | Visible at once | The header is the same for all formats and has no place for a column of 64-character digests |
+
+**Choice:** (a). The block is read from the metadata members the view API sends and shows what is present: an absent artifact type or size shows no row, a tag whose metadata has no digest shows the empty-state sentence, a child without a string digest is not listed, and a child's size that is no number reads "–". The platform is shown as the server sends it, `unknown/unknown` for an attestation included, because the page must not interpret what the server has not marked; a child the index names without a platform (an empty string, the rows' COALESCE) reads "No platform". A provenance attestation exists once per platform and all are `unknown/unknown`, so a row whose platform is empty or repeated gets the first twelve hex digits of its digest after the platform, read by assistive technology only, and the same in the name of its copy button; every row header and every button name on the page is unique. Sizes use the binary units of the rest of the page; the copy buttons are named "Copy digest" for the tag and "Copy digest of <platform>" for a child.
+**Rationale:** the Metadata tab is where the other formats show their format-specific facts, so a reader finds an image's facts where they find a package's dependencies. The development agent revisits this when the layer history or the labels are shown (Deferred in R-OCI-031): that content is large enough to deserve a tab of its own.
+**Applied:** R-UI-007 (the Metadata bullet); `web/src/app/features/packages/package-detail.{ts,html}`, `package-detail.spec.ts`, `fakes-packages.ts` (`ociFixture`); [web-ui.md](../developer/web-ui.md).
+
+### Q-UI-178 · OCI gets the cube icon, and the package page takes its type icon from the same function as the list
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `formatIcon` (R-UI-006, R-UI-021) gives `nuget` the puzzle glyph and every other format the neutral package glyph; the package page's type badge named the neutral glyph itself instead of asking the function.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `view_in_ar` for `oci`, and the package page asks `formatIcon` (chosen) | A cube, in the icon font the UI already bundles | Says "container" at a glance in the list, the wizard tile and the page; one function decides | The glyph is Material's, like the other two (the font is the only icon source, Q-UI-1) |
+| (b) Keep the neutral glyph | No change | Nothing to review | The list cannot tell an image from an npm package by its icon |
+| (c) A drawn SVG of the whale or the OCI mark | A brand glyph | Recognisable | A third-party logo, a second icon mechanism and a licence question for a glyph the owner has not asked for |
+
+**Choice:** (a). The owner may replace the glyph at the walkthrough with the one he wants; it is one line in `web/src/app/shared/format-icon.ts`.
+**Rationale:** the icon font is the one source of glyphs (Q-UI-1), so a format icon is a ligature name; revisited when the owner names another glyph.
+**Applied:** `web/src/app/shared/format-icon.ts`, `package-detail.html`.
 
 ## What this does not cover
 

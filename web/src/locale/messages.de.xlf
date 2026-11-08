@@ -10793,6 +10793,62 @@
         <target>Diese Version enthält keine weiteren Metadaten.</target>
       </segment>
     </unit>
+    <unit id="pkg.image.heading">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:115,116</note>
+      </notes>
+      <segment>
+        <source>Image</source>
+        <target>Image</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.digest">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:117,118</note>
+        <note category="location">src/app/features/packages/package-detail.ts:388</note>
+      </notes>
+      <segment>
+        <source>Digest</source>
+        <target>Digest</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.media-type">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:123,124</note>
+        <note category="location">src/app/features/packages/package-detail.ts:389</note>
+      </notes>
+      <segment>
+        <source>Media type</source>
+        <target>Medientyp</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.artifact-type">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:127,128</note>
+      </notes>
+      <segment>
+        <source>Artifact type</source>
+        <target>Artefakttyp</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.total-size">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:131,132</note>
+      </notes>
+      <segment>
+        <source>Size</source>
+        <target>Größe</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.platforms">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:136,137</note>
+      </notes>
+      <segment>
+        <source>Platforms</source>
+        <target>Plattformen</target>
+      </segment>
+    </unit>
     <unit id="pkg.meta.links">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:115,116</note>
@@ -10908,6 +10964,24 @@
       <segment>
         <source>None</source>
         <target>Keine</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.no-platform">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:100</note>
+      </notes>
+      <segment>
+        <source>No platform</source>
+        <target>Keine Plattform</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.copy-no-platform-digest">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:110</note>
+      </notes>
+      <segment>
+        <source>Copy digest of the child without a platform (<ph id="0" equiv="digest" disp="hint"/>)</source>
+        <target>Digest des Kindes ohne Plattform (<ph id="0" equiv="digest" disp="hint"/>) kopieren</target>
       </segment>
     </unit>
     <unit id="pkg.tab.readme">
@@ -11223,6 +11297,60 @@
       <segment>
         <source>Browse</source>
         <target>Durchsuchen</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.platform">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:387</note>
+      </notes>
+      <segment>
+        <source>Platform</source>
+        <target>Plattform</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.size">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:390</note>
+      </notes>
+      <segment>
+        <source>Size</source>
+        <target>Größe</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.platforms-caption">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:392</note>
+      </notes>
+      <segment>
+        <source>Platforms of this image index</source>
+        <target>Plattformen dieses Image-Index</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.copy-digest">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:393</note>
+      </notes>
+      <segment>
+        <source>Copy digest</source>
+        <target>Digest kopieren</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.copy-platform-digest">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:395</note>
+      </notes>
+      <segment>
+        <source>Copy digest of <ph id="0" equiv="platform" disp="platform"/></source>
+        <target>Digest von <ph id="0" equiv="platform" disp="platform"/> kopieren</target>
+      </segment>
+    </unit>
+    <unit id="pkg.image.copy-platform-digest-short">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:111</note>
+      </notes>
+      <segment>
+        <source>Copy digest of <ph id="0" equiv="platform" disp="platform"/> (<ph id="1" equiv="digest" disp="hint"/>)</source>
+        <target>Digest von <ph id="0" equiv="platform" disp="platform"/> (<ph id="1" equiv="digest" disp="hint"/>) kopieren</target>
       </segment>
     </unit>
     <unit id="pkg.file.caption">
@@ -19032,6 +19160,15 @@
         <target>Mit dieser Variante kommen nur die Pakete eines Scopes aus diesem Repository. Alle anderen Pakete kommen weiterhin aus der Standard-Registry von npm.</target>
       </segment>
     </unit>
+    <unit id="setup.snippet.yarnrc-scoped">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:54</note>
+      </notes>
+      <segment>
+        <source>Add this to .yarnrc.yml to take only the packages of one scope from this repository. All other packages still come from npm&apos;s default registry.</source>
+        <target>Fügen Sie dies zur .yarnrc.yml hinzu, um nur die Pakete eines Scopes aus diesem Repository zu beziehen. Alle anderen Pakete kommen weiterhin aus der Standard-Registry von npm.</target>
+      </segment>
+    </unit>
     <unit id="setup.snippet.npm-cli">
       <notes>
         <note category="location">src/app/features/setup/clients.ts:49</note>
@@ -19183,6 +19320,51 @@
       <segment>
         <source>Uploads a file to the path you give. Replacing a file with other bytes also needs the overwrite permission.</source>
         <target>Lädt eine Datei an den angegebenen Pfad hoch. Wer eine Datei durch andere Bytes ersetzt, braucht zusätzlich die Berechtigung overwrite.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.oci-login">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:101</note>
+      </notes>
+      <segment>
+        <source>Signs the client in to this repository. A token is read from standard input, so it appears neither in the process list nor in the shell history; without a token the client asks for the password. The images of this repository begin with the address in the login.</source>
+        <target>Meldet den Client an diesem Repository an. Ein Token wird von der Standardeingabe gelesen und steht deshalb weder in der Prozessliste noch in der Shell-Historie; ohne Token fragt der Client nach dem Passwort. Die Images dieses Repositorys beginnen mit der Adresse aus dem Login.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.oci-pull-secret">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:105</note>
+      </notes>
+      <segment>
+        <source>For a Kubernetes cluster: creates an image pull secret that holds the token. A snippet without a token is only a comment, because a secret needs a credential. Name the secret under imagePullSecrets of the pods that pull images of this repository.</source>
+        <target>Für einen Kubernetes-Cluster: legt ein Image-Pull-Secret an, das das Token enthält. Ein Snippet ohne Token ist nur ein Kommentar, weil ein Secret eine Anmeldeinformation braucht. Nennen Sie das Secret unter imagePullSecrets der Pods, die Images dieses Repositorys ziehen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.oci-pull">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:106</note>
+      </notes>
+      <segment>
+        <source>Pulls an image of this repository by its tag. Replace &lt;package&gt; with the image name. Use the digest instead of the tag to pull exactly these bytes.</source>
+        <target>Zieht ein Image dieses Repositorys über sein Tag. Ersetzen Sie &lt;package&gt; durch den Namen des Images. Nehmen Sie statt des Tags den Digest, um genau diese Bytes zu ziehen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.oci-push">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:109</note>
+      </notes>
+      <segment>
+        <source>Names a local image below this repository and pushes it to the repository that receives uploads.</source>
+        <target>Benennt ein lokales Image unterhalb dieses Repositorys und lädt es in das Repository hoch, das Uploads erhält.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.oci-buildx">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:111</note>
+      </notes>
+      <segment>
+        <source>Builds the image for two platforms from the Dockerfile in the current directory and pushes the result as one multi-platform image.</source>
+        <target>Baut das Image für zwei Plattformen aus dem Dockerfile im aktuellen Verzeichnis und lädt das Ergebnis als ein Multi-Plattform-Image hoch.</target>
       </segment>
     </unit>
     <unit id="route.setup.title">

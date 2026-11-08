@@ -205,6 +205,20 @@ export const NUGET_FORMAT: FormatDescriptor = {
   settingsSchema: NUGET_SETTINGS_SCHEMA,
 };
 
+/** OCI as the catalog lists it (internal/formats/oci/format.go): the class local only, the Docker CLI and Podman, the registry root as base path. Its settings schema is not copied. */
+export const OCI_FORMAT: FormatDescriptor = {
+  ...GENERIC_FORMAT,
+  name: 'oci',
+  displayName: 'OCI (Docker)',
+  classes: ['local'],
+  clients: [
+    { id: 'docker', displayName: 'Docker CLI (with Buildx)' },
+    { id: 'podman', displayName: 'Podman' },
+  ],
+  protocolBasePath: '/v2/{project}/{key}/',
+  patternSubject: 'name',
+};
+
 /** A repository of the fake: the project is writable so that a test can move one. */
 export type FakeRepository = { -readonly [K in keyof Repository]: Repository[K] };
 

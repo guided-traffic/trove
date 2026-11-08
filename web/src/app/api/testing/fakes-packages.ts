@@ -54,6 +54,11 @@ export const NPM_REPOSITORIES: readonly Repository[] = [
   { key: 'npm-readonly', project: 'web', class: 'virtual', format: 'npm', description: 'Read-only view' },
 ];
 
+/** The OCI repositories of the fakes: the format registers the class local only (R-OCI-001). */
+export const OCI_REPOSITORIES: readonly Repository[] = [
+  { key: 'oci-local', project: 'web', class: 'local', format: 'oci', description: 'Internal images' },
+];
+
 /** The NuGet repositories of the fakes: a local, a remote and a virtual one that deploys to the local one. */
 export const NUGET_REPOSITORIES: readonly Repository[] = [
   { key: 'nuget-local', project: 'web', class: 'local', format: 'nuget', description: 'Internal packages' },
@@ -180,6 +185,95 @@ function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
     },
     ...over,
   };
+}
+
+const digestOf = (n: number): string => 'sha256:' + n.toString(16).padEnd(64, 'f');
+const OCI_SINGLE_DIGEST = digestOf(0xa4d64);
+const OCI_INDEX_DIGEST = digestOf(0x1d3a);
+
+/** The package of the OCI fakes. It is not in the default list of {@link FakePackagesApi}; a test adds it with {@link ociFixture}. */
+export const OCI_PACKAGE: PackageSummary = {
+  id: 'pkg_01JBQ8OCIOCI',
+  format: 'oci',
+  name: 'team/app',
+  description: null,
+  latestVersion: '1.2.0',
+  keywords: [],
+  repositories: ['web/oci-local'],
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-05T00:00:00.000Z',
+  versionCount: 2,
+  downloadCount: 0,
+};
+
+/**
+ * An OCI tag as the view adapter describes it (formats/oci.md R-OCI-031, internal/formats/oci/view.go). A tag has no README and no
+ * license. Its one file is the lead item `<name>/_tags/<tag>`, the bytes of the manifest the tag points at, so its SHA-256 is the
+ * manifest's digest; the manifest item is not linked to the version (InsertVersion links the lead item only, OCI never calls LinkItem).
+ * The version's `sizeBytes` is the sum of its linked items, the manifest document's bytes, not the content size of the metadata.
+ */
+function ociVersion(tag: string, metadata: Record<string, unknown>, manifestSize: number, over: Partial<FakeVersion> = {}): FakeVersion {
+  const hex = String(metadata['digest']).replace('sha256:', '');
+  const file = (path: string): PackageVersion['files'][number] => ({
+    path,
+    sizeBytes: manifestSize,
+    sha256: hex,
+    downloadUrl: `${BASE}/api/v1/projects/web/repositories/oci-local/content/${path}`,
+    contentUrl: `/api/v1/projects/web/repositories/oci-local/content/${path}`,
+  });
+  return {
+    packageId: OCI_PACKAGE.id,
+    format: 'oci',
+    name: OCI_PACKAGE.name,
+    version: tag,
+    prerelease: false,
+    publishedAt: '2026-11-05T00:00:00.000Z',
+    licenses: [],
+    sizeBytes: manifestSize,
+    downloadCount: 0,
+    hasReadme: false,
+    metadata,
+    repositories: [{ key: 'web/oci-local', class: 'local', publishedAt: '2026-11-05T00:00:00.000Z' }],
+    files: [file(`team/app/_tags/${tag}`)],
+    readme: null,
+    ...over,
+  };
+}
+
+const MANIFEST = 'application/vnd.oci.image.manifest.v1+json';
+
+/**
+ * The OCI package with a single-platform tag (`1.1.0`, which has an artifact type: the media type of its config) and a multi-platform
+ * index (`1.2.0`, which has none): two images, two provenance attestations that are both `unknown/unknown`, and a child the index
+ * names without a platform (`""` on the wire, the COALESCE of the rows).
+ */
+export function ociFixture(fake: FakePackagesApi): void {
+  fake.packages.push(OCI_PACKAGE);
+  const children = [
+    { platform: 'linux/amd64', digest: digestOf(0xa4d64), mediaType: MANIFEST, size: 31_457_280 },
+    { platform: 'linux/arm64', digest: digestOf(0xa4c64), mediaType: MANIFEST, size: 31_457_000 },
+    { platform: 'unknown/unknown', digest: digestOf(0xa77e1), mediaType: MANIFEST, size: 280 },
+    { platform: 'unknown/unknown', digest: digestOf(0xa77e2), mediaType: MANIFEST, size: 281 },
+    { platform: '', digest: digestOf(0xb1a4c), mediaType: MANIFEST, size: 99 },
+  ];
+  fake.versionList.push(
+    ociVersion(
+      '1.1.0',
+      { digest: OCI_SINGLE_DIGEST, mediaType: MANIFEST, size: 31_457_280, artifactType: 'application/vnd.oci.image.config.v1+json' },
+      482,
+      { publishedAt: '2026-11-01T00:00:00.000Z' },
+    ),
+    ociVersion(
+      '1.2.0',
+      {
+        digest: OCI_INDEX_DIGEST,
+        mediaType: 'application/vnd.oci.image.index.v1+json',
+        size: children.reduce((n, c) => n + c.size, 0),
+        platforms: children,
+      },
+      1024,
+    ),
+  );
 }
 
 export class FakePackagesApi extends PackagesApi {
@@ -356,6 +450,11 @@ export class FakeClientSetupApi extends ClientSetupApi {
     if (nuget) {
       const mayPublish = !this.readOnly.has(repository) && nuget.class !== 'remote' && !this.noTarget.has(repository);
       return nugetSetup(nuget, query, mayPublish, this.ttl);
+    }
+    const oci = OCI_REPOSITORIES.find((r) => refOf(r) === repository);
+    if (oci) {
+      const mayPublish = !this.readOnly.has(repository) && !this.noTarget.has(repository);
+      return ociSetup(oci, query, mayPublish, this.ttl);
     }
     const repo = NPM_REPOSITORIES.find((r) => refOf(r) === repository);
     if (!repo) throw notFound();
@@ -547,6 +646,66 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     credentials,
     registryUrl,
     endpointPath: source.replace(/^https?:/, ''),
+    username: credentials === 'none' ? null : 'alice',
+    publishTarget: target,
+    tokenTtlSeconds: ttl,
+    snippets,
+  };
+}
+
+/**
+ * The OCI snippets as the server renders them (internal/formats/oci/setup.go, R-OCI-030; the ids are `<client>.<section>[.<name>]`,
+ * Q-API-160, and `snippet-ids.fixture.ts` pins them against the Go side): the image prefix is `<host>/<project>/<repository>`, not
+ * the registry URL. With a credential the login reads the token from standard input; without one it is the interactive login and the
+ * pull secret is a comment that asks for the snippet with a credential (the API drops the lines that hold the token reference).
+ */
+function ociSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boolean, ttl: number): ClientSetup {
+  if (!['docker', 'podman'].includes(query.client)) {
+    throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
+  }
+  const credentials = query.credentials ?? 'placeholder';
+  const registryUrl = `${BASE}/v2/${refOf(repo)}/`;
+  const prefix = `${BASE.replace(/^https?:\/\//, '')}/${refOf(repo)}`;
+  const token = credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '${TROVE_TOKEN}' : null;
+  const target = mayPublish ? refOf(repo) : null;
+  const tool = query.client;
+  const pkg = query.package ? shellQuote(query.package) : '<package>';
+  const spec = query.package && query.version ? `${pkg}:${shellQuote(query.version)}` : pkg;
+  const snippets: ClientSnippet[] = [];
+  const add = (id: string, tab: ClientSnippet['tab'], content: string): void => {
+    snippets.push({ id, tab, fileName: null, language: 'shell', content });
+  };
+  add(
+    `${tool}.configure.shell`,
+    'configure',
+    token === null
+      ? `${tool} login ${prefix} --username trove\n`
+      : `printf '%s' "${token}" | ${tool} login ${prefix} --username trove --password-stdin\n`,
+  );
+  if (tool === 'docker') {
+    add(
+      'docker.configure.kubernetes',
+      'configure',
+      token === null
+        ? '# An image pull secret holds a credential: ask for the snippet with one.\n'
+        : `printf '{"auths":{"%s":{"username":"trove","password":"%s"}}}' ${prefix} "${token}" | \\\n` +
+            '  kubectl create secret generic trove-registry --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson=/dev/stdin\n',
+    );
+  }
+  add(`${tool}.install`, 'install', `${tool} pull ${prefix}/${spec}\n`);
+  if (target !== null) {
+    add(`${tool}.publish`, 'publish', `${tool} tag myapp:1.0 ${prefix}/myapp:1.0\n${tool} push ${prefix}/myapp:1.0\n`);
+    if (tool === 'docker') {
+      add('docker.publish.buildx', 'publish', `docker buildx build --platform linux/amd64,linux/arm64 --tag ${prefix}/myapp:1.0 --push .\n`);
+    }
+  }
+  return {
+    repository: refOf(repo),
+    format: 'oci',
+    client: tool,
+    credentials,
+    registryUrl,
+    endpointPath: registryUrl.replace(/^https?:/, ''),
     username: credentials === 'none' ? null : 'alice',
     publishTarget: target,
     tokenTtlSeconds: ttl,

@@ -3,8 +3,8 @@ import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
-import { FakeRepositoriesApi, GENERIC_FORMAT, NUGET_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
-import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES, NUGET_REPOSITORIES } from '../../api/testing/fakes-packages';
+import { FakeRepositoriesApi, GENERIC_FORMAT, NUGET_FORMAT, OCI_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
+import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES, NUGET_REPOSITORIES, OCI_REPOSITORIES } from '../../api/testing/fakes-packages';
 import { FakeTokensApi } from '../../api/testing/access-fakes';
 import { TokensApi } from '../../api/tokens-api';
 import {
@@ -525,6 +525,75 @@ describe('Client setup', () => {
       const r = await open({ repository: 'web/nuget-remote', client: 'dotnet' });
       await tab(r, 'Publish');
       expect(text(r.root)).toContain('You cannot publish to this repository');
+    });
+  });
+
+  describe('OCI', () => {
+    const oci = (inputs: Record<string, unknown>, options: { anonymous?: boolean } = {}) =>
+      open(inputs, {
+        ...options,
+        setup: (get) => {
+          const repos = get(RepositoriesApi) as FakeRepositoriesApi;
+          repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT, NUGET_FORMAT, OCI_FORMAT];
+          repos.repositories = [...NPM_REPOSITORIES, ...OCI_REPOSITORIES];
+        },
+      });
+
+    it('R-UI-016 R-OCI-030 OCI is offered with the Docker CLI and Podman, in the order of the table', async () => {
+      const r = await oci({ format: 'oci' });
+      expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="client"]')].map((i) => i.value)).toEqual(['docker', 'podman']);
+      expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="repository"]')].map((i) => i.value)).toEqual(['web/oci-local']);
+      expect(text(r.root)).toContain('Docker CLI (with Buildx)');
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-016 R-OCI-030 the login reads the token from standard input, names the image prefix and not the registry URL, and the Kubernetes secret follows', async () => {
+      const r = await oci({ repository: 'web/oci-local', client: 'docker' });
+      expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'web/oci-local', query: { client: 'docker', credentials: 'env' } });
+      const [login, secret] = snippets(r);
+      expect(login).toContain(`printf '%s' "\${TROVE_TOKEN}" | docker login trove.example.net/web/oci-local --username trove --password-stdin`);
+      expect(login).not.toContain('/v2');
+      expect(secret).toContain('kubectl create secret generic trove-registry --type=kubernetes.io/dockerconfigjson');
+      const t = text(r.root);
+      expect(t).toContain('A token is read from standard input');
+      expect(t).toContain('creates an image pull secret that holds the token');
+      expect(t).not.toMatch(/trv_(pat|sat|cit)_/);
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-016 R-OCI-030 install pulls by tag, publish tags and pushes, and Buildx pushes a multi-platform image', async () => {
+      const r = await oci({ repository: 'web/oci-local', client: 'docker' });
+      await tab(r, 'Install');
+      expect(snippets(r)[0]).toContain('docker pull trove.example.net/web/oci-local/<package>');
+      expect(text(r.root)).toContain('Replace <package> with the image name.');
+      await tab(r, 'Publish');
+      const [push, buildx] = snippets(r);
+      expect(push).toContain('docker tag myapp:1.0 trove.example.net/web/oci-local/myapp:1.0');
+      expect(push).toContain('docker push trove.example.net/web/oci-local/myapp:1.0');
+      expect(buildx).toContain('docker buildx build --platform linux/amd64,linux/arm64');
+      expect(text(r.root)).toContain('Names a local image below this repository');
+      expect(text(r.root)).toContain('one multi-platform image');
+    });
+
+    it('R-UI-016 R-OCI-030 Podman has its own login and push and no Buildx or Kubernetes snippet', async () => {
+      const r = await oci({ repository: 'web/oci-local', client: 'podman' });
+      expect(snippets(r)).toHaveLength(1);
+      expect(snippets(r)[0]).toContain('podman login trove.example.net/web/oci-local --username trove --password-stdin');
+      await tab(r, 'Publish');
+      expect(snippets(r)).toHaveLength(1);
+      expect(snippets(r)[0]).toContain('podman push trove.example.net/web/oci-local/myapp:1.0');
+    });
+
+    it('R-UI-016 R-OCI-030 an anonymous viewer gets the interactive login and a comment in place of the pull secret, and no token line', async () => {
+      const r = await oci({ repository: 'web/oci-local', client: 'docker' }, { anonymous: true });
+      expect(r.setup.calls.at(-1)?.query.credentials).toBe('none');
+      const [login, secret] = snippets(r);
+      expect(login).toBe('docker login trove.example.net/web/oci-local --username trove\n');
+      expect(secret).toBe('# An image pull secret holds a credential: ask for the snippet with one.\n');
+      expect(text(r.root)).toContain('without a token the client asks for the password');
+      expect(text(r.root)).toContain('A snippet without a token is only a comment');
+      expect(snippets(r).join('')).not.toContain('--password-stdin');
+      await expectAccessible(r.root);
     });
   });
 });
