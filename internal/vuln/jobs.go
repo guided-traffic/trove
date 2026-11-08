@@ -1,6 +1,10 @@
 package vuln
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/guided-traffic/trove/internal/jobs"
+)
 
 // The job kinds of the vulnerability scanning (R-VULN-004, R-VULN-011, R-VULN-014), and the queue and dedup mode each
 // registers with. The contract wave names them; the work package that owns a kind registers it, with its handler, in
@@ -37,6 +41,13 @@ const (
 
 // RescanKey is the dedup key of the rescan of one repository, "vuln-rescan:<repository id>" (R-VULN-011).
 func RescanKey(repoID int64) string { return KindRescan + ":" + strconv.FormatInt(repoID, 10) }
+
+// RescanKindSpec is the spec of the kind KindRescan without its handler: queue default, exclusive. The application registers
+// the kind with it plus the handler (internal/app/wire_vuln_eval.go), and a replay handler that starts a rescan in its own
+// transaction passes it to [jobs.EnqueueTx], so the two rows are one (R-HA-054, Q-HA-180).
+func RescanKindSpec() jobs.KindSpec {
+	return jobs.KindSpec{Queue: QueueDefault, DedupMode: jobs.Exclusive}
+}
 
 // The tasks (R-OPS-019) with their default schedules (R-VULN-004, R-VULN-014, R-VULN-025; cron, UTC). A task has the name
 // of its kind. maintenance.tasks.<name> overrides the schedule; the configuration's defaults (internal/config) hold

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -61,6 +62,8 @@ func New(o Options) *Replayer {
 //
 //   - an entry whose event has no handler, an object that cannot be read and a handler that panics are reported
 //     [journal.Skipped] and change nothing;
+//   - an entry whose value the database refuses (SQLSTATE class 22 or 54, or not_null or check_violation) is rolled back and reported [journal.Skipped]
+//     with its subject, and the replay goes on;
 //   - a handler that returns an error (the database failed) ends the replay with that error; the entries applied so far
 //     stay, and running the replay again reports them as already in effect;
 //   - a journal that cannot be listed ends the replay with an error, because an incomplete journal is not a journal.
@@ -83,21 +86,25 @@ func (r *Replayer) Replay(ctx context.Context, opts journal.ReplayOptions) (*jou
 	for _, u := range unreadable {
 		sum.Unreadable = append(sum.Unreadable, u)
 		sum.Counts[journal.Skipped]++
-		line(opts, fmt.Sprintf("unreadable %s skipped: %s", u.Key, u.Reason))
+		line(opts, fmt.Sprintf("unreadable %q skipped: %s", u.Key, u.Reason))
 	}
 	env := journal.Env{Now: r.o.Now(), RestoredTo: opts.RestoredTo, Notifier: r.o.Notifier}
 	for _, o := range entries {
 		if o.Warning != "" {
 			sum.Warnings = append(sum.Warnings, o.ID+": "+o.Warning)
-			line(opts, "warning: "+o.Event+" "+o.ID+": "+o.Warning)
+			line(opts, "warning: "+strconv.Quote(o.Event)+" "+o.ID+": "+o.Warning)
 		}
 		res, err := r.apply(ctx, env, o)
 		if err != nil {
-			return sum, fmt.Errorf("journal: replaying %s %s: %w", o.Event, o.ID, err)
+			return sum, fmt.Errorf("journal: replaying %s %s: %w", strconv.Quote(o.Event), o.ID, err)
 		}
 		sum.Add(res)
 		for _, r := range res.Flat() {
 			line(opts, r.Line())
+			if r.Note != "" {
+				sum.Warnings = append(sum.Warnings, r.ID+": "+r.Note)
+				line(opts, "  warning: "+r.Note)
+			}
 			if len(r.Detail) > 0 && (r.Outcome == journal.Suspended || r.Outcome == journal.Revived) {
 				line(opts, "  "+string(r.Detail))
 			}
@@ -107,7 +114,7 @@ func (r *Replayer) Replay(ctx context.Context, opts journal.ReplayOptions) (*jou
 		return sum, err
 	}
 	if sum.NoAdminBinding {
-		line(opts, "no admin role binding is left: sign in with the break-glass account (R-AUTH-014) and bind the role again")
+		line(opts, "no enabled administrator is left (a service account that holds the role counts as one, though nobody can sign in as it): sign in with the break-glass account (R-AUTH-014), then bind the admin role again or re-attach or fill the group that holds it")
 	}
 	return sum, nil
 }
@@ -156,11 +163,35 @@ func (r *Replayer) apply(ctx context.Context, env journal.Env, o journal.Object)
 	if errors.Is(err, errRollback) {
 		return res, nil
 	}
+	if code, bad := postgres.ForgedValueErrorCode(err); bad {
+		// The entry holds a value the database refuses (a NUL byte, a text too long, a constraint): a forged or damaged
+		// entry, not a database that failed. It rolled back with its transaction and must not stop the entries after it.
+		r.o.Log.Error("journal entry refused by the database", "event", o.Event, "id", o.ID, "domain", h.Domain, "sqlstate", code)
+		out := o.Malformed("the database refused a value of the entry (SQLSTATE " + code + ")")
+		out.Subject = entrySubject(o)
+		return out, nil
+	}
 	if err != nil {
 		return journal.Result{}, err
 	}
 	res.ID, res.Event = o.ID, o.Event
 	return res, nil
+}
+
+// entrySubject names what an entry is about for the line a skipped entry prints: the display member `key` or `name` of the
+// entry, which the producers write. It is the entry's own claim and is printed quoted.
+func entrySubject(o journal.Object) string {
+	var e struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+	}
+	if !o.Into(&e) {
+		return ""
+	}
+	if e.Key != "" {
+		return e.Key
+	}
+	return e.Name
 }
 
 var errRollback = fmt.Errorf("journal: entry rolled back")

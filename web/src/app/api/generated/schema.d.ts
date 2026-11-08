@@ -697,7 +697,9 @@ export interface paths {
         head?: never;
         /**
          * Change a group
-         * @description `description`, `autoJoin` and `name` (a rename). A group owned by the identity provider's SCIM client answers
+         * @description `description`, `autoJoin`, `name` (a rename) and `syncDetached`, which accepts only `false` and attaches a detached group
+         *     to group synchronization again; `true` answers `422 validation_failed` with the pointer `/syncDetached`
+         *     (R-AUTH-018, Q-AUTH-206). A group owned by the identity provider's SCIM client answers
          *     `409 managed_by_scim`; auto-join on a group with an administration role binding answers
          *     `409 auto_join_admin_conflict` (R-AUTH-018, R-AUTH-019); auto-join on a group that is a member of a project answers
          *     `409 auto_join_member_conflict` and names the projects (R-AUTHZ-026). JSON merge patch; read-only members are ignored.
@@ -4964,12 +4966,13 @@ export interface components {
             groups: components["schemas"]["UserGroupMembership"][];
         };
         /**
-         * @description A group (R-AUTH-018). `roles` and `memberCount` are read only.
+         * @description A group (R-AUTH-018). `roles`, `memberCount` and `syncDetached` are read only here; `syncDetached` is cleared with `PATCH`.
          * @example {
          *       "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a11",
          *       "name": "team-web",
          *       "description": "Web team",
          *       "autoJoin": false,
+         *       "syncDetached": false,
          *       "origin": "admin",
          *       "memberCount": 3,
          *       "roles": [],
@@ -4982,6 +4985,11 @@ export interface components {
             name: string;
             description: string;
             autoJoin: boolean;
+            /**
+             * @description Set by the replay of a rename after a restore (R-AUTH-041): group synchronization neither fills nor creates the group
+             *     (R-AUTH-008). An administrator attaches it again with `PATCH` and `{"syncDetached": false}`.
+             */
+            syncDetached: boolean;
             /** @enum {string} */
             origin: "admin" | "oidc" | "scim";
             memberCount: number;
@@ -5019,6 +5027,11 @@ export interface components {
             name?: string;
             description?: string;
             autoJoin?: boolean;
+            /**
+             * @description Only `false` is accepted; it attaches a detached group to group synchronization again.
+             * @enum {boolean}
+             */
+            syncDetached?: false;
         };
         /**
          * @example {

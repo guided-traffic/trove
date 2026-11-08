@@ -3,6 +3,7 @@ package principal
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -67,6 +68,10 @@ func TestR_AUTH_041_GroupUpdatedEntriesAreReadStrictly(t *testing.T) {
 		`{"principalId":"` + gid + `","autoJoin":{"before":true}}`,
 		`{"principalId":"` + gid + `","autoJoin":{"after":false}}`,
 		`{"principalId":"` + gid + `","autoJoin":{"before":"yes","after":false}}`,
+		// renamedFrom (Q-AUTH-206): both names must be group names.
+		`{"principalId":"` + gid + `","name":"ops","renamedFrom":"Not A Group","autoJoin":{"before":true,"after":true}}`,
+		`{"principalId":"` + gid + `","name":"","renamedFrom":"ops","autoJoin":{"before":true,"after":true}}`,
+		`{"principalId":"` + gid + `","name":"ops","renamedFrom":7,"autoJoin":{"before":true,"after":true}}`,
 	} {
 		o := journal.Object{Event: audit.EventGroupUpdated, Entry: json.RawMessage(bad)}
 		if _, ok := readGroupUpdated(o); ok {
@@ -74,6 +79,95 @@ func TestR_AUTH_041_GroupUpdatedEntriesAreReadStrictly(t *testing.T) {
 		}
 		if r, err := replayPrincipal(context.Background(), nil, journal.Env{}, o); err != nil || r.Outcome != journal.Skipped {
 			t.Errorf("%s: %+v, %v; want skipped as malformed", bad, r, err)
+		}
+	}
+}
+
+// TestR_AUTH_041_AGroupRenameEntryReadsBack: the entry of a rename carries the former name, and an update that did not rename
+// leaves the key out (Q-AUTH-206).
+func TestR_AUTH_041_AGroupRenameEntryReadsBack(t *testing.T) {
+	renamed, err := json.Marshal(groupUpdatedEntry{PrincipalID: gid, Name: "ops", AutoJoin: boolChange{Before: true, After: true}, RenamedFrom: "sre"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := readGroupUpdated(journal.Object{Entry: renamed}); !ok || e.RenamedFrom != "sre" || e.Name != "ops" {
+		t.Fatalf("%s reads as %+v, %v", renamed, e, ok)
+	}
+	plain, err := json.Marshal(groupUpdatedEntry{PrincipalID: gid, Name: "ops", AutoJoin: boolChange{Before: true, After: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plain), "renamedFrom") {
+		t.Errorf("an update that did not rename carries renamedFrom: %s", plain)
+	}
+}
+
+// TestR_AUTH_041_UserUpdatedEntriesAreReadStrictly: the entry the producer writes reads back, an empty list included; an
+// entry without the user's ID, without the list, with a list that is too long or holds a non-string or empty provider is
+// skipped as malformed before any statement runs.
+func TestR_AUTH_041_UserUpdatedEntriesAreReadStrictly(t *testing.T) {
+	for _, links := range [][]string{{}, {"corp"}, {"corp", "partners"}} {
+		written, err := json.Marshal(userUpdatedEntry{PrincipalID: gid, Name: "alice", PendingLinksRemoved: links})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, ok := readUserUpdated(journal.Object{Entry: written})
+		if !ok || e.PrincipalID != gid || len(e.PendingLinksRemoved) != len(links) {
+			t.Fatalf("the producer's entry %s reads as %+v, %v", written, e, ok)
+		}
+	}
+	tooMany := `["` + strings.Repeat(`a","`, maxEntryList) + `a"]`
+	for _, bad := range []string{
+		`{"name":"alice","pendingLinksRemoved":[]}`,
+		`{"principalId":"alice","pendingLinksRemoved":[]}`,
+		`{"principalId":"` + gid + `"}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":null}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":"corp"}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":[7]}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":[""]}`,
+		// A provider ID is the syntax of the configuration: a control character, NUL, upper case or length fails it.
+		`{"principalId":"` + gid + `","pendingLinksRemoved":["co\u0000rp"]}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":["corp\n"]}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":["Corp"]}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":["a ","b"]}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":["` + strings.Repeat("a", 33) + `"]}`,
+		`{"principalId":"` + gid + `","pendingLinksRemoved":` + tooMany + `}`,
+		`[]`,
+	} {
+		o := journal.Object{Event: audit.EventUserUpdated, Entry: json.RawMessage(bad)}
+		if _, ok := readUserUpdated(o); ok {
+			t.Errorf("%.80s was read", bad)
+		}
+		if r, err := replayPrincipal(context.Background(), nil, journal.Env{}, o); err != nil || r.Outcome != journal.Skipped {
+			t.Errorf("%.80s: %+v, %v; want skipped as malformed", bad, r, err)
+		}
+	}
+}
+
+// TestR_AUTH_041_AGroupDeletedEntryNamesAGroup: the name of a group.deleted entry is written into the suppression of a role
+// binding; a name that is no group name makes the entry malformed before any statement runs.
+func TestR_AUTH_041_AGroupDeletedEntryNamesAGroup(t *testing.T) {
+	for _, name := range []string{"Bad Name", "a\u0000b", "x\ny", strings.Repeat("a", 129)} {
+		raw, err := json.Marshal(map[string]string{"principalId": gid, "name": name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		o := journal.Object{Event: audit.EventGroupDeleted, Entry: raw}
+		if r, err := replayPrincipal(context.Background(), nil, journal.Env{}, o); err != nil || r.Outcome != journal.Skipped {
+			t.Errorf("%q: %+v, %v; want skipped as malformed", name, r, err)
+		}
+	}
+}
+
+// TestR_HA_054_EveryIdentityEventIsRegisteredWithItsHandler: the identity handler of this package takes every identity event
+// the registry flags as journaled, user.updated included.
+func TestR_HA_054_EveryIdentityEventIsRegisteredWithItsHandler(t *testing.T) {
+	for _, ev := range []string{
+		audit.EventUserUpdated, audit.EventUserDisabled, audit.EventUserDeleted, audit.EventGroupUpdated, audit.EventGroupDeleted,
+		audit.EventGroupMembersChanged, audit.EventUserGroupsSynced,
+	} {
+		if h, ok := journal.HandlerFor(ev); !ok || h.Domain != "identity" {
+			t.Errorf("%s has no identity handler", ev)
 		}
 	}
 }

@@ -243,9 +243,16 @@ func (s *SettingsStore) Update(ctx context.Context, c principal.Caller, p Settin
 		if after, err = readSettings(ctx, qs); err != nil {
 			return err
 		}
-		// The journal entry carries anonymousAccess before and after on every
-		// change, so a producer cannot drop a narrowing (Q-AUTH-18).
-		entry := map[string]any{"anonymousAccess": map[string]bool{"before": before.AnonymousAccess, "after": after.AnonymousAccess}}
+		// The journal entry carries anonymousAccess and the two runtime maxima, each
+		// before and after, on every change, so a producer cannot drop a narrowing
+		// (Q-AUTH-18, Q-AUTH-207). A maximum is seconds, or null for the YAML value.
+		maxima := func(b, a *time.Duration) map[string]any {
+			return map[string]any{"maxTTLSeconds": map[string]any{"before": secsOrNil(b), "after": secsOrNil(a)}}
+		}
+		entry := map[string]any{
+			"anonymousAccess": map[string]bool{"before": before.AnonymousAccess, "after": after.AnonymousAccess},
+			"tokens":          map[string]any{"pat": maxima(before.PATMaxTTL, after.PATMaxTTL), "sat": maxima(before.SATMaxTTL, after.SATMaxTTL)},
+		}
 		return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 			Type: audit.EventSettingsAuthChanged, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
 			Subject: audit.Subject{Kind: "settings", Name: "auth"},
@@ -279,6 +286,8 @@ func (s *SettingsStore) validate(after Settings, p SettingsPatch) error {
 		case c.v == nil:
 		case *c.v < time.Minute:
 			return errs.E(errs.Invalid, errs.CodeInvalidTTL, "A lifetime must be at least 60 seconds.")
+		case *c.v > config.MaxTokenLifetime:
+			return errs.E(errs.Invalid, errs.CodeExceedsCeiling, "A lifetime is at most "+config.MaxTokenLifetime.String()+" (100 years).")
 		case *c.v > c.ceiling:
 			return errs.E(errs.Invalid, errs.CodeExceedsCeiling, "The value exceeds the ceiling in the configuration ("+c.ceiling.String()+").")
 		}
@@ -296,13 +305,16 @@ func (s *SettingsStore) validate(after Settings, p SettingsPatch) error {
 	return nil
 }
 
-func settingsJSON(st Settings) map[string]any {
-	n := func(d *time.Duration) any {
-		if d == nil {
-			return nil
-		}
-		return int64(d.Seconds())
+// secsOrNil is a lifetime as whole seconds, or nil for the YAML value.
+func secsOrNil(d *time.Duration) any {
+	if d == nil {
+		return nil
 	}
+	return int64(d.Seconds())
+}
+
+func settingsJSON(st Settings) map[string]any {
+	n := secsOrNil
 	return map[string]any{
 		"anonymousAccess": st.AnonymousAccess, "patDefaultTTLSeconds": n(st.PATDefaultTTL), "patMaxTTLSeconds": n(st.PATMaxTTL),
 		"satDefaultTTLSeconds": n(st.SATDefaultTTL), "satMaxTTLSeconds": n(st.SATMaxTTL), "expiryNoticeSeconds": n(st.ExpiryNotice),

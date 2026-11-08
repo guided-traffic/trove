@@ -37,13 +37,15 @@ func init() {
 	// finding is the finding's ID, package and version the stored name and version, advisory the canonical identifier; from
 	// and to are statuses; reason is the dismissal reason; bulk is the identifier of the bulk operation that carried the
 	// change; block says that the change set or lifted a download block under the repository's current policy (R-VULN-013),
-	// absent when it touched none.
+	// absent when it touched none; cause says which change of the evaluation set the block (detected, kind_changed, redetected,
+	// merged) and is absent for a triager's change (R-VULN-012, Q-VULN-130).
 	Register(EventType{
 		Name: EventVulnFindingStatusChanged, Category: CategoryContent, Mode: Transactional, Journal: JournalRevocation, Entry: EntryOptional,
 		Schema: `{"type":"object","properties":{` +
 			`"finding":{"type":"string"},"package":{"type":"string"},"version":{"type":"string"},"advisory":{"type":"string"},` +
 			`"from":{"type":"string"},"to":{"type":"string"},"reason":{"type":"string"},"bulk":{"type":"string"},` +
-			`"block":{"type":"string","enum":["set","lifted"]}},` +
+			`"block":{"type":"string","enum":["set","lifted"]},` +
+			`"cause":{"type":"string","enum":["detected","kind_changed","redetected","merged"]}},` +
 			`"required":["finding","package","version","advisory","from","to"],"additionalProperties":false}`,
 	})
 	// change is what moved a dismissed finding to needs_triage (the severity level rose, the kind became malicious, the

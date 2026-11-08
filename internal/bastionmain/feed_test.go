@@ -96,6 +96,7 @@ func TestR_BAS_015_TheMappingTableOfTheFeed(t *testing.T) {
 		{"repository.disabled drops every answer", FeedEvent{Action: audit.EventRepositoryDisabled, Repository: "web/npm-local"}, []rawEntry{{kind: iface.FeedGrants}}},
 		{"repository.deleted drops every answer", FeedEvent{Action: "repository.deleted", Repository: "web/npm-local"}, []rawEntry{{kind: iface.FeedGrants}}},
 		{"bastion.disabled concerns no caller", FeedEvent{Action: audit.EventBastionDisabled, ResourceID: u1}, nil},
+		{"user.updated removes a pending link no caller holds", FeedEvent{Action: audit.EventUserUpdated, ResourceID: u1}, nil},
 		{"group.updated removes no membership", FeedEvent{Action: audit.EventGroupUpdated, ResourceID: u1}, nil},
 		{"authz.ownership.removed bounds writes", FeedEvent{Action: "authz.ownership.removed"}, nil},
 		{"package.published reserves numbers", FeedEvent{Action: audit.EventPackagePublished, Repository: "web/npm-local"}, nil},
@@ -108,6 +109,40 @@ func TestR_BAS_015_TheMappingTableOfTheFeed(t *testing.T) {
 				t.Errorf("entries = %+v, want %+v", got, c.want)
 			}
 		})
+	}
+}
+
+// TestR_BAS_015_ANarrowingYieldsContentAndAGlobalClaimGrants: repository.narrowed yields the content of its repository, and
+// repository.claims_changed reads its added list: claims of scope members yield content, a global claim yields grants, a
+// change that only removed claims yields none, and a repository that is not named yields grants (Q-BAS-146). The removed list
+// of the claims event, a list of strings, is not read as the member list of group.members.changed.
+func TestR_BAS_015_ANarrowingYieldsContentAndAGlobalClaimGrants(t *testing.T) {
+	content := []rawEntry{{kind: iface.FeedContent, repository: "web/npm-local"}}
+	grants := []rawEntry{{kind: iface.FeedGrants}}
+	cases := []struct {
+		name string
+		ev   FeedEvent
+		want []rawEntry
+	}{
+		{"narrowed", FeedEvent{Action: audit.EventRepositoryNarrowed, Repository: "web/npm-remote", Details: []byte(`{"class":"remote","format":"npm","project":"web","parts":["excludeAdded"]}`)}, []rawEntry{{kind: iface.FeedContent, repository: "web/npm-remote"}}},
+		{"narrowed without a repository", FeedEvent{Action: audit.EventRepositoryNarrowed}, grants},
+		{"a members claim", FeedEvent{Action: "repository.claims_changed", Repository: "web/npm-local", Details: []byte(`{"source":"auto","added":[{"pattern":"@acme/lib","scope":"members"}],"removed":[],"claimsVersion":2}`)}, content},
+		{"a global claim among members claims", FeedEvent{Action: "repository.claims_changed", Repository: "web/npm-local", Details: []byte(`{"source":"manual","added":[{"pattern":"@a/*","scope":"members"},{"pattern":"@b/*","scope":"global"}],"removed":[],"claimsVersion":2}`)}, grants},
+		{"a removal only", FeedEvent{Action: "repository.claims_changed", Repository: "web/npm-local", Details: []byte(`{"source":"manual","added":[],"removed":["@a/*"],"claimsVersion":3}`)}, nil},
+		{"a claim without a repository", FeedEvent{Action: "repository.claims_changed", Details: []byte(`{"source":"auto","added":[{"pattern":"x","scope":"members"}],"removed":[],"claimsVersion":2}`)}, grants},
+		{"details that do not read", FeedEvent{Action: "repository.claims_changed", Repository: "web/npm-local", Details: []byte(`{"added":"x"}`)}, grants},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := mapEvent(c.ev, "default"); !reflect.DeepEqual(got, c.want) {
+				t.Errorf("entries = %+v, want %+v", got, c.want)
+			}
+		})
+	}
+	for _, name := range []string{audit.EventRepositoryNarrowed, "repository.claims_changed"} {
+		if !slices.Contains(FeedActions(), name) {
+			t.Errorf("%s is not among the actions the feed reads", name)
+		}
 	}
 }
 

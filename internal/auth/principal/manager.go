@@ -559,6 +559,7 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 			return err
 		}
 		var fields []string
+		removed := []string{}
 		if p.Email != nil || p.DisplayName != nil {
 			arg := q.IdentityUpdateUserFieldsParams{ID: id}
 			if p.Email != nil {
@@ -581,9 +582,11 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 					return err
 				}
 			}
-			if err := qs.IdentityReplaceIdentities(ctx, q.IdentityReplaceIdentitiesParams{UserID: id, Providers: providers}); err != nil {
+			gone, err := qs.IdentityReplaceIdentities(ctx, q.IdentityReplaceIdentitiesParams{UserID: id, Providers: providers})
+			if err != nil {
 				return err
 			}
+			removed = append(removed, gone...)
 			fields = append(fields, "identities")
 		}
 		if len(fields) == 0 {
@@ -593,6 +596,7 @@ func (m *Manager) UpdateUser(ctx context.Context, c Caller, name string, p UserP
 			Type: audit.EventUserUpdated, Outcome: audit.Success, Actor: c.Actor, Source: c.Source,
 			Subject: audit.Subject{Kind: "user", ID: id, Name: name},
 			Details: details(map[string]any{"source": sourceOf(c), "fields": fields}),
+			Journal: details(userUpdatedEntry{PrincipalID: id, Name: name, PendingLinksRemoved: removed}),
 		})
 	})
 	if err != nil {

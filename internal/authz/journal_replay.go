@@ -53,15 +53,18 @@ func replayAuthz(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Obj
 	}
 }
 
-// HasAdminBinding reports whether the database holds an admin role binding, for the line the replay prints when none is left
+// HasAdminBinding reports whether an enabled principal still holds the admin role, directly or through a group with an enabled member, for the line the replay prints when none is left
 // (R-HA-054).
 func HasAdminBinding(ctx context.Context, tx meta.Tx) (bool, error) {
 	qs, err := queriesOf(tx)
 	if err != nil {
 		return false, err
 	}
-	n, err := qs.JournalAdminBindingCount(ctx)
-	return n > 0, err
+	// The definition of the last_admin guard (R-AUTHZ-022), so the two cannot drift: an active user or service account that holds
+	// the role directly or through a group. A service account counts (it can act, nobody can sign in as it), and so does a holder
+	// without a usable identity (a user no identity provider account maps to).
+	h, err := qs.IdentityAdminHolders(ctx)
+	return h.Holders > 0, err
 }
 
 // bindableRole reports whether the name is a system role a binding can hold.

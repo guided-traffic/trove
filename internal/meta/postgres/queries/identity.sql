@@ -199,12 +199,21 @@ UPDATE user_identity SET last_claims = sqlc.arg(claims)::text::jsonb
 -- name: IdentityDeleteIdentitiesOfUser :one
 WITH d AS (DELETE FROM user_identity WHERE user_id = sqlc.arg(user_id)::text::uuid RETURNING 1) SELECT count(*) FROM d;
 
--- name: IdentityReplaceIdentities :exec
+-- name: IdentityReplaceIdentities :many
 -- Replaces the pending links of a user: the identities listed stay or are added
--- as pending (a linked identity is never removed here).
+-- as pending (a linked identity is never removed here). The providers of the links
+-- removed are returned: they are part of the journal entry of user.updated.
 DELETE FROM user_identity
  WHERE user_id = sqlc.arg(user_id)::text::uuid AND subject IS NULL
-   AND NOT (provider_id = ANY(sqlc.arg(providers)::text[]));
+   AND NOT (provider_id = ANY(sqlc.arg(providers)::text[]))
+RETURNING provider_id;
+
+-- name: IdentityDeletePendingLinks :many
+-- Replay of user.updated: deletes the pending links of the providers named; a linked identity is never touched.
+DELETE FROM user_identity
+ WHERE user_id = sqlc.arg(user_id)::text::uuid AND subject IS NULL
+   AND provider_id = ANY(sqlc.arg(providers)::text[])
+RETURNING provider_id;
 
 -- Groups ---------------------------------------------------------------------
 
@@ -213,13 +222,13 @@ INSERT INTO user_group (principal_id, description, auto_join, origin)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text, sqlc.arg(auto_join)::boolean, sqlc.arg(origin)::text);
 
 -- name: IdentityGetGroup :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.sync_detached, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name = sqlc.arg(name)::text;
 
 -- name: IdentityListGroups :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.sync_detached, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name > sqlc.arg(after)::text
@@ -230,7 +239,8 @@ SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created
 
 -- name: IdentityUpdateGroup :exec
 UPDATE user_group SET description = CASE WHEN sqlc.arg(set_description)::boolean THEN sqlc.arg(description)::text ELSE description END,
-                      auto_join = CASE WHEN sqlc.arg(set_auto_join)::boolean THEN sqlc.arg(auto_join)::boolean ELSE auto_join END
+                      auto_join = CASE WHEN sqlc.arg(set_auto_join)::boolean THEN sqlc.arg(auto_join)::boolean ELSE auto_join END,
+                      sync_detached = CASE WHEN sqlc.arg(set_sync_detached)::boolean THEN sqlc.arg(sync_detached)::boolean ELSE sync_detached END
  WHERE principal_id = sqlc.arg(id)::text::uuid;
 
 -- name: IdentityGroupMembers :many
@@ -272,7 +282,12 @@ SELECT p.id::text AS group_id, p.name AS group_name
 
 -- name: IdentityGroupsByName :many
 SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principal_id = p.id
- WHERE p.kind = 'group' AND p.name = ANY(sqlc.arg(names)::text[]);
+ WHERE p.kind = 'group' AND p.name = ANY(sqlc.arg(names)::text[]) AND NOT g.sync_detached;
+
+-- name: IdentityGroupDetachedByName :one
+-- Whether the group of the name is detached from group synchronization (Q-AUTH-206).
+SELECT EXISTS (SELECT 1 FROM principal p JOIN user_group g ON g.principal_id = p.id
+                WHERE p.kind = 'group' AND p.name = sqlc.arg(name)::text AND g.sync_detached);
 
 -- name: IdentityAutoJoinGroups :many
 SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principal_id = p.id
@@ -294,7 +309,13 @@ SELECT p.key FROM project_member m JOIN project p ON p.id = m.project_id
 -- auto-join flag, which each check the other, run one after the other
 -- (R-AUTH-019, R-AUTHZ-022). No row for a principal that is not a group. The
 -- flag read under the lock is the before-state of group.updated's journal entry.
-SELECT principal_id::text AS id, auto_join FROM user_group WHERE principal_id = sqlc.arg(id)::text::uuid FOR UPDATE;
+SELECT principal_id::text AS id, auto_join, sync_detached FROM user_group WHERE principal_id = sqlc.arg(id)::text::uuid FOR UPDATE;
+
+-- name: IdentityDeleteOIDCMemberships :many
+-- Replay of a group rename (Q-AUTH-206): the memberships a group synchronization wrote, of every provider.
+DELETE FROM group_membership
+ WHERE group_id = sqlc.arg(group_id)::text::uuid AND source LIKE 'oidc:%'
+RETURNING member_id::text AS member_id;
 
 -- name: IdentityHoldsRole :one
 -- Whether a principal holds a system role, through a binding of its own or of a
@@ -623,6 +644,26 @@ UPDATE auth_settings
        expiry_notice = CASE WHEN sqlc.arg(expiry_notice_secs)::float8 < 0 THEN NULL ELSE make_interval(secs => sqlc.arg(expiry_notice_secs)::float8) END,
        revision = revision + 1, updated_at = now(), updated_by = NULLIF(sqlc.arg(updated_by)::text, '')::uuid
  WHERE singleton AND (sqlc.arg(expected)::bigint < 0 OR revision = sqlc.arg(expected)::bigint)
+RETURNING revision;
+
+-- name: IdentityLowerPATMax :many
+-- Replay of settings.auth.changed (Q-AUTH-207): the runtime maximum is taken to the journaled value when that is shorter; NULL is the
+-- YAML value and the longest. A default above the new maximum is taken down to it, a NULL default stays NULL (the effective
+-- value clamps it). No row: the maximum is at most the value already.
+UPDATE auth_settings
+   SET pat_max_ttl = make_interval(secs => sqlc.arg(secs)::float8),
+       pat_default_ttl = CASE WHEN pat_default_ttl > make_interval(secs => sqlc.arg(secs)::float8) THEN make_interval(secs => sqlc.arg(secs)::float8) ELSE pat_default_ttl END,
+       revision = revision + 1, updated_at = now()
+ WHERE singleton AND (pat_max_ttl IS NULL OR pat_max_ttl > make_interval(secs => sqlc.arg(secs)::float8))
+RETURNING revision;
+
+-- name: IdentityLowerSATMax :many
+-- As IdentityLowerPATMax, for service account tokens.
+UPDATE auth_settings
+   SET sat_max_ttl = make_interval(secs => sqlc.arg(secs)::float8),
+       sat_default_ttl = CASE WHEN sat_default_ttl > make_interval(secs => sqlc.arg(secs)::float8) THEN make_interval(secs => sqlc.arg(secs)::float8) ELSE sat_default_ttl END,
+       revision = revision + 1, updated_at = now()
+ WHERE singleton AND (sat_max_ttl IS NULL OR sat_max_ttl > make_interval(secs => sqlc.arg(secs)::float8))
 RETURNING revision;
 
 -- Group members, one row per member (R-AUTH-018) --------------------------------

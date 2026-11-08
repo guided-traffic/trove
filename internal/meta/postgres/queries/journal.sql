@@ -98,9 +98,6 @@ UPDATE authz_project_policy_entry SET actions = sqlc.arg(actions)::text[]
 WITH a AS (DELETE FROM authz_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid)
 DELETE FROM authz_project_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid;
 
--- name: JournalAdminBindingCount :one
-SELECT count(*)::bigint FROM authz_role_binding WHERE role = 'admin';
-
 -- name: JournalProjectLock :many
 -- A project by ID under its row lock, which every member change and move takes.
 SELECT id::text AS id, key FROM project WHERE id = sqlc.arg(id)::text::uuid FOR UPDATE;

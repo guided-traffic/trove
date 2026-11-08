@@ -20,6 +20,9 @@ type Group struct {
 	Name        string
 	Description string
 	AutoJoin    bool
+	// SyncDetached is set by the replay of a rename and cleared by an administrator: group synchronization neither
+	// fills nor creates the group (R-AUTH-008, R-AUTH-018).
+	SyncDetached bool
 	// Origin is admin, oidc or scim.
 	Origin      string
 	MemberCount int
@@ -134,8 +137,8 @@ func (m *Manager) createGroup(ctx context.Context, tx meta.Tx, c Caller, in NewG
 	return loadGroup(ctx, qs, in.Name)
 }
 
-func groupFrom(id, name, desc string, autoJoin bool, origin string, created time.Time, members, revision int64) Group {
-	return Group{Revision: revision, ID: id, Name: name, Description: desc, AutoJoin: autoJoin, Origin: origin, CreatedAt: created, MemberCount: int(members)}
+func groupFrom(id, name, desc string, autoJoin, syncDetached bool, origin string, created time.Time, members, revision int64) Group {
+	return Group{Revision: revision, ID: id, Name: name, Description: desc, AutoJoin: autoJoin, SyncDetached: syncDetached, Origin: origin, CreatedAt: created, MemberCount: int(members)}
 }
 
 // GetGroup returns the group, or a 404.
@@ -162,7 +165,7 @@ func loadGroup(ctx context.Context, qs *q.Queries, name string) (Group, error) {
 		return Group{}, ErrNotFound
 	}
 	r := rows[0]
-	g := groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision)
+	g := groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.SyncDetached, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision)
 	roles, err := qs.IdentityGroupRoles(ctx, r.ID)
 	if err != nil {
 		return Group{}, err
@@ -191,7 +194,7 @@ func (m *Manager) ListGroups(ctx context.Context, f GroupFilter) ([]Group, error
 		}
 		out = out[:0]
 		for _, r := range rows {
-			out = append(out, groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision))
+			out = append(out, groupFrom(r.ID, r.Name, r.Description, r.AutoJoin, r.SyncDetached, r.Origin, r.CreatedAt.Time, r.MemberCount, r.Revision))
 		}
 		return nil
 	})
@@ -207,6 +210,9 @@ type GroupPatch struct {
 	Name        *string
 	Description *string
 	AutoJoin    *bool
+	// SyncDetached attaches a detached group to group synchronization again when false; true is refused, because only
+	// a journal replay detaches a group (R-AUTH-018, Q-AUTH-206).
+	SyncDetached *bool
 	// Expected is the revision the caller loaded (If-Match) or errs.AnyRevision
 	// for the deliberate blind write; the zero value matches no revision
 	// (R-API-012).
@@ -219,6 +225,10 @@ type GroupPatch struct {
 // answers 409 auto_join_admin_conflict, and on a group that is a member of a
 // project 409 auto_join_member_conflict (R-AUTHZ-026).
 func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p GroupPatch) (Group, error) {
+	if p.SyncDetached != nil && *p.SyncDetached {
+		return Group{}, errs.E(errs.Invalid, errs.CodeValidation, "A group is detached from group synchronization by a restore only; it can be attached again.",
+			errs.WithFields(errs.FieldError{Pointer: "/syncDetached", Code: "invalid_value", Detail: "only false is accepted"}))
+	}
 	final := name
 	err := m.db.InTx(ctx, func(tx meta.Tx) error {
 		qs := Queries(tx)
@@ -252,37 +262,17 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 			return err
 		}
 		var fields []string
+		var renamedFrom string
 		if p.AutoJoin != nil && *p.AutoJoin {
-			admin, err := qs.IdentityGroupHasAdminRole(ctx, g.ID)
-			if err != nil {
-				return err
-			}
-			if admin {
-				return errs.E(errs.Conflict, errs.CodeAutoJoinAdminConflict, "A group with an administration role binding cannot be an auto-join group.")
-			}
-			projects, err := qs.IdentityGroupProjects(ctx, g.ID)
-			if err != nil {
-				return err
-			}
-			if len(projects) > 0 {
-				return errs.E(errs.Conflict, errs.CodeAutoJoinMemberConflict,
-					"A group that is a member of a project cannot be an auto-join group: "+strings.Join(projects, ", ")+".")
-			}
-		}
-		if p.Description != nil || p.AutoJoin != nil {
-			arg := q.IdentityUpdateGroupParams{ID: g.ID}
-			if p.Description != nil {
-				arg.SetDescription, arg.Description = true, *p.Description
-				fields = append(fields, "description")
-			}
-			if p.AutoJoin != nil {
-				arg.SetAutoJoin, arg.AutoJoin = true, *p.AutoJoin
-				fields = append(fields, "autoJoin")
-			}
-			if err := qs.IdentityUpdateGroup(ctx, arg); err != nil {
+			if err := checkAutoJoinTarget(ctx, qs, g.ID); err != nil {
 				return err
 			}
 		}
+		changed, err := updateGroupFields(ctx, qs, g.ID, p, p.SyncDetached != nil && locked[0].SyncDetached)
+		if err != nil {
+			return err
+		}
+		fields = append(fields, changed...)
 		if p.Name != nil && *p.Name != name {
 			if !ValidGroupName(*p.Name) {
 				return errs.E(errs.Invalid, errs.CodeValidation, "The group name does not match ^[a-z0-9][a-z0-9._-]{0,127}$.")
@@ -294,7 +284,7 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 			if len(renamed) == 0 {
 				return errs.E(errs.Conflict, errs.CodeAlreadyExists, "A group with this name exists.")
 			}
-			final = *p.Name
+			final, renamedFrom = *p.Name, name
 			fields = append(fields, "name")
 			if err := notifyAuthz(ctx, m.authz, tx, g.ID); err != nil {
 				return err
@@ -315,7 +305,7 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 			Subject: audit.Subject{Kind: "group", ID: g.ID, Name: final},
 			Details: details(map[string]any{"fields": fields}),
 			Journal: details(groupUpdatedEntry{
-				PrincipalID: g.ID, Name: final, AutoJoin: boolChange{Before: autoJoinBefore, After: autoJoinAfter},
+				PrincipalID: g.ID, Name: final, AutoJoin: boolChange{Before: autoJoinBefore, After: autoJoinAfter}, RenamedFrom: renamedFrom,
 			}),
 		})
 	})
@@ -323,6 +313,51 @@ func (m *Manager) UpdateGroup(ctx context.Context, c Caller, name string, p Grou
 		return Group{}, DBErr("principal.UpdateGroup", err)
 	}
 	return m.GetGroup(ctx, final)
+}
+
+// checkAutoJoinTarget refuses auto-join for a group with an administration role binding (409 auto_join_admin_conflict) and for
+// a group that is a member of a project (409 auto_join_member_conflict, R-AUTHZ-026).
+func checkAutoJoinTarget(ctx context.Context, qs *q.Queries, id string) error {
+	admin, err := qs.IdentityGroupHasAdminRole(ctx, id)
+	if err != nil {
+		return err
+	}
+	if admin {
+		return errs.E(errs.Conflict, errs.CodeAutoJoinAdminConflict, "A group with an administration role binding cannot be an auto-join group.")
+	}
+	projects, err := qs.IdentityGroupProjects(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(projects) > 0 {
+		return errs.E(errs.Conflict, errs.CodeAutoJoinMemberConflict,
+			"A group that is a member of a project cannot be an auto-join group: "+strings.Join(projects, ", ")+".")
+	}
+	return nil
+}
+
+// updateGroupFields writes the description, the auto-join flag and, when the group is detached and the patch asks, the clear
+// of syncDetached, in one statement; it returns the names of the fields it wrote. The clear widens (the provider fills the
+// group again), so it is no part of the journal entry (Q-AUTH-206).
+func updateGroupFields(ctx context.Context, qs *q.Queries, id string, p GroupPatch, clearDetached bool) ([]string, error) {
+	if p.Description == nil && p.AutoJoin == nil && !clearDetached {
+		return nil, nil
+	}
+	var fields []string
+	arg := q.IdentityUpdateGroupParams{ID: id}
+	if clearDetached {
+		arg.SetSyncDetached, arg.SyncDetached = true, false
+		fields = append(fields, "syncDetached")
+	}
+	if p.Description != nil {
+		arg.SetDescription, arg.Description = true, *p.Description
+		fields = append(fields, "description")
+	}
+	if p.AutoJoin != nil {
+		arg.SetAutoJoin, arg.AutoJoin = true, *p.AutoJoin
+		fields = append(fields, "autoJoin")
+	}
+	return fields, qs.IdentityUpdateGroup(ctx, arg)
 }
 
 // DeleteGroup deletes a group with its memberships and bindings. A group with

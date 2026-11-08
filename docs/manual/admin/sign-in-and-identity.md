@@ -139,6 +139,8 @@ auth:
 
 At every sign-in, the user's memberships from this provider become exactly the groups the rules produce. Only groups that already exist are joined, unless `create_groups` is true. Memberships added by hand or by auto-join are never touched. A result that is not a valid group name is skipped and logged. When the claim is missing, `clear` removes the provider's memberships, `keep` leaves them, and `deny` refuses the sign-in; the user's detail page then shows a warning that the last sign-in carried no usable group claim.
 
+A group that a restore marked as **detached** (below) is neither filled nor created by the sync: a rule that produces its name adds no member and, with `create_groups`, creates no second group; the sign-in goes on.
+
 A membership change at the provider reaches trove only at the user's next sign-in. The sync can remove the last member of a group that holds the `admin` role; keep the break-glass account or a service account with `admin` for recovery.
 
 ## Administrators from the Helm values
@@ -260,6 +262,7 @@ To pre-provision a user, select **Add user** and fill in:
 A user's page shows **Attributes**, **Identities** (**Linked** or **Pending first sign-in**), **Groups** with the **Source** of each membership (**Manual**, **Auto-join**, **Identity provider**), the user's system roles, **Tokens** and **Sessions**. You can:
 
 - correct **Display name** and **Email** with **Save correction**;
+- remove a pending link by saving the list of links without it. The removal is journaled with the change (`user.updated` lists the provider), so a restore to an earlier point removes the link again and the provider's account of that username cannot take the user over through it. A link that is already **Linked** is never removed this way, and the replay never removes one;
 - add a manual membership with **Add to group**, or **Remove** a manual one; memberships from the provider or auto-join cannot be removed here;
 - **Disable** the user: sessions end, tokens stop working, and **Also revoke all tokens of this user** (checked by default) revokes them for good. **Enable** reverses a disable, but not a revocation;
 - **Delete** the user with tokens, sessions, identity links, memberships, policy entries and role bindings. A later sign-in of the same identity creates a new user with no grants, if `jit` allows it;
@@ -279,6 +282,8 @@ Nobody can disable or delete their own account here. Disabling or deleting the l
 | **Every user joins this group automatically** | Auto-join: users created afterwards become members with source **Auto-join**; existing users are not added |
 
 A group's page lets you rename it, change the description and auto-join flag (**Save group**), **Delete group**, add members with **Add a member** (a username, or `sa:<name>` for a service account of no project; a service account of a project never joins a group, `project_account_not_groupable`), and **Remove** manual memberships. It also lists the group's **System roles** and the **Permission policies naming this group**. A group that holds a system role cannot be auto-join (`auto_join_admin_conflict`), and an auto-join group cannot be made a member of a project (`principal_not_allowed`): every user is in it.
+
+**Detached groups.** Group synchronization finds a group by its name, so renaming a group cuts it off from the provider's group of the old name. A restore to a point before the rename would bring the old name back and let the next sign-in fill the group, with its role bindings, from the provider again. The restore therefore does not rename the group back: it keeps the restored name, marks the group **detached** and removes its memberships from the identity provider. The manual memberships, the role bindings and the policies stay. The group's page then says that the identity provider no longer fills the group and offers **Attach to group synchronization again**, which sends `{"syncDetached": false}`; use it when the provider may fill the group again. The API refuses `true`: only a restore detaches a group, and a rename leaves the mark as it is. The restore output lists the entry as `applied` and, for a detached group that holds a role binding, names the roles in its line. If that leaves nobody with the `admin` role (the administrators reached it only through the group), the output says that no enabled administrator is left: sign in with the break-glass administrator and attach the group again. See [Operations](operations.md).
 
 ## The Service accounts screen
 

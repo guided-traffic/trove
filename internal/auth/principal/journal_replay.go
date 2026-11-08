@@ -3,6 +3,9 @@ package principal
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -27,7 +30,7 @@ func init() {
 	journal.Register(journal.Handler{
 		Domain: "identity",
 		Events: []string{
-			audit.EventUserDisabled, audit.EventUserDeleted, audit.EventSADisabled, audit.EventSADeleted,
+			audit.EventUserDisabled, audit.EventUserDeleted, audit.EventUserUpdated, audit.EventSADisabled, audit.EventSADeleted,
 			audit.EventBastionDisabled, audit.EventBastionDeleted,
 			audit.EventGroupDeleted, audit.EventGroupMembersChanged, audit.EventUserGroupsSynced, audit.EventGroupUpdated,
 		},
@@ -42,12 +45,14 @@ func replayPrincipal(ctx context.Context, tx meta.Tx, env journal.Env, o journal
 	switch o.Event {
 	case audit.EventUserDisabled, audit.EventUserDeleted:
 		return replayDisableUser(ctx, tx, env, o)
+	case audit.EventUserUpdated:
+		return replayUserUpdated(ctx, tx, o)
 	case audit.EventSADisabled, audit.EventSADeleted:
 		return replayDisableAccount(ctx, tx, env, o, KindServiceAccount)
 	case audit.EventBastionDisabled, audit.EventBastionDeleted:
 		return replayDisableAccount(ctx, tx, env, o, KindBastion)
 	case audit.EventGroupUpdated:
-		return replayGroupUpdated(ctx, tx, o)
+		return replayGroupUpdated(ctx, tx, env, o)
 	case audit.EventGroupDeleted:
 		return replayDeleteGroup(ctx, tx, env, o)
 	case audit.EventGroupMembersChanged:
@@ -135,6 +140,10 @@ func replayDeleteGroup(ctx context.Context, tx meta.Tx, env journal.Env, o journ
 	}
 	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) {
 		return o.Malformed("principalId is not an ID"), nil
+	}
+	// The name is written into the suppression of a binding: only a group name goes there.
+	if e.Name != "" && !ValidGroupName(e.Name) {
+		return o.Malformed("name is not a group name"), nil
 	}
 	qs := Queries(tx)
 	g, found, err := principalOf(ctx, qs, e.PrincipalID, KindGroup)
@@ -274,15 +283,34 @@ type boolChange struct {
 	After  bool `json:"after"`
 }
 
-// groupUpdatedEntry is the journal entry of group.updated (R-AUTH-041, Q-AUTH-198): the group by ID, its name for display,
-// and the auto-join flag before and after the update, on every update whether it changed the flag or not.
+// groupUpdatedEntry is the journal entry of group.updated (R-AUTH-041, Q-AUTH-198, Q-AUTH-206): the group by ID, its name for
+// display, the auto-join flag before and after the update on every update whether it changed the flag or not, and the name
+// before when the update renamed the group.
 type groupUpdatedEntry struct {
 	PrincipalID string     `json:"principalId"`
 	Name        string     `json:"name"`
 	AutoJoin    boolChange `json:"autoJoin"`
+	RenamedFrom string     `json:"renamedFrom,omitempty"`
 }
 
-// readGroupUpdated reads a group.updated entry strictly: the ID and both values of the flag must be present.
+// userUpdatedEntry is the journal entry of user.updated (R-AUTH-041, Q-AUTH-205): the user by ID, its name for display, and
+// the providers whose pending identity link the update removed, an empty list when it removed none.
+type userUpdatedEntry struct {
+	PrincipalID         string   `json:"principalId"`
+	Name                string   `json:"name"`
+	PendingLinksRemoved []string `json:"pendingLinksRemoved"`
+}
+
+// providerIDPattern is the syntax of a provider ID in the configuration (auth.oidc.providers, it is part of the redirect URI).
+// A forged entry names no other string: a value with a control character or NUL would fail the statement that carries it,
+// and a failing statement stops the replay.
+var providerIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// maxEntryList bounds the lists of a journal entry the readers accept.
+const maxEntryList = 1000
+
+// readGroupUpdated reads a group.updated entry strictly: the ID and both values of the flag must be present, and a
+// renamedFrom is a valid group name together with the entry's name.
 func readGroupUpdated(o journal.Object) (groupUpdatedEntry, bool) {
 	var e struct {
 		PrincipalID string `json:"principalId"`
@@ -291,11 +319,68 @@ func readGroupUpdated(o journal.Object) (groupUpdatedEntry, bool) {
 			Before *bool `json:"before"`
 			After  *bool `json:"after"`
 		} `json:"autoJoin"`
+		RenamedFrom string `json:"renamedFrom"`
 	}
 	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) || e.AutoJoin == nil || e.AutoJoin.Before == nil || e.AutoJoin.After == nil {
 		return groupUpdatedEntry{}, false
 	}
-	return groupUpdatedEntry{PrincipalID: e.PrincipalID, Name: e.Name, AutoJoin: boolChange{Before: *e.AutoJoin.Before, After: *e.AutoJoin.After}}, true
+	if e.RenamedFrom != "" && (!ValidGroupName(e.RenamedFrom) || !ValidGroupName(e.Name)) {
+		return groupUpdatedEntry{}, false
+	}
+	return groupUpdatedEntry{
+		PrincipalID: e.PrincipalID, Name: e.Name, AutoJoin: boolChange{Before: *e.AutoJoin.Before, After: *e.AutoJoin.After},
+		RenamedFrom: e.RenamedFrom,
+	}, true
+}
+
+// readUserUpdated reads a user.updated entry strictly: the ID and the list of providers must be present, the list holds
+// at most 1000 non-empty strings.
+func readUserUpdated(o journal.Object) (userUpdatedEntry, bool) {
+	var e struct {
+		PrincipalID         string    `json:"principalId"`
+		Name                string    `json:"name"`
+		PendingLinksRemoved *[]string `json:"pendingLinksRemoved"`
+	}
+	if !o.Into(&e) || !journal.IsUUID(e.PrincipalID) || e.PendingLinksRemoved == nil || len(*e.PendingLinksRemoved) > maxEntryList {
+		return userUpdatedEntry{}, false
+	}
+	for _, p := range *e.PendingLinksRemoved {
+		if !providerIDPattern.MatchString(p) {
+			return userUpdatedEntry{}, false
+		}
+	}
+	return userUpdatedEntry{PrincipalID: e.PrincipalID, Name: e.Name, PendingLinksRemoved: *e.PendingLinksRemoved}, true
+}
+
+// replayUserUpdated deletes the pending identity links the update removed (R-AUTH-016, Q-AUTH-205). A linked identity is
+// never removed: the live update cannot either, so an entry naming a provider the restored user holds linked changes
+// nothing. Pending links are read from PostgreSQL at each login (IdentityClaimPendingLink), no cache holds them, so no
+// change area is told.
+func replayUserUpdated(ctx context.Context, tx meta.Tx, o journal.Object) (journal.Result, error) {
+	e, ok := readUserUpdated(o)
+	if !ok {
+		return o.Malformed("principalId or pendingLinksRemoved is missing"), nil
+	}
+	qs := Queries(tx)
+	u, found, err := principalOf(ctx, qs, e.PrincipalID, KindUser)
+	switch {
+	case err != nil:
+		return journal.Result{}, err
+	case !found:
+		return o.Result(journal.SubjectUnknown, e.PrincipalID), nil
+	case u.IsBreakGlass:
+		return o.Malformed("the break-glass account is not replayed"), nil
+	case len(e.PendingLinksRemoved) == 0:
+		return o.Result(journal.AlreadyInEffect, u.Name), nil
+	}
+	gone, err := qs.IdentityDeletePendingLinks(ctx, q.IdentityDeletePendingLinksParams{UserID: u.ID, Providers: e.PendingLinksRemoved})
+	if err != nil {
+		return journal.Result{}, err
+	}
+	if len(gone) == 0 {
+		return o.Result(journal.AlreadyInEffect, u.Name), nil
+	}
+	return o.Result(journal.Applied, u.Name), nil
 }
 
 // autoJoinOrder is the comparator of the auto-join flag (R-AUTH-019): off gives the users created afterwards nothing that on
@@ -305,11 +390,14 @@ type autoJoinOrder struct{}
 // Narrows reports whether after grants nothing that current does not.
 func (autoJoinOrder) Narrows(current, after bool) bool { return !after || current }
 
-// replayGroupUpdated is the update rule of R-HA-054 on the auto-join flag: a flag the entry cleared is cleared (applied), one
-// it set is never set (skipped, case 2). With two values the rule cannot reach case 3: the only change that is neither a
-// narrowing nor contained in its before-state is an equal one, which is already in effect. The name and the description of
-// a group are not access-bearing and are not replayed; replay never changes an identifying field.
-func replayGroupUpdated(ctx context.Context, tx meta.Tx, o journal.Object) (journal.Result, error) {
+// replayGroupUpdated replays the two parts of a group.updated entry. The auto-join part is the update rule of R-HA-054 on
+// the flag: a flag the entry cleared is cleared (applied), one it set is never set (skipped, case 2). With two values the
+// rule cannot reach case 3: the only change that is neither a narrowing nor contained in its before-state is an equal one,
+// which is already in effect. The rename part (Q-AUTH-206) never renames: the group keeps its restored name and is
+// detached from group synchronization. The description of a group is not access-bearing and is not replayed; replay never
+// changes an identifying field. The outcome is applied when either part changed something, and a suspension of the flag
+// stays the outcome.
+func replayGroupUpdated(ctx context.Context, tx meta.Tx, env journal.Env, o journal.Object) (journal.Result, error) {
 	e, ok := readGroupUpdated(o)
 	if !ok {
 		return o.Malformed("principalId or autoJoin is missing"), nil
@@ -329,10 +417,38 @@ func replayGroupUpdated(ctx context.Context, tx meta.Tx, o journal.Object) (jour
 	if len(locked) == 0 {
 		return o.Result(journal.SubjectUnknown, g.Name), nil
 	}
-	current := locked[0].AutoJoin
+	r, err := replayAutoJoin(ctx, tx, o, e, g, locked[0].AutoJoin)
+	if err != nil || e.RenamedFrom == "" {
+		return r, err
+	}
+	detached, roles, err := replayRenameDetach(ctx, tx, env, e, g, locked[0].SyncDetached)
+	if err != nil || !detached {
+		return r, err
+	}
+	switch r.Outcome {
+	case journal.Suspended:
+	case journal.Applied:
+		r.Detail = json.RawMessage(`{"parts":["autoJoin","syncDetached"]}`)
+	case journal.Skipped:
+		// The skipped flag stays visible beside the part that applied.
+		r.Outcome, r.Detail = journal.Applied, json.RawMessage(`{"parts":["syncDetached"],"skipped":["autoJoin"]}`)
+	default:
+		r.Outcome, r.Detail = journal.Applied, json.RawMessage(`{"parts":["syncDetached"]}`)
+	}
+	if len(roles) > 0 {
+		// A detached group that holds a role binding loses the members the identity provider put into it, and with them
+		// the role: the line names the roles so that an administrator sees it (Q-AUTH-206).
+		r.Subject = fmt.Sprintf("%s (detached from group synchronization; holds the role binding %s)", g.Name, strings.Join(roles, ", "))
+	}
+	return r, nil
+}
+
+// replayAutoJoin is the auto-join part of group.updated.
+func replayAutoJoin(ctx context.Context, tx meta.Tx, o journal.Object, e groupUpdatedEntry, g q.IdentityPrincipalByIDRow, current bool) (journal.Result, error) {
 	if current == e.AutoJoin.After {
 		return o.Result(journal.AlreadyInEffect, g.Name), nil
 	}
+	qs := Queries(tx)
 	// The flag is read when a user is created (applyAutoJoin); no replica caches it, so no change area is told.
 	clearFlag := func() error {
 		return qs.IdentityUpdateGroup(ctx, q.IdentityUpdateGroupParams{ID: g.ID, SetAutoJoin: true, AutoJoin: false})
@@ -347,4 +463,28 @@ func replayGroupUpdated(ctx context.Context, tx meta.Tx, o journal.Object) (jour
 	r := o.Result(out, g.Name)
 	r.Detail = detail
 	return r, err
+}
+
+// replayRenameDetach is the rename part of group.updated (Q-AUTH-206). It reports whether it changed the group: a group
+// that already carries the journaled name (the restore point lies after the rename) or is detached is already in effect.
+// Otherwise the group is detached from group synchronization and loses its memberships of source oidc:*, which the
+// provider's group of the old name filled; the manual, auto and scim memberships and the group's bindings stay. The roles
+// the group is bound to are returned for the line the replay prints.
+func replayRenameDetach(ctx context.Context, tx meta.Tx, env journal.Env, e groupUpdatedEntry, g q.IdentityPrincipalByIDRow, detached bool) (changed bool, roles []string, err error) {
+	if detached || g.Name == e.Name {
+		return false, nil, nil
+	}
+	qs := Queries(tx)
+	if err := qs.IdentityUpdateGroup(ctx, q.IdentityUpdateGroupParams{ID: g.ID, SetSyncDetached: true, SyncDetached: true}); err != nil {
+		return false, nil, err
+	}
+	if _, err := qs.IdentityDeleteOIDCMemberships(ctx, g.ID); err != nil {
+		return false, nil, err
+	}
+	roles, err = qs.IdentityGroupRoles(ctx, g.ID)
+	if err != nil {
+		return false, nil, err
+	}
+	// The group change flushes the principal cache, which holds the memberships.
+	return true, roles, NotifyPrincipals(env, tx, ChangeGroup, g.ID)
 }

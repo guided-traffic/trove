@@ -9576,6 +9576,24 @@
         <target>Diese Gruppe wird über SCIM verwaltet und kann hier nicht geändert werden.</target>
       </segment>
     </unit>
+    <unit id="group.detached-note">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:24,26</note>
+      </notes>
+      <segment>
+        <source>The identity provider no longer fills this group: a restore found it renamed after the restore point and detached it from group synchronization, and removed its members from the identity provider.</source>
+        <target>Der Identitätsanbieter füllt diese Gruppe nicht mehr: Eine Wiederherstellung hat sie nach dem Wiederherstellungspunkt umbenannt vorgefunden, von der Gruppensynchronisierung gelöst und ihre Mitglieder aus dem Identitätsanbieter entfernt.</target>
+      </segment>
+    </unit>
+    <unit id="group.attach">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:28,30</note>
+      </notes>
+      <segment>
+        <source>Attach to group synchronization again</source>
+        <target>Wieder an die Gruppensynchronisierung anbinden</target>
+      </segment>
+    </unit>
     <unit id="group.name">
       <notes>
         <note category="location">src/app/features/groups/group-detail.html:25</note>

@@ -368,12 +368,35 @@ const vulnDataComplete = `-- name: VulnDataComplete :one
 SELECT EXISTS (SELECT 1 FROM vuln_source_state WHERE source = 'osv' AND ecosystem = $1::text AND state = 'complete')::boolean
 `
 
-// Whether the ecosystem's advisory data has been imported completely (R-VULN-011: no evaluation resolves a finding before).
+// Whether the ecosystem's advisory data has been imported completely (R-VULN-011: no evaluation resolves a finding before). The
+// evaluation reads VulnDataGate; this statement is the plain fact, for the tests that arrange the state.
 func (q *Queries) VulnDataComplete(ctx context.Context, ecosystem string) (bool, error) {
 	row := q.db.QueryRow(ctx, vulnDataComplete, ecosystem)
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const vulnDataGate = `-- name: VulnDataGate :one
+SELECT COALESCE(bool_or(s.state = 'complete'), false)::boolean AS complete,
+       COALESCE(bool_or(r.restored_at IS NOT NULL AND (s.synced_at IS NULL OR s.synced_at < r.restored_at)), false)::boolean AS not_synced_since_restore
+  FROM vuln_source_state s
+  LEFT JOIN (SELECT (value #>> '{}')::timestamptz AS restored_at FROM system_state WHERE key = 'restored_at') r ON true
+ WHERE s.source = 'osv' AND s.ecosystem = $1::text
+`
+
+type VulnDataGateRow struct {
+	Complete              bool
+	NotSyncedSinceRestore bool
+}
+
+// The two facts about an ecosystem's advisory data that a commit's evaluation needs in one read: whether it is complete (R-VULN-011)
+// and whether the installation was restored and the ecosystem has not synced since (Q-VULN-132). A missing row is neither.
+func (q *Queries) VulnDataGate(ctx context.Context, ecosystem string) (VulnDataGateRow, error) {
+	row := q.db.QueryRow(ctx, vulnDataGate, ecosystem)
+	var i VulnDataGateRow
+	err := row.Scan(&i.Complete, &i.NotSyncedSinceRestore)
+	return i, err
 }
 
 const vulnDeleteFinding = `-- name: VulnDeleteFinding :exec
@@ -1355,9 +1378,11 @@ func (q *Queries) VulnRekeyTargets(ctx context.Context, arg VulnRekeyTargetsPara
 }
 
 const vulnRepositoryInputs = `-- name: VulnRepositoryInputs :many
-SELECT id::bigint AS id, key::text AS key, class::text AS class, format::text AS format, lifecycle::text AS lifecycle, config::text AS config
-  FROM repositories
- WHERE id = $1::bigint
+SELECT r.id::bigint AS id, (p.key || '/' || r.key)::text AS key, r.class::text AS class, r.format::text AS format,
+       r.lifecycle::text AS lifecycle, r.config::text AS config
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE r.id = $1::bigint
 `
 
 type VulnRepositoryInputsRow struct {
@@ -1371,6 +1396,7 @@ type VulnRepositoryInputsRow struct {
 
 // The scanning inputs of a repository, read from the row and not from a replica's snapshot, so that a rescan sees a change
 // committed just before it ran (R-VULN-011): the document as text.
+// key is the qualified name, project and repository: the form the events and the journal entries of the evaluation carry.
 func (q *Queries) VulnRepositoryInputs(ctx context.Context, id int64) ([]VulnRepositoryInputsRow, error) {
 	rows, err := q.db.Query(ctx, vulnRepositoryInputs, id)
 	if err != nil {

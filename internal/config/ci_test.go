@@ -163,3 +163,18 @@ func TestIssuersFromTheConfiguration(t *testing.T) {
 		}
 	})
 }
+
+// R-AUTH-026, R-AUTH-041: the ceilings of the personal and service-account token lifetimes stop at 100 years, the largest
+// maximum the replay of settings.auth.changed reads, so the runtime maximum the settings API stores is one the journal replays.
+func TestR_AUTH_026_TheTokenLifetimeCeilingsStopAtOneHundredYears(t *testing.T) {
+	for _, kind := range []string{"PAT", "SAT"} {
+		key := "auth.tokens." + strings.ToLower(kind) + ".max_ttl"
+		if l, err := loadCI(t, "", "TROVE_AUTH_TOKENS_"+kind+"_MAX_TTL=876000h"); err != nil {
+			t.Errorf("%s: 876000h refused: %v (%v)", key, err, l)
+		}
+		_, err := loadCI(t, "", "TROVE_AUTH_TOKENS_"+kind+"_MAX_TTL=876001h")
+		if err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: 876001h: err = %v, want a refusal naming the key", key, err)
+		}
+	}
+}

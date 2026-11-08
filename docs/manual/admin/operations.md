@@ -135,6 +135,10 @@ The chart's backup is off until you set `backup.enabled: true` and a bucket of i
 - **Stored backups**: the complete backups that the newest run found in the target, headed "As recorded by run … at …". Backups written or removed outside trove appear after the next run; `trove backup list` reads the target itself. Next to them: the target, how many of the newest backups are kept, the age below which backups are kept, and the expected interval.
 - **Start a backup now**: the `kubectl` command that creates a Job from the CronJob, with a copy button. Run it with access to the cluster. The namespace and the CronJob name come from the chart; if the installation does not provide them, the command shows `<namespace>` and `<cronjob>` for you to replace. The run appears in the list once its pod has started. One backup runs at a time.
 - After a restore, a notice names the backup and the snapshot time this installation was restored from.
+- The output of the revocation journal replay (`trove backup restore`, `trove admin post-restore`) prints one line per entry with
+  its outcome. A repository whose entry could widen what it serves is listed as `suspended` and is **disabled** (the line prints
+  the entry); a `vuln-rescan` that a stronger vulnerability setting needs is queued in the restored database and runs once the
+  workers are up ([After a restore](repositories.md#after-a-restore)).
 
 ## The audit log
 

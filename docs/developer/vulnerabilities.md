@@ -228,7 +228,7 @@ Files: [internal/vuln/match/affects.go](../../internal/vuln/match/affects.go) (t
   when the ecosystem's data is complete (the commit path reads `States`, the jobs read PostgreSQL).
 - **The commit hook costs two round trips** (Q-VULN-82). `Service.OnVersionCommitted` calls `store.Eval.Pipeline` once for its reads: the repository row, the item's version, the findings of the item's package, the state row, the affected entries of the item's package (`VulnFindingsOfRepoItem`, `VulnAffectedForItem`, `VulnClaimHoldersForItem` are the by-name statements with the package taken from `items.version_id`) and one claim lookup per format of the ecosystem. Each pipeline sends the statements of its steps as one pgx batch on the commit's transaction (`q.Pipeline`, [pipeline.go](../../internal/meta/postgres/q/pipeline.go)); the affected entries go to `run.affected` and the claims to `txClaims.prime`. `run.recordClaimed` sends the inserts of the claimed-name matches and the prune as the second. A statement added to the hook goes into the round it depends on, and a statement that needs another's answer is a third round: `TestR_VULN_011_TheCommitEvaluationCostsAFixedNumberOfStatements` counts the statements (6, a claimed name 7) and the round trips (1, 2), and `TestR_VULN_011_PipelineAnswersLikeTheStatementsOneByOne` compares the by-item statements with the by-name ones. `TestR_VULN_028_TheEvaluationOfAPublishIsMeasured` is V-4 on a small stack (231,000 advisory records, 300 publishes, the sample of Q-VULN-76).
 - **Hooks.** `evaluate.Hooks(inner, evaluator)` runs the evaluation after the format's `OnCommit` (a companion file of a version, not its lead item, is skipped) and the resolution of removed versions before the format's
-  `OnItemsRemoved` (Q-VULN-39). `evaluate.NewRepositoryHook(queue)` is in `wireRepository`'s `MultiHooks` and enqueues `vuln-rescan` in the transaction of a change of `enabled`, `matchPublicAdvisories` or the upstream URL.
+  `OnItemsRemoved` (Q-VULN-39). `evaluate.NewRepositoryHook(queue)` is in `wireRepository`'s `MultiHooks` and enqueues `vuln-rescan` in the transaction of a change of `enabled`, `matchPublicAdvisories` or the upstream URL. The replay of `repository.narrowed` (R-REPO-061) enqueues the same job when it raises `enabled` or `matchPublicAdvisories`, through `jobs.EnqueueTx` with `vuln.RescanKindSpec()`, the spec that `wire_vuln_eval.go` registers the kind with (Q-HA-180).
 - **Jobs.** `vuln-evaluate` (coalescing) serves each full-evaluation request in `vuln_source_state.full_evaluation_requested_at` in batches of 1,000 package names with a checkpoint, clears the request in the
   last batch only when it still holds the value read at the start, then works off `vuln_pending_evaluation` in batches of 1,000 advisories; `vuln-rescan` (exclusive per repository, arguments `{"repository": key, "repositoryId": n}`, the field names of the rescan endpoint) reads the
   repository row at its start and its end and runs again when the inputs differ; `vuln-findings-retention` deletes resolved findings past `resolved_retention`.
@@ -338,7 +338,7 @@ the security view is [security/vulnerability-scanning.md](../security/vulnerabil
 ### E · API and triage
 
 Files: [internal/vuln/report](../../internal/vuln/report) (the read side), [internal/vuln/triage](../../internal/vuln/triage) (the status changes,
-and in `journal_replay.go` the replay of a download block from the revocation journal, Q-VULN-114),
+and in `journal_replay.go` the replay of a download block from the revocation journal: the finding by ID, then by identity, else created, in the shape both download gates read, Q-VULN-114, Q-VULN-131),
 [internal/vuln/store/api.go](../../internal/vuln/store/api.go) and [queries/vuln_api.sql](../../internal/meta/postgres/queries/vuln_api.sql) (the statements),
 [vulnerabilities_api.go](../../internal/api/v1/vulnerabilities_api.go), [vulnerabilities_views_api.go](../../internal/api/v1/vulnerabilities_views_api.go) (the handlers, the rescan,
 the `vulnerabilityData` block of `GET /system/info`), [wire_vuln_api.go](../../internal/app/wire_vuln_api.go) (the step `vuln-api`, which takes `vulnArea` for the
@@ -458,6 +458,29 @@ is; it does not read A's cache, because the system information is a rare, bounde
 **Gauges.** Zero-filling (Q-VULN-56) is what makes `TroveVulnerabilityDataStale` fire for a restored installation: the gauge carries
 `source`/`ecosystem` for every configured source, 0 without a row. If the sync were to create the row of every configured
 source at start-up, nothing would change: the value of a row without `synced_at` is 0 as well.
+
+**Blocks the evaluation sets are journaled (F-74).** `vuln.NewBlockEntry` ([block_entry.go](../../internal/vuln/block_entry.go)) is the one builder of the
+entry `{finding, repositoryId, repository, ecosystem, package, version, advisory, kind, severity, block: "set"}`; the triage (`triage.record`), the
+reopen and the changes of [evaluate/blocks.go](../../internal/vuln/evaluate/blocks.go) all call it, and `readBlockEntry` in
+[triage/journal_replay.go](../../internal/vuln/triage/journal_replay.go) reads every member strictly. In `evaluate`, `recordBlockSet` writes
+`vulnerability.finding.status_changed` with `block: set` and the `cause` (`detected`, `kind_changed`, `redetected`, `merged`) in the run's
+transaction (`r.tx`) when `setsBlock` says the finding blocks its version after the change and did not before; the call sites are `upsert` (first
+insert, re-detection, kind change) and `merge` (`blockEvent`). The commit hook also reads `store.Eval.DataGate` (complete, and not synced since the
+restore) in its round trip and sets `run.holdBlocked`: `apply` then brings a finding in the evicted shape (`isEvictedBlock`) back as blocked with
+`redetectHeld`, and `missVerdict` counts the same shape through `holdsEvictedBlocks`. Every evaluation that can resolve a finding takes `canResolve` from `canResolveWith(gate)` (complete and synced since the restore); `run.journaled` makes a run record one block per finding. The replica's state cache carries the second fact as
+`advisory.DataState.NotSyncedSinceRestore`, computed by `VulnStateList` from `vuln_source_state.synced_at` and `system_state.restored_at`, so a
+miss costs no query for it. The replay writes the finding with `JournalVulnFindingInsert` and `JournalVulnFindingBlock`; the ecosystem of the
+entry's repository is checked against `catalog.Default()`.
+
+| Test | What it pins |
+|---|---|
+| `TestR_VULN_012_EveryEvaluationChangeThatSetsABlockIsJournaled` (unit) | which changes set a block under which policy, and the event and entry of each |
+| `TestR_VULN_012_AMaliciousDetectionIsJournaledInItsTransaction`, `..._AnAdvisoryThatTurnsMaliciousIsJournaled`, `..._AMergeThatSetsABlockIsJournaled`, `..._ARedetectionThatSetsABlockIsJournaled` ([vulnfindings](../../test/integration/vulnfindings/journal_blocks_test.go)) | one outbox row and one audit event per change, none in a rolled-back transaction, none with `blockMalicious` off or in the mode report |
+| `TestR_VULN_026_TheEntryOfEveryEvaluationProducerReplaysItsBlock` | the entries the producers wrote bring their findings back after the findings are deleted |
+| `TestR_VULN_026_AnEvaluationBlockIsReplayedBeforeTheFirstSync` (vulnfindings and [backup](../../test/integration/backup/journal_vuln_replay_test.go)) | the created shapes, the 403 of a replayed stored version, the miss of a version that is not stored, the forged entry, the second replay |
+| `TestR_VULN_013_AReplayedBlockOfAnEvictedVersionKeepsTheShapeTheMissReads` | the correction of Q-VULN-114: the replay leaves the evicted shape alone |
+| `TestR_VULN_012_ACommitBeforeTheFirstSyncAfterARestoreRedetectsAnEvictedBlock`, `TestR_VULN_015_AMissAfterAPlatformRestoreCountsAnEvictedBlockUntilTheNextSync`, `TestR_VULN_015_TheStateRowSaysWhetherTheEcosystemSyncedSinceTheRestore` | Q-VULN-132 at the commit, at the miss and in the state row |
+| `TestR_VULN_026_TheFirstSyncAfterTheRestoreReconcilesReplayedBlocks` ([vulnrestore](../../test/integration/vulnrestore/replayed_blocks_test.go)) | a block whose advisory affects the version stays, a forged one resolves after the first complete sync and its version downloads again |
 
 **The restore test** ([restore_test.go](../../test/integration/vulnrestore/restore_test.go)) builds the state a restore leaves, by SQL
 (`seedInstallation`): four versions published through a replica, the synced state of an earlier life (source state, advisories,

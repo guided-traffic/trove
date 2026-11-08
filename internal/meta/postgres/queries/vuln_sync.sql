@@ -36,10 +36,13 @@ SELECT source, ecosystem, state, data_epoch, COALESCE(etag, '')::text AS etag, C
    FOR UPDATE;
 
 -- name: VulnStateList :many
--- Every row of a source, for the replica's copy of the state (R-VULN-027).
-SELECT ecosystem, state, data_epoch, COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us
-  FROM vuln_source_state
- WHERE source = sqlc.arg(source)::text;
+-- Every row of a source, for the replica's copy of the state (R-VULN-027). not_synced_since_restore is true when the installation
+-- was restored and the row has not synced since (Q-VULN-132); false when it never was.
+SELECT s.ecosystem, s.state, s.data_epoch, COALESCE(extract(epoch FROM s.synced_at) * 1000000, 0)::bigint AS synced_us,
+       COALESCE(r.restored_at IS NOT NULL AND (s.synced_at IS NULL OR s.synced_at < r.restored_at), false)::boolean AS not_synced_since_restore
+  FROM vuln_source_state s
+  LEFT JOIN (SELECT (value #>> '{}')::timestamptz AS restored_at FROM system_state WHERE key = 'restored_at') r ON true
+ WHERE s.source = sqlc.arg(source)::text;
 
 -- name: VulnStateSave :exec
 -- Writes every column a run changes; the caller read the row with VulnStateLock and passes back what stays. 0 for a time is NULL.

@@ -340,7 +340,7 @@ long reader).
 |---|---|---|---|
 | `principal` | Every principal kind in one table (R-AUTH-016): `user`, `group`, `service_account`, `anonymous`, `authenticated`, `ci_mapping` | `id uuid`, `kind`, `name` (`UNIQUE (kind, name)`), `status`; the two built-in rows are seeded. Every other table that names a principal references `principal (id)` | data (`CycleBreak created_by`) |
 | `app_user` | The user record | `principal_id` (PK, kind `user`), `origin`, `is_break_glass` (at most one true), `scim_external_id`, `last_interactive_auth_at`, `disabled_reason` | data |
-| `user_group` | The group record | `principal_id` (PK, kind `group`), `auto_join`, `origin` | data |
+| `user_group` | The group record | `principal_id` (PK, kind `group`), `auto_join`, `sync_detached` (set by the replay of a rename, cleared by `PATCH` with `false`; migration 00052), `origin` | data |
 | `group_membership` | Memberships with a source | `(group_id, member_id, source)`; member is a user or a service account; source `manual`, `auto`, `scim` or `oidc:<providerId>` | data |
 | `service_account` | The service account record | `principal_id` (PK, kind `service_account`) | data |
 | `api_token` | PAT, SAT and CIT; only `secret_sha256` is stored (R-AUTH-023) | `id`, `type`, `secret_sha256` (unique, 32 bytes), `principal_id`, `scope jsonb`, `expires_at`, `revoked_at`, `revocation_reason`, `rotated_from` and `derived_from` (plain uuid, Q-AUTH-15), `rejection_logged_at`, `expiry_notified_at`, `ci_context` | data |

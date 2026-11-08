@@ -126,6 +126,13 @@ by a conditional update, two first logins on two replicas end with one user. A u
 refused; deleting a user ends sessions and deletes tokens and memberships, and a later login of the same identity is a new
 principal. Group membership is resolved when a request is authenticated, not when a token was issued.
 
+Group synchronization finds a group by name and skips a group with `user_group.sync_detached`: it neither fills it nor creates a
+second group of that name (`IdentityGroupsByName`, `createOIDCGroup`). Only the replay of a rename after a restore sets the flag
+(Q-AUTH-206), so the provider's group of an old name cannot refill a renamed group's grants; the API clears it and refuses to set it.
+A pending identity link removed by an administrator is journaled and removed again by a restore, so the provider's account of that
+username cannot claim the user through it (Q-AUTH-205). The runtime token lifetime maxima are journaled and a restore keeps the
+shorter value (Q-AUTH-207); [backup-and-restore.md](backup-and-restore.md) holds the replay rules.
+
 ## The management API over tokens
 
 The operations are in [tokens_api.go](../../internal/api/v1/tokens_api.go) and [users_api.go](../../internal/api/v1/users_api.go);

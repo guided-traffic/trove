@@ -99,6 +99,21 @@ func RegisterTask(name string, spec TaskSpec) { Default.RegisterTask(name, spec)
 // Freeze freezes [Default]; the composition root calls it before it serves.
 func Freeze() { Default.Freeze() }
 
+// normalize fills the defaults of a kind's spec: the queue "default", ten attempts and priority 100. RegisterKind stores the
+// result, and [EnqueueTx] applies it to a spec it is given, so both write the same row.
+func normalize(spec KindSpec) KindSpec {
+	if spec.Queue == "" {
+		spec.Queue = "default"
+	}
+	if spec.MaxAttempts == 0 {
+		spec.MaxAttempts = 10
+	}
+	if spec.Priority == 0 {
+		spec.Priority = 100
+	}
+	return spec
+}
+
 // RegisterKind registers a kind. It panics on a programming error: a bad or
 // duplicate name, a missing handler, an unknown dedup mode, or a registration
 // after Freeze.
@@ -114,17 +129,9 @@ func (r *Registry) RegisterKind(kind string, spec KindSpec) {
 	default:
 		panic(kindError(kind, "unknown dedup mode %q", spec.DedupMode))
 	}
-	if spec.Queue == "" {
-		spec.Queue = "default"
-	}
-	if spec.MaxAttempts == 0 {
-		spec.MaxAttempts = 10
-	}
+	spec = normalize(spec)
 	if spec.MaxAttempts < 1 {
 		panic(kindError(kind, "MaxAttempts %d", spec.MaxAttempts))
-	}
-	if spec.Priority == 0 {
-		spec.Priority = 100
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -97,6 +97,28 @@ Every claim and pin-rule change is audited in its transaction (`repository.claim
 replicas through the change areas `claims` and `repo_config`, within `cluster.epoch_poll_interval` with or without Valkey. The members
 and the deploy target the grant index uses for the virtual gate (R-AUTHZ-009) are the same rows ([permissions.md](permissions.md)).
 
+- **A restore keeps the protection a claim or a pin rule gave a name.** A restore to a point before the first publish of a name
+  loses the package and its auto claim together, and the name would reach a remote member again: the case dependency confusion
+  uses, because the clients know the name. `repository.claims_changed` (every claims change, the auto claim included) and
+  `repository.narrowed` (a pin rule added, a member out of a rule or the member list, `autoClaim` switched on, patterns and a
+  stronger `vulnerabilities` member) are in the revocation journal, and every restore re-applies them
+  ([R-REPO-061](../spec/repositories-and-proxy.md#r-repo-061--narrowings-of-a-repository-in-the-revocation-journal),
+  [journal_replay.go](../../internal/repository/journal_replay.go)). Replay only narrows, and the journal can be written by
+  whoever holds the runtime S3 credential, so each part that could widen what the restored repository serves disables the
+  repository instead and reports the entry `suspended`:
+  - a member removal whose member holds a claim of scope `members` while any other member stays, because the claim would leave
+    effect in that virtual repository and its names would reach the member that stays, a remote one or a local one that does not
+    hold them (Q-REPO-248);
+  - a pin rule that a claim in effect or another rule overlaps, because a rule is the one way a claimed name reaches a remote
+    member (Q-REPO-249);
+  - an include list that shares no pattern with the restored one, because an empty list admits everything (Q-REPO-247);
+  - a manual claim that overlaps a claim in effect together with it, because it could take names from the other repository; the
+    claim is created and its repository disabled, and a claim of a disabled repository stays in effect (Q-REPO-250).
+
+  An entry never adds a member, a pattern to an include list or a member to a pin rule, and an auto claim is not created where
+  another repository's claim covers the name. The settings that are not journaled are listed under
+  [H-569](backup-and-restore.md#h-569--upstream-storage-and-format-settings-of-a-repository-come-back-with-a-restore).
+
 ## Virtual resolution: what the engine decides per caller
 
 The routing above is the same for everybody; the engine ([virtual.md](../developer/virtual.md)) adds what depends on the caller

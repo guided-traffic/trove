@@ -342,6 +342,8 @@ Priority: **MVP** · Covers: REPO-011, RMT-034
 - Changing patterns MUST NOT delete stored items.
 - Limits: at most 100 patterns per list, each at most 1024 characters; violations answer 422
   `invalid_pattern`.
+- A change that narrows a list (an exclude pattern added, an include pattern taken out of a list that keeps restricting, a
+  first include pattern) records `repository.narrowed`, so a restore keeps it narrowed (R-REPO-061).
 
 Acceptance criteria:
 
@@ -784,6 +786,113 @@ Acceptance criteria:
 - An Owner of `web` with the role `developer` in `mobile` gets 403; one that is no member of `mobile` gets 404.
 - A global policy with the key selector `web/npm-libs` reads back `mobile/npm-libs` after the move and keeps granting.
 
+### R-REPO-061 · Narrowings of a repository in the revocation journal
+Priority: **MVP** · Covers: trove-only
+
+A restore to a point in time *t* returns every repository to its configuration and its claims at *t* ([backup-and-restore.md](backup-and-restore.md)
+R-BAK-024, [ha-and-helm.md](ha-and-helm.md) R-HA-025). The changes of this page that narrow what a repository serves after *t*
+are therefore copied into the revocation journal of [ha-and-helm.md](ha-and-helm.md) R-HA-054 and re-applied by every restore, as
+a disable and the authorization settings are ([authorization.md](authorization.md) R-AUTHZ-031). Replay only narrows: where
+re-applying a part to the restored repository could widen what it serves, the repository is disabled instead (`disabled: true`,
+R-REPO-004) and the entry is reported `suspended`.
+
+| Audit event, flagged `journal: revocation` | Recorded | Entry carries |
+|---|---|---|
+| `repository.narrowed` | By an update (R-REPO-011) whose change narrows one of the parts below, beside its `repository.updated`, in the same transaction; an update that narrows nothing records none ([Q-REPO-245](#q-repo-245--a-narrowing-update-records-repositorynarrowed-beside-repositoryupdated-with-only-the-parts-that-narrowed)) | `repositoryId` (decimal text, as `repository.disabled` carries it), `key` (the qualified name, for display), and each part that narrowed, only when it did: `include`, `excludeAdded`, `autoClaim`, `membersRemoved`, `pinsAdded`, `pinMembersRemoved`, `vulnerabilities` |
+| `repository.claims_changed` | By every change of a repository's claims (R-REPO-023): a claims write of the API and the auto claim of a first publish; every event carries its entry ([Q-REPO-250](#q-repo-250--every-claims-change-carries-a-journal-entry-and-a-replayed-manual-claim-that-overlaps-another-repositorys-claim-disables-its-repository)) | `repositoryId`, `key`, `source` (`manual`, `auto`) and `added`: the claims created and those widened from `members` to `global`, each `{pattern, scope}`; a removal and a narrowing to `members` widen and are not part of it. The `added` list of the event's details keeps listing every claim whose scope changed, a narrowing included, as R-OPS-016 has it |
+
+**What narrows.** The update compares the stored document and the rows of its virtual section with the new ones, in the
+transaction that writes them (the comparison that fills `changes`):
+
+| Part | Narrows when | Entry |
+|---|---|---|
+| `includePatterns` (R-REPO-005) | the new list is not empty, and the old one is empty or holds a pattern that no pattern of the new one provably covers (the same pattern in the folded form of the format's name rule, or a literal with one trailing `*` or `**` that takes in the other); an emptied list admits everything, and a list that only widens or changes case never narrows | `include`: the new list |
+| `excludePatterns` | the new list holds a pattern the old one lacks | `excludeAdded`: those patterns |
+| `local.autoClaim` (R-REPO-023) | its effective value (an absent member is the format's default) goes from false to true | `autoClaim: true` |
+| `virtual.members` (R-REPO-017) | a member of the old list is not in the new one, compared by repository ID | `membersRemoved`: `[{repositoryId, key}]` |
+| `virtual.pinning` (R-REPO-023) | a pattern that no rule held is held by a rule, or a pattern that a rule held before and after loses members | `pinsAdded`: `[{pattern, members: [{repositoryId, key}]}]`; `pinMembersRemoved`: the same shape, with the members the pattern lost |
+| `vulnerabilities` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002) | a member moves towards more blocking, in the order of Q-VULN-69: `enabled` to true, `matchPublicAdvisories` to a higher rank, `blockMalicious` to true, `onMissingData` to `block` | `vulnerabilities`: the member before and after, an absent member as its defaults |
+
+The other members are not journaled ([Q-REPO-246](#q-repo-246--patterns-auto-claims-virtual-members-pin-rules-and-the-vulnerabilities-member-are-journaled-upstream-storage-and-format-settings-are-not)):
+`description`, `adminNotes`, `priorityMember`, `virtual.deployTarget`, `virtual.mergedMetadataTtlSeconds`, the `remote` section
+apart from `cacheFillAction`, `storage`, `local.caps`, `local.ownershipDomain` and the format members. A restore reverts them; the
+security-relevant ones are [H-569](../security/backup-and-restore.md#h-569--upstream-storage-and-format-settings-of-a-repository-come-back-with-a-restore).
+`disabled`, `requireAuthentication`, `hideExistence`, `local.packageOwnership` and `remote.cacheFillAction` keep the events of
+R-AUTHZ-031. A widening part of an update that also narrows (a pattern added to an include list, a member added) is not part of
+the entry.
+
+**Replay of `repository.narrowed`** ([ha-and-helm.md](ha-and-helm.md) R-HA-054), in one transaction, on the repository of the
+entry's ID as the restored database holds it, locked. A repository that is missing or being deleted is `subject unknown`; a part
+that does not fit the repository's class (members of a repository that is not virtual) is left out. Every part is applied; a
+part that fails closed disables the repository, and the other parts are still applied, so the repository is narrowed when an
+administrator enables it again.
+
+1. `include`: a restored list that is empty takes the journaled list; one that is not keeps only the patterns that the journaled
+   list holds as well or covers (a literal with one trailing wildcard that takes in the restored pattern), compared in the folded
+   form of the format's name rule, so a consolidating edit narrows to the pattern inside. When none is left, the repository is disabled ([Q-REPO-247](#q-repo-247--a-replayed-include-list-keeps-the-patterns-both-lists-hold-and-none-left-disables-the-repository)).
+2. `excludeAdded`: each pattern the restored list lacks is added. A list that would hold more than 100 patterns disables the
+   repository.
+3. `autoClaim`: set to `true`.
+4. `membersRemoved`: each member is taken out of the member list, out of every pin rule and, when it is the deploy target, out of
+   the deploy target. When a removed member is a local repository that holds a claim of scope `members` and any other member of
+   the restored repository stays (one the entry does not remove), the virtual repository is disabled instead of losing that
+   member: the claim would leave effect in it, and the names it claims would reach the member that stays, a remote one or a local
+   one that does not hold them ([Q-REPO-248](#q-repo-248--a-replayed-member-removal-that-would-take-a-members-claim-out-of-effect-beside-another-member-disables-the-virtual-repository)).
+5. `pinMembersRemoved`: the members are taken out of the rule that holds the pattern; a rule left without members answers 404 for
+   its names. When no rule holds the pattern, the repository is disabled.
+6. `pinsAdded`: when a rule holds the pattern, its members are reduced to those the entry names. Otherwise a rule with the pattern
+   and those of the entry's members that are members of the restored repository is added, unless a claim in effect in the
+   repository or a pattern of another rule of the restored repository overlaps the pattern (the rules this entry adds beside it are
+   not counted: any rule selects a subset of the members a name reached before); then the repository is disabled ([Q-REPO-249](#q-repo-249--a-replayed-pin-rule-is-added-only-where-no-claim-and-no-other-rule-overlaps-it)).
+7. `vulnerabilities`: each member takes the more blocking of its restored and its journaled after-value. When `enabled` or
+   `matchPublicAdvisories` moved, a `vuln-rescan` of the repository is enqueued in the same transaction
+   ([ha-and-helm.md](ha-and-helm.md) [Q-HA-180](ha-and-helm.md#q-ha-180--a-replay-handler-starts-follow-up-work-by-writing-a-job-row-in-its-own-transaction)).
+   A repository without the member (virtual, or of a format without the vulnerability adapter) leaves the part out.
+
+A pattern that steps 1, 2 and 6 write is checked as an update checks it (the format's pattern rules, R-REPO-008); an entry with a
+pattern that fails the check, with an ID that is no ID, with a list longer than an update can write (100 patterns, the members a
+virtual repository can hold, the pin patterns it can hold) or with no part at all is skipped as malformed, before anything is written. A changed repository raises `config_version` and is told to the change
+areas `repo_config` and `authz`, as the replay of a setting is; the replay writes no audit event. The outcome is `suspended` when a
+part disabled the repository, `applied` when a part changed it, and `already in effect` otherwise; a repository that is disabled
+already stays as it is and a part that fails closed there reports nothing, so a second replay finds every entry `already in effect`.
+The detail names the parts and, for a suspension, prints the entry, so an administrator can review it and re-apply what it says.
+
+**Replay of `repository.claims_changed`**, on the local repository of the entry's ID (a repository of another class or of a
+format without claims is `subject unknown`), for each added claim:
+
+- the restored repository holds the pattern with the journaled scope, or with `global` for a journaled `members`: nothing;
+- it holds the pattern with `members` and the entry says `global`: the scope is widened to `global`;
+- an auto claim (`source: auto`) is one exact name of scope `members`, else the entry is skipped as malformed; it is created as a
+  first publish creates it, unless a claim of another repository that is in effect together with it covers the name (the name
+  then keeps resolving from that repository);
+- a manual claim is created with its scope. When a claim of another repository that is in effect together with it overlaps the
+  pattern (either claim is `global`, or the two repositories are members of one virtual repository: the condition of
+  `claim_overlaps`), the claim is created and the claiming repository is disabled, because the claim could take names from the
+  other repository (Q-REPO-250).
+
+The limit of 1000 claims does not stop a replayed claim: a claim only narrows, and a dropped one leaves a name unclaimed. A
+repository that ends above the limit is listed in the replay output as a warning.
+
+An entry without its `added` member is skipped as malformed. A created claim has no creator, `claims_version` rises,
+and the change area `claims` is told. The outcome is `suspended` when the repository was disabled, `applied` when a claim was
+created or widened, and `already in effect` otherwise.
+
+Acceptance criteria (project `web`: `npm-internal` local with `local.autoClaim: true`, `npmjs` remote of the public registry,
+`npm-all` virtual over both with `npm-internal` first; a trove backup is taken at *t*, and each criterion restores it):
+
+- After *t*, `excludePatterns: ["@evil/*"]` is set on `npmjs`. After the restore, `npm view @evil/pkg` through `npm-all` fails
+  with `E404` without an upstream request, and the replay output lists `repository.narrowed web/npmjs … applied`.
+- After *t*, `@acme/new-lib` is published to `npm-internal` for the first time, and the test upstream then serves a package of
+  that name. After the restore the version is gone, `npm view @acme/new-lib` through `npm-all` fails with `E404`, the test
+  upstream records no request for the name, and the output lists `repository.claims_changed web/npm-internal … applied`.
+- After *t*, `npm-internal` is removed from `npm-all`. After the restore, `npm-all` is disabled and the entry is `suspended`,
+  because `npm-internal` holds claims of scope `members` and `npm-all` keeps `npmjs`.
+- After *t*, `vulnerabilities.blockMalicious` is set to `true` on `npmjs`, which was `false` at *t*. After the restore the member
+  reads `true`.
+- Hand-written entries: a `repository.narrowed` whose `include` shares no pattern with the restored list disables the
+  repository (`suspended`); a manual claim that overlaps a claim of another member of `npm-all` is created and its repository is
+  disabled; no entry adds a member, a pattern to an include list or a member to a pin rule.
+
 ### R-REPO-014 · Batch operations
 Priority: **P1** · Covers: REPO-059, REPO-061, REPO-062, REPO-064, API-053, API-055, API-059, API-064
 
@@ -913,6 +1022,8 @@ Priority: **MVP** · Covers: REPO-033
   until then.
 - Members and their order can change without touching client configuration; a change takes effect
   on all replicas within 2 seconds and drops the repository's merged-metadata cache (R-REPO-020).
+  A member taken out records `repository.narrowed`, and a restore takes it out again or, where its claims would leave effect
+  beside another member, disables the virtual repository (R-REPO-061).
 - Recommended practice, shown in the UI: clients use a virtual repository; local members come first.
 - The members, the deploy target and the pin rules are rows (the data model below), not part of `repositories.config`: a
   read renders them into `virtual`, an update replaces them in the transaction that raises `config_version`, and the grant
@@ -1289,6 +1400,10 @@ confused dependency; such a caller receives 404 instead (H-7 names the remaining
 - On create or update of a virtual repository that has local and remote members, no pin rule, and
   local members without `autoClaim` and without claims, the response carries the warning
   `dependency_confusion_unprotected`.
+- **Across a restore.** A claim created or widened to `global`, the auto claim of a first publish included, is journaled with
+  `repository.claims_changed`; a pin rule added for a name, a member taken out of a rule and `autoClaim` switched on are
+  journaled with `repository.narrowed`. A restore re-applies them, so a name that was claimed or pinned after the restore point
+  does not fall through to a remote member again (R-REPO-061).
 
 Data model:
 
@@ -3761,8 +3876,9 @@ L covers the name) is not counted (Q-REPO-115).
   read and then fetched itself, a `waiter` first waited for another replica's flight that ended
   without an entry and then fetched.
 - Audit events (INV-16): `repository.created`, `repository.updated`, `repository.disabled` (an
-  update that sets `disabled`, beside its `repository.updated`), `repository.deleted`,
-  `repository.cache_invalidated`, `repository.claims_changed`, `proxy.global_offline_changed`,
+  update that sets `disabled`, beside its `repository.updated`), `repository.narrowed` (an update that narrows, beside its
+  `repository.updated`, journaled, R-REPO-061), `repository.deleted`,
+  `repository.cache_invalidated`, `repository.claims_changed` (journaled, R-REPO-061), `proxy.global_offline_changed`,
   `proxy.client_certificate_changed`, `proxy.outbound_proxy_changed`. Security events:
   `proxy.integrity_mismatch`, `proxy.upstream_digest_changed`, `proxy.tls_untrusted`,
   `proxy.egress_denied`, `proxy.upstream_gone`, `repository.remote_package_shadowed` (R-REPO-048).
@@ -7225,6 +7341,150 @@ foreign key has waited.
 `TestR_REPO_060_AMemberWriteAndAMoveOfItsRepositoryAreSerialisedByTheDatabase` (member and key selector writes, both orders)
 ([test/integration/postgres/move_guard_race_test.go](../../test/integration/postgres/move_guard_race_test.go));
 [database.md](../developer/database.md), [delegated-administration.md](../security/delegated-administration.md).
+
+### Q-REPO-245 · A narrowing update records `repository.narrowed` beside `repository.updated`, with only the parts that narrowed
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-72. A repository update that narrows what the repository serves (fewer include patterns, more exclude patterns, a
+virtual member taken out, a stronger `vulnerabilities` member) was recorded as `repository.updated` without a journal entry, so a
+restore to a point before it served what the update withheld. One update can narrow one part and widen another (a member out,
+another in).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Flag `repository.updated`, entry with the whole document before and after, replayed by the update rule of R-HA-054 | One event; the comparator decides | No new event name | An update that narrows one part and widens another is neither a narrowing nor contained in its before-state, so it is suspended whenever the restored state differs from the after-state: almost every mixed update would disable its repository; every description change ships a document |
+| (b) A dedicated `repository.narrowed` beside `repository.updated`, written only when the comparison finds a narrowing part, with only those parts (chosen) | The precedent of `repository.disabled` (Q-AUTHZ-238) and `authz.settings.changed` | Each part is a removal the replay re-applies to whatever state it finds; the widening half of a mixed update is never replayed; the audit trail can be filtered for narrowings; the Bastion's feed reads one event (Q-BAS-146) | One more event name; the writer compares two states |
+| (c) Not journaled | — | Nothing to build | The gap of H-569 stays |
+
+**Choice:** (b). The writer is `recordUpdate` in `internal/repository/service.go`: it has the stored and the new document and,
+for a virtual repository, the stored and the new rows (`curRel`, `rel`, by repository ID).
+**Rationale:** a removal can be re-applied to any state without widening it, which a whole after-state cannot; the parts are
+small, and the entry exists only when there is something to replay. The development agent would revisit this if a member gained
+narrowing parts that cannot be expressed as a removal.
+**Applied:** R-REPO-061, R-REPO-005, R-REPO-017; [ha-and-helm.md](ha-and-helm.md) R-HA-054 (the table);
+[operations-and-observability.md](operations-and-observability.md) R-OPS-016; [bastion.md](bastion.md) R-BAS-015.
+
+### Q-REPO-246 · Patterns, auto claims, virtual members, pin rules and the vulnerabilities member are journaled; upstream, storage and format settings are not
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the repository document has more members that a change can tighten (R-REPO-004, R-REPO-024). R-HA-054 journals what
+bears access and what withdraws a version.
+
+| Member | Journaled | Why |
+|---|---|---|
+| `includePatterns`, `excludePatterns` | yes | They decide which names a repository serves, fetches and takes part in virtual resolution with (R-REPO-005) |
+| `virtual.members` | yes | A member out takes its content out of the virtual repository and out of a token scoped to it (R-AUTHZ-009 rule 2, Q-AUTHZ-163) |
+| `virtual.pinning`, `local.autoClaim` | yes | They keep a name from falling through to a remote member (R-REPO-023) |
+| `vulnerabilities` | yes | More blocking withholds versions (R-VULN-002, R-VULN-015) |
+| `disabled`, `requireAuthentication`, `hideExistence`, `local.packageOwnership`, `remote.cacheFillAction` | by R-AUTHZ-031 | Their own events |
+| `virtual.deployTarget` | no | A write through the virtual address runs with the target's permissions (R-REPO-021): the target routes, it grants nothing |
+| `priorityMember`, `virtual.mergedMetadataTtlSeconds`, `description`, `adminNotes`, `local.caps` | no | Order, freshness, text and retention: none changes what a caller may reach |
+| `remote` (URL, extra hosts, credentials, integrity, availability, mirror) and `storage` | no, H-569 | They decide how trove talks to an upstream and what it accepts from it and from clients, not what a caller may reach; re-applying them cannot be checked against the restored upstream state |
+| format members (`npm`, `nuget`) | no, H-569 | The format pages own them (R-REPO-004); a format page that withholds versions through a member flags its own event |
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The members of the first table that bear access or withhold content (chosen) | As above | Every journaled part has an order or a removal the replay can apply without widening | The upstream and format settings come back with a restore (H-569) |
+| (b) Every member that can be ordered | Upstream hardening too (`forwardAuthOnRedirect` off, an extra host removed, `checksumPolicy: require`) | Fewer reverts | Orders for settings that bear no access, each with its own replay rule; an extra host removed while the URL changed has no meaningful replay |
+
+**Choice:** (a).
+**Rationale:** the journal re-applies decisions about access and content; how trove reaches an upstream is configuration that
+an operator re-checks after a restore, and H-569 names each case. The development agent would revisit this when an upstream
+setting starts deciding who may read what, or when a format page asks for its member.
+**Applied:** R-REPO-061 (the not-journaled list); [backup-and-restore.md](../security/backup-and-restore.md) H-569.
+
+### Q-REPO-247 · A replayed include list keeps the patterns both lists hold, and none left disables the repository
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an include list admits the union of its patterns, and an empty one admits everything (R-REPO-005). The entry carries the
+list after the update. The restored list can be empty, the before-state, or another list (a pattern added after *t* and not
+journaled, because adding one widens).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Remove the patterns the update removed | The entry carries the removed patterns | Exact when the restored list is the before-state | An update from an empty list removes nothing and is lost; removing the last pattern widens to everything |
+| (b) Set the journaled list | As an update would | Simple | A pattern the restored list lacks would be added: widening |
+| (c) Keep the patterns both lists hold; an empty restored list takes the journaled list; none left disables the repository (chosen) | The intersection in the folded form of the format's name rule, where a restored pattern that a journaled one covers counts as held by both (`[@acme/ui-*, @x/*]` to `[@acme/*]` narrows to `@acme/ui-*`) | Never admits what either list does not; covers the update from an empty list; the empty intersection fails closed | Two patterns that match the same names but are spelled differently (`a*` and `a**` for flat names) count as different and narrow more |
+
+**Choice:** (c).
+**Rationale:** the intersection is the one list that is provably no wider than both the restored and the journaled one, and an
+empty one cannot be written because it would admit everything. The development agent would revisit this if include lists gained
+a way to admit nothing.
+The writer does not journal an include edit whose old patterns are all covered by the new ones (`[@acme/ui-*]` to `[@acme/*]`, a change of case): that edit widens, and a replay would otherwise intersect the restored list with the wider one. Containment is proved for the same folded pattern and for a literal with one trailing wildcard; anything else counts as a narrowing, which the intersection keeps safe.
+**Applied:** R-REPO-061 step 1; `includeNarrowed` in `internal/repository/narrowed.go`.
+
+### Q-REPO-248 · A replayed member removal that would take a `members` claim out of effect beside another member disables the virtual repository
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a claim of scope `members` is in effect only in the virtual repositories that contain the claiming repository
+(R-REPO-023). Taking a local member out of a virtual repository therefore takes its claims out of effect there, and the claimed
+names resolve from the remaining members: a remote one, and also another local one that does not hold them, whose name resolution
+the claim had kept off the names. A journal object can be forged by a holder of the runtime S3 credential (R-HA-054), and the
+entry cannot say whether another member's claim covers the same names.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Remove the member as recorded | The live change's effect | Exact for a genuine entry | A forged removal of a claiming member opens dependency confusion for every name it claims |
+| (b) Remove it and add an empty pin rule per claim | The names answer 404 | Keeps the rest of the repository serving | The replay invents configuration that no administrator wrote |
+| (c) Disable the virtual repository instead, when the member holds a `members` claim and a remote member stays (first choice) | The fail-closed step that R-HA-054 asks for where removing one object widens another, as Q-CI-11 does for mappings | Nothing reaches the remote member; the output names the entry for review | A forged removal of a claiming member gives its names to another local member that stays |
+| (d) Disable the virtual repository instead, when the member holds a `members` claim and any member stays (chosen, after the security review of F-72) | As (c) for every member that stays | Nothing a claim reserved reaches any member that did not hold it | A genuine removal of a claiming member from a virtual repository that keeps another member is disabled until reviewed; only the removal of the last member applies |
+
+**Choice:** (d). Claims of scope `global` stay in effect without the member, so they do not trigger it.
+**Rationale:** the removal is a narrowing for the member's content and a widening for the names it claims; only the disable is
+both. The development agent would revisit this if the replay could tell whether another member's claim covers the same names, which would let the removal apply where the staying member holds them.
+**Applied:** R-REPO-061 step 4, R-REPO-017.
+
+### Q-REPO-249 · A replayed pin rule is added only where no claim and no other rule overlaps it
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a pin rule decides the members consulted for its names and takes precedence over claims; it is the only way a claimed
+name reaches a remote member (R-REPO-023). Adding a rule narrows a name only when its members are among those consulted before,
+which depends on the claims and rules of the restored state.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Add the rule as recorded | The live change | Simple | A rule that names a remote member for a claimed name widens; a forged one could route any claimed name to a remote |
+| (b) Not journaled | — | — | A rule added after *t* to keep a scope internal is lost |
+| (c) Add the rule when no claim in effect and no pattern of another rule overlaps its pattern, with its members reduced to the restored members; otherwise disable the repository (chosen) | Without an overlapping claim or rule every member is consulted for the name, so any subset narrows | Provably narrowing where applied, fail-closed elsewhere; the overlap test is `ClaimPattern.Overlaps` | A genuine rule that refines a claim disables the repository until reviewed |
+
+A member taken out of a rule is always a narrowing (the rule still selects the name) and is applied as recorded; a pattern
+held by a rule of the restored repository has its members reduced to the journaled ones.
+**Choice:** (c).
+**Rationale:** the replay applies a rule only where it can show that the rule consults no member the name did not reach before.
+The development agent would revisit this if the replay evaluated the consulted members per name.
+**Applied:** R-REPO-061 steps 5 and 6, R-REPO-023.
+
+### Q-REPO-250 · Every claims change carries a journal entry, and a replayed manual claim that overlaps another repository's claim disables its repository
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a claim keeps a name from falling through to remote members (R-REPO-023). A restore to a point before an auto claim loses
+the version that created it and the claim, so the name reaches a remote member, which is the case dependency confusion uses: the
+clients know the name. A claim that overlaps another repository's claim at equal or higher specificity takes names from it, which
+a forged entry must not do (R-HA-054).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Flag `repository.claims_changed`; every event carries `added` (created, or widened to `global`); a removal-only change carries an empty list (chosen) | The precedent of Q-AUTH-18 and Q-AUTH-198: a type that cannot be written without its entry cannot drop a narrowing | One event for the API and the auto claim; the auto claim of every first publish is journaled | One journal object per first publish of a name |
+| (b) A dedicated `repository.claims_added` | Only additions | No empty entries | One more event beside one that already lists `added` |
+| (c) Manual claims only | — | Fewer objects | Loses the auto claim, the case that matters most |
+
+The replay of a manual claim that overlaps a claim of another repository in effect together with it creates the claim and
+disables the claiming repository: a claim of a disabled repository stays in effect (`inEffect` in `internal/repository/routing.go`
+reads membership, not state), so the overlapping names answer 404 instead of moving to it. An auto claim follows the rule of the
+first publish and is not created where another repository's claim covers the name. The limit of 1000 claims does not stop a
+replayed claim: a claim only narrows, and a dropped one leaves a name unclaimed, the case dependency confusion uses. The entry of
+an auto claim carries exactly one claim, and a repository that ends above the limit is noted in the replay output.
+**Choice:** (a).
+**Rationale:** the auto claim is the protection of every name published after the restore point; the disable is the one state in
+which an overlapping claim takes nothing and lets nothing through. The development agent would revisit this if the journal
+volume of first publishes became a cost.
+**Applied:** R-REPO-061, R-REPO-023; `internal/audit/events_repository.go`, `recordClaims` in `internal/repository/claims.go`.
 
 ## What this does not cover
 

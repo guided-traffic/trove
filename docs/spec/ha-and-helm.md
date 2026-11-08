@@ -3191,6 +3191,7 @@ to this mechanism. At least these events are flagged:
 | `token.revoked`, `ci.token.revoked` | [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-029, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-017 | Revoke the token, with the cascade of R-AUTH-029. A disable or deletion that revokes a principal's tokens (a user's or service account's with `revokeTokens` or on deletion, a Bastion registration's on deletion) records one `token.revoked` per token as well ([Q-AUTH-198](identity-and-authentication.md#q-auth-198--a-disable-or-deletion-journals-every-token-it-revokes-and-clearing-auto-join-is-journaled)) |
 | `token.rotated` | identity R-AUTH-030 | Set the predecessor's `expires_at` to the earlier of its current and its journaled value; revoke it when the overlap was 0 |
 | `user.disabled`, `user.deleted` | identity R-AUTH-016, R-AUTH-021, R-AUTH-039 | Disable the user |
+| `user.updated` (the pending identity links it removed) | identity R-AUTH-016, R-AUTH-041 | Remove the pending link of each journaled provider from the user; never a linked identity ([Q-AUTH-205](identity-and-authentication.md#q-auth-205--userupdated-carries-the-pending-identity-links-it-removed-and-the-replay-removes-them)) |
 | `serviceaccount.disabled`, `serviceaccount.deleted` | identity R-AUTH-020 | Disable the service account |
 | `bastion.disabled`, `bastion.deleted` | [bastion.md](bastion.md) R-BAS-004 | Disable the Bastion registration ([Q-BAS-145](bastion.md#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled)) |
 | `group.deleted` | identity R-AUTH-018 | Delete the group |
@@ -3201,12 +3202,14 @@ to this mechanism. At least these events are flagged:
 | `authz.project.deleted`, `authz.project.member_removed` | authorization R-AUTHZ-026, R-AUTHZ-031 | Delete the project (when empty), remove the membership |
 | `repository.moved` | authorization R-AUTHZ-031, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-060 | Disable the repository when the restored database holds it in the source project, and report it `suspended` |
 | `repository.disabled`, `repository.deleted` | authorization R-AUTHZ-031, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004, R-REPO-013 | Disable the repository ([Q-AUTHZ-238](authorization.md#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own), [Q-AUTHZ-239](authorization.md#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled)) |
-| `group.updated` (the auto-join flag) | identity R-AUTH-019 | Update rule below: clear the flag, never set it (Q-AUTH-198) |
+| `repository.narrowed` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-061, [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002 | Re-apply each narrowing part to the restored repository: keep the include patterns both lists hold, add the exclude patterns, switch `autoClaim` on, take the members out, add or reduce the pin rules, take the more blocking `vulnerabilities` values. Where a part could widen (an empty include list, a removed member whose `members` claim would leave effect beside another member, a pin rule that a claim or another rule overlaps), disable the repository instead (`suspended`) |
+| `repository.claims_changed` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-023, R-REPO-061 | Create each added claim, or widen it to `global`; an auto claim not where another repository's claim covers the name; a manual claim that overlaps a claim of another repository in effect together with it is created and its repository disabled (`suspended`). An entry with no added claim is `already in effect` |
+| `group.updated` (the auto-join flag and a rename) | identity R-AUTH-019, R-AUTH-041 | Update rule below: clear the flag, never set it (Q-AUTH-198). A rename keeps the restored name and detaches the group from group synchronization ([Q-AUTH-206](identity-and-authentication.md#q-auth-206--a-group-renamed-after-the-restore-point-is-detached-from-group-synchronization-not-renamed)) |
 | `ci.issuer.*` and `ci.mapping.*` disables and deletions | gitlab-ci R-CI-002, R-CI-019, R-CI-020 | Disable the issuer or mapping. Disabling a mapping that was enabled also suspends every later enabled mapping of its tier, so no job falls through to a mapping that grants more ([Q-CI-11](gitlab-ci-oidc.md#q-ci-11--replaying-a-mapping-disable-under-first-match)) |
-| `authz.policy.updated`, `authz.project.member_changed`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch, R-AUTH-037) and `authz.settings.changed` | the pages above | Update rule below |
+| `authz.policy.updated`, `authz.project.member_changed`; `ci.issuer.*` and `ci.mapping.*` updates; `settings.auth.changed` (the anonymous-access switch and the token lifetime maxima, R-AUTH-037, R-AUTH-040) and `authz.settings.changed` | the pages above | Update rule below; the lifetime maxima value by value to the smaller ([Q-AUTH-207](identity-and-authentication.md#q-auth-207--the-token-lifetime-maxima-are-journaled-and-the-replay-lowers-each-to-the-smaller-value)) |
 | `endpoint.exposure.deleted`; `endpoint.exposure.updated` | [endpoints.md](endpoints.md) R-EP-020 | Delete the rule; the update rule below with the exposure comparator of R-EP-020, whose suspension disables the rule |
 | `npm.unpublish` | [formats/npm.md](formats/npm.md) R-NPM-017, R-NPM-047 | Withhold the version: tombstone it and apply the dist-tag rule, leaving its items stored and unserved, when the restored repository holds it live with the journaled integrity (`applied`); `already in effect` when it is tombstoned; otherwise `subject unknown`. Nothing is deleted; `trove admin npm reinstate` reverses it |
-| `vulnerability.finding.status_changed`, `vulnerability.finding.reopened` when the change sets a download block (`block: set`) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-48 | Set `blocked` on the restored finding of the journaled id and package version whatever its status; `already in effect` when it is blocked; `subject unknown` when it is missing or another package version ([Q-VULN-114](vulnerability-scanning.md#q-vuln-114--a-replayed-block-sets-blocked-on-the-restored-finding-whatever-its-status-so-a-block-lifted-after-the-restore-point-comes-back), [Q-VULN-115](vulnerability-scanning.md#q-vuln-115--a-replayed-block-names-its-finding-by-id-and-by-its-immutable-package-version-and-writes-the-findings-own-history)). The entry is optional: a change that lifts a block or sets none is not journaled |
+| `vulnerability.finding.status_changed`, `vulnerability.finding.reopened` when the change sets a download block (`block: set`) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-012, R-VULN-013, R-VULN-026, Q-VULN-48 | Written by a triage, a reopen and every evaluation change that sets a block ([Q-VULN-130](vulnerability-scanning.md#q-vuln-130--every-change-of-the-evaluation-that-sets-a-download-block-records-vulnerabilityfindingstatus_changed-with-block-set-its-cause-and-the-journal-entry)). Block the finding of the journaled ID when it has the entry's repository, package version and advisory, else the finding of the entry's repository, package version and advisory, else a finding the replay creates; `subject unknown` when the restored database holds no such repository of the entry's ecosystem. A stored version's finding is set `blocked` whatever its status; the finding of a version the repository does not store becomes `resolved` with `version_removed` while `blocked`, which the remote miss and a commit count until the ecosystem has synced since the restore; `already in effect` when the finding has that shape ([Q-VULN-114](vulnerability-scanning.md#q-vuln-114--a-replayed-block-sets-blocked-on-the-restored-finding-whatever-its-status-so-a-block-lifted-after-the-restore-point-comes-back), [Q-VULN-115](vulnerability-scanning.md#q-vuln-115--a-replayed-block-names-its-finding-by-id-and-by-its-immutable-package-version-and-writes-the-findings-own-history), [Q-VULN-131](vulnerability-scanning.md#q-vuln-131--a-replayed-block-names-its-repository-and-package-version-creates-the-finding-the-restored-database-lacks-and-leaves-the-shape-both-download-gates-read), [Q-VULN-132](vulnerability-scanning.md#q-vuln-132--a-blocked-finding-whose-version-is-gone-counts-until-its-ecosystem-has-synced-since-the-restore-at-the-remote-miss-and-at-a-commit)). The entry is optional: a change that lifts a block or sets none is not journaled |
 | `package.published`, `package.deleted` (from P1 also the copy and move events of R-STOR-019) of local NuGet repositories | [formats/nuget.md](formats/nuget.md) R-NUGET-033 | Addition of an absent version: write a `reserved` tombstone for the journaled SHA-512. Removal: an absent version's tombstone becomes or is written as `removed`; a present version with the journaled SHA-512 is reported `revived`; never delete |
 
 **Dispatch.** An entry of a format event is dispatched to that format's replay handler, which the
@@ -3245,12 +3248,19 @@ restore does not revive it and it is not journaled.
 - **Forged entries cannot escalate.** Whoever holds the runtime S3 credential can write journal
   objects. A removal only removes. Where removing one object can widen what another grants, the
   owning page adds a fail-closed step: a disabled CI mapping would let its jobs fall through to the
-  next mapping of its tier, so replay suspends those mappings too (R-CI-020, Q-CI-11). An update is
+  next mapping of its tier, so replay suspends those mappings too (R-CI-020, Q-CI-11); a virtual
+  member whose claims would leave effect, and a pin rule or a claim that would route a name to
+  another member, disable the repository instead ([repositories-and-proxy.md](repositories-and-proxy.md)
+  R-REPO-061); a group rename only detaches the group from synchronization (Q-AUTH-206). An update is
   applied only when it grants nothing beyond the
   object's current state, and the forgeable before-state only chooses between skipping and
-  suspending. An entry of an unknown event type is reported and skipped.
+  suspending. An entry of an unknown event type is reported and skipped. An entry that holds a value the database refuses (SQLSTATE class 22, 23 or 54: a NUL byte, a text beyond a limit, a constraint) is rolled back and reported `skipped` with its subject, and the replay goes on; a lost connection or a serialization failure still ends it. The subject of a printed line comes from the entry and is printed quoted.
 - Within the replay margin (below), an update that is already reflected in the restored database
   can undo a broadening made shortly before *t*. Replay then fails closed, too.
+- **Follow-up work.** A handler whose narrowing needs work that runs later (the re-evaluation of a
+  repository whose scanning it strengthened, R-REPO-061) writes the job row in its own transaction,
+  so the job exists exactly when the entry's change commits; the workers that start after the
+  restore run it ([Q-HA-180](#q-ha-180--a-replay-handler-starts-follow-up-work-by-writing-a-job-row-in-its-own-transaction)).
 
 **Outbox and shipping.**
 
@@ -8815,6 +8825,28 @@ That last assertion can run only after the push, because BuildKit writes the att
 The development agent would revisit this when `docker/buildkit-syft-scanner` ships the pinned version (then (a) with `generator=docker/buildkit-syft-scanner:<tag>@sha256:…` drops the repository's script), or when the organisation wants the generator published (option (d)).
 
 **Applied:** R-HA-047 (attestations bullet); [build.yml](../../.github/workflows/build.yml) (job `build`), [release.yml](../../.github/workflows/release.yml) (job `sbom-generator`), `tools/sbom-generator/`, [versions.env](../../tools/versions.env) (`SYFT_IMAGE`, `SBOM_GENERATOR_SHELL_IMAGE`, `SBOM_GENERATOR_REGISTRY_IMAGE`), the Makefile targets `versions-check` and `sbom-generator-check`, [releasing.md](../developer/releasing.md#the-release-pipeline); `TestR_HA_047_TheImageAttestationUsesThePinnedSyft` guards the build step and `TestR_HA_047_TheTokensHoldWhatTheJobsUse` the absence of any network option on the builder.
+### Q-HA-180 · A replay handler starts follow-up work by writing a job row in its own transaction
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-72. A replayed `repository.narrowed` can switch a repository's scanning on or widen the advisories it matches
+([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-061). The setting alone blocks nothing until the repository's
+versions are evaluated again (R-VULN-011). After a trove backup restore the first complete import evaluates every stored version,
+because the advisory tables are `transient`; after a point-in-time restore the advisory tables come back and nothing triggers an
+evaluation. A handler is registered at start-up and gets only the transaction and `journal.Env` (`internal/journal/replay.go`); the
+restore commands build no job registry (`cmd/trove/backup_restore.go`, `admin_postrestore.go`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `journal.Env` carries a job queue that both restore commands build | The handler calls `Enqueue` | The queue's own path | Both commands need the composition root's job registry; one more member of the shared `Env` for one handler |
+| (b) The handler writes the job row itself, with the kind's spec from the owning package (chosen) | `jobs.EnqueueTx(ctx, tx, spec, e)`: the queue's insert without the registry lookup and without the wake-up signal; `vuln.RescanKindSpec()` is the spec that the application registers too | No change of the shared journal contract or of the commands; the job exists exactly when the entry's change commits; the workers that start after the restore pick it up | The spec of the kind is read from the owning package instead of the registry, so both places must use the one function |
+| (c) No follow-up; rely on the next full evaluation | — | Nothing to build | After a point-in-time restore the strengthened setting blocks nothing until an advisory changes: fails open |
+
+**Choice:** (b). The application registers the rescan with `vuln.RescanKindSpec()` plus its handler, so the spec has one source.
+**Rationale:** the follow-up belongs to the change that needs it, in its transaction, as every enqueue of trove does (R-ARCH-016);
+the restore commands stay free of the worker wiring. The development agent would revisit (a) when a second handler needs a job.
+**Applied:** R-HA-054 "Replay rules"; R-REPO-061 step 7; `internal/jobs/queue.go`, `internal/vuln/jobs.go`,
+`internal/app/wire_vuln_eval.go`.
 
 ## What this does not cover
 

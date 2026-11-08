@@ -317,8 +317,18 @@ UPDATE vuln_source_state
    AND (extract(epoch FROM full_evaluation_requested_at) * 1000000)::bigint = sqlc.arg(requested_us)::bigint;
 
 -- name: VulnDataComplete :one
--- Whether the ecosystem's advisory data has been imported completely (R-VULN-011: no evaluation resolves a finding before).
+-- Whether the ecosystem's advisory data has been imported completely (R-VULN-011: no evaluation resolves a finding before). The
+-- evaluation reads VulnDataGate; this statement is the plain fact, for the tests that arrange the state.
 SELECT EXISTS (SELECT 1 FROM vuln_source_state WHERE source = 'osv' AND ecosystem = sqlc.arg(ecosystem)::text AND state = 'complete')::boolean;
+
+-- name: VulnDataGate :one
+-- The two facts about an ecosystem's advisory data that a commit's evaluation needs in one read: whether it is complete (R-VULN-011)
+-- and whether the installation was restored and the ecosystem has not synced since (Q-VULN-132). A missing row is neither.
+SELECT COALESCE(bool_or(s.state = 'complete'), false)::boolean AS complete,
+       COALESCE(bool_or(r.restored_at IS NOT NULL AND (s.synced_at IS NULL OR s.synced_at < r.restored_at)), false)::boolean AS not_synced_since_restore
+  FROM vuln_source_state s
+  LEFT JOIN (SELECT (value #>> '{}')::timestamptz AS restored_at FROM system_state WHERE key = 'restored_at') r ON true
+ WHERE s.source = 'osv' AND s.ecosystem = sqlc.arg(ecosystem)::text;
 
 -- name: VulnPendingCount :one
 -- The queued advisories of the ecosystems this build evaluates: a row of another ecosystem stays for a build that has its adapter.
@@ -404,9 +414,12 @@ SELECT c.repo_id::bigint AS repo_id, (rp.key || '/' || r.key)::text AS key, r.co
 -- name: VulnRepositoryInputs :many
 -- The scanning inputs of a repository, read from the row and not from a replica's snapshot, so that a rescan sees a change
 -- committed just before it ran (R-VULN-011): the document as text.
-SELECT id::bigint AS id, key::text AS key, class::text AS class, format::text AS format, lifecycle::text AS lifecycle, config::text AS config
-  FROM repositories
- WHERE id = sqlc.arg(id)::bigint;
+-- key is the qualified name, project and repository: the form the events and the journal entries of the evaluation carry.
+SELECT r.id::bigint AS id, (p.key || '/' || r.key)::text AS key, r.class::text AS class, r.format::text AS format,
+       r.lifecycle::text AS lifecycle, r.config::text AS config
+  FROM repositories r
+  JOIN project p ON p.id = r.project_id
+ WHERE r.id = sqlc.arg(id)::bigint;
 
 -- name: VulnUnversionedItems :many
 -- The cached files of the remote repositories of the formats that no version row belongs to (the tarballs a remote repository

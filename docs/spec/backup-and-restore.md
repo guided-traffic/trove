@@ -1631,6 +1631,10 @@ be weaker than a PITR restore.
   report a version as `revived` ([formats/nuget.md](formats/nuget.md) R-NUGET-033), and npm's
   unpublishes withhold the restored version ([formats/npm.md](formats/npm.md) R-NPM-047). Replay of
   version entries only restricts; it deletes nothing.
+- **Repository entries.** The narrowings of a repository's content and its claims made after the snapshot
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-061) are re-applied to the restored repositories; where a
+  part could widen, the repository is disabled and listed `suspended`. A `vuln-rescan` that such an entry enqueues runs when
+  the workers start, after the restore.
 - Replay is idempotent (R-HA-054), so a resumed restore may replay again.
 - **Journal unavailable.** R-BAK-020 check 8 refuses the restore. `--skip-revocation-journal`
   (chart value `restore.skipRevocationJournal`) is for the disaster in which the source bucket is
@@ -1645,6 +1649,8 @@ Acceptance criteria:
   output lists `token.revoked … applied`.
 - A restore whose Job is killed during the replay and resumed lists each entry once as `applied`
   and, on the second pass, as `already in effect`; the token stays revoked.
+- A pending identity link removed, an exclude pattern added and a claim created after the snapshot are in effect after the
+  restore, and a second replay reports each `already in effect`.
 
 ### R-BAK-025 · Restore onto an existing blob store
 Priority: **P1** · Covers: OPS-039

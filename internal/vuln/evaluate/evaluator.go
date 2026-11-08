@@ -14,13 +14,8 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
-// complete reports whether the ecosystem's data is complete as the replica's cache says. It is for a caller that holds no
-// transaction: a miss of the cache loads through the pool (the commit hook reads the state row on its own connection instead). A
-// replica without the state cache reads as not complete, so the evaluation only adds (R-VULN-011).
-func (s *Service) complete(ecosystem string) bool {
-	return s.o.States != nil && s.o.States.State(ecosystem).Complete
-}
-
+// state is the ecosystem's data state from the replica's cache. A replica without the state cache reads as not complete, so the
+// evaluation only adds (R-VULN-011).
 func (s *Service) state(ecosystem string) advisory.DataState {
 	if s.o.States == nil {
 		return advisory.DataState{}
@@ -87,7 +82,7 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 		ver      store.StoredVersion
 		verOK    bool
 		existing []store.Finding
-		complete bool
+		gate     store.DataGate
 		affected []store.AffectedRow
 		holders  = make([][]store.ClaimHolder, len(eco.Formats))
 	)
@@ -98,7 +93,7 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 			existing, err = e.FindingsOfRepoItem(ctx, c.RepoID, eco.Name, c.ItemID)
 			return err
 		},
-		func(e *store.Eval) (err error) { complete, err = e.DataComplete(ctx, eco.Name); return err },
+		func(e *store.Eval) (err error) { gate, err = e.DataGate(ctx, eco.Name); return err },
 		func(e *store.Eval) (err error) {
 			affected, err = e.AffectedForItem(ctx, eco.Name, c.ItemID)
 			return err
@@ -138,9 +133,10 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 		}
 	}
 	r := &run{
-		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, rule: ClaimRule{Claims: claims}, single: true,
-		repos:    func(id int64) (repoView, bool) { return rv, id == rv.ID },
-		affected: &affected,
+		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: canResolveWith(gate), rule: ClaimRule{Claims: claims}, single: true,
+		holdBlocked: holdsEvictedBlocks(gate.Complete, gate.NotSyncedSinceRestore),
+		repos:       func(id int64) (repoView, bool) { return rv, id == rv.ID },
+		affected:    &affected,
 	}
 	if err := r.evaluateNames(ctx, []string{ver.Name}, []store.StoredVersion{ver}, ofVersion); err != nil {
 		return err
@@ -201,7 +197,7 @@ func (s *Service) EvaluateMiss(ctx context.Context, m vuln.Miss) (vuln.Block, er
 			s.o.Metrics.UnevaluableRanges.WithLabelValues(eco.Name).Add(float64(st.unevaluable))
 		}
 	}
-	return missVerdict(pol, in, s.state(eco.Name), s.complete(eco.Name)), nil
+	return missVerdict(pol, in, s.state(eco.Name)), nil
 }
 
 // missInput is what the evaluation of a miss reads: the advisories that affect the version, the findings of the version in the
@@ -250,9 +246,27 @@ func (s *Service) readMiss(ctx context.Context, eco Ecosystem, repoID int64, m v
 	return in, st, err
 }
 
+// canResolveWith says whether an evaluation may resolve findings on the ecosystem's data: it is complete (R-VULN-011) and has synced
+// since the last restore, since data older than the restore would read a block the journal replayed as "no longer affected"
+// (R-VULN-026, Q-VULN-132).
+func canResolveWith(g store.DataGate) bool { return g.Complete && !g.NotSyncedSinceRestore }
+
+// holdsEvictedBlocks says whether the ecosystem's data is too little to judge a blocked finding whose version is gone: it is
+// incomplete, or the installation was restored and the ecosystem has not synced since (R-VULN-015, Q-VULN-132). The remote miss
+// counts such a finding as blocked, and a commit of the version re-detects it as blocked.
+func holdsEvictedBlocks(complete, notSyncedSinceRestore bool) bool {
+	return !complete || notSyncedSinceRestore
+}
+
+// isEvictedBlock is the shape a blocked finding takes when its version is evicted (OnVersionsRemoved), and the shape the replay of
+// a block gives a finding whose version the restored repository does not store (Q-VULN-131).
+func isEvictedBlock(f *store.Finding) bool {
+	return f.Status == vuln.StatusResolved && f.ResolvedReason == vuln.ResolvedVersionRemoved && f.BeforeResolution == vuln.StatusBlocked
+}
+
 // missVerdict is the verdict of a remote miss over what was read: the finding of the strongest status of each advisory group of the
-// version decides, and the data rule answers when none blocks. complete says whether the ecosystem's data is complete.
-func missVerdict(pol vuln.Policy, in missInput, data advisory.DataState, complete bool) vuln.Block {
+// version decides, and the data rule answers when none blocks. data is the state of the ecosystem's data.
+func missVerdict(pol vuln.Policy, in missInput, data advisory.DataState) vuln.Block {
 	enforced := pol.Enforcement != vuln.EnforceReport
 	var best *blocking
 	consider := func(mm *matched, f *store.Finding) {
@@ -288,12 +302,12 @@ func missVerdict(pol vuln.Policy, in missInput, data advisory.DataState, complet
 		consider(in.found[id], strongest)
 	}
 	// A blocked finding that resolved with version_removed counts although no advisory matches now, while the data cannot
-	// say that the advisory stopped applying: a restored installation has none (R-VULN-011, no resolution without data).
-	if !complete {
+	// say that the advisory stopped applying: a restored installation has none (R-VULN-011, no resolution without data), and
+	// one whose data is older than the restore has not seen the records the journal's blocks rest on (Q-VULN-132).
+	if holdsEvictedBlocks(data.Complete, data.NotSyncedSinceRestore) {
 		for i := range in.existing {
 			f := &in.existing[i]
-			if in.found[f.AdvisoryID] == nil && in.found[in.rekey[f.AdvisoryID]] == nil && f.Status == vuln.StatusResolved &&
-				f.ResolvedReason == vuln.ResolvedVersionRemoved && f.BeforeResolution == vuln.StatusBlocked {
+			if in.found[f.AdvisoryID] == nil && in.found[in.rekey[f.AdvisoryID]] == nil && isEvictedBlock(f) {
 				consider(&matched{ID: f.AdvisoryID, Kind: f.Kind, Severity: f.Severity, KnownExploited: f.KnownExploited, ModifiedUs: f.AdvisoryModifiedU}, f)
 			}
 		}

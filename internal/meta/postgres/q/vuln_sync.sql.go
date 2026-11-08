@@ -665,19 +665,23 @@ func (q *Queries) VulnStateGet(ctx context.Context, arg VulnStateGetParams) (Vul
 }
 
 const vulnStateList = `-- name: VulnStateList :many
-SELECT ecosystem, state, data_epoch, COALESCE(extract(epoch FROM synced_at) * 1000000, 0)::bigint AS synced_us
-  FROM vuln_source_state
- WHERE source = $1::text
+SELECT s.ecosystem, s.state, s.data_epoch, COALESCE(extract(epoch FROM s.synced_at) * 1000000, 0)::bigint AS synced_us,
+       COALESCE(r.restored_at IS NOT NULL AND (s.synced_at IS NULL OR s.synced_at < r.restored_at), false)::boolean AS not_synced_since_restore
+  FROM vuln_source_state s
+  LEFT JOIN (SELECT (value #>> '{}')::timestamptz AS restored_at FROM system_state WHERE key = 'restored_at') r ON true
+ WHERE s.source = $1::text
 `
 
 type VulnStateListRow struct {
-	Ecosystem string
-	State     string
-	DataEpoch int64
-	SyncedUs  int64
+	Ecosystem             string
+	State                 string
+	DataEpoch             int64
+	SyncedUs              int64
+	NotSyncedSinceRestore bool
 }
 
-// Every row of a source, for the replica's copy of the state (R-VULN-027).
+// Every row of a source, for the replica's copy of the state (R-VULN-027). not_synced_since_restore is true when the installation
+// was restored and the row has not synced since (Q-VULN-132); false when it never was.
 func (q *Queries) VulnStateList(ctx context.Context, source string) ([]VulnStateListRow, error) {
 	rows, err := q.db.Query(ctx, vulnStateList, source)
 	if err != nil {
@@ -692,6 +696,7 @@ func (q *Queries) VulnStateList(ctx context.Context, source string) ([]VulnState
 			&i.State,
 			&i.DataEpoch,
 			&i.SyncedUs,
+			&i.NotSyncedSinceRestore,
 		); err != nil {
 			return nil, err
 		}

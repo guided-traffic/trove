@@ -235,6 +235,34 @@ When a virtual repository combines a local repository with a remote one, a publi
 
 To resolve a refusal, claim the name on the local repository first, or let a holder of `manage` decide. A virtual repository with local and remote members, no pin rule and no claims carries the warning `dependency_confusion_unprotected`.
 
+## After a restore
+
+A restore returns every repository to its configuration and claims at the restore point, and then re-applies the narrowings made
+after it, so a name that was claimed or pinned afterwards is not served from a remote member again. What is re-applied: include
+patterns narrowed, exclude patterns added, `local.autoClaim` switched on, members taken out of a virtual repository or a pin rule,
+pin rules added, a stronger **vulnerabilities** setting, and every claim created or widened to `global`, the claim of a first
+publish included. A claim that was created by a publish after the restore point is created again; the version itself is gone with
+the restore, so the name has no package until it is published again, and a virtual repository over the claimant asks no remote
+member for it meanwhile.
+
+The restore lists each repository it re-applied as `repository.narrowed … applied` or `repository.claims_changed … applied`. A
+repository that could have served more than before is **disabled** and listed as `suspended`, with the entry that caused it, in
+these cases:
+
+- the include patterns of the restored repository and of the entry share none;
+- a member was taken out of a virtual repository, the member is a local repository with claims of scope `members`, and another
+  member stays: the claimed names would reach the member that stays;
+- a pin rule was added whose pattern overlaps a claim of the virtual repository or another rule;
+- a claim was created whose pattern overlaps a claim of another repository that is in effect together with it;
+- a pin rule that was reduced is missing from the restored repository.
+
+To review one, read the printed entry (or the replay output of `trove admin post-restore`), check the repository's patterns, members,
+pin rules and claims against what you intended, correct them, and enable the repository again.
+
+A restore does not re-apply the settings of how a repository talks to its upstream or what it accepts: the hosts that receive the
+credential, the checksum and content-type policy of a remote, offline mode, a local repository's client checksum policy and upload
+limits, and the settings of the npm and NuGet members. See [Known limitations](limitations.md#backup-and-restore).
+
 ## Edit a repository
 
 1. Open the repository from the list or with **Edit**.

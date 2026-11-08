@@ -1089,7 +1089,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
   of the database at *t*: a Bastion registration's disable and deletion ([Q-BAS-145](../spec/bastion.md)), one `token.revoked` per token a
   disable or deletion revokes, written in batches, and a cleared auto-join flag ([Q-AUTH-198](../spec/identity-and-authentication.md)), a
   repository's disable and deletion ([Q-AUTHZ-238, Q-AUTHZ-239](../spec/authorization.md)); every journaled event has a handler in the
-  `trove` binary (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`). The blocks of findings replay since Q-VULN-114 (H-489 narrowed). Narrowings that still write no entry are finding F-72 (H-569)
+  `trove` binary (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`). The blocks of findings replay since Q-VULN-114, the blocks the evaluation sets since Q-VULN-130 to Q-VULN-132 (F-74), and the narrowings of identities, groups, token maxima, repositories and claims since R-REPO-061 and Q-AUTH-205 to Q-AUTH-207 (F-72); what a restore still brings back is H-569 (upstream, storage and format settings of a repository)
 - 🟡 E2E: backup taken during publishing restores with every npm and NuGet file digest-correct. Built on 2026-11-07 (set `backup`,
   nightly leg `e2e-backup` on `large`, Q-HA-154; [e2e.md](../developer/e2e.md)) and passed on kind locally: `TestBackupDrill` (a backup
   during 19 npm, 19 NuGet and 19 file publishes with deletes, trashes and a collector at `grace_period: 0s`, restored by the restore Job

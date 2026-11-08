@@ -494,23 +494,15 @@ func (rt *Routing) AutoClaim(ctx context.Context, tx meta.Tx, local Repository, 
 	if err != nil {
 		return AutoClaimResult{}, err
 	}
-	for _, c := range own {
-		if p, err := ParseClaimPattern(c.Pattern); err == nil && p.Match(norm) {
-			return AutoClaimResult{Reason: AutoClaimCovered}, nil
-		}
+	if ownClaimCovers(norm, own) {
+		return AutoClaimResult{Reason: AutoClaimCovered}, nil
 	}
 	others, err := qs.ListOtherClaims(ctx, q.ListOtherClaimsParams{RepoID: local.rid, Format: local.Format})
 	if err != nil {
 		return AutoClaimResult{}, err
 	}
-	for _, o := range others {
-		inEffect := o.SharesVirtual || (o.Scope == ScopeGlobal && o.InVirtual)
-		if !inEffect {
-			continue
-		}
-		if p, err := ParseClaimPattern(o.Pattern); err == nil && p.Match(norm) {
-			return AutoClaimResult{Reason: AutoClaimSkipped}, nil
-		}
+	if otherClaimCovers(norm, others) {
+		return AutoClaimResult{Reason: AutoClaimSkipped}, nil
 	}
 	if len(own) >= MaxClaims {
 		return AutoClaimResult{Reason: AutoClaimLimit}, nil
@@ -527,10 +519,38 @@ func (rt *Routing) AutoClaim(ctx context.Context, tx meta.Tx, local Repository, 
 	if err != nil {
 		return AutoClaimResult{}, err
 	}
-	if err := recordClaims(ctx, tx, rt.rec, rt.notif, by, local, SourceAuto, []claimChange{{Pattern: pat, Scope: ScopeMembers}}, nil, version); err != nil {
+	auto := []claimChange{{Pattern: pat, Scope: ScopeMembers}}
+	if err := recordClaims(ctx, tx, rt.rec, rt.notif, by, local, SourceAuto, auto, auto, nil, version); err != nil {
 		return AutoClaimResult{}, err
 	}
 	return AutoClaimResult{Created: true, Pattern: pat}, nil
+}
+
+// ownClaimCovers reports whether a claim of the repository itself covers the name: the first of the two checks of the auto
+// claim of a first publish (R-REPO-023).
+func ownClaimCovers(norm string, own []q.ListRepositoryClaimsRow) bool {
+	for _, c := range own {
+		if p, err := ParseClaimPattern(c.Pattern); err == nil && p.Match(norm) {
+			return true
+		}
+	}
+	return false
+}
+
+// otherClaimCovers reports whether a claim of another repository that is in effect in a virtual repository containing this
+// one covers the name: an auto claim must not take a name from another repository, so none is created. The replay of a
+// journaled auto claim applies the same two checks to the restored claims (R-REPO-061, Q-REPO-250).
+func otherClaimCovers(norm string, others []q.ListOtherClaimsRow) bool {
+	for _, o := range others {
+		inEffect := o.SharesVirtual || (o.Scope == ScopeGlobal && o.InVirtual)
+		if !inEffect {
+			continue
+		}
+		if p, err := ParseClaimPattern(o.Pattern); err == nil && p.Match(norm) {
+			return true
+		}
+	}
+	return false
 }
 
 // String is the readable form of a result, for audit details and logs.

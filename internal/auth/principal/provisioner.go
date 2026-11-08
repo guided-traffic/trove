@@ -310,7 +310,9 @@ func (p *PGProvisioner) syncGroups(ctx context.Context, tx meta.Tx, qs *q.Querie
 				if err != nil {
 					return err
 				}
-				target[n] = id
+				if id != "" {
+					target[n] = id
+				}
 			}
 		}
 	}
@@ -369,7 +371,9 @@ func (p *PGProvisioner) syncGroups(ctx context.Context, tx meta.Tx, qs *q.Querie
 
 // createOIDCGroup creates a missing target group with origin oidc, or finds the
 // one a concurrent login created at the same moment (ON CONFLICT DO NOTHING,
-// then a read).
+// then a read). A group of that name detached from group synchronization is
+// neither filled nor created: the ID is empty and the login goes on without it
+// (R-AUTH-008, Q-AUTH-206).
 func (p *PGProvisioner) createOIDCGroup(ctx context.Context, qs *q.Queries, name string) (string, error) {
 	id := NewID()
 	ins, err := qs.IdentityInsertPrincipal(ctx, q.IdentityInsertPrincipalParams{ID: id, Kind: string(KindGroup), Name: name})
@@ -386,10 +390,17 @@ func (p *PGProvisioner) createOIDCGroup(ctx context.Context, qs *q.Queries, name
 	if err != nil {
 		return "", err
 	}
-	if len(found) == 0 {
-		return "", errRetry
+	if len(found) > 0 {
+		return found[0].ID, nil
 	}
-	return found[0].ID, nil
+	detached, err := qs.IdentityGroupDetachedByName(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if detached {
+		return "", nil
+	}
+	return "", errRetry
 }
 
 // validGroupNames drops values that violate the group-name rule and duplicates.

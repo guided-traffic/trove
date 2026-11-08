@@ -160,7 +160,7 @@ func (p *PostRestorer) PostRestore(ctx context.Context, opts backup.PostRestoreO
 			step("  warning: " + w)
 		}
 		if sum.NoAdminBinding {
-			step("no admin role binding is left: sign in with the break-glass account (R-AUTH-014) and bind the role again")
+			step("no enabled administrator is left (a service account that holds the role counts as one, though nobody can sign in as it): sign in with the break-glass account (R-AUTH-014), then bind the admin role again or re-attach or fill the group that holds it")
 		}
 	}
 	err = p.o.DB.InTx(ctx, func(tx meta.Tx) error {

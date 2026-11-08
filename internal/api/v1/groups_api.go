@@ -23,7 +23,7 @@ func toGroup(g principal.Group) gen.Group {
 	}
 	return gen.Group{
 		Id: uuidOf(g.ID), Name: g.Name, Description: g.Description, AutoJoin: g.AutoJoin, Origin: gen.GroupOrigin(g.Origin),
-		MemberCount: g.MemberCount, Roles: roles, CreatedAt: utc(g.CreatedAt),
+		SyncDetached: g.SyncDetached, MemberCount: g.MemberCount, Roles: roles, CreatedAt: utc(g.CreatedAt),
 	}
 }
 
@@ -109,6 +109,8 @@ type groupPatchBody struct {
 	Name        json.RawMessage `json:"name"`
 	Description json.RawMessage `json:"description"`
 	AutoJoin    json.RawMessage `json:"autoJoin"`
+	// SyncDetached accepts false only; the Manager refuses true (Q-AUTH-206).
+	SyncDetached json.RawMessage `json:"syncDetached"`
 
 	ID          json.RawMessage `json:"id"`
 	Origin      json.RawMessage `json:"origin"`
@@ -137,6 +139,7 @@ func (s *Server) UpdateGroup(w http.ResponseWriter, r *http.Request, name string
 			func() (e error) { p.Name, e = patchRequiredString(in.Name, "/name"); return },
 			func() (e error) { p.Description, e = patchString(in.Description, "/description"); return },
 			func() (e error) { p.AutoJoin, e = patchBool(in.AutoJoin, "/autoJoin"); return },
+			func() (e error) { p.SyncDetached, e = patchBool(in.SyncDetached, "/syncDetached"); return },
 		)
 	}
 	if err != nil {

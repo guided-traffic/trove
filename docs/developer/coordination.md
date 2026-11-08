@@ -18,7 +18,7 @@ this page covers what is built on it.
 | File | Responsibility |
 |---|---|
 | `internal/jobs/kinds.go` | `Registry`, `RegisterKind`, `RegisterTask`, `Freeze`; `KindSpec`, `TaskSpec`, `DedupMode` |
-| `internal/jobs/queue.go` | `Queue`: `Enqueue` (in the caller's transaction), `EnqueueNow`, `Get`, `Cancel`; exclusive and coalesce keys |
+| `internal/jobs/queue.go` | `Queue`: `Enqueue` (in the caller's transaction), `EnqueueNow`, `Get`, `Cancel`; exclusive and coalesce keys. `EnqueueTx(ctx, tx, spec, e)`: the same insert for a caller that holds no queue and no registry (a replay handler of the restore commands, Q-HA-180); the spec is the kind's, without the handler, from the owning package (`vuln.RescanKindSpec()`), and `paramsFor` and `normalize` make its row equal the one `Enqueue` writes; it sends no wake-up, so the workers find the row by polling `jobs.poll_interval` |
 | `internal/jobs/worker.go` | `Worker`: claim loop, handler runs, completion, heartbeat, release; the Component phases `Start`, `Drain`, `Settle`, `Quiesce`, `Stop` |
 | `internal/jobs/run.go` | `Run`, the handle a handler gets: `LoadCheckpoint`, `SaveCheckpoint`, `SaveProgress`, `SetResult`, `DB` |
 | `internal/jobs/reaper.go` | Reaper pass and retention of finished jobs |

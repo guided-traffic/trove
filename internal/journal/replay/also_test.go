@@ -34,8 +34,8 @@ func TestR_CI_020_TheReplayPrintsTheFurtherResultsOfAnEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "alsotest.disable gitlab/first " + id(1) + " applied\n" +
-		"alsotest.disable gitlab/later " + id(1) + " suspended\n" +
+	want := "\"alsotest.disable\" \"gitlab/first\" " + id(1) + " applied\n" +
+		"\"alsotest.disable\" \"gitlab/later\" " + id(1) + " suspended\n" +
 		`  {"reason":"first_match_fall_through"}` + "\n"
 	if out.String() != want {
 		t.Errorf("printed:\n%s\nwant:\n%s", out.String(), want)

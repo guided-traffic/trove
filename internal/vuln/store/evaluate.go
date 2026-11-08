@@ -474,9 +474,14 @@ func (e *Eval) ClearFullEvaluation(ctx context.Context, r FullRequest) (bool, er
 	return n > 0, err
 }
 
-// DataComplete reports whether the ecosystem's advisory data has been imported completely, read from PostgreSQL.
-func (e *Eval) DataComplete(ctx context.Context, ecosystem string) (bool, error) {
-	return e.qs.VulnDataComplete(ctx, ecosystem)
+// DataGate is what a commit's evaluation reads of an ecosystem's advisory data: Complete (an import has finished,
+// R-VULN-011) and NotSyncedSinceRestore as [advisory.DataState] says it. Every evaluation that may resolve a finding reads it.
+type DataGate struct{ Complete, NotSyncedSinceRestore bool }
+
+// DataGate reads both facts in one statement, from PostgreSQL.
+func (e *Eval) DataGate(ctx context.Context, ecosystem string) (DataGate, error) {
+	r, err := e.qs.VulnDataGate(ctx, ecosystem)
+	return DataGate{Complete: r.Complete, NotSyncedSinceRestore: r.NotSyncedSinceRestore}, err
 }
 
 // PendingCount counts the queued advisories of the ecosystems.

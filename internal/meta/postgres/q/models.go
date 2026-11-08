@@ -913,6 +913,7 @@ type UserGroup struct {
 	AutoJoin       bool
 	Origin         string
 	ScimExternalID pgtype.Text
+	SyncDetached   bool
 }
 
 type UserIdentity struct {

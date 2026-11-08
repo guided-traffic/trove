@@ -18,6 +18,17 @@
         <ng-container i18n="@@group.scim-note">This group is managed by SCIM and cannot be changed here.</ng-container>
       </p>
     }
+    @if (g.syncDetached) {
+      <p role="status" class="warn">
+        <span class="material-icons" aria-hidden="true">link_off</span>
+        <ng-container i18n="@@group.detached-note">The identity provider no longer fills this group: a restore found it renamed after the restore point and detached it from group synchronization, and removed its members from the identity provider.</ng-container>
+      </p>
+      @if (canWrite() && !readOnly()) {
+        <p>
+          <button class="btn btn-tertiary" type="button" [disabled]="busy()" (click)="attach()" i18n="@@group.attach">Attach to group synchronization again</button>
+        </p>
+      }
+    }
     @if (editError(); as e) {
       <trove-error-notice [error]="e" />
     }

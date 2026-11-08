@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 489 of 694 spec requirements are implemented: a passing test names them and no
+**Status.** 489 of 695 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 704 specified (348 of them implemented), 1,535 open.
-694 spec requirements: 546 cover catalog features, 148 cover none (`trove-only`, [listed at the
+695 spec requirements: 546 cover catalog features, 149 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>148 requirements</summary>
+<summary>149 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3092,6 +3092,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-OPS-047 | Installation-wide cache flush | P1 | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-024 | Read-only maintenance mode | P1 | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-REPO-060 (implemented) | Move a repository to another project | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
+| R-REPO-061 | Narrowings of a repository in the revocation journal | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-026 (implemented) | Collapsing concurrent misses (single-flight and Valkey flight lock) | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-038 (implemented) | Egress address rules for remote repositories | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |
 | R-REPO-040 (implemented) | Size and concurrency limits | MVP | [repositories-and-proxy.md](../spec/repositories-and-proxy.md) |

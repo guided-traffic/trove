@@ -118,12 +118,17 @@ func TestCreateReadUpdate(t *testing.T) {
 		var details struct {
 			Changes []string `json:"changes"`
 		}
-		got := last()
+		// The first include list narrows (R-REPO-061): repository.narrowed follows repository.updated.
+		evs := events()
+		got := evs[len(evs)-2]
 		if err := json.Unmarshal([]byte(got.Details), &details); err != nil {
 			t.Fatal(err)
 		}
 		if got.Type != repository.EventUpdated || !slices.Equal(details.Changes, []string{"description", "includePatterns"}) {
 			t.Fatalf("event = %s %s", got.Type, got.Details)
+		}
+		if n := last(); n.Type != repository.EventNarrowed || !strings.Contains(n.Details, `"parts": ["include"]`) {
+			t.Fatalf("event = %s %s", n.Type, n.Details)
 		}
 		if epoch() != before+1 {
 			t.Fatal("the update did not advance the epoch")

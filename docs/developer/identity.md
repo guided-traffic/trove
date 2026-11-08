@@ -51,10 +51,10 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `serviceaccounts.go`, `projectaccounts.go` | The service accounts of the instance and of a project (Q-AUTHZ-169, Q-AUTHZ-209). A project's account is stored as `<projectKey>/<name>` in `principal.name` (the trigger `service_account_project` of 00019 keeps the prefix and `service_account.project_id` together, SQLSTATE `AI003`), so `UNIQUE (kind, name)` keeps both rules and the same name lives in every project and once instance-wide. The methods without `Project` in the name (`CreateServiceAccount`, `GetServiceAccount`, …) address instance-wide accounts: `loadAccountOf` refuses a name with a `/` and an account of another place, so the account of a project answers 404 there. The `…Project…` methods take a `qname.Object` (`ParseObject`, `ServiceAccount.Object`); `createServiceAccount` locks the project `FOR SHARE` (404 `not_found` for none), refuses `Admin` (422 `role_not_allowed`) and writes `project` into the `serviceaccount.*` events. `deleteAccount` revokes the account's tokens, notifies the change areas and only then deletes the principal row, whose token rows go with it by cascade. `ServiceAccountByRef` reads what follows `sa:` (`<name>` or `<project>/<name>`). `ListProjectServiceAccounts(project, query, after, limit)` matches `query` against the name within the project |
 | `groups.go` (projects) | `refuseProjectAccount` in `changeMembers`: a project service account is no group member (422 `project_account_not_groupable`); `postgres.IsState(err, "AI002")` maps the trigger's refusal to the same answer (Q-AUTH-191) |
 | `guards.go` | `guardRoleHolder` (a principal that holds a system role, or a group that carries one, is changed only with `roles:write`, Q-AUTHZ-69) and `LastAdminGuard` (`last_admin` over active holders, locked on the `admin` binding rows; authz uses it in `UnbindRole`, Q-AUTHZ-70) |
-| `provisioner.go` | `PGProvisioner.SignIn`: just-in-time user, identity link, rename, group sync (R-AUTH-007, R-AUTH-008) |
+| `provisioner.go` | `PGProvisioner.SignIn`: just-in-time user, identity link, rename, group sync (R-AUTH-007, R-AUTH-008); `IdentityGroupsByName` leaves out a group with `sync_detached`, and `createOIDCGroup` answers an empty ID for a detached group of the name, so the login goes on without it (Q-AUTH-206) |
 | `change.go` | The payload of the change area `auth` and its notify helpers |
 | `token_events.go` | `RevokeAllTokensTx` (revoke every unrevoked token of a principal) and `RecordTokensRevoked`: the one place that builds `token.revoked` with its journal entry `{tokenId, reason}`, for the token service's revocations and for the disables and deletions of `Manager`; the events go through `audit.RecordAllTx`, so a principal's thousands of tokens cost a fixed number of statements (Q-AUTH-198) |
-| `journal_replay.go` | The replay handlers of the identity events (R-HA-054): disable a user, a service account or a Bastion registration, delete a group, remove memberships, clear a group's auto-join flag (`autoJoinOrder`, the update rule) |
+| `journal_replay.go` | The replay handlers of the identity events (R-HA-054): disable a user, a service account or a Bastion registration, delete a group, remove memberships, clear a group's auto-join flag (`autoJoinOrder`, the update rule), delete the pending links a `user.updated` removed (`replayUserUpdated`, Q-AUTH-205) and detach a group a `group.updated` renamed (`replayRenameDetach`, Q-AUTH-206: `sync_detached`, the `oidc:*` memberships deleted, the name never written). The entries are `userUpdatedEntry` and `groupUpdatedEntry`, read strictly (`readUserUpdated`, `readGroupUpdated`) |
 | `gate.go` | `Gate` (freshness), `Flights` (shared lookups while the gate is closed), `Metrics` |
 | `ids.go`, `errors.go`, `db.go` | UUIDv7 and name rules; the refusals; the `DB` and `Notifier` interfaces |
 
@@ -70,7 +70,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade; `DescendsFrom` (whether a token's `derived_from` chain leads to another or to one of its rotation predecessors, the line of a narrowed token in the token API, Q-AUTH-199) |
 | `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected`; the type `bst` is refused here as unknown before the cache and the table (R-BAS-005) |
 | `bastion.go` | The Bastion token (type `bst`, R-BAS-004): `CreateBastion`/`CreateBastionTx` (the lifetime rule of `auth.tokens.bst`, the limit per registration under the owner lock), `RevokeBastionToken`, `RevokeAllOfBastionTx` (deleting a registration), `AuthenticateBastion` (the validation of the interface, through the cache `auth_tokens` and `BastionTokenBySecret`) |
-| `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040) |
+| `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040); the journal entry of `settings.auth.changed` carries `anonymousAccess` and both runtime maxima before and after, `null` for the YAML value (Q-AUTH-207) |
+| `journal_replay.go` | The replay of the token events; `replaySettings` replays `settings.auth.changed` part by part: the anonymous switch (`switchOrder`) and each maximum (`maxOrder`, a total order with `null` the longest, so it never suspends), lowering by `IdentityLowerPATMax` and `IdentityLowerSATMax`, which also take a default above the new maximum down to it |
 | `tasks.go` | `Cleanup` (`token-cleanup`), `NoticeExpiring` (`token-expiry-notice`) |
 
 ## Request path
@@ -208,6 +209,30 @@ and the check of the Bastion interface calls the same stage function as a direct
 
 Run the integration area from the checkout root with the stack up (see [build-and-test.md](build-and-test.md)):
 `set -a; . /Users/hfi/repos/trove/.dev/integration/env; set +a; go test -count=1 -tags integration ./test/integration/identity/...`
+
+## Journaled narrowings (F-72)
+
+Three identity changes that a restore would undo are journaled and replayed (R-AUTH-041, R-HA-054). The replay of each only removes or
+narrows, and every entry is read strictly: a missing key, a wrong type or a list over 1000 entries is `skipped`.
+
+| Change | Entry | Replay |
+|---|---|---|
+| A pending identity link removed (`PATCH /api/v1/users/{username}` with `identities`) | `user.updated`: `{principalId, name, pendingLinksRemoved}` on every update, the list empty when none was removed; `IdentityReplaceIdentities` returns the removed providers (`RETURNING provider_id`) | `IdentityDeletePendingLinks` deletes the pending links (`subject IS NULL`) of those providers; a linked identity is never removed; the break-glass account is malformed. No cache holds pending links (the login reads `user_identity` in its transaction), so no change area is told |
+| A group renamed | `group.updated` gains `renamedFrom` when the update renamed | `sync_detached = true`, the `oidc:*` memberships deleted, `ChangeGroup` notified (flushes the principal cache); the name is never written. Already in effect when the restored name equals the entry's `name` or the group is detached |
+| A token lifetime maximum | `settings.auth.changed` gains `tokens.pat.maxTTLSeconds` and `tokens.sat.maxTTLSeconds`, `{before, after}` each, all keys required, a value 60 s to 100 years (`config.MaxTokenLifetime`, the `max=876000h` of the two `max_ttl` keys and the settings API) or `null`; the parts are read independently | each maximum is lowered to the smaller value; `null` and a longer value change nothing; the change raises `auth_settings.revision` and tells the settings area |
+
+The column `user_group.sync_detached` (migration 00052) is exported with its table: the backup classifies by table (`tables_m1.go`, class
+`data`), so no registration changes. Only the replay sets it; `UpdateGroup` takes `false` only and refuses `true` with 422 `invalid_value`
+at `/syncDetached`. A rename never changes it.
+
+Tests: `TestR_AUTH_041_UserUpdatedEntriesAreReadStrictly`, `TestR_AUTH_041_GroupUpdatedEntriesAreReadStrictly`,
+`TestR_AUTH_041_SettingsEntriesAreReadStrictly`, `TestR_AUTH_026_TheMaximumOrderTreatsNullAsTheLongest` (unit);
+`TestR_AUTH_016_ARemovedPendingLinkIsJournaledInItsTransaction`, `TestR_AUTH_018_ARenameCarriesTheFormerNameInItsEntry`,
+`TestR_AUTH_040_ASettingsChangeCarriesTheMaximaInItsEntry`, `TestR_AUTH_008_ADetachedGroupIsNeitherFilledNorCreated`,
+`TestR_AUTH_018_SyncDetachedIsClearedOnlyToFalse` in [test/integration/identity/journal_identity_test.go](../../test/integration/identity/journal_identity_test.go)
+(the writers); `TestR_AUTH_016_ARemovedPendingLinkStaysRemovedAfterARestore`, `TestR_AUTH_018_AGroupRenamedAfterTheRestorePointIsDetached`,
+`TestR_AUTH_026_ALoweredMaximumStaysLoweredAfterARestore` in [test/integration/backup/journal_identity_narrowing_test.go](../../test/integration/backup/journal_identity_narrowing_test.go)
+(the replay against a restored copy, with hand-written entries and a second pass).
 
 ## Wiring and what other areas connect
 

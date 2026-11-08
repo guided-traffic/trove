@@ -3765,6 +3765,9 @@ Priority: **MVP** · Covers: UI-037
   of the group (read-only with link to `/admin/roles`), the policies naming the group (read-only
   links), "Explain" (P1).
 - A group managed by SCIM is read-only with the reason shown.
+- A group a restore detached from group synchronization (`syncDetached`, [identity-and-authentication.md](identity-and-authentication.md)
+  R-AUTH-018) shows that the identity provider no longer fills it, and the editor offers to attach it again
+  (`{"syncDetached": false}`).
 
 Acceptance criteria:
 

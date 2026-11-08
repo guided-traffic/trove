@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -328,7 +329,7 @@ func TestR_CI_020_IssuerAndMappingEntriesReplayIntoTheRestoredDatabase(t *testin
 	})
 	t.Run("R-CI-020 the replay prints every suspended mapping as a line of its own", func(t *testing.T) {
 		for _, want := range []string{"gitlab-a/acme-mr-readonly", "gitlab-a/acme-release-publish", "gitlab-a/acme-read"} {
-			if !strings.Contains(printed, "ci.mapping.deleted "+want+" ") {
+			if !strings.Contains(printed, strconv.Quote("ci.mapping.deleted")+" "+strconv.Quote(want)+" ") {
 				t.Errorf("no line for %s:\n%s", want, printed)
 			}
 		}

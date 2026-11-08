@@ -771,7 +771,9 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
 | `repository.moved` | `grants`: the repository left its project's roles and policies behind and changed its address ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified), [repositories-and-proxy.md](repositories-and-proxy.md#r-repo-060--move-a-repository-to-another-project)) |
 | `authz.project.member_removed`, `authz.project.member_changed` | `grants`: a member's role grants reads on every repository of the project ([authorization.md](authorization.md) R-AUTHZ-026), so a removal or a lower role narrows them |
 | `repository.disabled`, `repository.deleted` | `grants`: the repository takes no part in resolution or download any more, and a `content` entry would keep its shape answers ([Q-AUTHZ-238](authorization.md#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own), [Q-AUTHZ-239](authorization.md#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled)) |
-| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted`, `bastion.disabled`, `bastion.deleted`, `group.updated` | none: they bound publishing, reserve numbers, change a project's name and description, remove a project that holds no repository (a project's policies are deleted before it, each `authz.policy.deleted`), end a registration, which is no caller a Bastion answers and learns of its end from `401 bastion_token_invalid` (R-BAS-006, [Q-BAS-145](#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled)), or clear a group's auto-join flag, which removes no membership that exists; each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
+| `repository.narrowed` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-061) | `content` for the repository and its virtual repositories: patterns, members, pin rules and blocks change which bytes a URL may be answered with, not who may read the repository ([Q-BAS-146](#q-bas-146--a-content-narrowing-and-a-claim-of-scope-members-yield-a-content-entry-a-global-claim-yields-grants)) |
+| `repository.claims_changed` with an added claim | `content` for the claiming repository and its virtual repositories when every added claim has scope `members`; `grants` when one has scope `global`, which is in effect in every virtual repository of the format and in remote refusal (Q-BAS-146); none when the change only removed claims |
+| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted`, `bastion.disabled`, `bastion.deleted`, `group.updated`, `user.updated` | none: they bound publishing, reserve numbers, change a project's name and description, remove a project that holds no repository (a project's policies are deleted before it, each `authz.policy.deleted`), end a registration, which is no caller a Bastion answers and learns of its end from `401 bastion_token_invalid` (R-BAS-006, [Q-BAS-145](#q-bas-145--a-disabled-or-deleted-registration-is-journaled-and-replayed-as-disabled)), clear a group's auto-join flag, which removes no membership that exists, or remove a pending identity link, which no caller holds until a login completes it; each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
 
 ```json
 {
@@ -798,7 +800,10 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
   when the entries behind the cursor exceed four times `bastions.feed.max_page`, the answer is `reset: true`.
 - **Reset.** `reset: true` when the entry the cursor names no longer exists although its time lies within the audit retention
   (a point-in-time restore or a failover that lost commits), when the cursor's time lies after the main installation's clock by
-  more than `lookback`, or when it lies before the audit retention. The Bastion then drops every answer (R-BAS-026) and takes the
+  more than `lookback`, when it lies before the audit retention, or when it lies before the last restore (`system_state`
+  `restored_at`): a restore re-applies the narrowings made after its restore point with a journal replay, which writes no audit
+  event, so the feed carries none of them and the answers of a Bastion that has not seen the restore may predate them. The
+  position of a handshake or a reset is then the database clock, so the Bastion settles after one reset. The Bastion then drops every answer (R-BAS-026) and takes the
   returned cursor.
 - **History.** `after` may name a synthetic cursor `t:<RFC 3339>` up to the audit retention back, so a starting replica reads the
   entries of the whole lifetime of an answer (R-BAS-026,
@@ -5304,6 +5309,36 @@ revisit (b) if a registration gains further access-bearing members.
 **Applied in the spec:** R-BAS-004, R-BAS-015 table, R-HA-054 table, R-AUTH-041; the OpenAPI text of `updateBastion` and
 `deleteBastion`; code: `internal/audit/events_bastion.go`, `internal/bastionmain/registrations.go`, `internal/bastionmain/feed.go`,
 `internal/auth/principal/journal_replay.go`. Test: `TestR_BAS_004_ADisabledOrDeletedRegistrationStaysDisabledAfterARestore`.
+
+### Q-BAS-146 · A content narrowing and a claim of scope `members` yield a `content` entry, a `global` claim yields `grants`
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-72 journals `repository.narrowed` and `repository.claims_changed` ([repositories-and-proxy.md](repositories-and-proxy.md)
+R-REPO-061), so the feed must classify them (`TestR_BAS_015_EveryJournaledEventIsClassified`). Neither was read before: a Bastion
+kept serving a cached answer of a virtual repository for a name that a member removal, a pattern or a new claim took away. The auto
+claim of a first publish is the common case: before it, the name resolved from the remote members, and a Bastion may hold that
+answer.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `grants` for both | Every answer of every caller drops | Exact | The auto claim of every first publish empties every Bastion's answers |
+| (b) `content` for the repository and its virtual repositories; `grants` for a `global` claim (chosen) | The kind `npm.unpublish` and the block events use; a `global` claim is in effect in every virtual repository of the format and refuses names at remote repositories, which a list of repositories cannot name | A cached entry of the repository or of a virtual repository over it is checked again through the real route, which answers with the narrowed configuration; who may read the repository does not change, so the read-shape answers stay | A `global` claim still drops every answer |
+| (c) None | — | — | A Bastion serves the name from the remote member until the entry's period ends, the dependency confusion the claim was made against |
+| (d) For the auto claim of a first publish, a `content` entry that names the package | Only the answers for that one name drop | A first publish drops one name, not the repository's cache | The Bastion carries no format knowledge: an answer is keyed by URL, and mapping a URL to a package name is the format's, so the entry format, the answer record and the engine would each need the name rules of every format |
+
+**Choice:** (b). A `claims_changed` event that only removed claims yields none: a removal widens.
+**Cost, recorded after the review of F-72:** the auto claim of every first publish yields a `content` entry for the repository,
+so every answer of the repository and of the virtual repositories over it that was obtained before it is checked again with the
+main installation, and one obtained within 15 s after it is not used (R-BAS-020 rule 3). A repository that publishes new package
+names often keeps its Bastions' caches cold; an update of an existing name or a new version is unaffected. The test set-up
+(`test/integration/bastion`) therefore removes the claim events of its first publishes before a Bastion starts, as it stands for
+content older than any Bastion's history. The development agent would revisit the choice for (d) if the entry format gained a
+format-neutral name, or for a variant of (b) that names an auto claim's entry only when the first publish shadowed a name that a
+remote member served (R-REPO-048's exposure set), which is the only case with a stale answer to drop.
+**Rationale:** these changes alter which bytes answer a URL, not who may read a repository, which is what `content` drops. The
+development agent would revisit this if a `content` entry could name every virtual repository of a format.
+**Applied in the spec:** R-BAS-015 table; code: `internal/bastionmain/feed.go`.
 
 ## What this does not cover
 

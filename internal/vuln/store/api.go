@@ -600,6 +600,7 @@ type Locked struct {
 	RepoID                                                        int64
 	ID, Repository, Format, Ecosystem, Package, Version, Advisory string
 	Kind                                                          advisory.Kind
+	Severity                                                      string
 	Status                                                        vuln.Status
 	DismissalReason, Comment                                      string
 	Revision                                                      int64
@@ -643,7 +644,7 @@ func (a *API) Lock(ctx context.Context, tx meta.Tx, sc Scope, ids []string) ([]L
 	for _, r := range rows {
 		out = append(out, Locked{
 			ID: r.ID, RepoID: r.RepoID, Repository: r.RepoKey, Format: r.Format, Ecosystem: r.Ecosystem, Package: r.PackageName,
-			Version: r.Version, Advisory: r.AdvisoryID, Kind: advisory.Kind(r.Kind), Status: vuln.Status(r.Status),
+			Version: r.Version, Advisory: r.AdvisoryID, Kind: advisory.Kind(r.Kind), Severity: r.Severity, Status: vuln.Status(r.Status),
 			DismissalReason: r.DismissalReason, Comment: r.Comment, Revision: r.Revision,
 		})
 	}

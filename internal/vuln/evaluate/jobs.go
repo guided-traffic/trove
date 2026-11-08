@@ -116,9 +116,13 @@ func (s *Service) fullEvaluation(ctx context.Context, run JobRun, cp *evalCheckp
 		if err != nil {
 			return err
 		}
-		if complete, err = ev.DataComplete(ctx, eco.Name); err != nil {
+		gate, err := ev.DataGate(ctx, eco.Name)
+		if err != nil {
 			return err
 		}
+		// Data that is complete but older than the restore cannot judge the blocks the journal replayed either: the request
+		// stays for the run that follows the first sync (Q-VULN-132).
+		complete = canResolveWith(gate)
 		total, err = ev.CountStoredVersions(ctx, eco.Formats, 0)
 		return err
 	}); err != nil {
@@ -283,11 +287,11 @@ func (s *Service) evaluatePending(ctx context.Context, run JobRun) (int, error) 
 				if len(names) == 0 {
 					continue
 				}
-				complete, err := ev.DataComplete(ctx, name)
+				gate, err := ev.DataGate(ctx, name)
 				if err != nil {
 					return err
 				}
-				if _, err := s.evaluateBatch(ctx, tx, ev, eco, names, 0, vuln.TriggerAdvisory, complete, repos, started); err != nil {
+				if _, err := s.evaluateBatch(ctx, tx, ev, eco, names, 0, vuln.TriggerAdvisory, canResolveWith(gate), repos, started); err != nil {
 					return err
 				}
 			}
@@ -484,9 +488,11 @@ func (s *Service) rescanOnce(ctx context.Context, run JobRun, rv repoView, from 
 		if err != nil {
 			return err
 		}
-		if complete, err = ev.DataComplete(ctx, eco.Name); err != nil {
+		gate, err := ev.DataGate(ctx, eco.Name)
+		if err != nil {
 			return err
 		}
+		complete = canResolveWith(gate)
 		total, err = ev.CountStoredVersions(ctx, eco.Formats, rv.ID)
 		return err
 	}); err != nil {

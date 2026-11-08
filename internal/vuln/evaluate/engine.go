@@ -204,7 +204,14 @@ type run struct {
 	rule ClaimRule
 	// single is true for the commit hook's evaluation of one version.
 	single bool
-	st     stats
+	// holdBlocked is true for the commit hook's evaluation while the ecosystem's data cannot judge a blocked finding whose version
+	// is gone (incomplete, or not synced since the last restore): such a finding of the committed version returns as blocked
+	// (Q-VULN-132).
+	holdBlocked bool
+	// journaled are the findings whose block this run recorded: a finding that a merge blocks and the upsert after it changes
+	// again is recorded once.
+	journaled map[string]bool
+	st        stats
 	// affected are the affected entries of the names when the caller read them with its other reads (the commit hook, one round
 	// trip); nil makes evaluateNames read them.
 	affected *[]store.AffectedRow
@@ -273,7 +280,8 @@ func (r *run) evaluateNames(ctx context.Context, names []string, versions []stor
 		if na := byName[v.Name]; na != nil {
 			withdrawn = na.withdrawn
 		}
-		if err := r.apply(ctx, rv, v, found, byKey[key{v.RepoID, v.Name, v.Version}], withdrawn, rekey); err != nil {
+		held := r.holdBlocked && sc.scope == ScopeMatched
+		if err := r.apply(ctx, rv, v, found, byKey[key{v.RepoID, v.Name, v.Version}], withdrawn, rekey, held); err != nil {
 			return err
 		}
 	}
@@ -313,9 +321,11 @@ func (r *run) rekeyTargets(ctx context.Context, existing []store.Finding, byName
 	return r.ev.RekeyTargets(ctx, r.eco.Name, candidates)
 }
 
-// apply brings the findings of one stored version in line with what the evaluation found.
+// apply brings the findings of one stored version in line with what the evaluation found. held says that the data cannot judge a
+// blocked finding whose version is gone and the version is in the scope of the advisories: such a finding that no advisory
+// matches returns as blocked (Q-VULN-132).
 func (r *run) apply(ctx context.Context, rv repoView, v store.StoredVersion, found map[string]*matched, existing []*store.Finding,
-	withdrawn map[string]bool, rekey map[string]string,
+	withdrawn map[string]bool, rekey map[string]string, held bool,
 ) error {
 	// The findings are taken in the order of their ids: two evaluations of one version decide the same way (Q-VULN-65).
 	sort.SliceStable(existing, func(i, j int) bool { return existing[i].ID < existing[j].ID })
@@ -363,12 +373,18 @@ func (r *run) apply(ctx context.Context, rv repoView, v store.StoredVersion, fou
 			return err
 		}
 	}
+	// A finding the data cannot judge returns as blocked and is not resolved by the same evaluation, whose complete but older data
+	// would read its missing advisory as "no longer affected" (Q-VULN-132).
+	returned, err := r.redetectHeldAll(ctx, rv, v, live, found, held)
+	if err != nil {
+		return err
+	}
 	if !r.canResolve {
 		return nil
 	}
 	byReason := map[vuln.ResolvedReason][]string{}
 	for _, f := range live {
-		if f.Status == vuln.StatusResolved || found[f.AdvisoryID] != nil {
+		if f.Status == vuln.StatusResolved || found[f.AdvisoryID] != nil || returned[f] {
 			continue
 		}
 		reason := vuln.ResolvedNoLongerAffected
@@ -547,12 +563,20 @@ func (r *run) merge(ctx context.Context, rv repoView, v store.StoredVersion, m *
 	block := ""
 	switch {
 	case afterBlocked && !fBlocked && !gBlocked:
-		block = "set"
+		block = vuln.BlockSet
 	case !afterBlocked && (fBlocked || gBlocked):
 		block = "lifted"
 	}
 	if block == "" || r.s.o.Recorder == nil {
 		return nil
+	}
+	// The change that sets a block carries the journal entry and its cause when the installation enforces (Q-VULN-130).
+	if block == vuln.BlockSet && pol.Enforcement == vuln.EnforceBlocks {
+		ev, err := blockEvent(rv, v, blockFacts{ID: g.ID, AdvisoryID: g.AdvisoryID, Kind: m.Kind, Severity: g.Severity}, was, after, causeMerged)
+		if err != nil {
+			return err
+		}
+		return r.recordOnce(ctx, g.ID, ev)
 	}
 	details, err := json.Marshal(map[string]string{
 		"finding": g.ID, "package": v.Name, "version": v.Version, "advisory": g.AdvisoryID, "from": string(was), "to": string(after), "block": block,
@@ -581,7 +605,10 @@ func (r *run) upsert(ctx context.Context, rv repoView, v store.StoredVersion, m 
 			return err
 		}
 		if inserted {
-			return r.ev.AddEvent(ctx, nf.ID, vuln.ChangeDetected, "", vuln.StatusNeedsTriage, "", nil)
+			if err := r.ev.AddEvent(ctx, nf.ID, vuln.ChangeDetected, "", vuln.StatusNeedsTriage, "", nil); err != nil {
+				return err
+			}
+			return r.recordBlockSet(ctx, rv, v, blockFacts{ID: nf.ID, AdvisoryID: m.ID, Kind: m.Kind, Severity: m.Severity}, nil, "", vuln.StatusNeedsTriage, causeDetected)
 		}
 		// Another evaluation wrote the finding between the read and the insert: it is the finding now, and no event is written
 		// for a row that this statement did not create.
@@ -599,6 +626,7 @@ func (r *run) upsert(ctx context.Context, rv repoView, v store.StoredVersion, m 
 		var reopened bool
 		var change map[string]any
 		was := f.ResolvedReason
+		before := *f
 		done, _, _, err := r.transition(ctx, f, func(cur *store.Finding) (vuln.Status, bool) {
 			if cur.Status != vuln.StatusResolved {
 				return "", false
@@ -619,7 +647,10 @@ func (r *run) upsert(ctx context.Context, rv repoView, v store.StoredVersion, m 
 		case reopened:
 			return r.reopen(ctx, rv, v, f, m, vuln.StatusResolved, change)
 		}
-		return r.redetectedEvent(ctx, f, was, status)
+		if err := r.redetectedEvent(ctx, f, was, status); err != nil {
+			return err
+		}
+		return r.recordBlockSet(ctx, rv, v, blockFacts{ID: f.ID, AdvisoryID: m.ID, Kind: m.Kind, Severity: m.Severity}, &before, vuln.StatusResolved, status, causeRedetected)
 	case vuln.StatusDismissed:
 		if change, yes := m.material(f); yes {
 			done, _, _, err := r.transition(ctx, f, func(cur *store.Finding) (vuln.Status, bool) {
@@ -650,7 +681,11 @@ func (r *run) upsert(ctx context.Context, rv repoView, v store.StoredVersion, m 
 		}
 	}
 	if len(changed) > 0 && !bare {
-		return r.ev.AddEvent(ctx, f.ID, vuln.ChangeAdvisoryChanged, f.Status, f.Status, "", map[string]any{"changed": changed})
+		if err := r.ev.AddEvent(ctx, f.ID, vuln.ChangeAdvisoryChanged, f.Status, f.Status, "", map[string]any{"changed": changed}); err != nil {
+			return err
+		}
+		// An open finding whose advisory turned malicious blocks under blockMalicious: the kind sets the block (Q-VULN-130).
+		return r.recordBlockSet(ctx, rv, v, blockFacts{ID: f.ID, AdvisoryID: m.ID, Kind: m.Kind, Severity: m.Severity}, f, f.Status, f.Status, causeKindChanged)
 	}
 	return nil
 }
@@ -674,10 +709,7 @@ func (r *run) reopen(ctx context.Context, rv repoView, v store.StoredVersion, f 
 		body["block"] = "set"
 		// The block the reopen sets is journaled like a triage's: a restore to a point before it replays it (R-HA-054,
 		// Q-VULN-48, Q-VULN-114).
-		entry, err := json.Marshal(map[string]string{
-			"finding": f.ID, "repository": rv.Key, "ecosystem": rv.Ecosystem, "package": v.Name, "version": v.Version,
-			"advisory": m.ID, "block": "set",
-		})
+		entry, err := vuln.NewBlockEntry(f.ID, rv.ID, rv.Key, rv.Ecosystem, v.Name, v.Version, m.ID, string(m.Kind), string(m.Severity)).JSON()
 		if err != nil {
 			return err
 		}

@@ -669,6 +669,7 @@ advisory.CVSS: field Version string
 advisory.CVSS: method Present() bool
 advisory.DataState: field Complete bool
 advisory.DataState: field Epoch int64
+advisory.DataState: field NotSyncedSinceRestore bool
 advisory.DataState: field Stale bool
 advisory.DataState: field SyncedAt time.Time
 advisory.DataState: method Age(time.Time) time.Duration

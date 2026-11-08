@@ -492,7 +492,7 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 		return ClaimSet{}, err
 	}
 
-	added, removed, touchesGlobal := diffClaims(want, manual)
+	added, journaled, removed, touchesGlobal := diffClaims(want, manual)
 	if touchesGlobal && guard != nil {
 		if err := guard(ctx); err != nil {
 			return ClaimSet{}, err
@@ -505,7 +505,7 @@ func (s *Service) putClaims(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	}
 	version := row.ClaimsVersion
 	if len(added) > 0 || len(removed) > 0 {
-		if version, err = s.applyClaimChange(ctx, tx, qs, c, row, project, added, removed); err != nil {
+		if version, err = s.applyClaimChange(ctx, tx, qs, c, row, project, added, journaled, removed); err != nil {
 			return ClaimSet{}, err
 		}
 	}
@@ -555,13 +555,19 @@ func validateClaimWrite(v *validation, want wantClaims, auto map[string]bool) {
 // diffClaims computes what a replace changes. A global claim that is added, kept,
 // narrowed or removed needs repositories:write-config: the claim set is one
 // resource, and whoever may drop a global claim by omitting it from a replace
-// could reopen a dependency-confusion path (Q-REPO-105).
-func diffClaims(want wantClaims, manual map[string]string) (added []claimChange, removed []string, touchesGlobal bool) {
+// could reopen a dependency-confusion path (Q-REPO-105). added lists every claim
+// that is new or has another scope; journaled the ones of them a restore must
+// bring back, those created and those widened from members to global: a narrowing
+// to members and a removal widen, and a replay never undoes them (R-REPO-061).
+func diffClaims(want wantClaims, manual map[string]string) (added, journaled []claimChange, removed []string, touchesGlobal bool) {
 	for _, p := range want.order {
 		sc := want.scope[p]
 		touchesGlobal = touchesGlobal || sc == ScopeGlobal
 		if old, had := manual[p]; !had || old != sc {
 			added = append(added, claimChange{Pattern: p, Scope: sc})
+			if !had || (old == ScopeMembers && sc == ScopeGlobal) {
+				journaled = append(journaled, claimChange{Pattern: p, Scope: sc})
+			}
 		}
 	}
 	for p, sc := range manual {
@@ -574,14 +580,14 @@ func diffClaims(want wantClaims, manual map[string]string) (added []claimChange,
 	}
 	removed = append(removed, want.removeAuto...)
 	sort.Strings(removed)
-	return added, removed, touchesGlobal
+	return added, journaled, removed, touchesGlobal
 }
 
 // applyClaimChange writes a change of the manual claims, bumps claims_version and
 // records the audit event and the change notification, in the transaction. It
 // returns the new version.
 func (s *Service) applyClaimChange(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, project string,
-	added []claimChange, removed []string,
+	added, journaled []claimChange, removed []string,
 ) (int64, error) {
 	actor := c.principalID()
 	for _, p := range removed {
@@ -599,7 +605,7 @@ func (s *Service) applyClaimChange(ctx context.Context, tx meta.Tx, qs *q.Querie
 		return 0, err
 	}
 	r, _ := toRepository(row, project, s.cat)
-	if err := recordClaims(ctx, tx, s.rec, s.notif, c, r, SourceManual, added, removed, version); err != nil {
+	if err := recordClaims(ctx, tx, s.rec, s.notif, c, r, SourceManual, added, journaled, removed, version); err != nil {
 		return 0, err
 	}
 	return version, nil
@@ -642,13 +648,27 @@ func (s *Service) claimOverlaps(ctx context.Context, qs *q.Queries, row q.Reposi
 	return out, nil
 }
 
-// recordClaims writes the audit event and the change-log row of a change of
-// claims, in the transaction that made it.
+// claimsEntry is the journal entry of repository.claims_changed (R-REPO-061, Q-REPO-250): the repository, who changed its
+// claims, and the claims a restore must bring back. Added is empty for a change that only removed claims or narrowed them;
+// the entry is written all the same, because a flagged event cannot be recorded without one.
+type claimsEntry struct {
+	RepositoryID string        `json:"repositoryId"`
+	Key          string        `json:"key"`
+	Source       string        `json:"source"`
+	Added        []claimChange `json:"added"`
+}
+
+// recordClaims writes the audit event, with its journal entry, and the change-log row of a change of claims, in the
+// transaction that made it. added is every claim that is new or has another scope (the details), journaled the created and
+// widened ones (the entry).
 func recordClaims(ctx context.Context, tx meta.Tx, rec audit.Recorder, notif Notifier, c Caller, r Repository,
-	source string, added []claimChange, removed []string, version int64,
+	source string, added, journaled []claimChange, removed []string, version int64,
 ) error {
 	if added == nil {
 		added = []claimChange{}
+	}
+	if journaled == nil {
+		journaled = []claimChange{}
 	}
 	if removed == nil {
 		removed = []string{}
@@ -657,9 +677,14 @@ func recordClaims(ctx context.Context, tx meta.Tx, rec audit.Recorder, notif Not
 	if err != nil {
 		return err
 	}
+	entry, err := json.Marshal(claimsEntry{RepositoryID: r.ID, Key: r.Name.String(), Source: source, Added: journaled})
+	if err != nil {
+		return err
+	}
 	if err := rec.RecordTx(ctx, tx, audit.Event{
 		Type: EventClaimsChanged, Actor: c.Actor, Outcome: audit.Success, Source: c.Source,
-		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name.String()}, Project: r.Name.Project, Details: raw,
+		Subject: audit.Subject{Kind: "repository", ID: r.ID, Name: r.Name.String()}, Repository: r.Name.String(),
+		Project: r.Name.Project, Details: raw, Journal: entry,
 	}); err != nil {
 		return err
 	}

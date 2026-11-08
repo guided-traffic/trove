@@ -264,7 +264,7 @@ SELECT count(*)::bigint AS n
 -- name: VulnFindingsLock :many
 -- The findings of the given ids the caller can read, locked for a status change, in id order so that two bulk changes
 -- never wait for each other in a circle. The ids are UUIDs the caller validated; the array compares against the primary key.
-SELECT f.id::text AS id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
+SELECT f.id::text AS id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f

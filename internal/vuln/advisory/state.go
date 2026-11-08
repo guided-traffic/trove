@@ -11,6 +11,10 @@ type DataState struct {
 	// Stale is true when SyncedAt is older than vulnerabilities.stale_after. Stale data is still used: evaluation and
 	// enforcement continue and the report shows a banner (R-VULN-004).
 	Stale bool
+	// NotSyncedSinceRestore is true when the installation was restored (system_state restored_at) and the ecosystem has not
+	// synced since: the data is as old as the restore point and older than the journal, so a block the journal replayed is
+	// not yet judged by it (R-VULN-015, Q-VULN-132). False when the installation was never restored.
+	NotSyncedSinceRestore bool
 	// SyncedAt is the end of the last run that finished changed or unchanged; the zero time for an ecosystem that
 	// was never imported.
 	SyncedAt time.Time

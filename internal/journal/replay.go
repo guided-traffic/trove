@@ -47,6 +47,9 @@ type Result struct {
 	// entry's ID and event: the later mappings of a tier that a replayed mapping disable suspends (R-CI-020, Q-CI-11).
 	// [Summary.Add] records them as results of their own.
 	Also []Result `json:"also,omitempty"`
+	// Note is a warning the entry's replay raises beyond its outcome, for example a repository left above a limit. The replayer
+	// prints it on a line of its own and lists it among the summary's warnings.
+	Note string `json:"note,omitempty"`
 }
 
 // Notifier records a change of a change area in the transaction that makes it. *cluster.Changes implements it.
@@ -223,9 +226,11 @@ type Replayer interface {
 
 // Line formats a result as the line a replay prints.
 func (r Result) Line() string {
-	s := fmt.Sprintf("%s %s %s", r.Event, r.ID, r.Outcome)
+	// The event name and the subject come from a journal object, which anybody with the runtime credential can write: both are
+	// quoted, so a line break or a control character in them cannot forge a line of the output.
+	s := fmt.Sprintf("%q %s %s", r.Event, r.ID, r.Outcome)
 	if r.Subject != "" {
-		s = fmt.Sprintf("%s %s %s %s", r.Event, r.Subject, r.ID, r.Outcome)
+		s = fmt.Sprintf("%q %q %s %s", r.Event, r.Subject, r.ID, r.Outcome)
 	}
 	return s
 }

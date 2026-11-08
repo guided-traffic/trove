@@ -73,7 +73,9 @@ func init() {
 
 	userSource := `"source":{"type":"string","enum":["jit","admin","scim","dormancy","admin-cli"]}`
 	ident(EventUserCreated, NoJournal, `{"type":"object","properties":{`+userSource+`,"provider":{"type":"string"}}}`)
-	ident(EventUserUpdated, NoJournal, `{"type":"object","properties":{`+userSource+`,"fields":`+eventSchemaNames+`}}`)
+	// Every update carries the providers whose pending identity link it removed, an empty list when it removed none: a
+	// type that cannot be written without its entry cannot drop a narrowing by a bug (Q-AUTH-205).
+	ident(EventUserUpdated, JournalRevocation, `{"type":"object","properties":{`+userSource+`,"fields":`+eventSchemaNames+`}}`)
 	ident(EventUserRenamed, NoJournal, `{"type":"object","properties":{`+userSource+`,"from":{"type":"string"},"to":{"type":"string"}}}`)
 	ident(EventUserRenameConflict, NoJournal, `{"type":"object","properties":{`+userSource+`,"wanted":{"type":"string"}}}`)
 	ident(EventUserDisabled, JournalRevocation, `{"type":"object","properties":{`+userSource+`,`+

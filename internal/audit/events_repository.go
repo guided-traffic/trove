@@ -33,7 +33,8 @@ const repositoryEventSchema = `{
 // changed the claims of a repository and how. source is "manual" for a claims
 // write of the API and "auto" for the claim a first publish created. added lists
 // the claims that were created or whose scope changed, removed the patterns that
-// went; claimsVersion is the revision the change produced.
+// went; claimsVersion is the revision the change produced. The event is journaled
+// (R-REPO-061, Q-REPO-250): its entry carries the created and widened claims.
 const claimsEventSchema = `{
   "type": "object",
   "properties": {
@@ -64,6 +65,12 @@ const claimsEventSchema = `{
 // any more, so the event is journaled (R-AUTHZ-031, Q-AUTHZ-238).
 const EventRepositoryDisabled = "repository.disabled"
 
+// EventRepositoryNarrowed is an update that narrowed what a repository serves (R-REPO-061, Q-REPO-245): fewer include
+// patterns, more exclude patterns, a virtual member taken out, a pin rule, auto claim or stronger vulnerabilities member.
+// An update records it next to repository.updated, in the same transaction, and only when it narrows. Its journal entry
+// carries the parts that narrowed; the details name them in parts.
+const EventRepositoryNarrowed = "repository.narrowed"
+
 func init() {
 	for name, journal := range map[string]Journal{
 		"repository.created": NoJournal, "repository.updated": NoJournal, "repository.deleted": JournalRevocation,
@@ -81,11 +88,19 @@ func init() {
 		Schema: `{"type":"object","properties":{"class":{"type":"string","enum":["local","remote","virtual"]},` +
 			`"format":{"type":"string"},"project":{"type":"string"}},"required":["class","format"],"additionalProperties":false}`,
 	})
+	Register(EventType{
+		Name: EventRepositoryNarrowed, Category: CategoryRepository, Mode: Transactional, Journal: JournalRevocation,
+		Schema: `{"type":"object","properties":{"class":{"type":"string","enum":["local","remote","virtual"]},` +
+			`"format":{"type":"string"},"project":{"type":"string"},` +
+			`"parts":{"type":"array","maxItems":16,"items":{"type":"string"}}},` +
+			`"required":["class","format","parts"],"additionalProperties":false}`,
+	})
 	// >>> M2 virtual
 	Register(EventType{
 		Name:     "repository.claims_changed",
 		Category: CategoryRepository,
 		Mode:     Transactional,
+		Journal:  JournalRevocation,
 		Schema:   claimsEventSchema,
 	})
 	// <<< M2 virtual

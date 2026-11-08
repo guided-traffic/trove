@@ -39,6 +39,10 @@ Everything else of the content report's filter panel (severity, status, kind, re
 
 With `vulnerabilities:triage`, tick findings (**Select all loaded findings** ticks the loaded rows) and choose **Change status** to confirm, dismiss, or block several at once; the dialog reports one result per finding. A single finding is changed on its own screen, where the history is. Blocking a finding refuses the download of that version to every client of its repository and of the virtual repositories that contain it, in whichever project it lives; the dialog says so before it acts. Every change is audited with your name.
 
+## After a restore
+
+A restore to an earlier point replays every block that was set after it, whether a person set it or the scanning did (a malicious version detected, an advisory that turned malicious, a version blocked again when it came back). A finding that the restored installation did not have is created by the replay; its history has a row, a detection or a status change, that names no person. A version the repository does not store any more is resolved with the reason that the version was removed: the block still counts for a fetch of that version, and for a published copy of it, until the ecosystem has synced since the restore. The first complete sync then decides again: a block whose advisory still affects the version stays, one whose advisory stopped applying resolves. You can lift a replayed block on a stored version like any other block.
+
 ## Limits
 
 - The dashboard lists findings; it does not show a project's repositories or members. Open the project from **Projects**.

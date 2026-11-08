@@ -25,6 +25,8 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `PatternSubject` (the catalog's), `Pattern.Match`, `Admission` (include and exclude lists, folder admission). Matching allocates nothing for the sizes in use and refuses an input without the pattern's literal lead first ([Q-EP-64](../spec/endpoints.md#q-ep-64--pattern-matching-in-the-decision-path-allocates-nothing-and-a-literal-lead-refuses-before-any-state-is-built)); [pattern_alloc_test.go](../../internal/repository/pattern_alloc_test.go) holds the former matcher as the reference and a fuzz target |
 | [store.go](../../internal/repository/store.go) | rows to `Repository` and `Document`; the sqlc `queries(tx)` seam; fail-closed load of an undecodable row |
 | [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, the `Hooks` seam (`OnUpdated`, `OnDelete`, `MultiHooks`); `ChangeEviction`, the reader of a `repo_config` payload for the caches keyed by version; a stale version is `errs.Stale` |
+| [narrowed.go](../../internal/repository/narrowed.go) | the writer of `repository.narrowed` (R-REPO-061): `Service.narrowing` compares the stored document and rows of an update with the new ones (`includeNarrowed` with `patternCovers`, which keeps a widening include edit out of the journal, `addedPatterns`, `lostRefs`, `pinNarrowings`, the `weakensVulnerabilities` check with its arguments swapped) and `recordNarrowed` records the event beside `repository.updated` in the update's transaction, with the entry (`narrowedEntry`) as the journal entry |
+| [journal_replay.go](../../internal/repository/journal_replay.go) | the replay handler of `repository.narrowed` and `repository.claims_changed` (domain `repository`, registered in `init`): `readNarrowed` and `readClaims` (the strict readers), `replayer` (the locked repository as the restored database holds it) with one method per step of R-REPO-061 (`include`, `excludes`, `autoClaim`, `membersRemoved`, `pinMembersRemoved`, `pinsAdded`, `vulnerabilities`) and `claimReplay` for the claims; the rows are written with `writeVirtual`, the rescan with `jobs.EnqueueTx` |
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot indexed by `qname.Repo`, the negative cache `repo_key_misses` of unknown names, the lookup of R-ARCH-011 step 2 |
@@ -38,7 +40,7 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the contract's own members), `Format`, `Register` (validates and fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types; the contract is described in [formats.md](formats.md) |
 | [formats/generic/generic.go](../../internal/formats/generic/generic.go) | the generic format: descriptor and request classification |
 | [formats/all/all.go](../../internal/formats/all/all.go) | registers every format; the composition root imports it |
-| [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted` (details `class`, `format`, `changes`, `phase`, and `project` for a repository of a project), `.claims_changed` |
+| [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted` (details `class`, `format`, `changes`, `phase`, and `project` for a repository of a project), `.claims_changed` (journaled, with the claims created or widened to `global`), `.narrowed` (journaled) and `.disabled` |
 | [app/wire_repository.go](../../internal/app/wire_repository.go) | `wireRepository` (reader and service, both on `catalog.Default()`), the job kind registration |
 | [app/wire_proxy.go](../../internal/app/wire_proxy.go) | `wireProxy`: the upstream clients, and `Service.Bind` with the key ring and the prober |
 | [queries/remote_settings.sql](../../internal/meta/postgres/queries/remote_settings.sql) | the statements on `repository_secrets` |
@@ -95,6 +97,29 @@ transaction with the repository before and after; the authorization area uses it
 to record `authz.settings.changed` for `cacheFillAction`, `packageOwnership`, `requireAuthentication` and `hideExistence`
 (R-AUTHZ-031): `authz.SettingsHook` ([settings.go](../../internal/authz/settings.go)), which `wireRepository` sets as `Options.Hooks`.
 It records only the settings that changed, before and after, with a journal entry, and nothing for another change.
+
+### Narrowings in the revocation journal
+
+`recordUpdate` records `repository.updated`, then `repository.narrowed` when `Service.narrowing` finds a part that narrows
+(R-REPO-061, Q-REPO-245), then `repository.disabled` when the update set `disabled`: all three in the update's transaction, so a
+failing audit insert rolls the update back. `update` hands it the rows of a virtual repository before and after (`curRel`,
+`rel`; nil for another class). The entry carries only the parts that narrowed, by repository ID for members, so the replay
+re-applies a removal to whatever the restored database holds and never the widening half of a mixed update. `Create` never
+records it. `recordClaims` ([claims.go](../../internal/repository/claims.go)) writes the `repository.claims_changed` entry
+(`claimsEntry`) on every claims change, the auto claim of a first publish ([routing.go](../../internal/repository/routing.go))
+included; `diffClaims` returns the created and widened claims separately (`journaled`) from the `added` list of the event's
+details, which keeps the narrowings to `members` too.
+
+The replay ([journal_replay.go](../../internal/repository/journal_replay.go)) locks the repository (`JournalRepositoryLock`),
+reads its stored document as a map and as `Settings`, applies the parts in the order of R-REPO-061, writes the document with
+`JournalRepositorySetConfig` (which raises `config_version`) and tells `repo_config` and `authz`, and `claims` when pin rules
+or claims changed. A part that fails closed calls `replayer.suspend`: it sets `disabled`, and a repository that is disabled
+already stays as it is and reports nothing, which is what makes a second replay `already in effect`. The auto-claim cover rule
+is `ownClaimCovers` and `otherClaimCovers` in routing.go, shared with `Routing.AutoClaim`. The statements are in
+[journal_repository.sql](../../internal/meta/postgres/queries/journal_repository.sql). The restore commands build no job registry,
+so the rescan of a strengthened `vulnerabilities` member is written by `jobs.EnqueueTx` with `vuln.RescanKindSpec()`, the spec
+that `internal/app/wire_vuln_eval.go` registers the kind with (Q-HA-180); the workers that start after the restore find the row
+by polling `jobs.poll_interval`.
 
 ### Delete
 
@@ -236,6 +261,8 @@ name-pattern table of R-AUTHZ-005 through it.
 | unit | [internal/repository](../../internal/repository/) | path canonicalisation, keys, patterns and admission, document decoding, merge patch (RFC 7396 examples), validation (R-REPO-002, -005, -006, -008, R-GENERIC-001, -002, -007, -008); `remote_test.go`: the defaults, ranges, URL normalization, warnings, refusals and secret forms of the remote section (R-REPO-024, R-REPO-033); |
 | unit | [internal/formats](../../internal/formats/) and below | registry rules; the generic descriptor and classification (R-GENERIC-001, -003) |
 | integration | [test/integration/repository](../../test/integration/repository/) | create, read, update, list, delete against PostgreSQL with audit and change-log rows; the snapshot, the lookup and the poll bound on two replicas without Valkey (R-REPO-009 to -013, R-REPO-049, R-ARCH-011); `remote_test.go`: the remote settings, the sealed secrets (nothing in any table, a copied value, a rotation), the upstream test and the invalidation hook, against a TLS test upstream (R-REPO-024, R-REPO-033, R-REPO-038); `list_order_test.go`: pages of hyphenated keys in byte order under the stack's `en_US.utf8` database (`TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder`); `project_events_test.go`: `project` in the `repository.*` events; `project_rules_test.go`: the same key in two projects, a virtual repository that lists only its own project's repositories, the AI006 backstop |
+| integration | [test/integration/repository/journal_narrowed_test.go](../../test/integration/repository/journal_narrowed_test.go) | the writer of R-REPO-061 through `Service`: which update records `repository.narrowed` with which parts, that a description, a widening, a refused and a failed update record none, and the entry of every claims change |
+| integration | [test/integration/backup/journal_repository_narrowing_test.go](../../test/integration/backup/journal_repository_narrowing_test.go) | the replay of both events into the copy of a database made at *t*, one test per step of R-REPO-061 with a restored state that differs, the fail-closed cases, the rescan row and a worker that takes it by polling, and the second replay applying nothing |
 | integration | [test/integration/api](../../test/integration/api/) (`upstream_test.go`) | both upstream-test operations over HTTP on a real database, every answer validated against the OpenAPI document |
 | integration | [test/integration/files](../../test/integration/files/) (`repository_api_test.go`) | the repository API over HTTP on two replicas: the contract suite of E1.6 (`apitest.RunContract`: cursor walk, ETag with If-Match, merge patch, idempotency keys), validation, permissions, the consumer view, list visibility, the delete job on a worker, an idempotent create replayed through the other replica |
 

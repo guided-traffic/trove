@@ -86,11 +86,18 @@ func (qu *Queue) params(e EnqueueSpec) (q.InsertJobParams, KindSpec, error) {
 	if !ok {
 		return q.InsertJobParams{}, spec, fmt.Errorf("%w: %q", ErrUnknownKind, e.Kind)
 	}
+	p, err := paramsFor(spec, e)
+	return p, spec, err
+}
+
+// paramsFor is the row of a job of the given kind spec: the one place that turns a spec and an enqueue request into the
+// insert, whether the spec comes from the registry or from the caller.
+func paramsFor(spec KindSpec, e EnqueueSpec) (q.InsertJobParams, error) {
 	args := []byte("{}")
 	if e.Args != nil {
 		b, err := json.Marshal(e.Args)
 		if err != nil {
-			return q.InsertJobParams{}, spec, fmt.Errorf("jobs: args of %q: %w", e.Kind, err)
+			return q.InsertJobParams{}, fmt.Errorf("jobs: args of %q: %w", e.Kind, err)
 		}
 		args = b
 	}
@@ -99,7 +106,7 @@ func (qu *Queue) params(e EnqueueSpec) (q.InsertJobParams, KindSpec, error) {
 		key = e.Kind
 	}
 	if spec.DedupMode == NoDedup && key != "" {
-		return q.InsertJobParams{}, spec, kindError(e.Kind, "has no dedup mode, so an enqueue cannot carry a key")
+		return q.InsertJobParams{}, kindError(e.Kind, "has no dedup mode, so an enqueue cannot carry a key")
 	}
 	prio := spec.Priority
 	if e.Priority != 0 {
@@ -110,7 +117,33 @@ func (qu *Queue) params(e EnqueueSpec) (q.InsertJobParams, KindSpec, error) {
 		DelaySecs: e.Delay.Seconds(), MaxAttempts: int32(spec.MaxAttempts), //nolint:gosec // small
 		DedupKey: key, DedupMode: string(spec.DedupMode),
 		TargetKind: e.TargetKind, TargetKey: e.TargetKey, CreatedBy: e.CreatedBy, Traceparent: e.Traceparent,
-	}, spec, nil
+	}, nil
+}
+
+// EnqueueTx inserts a job of the given kind spec in the caller's transaction, as [Queue.Enqueue] does, without the registry
+// lookup and without the wake-up: the workers find the row by polling (jobs.poll_interval). It is for a caller that holds no
+// queue, such as a replay handler of the restore commands, which build no job registry (Q-HA-180). The spec is the one the
+// application registers the kind with, minus its handler, so the row equals the one Enqueue writes; its unset members take
+// the defaults of RegisterKind. A conflicting key returns the existing job with Created false.
+func EnqueueTx(ctx context.Context, tx meta.Tx, spec KindSpec, e EnqueueSpec) (Result, error) {
+	ptx, ok := postgres.Unwrap(tx)
+	if !ok {
+		return Result{}, errors.New("jobs: EnqueueTx needs a transaction of internal/meta/postgres")
+	}
+	spec = normalize(spec)
+	switch spec.DedupMode {
+	case NoDedup, Exclusive, Coalesce:
+	default:
+		return Result{}, kindError(e.Kind, "unknown dedup mode %q", spec.DedupMode)
+	}
+	if spec.MaxAttempts < 1 {
+		return Result{}, kindError(e.Kind, "MaxAttempts %d", spec.MaxAttempts)
+	}
+	p, err := paramsFor(spec, e)
+	if err != nil {
+		return Result{}, err
+	}
+	return insertJob(ctx, q.New(ptx), p, DedupMode(p.DedupMode))
 }
 
 // Enqueue inserts a job in the caller's transaction, so the job exists exactly
@@ -126,7 +159,7 @@ func (qu *Queue) Enqueue(ctx context.Context, tx meta.Tx, e EnqueueSpec) (Result
 	if err != nil {
 		return Result{}, err
 	}
-	res, err := qu.insert(ctx, q.New(ptx), p, DedupMode(p.DedupMode))
+	res, err := insertJob(ctx, q.New(ptx), p, DedupMode(p.DedupMode))
 	if err != nil {
 		return Result{}, err
 	}
@@ -143,7 +176,7 @@ func (qu *Queue) EnqueueNow(ctx context.Context, e EnqueueSpec) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	res, err := qu.insert(ctx, q.New(qu.db), p, DedupMode(p.DedupMode))
+	res, err := insertJob(ctx, q.New(qu.db), p, DedupMode(p.DedupMode))
 	if err != nil {
 		return Result{}, err
 	}
@@ -153,10 +186,10 @@ func (qu *Queue) EnqueueNow(ctx context.Context, e EnqueueSpec) (Result, error) 
 	return res, nil
 }
 
-// insert runs the insert and resolves a conflict on the dedup key to the
+// insertJob runs the insert and resolves a conflict on the dedup key to the
 // existing job. A job that ended between the refusal and the lookup lets the
 // insert run again.
-func (qu *Queue) insert(ctx context.Context, qs *q.Queries, p q.InsertJobParams, mode DedupMode) (Result, error) {
+func insertJob(ctx context.Context, qs *q.Queries, p q.InsertJobParams, mode DedupMode) (Result, error) {
 	for range 3 {
 		rows, err := qs.InsertJob(ctx, p)
 		if err != nil {

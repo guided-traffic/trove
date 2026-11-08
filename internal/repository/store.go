@@ -80,10 +80,7 @@ func toRepository(r q.Repository, project string, cat *catalog.Registry) (Reposi
 		include, exclude = foldAll(cat, r.Format, include), foldAll(cat, r.Format, exclude)
 	}
 	out.rid, out.PriorityMember = r.ID, s.PriorityMember
-	out.autoClaim = known && info.PinsAndClaims && info.PackageNames
-	if s.Local != nil && s.Local.AutoClaim != nil {
-		out.autoClaim = out.autoClaim && *s.Local.AutoClaim
-	}
+	out.autoClaim = effectiveAutoClaim(info, known, &s)
 	if out.Class != Virtual && known && info.Ecosystem != "" {
 		out.vulnEcosystem, out.vulnerabilities = info.Ecosystem, vuln.DefaultSettings()
 		if s.Vulnerabilities != nil {
@@ -112,6 +109,16 @@ func toRepository(r q.Repository, project string, cat *catalog.Registry) (Reposi
 }
 
 // >>> M2 virtual
+
+// effectiveAutoClaim is the value of local.autoClaim a repository acts on: the format's default (on for a format with package
+// names that supports claims, off otherwise) unless the document sets it, and never on where the format cannot claim.
+func effectiveAutoClaim(info catalog.Entry, known bool, s *Settings) bool {
+	on := known && info.PinsAndClaims && info.PackageNames
+	if s.Local != nil && s.Local.AutoClaim != nil {
+		on = on && *s.Local.AutoClaim
+	}
+	return on
+}
 
 // foldAll folds name patterns with the name rule of the format; a pattern the
 // rule does not take stays as written and fails to compile or never matches.

@@ -62,6 +62,23 @@ describe('Groups (R-UI-025)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('R-UI-025 a detached group says the provider no longer fills it and attaches again with syncDetached false', async () => {
+    const { fixture, root, get } = await renderScreen(GroupDetail, { inputs: { name: 'team-web' } });
+    expect(text(root)).toContain('no longer fills this group');
+    expect(await seriousViolations(root)).toEqual([]);
+    buttonByText(root, 'Attach to group synchronization again').click();
+    await settle(fixture);
+    const api = get(IdentityApi) as FakeIdentityApi;
+    expect(api.calls).toContain('updateGroup team-web {"syncDetached":false}');
+    expect(text(root)).not.toContain('no longer fills this group');
+  });
+
+  it('R-UI-025 an attached group shows no detached note and no attach action', async () => {
+    const { root } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
+    expect(text(root)).not.toContain('no longer fills this group');
+    expect(root.textContent).not.toContain('Attach to group synchronization again');
+  });
+
   it('R-UI-025 shows the bound roles and the policies that name the group, both read only', async () => {
     const { root } = await renderScreen(GroupDetail, { inputs: { name: 'platform' } });
     expect(text(root)).toContain('repository-admin');

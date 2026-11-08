@@ -169,8 +169,41 @@ a missing member, an oversized value or a digest that is not the expected shape 
   enough to hold its lock for long (14 statements for one token, 18 for 1,200).
 - **Auto-join.** `group.updated` journals the flag before and after on every update; the replay clears a cleared flag and never sets
   one, so a forged entry can only stop new users from joining a group (Q-AUTH-198).
-- **Coverage.** `TestR_HA_054_EveryJournaledEventHasAReplayHandler` fails for a journaled event without a handler in the `trove` binary,
-  apart from the vulnerability-finding events of H-489.
+- **Narrowings of identity and repositories** (F-72; [principal](../../internal/auth/principal/journal_replay.go),
+  [token](../../internal/auth/token/journal_replay.go) and [repository](../../internal/repository/journal_replay.go) replay handlers).
+  Every replay of this group only removes or narrows, reads its entry strictly (a missing key, a wrong type or an over-long list is
+  `skipped`) and, where re-applying a part could widen, fails closed. The journal objects live under the blob prefix, so whoever holds the
+  runtime credential of the blob store can write them (R-HA-054); what such an entry can do is bounded by what the replay does,
+  which is to deny or narrow, never to widen. [What a forged entry can deny](#what-a-forged-entry-can-deny-and-how-an-administrator-recovers)
+  lists it per handler. An entry that holds a value the database refuses (a NUL byte, a text beyond a limit) is rolled back and
+  reported `skipped` with its subject quoted, and the replay goes on.
+  - *Identity.* `user.updated` names the providers whose pending link the update removed; the replay deletes the pending link of each
+    from the user of the journaled ID and never a linked identity, so a forged entry can remove a pending link (which only withholds a
+    login) and nothing else (Q-AUTH-205). `group.updated` with `renamedFrom` detaches the group of the journaled ID from group
+    synchronization and deletes its `oidc:*` memberships; it never writes the name, so no entry can hand a group's grants to the members
+    of a provider group of that name (Q-AUTH-206). That detach can lock out administrators who hold `admin` only through a provider
+    group: the replay prints a line for each detached group that holds a role binding, naming the roles, and its admin check uses the definition of the last-admin
+    guard (`IdentityAdminHolders`: an active user or service account holding `admin` directly or through a group) and prints `no enabled
+    administrator is left` otherwise. Remaining limit: a service account counts as a holder (it can act, nobody signs in as it), and a
+    holder without a usable identity still counts, so the check can stay silent although no person can sign in.
+    Recovery: the break-glass sign-in, then `PATCH /api/v1/groups/<name>` with `{"syncDetached": false}`. Every string of these
+    entries is checked before a statement runs (a provider ID against the syntax of the configuration, a group name), so a forged
+    object cannot make a statement fail and stop the replay. `settings.auth.changed` carries both runtime token maxima; each is set to
+    the smaller of the restored and the journaled value, `null` and a longer value change nothing, and the parts are read
+    independently: a maximum under 60 seconds or over 100 years narrows nothing and does not drop the anonymous switch-off (Q-AUTH-207).
+  - *Repositories* (R-REPO-061). `repository.narrowed` carries only the parts of an update that narrow (include and exclude patterns,
+    `autoClaim`, virtual members, pin rules, a stronger `vulnerabilities` member) and `repository.claims_changed` the claims created or
+    widened to `global`, the auto claim of a first publish included. The replay never adds a member, an include pattern or a member of a
+    pin rule. A part that could widen disables the repository (`disabled: true`, outcome `suspended`, the entry printed): an include
+    list that shares no pattern with the restored one (Q-REPO-247), a removal of a local member with a `members` claim while any
+    other member stays (Q-REPO-248), a pin rule that a claim in effect or another rule overlaps (Q-REPO-249), a manual claim that overlaps one
+    in effect together with it (Q-REPO-250). The follow-up scan of a stronger `vulnerabilities` member is a job row the handler writes
+    in its own transaction (`jobs.EnqueueTx`, Q-HA-180).
+  - *Tests.* Through the replayer against a restored copy, with hand-written entries and a second pass:
+    `TestR_AUTH_016_ARemovedPendingLinkStaysRemovedAfterARestore`, `TestR_AUTH_018_AGroupRenamedAfterTheRestorePointIsDetached`,
+    `TestR_AUTH_026_ALoweredMaximumStaysLoweredAfterARestore`, and the `TestR_REPO_061_…` tests of
+    [journal_repository_narrowing_test.go](../../test/integration/backup/journal_repository_narrowing_test.go).
+- **Coverage.** `TestR_HA_054_EveryJournaledEventHasAReplayHandler` fails for a journaled event without a handler in the `trove` binary.
 - **Exposure rules** ([journal_replay_exposure.go](../../internal/authz/journal_replay_exposure.go), R-EP-020). A deletion deletes the rule;
   deleting a rule only removes exposure, because rules add up and exclude wins inside a rule only. An update is applied only when the
   comparator proves the after-state exposes nothing the restored rule does not: the same endpoint and repository, `enabled` and
@@ -214,6 +247,28 @@ Not verified: that a delete marker is read through on a versioned bucket. The st
 ([journalstore.go](../../internal/blob/s3/journalstore.go)); the integration stack's bucket is not versioned, so only the listing
 path runs there.
 
+### What a forged entry can deny, and how an administrator recovers
+
+An entry written by a holder of the runtime blob credential is replayed like a genuine one. None of the handlers below widens
+access; each can deny something. The replay prints one line per entry with its outcome; it prints the detail of a result only when the
+result is `suspended` (for a repository: the repository, the parts, the part that suspended it and the whole entry) or `revived`.
+An `applied` repository or claims result prints no detail beyond the names of the parts in the result itself, so the administrator
+reads what an applied entry changed from the audit trail of the source and from the repository, not from the output. A line prints
+the event name and the subject quoted, because both come from the object. Every recovery is a change that widens, which is never journaled, so a later restore does not undo it.
+
+| Handler | The most a forged entry does | Recovery |
+|---|---|---|
+| `repository.narrowed` `excludeAdded` | Adds any exclude pattern (up to 100 per repository), for example `**`: the repository serves, fetches and resolves no name that matches | Remove the pattern with a repository update |
+| `repository.narrowed` `include` | Replaces the restored include list by its intersection with the entry's, or disables the repository when none is shared: names outside both lists become unreachable | Edit the list; enable the repository |
+| `repository.narrowed` `vulnerabilities` | Raises a member to the more blocking of both values, for example `onMissingData: block` and `enabled: true`: versions of an ecosystem whose advisory data is incomplete are refused (`vulnerability_data_missing`), and a rescan is queued | Set the member back; lowering it needs `repositories:write-config` (R-VULN-002) |
+| `repository.narrowed` `membersRemoved`, `pinsAdded`, `pinMembersRemoved` | Takes members out of a virtual repository or its pin rules, or disables it: the names of a member that is gone are unreachable through that address | Add the members back; enable the repository |
+| `repository.claims_changed` | Creates claims on a local repository (the limit of 1000 claims does not stop a replayed claim, and the replay warns about a repository above it): a broad `global` claim such as `**` makes the claimant the only source of every name of the format in every virtual repository and refuses every name at the remote repositories of the format; a manual claim that overlaps another repository's claim disables the claimant, whose claim stays in effect | Replace the claims (`PUT …/claims`, a `global` claim needs `repositories:write-config`) |
+| `group.updated` with `renamedFrom` | Detaches any group from group synchronization and deletes its `oidc:*` memberships: the members the provider filled lose the group's grants until recovery | `PATCH /api/v1/groups/<name>` with `{"syncDetached": false}`; the next sign-in of each member refills the group |
+| `user.updated` | Removes the pending identity link of any user for any provider: the provider's login no longer takes the user over | Add the link again with `PATCH /api/v1/users/<username>` |
+| `settings.auth.changed` | Lowers each token lifetime maximum, to 60 seconds at the least: new tokens live that long, and anonymous access is switched off when the entry says so | Raise the maxima and switch anonymous access on in the settings |
+| `vulnerability.finding.*` with `block: set` | Blocks any version of a repository of the restored database, creating the finding when it is missing: the version is refused until the finding is triaged. An entry is found by its ID only when repository, package version and advisory match; a finding that a replay created takes the stronger kind and severity of every later copy (each raise has a history row), a finding restored from the backup is never raised | Triage the finding; the first complete import after a restore also reconciles it |
+| `token.*`, `user.*`, `serviceaccount.*`, `bastion.*`, `ci.*`, `authz.*`, `endpoint.exposure.*`, `repository.disabled`, `repository.deleted`, `npm.unpublish`, `nuget.*` | Revokes, disables, deletes or narrows the object the entry names, if the restored database holds it | Create the token again, enable the object, restore the grant; an unpublished version is reinstated with `trove admin npm reinstate` |
+
 ## What a restore trusts
 
 A restore trusts the manifest and the files of the backup it is told to restore (H-46). It checks formats, sizes, schema steps and the key
@@ -254,39 +309,52 @@ The gaps of the backup itself are [H-46](../spec/backup-and-restore.md#h-46--bac
 - [H-557](../spec/backup-and-restore.md#h-557--the-post-restore-does-not-verify-the-blobs-and-a-replay-writes-no-audit-event-per-changed-object): post-restore does not verify the blobs, and a replay writes no audit event per changed object.
 - [H-564](../spec/ha-and-helm.md#h-564--the-platform-check-reads-settings-not-outcomes): the platform check reads settings, not outcomes.
 - [H-565](ci-federation.md#h-565--a-replayed-disable-of-a-configuration-declared-ci-issuer-is-undone-by-trove-migrate-when-the-restore-runs-with-an-older-configuration): a replayed disable of a configuration-declared CI issuer is undone by `trove migrate` when the restore runs with an older configuration.
-- [H-489](vulnerability-scanning.md#h-489--a-block-that-a-re-detection-sets-after-a-backup-returns-only-with-the-first-complete-import-after-a-restore): a block that a re-detection sets after a backup returns only with the first complete import after a restore.
 - [H-555](../spec/backup-and-restore.md#h-555--the-run-history-is-only-as-trustworthy-as-the-backup-role): the run history is only as trustworthy as the backup role.
 - [H-556](../spec/backup-and-restore.md#h-556--adopting-a-target-and-writing-its-marker-are-not-atomic-on-a-store-without-conditional-writes): adopting a target and writing its marker are not atomic on a store without conditional writes.
 - [H-558](../spec/backup-and-restore.md#h-558--a-server-side-copy-into-the-blob-store-is-checked-by-size-not-by-content): a server-side copy into the blob store is checked by size, not by content.
-- [H-569](#h-569--narrowings-without-a-journal-entry-come-back-with-a-restore): narrowings without a journal entry come back with a restore.
+- [H-569](#h-569--upstream-storage-and-format-settings-of-a-repository-come-back-with-a-restore): upstream, storage and format settings of a repository come back with a restore.
 - [H-566](../spec/backup-and-restore.md#h-566--the-drill-uses-one-s3-login-for-the-blob-store-the-backup-target-and-the-restore): the drill uses one S3 login for the blob store, the backup target and the restore.
 - [H-567](../spec/backup-and-restore.md#h-567--hand-written-journal-objects-are-tried-at-replay-level-not-through-the-restore-job-on-a-cluster): hand-written journal objects are tried at replay level, not through the restore Job on a cluster.
 - [H-568](../spec/backup-and-restore.md#h-568--the-restore-across-releases-and-across-postgresql-major-versions-is-not-run-by-the-drill): the restore across releases and across PostgreSQL major versions is not run by the drill.
 
-### H-569 · Narrowings without a journal entry come back with a restore
+### H-569 · Upstream, storage and format settings of a repository come back with a restore
 
-A review of the write paths that remove access (2026-11-07) found the following changes, which narrow what an installation grants or
-serves, recorded in the audit trail without a journal entry. A restore to a point before one of them brings the earlier state back,
-and the replay cannot restore the narrowing. Each is live wherever the change is used and a restore follows it; none grants a caller
-anything it did not hold at the point the restore returns to.
+A review of the write paths that remove access (2026-11-07, F-72) found narrowings recorded in the audit trail without a journal
+entry. They are journaled now and replayed by every restore: a pending identity link removed and a group renamed away from the name
+the identity provider fills ([R-AUTH-041](../spec/identity-and-authentication.md#r-auth-041--authentication-audit-events),
+Q-AUTH-205, Q-AUTH-206), a lowered token lifetime maximum (Q-AUTH-207), and a repository's narrowed patterns, `autoClaim`, virtual
+members, pin rules, stronger `vulnerabilities` member and added claims
+([R-REPO-061](../spec/repositories-and-proxy.md#r-repo-061--narrowings-of-a-repository-in-the-revocation-journal)). Where re-applying
+one of them could widen what a repository serves, the replay disables the repository instead; that costs availability until an
+administrator reviews the printed entry.
 
-- **A pending identity link removed.** `PATCH /api/v1/users/{username}` with `identities` drops pending links
-  (`IdentityReplaceIdentities`, [manager.go](../../internal/auth/principal/manager.go) in `UpdateUser`); `user.updated` carries no entry.
-  After a restore the link is back, and the first login at that provider whose claims carry the username takes the user over
-  (`IdentityClaimPendingLink`, R-AUTH-007). Real when an administrator removed a link because the provider's account of that name is
-  someone else.
-- **A group renamed away from the name the identity provider fills.** A rename ([groups.go](../../internal/auth/principal/groups.go) in
-  `UpdateGroup`) is an identifying field, which R-HA-054 never replays. After a restore the old name is back, and the group sync of the
-  next login (R-AUTH-008) fills the group, with its role bindings and policy entries, from the provider's group of that name.
-- **A repository's content narrowed.** Fewer `includePatterns`, more `excludePatterns`, a member taken out of a virtual repository
-  (`writeVirtual`, [members.go](../../internal/repository/members.go)) and a stronger `vulnerabilities` member are `repository.updated`,
-  which carries no entry ([service.go](../../internal/repository/service.go) in `update`). After a restore the repository serves what the
-  narrowing withheld; a token scoped to a virtual repository reaches its restored member again (R-AUTHZ-009 rule 2, Q-AUTHZ-163). The
-  download blocks of findings are H-489's.
-- **A namespace claim or pin rule added.** `PUT …/claims` ([claims.go](../../internal/repository/claims.go), `PutClaims`) records
-  `repository.claims_changed` without an entry. After a restore a virtual repository may serve a remote package of a name the claim
-  reserved for a local repository again (R-REPO-023).
-- **A token lifetime ceiling lowered.** `settings.auth.changed` journals only the anonymous switch; the ceilings are not part of the
-  entry by R-AUTH-041. Tokens issued after the restore may live up to the earlier, longer ceiling.
+What a restore still reverts is the rest of the repository document, by
+[Q-REPO-246](../spec/repositories-and-proxy.md#q-repo-246--patterns-auto-claims-virtual-members-pin-rules-and-the-vulnerabilities-member-are-journaled-upstream-storage-and-format-settings-are-not):
+the rule is that a setting is journaled when its tightening decides which names a repository serves or which versions it withholds,
+and that the replay can re-apply it as a removal. Settings of how trove reaches an upstream and what it accepts from it or from
+clients are not, and some of them are security relevant: tightened after the restore point, they are loose again after a restore,
+the audit events that recorded the tightening are gone with the restored database, and the operator finds them in the log stream of
+the audit events or in his own records. A setting that was loosened after the restore point comes back tight, which costs
+availability only.
+
+- **Where a remote repository sends its credential and what it asks.** The upstream `url` (a remote re-pointed from an upstream that
+  turned hostile), an `extraHosts` entry removed or switched to `sendCredentials: false`, `forwardAuthOnRedirect` switched off, a
+  rotated upstream credential (R-REPO-024, R-REPO-039, R-REPO-043): after the restore the remote asks the earlier URL and sends the
+  earlier credential to that host again. The restored credential itself comes back with the backup's sealed secrets.
+- **What a remote repository accepts.** `integrity.checksumPolicy` raised to `require`, `integrity.blockUnexpectedContentTypes`
+  switched on, `availability.mode: offline` (R-REPO-041, R-REPO-042, R-REPO-030), and the `mirror` section: after the restore the
+  remote stores what the tightened setting refused, asks an upstream an administrator took offline, or mirrors again what was
+  excluded. Real when the upstream was compromised after the restore point.
+- **What a local repository accepts from clients.** `storage.checksumPolicy` raised to `verify-client` and lowered upload limits
+  ([R-STOR-010](../spec/storage.md#r-stor-010--client-checksum-policy-and-digest-sidecar-files)): deploys the tightened policy
+  refused are accepted again.
+- **npm.** `serveRemovedVersions` switched off ([R-NPM-026](../spec/formats/npm.md#r-npm-026--versions-removed-upstream)): a remote
+  serves the cached tarball of a version its upstream removed again. `latestGuard` switched on, and `latestStrategy` and
+  `distTagStrategy` changed (R-NPM-030): a publish moves `latest` again, and a virtual repository merges the dist-tags as before.
+  `audit.mode` switched from `forward` to `local` and `audit.providerURL` changed (R-NPM-038): the names a client asks about reach
+  the earlier advisory provider again.
+- **NuGet.** `forwardSearch` switched off (R-NUGET-016), `vulnerabilityInfo` switched to `off`, and `deleteMode` changed: the names
+  a client searches for reach the upstream again, the service index lists the earlier vulnerability information, and a delete
+  behaves as before.
 
 Sessions are not on the list: a backup restore loads no session (R-BAK-004) and `trove admin post-restore` ends every session.

@@ -24,9 +24,9 @@ func TestR_CI_020_FurtherResultsAreCountedAndPrintedAsTheirOwn(t *testing.T) {
 		lines = append(lines, x.Line())
 	}
 	if !slices.Equal(lines, []string{
-		"ci.mapping.deleted gitlab/acme-mr-readonly " + id1 + " applied",
-		"ci.mapping.deleted gitlab/acme-release-publish " + id1 + " suspended",
-		"ci.mapping.deleted gitlab/acme-read " + id1 + " suspended",
+		"\"ci.mapping.deleted\" \"gitlab/acme-mr-readonly\" " + id1 + " applied",
+		"\"ci.mapping.deleted\" \"gitlab/acme-release-publish\" " + id1 + " suspended",
+		"\"ci.mapping.deleted\" \"gitlab/acme-read\" " + id1 + " suspended",
 	}) {
 		t.Fatalf("lines = %q", lines)
 	}

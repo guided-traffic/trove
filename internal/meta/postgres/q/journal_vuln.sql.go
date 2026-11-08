@@ -11,42 +11,111 @@ import (
 
 const journalVulnFindingBlock = `-- name: JournalVulnFindingBlock :one
 UPDATE vuln_finding
-   SET status = 'blocked', status_before_resolution = NULL, resolved_reason = NULL, resolved_at = NULL, dismissal_reason = NULL,
+   SET status = CASE WHEN $1::bigint <> 0 THEN 'blocked' ELSE 'resolved' END,
+       status_before_resolution = CASE WHEN $1::bigint <> 0 THEN NULL ELSE 'blocked' END,
+       resolved_reason = CASE WHEN $1::bigint <> 0 THEN NULL ELSE 'version_removed' END,
+       resolved_at = CASE WHEN $1::bigint <> 0 THEN NULL ELSE now() END,
+       dismissal_reason = NULL,
+       package_id = NULLIF($2::bigint, 0), version_id = NULLIF($1::bigint, 0),
        revision = revision + 1, status_changed_at = now(), status_changed_by = NULL
- WHERE id = $1::text::uuid
+ WHERE id = $3::text::uuid
 RETURNING revision
 `
 
-// Sets the download block again (Q-VULN-114): status blocked from whatever the restored finding has, the resolution and the
-// dismissal reason cleared as for every status a finding leaves, the comment kept, the revision raised, and no principal
-// recorded as the one who changed it.
-func (q *Queries) JournalVulnFindingBlock(ctx context.Context, id string) (int64, error) {
-	row := q.db.QueryRow(ctx, journalVulnFindingBlock, id)
+type JournalVulnFindingBlockParams struct {
+	VersionID int64
+	PackageID int64
+	ID        string
+}
+
+// Sets the download block again in the shape both gates read (Q-VULN-114, Q-VULN-131 step 4): a stored version (version_id not 0)
+// makes the finding blocked and linked to it; a version that is not stored makes it resolved with version_removed while blocked and
+// unlinked. Either way the dismissal reason is cleared as for every status a finding leaves, the comment kept, the revision raised,
+// and no principal recorded as the one who changed it.
+func (q *Queries) JournalVulnFindingBlock(ctx context.Context, arg JournalVulnFindingBlockParams) (int64, error) {
+	row := q.db.QueryRow(ctx, journalVulnFindingBlock, arg.VersionID, arg.PackageID, arg.ID)
 	var revision int64
 	err := row.Scan(&revision)
 	return revision, err
 }
 
+const journalVulnFindingInsert = `-- name: JournalVulnFindingInsert :exec
+INSERT INTO vuln_finding (id, repo_id, ecosystem, package_name, version, advisory_id, package_id, version_id, kind, severity, severity_rank,
+                          fix_available, status, status_before_resolution, resolved_reason, resolved_at, advisory_modified)
+VALUES ($1::text::uuid, $2::bigint, $3::text, $4::text, $5::text,
+        $6::text, NULLIF($7::bigint, 0), NULLIF($8::bigint, 0), $9::text,
+        $10::text, $11::smallint, false,
+        CASE WHEN $8::bigint <> 0 THEN 'blocked' ELSE 'resolved' END,
+        CASE WHEN $8::bigint <> 0 THEN NULL ELSE 'blocked' END,
+        CASE WHEN $8::bigint <> 0 THEN NULL ELSE 'version_removed' END,
+        CASE WHEN $8::bigint <> 0 THEN NULL ELSE now() END,
+        now())
+`
+
+type JournalVulnFindingInsertParams struct {
+	ID           string
+	RepoID       int64
+	Ecosystem    string
+	PackageName  string
+	Version      string
+	AdvisoryID   string
+	PackageID    int64
+	VersionID    int64
+	Kind         string
+	Severity     string
+	SeverityRank int16
+}
+
+// A finding the restored database lacks, in the shape both download gates read (Q-VULN-131 steps 3 and 4): version_id 0 is a
+// version the repository does not store, whose finding is resolved while blocked. The other advisory members stay empty until the
+// first evaluation with complete data refreshes them.
+func (q *Queries) JournalVulnFindingInsert(ctx context.Context, arg JournalVulnFindingInsertParams) error {
+	_, err := q.db.Exec(ctx, journalVulnFindingInsert,
+		arg.ID,
+		arg.RepoID,
+		arg.Ecosystem,
+		arg.PackageName,
+		arg.Version,
+		arg.AdvisoryID,
+		arg.PackageID,
+		arg.VersionID,
+		arg.Kind,
+		arg.Severity,
+		arg.SeverityRank,
+	)
+	return err
+}
+
 const journalVulnFindingLock = `-- name: JournalVulnFindingLock :many
 
-SELECT f.id::text AS id, f.ecosystem::text AS ecosystem, f.package_name::text AS package_name, f.version::text AS version,
-       f.status::text AS status
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.ecosystem::text AS ecosystem, f.package_name::text AS package_name,
+       f.version::text AS version, f.advisory_id::text AS advisory_id, f.status::text AS status,
+       COALESCE(f.status_before_resolution, '')::text AS status_before_resolution,
+       COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.version_id, 0)::bigint AS version_id,
+       COALESCE(f.package_id, 0)::bigint AS package_id
   FROM vuln_finding f
  WHERE f.id = $1::text::uuid
    FOR UPDATE
 `
 
 type JournalVulnFindingLockRow struct {
-	ID          string
-	Ecosystem   string
-	PackageName string
-	Version     string
-	Status      string
+	ID                     string
+	RepoID                 int64
+	Ecosystem              string
+	PackageName            string
+	Version                string
+	AdvisoryID             string
+	Status                 string
+	StatusBeforeResolution string
+	ResolvedReason         string
+	VersionID              int64
+	PackageID              int64
 }
 
-// The statements of the replay of a download block (R-HA-054, R-VULN-013, H-489): internal/vuln/triage/journal_replay.go.
-// The finding a replayed block names, locked for the change: its immutable identity (ecosystem, package, version) and its
-// status (Q-VULN-115).
+// The statements of the replay of a download block (R-HA-054, R-VULN-013, R-VULN-026, Q-VULN-114, Q-VULN-115, Q-VULN-131):
+// internal/vuln/triage/journal_replay.go.
+// The finding a replayed block names by its ID, locked for the change: its immutable identity (repository, ecosystem, package,
+// version) and the shape it has (Q-VULN-115, Q-VULN-131 step 1).
 func (q *Queries) JournalVulnFindingLock(ctx context.Context, id string) ([]JournalVulnFindingLockRow, error) {
 	rows, err := q.db.Query(ctx, journalVulnFindingLock, id)
 	if err != nil {
@@ -58,11 +127,202 @@ func (q *Queries) JournalVulnFindingLock(ctx context.Context, id string) ([]Jour
 		var i JournalVulnFindingLockRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.RepoID,
+			&i.Ecosystem,
+			&i.PackageName,
+			&i.Version,
+			&i.AdvisoryID,
+			&i.Status,
+			&i.StatusBeforeResolution,
+			&i.ResolvedReason,
+			&i.VersionID,
+			&i.PackageID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const journalVulnFindingLockByIdentity = `-- name: JournalVulnFindingLockByIdentity :many
+SELECT f.id::text AS id, f.repo_id::bigint AS repo_id, f.ecosystem::text AS ecosystem, f.package_name::text AS package_name,
+       f.version::text AS version, f.status::text AS status, COALESCE(f.status_before_resolution, '')::text AS status_before_resolution,
+       COALESCE(f.resolved_reason, '')::text AS resolved_reason, COALESCE(f.version_id, 0)::bigint AS version_id,
+       COALESCE(f.package_id, 0)::bigint AS package_id
+  FROM vuln_finding f
+ WHERE f.repo_id = $1::bigint AND f.ecosystem = $2::text AND f.package_name = $3::text
+   AND f.version = $4::text AND f.advisory_id = $5::text
+   FOR UPDATE
+`
+
+type JournalVulnFindingLockByIdentityParams struct {
+	RepoID      int64
+	Ecosystem   string
+	PackageName string
+	Version     string
+	AdvisoryID  string
+}
+
+type JournalVulnFindingLockByIdentityRow struct {
+	ID                     string
+	RepoID                 int64
+	Ecosystem              string
+	PackageName            string
+	Version                string
+	Status                 string
+	StatusBeforeResolution string
+	ResolvedReason         string
+	VersionID              int64
+	PackageID              int64
+}
+
+// The finding of the identity the table's unique key names (repository, ecosystem, package, version, advisory), locked for the
+// change (Q-VULN-131 step 2).
+func (q *Queries) JournalVulnFindingLockByIdentity(ctx context.Context, arg JournalVulnFindingLockByIdentityParams) ([]JournalVulnFindingLockByIdentityRow, error) {
+	rows, err := q.db.Query(ctx, journalVulnFindingLockByIdentity,
+		arg.RepoID,
+		arg.Ecosystem,
+		arg.PackageName,
+		arg.Version,
+		arg.AdvisoryID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []JournalVulnFindingLockByIdentityRow{}
+	for rows.Next() {
+		var i JournalVulnFindingLockByIdentityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
 			&i.Ecosystem,
 			&i.PackageName,
 			&i.Version,
 			&i.Status,
+			&i.StatusBeforeResolution,
+			&i.ResolvedReason,
+			&i.VersionID,
+			&i.PackageID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const journalVulnFindingRaise = `-- name: JournalVulnFindingRaise :execrows
+UPDATE vuln_finding f
+   SET kind = CASE WHEN $1::text = 'malicious' THEN 'malicious' ELSE kind END,
+       severity = CASE WHEN $2::smallint > severity_rank THEN $3::text ELSE severity END,
+       severity_rank = GREATEST(severity_rank, $2::smallint),
+       revision = revision + 1
+ WHERE f.id = $4::text::uuid
+   AND (($1::text = 'malicious' AND kind <> 'malicious') OR $2::smallint > severity_rank)
+   AND EXISTS (SELECT 1 FROM vuln_finding_event e
+                WHERE e.finding_id = f.id AND e.change = 'detected' AND e.details ? 'journal'
+                  AND e.at > COALESCE((SELECT (v.value #>> '{}')::timestamptz FROM system_state v WHERE v.key = 'restored_at'), '-infinity'::timestamptz))
+`
+
+type JournalVulnFindingRaiseParams struct {
+	Kind         string
+	SeverityRank int16
+	Severity     string
+	ID           string
+}
+
+// Raises the kind and the severity of a finding that a replay created to the stronger of its own and the entry's (Q-VULN-131): every
+// replayed copy can only make such a finding block more, so an earlier forged copy that named weaker facts is corrected by a later
+// genuine one. A finding restored from the backup is never raised: its facts are the evaluation's, and only a replay's creation (the
+// history row `detected` that names a journal entry, newer than the last restore's `restored_at`) marks the finding as the entries' own, so a finding an earlier restore created and the evaluation has owned since is not raised. Nothing changes, and no row counts, when
+// the finding is as strong already.
+func (q *Queries) JournalVulnFindingRaise(ctx context.Context, arg JournalVulnFindingRaiseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, journalVulnFindingRaise,
+		arg.Kind,
+		arg.SeverityRank,
+		arg.Severity,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const journalVulnRepository = `-- name: JournalVulnRepository :many
+SELECT r.class::text AS class, r.lifecycle::text AS lifecycle, r.format::text AS format
+  FROM repositories r
+ WHERE r.id = $1::bigint
+`
+
+type JournalVulnRepositoryRow struct {
+	Class     string
+	Lifecycle string
+	Format    string
+}
+
+// The repository an entry names, to tell one that can hold the finding from one that cannot (Q-VULN-131 step 3). No row: the
+// restored database does not hold it.
+func (q *Queries) JournalVulnRepository(ctx context.Context, id int64) ([]JournalVulnRepositoryRow, error) {
+	rows, err := q.db.Query(ctx, journalVulnRepository, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []JournalVulnRepositoryRow{}
+	for rows.Next() {
+		var i JournalVulnRepositoryRow
+		if err := rows.Scan(&i.Class, &i.Lifecycle, &i.Format); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const journalVulnStoredVersion = `-- name: JournalVulnStoredVersion :many
+SELECT pv.id::bigint AS version_id, pv.package_id::bigint AS package_id
+  FROM packages p
+  JOIN package_versions pv ON pv.package_id = p.id
+ WHERE p.repo_id = $1::bigint AND p.name = $2::text AND pv.version = $3::text
+   AND pv.trashed_at IS NULL
+ LIMIT 1
+`
+
+type JournalVulnStoredVersionParams struct {
+	RepoID      int64
+	PackageName string
+	Version     string
+}
+
+type JournalVulnStoredVersionRow struct {
+	VersionID int64
+	PackageID int64
+}
+
+// The package version a repository stores under the name and version of an entry (Q-VULN-131 step 4): the row the download joins
+// a finding to. No row: the version is not stored (it was evicted, or never was).
+func (q *Queries) JournalVulnStoredVersion(ctx context.Context, arg JournalVulnStoredVersionParams) ([]JournalVulnStoredVersionRow, error) {
+	rows, err := q.db.Query(ctx, journalVulnStoredVersion, arg.RepoID, arg.PackageName, arg.Version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []JournalVulnStoredVersionRow{}
+	for rows.Next() {
+		var i JournalVulnStoredVersionRow
+		if err := rows.Scan(&i.VersionID, &i.PackageID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

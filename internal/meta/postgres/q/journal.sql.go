@@ -9,17 +9,6 @@ import (
 	"context"
 )
 
-const journalAdminBindingCount = `-- name: JournalAdminBindingCount :one
-SELECT count(*)::bigint FROM authz_role_binding WHERE role = 'admin'
-`
-
-func (q *Queries) JournalAdminBindingCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, journalAdminBindingCount)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const journalAnonymousAccess = `-- name: JournalAnonymousAccess :one
 SELECT anonymous_access FROM auth_settings WHERE singleton
 `

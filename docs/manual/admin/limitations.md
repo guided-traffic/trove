@@ -28,9 +28,13 @@ This page lists what this version of trove does not do, and the known weak spots
   keeps revoked tokens revoked, disabled accounts disabled and removed permissions removed ([Backups](operations.md#backups)).
   The chart's backup is off by default: `backup.enabled: true` turns it on and then needs `config.backup.target.bucket` and the
   target's credentials.
-- Some narrowings write no journal entry yet and come back with a restore of either kind: a pending identity link removed, a group
-  renamed away from the name the identity provider fills, a repository's include and exclude patterns or virtual members narrowed,
-  claims and pin rules added, a lowered token lifetime ceiling. Review them after a restore.
+- A restore re-applies the narrowings made after the restore point that decide who may read what: patterns, virtual members, pin
+  rules, claims, a stronger vulnerability setting, a pending identity link removed, a group renamed away from the name the
+  identity provider fills and a lowered token lifetime maximum. Where re-applying one could widen what a repository serves, the
+  restore disables the repository and lists it as `suspended`. The settings of how a repository talks to its upstream and what it
+  accepts are not journaled and come back as they were at the restore point: the hosts that receive the upstream credential,
+  the checksum and content-type policy of a remote, offline mode, a local repository's client checksum policy and upload limits,
+  and the settings of the npm and NuGet members. Review them after a restore.
 - A restore from the database platform's own point-in-time backups is followed by `trove admin post-restore` (the chart's
   `postRestore` hook Job), which replays the journal from the restore point; `trove admin backup check` reports whether the
   platform protection you declared (`backup.recovery_window`, `backup.object_versioning`) is in place.

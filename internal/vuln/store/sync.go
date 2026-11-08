@@ -125,6 +125,8 @@ type StateSummary struct {
 	Complete  bool
 	DataEpoch int64
 	SyncedAt  time.Time
+	// NotSyncedSinceRestore says that the installation was restored and the ecosystem has not synced since (Q-VULN-132).
+	NotSyncedSinceRestore bool
 }
 
 // List returns the rows of a source.
@@ -135,7 +137,7 @@ func (Sync) List(ctx context.Context, db q.DBTX, source string) ([]StateSummary,
 	}
 	out := make([]StateSummary, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, StateSummary{Ecosystem: r.Ecosystem, Complete: r.State == StateComplete, DataEpoch: r.DataEpoch, SyncedAt: microTime(r.SyncedUs)})
+		out = append(out, StateSummary{Ecosystem: r.Ecosystem, Complete: r.State == StateComplete, DataEpoch: r.DataEpoch, SyncedAt: microTime(r.SyncedUs), NotSyncedSinceRestore: r.NotSyncedSinceRestore})
 	}
 	return out, nil
 }

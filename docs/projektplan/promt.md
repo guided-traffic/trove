@@ -262,35 +262,6 @@ Found on 2026-11-08 by the security audit of the F-72 fix, reading a replay hand
   when a genuine entry cannot be shadowed by a forged earlier one for the same version (e.g. the replay keeps every journaled digest of a
   version reserved, or refuses a reservation whose digest differs from another entry's), with a test.
 
-Found on 2026-11-07 by the planning agent of E5.13 (phase 7), reading the evaluation engine:
-
-### Product
-
-- **F-74 · A download block the evaluation sets writes no journal entry, so a restore lets a malicious version download again until the
-  first complete import** (read in the code, not reproduced). Three places set `blocked` without an entry: a malicious finding detected
-  for the first time (`internal/vuln/evaluate/engine.go` around line 584), an open finding whose advisory turns malicious (around line
-  653), and a merge whose audit event says `block: set` (around lines 563 to 567). A restore to a point before the block brings the
-  version back as downloadable on every replica until the first `vuln-sync-osv` after the restore re-evaluates it (R-VULN-026). The replay
-  of Q-VULN-115 names its finding by ID, which a finding created after the restore point does not have in the restored database, so the fix
-  needs a decision on what a replayed evaluation block names. Recorded as part of
-  [H-489](../security/vulnerability-scanning.md#what-this-does-not-cover). Done when an evaluation block writes an entry whose replay holds
-  the version blocked on the restored installation before its first sync, with a test, or a decision states why it need not.
-
-Found on 2026-11-07 by the security audit of the avatar upload (R-API-055) and of the revocation journal (R-HA-054):
-
-### Product
-
-- **F-72 · Narrowings that a restore undoes because they write no journal entry** (read in the code by the journal's audit and
-  the agent that closed its producer gaps; listed as
-  [H-569](../security/backup-and-restore.md#what-this-does-not-cover)). Each is recorded as an audit event without an entry, so
-  a restore of a backup or a platform restore brings the wider state back: a pending identity link removed (`IdentityReplaceIdentities`
-  in `UpdateUser`, `internal/auth/principal/manager.go`), a group renamed away from the name the identity provider fills
-  (`internal/auth/principal/groups.go`), a repository's content narrowed (include/exclude patterns, a virtual member removed,
-  `internal/repository/members.go`, a stronger `vulnerabilities` member; all `repository.updated`), claims and pin rules added
-  (`internal/repository/claims.go`), token lifetime ceilings lowered (not journaled by R-AUTH-041's own decision, to be revisited with the
-  rest). Done when each narrowing writes an entry with a fail-closed replay handler (`TestR_HA_054_EveryJournaledEventHasAReplayHandler`
-  then holds them), or a decision states why one need not, and H-569 is narrowed to what is left.
-
 Found on 2026-11-07 while reading the scheduled nightly run 42356771989:
 
 ### Tests and tools

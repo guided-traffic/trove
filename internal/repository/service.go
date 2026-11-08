@@ -457,7 +457,7 @@ func (s *Service) update(ctx context.Context, c Caller, name qname.Repo, pre Pre
 		if err != nil {
 			return err
 		}
-		if err := s.recordUpdate(ctx, tx, c, out.Repository, changes, &cur, &nd); err != nil {
+		if err := s.recordUpdate(ctx, tx, c, out.Repository, changes, &cur, &nd, curRel, rel); err != nil {
 			return err
 		}
 		// >>> M2 virtual
@@ -688,9 +688,16 @@ func (s *Service) recordAndNotify(ctx context.Context, tx meta.Tx, c Caller, eve
 	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Name.String(), Op: op, Version: r.Version})
 }
 
-// recordUpdate records repository.updated and its change-log row, and repository.disabled when the update set disabled.
-func (s *Service) recordUpdate(ctx context.Context, tx meta.Tx, c Caller, r Repository, changes []string, cur, nd *Document) error {
+// recordUpdate records repository.updated and its change-log row, repository.narrowed when the update narrowed what the
+// repository serves (R-REPO-061), and repository.disabled when the update set disabled. curRel and rel are the rows of a
+// virtual repository before and after, nil for another class.
+func (s *Service) recordUpdate(ctx context.Context, tx meta.Tx, c Caller, r Repository, changes []string, cur, nd *Document,
+	curRel, rel *virtualRel,
+) error {
 	if err := s.recordAndNotify(ctx, tx, c, EventUpdated, r, updateDetails(r, changes, cur, nd), strings.TrimPrefix(EventUpdated, "repository.")); err != nil {
+		return err
+	}
+	if err := s.recordNarrowed(ctx, tx, c, r, s.narrowing(r, cur, nd, curRel, rel)); err != nil {
 		return err
 	}
 	if cur.Disabled || !nd.Disabled {

@@ -1138,6 +1138,21 @@ func (e GroupMembersChangeSource) Valid() bool {
 	}
 }
 
+// Defines values for GroupPatchSyncDetached.
+const (
+	GroupPatchSyncDetachedFalse GroupPatchSyncDetached = false
+)
+
+// Valid indicates whether the value is a known member of the GroupPatchSyncDetached enum.
+func (e GroupPatchSyncDetached) Valid() bool {
+	switch e {
+	case GroupPatchSyncDetachedFalse:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GuideClass.
 const (
 	GuideClassLocal   GuideClass = "local"
@@ -5558,7 +5573,7 @@ type FormatList struct {
 // any difference; no list of formats per class is kept by hand anywhere.
 type FormatName string
 
-// Group A group (R-AUTH-018). `roles` and `memberCount` are read only.
+// Group A group (R-AUTH-018). `roles`, `memberCount` and `syncDetached` are read only here; `syncDetached` is cleared with `PATCH`.
 type Group struct {
 	AutoJoin    bool               `json:"autoJoin"`
 	CreatedAt   time.Time          `json:"createdAt"`
@@ -5570,6 +5585,10 @@ type Group struct {
 
 	// Roles The system roles bound to the group; empty on the list.
 	Roles []string `json:"roles"`
+
+	// SyncDetached Set by the replay of a rename after a restore (R-AUTH-041): group synchronization neither fills nor creates the group
+	// (R-AUTH-008). An administrator attaches it again with `PATCH` and `{"syncDetached": false}`.
+	SyncDetached bool `json:"syncDetached"`
 }
 
 // GroupOrigin defines model for Group.Origin.
@@ -5629,7 +5648,13 @@ type GroupPatch struct {
 	AutoJoin    *bool   `json:"autoJoin,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Name        *string `json:"name,omitempty"`
+
+	// SyncDetached Only `false` is accepted; it attaches a detached group to group synchronization again.
+	SyncDetached *GroupPatchSyncDetached `json:"syncDetached,omitempty"`
 }
+
+// GroupPatchSyncDetached Only `false` is accepted; it attaches a detached group to group synchronization again.
+type GroupPatchSyncDetached bool
 
 // Guide defines model for Guide.
 type Guide struct {

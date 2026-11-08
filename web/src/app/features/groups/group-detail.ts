@@ -22,7 +22,8 @@ import { groupOriginLabel } from './group-list';
  * One group (R-UI-025): name, description and auto-join; members with their sources, where only
  * manual members change; the system roles bound to the group (read only, linked to the roles
  * screen); the policies that name the group (read only links). A group managed by SCIM is
- * read-only and says why.
+ * read-only and says why. A group a restore detached from group synchronization says so and
+ * offers to attach it again (`syncDetached: false`, the only value the API takes).
  */
 @Component({
   selector: 'trove-group-detail',
@@ -125,6 +126,16 @@ export class GroupDetail {
     if (this.description().trim() !== g.description) patch.description = this.description().trim();
     if (this.autoJoin() !== g.autoJoin) patch.autoJoin = this.autoJoin();
     if (Object.keys(patch).length === 0) return;
+    await this.apply(g, patch);
+  }
+
+  /** Attaches a detached group to group synchronization again (R-UI-025, R-AUTH-018). */
+  protected async attach(): Promise<void> {
+    const g = this.group();
+    if (g) await this.apply(g, { syncDetached: false });
+  }
+
+  private async apply(g: Group, patch: GroupPatch): Promise<void> {
     this.busy.set(true);
     this.editError.set(null);
     try {

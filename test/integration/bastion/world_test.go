@@ -306,10 +306,26 @@ func (w *world) waitReads(token, repo string) {
 // publishNPM publishes a package to npm-local as the publisher.
 func (w *world) publishNPM(name, version string) {
 	w.t.Helper()
+	w.publishNPMKeepingEvents(name, version)
+	w.setUpOlderThanTheFeed()
+}
+
+// publishNPMKeepingEvents publishes as publishNPM does and leaves the audit events of the publish for the feed.
+func (w *world) publishNPMKeepingEvents(name, version string) {
+	w.t.Helper()
 	a := w.api("PUT", "/api/npm/"+npmLocal+"/"+strings.ReplaceAll(name, "/", "%2f"), w.publisher, npmPublishBody(w.t, name, version))
 	if a.Status != 201 {
 		w.t.Fatalf("npm publish %s@%s: %d %s", name, version, a.Status, a.Body)
 	}
+}
+
+// setUpOlderThanTheFeed removes the claim events of the set-up's first publishes. The auto claim of a first publish is a
+// repository-wide content entry (Q-BAS-146), which a Bastion that starts within the lookback receives and which makes the
+// answers it obtains in the next SkewMargin unusable (R-BAS-020 rule 3). The set-up stands for content that is older than any
+// Bastion's history; the tests that are about the feed publish after the Bastion has started and read the entry from there.
+func (w *world) setUpOlderThanTheFeed() {
+	w.t.Helper()
+	w.st.Exec(`DELETE FROM audit_event WHERE action = 'repository.claims_changed'`)
 }
 
 // publishNuGet pushes a package to nuget-local as the publisher.
@@ -320,6 +336,7 @@ func (w *world) publishNuGet(id, version string) {
 	if a.Status != 201 {
 		w.t.Fatalf("nuget push %s %s: %d %s", id, version, a.Status, a.Body)
 	}
+	w.setUpOlderThanTheFeed()
 }
 
 // content is the standard content: @acme/sdk 1.0.0 and 2.0.0 and plain-lib 1.0.0 (npm), Acme.Sdk 1.0.0 and

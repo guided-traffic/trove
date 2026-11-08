@@ -158,7 +158,9 @@ const bastionFeedCursorState = `-- name: BastionFeedCursorState :one
 SELECT EXISTS (SELECT 1 FROM audit_event WHERE occurred_at = $1::text::timestamptz
                                           AND id = $2::text::uuid)::boolean AS cursor_exists,
        (extract(epoch FROM now()) * 1000000)::bigint AS db_now_us,
-       COALESCE((SELECT retention_days FROM audit_policy WHERE id = 1), 0)::int AS retention_days
+       COALESCE((SELECT retention_days FROM audit_policy WHERE id = 1), 0)::int AS retention_days,
+       COALESCE((SELECT (extract(epoch FROM (value #>> '{}')::timestamptz) * 1000000)::bigint
+                   FROM system_state WHERE key = 'restored_at'), 0)::bigint AS restored_us
 `
 
 type BastionFeedCursorStateParams struct {
@@ -170,15 +172,22 @@ type BastionFeedCursorStateRow struct {
 	CursorExists  bool
 	DbNowUs       int64
 	RetentionDays int32
+	RestoredUs    int64
 }
 
 // What decides a reset (R-BAS-015) in one read: whether the event the cursor names exists (any action: the
 // journal is a filter, the cursor names an event that was returned), the database clock in Unix microseconds, and the audit
-// retention in days (0 keeps everything).
+// retention in days (0 keeps everything), and the time of the last restore in Unix microseconds (0 before the first): a cursor
+// older than the restore has not seen the narrowings the replay re-applied, which write no audit event (R-REPO-061).
 func (q *Queries) BastionFeedCursorState(ctx context.Context, arg BastionFeedCursorStateParams) (BastionFeedCursorStateRow, error) {
 	row := q.db.QueryRow(ctx, bastionFeedCursorState, arg.CursorAt, arg.CursorID)
 	var i BastionFeedCursorStateRow
-	err := row.Scan(&i.CursorExists, &i.DbNowUs, &i.RetentionDays)
+	err := row.Scan(
+		&i.CursorExists,
+		&i.DbNowUs,
+		&i.RetentionDays,
+		&i.RestoredUs,
+	)
 	return i, err
 }
 

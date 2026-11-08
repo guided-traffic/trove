@@ -8783,9 +8783,25 @@
         <source>This group is managed by SCIM and cannot be changed here.</source>
       </segment>
     </unit>
+    <unit id="group.detached-note">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:24,26</note>
+      </notes>
+      <segment>
+        <source>The identity provider no longer fills this group: a restore found it renamed after the restore point and detached it from group synchronization, and removed its members from the identity provider.</source>
+      </segment>
+    </unit>
+    <unit id="group.attach">
+      <notes>
+        <note category="location">src/app/features/groups/group-detail.html:28,30</note>
+      </notes>
+      <segment>
+        <source>Attach to group synchronization again</source>
+      </segment>
+    </unit>
     <unit id="group.name">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:25</note>
+        <note category="location">src/app/features/groups/group-detail.html:36</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -8793,7 +8809,7 @@
     </unit>
     <unit id="group.description">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:26</note>
+        <note category="location">src/app/features/groups/group-detail.html:37</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -8801,7 +8817,7 @@
     </unit>
     <unit id="group.auto-join">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:28,29</note>
+        <note category="location">src/app/features/groups/group-detail.html:39,40</note>
       </notes>
       <segment>
         <source>Every user joins this group automatically</source>
@@ -8809,7 +8825,7 @@
     </unit>
     <unit id="group.origin">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:31,32</note>
+        <note category="location">src/app/features/groups/group-detail.html:42,43</note>
       </notes>
       <segment>
         <source>Origin</source>
@@ -8817,7 +8833,7 @@
     </unit>
     <unit id="group.created">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:33,34</note>
+        <note category="location">src/app/features/groups/group-detail.html:44,45</note>
       </notes>
       <segment>
         <source>Created</source>
@@ -8825,7 +8841,7 @@
     </unit>
     <unit id="group.save">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:38,39</note>
+        <note category="location">src/app/features/groups/group-detail.html:49,50</note>
       </notes>
       <segment>
         <source>Save group</source>
@@ -8833,7 +8849,7 @@
     </unit>
     <unit id="group.delete">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:39,41</note>
+        <note category="location">src/app/features/groups/group-detail.html:50,52</note>
       </notes>
       <segment>
         <source>Delete group</source>
@@ -8841,7 +8857,7 @@
     </unit>
     <unit id="group.members">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:46,47</note>
+        <note category="location">src/app/features/groups/group-detail.html:57,58</note>
       </notes>
       <segment>
         <source>Members (<ph id="0" equiv="INTERPOLATION" disp="{{ g.memberCount }}"/>)</source>
@@ -8849,7 +8865,7 @@
     </unit>
     <unit id="group.source-filter">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:51</note>
+        <note category="location">src/app/features/groups/group-detail.html:62</note>
       </notes>
       <segment>
         <source>Source</source>
@@ -8857,7 +8873,7 @@
     </unit>
     <unit id="group.no-members">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:58,60</note>
+        <note category="location">src/app/features/groups/group-detail.html:69,71</note>
       </notes>
       <segment>
         <source>No member matches.</source>
@@ -8865,7 +8881,7 @@
     </unit>
     <unit id="group.members-region">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:60,62</note>
+        <note category="location">src/app/features/groups/group-detail.html:71,73</note>
       </notes>
       <segment>
         <source>Members</source>
@@ -8873,7 +8889,7 @@
     </unit>
     <unit id="group.members-caption">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:62,64</note>
+        <note category="location">src/app/features/groups/group-detail.html:73,75</note>
       </notes>
       <segment>
         <source>Members and where each membership comes from</source>
@@ -8881,7 +8897,7 @@
     </unit>
     <unit id="group.member">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:65,66</note>
+        <note category="location">src/app/features/groups/group-detail.html:76,77</note>
       </notes>
       <segment>
         <source>Member</source>
@@ -8889,7 +8905,7 @@
     </unit>
     <unit id="group.sources">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:66,67</note>
+        <note category="location">src/app/features/groups/group-detail.html:77,78</note>
       </notes>
       <segment>
         <source>Sources</source>
@@ -8897,7 +8913,7 @@
     </unit>
     <unit id="group.member-actions">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:67,69</note>
+        <note category="location">src/app/features/groups/group-detail.html:78,80</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -8905,7 +8921,7 @@
     </unit>
     <unit id="group.remove">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:82,83</note>
+        <note category="location">src/app/features/groups/group-detail.html:93,94</note>
       </notes>
       <segment>
         <source>Remove</source>
@@ -8913,7 +8929,7 @@
     </unit>
     <unit id="group.more">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:93,95</note>
+        <note category="location">src/app/features/groups/group-detail.html:104,106</note>
       </notes>
       <segment>
         <source>Load more</source>
@@ -8921,7 +8937,7 @@
     </unit>
     <unit id="group.add-member">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:101,103</note>
+        <note category="location">src/app/features/groups/group-detail.html:112,114</note>
       </notes>
       <segment>
         <source>Add a member</source>
@@ -8929,7 +8945,7 @@
     </unit>
     <unit id="group.add-member-hint">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:105,107</note>
+        <note category="location">src/app/features/groups/group-detail.html:116,118</note>
       </notes>
       <segment>
         <source>A user name, or sa:name for a service account</source>
@@ -8937,7 +8953,7 @@
     </unit>
     <unit id="group.add-member-submit">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:107,110</note>
+        <note category="location">src/app/features/groups/group-detail.html:118,121</note>
       </notes>
       <segment>
         <source>Add</source>
@@ -8945,7 +8961,7 @@
     </unit>
     <unit id="group.roles">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:113,114</note>
+        <note category="location">src/app/features/groups/group-detail.html:124,125</note>
       </notes>
       <segment>
         <source>System roles</source>
@@ -8953,7 +8969,7 @@
     </unit>
     <unit id="group.no-roles">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:115,117</note>
+        <note category="location">src/app/features/groups/group-detail.html:126,128</note>
       </notes>
       <segment>
         <source>No system role is bound to this group.</source>
@@ -8961,7 +8977,7 @@
     </unit>
     <unit id="group.roles-link">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:124,128</note>
+        <note category="location">src/app/features/groups/group-detail.html:135,139</note>
       </notes>
       <segment>
         <source>Manage role bindings</source>
@@ -8969,7 +8985,7 @@
     </unit>
     <unit id="group.policies">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:130,131</note>
+        <note category="location">src/app/features/groups/group-detail.html:141,142</note>
       </notes>
       <segment>
         <source>Permission policies naming this group</source>
@@ -8977,7 +8993,7 @@
     </unit>
     <unit id="group.no-policies">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.html:132,134</note>
+        <note category="location">src/app/features/groups/group-detail.html:143,145</note>
       </notes>
       <segment>
         <source>No policy names this group.</source>
@@ -8985,7 +9001,7 @@
     </unit>
     <unit id="group.source.all">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:65</note>
+        <note category="location">src/app/features/groups/group-detail.ts:66</note>
       </notes>
       <segment>
         <source>All sources</source>
@@ -8993,7 +9009,7 @@
     </unit>
     <unit id="group.source.manual">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:66</note>
+        <note category="location">src/app/features/groups/group-detail.ts:67</note>
       </notes>
       <segment>
         <source>Manual</source>
@@ -9001,7 +9017,7 @@
     </unit>
     <unit id="group.source.auto">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:67</note>
+        <note category="location">src/app/features/groups/group-detail.ts:68</note>
       </notes>
       <segment>
         <source>Auto-join</source>
@@ -9009,7 +9025,7 @@
     </unit>
     <unit id="group.saved">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:142</note>
+        <note category="location">src/app/features/groups/group-detail.ts:153</note>
       </notes>
       <segment>
         <source>Group saved.</source>
@@ -9017,7 +9033,7 @@
     </unit>
     <unit id="group.delete-title">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:157</note>
+        <note category="location">src/app/features/groups/group-detail.ts:168</note>
       </notes>
       <segment>
         <source>Delete this group?</source>
@@ -9025,7 +9041,7 @@
     </unit>
     <unit id="group.delete-text">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:158</note>
+        <note category="location">src/app/features/groups/group-detail.ts:169</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="group" disp="this.name()"/> and its memberships are removed. Policies and roles that name it stop applying.</source>
@@ -9033,7 +9049,7 @@
     </unit>
     <unit id="group.delete-confirm">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:159</note>
+        <note category="location">src/app/features/groups/group-detail.ts:170</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -9041,7 +9057,7 @@
     </unit>
     <unit id="group.deleted">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:165</note>
+        <note category="location">src/app/features/groups/group-detail.ts:176</note>
       </notes>
       <segment>
         <source>Group deleted.</source>
@@ -9049,7 +9065,7 @@
     </unit>
     <unit id="group.member-added">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:176</note>
+        <note category="location">src/app/features/groups/group-detail.ts:187</note>
       </notes>
       <segment>
         <source>Member added.</source>
@@ -9057,7 +9073,7 @@
     </unit>
     <unit id="group.member-removed">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:182</note>
+        <note category="location">src/app/features/groups/group-detail.ts:193</note>
       </notes>
       <segment>
         <source>Member removed.</source>
@@ -9065,7 +9081,7 @@
     </unit>
     <unit id="group.src.manual">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:211</note>
+        <note category="location">src/app/features/groups/group-detail.ts:222</note>
       </notes>
       <segment>
         <source>Manual</source>
@@ -9073,7 +9089,7 @@
     </unit>
     <unit id="group.src.auto">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:212</note>
+        <note category="location">src/app/features/groups/group-detail.ts:223</note>
       </notes>
       <segment>
         <source>Auto-join</source>
@@ -9081,7 +9097,7 @@
     </unit>
     <unit id="group.src.provider">
       <notes>
-        <note category="location">src/app/features/groups/group-detail.ts:214</note>
+        <note category="location">src/app/features/groups/group-detail.ts:225</note>
       </notes>
       <segment>
         <source>Identity provider</source>

@@ -82,12 +82,11 @@ func (a *App) registerVulnEvaluationJobs(r *jobs.Registry) {
 		Queue: vuln.QueueDefault, DedupMode: jobs.Coalesce,
 		Handler: handler(func(ctx context.Context, svc *evaluate.Service, j *jobs.Run) error { return svc.RunEvaluate(ctx, j) }),
 	})
-	r.RegisterKind(vuln.KindRescan, jobs.KindSpec{
-		Queue: vuln.QueueDefault, DedupMode: jobs.Exclusive,
-		Handler: handler(func(ctx context.Context, svc *evaluate.Service, j *jobs.Run) error {
-			return svc.RunRescan(ctx, j, j.Args)
-		}),
+	rescan := vuln.RescanKindSpec()
+	rescan.Handler = handler(func(ctx context.Context, svc *evaluate.Service, j *jobs.Run) error {
+		return svc.RunRescan(ctx, j, j.Args)
 	})
+	r.RegisterKind(vuln.KindRescan, rescan)
 	r.RegisterKind(vuln.KindFindingsRetention, jobs.KindSpec{
 		Queue: vuln.QueueMaintenance, DedupMode: jobs.Exclusive, MaxAttempts: 3,
 		Handler: handler(func(ctx context.Context, svc *evaluate.Service, j *jobs.Run) error { return svc.RunRetention(ctx, j) }),

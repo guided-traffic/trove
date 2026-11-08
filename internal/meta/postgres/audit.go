@@ -17,11 +17,39 @@ import (
 // the audit retention.
 
 // IsDataError reports a failure that belongs to the statement's data and that
-// retrying the same data cannot fix: a data exception (SQLSTATE class 22) or an
-// integrity violation (class 23). A connection that fails is not one.
+// retrying the same data cannot fix: a data exception (SQLSTATE class 22), an
+// integrity violation (class 23) or a program limit exceeded (class 54, a value
+// too large for a row or an index). A connection that fails is not one.
 func IsDataError(err error) bool {
+	_, ok := DataErrorCode(err)
+	return ok
+}
+
+// DataErrorCode is the SQLSTATE of a failure [IsDataError] recognises.
+func DataErrorCode(err error) (string, bool) {
 	var pe *pgconn.PgError
-	return errors.As(err, &pe) && (strings.HasPrefix(pe.Code, "22") || strings.HasPrefix(pe.Code, "23"))
+	if !errors.As(err, &pe) {
+		return "", false
+	}
+	if strings.HasPrefix(pe.Code, "22") || strings.HasPrefix(pe.Code, "23") || strings.HasPrefix(pe.Code, "54") {
+		return pe.Code, true
+	}
+	return "", false
+}
+
+// ForgedValueErrorCode is the SQLSTATE of a failure that a value of a journal entry can cause and a handler without a fault
+// cannot: a data exception (class 22), a program limit exceeded (class 54), not_null_violation (23502) or check_violation
+// (23514). A unique (23505) or foreign-key (23503) violation is not one: it means the handler's statements disagree with the
+// schema, and that must stop the replay rather than show up as a skipped entry.
+func ForgedValueErrorCode(err error) (string, bool) {
+	code, ok := DataErrorCode(err)
+	if !ok {
+		return "", false
+	}
+	if strings.HasPrefix(code, "23") && code != "23502" && code != "23514" {
+		return "", false
+	}
+	return code, true
 }
 
 // IsPrivilegeError reports insufficient_privilege (42501): the role may not do

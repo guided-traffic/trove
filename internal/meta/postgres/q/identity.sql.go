@@ -306,6 +306,66 @@ func (q *Queries) IdentityDeleteIdentitiesOfUser(ctx context.Context, userID str
 	return count, err
 }
 
+const identityDeleteOIDCMemberships = `-- name: IdentityDeleteOIDCMemberships :many
+DELETE FROM group_membership
+ WHERE group_id = $1::text::uuid AND source LIKE 'oidc:%'
+RETURNING member_id::text AS member_id
+`
+
+// Replay of a group rename (Q-AUTH-206): the memberships a group synchronization wrote, of every provider.
+func (q *Queries) IdentityDeleteOIDCMemberships(ctx context.Context, groupID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityDeleteOIDCMemberships, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var member_id string
+		if err := rows.Scan(&member_id); err != nil {
+			return nil, err
+		}
+		items = append(items, member_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityDeletePendingLinks = `-- name: IdentityDeletePendingLinks :many
+DELETE FROM user_identity
+ WHERE user_id = $1::text::uuid AND subject IS NULL
+   AND provider_id = ANY($2::text[])
+RETURNING provider_id
+`
+
+type IdentityDeletePendingLinksParams struct {
+	UserID    string
+	Providers []string
+}
+
+// Replay of user.updated: deletes the pending links of the providers named; a linked identity is never touched.
+func (q *Queries) IdentityDeletePendingLinks(ctx context.Context, arg IdentityDeletePendingLinksParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityDeletePendingLinks, arg.UserID, arg.Providers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var provider_id string
+		if err := rows.Scan(&provider_id); err != nil {
+			return nil, err
+		}
+		items = append(items, provider_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityDeletePrincipal = `-- name: IdentityDeletePrincipal :many
 DELETE FROM principal WHERE id = $1::text::uuid RETURNING id::text AS id
 `
@@ -362,21 +422,22 @@ func (q *Queries) IdentityEndSessions(ctx context.Context, arg IdentityEndSessio
 }
 
 const identityGetGroup = `-- name: IdentityGetGroup :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.sync_detached, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name = $1::text
 `
 
 type IdentityGetGroupRow struct {
-	ID          string
-	Name        string
-	Description string
-	AutoJoin    bool
-	Origin      string
-	CreatedAt   pgtype.Timestamptz
-	Revision    int64
-	MemberCount int64
+	ID           string
+	Name         string
+	Description  string
+	AutoJoin     bool
+	SyncDetached bool
+	Origin       string
+	CreatedAt    pgtype.Timestamptz
+	Revision     int64
+	MemberCount  int64
 }
 
 func (q *Queries) IdentityGetGroup(ctx context.Context, name string) ([]IdentityGetGroupRow, error) {
@@ -393,6 +454,7 @@ func (q *Queries) IdentityGetGroup(ctx context.Context, name string) ([]Identity
 			&i.Name,
 			&i.Description,
 			&i.AutoJoin,
+			&i.SyncDetached,
 			&i.Origin,
 			&i.CreatedAt,
 			&i.Revision,
@@ -635,6 +697,19 @@ func (q *Queries) IdentityGetUserByID(ctx context.Context, id string) ([]Identit
 	return items, nil
 }
 
+const identityGroupDetachedByName = `-- name: IdentityGroupDetachedByName :one
+SELECT EXISTS (SELECT 1 FROM principal p JOIN user_group g ON g.principal_id = p.id
+                WHERE p.kind = 'group' AND p.name = $1::text AND g.sync_detached)
+`
+
+// Whether the group of the name is detached from group synchronization (Q-AUTH-206).
+func (q *Queries) IdentityGroupDetachedByName(ctx context.Context, name string) (bool, error) {
+	row := q.db.QueryRow(ctx, identityGroupDetachedByName, name)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const identityGroupHasAdminRole = `-- name: IdentityGroupHasAdminRole :one
 SELECT EXISTS (SELECT 1 FROM authz_role_binding WHERE principal_id = $1::text::uuid)
 `
@@ -808,7 +883,7 @@ func (q *Queries) IdentityGroupRoles(ctx context.Context, groupID string) ([]str
 
 const identityGroupsByName = `-- name: IdentityGroupsByName :many
 SELECT p.id::text AS id, p.name FROM principal p JOIN user_group g ON g.principal_id = p.id
- WHERE p.kind = 'group' AND p.name = ANY($1::text[])
+ WHERE p.kind = 'group' AND p.name = ANY($1::text[]) AND NOT g.sync_detached
 `
 
 type IdentityGroupsByNameRow struct {
@@ -1147,7 +1222,7 @@ func (q *Queries) IdentityIsProjectServiceAccount(ctx context.Context, id string
 }
 
 const identityListGroups = `-- name: IdentityListGroups :many
-SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
+SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.sync_detached, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
   FROM principal p JOIN user_group g ON g.principal_id = p.id
  WHERE p.kind = 'group' AND p.name > $1::text
@@ -1165,14 +1240,15 @@ type IdentityListGroupsParams struct {
 }
 
 type IdentityListGroupsRow struct {
-	ID          string
-	Name        string
-	Description string
-	AutoJoin    bool
-	Origin      string
-	CreatedAt   pgtype.Timestamptz
-	Revision    int64
-	MemberCount int64
+	ID           string
+	Name         string
+	Description  string
+	AutoJoin     bool
+	SyncDetached bool
+	Origin       string
+	CreatedAt    pgtype.Timestamptz
+	Revision     int64
+	MemberCount  int64
 }
 
 func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroupsParams) ([]IdentityListGroupsRow, error) {
@@ -1194,6 +1270,7 @@ func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroups
 			&i.Name,
 			&i.Description,
 			&i.AutoJoin,
+			&i.SyncDetached,
 			&i.Origin,
 			&i.CreatedAt,
 			&i.Revision,
@@ -1579,12 +1656,13 @@ func (q *Queries) IdentityLockAdminBindings(ctx context.Context) error {
 }
 
 const identityLockGroup = `-- name: IdentityLockGroup :many
-SELECT principal_id::text AS id, auto_join FROM user_group WHERE principal_id = $1::text::uuid FOR UPDATE
+SELECT principal_id::text AS id, auto_join, sync_detached FROM user_group WHERE principal_id = $1::text::uuid FOR UPDATE
 `
 
 type IdentityLockGroupRow struct {
-	ID       string
-	AutoJoin bool
+	ID           string
+	AutoJoin     bool
+	SyncDetached bool
 }
 
 // Locks a group's row, so that binding a role to the group and turning on its
@@ -1600,7 +1678,7 @@ func (q *Queries) IdentityLockGroup(ctx context.Context, id string) ([]IdentityL
 	items := []IdentityLockGroupRow{}
 	for rows.Next() {
 		var i IdentityLockGroupRow
-		if err := rows.Scan(&i.ID, &i.AutoJoin); err != nil {
+		if err := rows.Scan(&i.ID, &i.AutoJoin, &i.SyncDetached); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1733,6 +1811,68 @@ func (q *Queries) IdentityLockTokenTree(ctx context.Context, arg IdentityLockTok
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityLowerPATMax = `-- name: IdentityLowerPATMax :many
+UPDATE auth_settings
+   SET pat_max_ttl = make_interval(secs => $1::float8),
+       pat_default_ttl = CASE WHEN pat_default_ttl > make_interval(secs => $1::float8) THEN make_interval(secs => $1::float8) ELSE pat_default_ttl END,
+       revision = revision + 1, updated_at = now()
+ WHERE singleton AND (pat_max_ttl IS NULL OR pat_max_ttl > make_interval(secs => $1::float8))
+RETURNING revision
+`
+
+// Replay of settings.auth.changed (Q-AUTH-207): the runtime maximum is taken to the journaled value when that is shorter; NULL is the
+// YAML value and the longest. A default above the new maximum is taken down to it, a NULL default stays NULL (the effective
+// value clamps it). No row: the maximum is at most the value already.
+func (q *Queries) IdentityLowerPATMax(ctx context.Context, secs float64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, identityLowerPATMax, secs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var revision int64
+		if err := rows.Scan(&revision); err != nil {
+			return nil, err
+		}
+		items = append(items, revision)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityLowerSATMax = `-- name: IdentityLowerSATMax :many
+UPDATE auth_settings
+   SET sat_max_ttl = make_interval(secs => $1::float8),
+       sat_default_ttl = CASE WHEN sat_default_ttl > make_interval(secs => $1::float8) THEN make_interval(secs => $1::float8) ELSE sat_default_ttl END,
+       revision = revision + 1, updated_at = now()
+ WHERE singleton AND (sat_max_ttl IS NULL OR sat_max_ttl > make_interval(secs => $1::float8))
+RETURNING revision
+`
+
+// As IdentityLowerPATMax, for service account tokens.
+func (q *Queries) IdentityLowerSATMax(ctx context.Context, secs float64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, identityLowerSATMax, secs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var revision int64
+		if err := rows.Scan(&revision); err != nil {
+			return nil, err
+		}
+		items = append(items, revision)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2075,10 +2215,11 @@ func (q *Queries) IdentityRenamePrincipal(ctx context.Context, arg IdentityRenam
 	return items, nil
 }
 
-const identityReplaceIdentities = `-- name: IdentityReplaceIdentities :exec
+const identityReplaceIdentities = `-- name: IdentityReplaceIdentities :many
 DELETE FROM user_identity
  WHERE user_id = $1::text::uuid AND subject IS NULL
    AND NOT (provider_id = ANY($2::text[]))
+RETURNING provider_id
 `
 
 type IdentityReplaceIdentitiesParams struct {
@@ -2087,10 +2228,26 @@ type IdentityReplaceIdentitiesParams struct {
 }
 
 // Replaces the pending links of a user: the identities listed stay or are added
-// as pending (a linked identity is never removed here).
-func (q *Queries) IdentityReplaceIdentities(ctx context.Context, arg IdentityReplaceIdentitiesParams) error {
-	_, err := q.db.Exec(ctx, identityReplaceIdentities, arg.UserID, arg.Providers)
-	return err
+// as pending (a linked identity is never removed here). The providers of the links
+// removed are returned: they are part of the journal entry of user.updated.
+func (q *Queries) IdentityReplaceIdentities(ctx context.Context, arg IdentityReplaceIdentitiesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityReplaceIdentities, arg.UserID, arg.Providers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var provider_id string
+		if err := rows.Scan(&provider_id); err != nil {
+			return nil, err
+		}
+		items = append(items, provider_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const identityRevokeAllOfPrincipal = `-- name: IdentityRevokeAllOfPrincipal :many
@@ -2646,16 +2803,19 @@ func (q *Queries) IdentityTouchTokensLastUsed(ctx context.Context, arg IdentityT
 
 const identityUpdateGroup = `-- name: IdentityUpdateGroup :exec
 UPDATE user_group SET description = CASE WHEN $1::boolean THEN $2::text ELSE description END,
-                      auto_join = CASE WHEN $3::boolean THEN $4::boolean ELSE auto_join END
- WHERE principal_id = $5::text::uuid
+                      auto_join = CASE WHEN $3::boolean THEN $4::boolean ELSE auto_join END,
+                      sync_detached = CASE WHEN $5::boolean THEN $6::boolean ELSE sync_detached END
+ WHERE principal_id = $7::text::uuid
 `
 
 type IdentityUpdateGroupParams struct {
-	SetDescription bool
-	Description    string
-	SetAutoJoin    bool
-	AutoJoin       bool
-	ID             string
+	SetDescription  bool
+	Description     string
+	SetAutoJoin     bool
+	AutoJoin        bool
+	SetSyncDetached bool
+	SyncDetached    bool
+	ID              string
 }
 
 func (q *Queries) IdentityUpdateGroup(ctx context.Context, arg IdentityUpdateGroupParams) error {
@@ -2664,6 +2824,8 @@ func (q *Queries) IdentityUpdateGroup(ctx context.Context, arg IdentityUpdateGro
 		arg.Description,
 		arg.SetAutoJoin,
 		arg.AutoJoin,
+		arg.SetSyncDetached,
+		arg.SyncDetached,
 		arg.ID,
 	)
 	return err

@@ -358,7 +358,7 @@ func TestR_AUTH_041_IdentityEntries(t *testing.T) {
 		ev{"group.deleted", fmt.Sprintf(`{"principalId":%q,"name":"devs"}`, devs)},
 		ev{"token.rotated", fmt.Sprintf(`{"predecessor":%q,"expiresAt":%q,"overlapSeconds":600}`, rotated, later)},
 		ev{"token.rotated", fmt.Sprintf(`{"predecessor":%q,"expiresAt":null,"overlapSeconds":0}`, oldTok)},
-		ev{"settings.auth.changed", `{"anonymousAccess":{"before":true,"after":false}}`},
+		ev{"settings.auth.changed", `{"anonymousAccess":{"before":true,"after":false},"tokens":{"pat":{"maxTTLSeconds":{"before":null,"after":null}},"sat":{"maxTTLSeconds":{"before":null,"after":null}}}}`},
 		ev{"user.disabled", `{"principalId":"not-an-id"}`},
 	)
 	e.want(out, journal.Applied, journal.AlreadyInEffect, journal.Applied, journal.Skipped, journal.Applied, journal.Applied,

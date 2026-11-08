@@ -26,17 +26,22 @@ type AuthTokens struct {
 	MaxActive           AuthTokenMax  `yaml:"max_active_per_principal"`
 }
 
+// MaxTokenLifetime is the longest maximum lifetime of a personal or service-account token: the bound of max_ttl and of the
+// runtime maximum, and the bound the replay of settings.auth.changed reads, so that the producer never writes a value the
+// reader rejects (R-AUTH-041, Q-AUTH-207). The validate tags below spell it as 876000h.
+const MaxTokenLifetime = 876000 * time.Hour
+
 // AuthTokenPAT is the lifetime policy of personal access tokens (R-AUTH-026).
 type AuthTokenPAT struct {
 	DefaultTTL    time.Duration `yaml:"default_ttl" default:"2160h" validate:"min=1m"`
-	MaxTTL        time.Duration `yaml:"max_ttl" default:"8760h" validate:"min=1m" doc:"Ceiling for the runtime setting."`
+	MaxTTL        time.Duration `yaml:"max_ttl" default:"8760h" validate:"min=1m,max=876000h" doc:"Ceiling for the runtime setting; at most 876000h (100 years), the largest maximum the revocation journal replays (R-AUTH-041)."`
 	AllowedGroups []string      `yaml:"allowed_groups" default:"[]" doc:"Empty: every user may create personal tokens; otherwise only members of these groups (R-AUTH-017)."`
 }
 
 // AuthTokenSAT is the lifetime policy of service-account tokens (R-AUTH-026).
 type AuthTokenSAT struct {
 	DefaultTTL       time.Duration `yaml:"default_ttl" default:"2160h" validate:"min=1m"`
-	MaxTTL           time.Duration `yaml:"max_ttl" default:"8760h" validate:"min=1m" doc:"Ceiling for the runtime setting."`
+	MaxTTL           time.Duration `yaml:"max_ttl" default:"8760h" validate:"min=1m,max=876000h" doc:"Ceiling for the runtime setting; at most 876000h (100 years), the largest maximum the revocation journal replays (R-AUTH-041)."`
 	AllowNonExpiring bool          `yaml:"allow_non_expiring" default:"false" doc:"Lets an administrator create a service-account token without expiry."`
 }
 

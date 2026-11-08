@@ -137,10 +137,30 @@ R-NPM-033 withhold every name any claim or pin rule covers).
 
 `Service.PutClaims(ctx, caller, key, pre, in, guard)` runs in one transaction under the row lock: compare `claims_version`, validate
 (`invalid_pattern`, `invalid_value`, `out_of_range`, `not_applicable`), call `guard` when the request adds, keeps, narrows or removes a
-global claim, write, bump `claims_version`, record `repository.claims_changed` and notify `claims`. The handler passes
+global claim, write, bump `claims_version`, record `repository.claims_changed` (with its journal entry) and notify `claims`. The handler passes
 `Server.globalClaimGuard`, which asks the request's access holder for `repositories:write-config` (Q-REPO-105). A write that changes
 nothing keeps the revision and records nothing. The response carries the warning `claim_overlaps` for a manual claim that overlaps a
 claim of another repository which is in effect together with it; its text does not name the other repository.
+
+## Across a restore
+
+A restore to a point before a claim or a pin rule would let the name fall through to a remote member again, so the changes that
+protect a name are copied into the revocation journal (R-REPO-061, R-REPO-023). `recordClaims` records
+`repository.claims_changed` with an entry on every claims change: `{repositoryId, key, source, added}`, where `added` holds the
+claims that were created and those widened from `members` to `global` (`diffClaims` returns them as `journaled`, apart from the
+`added` of the event's details) and is empty for a removal or a narrowing. The auto claim of a first publish
+(`Routing.AutoClaim`) records it too, which is the case that matters most: a restore loses the package and its claim together.
+A pin rule added, a member taken out of a rule or of the member list, and `local.autoClaim` switched on are parts of
+`repository.narrowed` ([repositories.md](repositories.md#narrowings-in-the-revocation-journal)).
+
+The replay of the claims event (`replayer.claims`, [journal_replay.go](../../internal/repository/journal_replay.go)) creates each
+added claim without a creator and bumps `claims_version`. An auto claim follows the rule of a first publish
+(`ownClaimCovers`, `otherClaimCovers`, the functions `Routing.AutoClaim` uses) and is not created where another repository's claim
+in effect covers the name; a manual claim that overlaps one in effect together with it (the condition of `claim_overlaps`) is
+created and its repository disabled. The replay of a member removal disables the virtual repository when the removed local member
+holds a `members` claim and any other member stays (`replayer.membersRemoved`, `JournalMembersClaimHolders`); a pin rule is added
+only where no claim in effect and no other restored rule overlaps its pattern (`pinOverlaps`). The limit of 1000 claims does not stop a replayed claim (a dropped claim leaves a name unclaimed); the replay prints a warning for a
+repository that ends above it. An auto claim must be one exact name of scope `members`, and an entry without `added` is skipped.
 
 ## Patterns
 
@@ -175,6 +195,7 @@ last transaction notifies `claims` when the repository had any, so every replica
 |---|---|
 | [claims_test.go](../../internal/repository/claims_test.go), [routing_test.go](../../internal/repository/routing_test.go), [validate_virtual_test.go](../../internal/repository/validate_virtual_test.go) | pattern forms, total order, claim and pin lookup, routing (claims, pins, priority, admission, the R-AUTHZ-005 matcher table through `routeOf`), remote refusal, validation, the stored form |
 | [virtual_test.go](../../test/integration/repository/virtual_test.go) | members and deploy target against PostgreSQL, order change on two replicas within 2 s without Valkey, detach, pin rules, warnings |
+| [journal_replay_test.go](../../internal/repository/journal_replay_test.go), [journal_narrowed_test.go](../../test/integration/repository/journal_narrowed_test.go), [journal_repository_narrowing_test.go](../../test/integration/backup/journal_repository_narrowing_test.go) | the narrowings and claims of R-REPO-061: the comparison of an update, the strict reader, the writer's transaction, the replay of each step into a restored copy, the fail-closed cases |
 | [claims_test.go](../../test/integration/repository/claims_test.go), [claims_http_test.go](../../test/integration/repository/claims_http_test.go) | claims service and API (428, 412, global permission), the auto claim and its skip rule, two replicas, the exposure set, the delete job |
 
 ## How to

@@ -699,7 +699,7 @@ func (q *Queries) VulnFindingsList(ctx context.Context, arg VulnFindingsListPara
 }
 
 const vulnFindingsLock = `-- name: VulnFindingsLock :many
-SELECT f.id::text AS id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind,
+SELECT f.id::text AS id, f.repo_id, (rp.key || '/' || r.key)::text AS repo_key, r.format, f.ecosystem, f.package_name, f.version, f.advisory_id, f.kind, f.severity,
        f.status, COALESCE(f.dismissal_reason, '')::text AS dismissal_reason, COALESCE(f.comment, '')::text AS comment,
        f.revision
   FROM vuln_finding f
@@ -730,6 +730,7 @@ type VulnFindingsLockRow struct {
 	Version         string
 	AdvisoryID      string
 	Kind            string
+	Severity        string
 	Status          string
 	DismissalReason string
 	Comment         string
@@ -762,6 +763,7 @@ func (q *Queries) VulnFindingsLock(ctx context.Context, arg VulnFindingsLockPara
 			&i.Version,
 			&i.AdvisoryID,
 			&i.Kind,
+			&i.Severity,
 			&i.Status,
 			&i.DismissalReason,
 			&i.Comment,

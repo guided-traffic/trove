@@ -168,7 +168,7 @@ func (s *States) dataState(sum store.StateSummary) advisory.DataState {
 	if !sum.Complete && sum.SyncedAt.IsZero() && sum.DataEpoch == 0 {
 		return advisory.DataState{}
 	}
-	d := advisory.DataState{Complete: sum.Complete, SyncedAt: sum.SyncedAt, Epoch: sum.DataEpoch}
+	d := advisory.DataState{Complete: sum.Complete, SyncedAt: sum.SyncedAt, Epoch: sum.DataEpoch, NotSyncedSinceRestore: sum.NotSyncedSinceRestore}
 	d.Stale = s.staleAfter > 0 && d.Complete && (sum.SyncedAt.IsZero() || s.now().Sub(sum.SyncedAt) > s.staleAfter)
 	return d
 }

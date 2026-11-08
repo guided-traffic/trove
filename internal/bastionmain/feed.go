@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -36,6 +37,7 @@ const (
 	eventRepositoryDeleted    = "repository.deleted"
 	eventProjectMemberRemoved = "authz.project.member_removed"
 	eventProjectMemberChanged = "authz.project.member_changed"
+	eventClaimsChanged        = "repository.claims_changed"
 )
 
 // feedActions are the audit actions that can yield an entry (R-BAS-015). The registry of the audit package
@@ -51,7 +53,7 @@ func feedActions() []string {
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
 		"endpoint.exposure.updated", "endpoint.exposure.deleted",
 		audit.EventSettingsAuthChanged, eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
-		audit.EventRepositoryDisabled, eventRepositoryDeleted,
+		audit.EventRepositoryDisabled, eventRepositoryDeleted, audit.EventRepositoryNarrowed, eventClaimsChanged,
 		audit.EventNPMUnpublish, audit.EventPackageDeleted,
 		audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened,
 	}
@@ -72,6 +74,7 @@ func noFeedEntry() map[string]string {
 		audit.EventBastionDisabled:  "a registration is no caller a Bastion answers; the Bastion learns of its own disable from 401 bastion_token_invalid on its next call (R-BAS-006, Q-BAS-145)",
 		audit.EventBastionDeleted:   "a registration is no caller a Bastion answers; its tokens' token.revoked entries come before it, and the Bastion learns of its end from 401 bastion_token_invalid (R-BAS-006, Q-BAS-145)",
 		audit.EventGroupUpdated:     "clearing auto-join removes no membership that exists (R-AUTH-019): only users created afterwards stay out of the group; a rename or a description changes no grant",
+		audit.EventUserUpdated:      "removes a pending identity link, which no caller holds until a login completes it; a profile change changes no grant",
 	}
 }
 
@@ -138,6 +141,9 @@ type detailsDoc struct {
 	PrincipalID string          `json:"principalId"`
 	Endpoint    string          `json:"endpoint"`
 	Removed     json.RawMessage `json:"removed"`
+	// Added is the claims a repository.claims_changed event added, read by claimsEntries only: the other events that
+	// carry the member shape it differently.
+	Added json.RawMessage `json:"added"`
 	// Block is "set" in the details of a finding event that set a download block (R-VULN-013).
 	Block  string `json:"block"`
 	Before *struct {
@@ -148,96 +154,175 @@ type detailsDoc struct {
 	} `json:"after"`
 }
 
+// mapper turns one stored event and its parsed details into the entries it yields.
+type mapper func(ev FeedEvent, d *detailsDoc, defaultEndpoint string) []rawEntry
+
+// mappers is the table of R-BAS-015: the mapper of each audit action the feed reads. It is built once.
+var mappers = sync.OnceValue(func() map[string]mapper {
+	t := map[string]mapper{
+		audit.EventTokenRevoked:             func(ev FeedEvent, _ *detailsDoc, _ string) []rawEntry { return tokenEntry(ev.ResourceID) },
+		audit.EventTokenRotated:             func(_ FeedEvent, d *detailsDoc, _ string) []rawEntry { return tokenEntry(d.Predecessor) },
+		audit.EventCITokenRevoked:           func(_ FeedEvent, d *detailsDoc, _ string) []rawEntry { return tokenEntry(d.TokenIDs...) },
+		audit.EventUserGroupsSynced:         mapGroupsSynced,
+		audit.EventGroupMembersChanged:      mapMembersChanged,
+		"authz.role.unbound":                mapRoleUnbound,
+		"endpoint.exposure.updated":         mapExposure,
+		"endpoint.exposure.deleted":         mapExposure,
+		audit.EventSettingsAuthChanged:      mapSettings,
+		audit.EventRepositoryNarrowed:       mapRepository,
+		eventClaimsChanged:                  mapRepository,
+		audit.EventNPMUnpublish:             mapWithdrawal,
+		audit.EventPackageDeleted:           mapWithdrawal,
+		audit.EventVulnFindingReopened:      mapBlock,
+		audit.EventVulnFindingStatusChanged: mapBlock,
+	}
+	for _, a := range []string{audit.EventUserDisabled, audit.EventUserDeleted, audit.EventSADisabled, audit.EventSADeleted} {
+		t[a] = mapPrincipal
+	}
+	// A move takes the repository out of its project's roles and policies and changes its address (R-REPO-060), a disabled or
+	// deleted repository takes no part in resolution or download any more (R-REPO-004, R-REPO-013), and a removed or re-roled
+	// member loses reads on every repository of the project (R-AUTHZ-026): the event names a project or one repository, not the
+	// callers or the virtual repositories over it. A content entry drops only the URL answers of a repository, not its shape
+	// answers, so only grants is exact enough (Q-BAS-120, Q-AUTHZ-238).
+	for _, a := range []string{
+		audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
+		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
+		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
+		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
+		audit.EventRepositoryDisabled, eventRepositoryDeleted,
+	} {
+		t[a] = func(FeedEvent, *detailsDoc, string) []rawEntry { return grantsEntry() }
+	}
+	return t
+})
+
+func grantsEntry() []rawEntry { return []rawEntry{{kind: iface.FeedGrants}} }
+
+func mapPrincipal(ev FeedEvent, _ *detailsDoc, _ string) []rawEntry {
+	if ev.ResourceID == "" {
+		return grantsEntry()
+	}
+	return []rawEntry{{kind: iface.FeedPrincipal, principals: []string{ev.ResourceID}}}
+}
+
+// mapGroupsSynced: the subject is the user whose groups were synchronized; additions only widen.
+func mapGroupsSynced(ev FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	if !hasEntries(d.Removed) {
+		return nil
+	}
+	return mapPrincipal(ev, d, "")
+}
+
+func mapMembersChanged(_ FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	members := removedMembers(d.Removed)
+	if len(members) == 0 {
+		return nil
+	}
+	return []rawEntry{{kind: iface.FeedPrincipal, names: members}}
+}
+
+// mapRoleUnbound: a user or service account is named by ID; a group, a CI identity and the built-in principals reach callers
+// the entry cannot list.
+func mapRoleUnbound(_ FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	if (strings.HasPrefix(d.Principal, "user:") || strings.HasPrefix(d.Principal, "sa:")) && d.PrincipalID != "" {
+		return []rawEntry{{kind: iface.FeedPrincipal, principals: []string{d.PrincipalID}}}
+	}
+	return grantsEntry()
+}
+
+// mapExposure: only the exposure of the default endpoint reaches a Bastion, which connects to it (Q-BAS-4).
+func mapExposure(_ FeedEvent, d *detailsDoc, defaultEndpoint string) []rawEntry {
+	if d.Endpoint != "" && d.Endpoint != defaultEndpoint {
+		return nil
+	}
+	return grantsEntry()
+}
+
+func mapSettings(_ FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	out := []rawEntry{{kind: iface.FeedSettings}}
+	if d.After != nil && d.After.AnonymousAccess != nil && !*d.After.AnonymousAccess &&
+		(d.Before == nil || d.Before.AnonymousAccess == nil || *d.Before.AnonymousAccess) {
+		out = append(out, rawEntry{kind: iface.FeedGrants})
+	}
+	return out
+}
+
+func mapRepository(ev FeedEvent, d *detailsDoc, _ string) []rawEntry {
+	return repositoryEntries(ev, d.Added, grantsEntry())
+}
+
+// mapWithdrawal: a withdrawal without a repository yields none (the caller logs it).
+func mapWithdrawal(ev FeedEvent, _ *detailsDoc, _ string) []rawEntry {
+	if ev.Repository == "" {
+		return nil
+	}
+	return []rawEntry{{kind: iface.FeedContent, repository: ev.Repository}}
+}
+
+// mapBlock: a finding event that set a block withdraws a version a Bastion may hold (R-VULN-015); one that lifted a block or
+// touched none narrows nothing. The entry is the content of the finding's repository and of the virtual ones above it.
+func mapBlock(ev FeedEvent, d *detailsDoc, defaultEndpoint string) []rawEntry {
+	if d.Block != "set" {
+		return nil
+	}
+	return mapWithdrawal(ev, d, defaultEndpoint)
+}
+
 // mapEvent maps one audit event to the entries it yields (the table of R-BAS-015): none for an event that
 // bounds writes or only widens access, one for most, two for settings.auth.changed that switched anonymous
 // access off. An event whose target cannot be read yields a grants entry, which drops every answer: the
 // conservative reading never keeps an answer the event may have narrowed. The one exception is a withdrawal
 // without a repository, which yields none (the caller logs it).
 func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {
+	m, ok := mappers()[ev.Action]
+	if !ok {
+		return nil
+	}
 	var d detailsDoc
 	if len(ev.Details) > 0 {
 		_ = json.Unmarshal(ev.Details, &d)
 	}
-	grants := []rawEntry{{kind: iface.FeedGrants}}
-	switch ev.Action {
-	case audit.EventTokenRevoked:
-		return tokenEntry(grants, ev.ResourceID)
-	case audit.EventTokenRotated:
-		return tokenEntry(grants, d.Predecessor)
-	case audit.EventCITokenRevoked:
-		return tokenEntry(grants, d.TokenIDs...)
-	case audit.EventUserDisabled, audit.EventUserDeleted, audit.EventSADisabled, audit.EventSADeleted:
-		if ev.ResourceID == "" {
-			return grants
-		}
-		return []rawEntry{{kind: iface.FeedPrincipal, principals: []string{ev.ResourceID}}}
-	case audit.EventUserGroupsSynced:
-		// The subject is the user whose groups were synchronized; additions only widen.
-		if !hasEntries(d.Removed) {
-			return nil
-		}
-		if ev.ResourceID == "" {
-			return grants
-		}
-		return []rawEntry{{kind: iface.FeedPrincipal, principals: []string{ev.ResourceID}}}
-	case audit.EventGroupMembersChanged:
-		members := removedMembers(d.Removed)
-		if len(members) == 0 {
-			return nil
-		}
-		return []rawEntry{{kind: iface.FeedPrincipal, names: members}}
-	case "authz.role.unbound":
-		// A user or service account is named by ID; a group, a CI identity and the built-in principals
-		// reach callers the entry cannot list.
-		if (strings.HasPrefix(d.Principal, "user:") || strings.HasPrefix(d.Principal, "sa:")) && d.PrincipalID != "" {
-			return []rawEntry{{kind: iface.FeedPrincipal, principals: []string{d.PrincipalID}}}
-		}
-		return grants
-	case audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
-		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
-		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
-		eventRepositoryMoved, eventProjectMemberRemoved, eventProjectMemberChanged,
-		audit.EventRepositoryDisabled, eventRepositoryDeleted:
-		// A move takes the repository out of its project's roles and policies and changes its address (R-REPO-060),
-		// a disabled or deleted repository takes no part in resolution or download any more (R-REPO-004, R-REPO-013),
-		// and a removed or re-roled member loses reads on every repository of the project (R-AUTHZ-026): the event
-		// names a project or one repository, not the callers or the virtual repositories over it. A content entry
-		// drops only the URL answers of a repository, not its shape answers, so only grants is exact enough
-		// (Q-BAS-120, Q-AUTHZ-238).
-		return grants
-	case "endpoint.exposure.updated", "endpoint.exposure.deleted":
-		// Only the exposure of the default endpoint reaches a Bastion, which connects to it (Q-BAS-4).
-		if d.Endpoint != "" && d.Endpoint != defaultEndpoint {
-			return nil
-		}
-		return grants
-	case audit.EventSettingsAuthChanged:
-		out := []rawEntry{{kind: iface.FeedSettings}}
-		if d.After != nil && d.After.AnonymousAccess != nil && !*d.After.AnonymousAccess &&
-			(d.Before == nil || d.Before.AnonymousAccess == nil || *d.Before.AnonymousAccess) {
-			out = append(out, rawEntry{kind: iface.FeedGrants})
-		}
-		return out
-	case audit.EventNPMUnpublish, audit.EventPackageDeleted:
+	return m(ev, &d, defaultEndpoint)
+}
+
+// repositoryEntries maps the two journaled events that change what a repository answers a URL with (Q-BAS-146). A narrowed
+// repository answers with other bytes than before (patterns, members, pin rules, blocks) and whom it answers is unchanged, so
+// the entry is the content of the repository and of the virtual ones above it. repository.claims_changed reads its added list:
+// a change that added no claim only removed some, which widens and yields none; a global claim is in effect in every virtual
+// repository of the format and refuses names at remote repositories, which a list of repositories cannot name, so it yields
+// grants; claims of scope members yield content. An added list that does not read is treated as a global claim, and an event
+// without a repository cannot be narrowed to one: grants.
+func repositoryEntries(ev FeedEvent, added json.RawMessage, grants []rawEntry) []rawEntry {
+	if ev.Action == audit.EventRepositoryNarrowed {
 		if ev.Repository == "" {
-			return nil
-		}
-		return []rawEntry{{kind: iface.FeedContent, repository: ev.Repository}}
-	case audit.EventVulnFindingStatusChanged, audit.EventVulnFindingReopened:
-		// A finding event that set a block withdraws a version a Bastion may hold (R-VULN-015); one that lifted a block or
-		// touched none narrows nothing. The entry is the content of the finding's repository and of the virtual ones above it.
-		if d.Block != "set" || ev.Repository == "" {
-			return nil
+			return grants
 		}
 		return []rawEntry{{kind: iface.FeedContent, repository: ev.Repository}}
 	}
-	return nil
+	var claims []struct {
+		Scope string `json:"scope"`
+	}
+	if json.Unmarshal(added, &claims) != nil {
+		return grants
+	}
+	if len(claims) == 0 {
+		return nil
+	}
+	for _, c := range claims {
+		if c.Scope != "members" {
+			return grants
+		}
+	}
+	if ev.Repository == "" {
+		return grants
+	}
+	return []rawEntry{{kind: iface.FeedContent, repository: ev.Repository}}
 }
 
-func tokenEntry(fallback []rawEntry, ids ...string) []rawEntry {
+func tokenEntry(ids ...string) []rawEntry {
 	ids = slices.DeleteFunc(slices.Clone(ids), func(s string) bool { return s == "" })
 	if len(ids) == 0 {
-		return fallback
+		return grantsEntry()
 	}
 	return []rawEntry{{kind: iface.FeedToken, tokens: ids}}
 }
@@ -269,24 +354,30 @@ func removedMembers(raw json.RawMessage) []string {
 // misses nothing: the lookback re-sends the entries of a transaction that commits late.
 func (f *Feed) Position(ctx context.Context) (string, error) {
 	var out string
-	err := f.o.DB.Read(ctx, func(db q.DBTX) error {
-		qs := q.New(db)
-		row, err := qs.BastionFeedNow(ctx, q.BastionFeedNowParams{WindowSecs: f.o.Lookback.Seconds(), Actions: feedActions()})
-		if err == nil {
-			out = iface.Cursor{At: row.OccurredAt.UTC(), ID: row.ID}.String()
-			return nil
-		}
-		if !postgres.IsNoRows(err) {
-			return err
-		}
-		st, err := qs.BastionFeedCursorState(ctx, q.BastionFeedCursorStateParams{CursorAt: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), CursorID: nilUUID})
-		if err != nil {
-			return err
-		}
-		out = iface.Cursor{At: time.UnixMicro(st.DbNowUs).UTC()}.String()
-		return nil
+	err := f.o.DB.Read(ctx, func(db q.DBTX) (err error) {
+		out, err = f.now(ctx, q.New(db))
+		return err
 	})
 	return out, err
+}
+
+// now is the feed position of the moment: the newest journaled event within the lookback, or the database clock as a
+// synthetic cursor when there is none, or when that event is older than the last restore (a cursor before the restore makes
+// the feed answer reset, so it would never settle).
+func (f *Feed) now(ctx context.Context, qs *q.Queries) (string, error) {
+	st, err := qs.BastionFeedCursorState(ctx, q.BastionFeedCursorStateParams{CursorAt: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), CursorID: nilUUID})
+	if err != nil {
+		return "", err
+	}
+	row, err := qs.BastionFeedNow(ctx, q.BastionFeedNowParams{WindowSecs: f.o.Lookback.Seconds(), Actions: feedActions()})
+	olderThanRestore := err == nil && st.RestoredUs > 0 && row.OccurredAt.Before(time.UnixMicro(st.RestoredUs))
+	switch {
+	case err == nil && !olderThanRestore:
+		return iface.Cursor{At: row.OccurredAt.UTC(), ID: row.ID}.String(), nil
+	case err == nil || postgres.IsNoRows(err):
+		return iface.Cursor{At: time.UnixMicro(st.DbNowUs).UTC()}.String(), nil
+	}
+	return "", err
 }
 
 // Read answers one feed request (R-BAS-015): after is the cursor of an earlier answer or a synthetic "t:…", limit
@@ -392,24 +483,22 @@ func (f *Feed) mustReset(cur iface.Cursor, st q.BastionFeedCursorStateRow, now t
 	if st.RetentionDays > 0 && cur.At.Before(now.Add(-time.Duration(st.RetentionDays)*24*time.Hour)) {
 		return true
 	}
+	// A restore re-applies the narrowings made after its restore point with a journal replay, which writes no audit event, so
+	// the feed does not carry them: a Bastion whose cursor lies before the restore has answers that may predate them and
+	// starts again (R-BAS-026, R-REPO-061).
+	if st.RestoredUs > 0 && cur.At.Before(time.UnixMicro(st.RestoredUs)) {
+		return true
+	}
 	return !cur.Synthetic() && !st.CursorExists
 }
 
 // reset answers a feed whose cursor is no longer valid: no entries, the position of now, reset true.
 func (f *Feed) reset(ctx context.Context, qs *q.Queries, ans *iface.FeedAnswer) error {
-	row, err := qs.BastionFeedNow(ctx, q.BastionFeedNowParams{WindowSecs: f.o.Lookback.Seconds(), Actions: feedActions()})
-	switch {
-	case err == nil:
-		ans.Cursor = iface.Cursor{At: row.OccurredAt.UTC(), ID: row.ID}.String()
-	case postgres.IsNoRows(err):
-		st, serr := qs.BastionFeedCursorState(ctx, q.BastionFeedCursorStateParams{CursorAt: time.Unix(0, 0).UTC().Format(time.RFC3339Nano), CursorID: nilUUID})
-		if serr != nil {
-			return serr
-		}
-		ans.Cursor = iface.Cursor{At: time.UnixMicro(st.DbNowUs).UTC()}.String()
-	default:
+	cur, err := f.now(ctx, qs)
+	if err != nil {
 		return err
 	}
+	ans.Cursor = cur
 	ans.Entries, ans.More, ans.Reset = []iface.FeedEntry{}, false, true
 	return nil
 }

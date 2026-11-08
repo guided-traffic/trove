@@ -598,7 +598,7 @@
                 },
                 "max_ttl": {
                   "default": "8760h",
-                  "description": "Ceiling for the runtime setting.",
+                  "description": "Ceiling for the runtime setting; at most 876000h (100 years), the largest maximum the revocation journal replays (R-AUTH-041).",
                   "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
                   "type": "string",
                   "x-trove-env": "TROVE_AUTH_TOKENS_PAT_MAX_TTL",
@@ -633,7 +633,7 @@
                 },
                 "max_ttl": {
                   "default": "8760h",
-                  "description": "Ceiling for the runtime setting.",
+                  "description": "Ceiling for the runtime setting; at most 876000h (100 years), the largest maximum the revocation journal replays (R-AUTH-041).",
                   "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
                   "type": "string",
                   "x-trove-env": "TROVE_AUTH_TOKENS_SAT_MAX_TTL",

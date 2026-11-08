@@ -265,7 +265,7 @@ func (s *Service) one(ctx context.Context, tx meta.Tx, a Actor, l store.Locked, 
 
 // BlockSet and BlockLifted are the values of `block` in the audit event.
 const (
-	BlockSet    = "set"
+	BlockSet    = vuln.BlockSet
 	BlockLifted = "lifted"
 )
 
@@ -311,10 +311,7 @@ func (s *Service) record(ctx context.Context, tx meta.Tx, a Actor, l store.Locke
 		Repository: l.Repository, Details: details,
 	}
 	if block == BlockSet {
-		ev.Journal, err = json.Marshal(map[string]string{
-			"finding": l.ID, "repository": l.Repository, "ecosystem": l.Ecosystem, "package": l.Package, "version": l.Version,
-			"advisory": l.Advisory, "block": BlockSet,
-		})
+		ev.Journal, err = vuln.NewBlockEntry(l.ID, l.RepoID, l.Repository, l.Ecosystem, l.Package, l.Version, l.Advisory, string(l.Kind), l.Severity).JSON()
 		if err != nil {
 			return err
 		}

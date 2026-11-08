@@ -663,6 +663,10 @@ reads the configured group claim:
   reads the group, so two logins on different replicas that create the same group at the same
   moment both end up with the one group.
 
+**Detached groups.** A group with `syncDetached` (R-AUTH-018) is no target: a value that maps to its name fills nothing and
+creates no group, and the user's `oidc:<providerId>` membership in it, if one is left, is removed like any membership outside
+the target set.
+
 **Writing the memberships.** In one transaction, trove sets the user's memberships whose
 source is `oidc:<providerId>` to exactly the target set. Memberships with source `manual`,
 `auto` or `scim` are never touched. If anything changed, the same transaction records the change
@@ -1371,6 +1375,11 @@ API (administrator unless stated; read operations also accept the system scope
 }
 ```
 
+- `identities` in a `PATCH` replaces the user's pending links: a pending link whose provider the list leaves out is removed, a
+  linked identity is never removed. The removed providers are part of the journal entry of `user.updated` (R-AUTH-041), so a
+  restore to a point before the removal does not let the provider's account of that name take the user over through the link
+  again ([Q-AUTH-205](#q-auth-205--userupdated-carries-the-pending-identity-links-it-removed-and-the-replay-removes-them)).
+
 Acceptance criteria:
 
 - Disabling `alice` with the defaults:
@@ -1433,6 +1442,11 @@ Priority: **MVP** · Covers: IAM-013, IAM-014, IAM-016, IAM-018, ADMAPI-013, ADM
 - Group names match `^[a-z0-9][a-z0-9._-]{0,127}$`.
 - Groups have a description, an `autoJoin` flag (R-AUTH-019) and an origin: `admin`, `oidc` or
   `scim`.
+- `syncDetached` (default `false`) is set only by a journal replay of a rename (R-AUTH-041,
+  [Q-AUTH-206](#q-auth-206--a-group-renamed-after-the-restore-point-is-detached-from-group-synchronization-not-renamed)): group
+  synchronization (R-AUTH-008) neither fills nor creates a group that carries it, and the replay removed its `oidc:*`
+  memberships. An administrator clears it with `PATCH /api/v1/groups/{name}` and `{"syncDetached": false}`; the API refuses
+  `true` with 422 `validation_failed` and the field error `invalid_value` at `/syncDetached`, and a rename leaves it as it is.
 - Groups are flat; nesting is not supported.
 
 **Members.** Members are users and service accounts of no project; a project's service account is
@@ -1472,7 +1486,8 @@ CREATE TABLE user_group (
   description       text    NOT NULL DEFAULT '',
   auto_join         boolean NOT NULL DEFAULT false,
   origin            text    NOT NULL CHECK (origin IN ('admin', 'oidc', 'scim')),
-  scim_external_id  text UNIQUE
+  scim_external_id  text UNIQUE,
+  sync_detached     boolean NOT NULL DEFAULT false   -- set by a replayed rename (Q-AUTH-206)
 );
 
 CREATE TABLE group_membership (
@@ -1492,7 +1507,7 @@ API (administrator; read operations also accept `identities:read`):
 | `POST /api/v1/groups` | `{"name": "team-web", "description": "…", "autoJoin": false, "members": ["alice", "sa:ci-bot"]}` | Group | 201, 400, 404 (unknown member; nothing created), 409 |
 | `GET /api/v1/groups?q=&origin=&limit=&cursor=` | — | Page of groups with member counts | 200 |
 | `GET /api/v1/groups/{name}` | — | Group, including `roles` (read-only) | 200, 404 |
-| `PATCH /api/v1/groups/{name}` | Any of `description`, `autoJoin`, `name` (rename) | Group | 200, 400, 404, 409, 412, 428 |
+| `PATCH /api/v1/groups/{name}` | Any of `description`, `autoJoin`, `name` (rename), `syncDetached` (only `false`) | Group | 200, 400, 404, 409, 412, 422, 428 |
 | `DELETE /api/v1/groups/{name}` | — | — | 204, 404, 409 (`managed_by_scim`) |
 | `GET /api/v1/groups/{name}/members?source=&limit=&cursor=` | — | `{"items": [{"principal": "alice", "kind": "user", "sources": ["manual", "oidc:corp"]}]}` | 200, 404 |
 | `PATCH /api/v1/groups/{name}/members` | `{"add": ["bob"], "remove": ["sa:old-bot"]}` | Resulting member page | 200, 404 (unknown member; nothing applied), 409 |
@@ -2119,7 +2134,8 @@ administrators.
 **YAML ceilings and runtime values.** The YAML values are ceilings. Administrators may lower the
 default and the maximum at runtime (R-AUTH-040), but never raise them above the YAML values.
 Lowering the maximum does not shorten existing tokens. `GET /api/v1/tokens?expiresAfter=` finds
-them for revocation. Startup MUST fail if any `default_ttl` or `max_ttl` is zero or negative
+them for revocation. A lowered runtime maximum is journaled, so a restore to a point before it keeps it lowered
+([Q-AUTH-207](#q-auth-207--the-token-lifetime-maxima-are-journaled-and-the-replay-lowers-each-to-the-smaller-value)). Startup MUST fail if any `default_ttl` or `max_ttl` is zero or negative
 (there is no "0 means unlimited"), if a `default_ttl` exceeds its `max_ttl`, or if
 `cit.max_ttl` exceeds 6 h.
 
@@ -3273,7 +3289,8 @@ token with `admin: true`; `If-Match` with the `ETag` of the `GET`, Q-AUTH-50) ac
 - Enabling anonymous access while the ceiling forbids it answers 409 `anonymous_not_allowed`.
 - Every change writes `settings.auth.changed` with the before and after values, and records
   itself in the change area `auth` in the same transaction, so every replica applies it within
-  the revocation bound of R-AUTH-023.
+  the revocation bound of R-AUTH-023. Its journal entry carries `anonymousAccess` and the two runtime maxima
+  (`tokens.pat.maxTTLSeconds`, `tokens.sat.maxTTLSeconds`) before and after (R-AUTH-041).
 
 The declarative configuration-as-code file (P1,
 [operations-and-observability.md](operations-and-observability.md)) may set these values. It
@@ -3358,13 +3375,14 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
 | `token.revoked` | Token ID and revocation reason; written for every token a revocation ends, including each token a disable with `revokeTokens` or a deletion of a user, service account or Bastion registration revokes (Q-AUTH-198) | Revoke the token with the cascade of R-AUTH-029; reason `leaked` also repeats the forward cascade over rotation successors |
 | `token.rotated` | The predecessor's token ID, its new `expires_at` and `overlapSeconds` (R-AUTH-030) | Set the predecessor's `expires_at` to the earlier of its current and its journaled value; revoke it when the overlap was 0 |
 | `user.disabled`, `user.deleted` | Principal ID and username; for `user.disabled` also `disabled_reason` | Disable the user, with the journaled reason for `user.disabled` and reason `admin` for `user.deleted` |
+| `user.updated` | Principal ID and username; `pendingLinksRemoved`, the providers whose pending link the update removed, on every update (an empty list when it removed none) | Remove the pending link of each provider from the user of the ID; a linked identity is never removed ([Q-AUTH-205](#q-auth-205--userupdated-carries-the-pending-identity-links-it-removed-and-the-replay-removes-them)) |
 | `serviceaccount.disabled`, `serviceaccount.deleted` | Principal ID and name | Disable the service account |
 | `group.deleted` | Principal ID and name | Delete the group |
-| `group.updated` | Principal ID and name; `autoJoin` before and after, on every update | Update rule with the comparator below: clear the flag, never set it |
+| `group.updated` | Principal ID and name; `autoJoin` before and after, on every update; `renamedFrom`, the name before, when the update renamed the group | Update rule with the comparator below: clear the flag, never set it. A rename is not replayed as a rename: the group keeps its restored name and is detached from group synchronization ([Q-AUTH-206](#q-auth-206--a-group-renamed-after-the-restore-point-is-detached-from-group-synchronization-not-renamed)) |
 | `bastion.disabled`, `bastion.deleted` | The registration's principal ID and name ([bastion.md](bastion.md) R-BAS-004, Q-BAS-145) | Disable the registration |
 | `group.members.changed` | The group, and the removed memberships, each with its member and source (`manual`, `auto`, `scim`) | Remove each removed membership with its source |
 | `user.groups.synced` | The user, and the removed memberships, each with its group and source `oidc:<providerId>` | Remove each removed membership with its source |
-| `settings.auth.changed`, only when the change sets `anonymousAccess` | `anonymousAccess` before and after; the token lifetime fields are not part of the entry | Update rule with the comparator below |
+| `settings.auth.changed` | On every change: `anonymousAccess` before and after, and `tokens.pat.maxTTLSeconds` and `tokens.sat.maxTTLSeconds` before and after (`null` is the YAML value); the defaults and the expiry notice are not part of the entry | Update rule with the comparators below, value by value ([Q-AUTH-207](#q-auth-207--the-token-lifetime-maxima-are-journaled-and-the-replay-lowers-each-to-the-smaller-value)) |
 
 - **Replay never deletes a user or service account.** A replayed deletion disables the principal,
   which already makes its tokens fail with `principal_disabled` (R-AUTH-016, R-AUTH-020), and
@@ -3382,14 +3400,34 @@ is MVP. `trove admin post-restore` re-applies it after a platform restore (Q-HA-
 - **Comparator for the auto-join flag** (R-AUTH-019). The same order: `narrows(current, after)` is
   true when `after.autoJoin` is `false` or equals the current flag. Replay clears the flag of the
   group of the journaled ID and never sets it; the group's name and description are not replayed.
+- **A rename detaches.** A `group.updated` entry with `renamedFrom` sets `syncDetached` on the group of the journaled ID and
+  removes its memberships of source `oidc:*`, unless the restored group already carries the journaled name (the restore point
+  lies after the rename) or is detached (`already in effect`). Its name is never changed: a group sync matches by name, so a
+  replayed name would hand the group's grants to whoever the identity provider puts into the group of that name (Q-AUTH-206). An
+  entry whose `renamedFrom` or `name` is not a group name (R-AUTH-018) is malformed.
+- **Comparator for the token lifetime maxima** (R-AUTH-026, R-AUTH-040). For each maximum, `narrows(current, after)` is true
+  when `after` is not `null` and at most `current`, where `null` stands for the YAML value and is the longest. Replay sets each
+  maximum to the smaller of its current and its journaled after-value and leaves a value that would grow; with a total order
+  case 3 of R-HA-054 cannot occur. A runtime default above the new maximum is lowered to it, so the default never exceeds the
+  maximum (R-AUTH-040). The parts of the entry (the anonymous switch, each maximum) are read independently: a part that is
+  missing, or holds a maximum below 60 seconds (the least the API accepts) or above 100 years (`max=876000h`, the bound of
+  `auth.tokens.pat.max_ttl` and `auth.tokens.sat.max_ttl` and of the settings API, so the producer never writes what the
+  reader rejects), narrows nothing and takes no other part with it; an entry with no readable part is malformed.
+- **Pending identity links.** Replay of `user.updated` deletes the pending links (`subject IS NULL`) of the providers in
+  `pendingLinksRemoved` from the user of the journaled ID. A provider whose link the restored user holds linked, or does not
+  hold, is `already in effect`; an unknown ID is `subject unknown`; the break-glass account is never named (Q-AUTH-205). Every provider in the entry matches the provider-ID syntax of the
+  configuration (`^[a-z0-9][a-z0-9-]{0,31}$`), at most 1000 of them; any other string makes the entry malformed before a statement
+  runs, so a forged entry cannot make a statement fail and stop the replay. The same holds for the name of a `group.deleted` entry,
+  which must be a group name.
 - **Every revoked token has its entry.** A disable with `revokeTokens` and a deletion of a user,
   service account or Bastion registration record one `token.revoked` per token they revoke, in the
   transaction of the change, so enabling a restored principal again brings none of its tokens back.
   The events and their journal rows are written in batches, at a fixed number of statements for any
   number of tokens (Q-AUTH-198).
-- **Not journaled.** The break-glass account's `enabled` state and the YAML ceiling
+- **Not journaled.** The break-glass account's `enabled` state, the YAML ceilings of R-AUTH-026 and
   `auth.anonymous.allowed` live in the configuration file, not in PostgreSQL, so a restore does not
-  change them.
+  change them. The runtime default lifetimes and the expiry notice bound nothing a caller can ask for (a request may name any
+  lifetime up to the maximum), and a profile change of `email` or `displayName` matches no identity (R-AUTH-007).
 
 **Metrics.** Proposed names, which the operations page may rename:
 
@@ -5593,6 +5631,80 @@ filter of `IdentityListTokens`), `internal/auth/token/revoke.go` (`Service.Desce
 Tests: `TestR_AUTH_028_ANarrowedTokenSeesItselfAndItsDerivedTokensOnly` (a token that leaves the line, a cut chain),
 `TestR_AUTH_029_ANarrowedTokenRevokesItselfAndItsDerivedTokensOnly`, `TestR_AUTH_030_ANarrowedTokenRotatesItselfAndItsDerivedTokensOnly`
 (the line across a self-rotation, a narrowed SAT with `tokens:read`, an administrator account's `admin: true` SAT).
+### Q-AUTH-205 · `user.updated` carries the pending identity links it removed, and the replay removes them
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-72. `PATCH /api/v1/users/{username}` with `identities` removes the pending links it leaves out
+(`IdentityReplaceIdentities` in `UpdateUser`). An administrator removes one when the provider's account of that username is
+someone else. `user.updated` carried no entry, so after a restore the link was back, and the first login at that provider whose
+claims carry the username took the user over (R-AUTH-007, pending link).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Flag `user.updated`; every update carries `pendingLinksRemoved`, empty when it removed none (chosen) | The statement that removes the links returns their providers; the replay deletes the pending link of each | The precedent of Q-AUTH-18 and Q-AUTH-198: a type that cannot be written without its entry cannot drop a narrowing; one event | Every profile change ships a journal object of a few hundred bytes |
+| (b) A dedicated `user.identity.removed` | Only removals | No empty entries | One more event name beside a `user.updated` that already names `identities` in `fields` |
+| (c) Not journaled | — | — | The takeover after a restore stays |
+
+**Choice:** (a). The replay never removes a linked identity: the live change cannot either, and removing one would lock a user out
+whom the entry does not name.
+**Rationale:** the removal is the narrowing, and replaying it by provider on the user's ID cannot widen anything. The development
+agent would revisit (b) if SCIM (R-AUTH-039) becomes a second producer of identity changes.
+**Applied:** R-AUTH-016, R-AUTH-041 (the table and the bullet); [ha-and-helm.md](ha-and-helm.md) R-HA-054;
+[bastion.md](bastion.md) R-BAS-015 (no feed entry); `internal/audit/events_identity.go`, `manager.go`, `journal_replay.go`.
+
+### Q-AUTH-206 · A group renamed after the restore point is detached from group synchronization, not renamed
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-72. Group synchronization fills a group by name (R-AUTH-008). Renaming a group away from the name the identity provider
+fills cuts it off from the provider's group; a restore brings the old name back, and the next login fills the group, with its role
+bindings and policy entries, from the provider again. R-HA-054 never replays an identifying field.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Replay the rename | Set the journaled name when it is free | The live state | A forged entry renames an administrator group to a name the provider fills for everyone: an escalation; a name taken in the restored database has no replay |
+| (b) Detach: the group keeps its name, the replay sets `syncDetached` and removes its `oidc:*` memberships; synchronization neither fills nor creates it (chosen) | A column of the group, a filter in the sync | Re-applies exactly what the rename took away, the provider's filling; a forged entry can only detach; no identifying field changes | One more state of a group, which only a replay sets and an administrator clears |
+| (c) Suspend the group's grants | Remove its role bindings, policy entries and project memberships | Fails closed with what exists | Destroys an administrator's configuration for a rename |
+| (d) Not journaled | A rename is no narrowing tool; the journaled removals of bindings and memberships are | Nothing to build | The rename an administrator chose comes undone |
+
+**Choice:** (b). The entry of `group.updated` gains `renamedFrom` when the update renamed. The API shows `syncDetached` and takes
+only `false`; a rename leaves it set, so an administrator decides explicitly that the provider may fill the group again.
+**Rationale:** the narrowing a rename makes is "the provider's group of the old name no longer fills this group", and the detach is
+that narrowing without the name. The development agent would revisit this if administrators need to detach a group by hand; then
+`true` becomes a write of its own, journaled as a narrowing.
+**Lockout and recovery:** a forged or mistaken rename entry for a group that carries a role binding removes the administrators who
+reach the role only through the identity provider's group sync: the detach deletes their `oidc:*` memberships, and the group keeps its
+binding. The replay prints one line for each detached group that holds a role binding, naming the roles. The check after the replay
+uses the definition of the last-admin guard (R-AUTHZ-022, `IdentityAdminHolders`): an active user or service account that holds
+`admin` directly or through a group counts, so this lockout prints "no enabled administrator is left". Limits: a service account
+counts as a holder (it can act, but nobody can sign in as it), and so does a holder without a usable identity (a user that no
+identity provider account maps to); the warning says so, and the break-glass account remains the way back in. Recovery: sign in with the break-glass account (R-AUTH-014), then
+`PATCH /api/v1/groups/<name>` with `{"syncDetached": false}`; the next sign-in of each administrator fills the group again.
+**Applied:** R-AUTH-008, R-AUTH-018, R-AUTH-041; [ha-and-helm.md](ha-and-helm.md) R-HA-054; a migration adding
+`user_group.sync_detached`; `internal/auth/principal/groups.go`, `provisioner.go`, `journal_replay.go`; `api/openapi.yaml`.
+
+### Q-AUTH-207 · The token lifetime maxima are journaled, and the replay lowers each to the smaller value
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-72 asked to revisit R-AUTH-041's sentence that the token lifetime fields are not part of the entry of
+`settings.auth.changed`. That sentence had no decision of its own: Q-AUTH-18 decided only that the entry is written on every
+change. The runtime maximum of R-AUTH-026 binds every creator, administrators included; an administrator who lowers it after
+*t* and restores to *t* lets tokens issued afterwards live up to the earlier maximum. The YAML ceilings are configuration and
+are not restored.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep them out | As before | Nothing to build | The lowered maximum comes undone, unseen |
+| (b) The two maxima, before and after, replayed value by value to the smaller (chosen) | The entry that Q-AUTH-18 writes on every change gains `tokens.pat.maxTTLSeconds` and `tokens.sat.maxTTLSeconds` | The bound every creator meets survives a restore; a total order, so the replay never suspends; a default above the new maximum is lowered with it | — |
+| (c) The maxima and the defaults | Also the default lifetimes | — | A default bounds nothing: a request may name any lifetime up to the maximum |
+
+**Choice:** (b). `null` stands for the YAML value and is the longest, so a journaled `null` never lowers anything.
+**Rationale:** the maximum is the setting that narrows what a caller can obtain; the defaults and the expiry notice are
+convenience. The development agent would revisit (c) if a default became binding for some creation path.
+**Applied:** R-AUTH-026, R-AUTH-040, R-AUTH-041 (the table, the comparator, the not-journaled bullet); [ha-and-helm.md](ha-and-helm.md)
+R-HA-054; `internal/auth/token/settings.go` (`Update`), `journal_replay.go`.
 
 ## What this does not cover
 
