@@ -61,6 +61,7 @@ type variantDrain struct {
 	monOnce  sync.Once
 	changes  map[string]float64
 	vkBefore string // the Valkey primary the Sentinels named when the drain started
+	hold     *primaryHold
 
 	// C: the old primary and the poll of the cluster's status and of that pod
 	oldPrimary string
@@ -438,6 +439,17 @@ func (d *variantDrain) Run(t *testing.T) {
 		t.Cleanup(d.stopMonitor)
 		d.changes = replicaMetric(t, "trove_valkey_primary_changes_total")
 		d.vkBefore, _ = sentinelPrimary()
+		// the primary stays down until the Sentinels have failed over (Q-HA-181): its replacement would otherwise be back within
+		// down-after-milliseconds and no failover would happen
+		onPrimaryNode := false
+		for _, p := range d.evictedDep {
+			onPrimaryNode = onPrimaryNode || p.Name == d.vkBefore
+		}
+		if !onPrimaryNode {
+			d.runErr, d.finished = fmt.Errorf("the Sentinels name %q as the Valkey primary, which is not among the pods evicted from %s (%v)", d.vkBefore, d.Node, podNames(d.evictedDep)), true
+			return
+		}
+		d.hold = holdValkeyPrimary(t, d.vkBefore)
 	}
 	args := append(d.alsoArgs(), d.Node)
 	cmd := exec.Command(filepath.Join(cfg.repo, "deploy/dev", "drain.sh"), args...)
@@ -508,8 +520,13 @@ func (d *variantDrain) verifyB(t *testing.T) {
 	after := replicaMetric(t, "trove_valkey_primary_changes_total")
 	vkAfter, _ := sentinelPrimary()
 	t.Logf("variant B: the Sentinels named %s as the Valkey primary before the drain and name %s after it", d.vkBefore, vkAfter)
-	if d.vkBefore != "" && vkAfter == d.vkBefore {
-		t.Errorf("variant B caused no failover: the evicted primary returned before down-after-milliseconds (the Sentinels name %s before and after the drain)", vkAfter)
+	holdReported := false
+	if d.hold != nil {
+		holdReported = d.hold.verify(t)
+	}
+	logSentinelEvents(t, d.started)
+	if d.vkBefore != "" && vkAfter == d.vkBefore && !holdReported {
+		t.Errorf("variant B caused no failover: the Sentinels still name the evicted primary %s", vkAfter)
 	}
 	onNode := map[string]bool{}
 	for _, p := range d.OnNode {

@@ -85,6 +85,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "e2e: kubectl proxy:", err)
 		os.Exit(2)
 	}
+	sweepHeldPods()
 	code := m.Run()
 	stopForwards()
 	basTeardown()

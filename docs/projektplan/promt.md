@@ -244,18 +244,6 @@ Found on 2026-11-08 by the penetration test of T-16 WP4a, reading the npm and Nu
   path, an empty path cannot pass a path-scoped set, and a conformance-kit check fails a format that authorizes without one; an agent
   is on it.
 
-Found on 2026-11-08 while running the drain variants of E5.13 on kind:
-
-### Tests and tools
-
-- **F-78 · Drain variant B can cause no Valkey failover, so its counter condition misses** (seen once on kind, 2026-11-08; cause not
-  verified). Variant B evicts the Valkey primary without a planned failover (Q-HA-171) and requires the replicas' counters to show the
-  failover. In one of three runs the counter stayed at 0: the Valkey pods have no volume claim, so the evicted primary can come back
-  under the same name within Sentinel's `down-after-milliseconds` (5 s) and Sentinel never fails over (ha-and-helm.md describes the empty
-  primary). The test now names the case ("variant B caused no failover"). Decide: make the failover deterministic (e.g. hold the
-  evicted pod's return past `down-after`, or a shorter `down-after` in the dev profile) or revise the variant's condition with a check
-  that still proves trove serves through the loss of its Valkey primary; until then a red B in the nightly is this finding.
-
 Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools

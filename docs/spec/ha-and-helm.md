@@ -677,7 +677,7 @@ trove MUST behave as in this table. Each row is exercised by the failure-injecti
 | Object storage unreachable from one replica only | Its circuit opens; peers' do not; alert `TroveObjectStoreUnreachableSingleReplica` | That replica's blob requests fail fast with `503` and `Retry-After`; it stays ready | Blob requests that hit it fail; clients' retries are balanced by the edge proxy and usually reach another replica | Automatic when its network path heals; otherwise the responder deletes the pod |
 | S3 throttling (`503 SlowDown`) | SDK retryer | Retries with backoff (R-STOR-033) | Higher latency | The content-addressed key layout spreads load across prefixes (R-HA-050) |
 | S3 credentials fail (expired web identity, revoked key) | `AccessDenied`, refresh error | Counted as object-store failure; logged with the credential source, never the secret | As the outage rows | Fix the credential; static key files are re-read (R-STOR-031) |
-| Valkey primary lost or switched over (Sentinel failover) | Command errors, timeouts, `READONLY`, closed connections; Sentinel's `switch-master` event as an early hint | Each Valkey use falls back for that call (R-HA-057); the client re-resolves the primary through Sentinel and checks its `ROLE` (R-HA-056); after `valkey.circuit_breaker.failure_threshold` failures the circuit skips Valkey for `open_duration`; replicas stay ready (Q-HA-13) | None; latency rises; a concurrent cache miss may be fetched upstream once per replica instead of once | Automatic, within Sentinel's `down-after-milliseconds` plus the failover and one reconnect backoff |
+| Valkey primary lost or switched over (Sentinel failover) | Command errors, timeouts, `READONLY`, closed connections; Sentinel's `switch-master` event as an early hint | Each Valkey use falls back for that call (R-HA-057); the client re-resolves the primary through Sentinel and checks its `ROLE` (R-HA-056); after `valkey.circuit_breaker.failure_threshold` failures the circuit skips Valkey for `open_duration`; replicas stay ready (Q-HA-13) | None; latency rises; a concurrent cache miss may be fetched upstream once per replica instead of once | Automatic, within Sentinel's `down-after-milliseconds` plus the failover and one reconnect backoff; when the election of the remaining Sentinels is split (two Sentinels left after a drain or a node loss), Sentinel starts the next automatic failover only after twice `failover-timeout` (2 minutes at the default), and trove runs degraded until then or until the primary returns (R-HA-057) |
 | Sentinel quorum lost (fewer than a majority of Sentinels reachable) | Sentinel queries fail or time out; `trove_valkey_sentinels_reachable`, the number of configured Sentinels that answered the last probe of all of them (R-HA-056 step 4, R-HA-057) | Existing connections to the primary keep working; a reconnect needs one reachable Sentinel; no failover can happen meanwhile | None while the primary is healthy; if the primary fails too, as the next row | Restore the Sentinels; alert `TroveValkeySentinelsDegraded` |
 | Valkey unavailable for every replica, for any duration | Circuit open on every replica, `valkey` check, alert `TroveValkeyUnavailable` | Degraded mode (R-HA-057): fetch collapse and negative caching per replica, rate limits approximated per replica, changes applied at the next change-log poll (R-HA-004); replicas stay ready; a replica started during the outage becomes ready (Q-HA-13) | None; upstream load rises, changes take up to `cluster.epoch_poll_interval` | Automatic; nothing to repair in Valkey |
 | Valkey unreachable from one replica only | Its circuit opens; peers' do not; alert `TroveValkeyUnavailableSingleReplica` | That replica runs in degraded mode; it stays ready | None | Automatic when its path heals; otherwise the responder deletes the pod |
@@ -1055,7 +1055,7 @@ what "sized for it" means.
    |---|---|
    | PostgreSQL instance | CloudNativePG requests the switchover when the primary's node is cordoned and releases the primary's budget from that request on, so the old primary may be evicted while it is still demoting (Q-HA-172) ([Kubernetes upgrade and maintenance](https://cloudnative-pg.io/docs/1.30/kubernetes_upgrade)); with `dataDurability: required` at least three instances, so a drained standby leaves a synchronous standby (R-HA-013). Other platforms: their maintenance procedure |
    | Pooler instance (R-HA-058), request or control pooler | At least two instances of each pooler on different nodes, a PDB, PgBouncer 1.23 or later, and a stop that waits until trove's connections have left the instance: a `preStop` sleep of at least `max_conn_lifetime` + jitter + `health_check_period` while the pod is out of its Service, and a grace period longer than the sleep. PgBouncer's own `SIGTERM` waits for clients to disconnect ([signals](https://www.pgbouncer.org/usage.html)), but the CloudNativePG pooler manager does not pass it on: it sends `SIGINT`, which closes every idle client connection at once (R-HA-058) |
-   | Valkey primary | A replica and a Sentinel majority on other nodes. Sentinel fails over after `down-after-milliseconds`, and trove runs degraded meanwhile (R-HA-057). Running `SENTINEL FAILOVER` before the primary stops shortens that window |
+   | Valkey primary | A replica and a Sentinel majority on other nodes. Sentinel fails over after `down-after-milliseconds`, and trove runs degraded meanwhile (R-HA-057). Running `SENTINEL FAILOVER` before the primary stops shortens that window. When the Sentinel of the same node is drained with the primary, the two that remain can split the election, and Sentinel then starts no automatic failover before twice `failover-timeout` have passed (2 minutes at the default 60 s): the window is not bounded by `down-after-milliseconds` alone, and trove runs degraded throughout it (R-HA-057, [Q-HA-181](#q-ha-181--variant-b-keeps-the-evicted-valkey-primary-lost-until-the-sentinels-name-another-one-and-asks-for-the-failover-when-they-do-not)). Draining the Sentinel and the primary of one node at once is therefore better done one after the other |
    | Valkey replica, Sentinel | A PDB with `maxUnavailable: 1` from whoever runs Valkey; three Sentinels on three nodes keep a majority |
    | S3-compatible store, edge proxy | The platform's; both must run highly available |
    | A running backup pod | Evicted without a disruption budget; the Job starts the run again (R-HA-060) |
@@ -1112,7 +1112,8 @@ Variants, with the same load and pass conditions:
 to Q-HA-174). `deploy/dev/drain.sh [--also valkey|postgres|pooler]… <node>` drains the release's pods and, for B, C and D, the
 dependency's pods on the node, each set by its own `kubectl drain --pod-selector` run, all started together; nothing else on the node
 is evicted, and the script returns once the node is uncordoned and the evicted dependency is whole again. B evicts the Valkey primary
-and the Sentinel without a planned failover first; C lets CloudNativePG switch the primary over at the cordon and evicts the demoted
+and the Sentinel without a planned failover first and keeps the evicted primary lost until the Sentinels name another one
+([Q-HA-181](#q-ha-181--variant-b-keeps-the-evicted-valkey-primary-lost-until-the-sentinels-name-another-one-and-asks-for-the-failover-when-they-do-not)); C lets CloudNativePG switch the primary over at the cordon and evicts the demoted
 instance; D runs in the pooler profile with the prerequisites of rule 5; E places a backup pod on the node through a preferred node
 affinity. The harness that picks the node, drains it and judges the variant's own condition (`test/e2e/drain_variants_test.go`) does
 not bring a load: the blocks of the vulnerability scanning run it under their probes (roadmap E5.13), and E5.9 runs it under the load above.
@@ -2063,6 +2064,11 @@ and its fallback; this requirement fixes the contract they share.
    needs no access to Valkey to restore. No key is scanned or deleted; the old keys expire by their
    TTLs. The point-in-time restore of R-HA-025 sets a new keyspace ID the same way, because a PITR
    brings back the old ID.
+8. **Degraded mode covers the whole gap.** The time without a Valkey primary is not bounded by Sentinel's
+   `down-after-milliseconds` (5 s): when the Sentinels left after a drain or a node loss start the election together and neither
+   wins (`-failover-abort-not-elected`), the next automatic failover waits twice `failover-timeout`, 2 minutes at the default 60 s
+   (measured in [Q-HA-181](#q-ha-181--variant-b-keeps-the-evicted-valkey-primary-lost-until-the-sentinels-name-another-one-and-asks-for-the-failover-when-they-do-not)).
+   Rules 1 to 5 hold for that whole time, and a primary that returns empty before then is named primary again.
 
 Metrics (R-OPS-007 conventions): `trove_valkey_available` (gauge per replica),
 `trove_valkey_circuit_open`, `trove_valkey_sentinels_reachable` (the number of configured Sentinels
@@ -8925,7 +8931,8 @@ the failover tests (`/readyz` of every replica once a second), judged for the re
 **Rationale:** the variant proves the drain of the primary's node, which the planned failover does not. The development agent would
 revisit it when the Valkey operator fails a primary over before it stops: then (a) and (b) are one drain.
 
-**Applied:** R-HA-059 (how the test drains variants B to E); `test/e2e/drain_variants_test.go`.
+**Applied:** R-HA-059 (how the test drains variants B to E); `test/e2e/drain_variants_test.go`. Q-HA-181 adds what the first runs
+did not know: the failover of this variant is not reliable on its own, and the test keeps the primary lost until it has happened.
 
 ### Q-HA-172 · Variant C lets CloudNativePG request the switchover at the cordon, evicts the old primary, and reads the order from the cluster's own timestamps
 
@@ -9037,6 +9044,118 @@ restore commands build no job registry (`cmd/trove/backup_restore.go`, `admin_po
 the restore commands stay free of the worker wiring. The development agent would revisit (a) when a second handler needs a job.
 **Applied:** R-HA-054 "Replay rules"; R-REPO-061 step 7; `internal/jobs/queue.go`, `internal/vuln/jobs.go`,
 `internal/app/wire_vuln_eval.go`.
+
+### Q-HA-181 · Variant B keeps the evicted Valkey primary lost until the Sentinels name another one, and asks for the failover when they do not
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: F-78. Variant B's condition is that `trove_valkey_primary_changes_total` rises on every replica that ran through the drain
+(Q-HA-171), which needs a failover. In one of three runs on kind (2026-11-08) the counter stayed at 0. The first suspicion was that
+the evicted primary, which has no volume claim, returns under its own name within `down-after-milliseconds` (5 s) and no Sentinel
+sees it down. Measured on the dev cluster, 14 drains of the Valkey pods alone from the node of the primary (the Sentinels and data
+pods only, `kubectl drain --pod-selector`; the event excerpts of the two drains without a sidecar request are below) and the variant itself:
+
+- The Valkey operator's sidecar (`internal/sidecar/drain.go` of the operator) asks a Sentinel for `SENTINEL FAILOVER` when its
+  `SIGTERM` finds Valkey still answering `INFO replication`; Valkey itself waits for its replica before it exits, about 0.3 s. In 12 of
+  14 drains a failover was requested (in one the first Sentinel, itself being evicted, refused and the second accepted) and the Sentinels
+  named the other pod 1.2 to 6.2 s after Valkey's `SIGTERM` (1.2 s in seven). In 2 the sidecar's `INFO` failed (connection refused;
+  `AUTH failed ... connection reset by peer` during Valkey's shutdown) and it exited without a request.
+- Without the request the Sentinels fail over by themselves. In one of the two, `+sdown master` came 5.2 s after Valkey's `SIGTERM`,
+  `+odown` 0.4 s later and the new primary was named 6.5 s after it. In the other (the drain that reproduced F-78) the sidecar's
+  signal came 6.5 s after Valkey's, the Sentinel on the drained node was gone, and the two that remained both started a failover
+  (`+try-failover` 1.3 s apart); neither was elected and both logged `-failover-abort-not-elected` 10 s later, with `Next failover delay:
+  I will not start a failover before` two minutes ahead (twice the `failover-timeout` of 60 s). The primary was down for about 55 s,
+  came back empty and was named primary again, and the counter stayed at 0. The return within 5 s was not the cause.
+<details>
+<summary>Sentinel events of the two drains in which the sidecar made no failover request (times are UTC; the first Sentinel of each file was evicted with the primary or left out)</summary>
+
+```text
+## it-9
+valkey SIGTERM 10:11:47.759
+10:11:54.309  sidecar: signal received, starting graceful drain
+10:11:54.311  sidecar drain: failed to detect role during drain, exiting immediately {"
+s1: 10:11:54.013 # +sdown master trove-valkey valkey-0 16379
+s1: 10:11:56.418 # +odown master trove-valkey valkey-0 16379 #quorum 2/2
+s1: 10:11:56.418 # +try-failover master trove-valkey valkey-0 16379
+s1: 10:12:06.839 # -failover-abort-not-elected master trove-valkey valkey-0 16379
+s1: 10:12:07.031 * Next failover delay: I will not start a failover before Sun Nov  8 10:13:56 2026
+s1: 10:12:43.137 # -odown master trove-valkey valkey-0 16379
+s1: 10:12:43.208 # -sdown master trove-valkey valkey-0 16379
+s2: 10:11:53.280 # +sdown master trove-valkey valkey-0 16379
+s2: 10:11:55.090 # +odown master trove-valkey valkey-0 16379 #quorum 2/2
+s2: 10:11:55.090 # +try-failover master trove-valkey valkey-0 16379
+s2: 10:12:05.653 # -failover-abort-not-elected master trove-valkey valkey-0 16379
+s2: 10:12:05.861 * Next failover delay: I will not start a failover before Sun Nov  8 10:13:55 2026
+s2: 10:12:14.204 # -odown master trove-valkey valkey-0 16379
+## it-11
+valkey SIGTERM 10:15:37.892
+10:15:37.851  sidecar: signal received, starting graceful drain
+10:15:38.210  sidecar drain: failed to detect role during drain, exiting immediately {"
+s0: 10:15:43.110 # +sdown master trove-valkey valkey-1 16379
+s0: 10:15:43.511 # +odown master trove-valkey valkey-1 16379 #quorum 2/2
+s0: 10:15:43.511 * Next failover delay: I will not start a failover before Sun Nov  8 10:17:44 2026
+s0: 10:15:44.626 # +switch-master trove-valkey valkey-1 16379 valkey-0 16379
+s1: 10:15:43.025 # +sdown master trove-valkey valkey-1 16379
+s1: 10:15:43.176 # +odown master trove-valkey valkey-1 16379 #quorum 2/2
+s1: 10:15:43.176 # +try-failover master trove-valkey valkey-1 16379
+s1: 10:15:43.532 # +elected-leader master trove-valkey valkey-1 16379
+s1: 10:15:43.624 # +selected-slave slave valkey-0:16379 valkey-0 16379 @ trove-valkey valkey-1 16379
+s1: 10:15:44.355 # +switch-master trove-valkey valkey-1 16379 valkey-0 16379
+```
+
+Drain 9 is the one without a failover: both remaining Sentinels reach `+odown` and `+try-failover`, both abort 10 s later and set the
+two-minute delay; the primary returned at 10:12:43 and `-odown` followed. Drain 11 recovered through the Sentinels' own election.
+In the 12 drains with a request, `+try-failover` followed the sidecar's request within 0.1 s and `+switch-master` within 1.2 to 6.2 s of
+Valkey's `SIGTERM`.
+
+</details>
+
+- `down-after-milliseconds` and `failover-timeout` are not fields of the Valkey resource (the operator renders 5000 and 60000), so
+  the profile cannot shorten them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The test keeps the evicted primary lost until a Sentinel names another one, and sends `SENTINEL FAILOVER` when none has 25 s after the eviction (chosen) | A finalizer on the primary's pod, set before `drain.sh`: the StatefulSet cannot create the pod of that name before the object is gone. The test removes it when `sentinelPrimary` names another pod; after 25 s without that it runs `SENTINEL FAILOVER` (which Sentinel runs without the two-minute delay) and logs it; after 90 s without a failover the variant fails | The disturbance is fixed: the primary is lost and a failover follows, whichever of the platform's paths takes it; the pass condition stays what R-HA-059 says; the platform's race is in the log | The command is the test's help in the one case the Sentinels did not manage; the test does not judge the operator or Sentinel |
+| (b) The hold alone, no command | The same finalizer, the failover left to the platform | Nothing is sent by the test | The split vote leaves the variant red for 90 s and again at every occurrence, on a property of Sentinel and the operator that trove does not own and variant B does not test |
+| (c) Shorter `down-after-milliseconds` in the dev profile | Fewer seconds before a Sentinel acts | Looks like the cheapest | Not configurable (above), and it would change neither the sidecar's miss nor the split vote |
+| (d) `SENTINEL FAILOVER` before the eviction | Q-HA-171 (b) | Deterministic | Not variant B: the eviction then meets a replica |
+| (e) Accept a counter of 0 when the primary came back | A weaker condition | Never red | The variant then proves nothing about trove's handling of a primary change; refused |
+
+**Choice:** (a). The assist is careful about what it starts: `SENTINEL FAILOVER` answers `-INPROG` per Sentinel, and a Sentinel that is
+not leading would accept it and begin a new epoch, so before each attempt the test reads `SENTINEL MASTER` on every reachable Sentinel
+and sends nothing while one lists `failover_in_progress`; it sends the command to the first Sentinel that answers and stops at its
+answer. An accepted command that has not ended after 10 s (the election timeout) was aborted, and one more is sent; there are at most two.
+Every attempt is logged, and when the assist fires the test prints a `::warning::` line for the nightly summary. All kubectl calls of
+the hold have a 15 s bound, the release is retried for 30 s (only `NotFound` and `Precondition failed` are final), and `TestMain` removes
+a stale hold finalizer from every pod of the namespace before the first test, so a killed run heals at the next start. The variant's conditions are unchanged: the counter rises by at least 1 on every replica that ran through, none turns
+unready, and the Sentinels name another primary than before. The finalizer name is `e2e.trove.guided-traffic.com/hold-valkey-primary`;
+`t.Cleanup` removes it, so a test that ends early leaves no pod `Terminating`.
+
+**Rationale:** what the variant tests is trove through the loss of its Valkey primary during a drain (R-HA-057, R-HA-059), and that
+needs a primary that is lost and a failover that follows. The failover itself is the platform's: the operator's sidecar and the
+Sentinels race, and the race is not trove's to win. Fixing the disturbance rather than the assertion keeps the pass condition; the
+log says when the Sentinels did not manage by themselves, so the platform's weakness is not hidden by the help. The weakness is a
+finding of its own, for the Valkey operator: a sidecar that did not reach Valkey at `SIGTERM` could still ask for the failover
+(it knows it was the primary), and two Sentinels that abort an election could retry before two `failover-timeout`. For an installation
+it means a drained Valkey primary can leave trove without a primary for up to two minutes, where it runs degraded (R-HA-057). The
+development agent would revisit (b) when the operator closes both gaps, and (a) when the profile runs the Valkey pods on volume claims.
+
+**What variant B no longer covers:** a primary that restarts at the same address within `down-after-milliseconds`, so that no
+Sentinel ever sees it down and no failover happens. That case is real for a platform whose Valkey pods restart fast, and trove's part
+in it is that the replicas keep serving (R-HA-057) while the primary comes back empty and its replica resynchronizes to nothing; the
+spec accepts the cost (cache only, R-HA-057 rule 2). `deploy/dev/valkey-kill.sh` names that outcome (`restarted in place`) and
+accepts it as correct next to `moved`, so the failure suite passes either way; no test asserts the replicas' counter for the quick
+return.
+
+**The Valkey operator and a long-lived Terminating pod:** read in the operator's source, not exercised on the cluster. It tolerates
+one: the rolling-update waits end the pass while a pod of the tier is Terminating, and only after the pod is 2 minutes past its
+graceful deadline (the deletion timestamp, 75 s after the delete for a data pod) does it report the condition `PodTerminationStalled`
+and carry on with the rest of the pass. The hold lasts 90 s at most, so it ends well before that. The five runs showed no other effect.
+`kubectl drain` waits until the evicted pod is gone, so the test releases the hold while `drain.sh` runs and the drain time includes
+the hold (33 to 54 s measured, 28 s without it).
+
+**Applied:** R-HA-059 (how the test drains variants B to E; rule 5's Valkey row); R-HA-057 rule 8; the failure table; Q-HA-171 (a note); `test/e2e/drain_variants_hold_test.go`,
+`test/e2e/drain_variants_test.go`; [e2e.md](../developer/e2e.md#variant-b-the-hold).
 
 
 ## What this does not cover
