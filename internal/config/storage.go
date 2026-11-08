@@ -134,12 +134,17 @@ type StorageUpload struct {
 // maxUploadParts is the most parts an S3 multipart upload has.
 const maxUploadParts = 10_000
 
+// minPartThroughput is the slowest rate (32 MiB/s) at which a part of storage.uploads.part_size is assumed to be sent: a part upload is cut at
+// three quarters of the writer lease, and a configuration whose part cannot be sent at this rate within that time would time out every part.
+const minPartThroughput = 32 << 20
+
 // StorageUploads configures multi-request upload sessions (R-STOR-011, P1).
 type StorageUploads struct {
-	PartSize      ByteSize      `yaml:"part_size" default:"16MiB" validate:"min=5MiB,max=5GiB"`
-	WriterLease   time.Duration `yaml:"writer_lease" default:"60s" validate:"min=1s"`
-	SessionTTL    time.Duration `yaml:"session_ttl" default:"4h" validate:"min=1m"`
-	SessionMaxAge time.Duration `yaml:"session_max_age" default:"20h" validate:"min=1m"`
+	PartSize        ByteSize      `yaml:"part_size" default:"16MiB" validate:"min=5MiB,max=5GiB"`
+	WriterLease     time.Duration `yaml:"writer_lease" default:"60s" validate:"min=1s" doc:"Also the deadline of one part upload (below it): choose it above the time one part takes to send (R-STOR-011)."`
+	SessionTTL      time.Duration `yaml:"session_ttl" default:"4h" validate:"min=1m"`
+	SessionMaxAge   time.Duration `yaml:"session_max_age" default:"20h" validate:"min=1m"`
+	MaxOpenSessions int           `yaml:"max_open_sessions" default:"100" validate:"min=1" doc:"Most open upload sessions one principal holds on one repository; a start above it answers 429 (R-STOR-011, Q-STOR-176)."`
 }
 
 // StorageDeployByChecksum configures checksum-based deploys.
@@ -216,6 +221,12 @@ func (s *Storage) Validate(r *Report) {
 	}
 	if s.Uploads.SessionMaxAge >= s.Orphans.MultipartMaxAge {
 		r.Add("uploads.session_max_age", "must be below orphans.multipart_max_age")
+	}
+	if s.Uploads.WriterLease >= s.Uploads.SessionTTL {
+		r.Add("uploads.writer_lease", "must be below uploads.session_ttl: the collection run would abort a session whose claim is still valid (R-STOR-011)")
+	}
+	if window := s.Uploads.WriterLease - s.Uploads.WriterLease/4; window > 0 && int64(s.Uploads.PartSize)*1000 > minPartThroughput*window.Milliseconds() {
+		r.Add("uploads.writer_lease", "a part of uploads.part_size (%s) must be sent within three quarters of the lease at %s/s or more: raise the lease or lower the part size (R-STOR-011)", s.Uploads.PartSize, ByteSize(minPartThroughput))
 	}
 	if s.Uploads.PartSize > 0 && s.Upload.MaxSize > s.Uploads.PartSize*maxUploadParts {
 		r.Add("upload.max_size", "must not exceed %d parts of uploads.part_size (%s), the most an S3 multipart upload has (R-STOR-011)", maxUploadParts, s.Uploads.PartSize)

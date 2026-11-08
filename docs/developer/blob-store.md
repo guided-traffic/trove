@@ -18,6 +18,8 @@ the verifying reader or a range.
 | [spool.go](../../internal/blob/spool.go) | `Spool`: admission, the budget, spool files, the single hashing pass, cleanup |
 | [store.go](../../internal/blob/store.go), [commit.go](../../internal/blob/commit.go) | `Store`, `Ingest`, `Commit` (the commit protocol), `Lookup` |
 | [transfer.go](../../internal/blob/transfer.go) | single `PutObject` or multipart from the spool file, part sizing, abort |
+| [staged.go](../../internal/blob/staged.go), [spool_segment.go](../../internal/blob/spool_segment.go) | the staging area of the upload sessions: `SessionKey`, `Staged` (a blob that is in the bucket already, committed by a server-side copy), `Spool.IngestSegment` (one part of a request, behind the recorded tail, through the session's hash functions) |
+| [gc_uploads.go](../../internal/blob/gc_uploads.go) | the session step of a collection run: expiry, `RemoveSession`, the sweep of `_uploads/` |
 | [download.go](../../internal/blob/download.go) | `Store.Open` and the verifying reader (hold-back, `content_status`), the mark of a missing object (`markMissing`) and its recheck (`RecheckMissing`) |
 | [guard.go](../../internal/blob/guard.go) | `Guard`: circuit breaker and request metrics around any `ObjectStore` |
 | [gc.go](../../internal/blob/gc.go), [gcjob.go](../../internal/blob/gcjob.go) | `Collector` (per-blob protocol, hand-over, pause, hold, fault hook) and the job adapter |
@@ -188,11 +190,33 @@ What a download holds ([Q-ARCH-241](../spec/architecture.md#q-arch-241--a-downlo
 - The object-store client's HTTP/2 receive window per stream is `storage.s3.http.receive_window` (`outbound.WithStreamReceiveWindow`);
   without it Go's transport lets the store send 4 MiB of an object ahead of a slow reader.
 
+## Staged blobs and the upload sessions (R-STOR-011)
+
+The service that holds the sessions is [internal/uploads](../../internal/uploads/) (see [oci.md](oci.md#upload-sessions-r-stor-011)); this package
+gives it three things. `ObjectStore.Copy(src, dst, size)` is a server-side copy (`CopyObject` up to 5 GiB, `UploadPartCopy` parts of 1 GiB
+above, the encryption of every write; [s3/copy.go](../../internal/blob/s3/copy.go)). `blob.Staged(digests, key)` returns a `*Spooled` whose
+content is the object at `key`: `Commit` and `CommitAll` take it like any spooled body, and the only difference is the protocol's object
+write (`putStaged`: the copy to the content address, then a size check), which a deduplication hit never runs. If the staging object is gone
+the commit fails with `ErrStagingGone`. A staged body has no reader (its `Reader` fails) and no spool budget.
+`Spool.IngestSegment(ctx, prefix, body, n, tee)` reads at most `n` bytes into a `*Spooled` (memory below the spool's threshold, a spool file
+above it, its budget reserved as the bytes arrive), the bytes of `prefix` first (the recorded tail, which the session's hash state has seen
+already) and then `body`, each byte of which goes through `tee` before it is kept; the result carries the segment's SHA-256 and MD5, the
+payload checksums of a part.
+
 ## Garbage collection (R-STOR-024, R-STOR-025)
 
 `blob.NewCollector(cfg.GC, prefix, objects, db)`; `Run(ctx, RunOptions{Mode, DryRun, Cursor, Checkpoint})` returns a
-`GCResult` (`dryRun, trashPurged, candidates, kept, held, deleted, bytesReclaimed, errors, paused`). A run:
+`GCResult` (`dryRun, trashPurged, candidates, kept, held, deleted, bytesReclaimed, errors, paused`, and the counters of the
+session step: `uploadSessionsAborted, uploadSessionsCleaned, uploadObjectsDeleted, uploadsAborted`). A run:
 
+0. with `WithUploadSessions(cfg.Uploads)` set, runs the session step ([gc_uploads.go](../../internal/blob/gc_uploads.go)): it aborts the
+   sessions that are idle for `session_ttl` or (open ones) older than `session_max_age`, removes the multipart upload and the objects of the
+   aborted ones and, once their idle time has passed, of the finished ones, deletes their rows, and in a full sweep removes what no session row
+   stands for below `<prefix>/_uploads/` ([Q-STOR-170](../spec/storage.md#q-stor-170--the-collection-run-aborts-a-live-session-for-its-idle-time-and-an-open-one-for-its-age),
+   [Q-STOR-172](../spec/storage.md#q-stor-172--the-full-collection-sweep-removes-what-no-session-stands-for-until-the-orphan-sweep-is-a-task-of-its-own)).
+   The step takes at most 25 batches of 200 per run, lists the staging area in pages (the optional `MultipartPager` of the store, 500 uploads at a time), re-reads the deletion pause before every batch, keeps the position of the staging sweep in `system_state` (`upload_sweep_cursor`) so that successive runs progress, and counts the sessions it expires in `trove_storage_upload_sessions_total{outcome="expired"}` ([Q-STOR-173](../spec/storage.md#q-stor-173--the-sessions-are-counted-by-trove_storage_upload_sessions_total-not-by-an-oci-metric)).
+   A failure of the step is counted in `errors` and logged; it does not stop the blob collection below it. A dry run counts the sessions it
+   would abort and changes nothing;
 1. reads the deletion pause (`system_state` key `deletions_paused_at`; see below) and ends with `paused: true` if set;
 2. finishes `deleting` rows left by earlier runs: step (6) once `delete_settle` has passed since the delete, steps
    (4) to (6) for a row nobody finished within `handover_delay`. Such a row is taken over with a compare-and-set
@@ -218,9 +242,9 @@ in migration 00001 is key-value, not the column the sketch in R-HA-025 shows) an
 points, `claim:before|locked|checked|committed`, `delete:before|after`, `record:after`, `finish:delete`, `drop:before`;
 a non-nil error ends the run at once as a process kill would, with `errors.Is(err, blob.ErrFault)`).
 
-Not in this package yet: the trash purge and the expiry of upload sessions that R-STOR-025 puts at the start of a run
-(their packages do not exist; the job handler calls them before `Run` and puts the count in `trashPurged`), the orphan
-sweep (R-STOR-026) and the scrub (R-STOR-027).
+Not in this package yet: the trash purge that R-STOR-025 puts at the start of a run (its package does not exist; the job handler calls
+it before `Run` and puts the count in `trashPurged`), the orphan sweep of `sha256/` (R-STOR-026; its pass over `_uploads/` is the
+session step) and the scrub (R-STOR-027).
 
 ### Job registration
 
@@ -277,9 +301,9 @@ backoff capped at 30 s and logged once per minute, and the call returns only whe
 `blob.RunConformance` runs `blob.ConformanceChecks()`, which also cover: a missing key reads as not found, overwrite
 and delete visibility to the next read and list (A1), concurrent writes of identical bytes (A6), a ranged read, a
 multipart object invisible until completion and complete after, an aborted upload leaving neither object nor listed
-upload (A2), `DeleteObjects` (optional: its failure names `storage.gc.batch_delete`) and a presigned URL. Everything it
-writes lies below `<prefix>/_probe/` and is removed. Conditional writes and server-side copy are not checked: trove
-uses neither until upload sessions (R-STOR-011, P1).
+upload (A2), a completion that assembles the part it names and refuses an ETag the store never issued (a part number sent twice, A2), a server-side copy that replaces its destination and reports a missing source as not found (the object write of
+a session's finalize, R-STOR-011), `DeleteObjects` (optional: its failure names `storage.gc.batch_delete`) and a presigned
+URL. Everything it writes lies below `<prefix>/_probe/` and is removed. Conditional writes are not checked: trove uses none.
 
 The command `trove admin storage check` is not written yet; it is `RunConformance` plus a printed report.
 

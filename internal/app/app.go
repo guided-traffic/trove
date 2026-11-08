@@ -39,6 +39,7 @@ import (
 	"github.com/guided-traffic/trove/internal/proxy/invalidation"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
+	"github.com/guided-traffic/trove/internal/uploads"
 	"github.com/guided-traffic/trove/internal/webui"
 )
 
@@ -141,6 +142,8 @@ type App struct {
 	leases  *cluster.Leases
 	queue   *jobs.Queue
 	blobs   *blob.Store
+	// uploads is the upload session service (R-STOR-011), built with the blob store and handed to the format host.
+	uploads *uploads.Service
 
 	// plan is the wiring steps this role runs (steps.go), checked in New.
 	plan []step

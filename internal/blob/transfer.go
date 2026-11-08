@@ -23,6 +23,9 @@ const (
 func (s *Store) putObject(ctx context.Context, sp *Spooled) error {
 	key := s.Key(sp.SHA256)
 	var err error
+	if sp.staged != "" {
+		return s.putStaged(ctx, sp)
+	}
 	if sp.Size <= int64(s.cfg.S3.Multipart.Threshold) {
 		err = s.objects.Put(ctx, key, sp.Reader(), sp.Size, s.wholeChecksum(sp))
 	} else {

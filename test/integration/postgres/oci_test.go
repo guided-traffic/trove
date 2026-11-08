@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -13,7 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
-// TestOCIMigrations checks 00054_upload_sessions, 00055_oci and 00056_key_grammar against the migrated schema (R-STOR-011, R-OCI-002,
+// TestOCIMigrations checks 00054_upload_sessions, 00055_oci, 00056_key_grammar, 00057_upload_session_tails and 00058_upload_session_indexes against the migrated schema (R-STOR-011, R-OCI-002,
 // R-OCI-007, R-BAK-004, R-HA-018).
 func TestOCIMigrations(t *testing.T) {
 	st := getStack(t)
@@ -22,7 +23,7 @@ func TestOCIMigrations(t *testing.T) {
 
 	t.Run("R-BAK-004 the upload session tables are transient and the OCI tables are data", func(t *testing.T) {
 		want := map[string]tables.Class{
-			"upload_sessions": tables.Transient, "upload_session_parts": tables.Transient,
+			"upload_sessions": tables.Transient, "upload_session_parts": tables.Transient, "upload_session_tails": tables.Transient,
 			"oci_manifests": tables.Data, "oci_references": tables.Data,
 		}
 		for name, class := range want {
@@ -35,6 +36,15 @@ func TestOCIMigrations(t *testing.T) {
 		}
 	})
 
+	t.Run("R-STOR-011 00058 gives the cleaning an ordered index and the cap on open sessions an index to count with", func(t *testing.T) {
+		if !scalar[bool](t, admin, `SELECT indexdef LIKE '%(state, last_activity_at)%' FROM pg_indexes WHERE schemaname = $1 AND indexname = 'upload_sessions_cleanup'`, schemaName) {
+			t.Error("upload_sessions_cleanup does not order by last_activity_at inside a state")
+		}
+		if !scalar[bool](t, admin, `SELECT indexdef LIKE '%(repo_id, COALESCE(principal_id%' FROM pg_indexes WHERE schemaname = $1 AND indexname = 'upload_sessions_open_per_principal'`, schemaName) {
+			t.Error("upload_sessions_open_per_principal is missing")
+		}
+	})
+
 	t.Run("R-HA-018 the table steps are expand steps and the key grammar is a named contract step", func(t *testing.T) {
 		steps, err := postgres.EmbeddedSteps()
 		if err != nil {
@@ -42,14 +52,14 @@ func TestOCIMigrations(t *testing.T) {
 		}
 		got := map[string]string{}
 		for _, s := range steps {
-			if s.Version >= 54 && s.Version <= 56 {
+			if s.Version >= 54 && s.Version <= 58 {
 				got[s.Name] = s.Phase
 				if s.Phase == "contract" && s.RequiresApp == "" {
 					t.Errorf("%s: a contract step without requires-app", s.Name)
 				}
 			}
 		}
-		want := map[string]string{"00054_upload_sessions": "expand", "00055_oci": "expand", "00056_key_grammar": "contract"}
+		want := map[string]string{"00054_upload_sessions": "expand", "00055_oci": "expand", "00056_key_grammar": "contract", "00057_upload_session_tails": "contract", "00058_upload_session_indexes": "contract"}
 		for name, phase := range want {
 			if got[name] != phase {
 				t.Errorf("%s: phase %q, want %q", name, got[name], phase)
@@ -67,13 +77,16 @@ func TestOCIMigrations(t *testing.T) {
 		wantState(t, admin, "23514", plain.Replace(ins), "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a12", target, addressed, strings.Repeat("a", 513), "open")
 		wantState(t, admin, "23514", plain.Replace(ins), "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a13", target, addressed, "app", "paused")
 		wantState(t, admin, "23503", plain.Replace(ins), "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a14", target, addressed+1000, "app", "open")
-		// A tail needs its writer and its checksum together, and is shorter than a part.
+		// A tail is shorter than a part, and a segment of it has a size and a checksum (00057).
 		wantState(t, admin, "23514", `INSERT INTO trove.upload_sessions (id, repo_id, addressed_repo_id, hash_state, part_size, s3_upload_id, state, tail_size)
-			VALUES ('0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a15', $1, $2, '\x00', 16777216, 'u', 'open', 100)`, target, addressed)
-		wantState(t, admin, "23514", `INSERT INTO trove.upload_sessions (id, repo_id, addressed_repo_id, hash_state, part_size, s3_upload_id, state, tail_size, tail_writer, tail_sha256)
-			VALUES ('0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a16', $1, $2, '\x00', 1000, 'u', 'open', 1000, gen_random_uuid(), decode(repeat('ab', 32), 'hex'))`, target, addressed)
-		mustExec(t, admin, `INSERT INTO trove.upload_sessions (id, repo_id, addressed_repo_id, hash_state, part_size, s3_upload_id, state, tail_size, tail_writer, tail_sha256)
-			VALUES ('0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a17', $1, $2, '\x00', 1000, 'u', 'open', 999, gen_random_uuid(), decode(repeat('ab', 32), 'hex'))`, target, addressed)
+			VALUES ('0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a15', $1, $2, '\x00', 1000, '', 'open', 1000)`, target, addressed)
+		mustExec(t, admin, `INSERT INTO trove.upload_sessions (id, repo_id, addressed_repo_id, hash_state, part_size, s3_upload_id, state, tail_size)
+			VALUES ('0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a17', $1, $2, '\x00', 1000, '', 'open', 999)`, target, addressed)
+		const seg = `INSERT INTO trove.upload_session_tails (session_id, seq, writer, size, sha256) VALUES ($1, $2, gen_random_uuid(), $3, decode(repeat('ab', $4), 'hex'))`
+		mustExec(t, admin, seg, "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a17", 1, 10, 32)
+		wantState(t, admin, "23505", seg, "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a17", 1, 10, 32)
+		wantState(t, admin, "23514", seg, "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a17", 2, 0, 32)
+		wantState(t, admin, "23514", seg, "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a17", 3, 10, 31)
 
 		const part = `INSERT INTO trove.upload_session_parts (session_id, part_number, size, etag, sha256) VALUES ($1, $2, 16777216, 'etag', decode(repeat('ab', 32), 'hex'))`
 		mustExec(t, admin, part, "0e4b8d38-39a4-4d3e-9c1e-5a0d0f6c2a11", 1)
@@ -170,13 +183,16 @@ func TestKeyGrammarStopsAtAKeyItRefuses(t *testing.T) {
 	name, admin := st.newDatabase(t)
 	cfg := st.config(t, name)
 	old := fstest.MapFS{}
+	later := 0
 	emb := postgres.EmbeddedFS()
 	entries, err := fs.ReadDir(emb, ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "00056_") {
+		// 00056 and the steps after it (00057, 00058 build on tables of 00054 only) are the ones applied last
+		if n, _ := strconv.Atoi(e.Name()[:5]); n >= 56 {
+			later++
 			continue
 		}
 		data, err := fs.ReadFile(emb, e.Name())
@@ -195,7 +211,7 @@ func TestKeyGrammarStopsAtAKeyItRefuses(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	mustExec(t, admin, "DELETE FROM trove.repositories")
-	if res, err := postgres.Migrate(ctxT(t, 60*time.Second), cfg, opts(nil)); err != nil || len(res.Applied) != 1 {
+	if res, err := postgres.Migrate(ctxT(t, 60*time.Second), cfg, opts(nil)); err != nil || len(res.Applied) != later {
 		t.Fatalf("after the key is gone: %+v, %v", res, err)
 	}
 }

@@ -126,8 +126,9 @@ func layerTable() []layerRule {
 		{"internal/files", layerDomain},
 		{"internal/items", layerDomain},
 		{"internal/packages", layerDomain},
-		{"internal/manual", layerDomain}, // the embedded manual of the help area (R-API-054)
-		{"internal/avatar", layerDomain}, // the user avatar: processing of the upload and the store (R-API-055)
+		{"internal/uploads", layerDomain}, // the multi-request upload sessions (R-STOR-011)
+		{"internal/manual", layerDomain},  // the embedded manual of the help area (R-API-054)
+		{"internal/avatar", layerDomain},  // the user avatar: processing of the upload and the store (R-API-055)
 		{"internal/proxy", layerDomain},
 		{"internal/virtual", layerDomain},
 		{"internal/formatdata", layerDomain},

@@ -898,13 +898,16 @@ part hold:
   hash functions at that count. Go's hash implementations marshal and restore their internal state
   ([`crypto/sha256`](https://pkg.go.dev/crypto/sha256) and the SHA-1, MD5 and SHA-512 packages),
   so any replica continues hashing where the previous request stopped;
-- the S3 multipart upload of the staging object `<prefix>/_uploads/<session-id>/data`, created
-  with the session, with the server-side encryption of R-STOR-032;
+- the S3 multipart upload of the staging object `<prefix>/_uploads/<session-id>/data`, with the
+  server-side encryption of R-STOR-032. It is created with the first full part, by the request that
+  sends it, and recorded with that part (`s3_upload_id` is empty until then), so a session that is
+  started and never continued costs a row and nothing in the bucket;
 - the *tail*: the bytes after the last completed part, always fewer than
-  `storage.uploads.part_size`, kept as the object `<prefix>/_uploads/<session-id>/tail-<writer>`,
-  where `<writer>` is the claim token of the request that wrote it (`tail_writer`), together with
-  the tail's size and SHA-256. Every request writes its tail under its own key, so a writer that
-  lost its claim can never overwrite the tail that the session records;
+  `storage.uploads.part_size`, kept as *segments*: one object `<prefix>/_uploads/<session-id>/tail-<writer>`
+  per request that wrote bytes to it, where `<writer>` is the claim token of that request, and one
+  row of `upload_session_tails` per segment with its order, writer, size and SHA-256. Every request
+  writes its segment under its own key, so a writer that lost its claim can never overwrite a
+  segment that the session records ([Q-STOR-174](#q-stor-174--the-tail-is-a-list-of-segments-that-are-read-once-and-the-multipart-upload-is-created-with-the-first-part));
 - the writer claim (`writer`, `writer_until`) and the state.
 
 **A request that carries bytes** (an OCI `PATCH`, or the body of the closing `PUT`):
@@ -917,8 +920,9 @@ part hold:
    retried finalize (below). Any other request that finds the session not `open`, or older than
    `storage.uploads.session_max_age`, answers `404` (OCI `BLOB_UPLOAD_UNKNOWN`), and an open
    session past that age is set to `aborted`; its objects are removed under *Expiry*. Every
-   request checks the age itself, so a session can never be continued past the multipart expiry
-   of R-STOR-006, however long collection runs are delayed or paused. Otherwise one short
+   request checks the age at its claim, and the renewal before each part and before the tail is read refuses a session past it, so a
+   session can never be continued past the multipart expiry of R-STOR-006 by more than the request that was running, however long
+   collection runs are delayed or paused. Otherwise one short
    transaction sets `writer` to a fresh random token and
    `writer_until = now() + storage.uploads.writer_lease`, only if no other claim is unexpired and
    the request's first byte equals `received`. Otherwise the answer is `416` with the current
@@ -926,26 +930,36 @@ part hold:
    replica that was drained is released at once (R-STOR-004 step 8); only a crashed holder's claim
    blocks the session until `writer_until`. No transaction stays open after the claim
    (R-ARCH-019).
-3. **Stream.** The body passes through the restored hash states into the spool and is cut into
-   parts of exactly `part_size`. The first part of a request begins with the recorded tail, read
-   back from S3 and checked against the recorded size and SHA-256 (a mismatch fails the session);
-   its bytes are already in the hash state and are not hashed again. Each full part is sent with
+3. **Stream.** The body is read first, through the restored hash states into the spool, in
+   segments: the first is as long as is missing for the part that the recorded tail began, the
+   next ones are parts of exactly `part_size`. A segment that completes a part is joined with the
+   recorded tail segments, which are read back from S3 here and only here, each checked against its
+   recorded size and SHA-256 (a mismatch, a longer object or a missing one fails the session); the
+   tail's bytes are already in the hash state and are not hashed again. The claim is extended
+   right before each part is sent, and the upload of the part has a deadline below the renewed
+   lease, so that it cannot outlive its claim ([Q-STOR-175](#q-stor-175--a-part-upload-is-sent-under-a-freshly-renewed-claim-and-ends-before-its-lease-does)). Each full part is sent with
    `UploadPart` (with the payload checksum of R-STOR-006) under the next consecutive part number,
    as S3 requires when parts carry checksums
    ([multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)).
    One transaction then records the part row (number, size, ETag, SHA-256), the new `received`,
-   the hash state, `tail_size = 0` and no tail (the tail is now inside the part), `last_activity_at`
-   and a renewed `writer_until`, conditional on this request's writer token. A request whose token
-   no longer matches stops and answers `416`.
-4. **End of body.** The remaining bytes, after the recorded tail if no part consumed it, are
-   written as this request's tail object `tail-<writer>`, and one transaction records `received`,
-   the hash state, the tail's size, SHA-256 and writer, `last_activity_at`, and releases the claim,
-   conditional on the writer token. Only after that commit does the request delete the superseded
-   tail object; a request whose transaction failed deletes nothing. The response reports the
+   the hash state, `tail_size = 0` and no tail segments (the tail is now inside the part), the
+   upload id when this part created the upload, `last_activity_at` and a renewed `writer_until`,
+   conditional on this request's writer token. A request whose token no longer matches stops and
+   answers `416`, or `404` if the session ended meanwhile.
+4. **End of body.** The remaining bytes, fewer than are missing for a part, are written as this
+   request's own tail segment `tail-<writer>` and nothing is read back. A tail that has the most
+   segments (32) is merged with them into one segment instead, which reads it once. One transaction
+   records `received`, the hash state, the tail's size, the segment row, `last_activity_at`, and
+   releases the claim, conditional on the writer token; it runs under a context of its own, so that
+   a drain does not cut a COMMIT in flight. Only after that commit does the request delete the
+   segments a merge superseded. A request whose transaction failed with an error that leaves it
+   unknown whether it committed deletes nothing; it deletes its own segment only when the failure
+   is certain, the claim being lost. The response reports the
    received range (OCI `Range: 0-<received − 1>`).
 5. **Limits.** A request that would raise `received` above the effective maximum upload size of
-   R-STOR-004 answers `413` and aborts the session. A request occupies at most one part plus its
-   own read buffer in the spool, whatever the chunk size.
+   R-STOR-004 answers `413` and aborts the session. A request occupies in the spool at most the part it
+   completes (the tail joined with its own bytes) and the segment its own bytes made, and a request
+   that completes no part occupies its own bytes only, whatever the chunk size.
 
 **Finalize** (the OCI closing `PUT` with `digest`):
 
@@ -954,19 +968,23 @@ part hold:
    session stays open. The change from `open` to `completing` takes the writer claim as in step 2
    and is refused with `416` while another request holds an unexpired claim; claims need state
    `open`, so no request writes bytes once a finalize has begun.
-2. State `completing`: the tail is read back, checked as in step 3, and uploaded as the last part,
+2. State `completing`: one continuation takes a short claim for the step, reads the tail segments
+   back, checks them as in step 3, and uploads them joined as the last part,
    which S3 allows to be smaller than 5 MiB
    ([`EntityTooSmall`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html)
    applies to every other part), and `CompleteMultipartUpload` runs with the recorded parts, their
-   ETags and checksums. S3 refuses a part whose ETag differs from the recorded one (`InvalidPart`),
-   so a part overwritten by a stale writer fails the session instead of corrupting the blob. A
-   session without a full part aborts its multipart upload and uses the tail object as its
-   staging object instead.
+   ETags and checksums. A store refuses a part whose ETag differs from the recorded one
+   (`InvalidPart`) or assembles the part that is named: the conformance check of R-STOR-035 pins
+   it, and a part sent by a request that had lost its claim is also kept from the store by the
+   renewal and the deadline of step 3. A session without a full part has no multipart upload: its
+   single tail segment is its staging object, the merge of several segments (put as `data`) or an
+   empty object is.
 3. State `assembled`: the commit protocol of R-STOR-005 runs, with a server-side copy of the
    staging object to the content address as its object write (`CopyObject` up to 5 GiB,
    `UploadPartCopy` above); a deduplication hit copies nothing. No byte passes through trove.
-4. Every object below `_uploads/<session-id>/` is deleted, the state becomes `done`, and the
-   answer is `201`.
+4. The state becomes `done` in the transaction that links the item (the same transaction as step
+   3's commit, [Q-STOR-171](#q-stor-171--a-session-ends-in-the-transaction-that-links-the-item)),
+   every object below `_uploads/<session-id>/` is deleted after it, and the answer is `201`.
 
 Each finalize step is recorded before the next starts, and each is idempotent. A finalize cut by
 a drain (R-ARCH-024) is therefore repeated by the client's retry on any replica and continues at
@@ -988,16 +1006,20 @@ resends from its own offset gets `416` and asks
 The session start answers with `OCI-Chunk-Min-Length: <part_size>`, which that specification lets a
 registry send and clients SHOULD honour; smaller chunks are accepted through the tail.
 
-**Expiry.** A session without a recorded request for `storage.uploads.session_ttl`, or older than
-`storage.uploads.session_max_age`, is aborted by the next collection run (R-STOR-025): state
-`aborted`, `AbortMultipartUpload`, every object below `_uploads/<session-id>/` deleted; the run
-does the same S3 clean-up for sessions that a request already set to `aborted`. Requests
+**Expiry.** A session without a recorded request for `storage.uploads.session_ttl`, or an open
+session older than `storage.uploads.session_max_age`, is aborted by the next collection run
+(R-STOR-025): state `aborted`, `AbortMultipartUpload`, every object below
+`_uploads/<session-id>/` deleted; the run does the same S3 clean-up for sessions that a request
+already set to `aborted`, and for a finished one once the replay window of 15 minutes has passed (when the request that finished it did not remove them), and then deletes
+their rows ([Q-STOR-170](#q-stor-170--the-collection-run-aborts-a-live-session-for-its-idle-time-and-an-open-one-for-its-age)). Requests
 enforce `session_max_age` themselves (step 2), so a delayed or paused collection run only delays
 the clean-up. `session_max_age` MUST be shorter than `storage.orphans.multipart_max_age` and than
 the bucket's lifecycle rule (R-STOR-006). Startup refuses a value not below `multipart_max_age`;
 keeping the lifecycle rule at one day or longer is the operator's part, because the permissions of
 R-STOR-031 do not let trove read it. The orphan sweep (R-STOR-026) removes what an aborted run
-left.
+left: until it is a task of its own, the full collection sweep (`gc-full`) does, for the staging
+area, with `session_max_age` as the age
+([Q-STOR-172](#q-stor-172--the-full-collection-sweep-removes-what-no-session-stands-for-until-the-orphan-sweep-is-a-task-of-its-own)).
 
 ```sql
 CREATE TABLE upload_sessions (
@@ -1009,17 +1031,15 @@ CREATE TABLE upload_sessions (
     received          bigint NOT NULL DEFAULT 0,
     hash_state        bytea NOT NULL,              -- SHA-256, SHA-1, MD5, SHA-512 states at `received`
     part_size         bigint NOT NULL,             -- fixed when the session starts
-    s3_upload_id      text NOT NULL,               -- multipart upload of _uploads/<id>/data
-    tail_size         bigint NOT NULL DEFAULT 0 CHECK (tail_size < part_size),
-    tail_writer       uuid,                        -- names the tail object _uploads/<id>/tail-<tail_writer>
-    tail_sha256       bytea,                       -- checked when the tail is read back
+    s3_upload_id      text NOT NULL,               -- multipart upload of _uploads/<id>/data; empty until the first part creates it
+    tail_size         bigint NOT NULL DEFAULT 0 CHECK (tail_size >= 0 AND tail_size < part_size),   -- the sum of upload_session_tails.size
     writer            uuid,                        -- claim token of the request writing now
     writer_until      timestamptz,
     digest            bytea,                       -- SHA-256 named by the client at finalize
     state             text NOT NULL CHECK (state IN ('open', 'completing', 'assembled', 'done', 'aborted')),
     created_at        timestamptz NOT NULL DEFAULT now(),
     last_activity_at  timestamptz NOT NULL DEFAULT now(),
-    CHECK ((tail_size = 0) = (tail_writer IS NULL) AND (tail_writer IS NULL) = (tail_sha256 IS NULL))
+    item_id           bigint                        -- the item a done session committed; a repeated closing request is answered from it
 );
 CREATE INDEX upload_sessions_live ON upload_sessions (last_activity_at)
     WHERE state IN ('open', 'completing', 'assembled');
@@ -1032,9 +1052,18 @@ CREATE TABLE upload_session_parts (
     sha256       bytea NOT NULL,                   -- payload checksum sent with the part
     PRIMARY KEY (session_id, part_number)
 );
+
+CREATE TABLE upload_session_tails (
+    session_id uuid NOT NULL REFERENCES upload_sessions (id) ON DELETE CASCADE,
+    seq        integer NOT NULL CHECK (seq >= 1),   -- the order of the segments
+    writer     uuid NOT NULL,                       -- names the object _uploads/<id>/tail-<writer>
+    size       bigint NOT NULL CHECK (size > 0),
+    sha256     bytea NOT NULL CHECK (octet_length(sha256) = 32),   -- checked when the segment is read back
+    PRIMARY KEY (session_id, seq)
+);
 ```
 
-Both tables have the backup export class `transient` (R-STOR-047): staged bytes are not backed up,
+All three tables have the backup export class `transient` (R-STOR-047): staged bytes are not backed up,
 and a client restarts its upload after a restore.
 
 Configuration:
@@ -1043,9 +1072,10 @@ Configuration:
 storage:
   uploads:
     part_size: 16MiB        # default (proposed); 5MiB to 5GiB (the largest part of an S3 upload); storage.upload.max_size must not exceed 10,000 parts
-    writer_lease: 60s       # default (proposed); renewed with every recorded part
+    writer_lease: 60s       # default (proposed); renewed right before each part is sent and with every recorded part; below session_ttl, and above the time one part takes to send (a part upload is cut at three quarters of it)
     session_ttl: 4h         # default (proposed); idle time after which a session is aborted
     session_max_age: 20h    # default (proposed); must be < storage.orphans.multipart_max_age and the lifecycle rule
+    max_open_sessions: 100  # default (proposed); open sessions one principal holds on one repository; a start above it answers 429 (Q-STOR-176)
 ```
 
 Acceptance criteria:
@@ -2646,7 +2676,7 @@ object store. Operators MUST use a store that satisfies them.
 - AWS S3 satisfies A1–A2 by documentation. MinIO and Ceph RGW (within one zone) are expected to;
   the conformance check is the operator's evidence.
 - **Startup check** (`storage.s3.startup_check: true`): write, read back, compare and delete
-  `<prefix>/_probe/<replica-id>`, then list `<prefix>/sha256/` with one key. A replica does not
+  `<prefix>/_probe/<replica-id>`, then list `<prefix>/sha256/` with one key, then the part-identity check (a part number sent twice must not assemble the other upload's bytes, R-STOR-011). A replica does not
   become ready before the check has passed (R-STOR-036, Q-STOR-1). Configuration and permission
   errors (`AccessDenied`, `NoSuchBucket`, invalid region) stop the process with a clear message.
   Transient errors (timeouts, connection errors, `5xx`, throttling) are retried with exponential
@@ -2655,8 +2685,10 @@ object store. Operators MUST use a store that satisfies them.
   restart back-off (up to five minutes in Kubernetes) delays readiness after the store returns;
   [ha-and-helm.md](ha-and-helm.md) R-HA-008 and R-HA-034 treat a wait for the schema the same way.
 - **Conformance check**: `trove admin storage check` runs the startup check plus multipart
-  upload and abort, ranged read, `DeleteObjects`, presigning, read-after-delete and
-  list-after-write, and reports each result. It changes nothing outside `_probe/`.
+  upload and abort, a completion that names a part (a part number sent twice must not end up in an
+  object that names the other upload's ETag, R-STOR-011), ranged read, server-side copy (the object write of an upload session's
+  finalize, R-STOR-011), `DeleteObjects`, presigning, read-after-delete and
+  list-after-write, and reports each result. The startup check runs the part-identity check as well, so a replica does not serve on a store that fails it. It changes nothing outside `_probe/`.
 
 Configuration:
 
@@ -3294,7 +3326,7 @@ leaves for storage.
   |---|---|---|
   | `blobs` | `blobs` | Only rows that the snapshot references; unreferenced and `deleting` rows are not restored |
   | `blob_gc_queue` | `transient` | Candidates only |
-  | `upload_sessions`, `upload_session_parts` | `transient` | Staged bytes under `_uploads/` are not backed up; clients restart their uploads |
+  | `upload_sessions`, `upload_session_parts`, `upload_session_tails` | `transient` | Staged bytes under `_uploads/` are not backed up; clients restart their uploads |
   | `pending_sidecars` | `transient` | Declarations waiting for a file for at most `storage.sidecars.pending_ttl` |
   | `repository_usage`, `storage_usage_totals`, `storage_usage_deltas` | `data` | Exported, then recomputed by the restore (below) |
   | every other table of this page | `data` | Items (trashed ones included), packages, versions, properties, download statistics, property sets, retention policies, runs and run items, `retention_run_gate` (its one row), `cap_outbox` (pending cap evaluations; evaluating a group again is harmless) |
@@ -3938,6 +3970,8 @@ updated. The matching edits on the operations, API and HA pages are cross-page c
 ### Q-STOR-11 · Multi-request uploads across replicas
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Superseded in part by [Q-STOR-174](#q-stor-174--the-tail-is-a-list-of-segments-that-are-read-once-and-the-multipart-upload-is-created-with-the-first-part) (the tail is a list of segments, read once, and the multipart upload is created with the first part) and [Q-STOR-175](#q-stor-175--a-part-upload-is-sent-under-a-freshly-renewed-claim-and-ends-before-its-lease-does) (the part identity is guarded by the claim, the deadline and the store's rule, not by the ETag check alone): where the text below says that small chunks rewrite the tail or that `CompleteMultipartUpload` alone turns a stale part into a failed session, those two decisions apply.
 
 INV-12 and INV-18 (owner constraints of 2026-10-28) send the requests of one upload session to
 random replicas without affinity, and a node drain may end any request. R-STOR-011 staged each
@@ -4741,6 +4775,119 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** R-STOR-033 asks that transfers fail when they stall, not when they are long; for a request without a body, "stalled" is only decidable against the size. The development agent would revisit this if the store is found to send keep-alive bytes during a completion, which would allow the byte-idle rule back for it.
 
 **Applied:** R-STOR-033, R-BAK-006; `internal/blob/s3/client.go` (`copyAPI`, `CompleteMultipart`), `internal/blob/s3/idle.go` (`body.Read`), `internal/blob/s3/target_copy.go`.
+
+### Q-STOR-170 · The collection run aborts a live session for its idle time and an open one for its age
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every live session by idle time and age, as the text of R-STOR-011 read | `completing` and `assembled` sessions are aborted when older than `session_max_age` as well | One rule | A finalize that began just before the age limit and is assembling or committing is aborted by the run under its feet: the copy fails and the client restarts a 100 GB upload |
+| (b) Idle time for every live session, age for the open ones only (chosen) | A session that is `completing` or `assembled` is aborted when no step was recorded for `session_ttl`; an `open` one also when older than `session_max_age`. A finished or aborted session loses its objects at the next run (a finished one when its idle time has passed, so that a repeated closing request still answers `201`), and then its row | The run never ends a finalize that is making progress; every request still refuses an open session past its age, so no session is continued beyond the multipart expiry | A stuck finalize that is older than `session_max_age` stays until its idle time, at most `session_ttl` after the last step |
+
+**Choice:** (b).
+
+**Rationale:** the bound that protects the multipart upload (`session_max_age` below `multipart_max_age`) matters for the bytes still arriving, which only an `open` session has; a finalize has them all and records a step (and `last_activity_at`) every time it advances. The development agent would revisit this if a finalize can stay in `completing` for hours (a copy of a very large blob), which would call for a heartbeat instead of the idle time.
+
+**Applied:** R-STOR-011 *Expiry*; `internal/meta/postgres/queries/uploads.sql` (`UploadExpire`, `UploadListCleanup`, `UploadDeleteCleaned`), `internal/blob/gc_uploads.go`. Tests: `TestR_STOR_011_TheCollectionRunExpiresAbandonedSessions` (integration).
+
+### Q-STOR-171 · A session ends in the transaction that links the item
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `done` after the commit, as a step of its own | The commit transaction links the item; a second statement sets `done` and the objects are deleted | Simple | A finalize cut between the two repeats the commit (it finds the blob and the item, and changes nothing), and the session is `assembled` with an item that exists |
+| (b) `done` inside the commit transaction (chosen) | The commit protocol's link function ends the session in the transaction that links the item (`CommitSpec.Extra`, `uploads.CommitFunc`'s `markDone`); a session aborted meanwhile makes the statement affect no row and the commit roll back | The item and the end of the session are one commit; no state where an item exists and its session is not done | The host's commit takes a step of the caller (`ingestor.commit`) |
+
+**Choice:** (b).
+
+**Rationale:** it removes a state that only a cut between two statements could produce, and it makes an abort during a finalize win cleanly: the item is not written for a session the client cancelled. The objects are deleted after the commit and a failure of that is left to the run.
+
+The session also records the item it committed (`item_id`, from the commit's `Extra` step), so that a repeated closing request after `done` is answered from the record: it commits nothing, records no second decision and re-creates no item that was deleted meanwhile.
+
+**Applied:** R-STOR-011 *Finalize* step 4; `internal/uploads/finalize.go` (`complete`), `internal/formathost/uploads.go` (`Finalize`), `internal/formathost/ingest.go` (`commit`). Tests: `TestR_STOR_011_ACutFinalizeIsRepeatedOnAnotherReplicaAtTheRecordedState`, `TestR_STOR_011_FinalizeCommitsTheStagedBlobInTheTransactionThatEndsTheSession`.
+
+### Q-STOR-172 · The full collection sweep removes what no session stands for until the orphan sweep is a task of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wait for the orphan sweep of R-STOR-026 | Leftovers of the staging area (a replica killed between creating the multipart upload and recording the session, the sessions of a deleted repository) stay until the sweep exists | No second place | The sweep is not built; the leftovers stay for good, and the bucket's lifecycle rule is the only remover |
+| (b) The session step of the full collection sweep removes them (chosen) | `gc-full` lists `_uploads/<id>/` directories, reads which ids have a row, and deletes the objects of the others and aborts the multipart uploads of the others (and of finished sessions), if they are older than `session_max_age`; a directory that is not a UUID is logged and left | The staging area has a remover now; the code is the pass R-STOR-026 describes for this prefix and moves into the sweep when it exists | `gc-full` runs weekly by default, so a leftover lives up to a week beyond its age |
+
+**Choice:** (b).
+
+**Rationale:** the age is `session_max_age`, not `multipart_max_age`: an object of an id without a row can only be a session that is over or never started, and a session's row is recorded before any object of it exists (the multipart upload is created with the first part, and recorded with it within `recordTimeout`), so an object or an upload older than `session_max_age` that no row names is not a session that is starting: the cutoff on the object's own age is what keeps the sweep out of the reach of one that is. The development agent would revisit this when the orphan sweep is built: the pass moves there unchanged.
+
+**Applied:** R-STOR-011 *Expiry*; `internal/blob/gc_uploads.go` (`sweepUploads`). Tests: `TestR_STOR_011_TheSweepRemovesWhatNoSessionStandsFor` (integration).
+
+The expiry and the cleaning go on batch after batch (200 rows) for a time budget of two minutes each per run, and the staging sweep takes at most 25 pages per run; the sweep lists the multipart uploads of the staging area 500 at a time when the store pages (`blob.MultipartPager`), and re-read the deletion pause before every batch; a backlog is the next run's, and a pause set during the step ends it. The sweep saves where it stopped (`system_state` key `upload_sweep_cursor`) and the next run goes on from there, so that live sessions at the start of the listing do not use every run's pages; when both listings are done the cursor is cleared.
+
+### Q-STOR-173 · The sessions are counted by `trove_storage_upload_sessions_total`, not by an OCI metric
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `trove_oci_upload_sessions_total{outcome}`, as R-OCI-034 wrote it | The OCI handlers count what they see | The name the OCI page already has | They see neither the sessions the collection run expires nor those the service aborts (a size limit, a damaged tail); the counter would need the service to call the format, or the format to count what it cannot see |
+| (b) `trove_storage_upload_sessions_total{outcome}`, counted where the sessions end (chosen) | `completed` when a finalize commits, `aborted` when a session is cancelled, fails or exceeds its size, `expired` when a request refuses an open session past its age or the collection run aborts one; each counted once, by the call that changed the state | One counter for every format that will use the sessions; no cross-package call; the family sits beside the other `trove_storage_*` families of `blob.Metrics` | R-OCI-034 names another family; the OCI page points here |
+| (c) Both | The service counts, an OCI alias | One name per audience | Two series for one fact |
+
+**Choice:** (b).
+
+**Rationale:** the sessions are the storage mechanism of R-STOR-011, used by one format today and by a generic resumable upload tomorrow; the outcome is decided in `internal/uploads` and `internal/blob`, and a format-named counter would have to be fed from outside. The label is `outcome` only; a format label would be unbounded in nothing, but no reader asks for it yet. The development agent would revisit this if an operator needs the sessions per format.
+
+**Applied:** [formats/oci.md](formats/oci.md) R-OCI-034 (the row names this family); `internal/blob/metrics.go` (`UploadSession`), `internal/uploads` (`complete`, `Abort`, `abortAndClean`, `lookup`), `internal/blob/gc_uploads.go` (`expireSessions`). Tests: `TestR_STOR_011_SessionsAreCountedByHowTheyEnded`.
+
+### Q-STOR-174 · The tail is a list of segments that are read once, and the multipart upload is created with the first part
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One tail, rewritten by every request (the first cut) | A request reads the whole recorded tail back, appends its bytes and writes a new tail | Few objects | A client that sends one byte per request makes the replica read and write up to a part (16 MiB) and hold it in the spool each time: about 10^7 times the request's bytes, for a few cents of its own; a stalled second byte holds the spool |
+| (b) A minimum size for a chunk that is not the last | A shorter `PATCH` is refused | Nothing is read back | The OCI distribution specification lets a registry announce a minimum with `OCI-Chunk-Min-Length` and does not make a refusal of a shorter chunk a conformance rule; Docker and Podman send what their layer buffer holds, and a client that ignores the header would fail |
+| (c) Segments (chosen) | The body is read first. A body shorter than what is missing for a part is written as one more tail segment, with its size and SHA-256 in a row of `upload_session_tails`, and nothing is read back. The request whose bytes complete a part reads the segments once and joins them with its bytes into the part. A tail with 32 segments is merged by the request that would add the 33rd | Each byte is written once and read once; a request's spool is its own bytes plus the part it completes; the amplification is one merge of at most a part per 33 requests | More rows and objects per session (at most 32 segments per part); the segments are checked one by one |
+
+**Choice:** (c), with the multipart upload created when the first full part is sent and its id recorded with that part.
+
+**Rationale:** the cost of a request is then bounded by its own bytes except for the request that completes a part, whose bytes pay for the read, and the merge, which is one read of at most a part per 33 requests: an attacker's cost-to-effect ratio is the part size over 33, not over 1. The lazy multipart upload removes the only S3 request `Start` made, so that a session that is started and not continued costs a row (the open sessions of an attacker no longer fill the staging area of the store, only the table: H-590). The development agent would revisit the cap of 32 if the merge shows up in the profile of a real client. The claim is extended before the segments are read, because a request that lost it may find them removed by the request that completed the part, and then stops with 416 instead of failing the session.
+
+**Applied:** R-STOR-011 *State*, *Stream*, *End of body*, the schema block; migration 00057, `queries/uploads.sql`; `internal/uploads/append.go` (`stream`, `endOfBody`, `joinTails`), `internal/uploads/finalize.go` (`tailAsPart`, `completeSmall`). Tests: `TestR_STOR_011_SmallChunksAreWrittenOnceAndReadOnceByTheRequestThatCompletesAPart`, `TestR_STOR_011_ASessionCostsNoObjectBeforeItsFirstPart`.
+
+### Q-STOR-175 · A part upload is sent under a freshly renewed claim and ends before its lease does
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rely on the store to refuse a stale part at the completion | Only the record of a part is conditional on the claim | Nothing to add | A request that kept uploading past its lease sends its part under a number the recorded request used; a store that assembles the last upload of a number whatever ETag is named would store the stale bytes under the digest of the recorded ones (a poisoned layer of the public deduplicated store) |
+| (b) Renew the claim before the segments are read and right before each `UploadPart`, and give the upload a deadline of three quarters of the lease (chosen) | `UploadRenew` is conditional on the writer token; a request that lost the claim reads no segment (another request may have removed them) and sends nothing; the client side of an upload that outlasts its deadline is cut; the check of R-STOR-035, run at every start, requires that a store assembles the part that is named or refuses | A request that lost its claim does not send a part after the recorded one from its side; a store that had received the whole body before the cut can still store it, and the part-identity rule is what keeps that from the blob; a store that does not hold the rule stops the replica at start | `writer_lease` has to exceed the time one part takes (a 5 GiB part within three quarters of 60 s needs about 119 MB/s); startup refuses a configuration whose part cannot be sent at 32 MiB/s within that time |
+| (c) A heartbeat during the upload | A goroutine renews the lease while the part is sent | Long parts fit any lease | A cut upload can still land after a late failed renewal; more moving parts |
+
+**Choice:** (b). A finalize that sends the tail as the last part takes a claim of its own for that step (`UploadClaimCompleting`), so that two continuations do not upload it twice; the one that does not get it is told to retry.
+
+**Rationale:** the store's behaviour is not under trove's control, the deadline of the client side is; the rest is the part-identity rule, which the startup check enforces. SeaweedFS 4.51 keeps both uploads of a part number and assembles the one whose ETag is named, which the check and the integration test pin. The development agent would revisit (b) for a deployment whose parts are larger than its lease allows, which (c) would serve.
+
+**Applied:** R-STOR-011 *Stream* step 3 and *Finalize* step 2; R-STOR-035; `internal/uploads/append.go` (`sendPart`, `partDeadline`), `internal/blob/conformance.go` (`checkPartIdentity`), `internal/config/storage.go` (the rules `writer_lease` below `session_ttl` and a part sendable at 32 MiB/s within three quarters of the lease), `StartupCheck` (runs `checkPartIdentity`). Tests: `TestR_STOR_011_APartUploadCannotOutliveItsClaim`, `TestR_STOR_011_AStaleWriterSendsNoPartAfterTheRecordedOne`, `TestR_STOR_011_TheStoreAssemblesThePartThatIsNamedWhenANumberIsSentTwice`.
+
+### Q-STOR-176 · The open sessions of a principal on a repository are capped, an ended session leaves no row, and the session step has a time budget
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the collection run bounds the sessions (it was 25 batches of 200 per step and run) | A client that starts sessions faster than the runs remove them grows the table without limit | Nothing to configure | The ceiling was about 240,000 sessions a day at the default schedule; a holder of `deploy` that starts 50 a second grows the table by four million a day, and the cleaning sorts every aborted row for each batch |
+| (b) A cap on the open sessions of one principal on one repository, at `Start`; the request that ends a session removes its row; a time budget and an index for the run (chosen) | `storage.uploads.max_open_sessions` (100): the start takes the lock of the repository row, counts the live sessions (`open`, `completing`, `assembled`) of the principal on it and inserts none above the cap, in one transaction, so that racing starts hold the cap exactly; it answers 429 with `Retry-After`. `Abort` and every failure that ends a session remove its objects and, when that succeeded, its row; a finished session stays for a replay window of 15 minutes and is marked `cleaned` when its request removed the objects. The run deletes rows that need no call to the store (`cleaned`, or nothing staged) in bulk, removes the objects of the others, and moves a session it could not clean to the back of the line. Expiry and cleaning each run batches of 200 for two minutes | The sessions one caller holds *at once* are bounded where they start, and a caller that starts and cancels in a loop leaves no row behind; the removal of the others needs no ceiling | Principals and repositories each have their own cap, so many of either still grow the table (H-590); a caller that starts and abandons sessions fills its own cap for `session_ttl` (below); the lock serializes the starts of one repository |
+| (c) A global cap | The installation refuses starts above a number | A hard bound | One caller can use it up for all; it needs a counter that survives replicas |
+
+**Choice:** (b).
+
+**Rationale:** the cap is the bound where the work is created, and the immediate removal keeps a start-and-cancel loop from growing the table at all, which the run alone could not (it removes at a rate, an attacker starts at another). What the cap does not bound is a caller that starts sessions and leaves them open: each holds a place for `session_ttl` (4 h), so one principal blocks itself, and, for an **anonymous** caller, every anonymous caller of the repository, with 100 starts per 4 h (H-590, H-592). A CI job is keyed on its token (`Subject.TokenID`: each exchange issues one), so the sessions of one token do not fill the cap of another token under the same mapping; a job can hold several tokens (several id_tokens), and an issuer that does not make an id_token single-use lets one be exchanged several times, so the token is a finer key than the mapping and not a guarantee of one cap per job. A shorter idle time for sessions that never received a byte was considered and not taken: a caller that sends one byte per session keeps it at `session_ttl` anyway, and the extra key would be a second knob for the same exposure. The index on `(repo_id, COALESCE(principal_id, all-zero uuid))` serves the count (`IS NOT DISTINCT FROM` cannot use an index; a session without a principal is the all-zero uuid for the count), and `(state, last_activity_at)` serves the listing in order; `TestR_STOR_011_TheCapCountAndTheCleaningListingUseTheirIndexes` runs `EXPLAIN` over 60,000 rows and requires both indexes and no sort. The locks of a start are taken in one order, a key share on the addressed repository (a virtual one whose configuration may be updated at the same time locks its row and then its members) before the lock on the target row, so a start through a virtual repository and the update of its configuration never wait for each other in a cycle (`TestR_STOR_011_AStartThroughAVirtualRepositoryDoesNotDeadlockWithItsConfigurationUpdate`); an advisory lock is not used (R-ARCH-017). The development agent would revisit a global cap, or a per-endpoint one for anonymous callers, if H-590 or H-592 shows up in a real installation.
+
+**Applied:** R-STOR-011 (configuration, *Expiry*), `internal/uploads/service.go` (`Start`, `endAndRemove`), `internal/uploads/finalize.go` (`complete`), `internal/formathost/uploads.go` (`scopeOf`), `internal/meta/postgres/queries/uploads.sql` (`UploadLockRepository`, `UploadInsertSession`, `UploadListAborted`, `UploadListDone`, `UploadDeleteCleanedBulk`, `UploadMarkCleaned`, `UploadBumpActivity`), migration 00058, `internal/blob/gc_uploads.go` (`cleanSessions`, `inBudget`), `internal/config/storage.go`. Tests: `TestR_STOR_011_AStartAboveTheCapOfOpenSessionsIsRefused`, `TestR_STOR_011_ConcurrentStartsNeverExceedTheCapOfOpenSessions`, `TestR_STOR_011_AnAbortThatRemovedTheObjectsDeletesTheRowAndOneThatDidNotLeavesItForTheRun`, `TestR_STOR_011_ASessionOfACIJobIsKeyedOnItsToken`.
 
 ## What this does not cover
 

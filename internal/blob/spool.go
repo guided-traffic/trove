@@ -225,6 +225,7 @@ type Spooled struct {
 	Digests
 
 	data     []byte // set for a body kept in memory
+	staged   string // set for a blob that is in the bucket at this key already (see Staged)
 	file     *os.File
 	spool    *Spool
 	reserved int64
@@ -248,6 +249,9 @@ func (s *Spooled) Reader() io.ReadSeeker { return s.Section(0, s.Size) }
 
 // Section returns a reader over [off, off+n) of the content.
 func (s *Spooled) Section(off, n int64) io.ReadSeeker {
+	if s.staged != "" {
+		return unreadable{}
+	}
 	if s.file == nil {
 		return bytes.NewReader(s.data[off : off+n])
 	}
@@ -271,7 +275,9 @@ func (s *Spooled) Close() error {
 		s.file = nil
 	}
 	s.data = nil
-	s.spool.release(s.reserved)
+	if s.spool != nil {
+		s.spool.release(s.reserved)
+	}
 	s.reserved = 0
 	return err
 }

@@ -1026,7 +1026,7 @@ Priority: **P1** · Covers: trove-only
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
 | `trove_oci_registry_tokens_total` | counter | `outcome` (`issued`, `anonymous`, `denied`) | Token service answers |
-| `trove_oci_upload_sessions_total` | counter | `outcome` (`completed`, `aborted`, `expired`) | Upload sessions by how they ended |
+| `trove_storage_upload_sessions_total` | counter | `outcome` (`completed`, `aborted`, `expired`) | Upload sessions by how they ended; a storage family, counted where the sessions end ([Q-STOR-173](../storage.md#q-stor-173--the-sessions-are-counted-by-trove_storage_upload_sessions_total-not-by-an-oci-metric)) |
 | `trove_oci_upstream_token_requests_total` | counter | `repo`, `outcome` (`ok`, `denied`, `failed`) | Handshakes of remote repositories |
 | `trove_oci_sweep_blobs_removed_total` | counter | — | Blob items removed by `oci-sweep` |
 

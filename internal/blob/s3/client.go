@@ -35,6 +35,9 @@ type Client struct {
 	// because the store answers a server-side copy only when it is done; the callers bound these requests by a deadline
 	// derived from the object size instead. Nil when the client was built from a bare HTTP client; api is used then.
 	copyAPI *awss3.Client
+	// singleCopyMax and copyStep replace the limits of a server-side copy when set; a test sets them to reach the multipart
+	// copy with a small object.
+	singleCopyMax, copyStep int64
 }
 
 // long is the client of the body-less, long-running requests.

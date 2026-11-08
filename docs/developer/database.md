@@ -476,12 +476,12 @@ migrated schema against a registry that holds them, and the integration tests th
 
 ## OCI tables, upload sessions and the key grammar
 
-Three migrations of phase T-16 ([oci.md](oci.md)). [00054_upload_sessions](../../internal/meta/postgres/migrations/00054_upload_sessions.sql) and
-[00055_oci](../../internal/meta/postgres/migrations/00055_oci.sql) are expand steps that create tables no earlier release knows:
+Five migrations of phase T-16 ([oci.md](oci.md)). [00054_upload_sessions](../../internal/meta/postgres/migrations/00054_upload_sessions.sql) and
+[00055_oci](../../internal/meta/postgres/migrations/00055_oci.sql) are expand steps that create tables no earlier release knows; [00057_upload_session_tails](../../internal/meta/postgres/migrations/00057_upload_session_tails.sql) is a named contract step that replaces the two tail columns of 00054, which is in no release, by the table of segments and adds `upload_sessions.item_id` (Q-STOR-174); [00058_upload_session_indexes](../../internal/meta/postgres/migrations/00058_upload_session_indexes.sql) is a contract step as well, replacing the cleanup index of 00054 by one on `(state, last_activity_at)` and adding the index on `(repo_id, principal_id)` that the cap on open sessions counts with (Q-STOR-176):
 
 | Table | Export class | Registered in | Meaning |
 |---|---|---|---|
-| `upload_sessions`, `upload_session_parts` | `transient` | [tables_uploads.go](../../internal/meta/postgres/tables_uploads.go) | The multi-request upload sessions of R-STOR-011 with the repository written to (`repo_id`), the repository the client addressed (`addressed_repo_id`) and the format's `binding` (the OCI image name); the tables are not read or written by any code yet |
+| `upload_sessions`, `upload_session_parts`, `upload_session_tails` | `transient` | [tables_uploads.go](../../internal/meta/postgres/tables_uploads.go) | The multi-request upload sessions of R-STOR-011 with the repository written to (`repo_id`), the repository the client addressed (`addressed_repo_id`) and the format's `binding` (the OCI image name); the statements are [uploads.sql](../../internal/meta/postgres/queries/uploads.sql) (run by [internal/uploads](../../internal/uploads/) and the session step of the collection run, [gc_uploads.go](../../internal/blob/gc_uploads.go)); the lease of a claim and the age of a session are the database's `now()`, see [oci.md](oci.md#upload-sessions-r-stor-011) |
 | `oci_manifests`, `oci_references` | `data` | [tables.go](../../internal/formatdata/oci/tables.go) | A row per manifest of an image name and the references of a manifest to manifests and blobs of the same name (R-OCI-007); no blob column, so they never hold a blob against garbage collection |
 
 [00056_key_grammar](../../internal/meta/postgres/migrations/00056_key_grammar.sql) is a **contract** step (`requires-app >= 0.1.0`, so the compatibility floor does not move: pre-alpha, no replica of an older release has to keep serving): it

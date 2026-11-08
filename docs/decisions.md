@@ -195,6 +195,7 @@ checked every earlier decision against them:
 | [ADR-159](#adr-159--the-data-state-the-format-contract-carries-says-whether-the-ecosystem-has-synced-since-the-last-restore) | The data state the format contract carries says whether the ecosystem has synced since the last restore | Decided by the development agent — owner review at the walkthrough |
 | [ADR-160](#adr-160--the-catalog-says-which-formats-always-verify-the-announced-digest) | The catalog says which formats always verify the announced digest | Decided by the development agent — owner review at the walkthrough |
 | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) | The format contract gains the registry root, the upstream handshake, HEAD revalidation and upload sessions | Decided by the development agent — owner review at the walkthrough |
+| [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) | The upload session service is a domain package under the host, and a staged blob commits through the commit protocol with a server-side copy | Decided by the development agent — owner review at the walkthrough |
 | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) | Registry tokens are bound to their trove token by the hash of its secret and verified through the token cache | Decided by the development agent — owner review at the walkthrough |
 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) | The remote engine carries out the format's token handshake and HEAD revalidation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
@@ -6135,6 +6136,55 @@ format); a field `Refusal.Base` (a new member for a fact the catalog holds); a b
 
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) Q-OCI-3, Q-OCI-4, Q-OCI-12, Q-OCI-13, Q-OCI-16, Q-OCI-24 to Q-OCI-34; [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009; [spec/storage.md](spec/storage.md) R-STOR-011.
 
+### ADR-162 · The upload session service is a domain package under the host, and a staged blob commits through the commit protocol with a server-side copy
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** R-STOR-011 (unbuilt until T-16 work package 1) keeps a blob that a client sends over several requests and replicas in PostgreSQL and
+one S3 multipart upload, and finalizes it by a server-side copy to the content address under the commit protocol of R-STOR-005. The
+port of the format contract (`Host.Uploads`, ADR-161) is the host's; the claims, parts, tails and states are not a format's business, and the
+commit protocol takes a spooled body, which a blob that is in the bucket already is not.
+
+**Decision.**
+
+- `internal/uploads` is a domain package (layer table, R-ARCH-003): the service decides nothing about who may do what, takes a scope the host
+  built (the addressed repository, the binding, the principal) and answers a session of another scope as one that does not exist. The host
+  (`internal/formathost/uploads.go`) decides principal, binding and `deploy` on the session's target before every call and implements
+  `formats.UploadSessions` over it; a host without the service answers `not_implemented`.
+- The state is the rows of migrations 00054 and 00057 (the tail as segments, the item of a finished session); the statements are `queries/uploads.sql`, and the lease of a claim and the age of a
+  session are judged by the database's clock. The service reaches the rows through a seam (`rows`), so the unit tests run the state machine
+  against a simulation and the integration tier runs the same code on PostgreSQL.
+- `blob.ObjectStore` gains `Copy(srcKey, dstKey, size)` (CopyObject up to 5 GiB, UploadPartCopy above, with the encryption of every write; the
+  guard counts it, the in-memory store implements it). A store may also implement `blob.MultipartPager` (the client, the guard and the in-memory store do), which the sweep of the staging area uses to list unfinished uploads a page at a time. `blob.Staged(digests, key)` is a `Spooled` whose object write in the commit protocol is that
+  copy; a blob that is stored copies nothing, and the source being gone is `blob.ErrStagingGone`. `Spool.IngestSegment` reads at most one
+  part of a request into the spool behind the recorded tail, feeding the session's hash functions.
+- The finalize commits through `items.Store.Commit` with the staged blob; the end of the session is a step of the commit transaction
+  ([Q-STOR-171](spec/storage.md#q-stor-171--a-session-ends-in-the-transaction-that-links-the-item)).
+- The collection run gains a session step: expiry, the removal of what aborted and finished sessions staged, and, in the full sweep, of what no
+  session stands for ([Q-STOR-170](spec/storage.md#q-stor-170--the-collection-run-aborts-a-live-session-for-its-idle-time-and-an-open-one-for-its-age),
+  [Q-STOR-172](spec/storage.md#q-stor-172--the-full-collection-sweep-removes-what-no-session-stands-for-until-the-orphan-sweep-is-a-task-of-its-own)).
+- The service has a fault hook (`Service.Fault`, named points of a request) in the form of the collector's: a returned error ends the request as if
+  the process had been killed there, with no release of the claim and no clean-up, and a hook may block to hold a request at a point. It is a field
+  of the object, not a build tag.
+
+The contract of `UploadSessions` and `UploadSession` is as work package 0 wrote it; nothing in `internal/formats` changed.
+
+**Consequences.** Every replica that takes uploads builds the service with its blob store (`a.uploads`, `wireBlob`); no Valkey is involved at any
+step (R-OCI-032). A format's handlers get the minimum chunk length from `UploadSession.PartSize`. The orphan sweep of R-STOR-026 has its
+`_uploads/` pass already, inside `gc-full`.
+
+**Alternatives considered.** Keeping the session logic inside `internal/formathost` (edge: no layer below it could be tested without a request, and
+the collection run could not share the key layout); a heartbeat-driven lease (the database's `now()` and a renewed `writer_until` per part
+are the same fence with no extra moving part); spooling the whole blob on the finalizing replica and committing it as a body (a replica that is
+drained or replaced loses it, and the bytes pass the replica twice); a build tag for fault injection (the collector's hook is a field, and tests
+of other packages use the service without a tag).
+
+**Revisit condition:** a second consumer of upload sessions with a different finalize (a generic resumable upload that is not content addressed),
+or a session that must stage more than one blob.
+
+**Spec:** [spec/storage.md](spec/storage.md) R-STOR-011, Q-STOR-170 to Q-STOR-176; [spec/architecture.md](spec/architecture.md) R-ARCH-003;
+[spec/formats/oci.md](spec/formats/oci.md) R-OCI-011, R-OCI-032.
+
 ### ADR-163 · Registry tokens are bound to their trove token by the hash of its secret and verified through the token cache
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -6172,22 +6222,6 @@ issue (a database write on the hottest route, Q-OCI-5 (d)); a JWT (header-driven
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-004, R-OCI-005, R-OCI-006, R-OCI-034, Q-OCI-50 to Q-OCI-57;
 [spec/identity-and-authentication.md](spec/identity-and-authentication.md) R-AUTH-001, R-AUTH-002, R-AUTH-022, R-AUTH-023, R-AUTH-041;
 [spec/authorization.md](spec/authorization.md) R-AUTHZ-007; [spec/architecture.md](spec/architecture.md) R-ARCH-021.
-
-### ADR-167 · The pinned tools of a CI job come from a verified cache, not from a live release download
-
-**Status:** Decided by the development agent — owner review at the walkthrough.
-
-**Context.** On 2026-11-08 the GitHub release host answered 504 for the buildx archive of the nightly run 42465102401, and the buildx action's own binary cache held an entry that a runner with another workspace depth could not extract: the cache writer stores paths relative to the workspace, and that entry was saved from `/runner/_work/trove/trove`, four levels deep, and restored into `/home/runner/_work/trove/trove`, five levels deep. Each job of Test and Release and of the nightly downloads its tools again, and a release-host outage of a minute fails the leg.
-
-**Decision.** A tool pinned in `tools/versions.env` reaches a job as a verified archive: a composite action (`.github/actions/install-buildx`) first uses the runner's copy when that file is the pinned release binary (the same SHA-256; another build of the pinned version goes through the cache), otherwise a copy cached under the workspace path `.bin/`, otherwise a download with a bounded retry; the archive is used only when its SHA-256 equals the pinned digest. The action's own binary download is avoided. Applied to Docker Buildx in all 23 jobs, and to the chart pulls of `make dev-up` as a retry (`chart_tgz`). Still open: the Go toolchain and the cache of the chart archives. The two GitHub-release chart archives are pinned by digest, and every release-asset download is authenticated with the job's token (Q-ARCH-356).
-
-**Consequences.** One pin and its digests per tool, read by the workflows and by `make versions-check`. A version bump edits the version and its digests together. The Go toolchain keeps its exposure until it is moved.
-
-**Alternatives considered.** Only fixing the cache key (the download stays exposed); longer retries inside the actions (not configurable); baking the pins into the runner image (outside the repository, and a bump waits for an image rebuild).
-
-**Revisit condition:** the runner image carries the pins (the cache steps then do nothing), or a cold-cache run fails on the release host within the retry window again.
-
-**Spec:** [spec/architecture.md](spec/architecture.md) Q-ARCH-355; [developer/releasing.md](developer/releasing.md#pinned-tools-in-the-jobs).
 
 ### ADR-165 · The remote engine carries out the format's token handshake and HEAD revalidation
 
@@ -6229,6 +6263,22 @@ request header by the adapter (the hop policy removes it); a token guessed from 
 
 **Spec:** [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-033, R-REPO-054, Q-REPO-255, Q-REPO-256;
 [spec/formats/oci.md](spec/formats/oci.md) R-OCI-021, R-OCI-022, R-OCI-025, Q-OCI-80 to Q-OCI-82; [spec/architecture.md](spec/architecture.md) R-ARCH-032, Q-ARCH-350.
+
+### ADR-167 · The pinned tools of a CI job come from a verified cache, not from a live release download
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** On 2026-11-08 the GitHub release host answered 504 for the buildx archive of the nightly run 42465102401, and the buildx action's own binary cache held an entry that a runner with another workspace depth could not extract: the cache writer stores paths relative to the workspace, and that entry was saved from `/runner/_work/trove/trove`, four levels deep, and restored into `/home/runner/_work/trove/trove`, five levels deep. Each job of Test and Release and of the nightly downloads its tools again, and a release-host outage of a minute fails the leg.
+
+**Decision.** A tool pinned in `tools/versions.env` reaches a job as a verified archive: a composite action (`.github/actions/install-buildx`) first uses the runner's copy when that file is the pinned release binary (the same SHA-256; another build of the pinned version goes through the cache), otherwise a copy cached under the workspace path `.bin/`, otherwise a download with a bounded retry; the archive is used only when its SHA-256 equals the pinned digest. The action's own binary download is avoided. Applied to Docker Buildx in all 23 jobs, and to the chart pulls of `make dev-up` as a retry (`chart_tgz`). Still open: the Go toolchain and the cache of the chart archives. The two GitHub-release chart archives are pinned by digest, and every release-asset download is authenticated with the job's token (Q-ARCH-356).
+
+**Consequences.** One pin and its digests per tool, read by the workflows and by `make versions-check`. A version bump edits the version and its digests together. The Go toolchain keeps its exposure until it is moved.
+
+**Alternatives considered.** Only fixing the cache key (the download stays exposed); longer retries inside the actions (not configurable); baking the pins into the runner image (outside the repository, and a bump waits for an image rebuild).
+
+**Revisit condition:** the runner image carries the pins (the cache steps then do nothing), or a cold-cache run fails on the release host within the retry window again.
+
+**Spec:** [spec/architecture.md](spec/architecture.md) Q-ARCH-355; [developer/releasing.md](developer/releasing.md#pinned-tools-in-the-jobs).
 
 ## Decisions by the development agent
 
@@ -6640,6 +6690,13 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-STOR-167](spec/storage.md#q-stor-167--a-row-names-the-avatar-the-blob-reference-rules-keep-and-collect-it) | How is the avatar's blob kept and collected? Decided by the development agent | (a) the reference rules of R-STOR-003 (guard and release triggers), the table in export class `data` | (b) delete in the request; (c) class `transient` |
 | [Q-STOR-165](spec/storage.md#q-stor-165--r-stor-030-to-r-stor-033-hold-for-the-backup-targets-client-as-they-do-for-the-blob-stores) | Which rules of the object-store client hold for the backup target's client? | (b) endpoint, TLS, credential and encryption from `backup.target`, transport and retry defaults of `storage.s3`; never the runtime credential | — |
 | [Q-STOR-168](spec/storage.md#q-stor-168--the-requests-whose-answer-comes-when-the-store-has-finished-the-work-have-no-response-header-timeout-and-no-byte-idle-watchdog-and-the-idle-watchdog-of-a-download-measures-the-network-only) | How are copy and completion requests and downloads watched? | (b) no header timeout and a size-derived deadline for copy and completion; the download watchdog measures the network only | — |
+| [Q-STOR-170](spec/storage.md#q-stor-170--the-collection-run-aborts-a-live-session-for-its-idle-time-and-an-open-one-for-its-age) | Which sessions does the collection run abort, and when do their rows go? | (b) idle time for every live session, age for the open ones; a finished session's objects when its idle time has passed, then its row | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
+| [Q-STOR-171](spec/storage.md#q-stor-171--a-session-ends-in-the-transaction-that-links-the-item) | When does a session become `done`? | (b) in the transaction that links the item | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
+| [Q-STOR-172](spec/storage.md#q-stor-172--the-full-collection-sweep-removes-what-no-session-stands-for-until-the-orphan-sweep-is-a-task-of-its-own) | Who removes the staging objects that no session stands for? | (b) the full collection sweep, with `session_max_age` as the age, until the orphan sweep is a task of its own | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
+| [Q-STOR-173](spec/storage.md#q-stor-173--the-sessions-are-counted-by-trove_storage_upload_sessions_total-not-by-an-oci-metric) | How are the upload sessions counted? | (b) `trove_storage_upload_sessions_total{outcome}`, counted where a session ends | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
+| [Q-STOR-174](spec/storage.md#q-stor-174--the-tail-is-a-list-of-segments-that-are-read-once-and-the-multipart-upload-is-created-with-the-first-part) | What does a request that sends few bytes cost, and when does a session cost S3 objects? | (c) the tail is a list of segments read once by the request that completes a part; the multipart upload is created with the first part | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
+| [Q-STOR-175](spec/storage.md#q-stor-175--a-part-upload-is-sent-under-a-freshly-renewed-claim-and-ends-before-its-lease-does) | How is a stale writer kept from sending a part? | (b) the claim is renewed right before each part and the upload ends before the lease | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
+| [Q-STOR-176](spec/storage.md#q-stor-176--the-open-sessions-of-a-principal-on-a-repository-are-capped-an-ended-session-leaves-no-row-and-the-session-step-has-a-time-budget) | What bounds the number of upload sessions? | (b) a cap on the open sessions of a principal on a repository at `Start`, a time budget for the session step, an index that orders the cleaning | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) |
 | [Q-AUTH-1](spec/identity-and-authentication.md#q-auth-1--where-login-provider-configuration-lives) | Where does login provider configuration live? | (a) the configuration file only, claim mapping, gates and group rules included; same choice as Q-OPS-6 | [ADR-018](#adr-018--humans-authenticate-only-through-an-external-oidc-provider-inv-7), [ADR-026](#adr-026--one-configuration-file-plus-database-held-configuration-inv-15) |
 | [Q-AUTH-2](spec/identity-and-authentication.md#q-auth-2--session-cookie-name) | Should the cookies use the `__Host-` prefix? | (c) all three: `__Host-trv_session`, `__Host-trv_csrf`, `__Host-trv_oidc_binding`; changes INV-8 | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8), [ADR-046](#adr-046--server-side-ui-sessions-behind-an-opaque-cookie) |
 | [Q-AUTH-3](spec/identity-and-authentication.md#q-auth-3--refresh-tokens-or-rotation) | Refresh tokens or rotation only? | (a) no refresh tokens; rotation and repeated login are the renewal paths | [ADR-019](#adr-019--trove-issues-opaque-prefixed-tokens-inv-8) |

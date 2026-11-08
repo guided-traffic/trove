@@ -156,6 +156,7 @@ func listHas(ctx context.Context, s ObjectStore, prefix, key string) (bool, erro
 func ConformanceChecks() []ConformanceCheck {
 	return []ConformanceCheck{
 		{Name: "write, read back, compare and delete a probe object", Assumption: "A1", Run: checkProbe},
+		{Name: "a listing after a key starts behind it", Assumption: "A1", Run: checkStartAfter},
 		{Name: "list the blob prefix", Assumption: "A1", Run: checkListKeyPrefix},
 		{Name: "a missing key reads as not found", Assumption: "A1", Run: checkMissing},
 		{Name: "an overwrite is visible to the next read", Assumption: "A1", Run: checkOverwrite},
@@ -164,7 +165,9 @@ func ConformanceChecks() []ConformanceCheck {
 		{Name: "deleting a missing key succeeds", Assumption: "A1", Run: checkDeleteMissing},
 		{Name: "concurrent writes of identical bytes leave those bytes", Assumption: "A6", Run: checkConcurrentSameBytes},
 		{Name: "a ranged read returns exactly the range", Run: checkRange},
+		{Name: "a server-side copy yields the bytes of its source and a missing source is not found", Run: checkCopy},
 		{Name: "a multipart object is invisible until completion and complete after", Assumption: "A2", Run: checkMultipart},
+		{Name: "a multipart completion assembles the part it names and refuses an ETag it never issued", Assumption: "A2", Run: checkPartIdentity},
 		{Name: "an aborted multipart upload leaves no object and no upload", Assumption: "A2", Run: checkAbort},
 		{Name: "DeleteObjects removes several keys with one request", Optional: true, Run: checkDeleteMany},
 		{Name: "a presigned URL serves the object", Run: checkPresign},
@@ -215,6 +218,31 @@ func probe(ctx context.Context, s ObjectStore, prefix, replica string) error {
 	}
 	if err := s.Delete(ctx, key); err != nil {
 		return fmt.Errorf("delete %s: %w", key, err)
+	}
+	return nil
+}
+
+// checkStartAfter is what the sweep of the staging area pages on: a listing with StartAfter returns the keys behind it and not the ones before.
+func checkStartAfter(ctx context.Context, e *ConformanceEnv) error {
+	base := e.Key("startafter")
+	for _, s := range []string{"-a", "-b", "-c"} {
+		e.mu.Lock()
+		e.created = append(e.created, base+s)
+		e.mu.Unlock()
+		if err := putBytes(ctx, e.Store, base+s, payload(10)); err != nil {
+			return err
+		}
+	}
+	page, err := e.Store.List(ctx, base, ListOptions{StartAfter: base + "-a"})
+	if err != nil {
+		return fmt.Errorf("list: %w", err)
+	}
+	var got []string
+	for _, o := range page.Objects {
+		got = append(got, o.Key)
+	}
+	if len(got) != 2 || got[0] != base+"-b" || got[1] != base+"-c" {
+		return fmt.Errorf("a listing after %s returned %v, want the two keys behind it", base+"-a", got)
 	}
 	return nil
 }
@@ -346,6 +374,39 @@ func checkRange(ctx context.Context, e *ConformanceEnv) error {
 	return nil
 }
 
+// checkCopy is the object write of a finalized upload session (R-STOR-011 Finalize step 3): the staging object is copied to the
+// content address inside the store. The copy replaces an object at the destination and leaves the source in place.
+func checkCopy(ctx context.Context, e *ConformanceEnv) error {
+	src, dst := e.Key("copy-src"), e.Key("copy-dst")
+	data := payload(3000)
+	if err := putBytes(ctx, e.Store, src, data); err != nil {
+		return err
+	}
+	if err := putBytes(ctx, e.Store, dst, payload(10)); err != nil {
+		return err
+	}
+	if err := e.Store.Copy(ctx, src, dst, int64(len(data))); err != nil {
+		return fmt.Errorf("copy: %w", err)
+	}
+	got, err := readAll(ctx, e.Store, dst, nil)
+	if err != nil {
+		return fmt.Errorf("read the copy: %w", err)
+	}
+	if !bytes.Equal(got, data) {
+		return fmt.Errorf("the copy has %d bytes that differ from its source's %d", len(got), len(data))
+	}
+	if _, err := e.Store.Head(ctx, src); err != nil {
+		return fmt.Errorf("the source after the copy: %w", err)
+	}
+	switch err := e.Store.Copy(ctx, e.Key("copy-missing"), dst, 1); {
+	case err == nil:
+		return errors.New("copy of a missing source succeeded")
+	case !errors.Is(err, ErrNotFound):
+		return fmt.Errorf("copy of a missing source is not reported as not found: %w", err)
+	}
+	return nil
+}
+
 // multipartPart is the smallest part S3 accepts but the last.
 const multipartPart = 5 << 20
 
@@ -399,6 +460,52 @@ func checkMultipart(ctx context.Context, e *ConformanceEnv) error {
 	}
 	if !bytes.Equal(got, want) {
 		return errors.New("the completed object differs from the parts that were sent")
+	}
+	return nil
+}
+
+// checkPartIdentity is the guard of R-STOR-011 against a stale writer: a part number sent twice with different bytes (a request that
+// lost its claim and sends its part after the recorded one) must never end up in an object that names the other upload's ETag. The
+// completion must refuse an ETag the store never issued, and a completion that names the first upload's ETag must either be refused or
+// assemble exactly the first upload's bytes. A store that assembles the last upload of the number whatever ETag is named fails the
+// check, because a finalize would then store the stale writer's bytes under the digest of the recorded ones.
+func checkPartIdentity(ctx context.Context, e *ConformanceEnv) error {
+	key := e.Key("partidentity")
+	id, err := e.Store.CreateMultipart(ctx, key, "")
+	if err != nil {
+		return fmt.Errorf("create: %w", err)
+	}
+	e.mu.Lock()
+	e.uploads = append(e.uploads, MultipartUpload{Key: key, UploadID: id})
+	e.mu.Unlock()
+	first, second := payload(1000), append(payload(999), 0xff)
+	pa, err := e.Store.UploadPart(ctx, key, id, 1, bytes.NewReader(first), int64(len(first)), Checksum{})
+	if err != nil {
+		return fmt.Errorf("first upload of part 1: %w", err)
+	}
+	pb, err := e.Store.UploadPart(ctx, key, id, 1, bytes.NewReader(second), int64(len(second)), Checksum{})
+	if err != nil {
+		return fmt.Errorf("second upload of part 1: %w", err)
+	}
+	if pa.ETag == pb.ETag {
+		return errors.New("two uploads of different bytes to one part number got the same ETag")
+	}
+	if err := e.Store.CompleteMultipart(ctx, key, id, []Part{{Number: 1, ETag: `"00000000000000000000000000000000"`, Size: 1000}}); err == nil {
+		return errors.New("the store completed an upload that names an ETag it never issued (assumption A2: a part is the one that was named)")
+	}
+	if cerr := e.Store.CompleteMultipart(ctx, key, id, []Part{{Number: 1, ETag: pa.ETag, Size: pa.Size}}); cerr != nil {
+		var se *StoreError
+		if errors.As(cerr, &se) && (se.Code == "InvalidPart" || se.Code == "InvalidPartOrder") {
+			return nil // refused: the first upload was replaced, which is as safe as assembling it
+		}
+		return fmt.Errorf("the completion that names the first upload's ETag failed without refusing the part: %w", cerr)
+	}
+	got, err := readAll(ctx, e.Store, key, nil)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got, first) {
+		return errors.New("the completion that names the first upload's ETag assembled other bytes (assumption A2: a part is the one that was named)")
 	}
 	return nil
 }
@@ -488,7 +595,7 @@ func checkPresign(ctx context.Context, e *ConformanceEnv) error {
 
 // StartupCheck is the check a replica passes before its first readiness
 // (R-STOR-035): write, read back, compare and delete <prefix>/_probe/<replica>,
-// then list <prefix>/sha256/ with one key. It makes one attempt; the error is a
+// then list <prefix>/sha256/ with one key, and the part-identity check of a multipart upload (a part number sent twice). It makes one attempt; the error is a
 // *StoreError for the store's answers.
 func StartupCheck(ctx context.Context, s ObjectStore, prefix, replica string) error {
 	if err := probe(ctx, s, prefix, replica); err != nil {
@@ -496,6 +603,13 @@ func StartupCheck(ctx context.Context, s ObjectStore, prefix, replica string) er
 	}
 	if _, err := s.List(ctx, KeyPrefix(prefix), ListOptions{Max: 1}); err != nil {
 		return fmt.Errorf("list %s: %w", KeyPrefix(prefix), err)
+	}
+	// A store that assembles another upload's bytes for a part it was not asked for would store a stale writer's part under the digest of the
+	// recorded ones (R-STOR-011): a replica does not serve on it.
+	e := &ConformanceEnv{Store: s, Opts: ConformanceOptions{Prefix: prefix, Replica: replica}}
+	defer e.cleanup(ctx)
+	if err := checkPartIdentity(ctx, e); err != nil {
+		return fmt.Errorf("multipart part identity: %w", err)
 	}
 	return nil
 }

@@ -27,7 +27,9 @@ func TestEmbeddedSteps(t *testing.T) {
 		// object, or only loosens (Q-BAS-48), and a new one is added to this list on purpose.
 		// 00056_key_grammar replaces the key checks of repositories and projects by the OCI component grammar (Q-OCI-3): a DROP, and a
 		// tightening that a release before the one it names would meet as a failing insert.
-		contract := map[string]bool{"00033_bastion_kinds": true, "00056_key_grammar": true}
+		// 00058_upload_session_indexes replaces the cleanup index of 00054 by one that orders inside a state (Q-STOR-176).
+		// 00057_upload_session_tails drops the two tail columns of 00054, which is in no release, for a table of segments (Q-STOR-174).
+		contract := map[string]bool{"00033_bastion_kinds": true, "00056_key_grammar": true, "00057_upload_session_tails": true, "00058_upload_session_indexes": true}
 		for _, s := range steps {
 			if s.Phase != phaseExpand && !contract[s.Name] {
 				t.Errorf("%s: an unlisted contract step: the migrations are expand steps unless a decision says otherwise, got %s", s.Name, s.Phase)

@@ -403,6 +403,7 @@ flowchart LR
 | dispatch | `internal/api/dispatch` | The format dispatcher: `/api/<id>/<projectKey>/<repoKey>/…` for every format with routes, and the error shape of the prefix | R-ARCH-005, R-ARCH-011, Q-ARCH-214 |
 | formathost | `internal/formathost` | The `Host` of the format contract and the adapters of the item store's hooks and the generic layer's seam; the data ports are bound by the composition root | R-ARCH-009, Q-ARCH-193, Q-ARCH-212 |
 | packages | `internal/packages` | The generic package rows: the package store and the package writer that raises `packages.rev_seq` | R-ARCH-009, Q-ARCH-212 |
+| uploads | `internal/uploads` | The multi-request upload sessions: claims, parts, tails, the finalize states and the staged commit over `internal/blob`; it decides nothing about who may do what | [storage.md](storage.md) R-STOR-011 |
 | webui | `internal/webui`, `internal/webui/shared` | Embedded Angular build; the shared asset store of the UI's hashed files on the blob store, which the handler takes as an interface (Q-ARCH-332) | [api-and-ui.md](api-and-ui.md) (R-UI-001), R-ARCH-004, [ha-and-helm.md](ha-and-helm.md) (R-HA-020, Q-HA-120) |
 | avatar | `internal/avatar` | The user avatar: the processing of an uploaded image (format by content, bounds before decoding, centre square, fixed size, a new PNG) and the store over the blob store and `user_avatars` | [api-and-ui.md](api-and-ui.md) R-API-055, [storage.md](storage.md) Q-STOR-166 |
 | formats | `internal/formats`, `internal/formats/<id>` | Package protocols behind the plug-in contract | R-ARCH-008 to R-ARCH-010; [formats/npm.md](formats/npm.md), [formats/nuget.md](formats/nuget.md) |
@@ -581,6 +582,7 @@ trove/
 │   ├── api/dispatch/            # the format dispatcher: /api/<id>/<projectKey>/<repoKey>/…, the error shape of a format prefix (Q-ARCH-214)
 │   ├── formathost/              # the Host of the format contract, the hook and seam adapters, the data-port bindings (Q-ARCH-212)
 │   ├── packages/                # the generic package rows: store and writer, rev_seq raised once per package per transaction (Q-ARCH-212)
+│   ├── uploads/                 # the multi-request upload sessions of R-STOR-011: claims, parts, tails, finalize states
 │   ├── api/edge/                # what every entry point shares: Subject, Access, the content response, conditional and digest headers, links, list query, JSON (Q-ARCH-205)
 │   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
 │   ├── auth/scope/              # the token scope value type (leaf layer)

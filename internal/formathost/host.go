@@ -87,6 +87,8 @@ type Options struct {
 	// engine lands with the virtual class of the first format that has it).
 	Remote   formats.RemoteFetcher
 	Resolver formats.Resolver
+	// Uploads is the upload session service behind Host.Uploads (R-STOR-011); nil answers every call not_implemented.
+	Uploads SessionService
 	// DownloadBuffer is storage.download.buffer_size; below 4,096 uses 4,096.
 	DownloadBuffer int
 	// Vuln are the ports of the vulnerability scanning behind Host.Vulnerabilities; the zero value is a replica that
@@ -144,7 +146,12 @@ func New(o Options) (*Host, error) {
 func (h *Host) Ingest() formats.Ingestor { return ingestor{h: h} }
 
 // Uploads implements [formats.Host]: the upload sessions of R-STOR-011.
-func (h *Host) Uploads() formats.UploadSessions { return unsupportedUploads{} }
+func (h *Host) Uploads() formats.UploadSessions {
+	if h.o.Uploads == nil {
+		return unsupportedUploads{}
+	}
+	return sessions{h: h, svc: h.o.Uploads}
+}
 
 // Items implements [formats.Host].
 func (h *Host) Items() formats.ItemStore { return itemStore{h: h} }

@@ -64,7 +64,7 @@ func New() *Store {
 
 // SetFault installs a function called before every operation with its name
 // ("put", "create_multipart", "upload_part", "complete_multipart",
-// "abort_multipart", "head", "get", "delete", "delete_many", "list",
+// "abort_multipart", "copy", "head", "get", "delete", "delete_many", "list",
 // "list_multipart") and key; a non-nil error is returned instead of the
 // operation. Pass nil to remove it.
 func (s *Store) SetFault(f func(op, key string) error) {
@@ -264,6 +264,24 @@ func (s *Store) AbortMultipart(_ context.Context, key, id string) error {
 	return nil
 }
 
+// Copy implements blob.ObjectStore.
+func (s *Store) Copy(_ context.Context, srcKey, dstKey string, size int64) error {
+	if err := s.enter("copy", srcKey); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.objects[srcKey]
+	if !ok {
+		return blob.ErrNotFound
+	}
+	if size >= 0 && int64(len(o.data)) != size {
+		return fmt.Errorf("copy of %s: the object has %d bytes, declared %d", srcKey, len(o.data), size)
+	}
+	s.objects[dstKey] = &object{data: bytes.Clone(o.data), modified: s.Now()}
+	return nil
+}
+
 // Head implements blob.ObjectStore.
 func (s *Store) Head(_ context.Context, key string) (blob.ObjectInfo, error) {
 	if err := s.enter("head", key); err != nil {
@@ -394,6 +412,34 @@ func (s *Store) ListMultipart(_ context.Context, prefix string) ([]blob.Multipar
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UploadID < out[j].UploadID })
 	return out, nil
+}
+
+var _ blob.MultipartPager = (*Store)(nil)
+
+// ListMultipartPage implements blob.MultipartPager: the uploads in order of key and id, max at a time.
+func (s *Store) ListMultipartPage(ctx context.Context, prefix string, after blob.MultipartMarker, max int) ([]blob.MultipartUpload, blob.MultipartMarker, error) {
+	all, err := s.ListMultipart(ctx, prefix)
+	if err != nil {
+		return nil, blob.MultipartMarker{}, err
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Key != all[j].Key {
+			return all[i].Key < all[j].Key
+		}
+		return all[i].UploadID < all[j].UploadID
+	})
+	var out []blob.MultipartUpload
+	for _, u := range all {
+		if after.Key != "" && (u.Key < after.Key || (u.Key == after.Key && u.UploadID <= after.UploadID)) {
+			continue
+		}
+		if len(out) == max {
+			last := out[len(out)-1]
+			return out, blob.MultipartMarker{Key: last.Key, UploadID: last.UploadID}, nil
+		}
+		out = append(out, u)
+	}
+	return out, blob.MultipartMarker{}, nil
 }
 
 // PresignHost is the host of the URLs Presign returns. The store is also an

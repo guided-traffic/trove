@@ -158,6 +158,9 @@ type ObjectStore interface {
 	CompleteMultipart(ctx context.Context, key, uploadID string, parts []Part) error
 	// AbortMultipart discards an upload and its parts.
 	AbortMultipart(ctx context.Context, key, uploadID string) error
+	// Copy copies the object srcKey, size bytes long, to dstKey inside the store, with no byte passing through the caller
+	// (CopyObject up to 5 GiB, UploadPartCopy above). dstKey is replaced if it exists; a missing srcKey is ErrNotFound.
+	Copy(ctx context.Context, srcKey, dstKey string, size int64) error
 	// Head returns the size and modification time of an object.
 	Head(ctx context.Context, key string) (ObjectInfo, error)
 	// Get opens an object, optionally a range of it. The caller closes the body.
@@ -173,4 +176,15 @@ type ObjectStore interface {
 	ListMultipart(ctx context.Context, prefix string) ([]MultipartUpload, error)
 	// Presign returns a URL that serves GET of the key for ttl.
 	Presign(ctx context.Context, key string, ttl time.Duration) (string, error)
+}
+
+// MultipartMarker is the position after which a page of unfinished multipart uploads continues; the zero value starts at the first.
+type MultipartMarker struct{ Key, UploadID string }
+
+// MultipartPager is implemented by an [ObjectStore] that lists unfinished multipart uploads a page at a time. The staging area can hold
+// many (a session that was started and never continued keeps its upload until the sweep), so the sweep of R-STOR-011 pages when it can
+// and reads them all at once only from a store that cannot.
+type MultipartPager interface {
+	// ListMultipartPage lists at most max uploads below prefix after the marker; next is the zero marker when the listing is complete.
+	ListMultipartPage(ctx context.Context, prefix string, after MultipartMarker, max int) (page []MultipartUpload, next MultipartMarker, err error)
 }

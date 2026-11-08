@@ -33,6 +33,8 @@ type Metrics struct {
 	gcLastOK    *prometheus.GaugeVec // no series until a run succeeded
 
 	damaged *prometheus.CounterVec
+
+	uploadSessions *prometheus.CounterVec
 }
 
 // NewMetrics registers the families on m. It panics, like every registration
@@ -56,6 +58,27 @@ func NewMetrics(m *observability.Metrics) *Metrics {
 		gcLastOK:    m.NewGaugeVec("trove_gc_last_success_timestamp_seconds", "End of the last garbage-collection run of this replica that was neither a dry run, nor paused, nor failed; absent until one has ended."),
 
 		damaged: m.NewCounterVec("trove_storage_blobs_damaged_total", "Blobs marked damaged by a detection, by new status.", "status"),
+
+		uploadSessions: m.NewCounterVec("trove_storage_upload_sessions_total", "Multi-request upload sessions by how they ended: completed, aborted or expired (R-STOR-011).", "outcome"),
+	}
+}
+
+// The outcomes of an upload session (UploadSession).
+const (
+	SessionCompleted = "completed"
+	SessionAborted   = "aborted"
+	SessionExpired   = "expired"
+)
+
+// UploadSessionCounter is the counter of one outcome, for a test that reads it.
+func (m *Metrics) UploadSessionCounter(outcome string) prometheus.Counter {
+	return m.uploadSessions.WithLabelValues(outcome)
+}
+
+// UploadSession counts n upload sessions that ended with the outcome (Q-STOR-173). A nil *Metrics records nothing.
+func (m *Metrics) UploadSession(outcome string, n int) {
+	if m != nil && n > 0 {
+		m.uploadSessions.WithLabelValues(outcome).Add(float64(n))
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/observability/health"
+	"github.com/guided-traffic/trove/internal/uploads"
 )
 
 // wireBlob is the blob area: it builds the object-store client, its guard, the
@@ -77,8 +78,16 @@ func (a *App) wireBlob(ctx context.Context, keys keysArea, pg postgresArea) (blo
 	}, !a.cfg.Health.RequireObjectStore)
 
 	area := blobArea{store: store}
+	// The upload sessions (R-STOR-011): a replica that accepts uploads continues any session; the collection run of a worker
+	// expires them.
+	svc, err := uploads.New(uploads.Options{DB: db, Objects: objects, Spool: store.Spool(), Storage: cfg, Metrics: bm, Log: a.log.With("component", "uploads")})
+	if err != nil {
+		return blobArea{}, err
+	}
+	a.uploads = svc
 	if a.sub.JobLoops {
-		area.gc = blob.NewCollector(cfg.GC, cfg.S3.Prefix, objects, db, blob.WithCollectorLogger(log), blob.WithCollectorMetrics(bm))
+		area.gc = blob.NewCollector(cfg.GC, cfg.S3.Prefix, objects, db, blob.WithCollectorLogger(log), blob.WithCollectorMetrics(bm),
+			blob.WithUploadSessions(cfg.Uploads))
 		a.gc.set(area.gc)
 		a.wireJournalShipper(client, pg.db)
 		a.wireBackupCheck(client)

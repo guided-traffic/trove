@@ -137,7 +137,7 @@ func TestStartupCheck(t *testing.T) {
 		if err := blob.StartupCheck(context.Background(), m, "trove", "r1"); err != nil {
 			t.Fatal(err)
 		}
-		if m.Count("put") != 1 || m.Count("get") != 1 || m.Count("delete") != 1 || m.Count("list") != 1 || len(m.Keys("")) != 0 {
+		if m.Count("put") != 1 || m.Count("get") != 1 || m.Count("delete") != 2 || m.Count("list") != 1 || len(m.Keys("")) != 0 || m.OpenUploads() != 0 { // the second delete is the clean-up of the part-identity check (a multipart upload of a part number sent twice)
 			t.Fatalf("put=%d get=%d delete=%d list=%d keys=%v", m.Count("put"), m.Count("get"), m.Count("delete"), m.Count("list"), m.Keys(""))
 		}
 	})

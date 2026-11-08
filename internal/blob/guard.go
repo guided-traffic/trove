@@ -183,6 +183,11 @@ func (g *Guard) AbortMultipart(ctx context.Context, key, uploadID string) error 
 	return g.call("abort_multipart", func() error { return g.inner.AbortMultipart(ctx, key, uploadID) })
 }
 
+// Copy implements ObjectStore.
+func (g *Guard) Copy(ctx context.Context, srcKey, dstKey string, size int64) error {
+	return g.call("copy", func() error { return g.inner.Copy(ctx, srcKey, dstKey, size) })
+}
+
 // Head implements ObjectStore.
 func (g *Guard) Head(ctx context.Context, key string) (info ObjectInfo, err error) {
 	err = g.call("head", func() (e error) { info, e = g.inner.Head(ctx, key); return })
@@ -237,4 +242,18 @@ func (g *Guard) ListMultipart(ctx context.Context, prefix string) (ups []Multipa
 // through the breaker.
 func (g *Guard) Presign(ctx context.Context, key string, ttl time.Duration) (string, error) {
 	return g.inner.Presign(ctx, key, ttl)
+}
+
+// ListMultipartPage implements [MultipartPager] when the guarded store does; a store that does not answers with the whole listing.
+func (g *Guard) ListMultipartPage(ctx context.Context, prefix string, after MultipartMarker, max int) (page []MultipartUpload, next MultipartMarker, err error) {
+	p, ok := g.inner.(MultipartPager)
+	if !ok {
+		if after != (MultipartMarker{}) {
+			return nil, MultipartMarker{}, nil
+		}
+		page, err = g.ListMultipart(ctx, prefix)
+		return page, MultipartMarker{}, err
+	}
+	err = g.call("list_multipart", func() (e error) { page, next, e = p.ListMultipartPage(ctx, prefix, after, max); return })
+	return page, next, err
 }

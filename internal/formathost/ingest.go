@@ -201,6 +201,12 @@ func (h *Host) linkSource(ctx context.Context, rq *formats.Request, from formats
 // transaction, after the item row and before the storage hook, where the generic
 // layer records them.
 func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Spooled, c formats.Commit) (formats.Committed, error) {
+	return i.commit(ctx, rq, sp, c, nil)
+}
+
+// commit is Commit with a step of the caller in the commit transaction, after the recorded write decisions: the upload sessions end
+// theirs there, so that the item and the end of the session are one commit (R-STOR-011 Finalize).
+func (i ingestor) commit(ctx context.Context, rq *formats.Request, sp formats.Spooled, c formats.Commit, also func(ctx context.Context, tx meta.Tx, ref items.Ref) error) (formats.Committed, error) {
 	s, ok := sp.(*spooled)
 	if !ok {
 		return formats.Committed{}, errs.E(errs.Internal, errs.CodeInternal, "The body was not spooled by this host.")
@@ -230,8 +236,14 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 		Origin: items.OriginUpload, CreateOnly: c.CreateOnly, MayOverwrite: c.MayOverwrite,
 		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,
 		Payload: &commitPayload{req: rq, inspection: c.Inspection, payload: c.Payload},
-		Extra: func(ctx context.Context, tx meta.Tx, _ items.Ref) error {
-			return st.record(ctx, tx, i.h.o.Decider, rq.Subject)
+		Extra: func(ctx context.Context, tx meta.Tx, ref items.Ref) error {
+			if err := st.record(ctx, tx, i.h.o.Decider, rq.Subject); err != nil {
+				return err
+			}
+			if also != nil {
+				return also(ctx, tx, ref)
+			}
+			return nil
 		},
 		BeginCommit: func() { httpserver.BeginCommit(ctx) },
 	})

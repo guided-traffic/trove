@@ -943,14 +943,14 @@ type UploadSession struct {
 	PartSize        int64
 	S3UploadID      string
 	TailSize        int64
-	TailWriter      pgtype.UUID
-	TailSha256      []byte
 	Writer          pgtype.UUID
 	WriterUntil     pgtype.Timestamptz
 	Digest          []byte
 	State           string
 	CreatedAt       pgtype.Timestamptz
 	LastActivityAt  pgtype.Timestamptz
+	ItemID          pgtype.Int8
+	Cleaned         bool
 }
 
 type UploadSessionPart struct {
@@ -959,6 +959,14 @@ type UploadSessionPart struct {
 	Size       int64
 	Etag       string
 	Sha256     []byte
+}
+
+type UploadSessionTail struct {
+	SessionID pgtype.UUID
+	Seq       int32
+	Writer    pgtype.UUID
+	Size      int64
+	Sha256    []byte
 }
 
 type UserAvatar struct {

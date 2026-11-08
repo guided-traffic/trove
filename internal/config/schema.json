@@ -3975,6 +3975,13 @@
         "uploads": {
           "additionalProperties": false,
           "properties": {
+            "max_open_sessions": {
+              "default": 100,
+              "description": "Most open upload sessions one principal holds on one repository; a start above it answers 429 (R-STOR-011, Q-STOR-176).",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_STORAGE_UPLOADS_MAX_OPEN_SESSIONS"
+            },
             "part_size": {
               "default": "16MiB",
               "type": [
@@ -4000,6 +4007,7 @@
             },
             "writer_lease": {
               "default": "1m",
+              "description": "Also the deadline of one part upload (below it): choose it above the time one part takes to send (R-STOR-011).",
               "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
               "type": "string",
               "x-trove-env": "TROVE_STORAGE_UPLOADS_WRITER_LEASE",

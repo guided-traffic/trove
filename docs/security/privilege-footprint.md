@@ -68,13 +68,17 @@ Trove calls these S3 operations and no others ([internal/blob/s3](../../internal
 | Operations | Who calls them | Code |
 |---|---|---|
 | `PutObject`, `CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `AbortMultipartUpload`, `HeadObject`, `GetObject`, `DeleteObject`, `DeleteObjects`, `ListObjectsV2` | the blob store of the replicas, the journal shipper, the backup's reads of the blob bucket, the backup target client | [client.go](../../internal/blob/s3/client.go) |
-| `CopyObject`, `UploadPartCopy` | the server-side copy of a blob into the target at a backup, and into the blob store at a restore (R-BAK-006) | [target_copy.go](../../internal/blob/s3/target_copy.go), [blobsink.go](../../internal/blob/s3/blobsink.go) |
+| `CopyObject`, `UploadPartCopy` | the server-side copy of a blob into the target at a backup, and into the blob store at a restore (R-BAK-006); and the copy of the finalize of an upload session, from its staging object to the content address, on every replica that takes uploads (R-STOR-011; one `CopyObject` up to 5 GiB, parts of 1 GiB above) | [target_copy.go](../../internal/blob/s3/target_copy.go), [blobsink.go](../../internal/blob/s3/blobsink.go), [copy.go](../../internal/blob/s3/copy.go) |
 | `ListObjectVersions`, and `GetObject` with a `VersionId` | the journal reader of a restore and of the post-restore, with the credential of `restore.journalCredentials` or `postRestore.journalCredentials` | [journalstore.go](../../internal/blob/s3/journalstore.go) |
 | `GetBucketVersioning`, `GetBucketLifecycleConfiguration` | the platform check of the blob bucket's protection (R-HA-023); a credential that may not read them gives "unknown", the common answer for the runtime credential | [protection.go](../../internal/blob/s3/protection.go) |
 
-The client also implements `ListMultipartUploads` and a presigned `GetObject`; only the object-store conformance check of
-R-STOR-035 ([conformance.go](../../internal/blob/conformance.go)) calls them, and it runs in the integration tier, not in a
-replica or a Job. Trove never calls `CreateBucket`, any `PutBucket*`, `DeleteObjectVersion`, or any call that configures
+The client also implements `ListMultipartUploads` and a presigned `GetObject`. `ListMultipartUploads` is called by the staging sweep of the
+collection run (a `worker`, in a full sweep, R-STOR-011 Expiry) and by the object-store conformance check of R-STOR-035
+([conformance.go](../../internal/blob/conformance.go)); the presigned `GetObject` only by the check in the integration tier. Every replica's
+startup check sends a part number twice in a multipart upload and completes it, naming one ETag, then deletes the object
+(`CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `DeleteObject` below `<prefix>/_probe/`); `AbortMultipartUpload` is called only when
+the store refuses the completion or the check is cleaned up, and the sweep deletes the staging objects and aborts the leftover probe objects and
+uploads it finds; all of these are within the permissions of R-STOR-031. Trove never calls `CreateBucket`, any `PutBucket*`, `DeleteObjectVersion`, or any call that configures
 versioning, lifecycle or object lock ([internal/blob](../../internal/blob) has no such call). The bucket is an operator resource.
 
 The minimum permissions per prefix are R-STOR-031 ([storage.md](../spec/storage.md)). The stackit S3 provisioner that the owner

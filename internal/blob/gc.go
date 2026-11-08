@@ -48,6 +48,13 @@ type GCResult struct {
 	// HoldSkipped is a run that found a valid global hold of a running backup before it claimed its candidates and ended
 	// without them (R-BAK-007 "Skipping a run").
 	HoldSkipped bool `json:"holdSkipped,omitempty"`
+	// The session step of the run (R-STOR-011 Expiry): sessions aborted for their idle time or age (a dry run counts those it would
+	// abort), sessions whose objects and row were removed, the unknown sessions' staging objects deleted and the multipart
+	// uploads of the staging area aborted by a full sweep.
+	UploadSessionsAborted int `json:"uploadSessionsAborted,omitempty"`
+	UploadSessionsCleaned int `json:"uploadSessionsCleaned,omitempty"`
+	UploadObjectsDeleted  int `json:"uploadObjectsDeleted,omitempty"`
+	UploadsAborted        int `json:"uploadsAborted,omitempty"`
 }
 
 // RunOptions are the parameters of one run.
@@ -73,6 +80,9 @@ type Collector struct {
 	metrics *Metrics
 	now     func() time.Time
 	poll    time.Duration
+	// uploads, when set, makes the run expire and clean up the upload sessions (WithUploadSessions).
+	uploads                *config.StorageUploads
+	sweepPages, sweepBatch int
 
 	// Paused reports the deletion pause of R-HA-025. The default reads the
 	// system_state key deletions_paused_at.
@@ -149,11 +159,13 @@ type candidate struct {
 
 // run is the state of one Run.
 type run struct {
-	c       *Collector
-	opts    RunOptions
-	res     GCResult
-	claimed map[Digest]claim // claimed by this run, object not yet deleted
-	pending []Digest         // object deleted, object_deleted_at not yet recorded
+	// sessionStart is when the session step of this run began (inBudget).
+	sessionStart time.Time
+	c            *Collector
+	opts         RunOptions
+	res          GCResult
+	claimed      map[Digest]claim // claimed by this run, object not yet deleted
+	pending      []Digest         // object deleted, object_deleted_at not yet recorded
 }
 
 // Run performs one collection run (R-STOR-024, R-STOR-025): it finishes
@@ -183,6 +195,18 @@ func (c *Collector) Run(ctx context.Context, o RunOptions) (res GCResult, err er
 
 	if r.res.Paused, err = r.paused(ctx); err != nil || r.res.Paused {
 		return r.res, err
+	}
+	// The session step comes first: it frees the staging objects, and a failure of it (the store unreachable) is counted and
+	// logged, never the reason the blob collection below does not run.
+	if serr := r.uploadSessions(ctx); serr != nil {
+		if stopsRun(ctx, serr) {
+			return r.res, serr
+		}
+		r.res.Errors++
+		c.log.Warn("the upload session step of the collection run failed", "error", serr)
+	}
+	if r.res.Paused { // the pause was set while the session step ran
+		return r.res, nil
 	}
 	if !o.DryRun {
 		if err = r.finishRows(ctx); err != nil || r.res.Paused {

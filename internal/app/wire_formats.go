@@ -252,13 +252,18 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 	if err != nil {
 		return formatHostArea{}, err
 	}
-	host, err := formathost.New(formathost.Options{
+	hostOpts := formathost.Options{
 		Runner: in.db, Decider: fa.decider, Items: fa.items, Packages: pkgs, Deps: fm.deps, Renditions: rend, Engine: eng.remote(),
 		Resolver: resolver,
 		Vuln:     vz.hostPorts(),
 		Enforce:  vz.enforcer, Repos: repo.reader,
 		DownloadBuffer: int(a.cfg.Storage.Download.BufferSize), Log: a.log.With("component", "formats"),
-	})
+	}
+	// A nil pointer in an interface would not be nil: the session service is set only where it was built.
+	if a.uploads != nil {
+		hostOpts.Uploads = a.uploads
+	}
+	host, err := formathost.New(hostOpts)
 	if err != nil {
 		return formatHostArea{}, err
 	}
