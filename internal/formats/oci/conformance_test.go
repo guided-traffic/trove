@@ -56,7 +56,7 @@ func pushManifest(h *formattest.Host, path string, body []byte) error {
 // are skipped or listed as not built, each with its reason, and the work package that builds the operation removes the entry (the kit
 // refuses a skip the format contradicts).
 func conformance() formattest.Fixture {
-	not := func(what string) string { return what + " is not built yet (T-16): its handler answers 501" }
+	const uploadNoRow = "an upload session and the blob it commits are no package row and no row of the format's tables: no document the revision keys changes"
 	return formattest.Fixture{
 		Rejects: []string{"app/manifests/%2e%2e", "../app/manifests/1", "app/manifests/1%00"},
 		Paths: []formattest.PathCase{
@@ -111,10 +111,9 @@ func conformance() formattest.Fixture {
 		}...),
 		NoRevision: map[string]string{
 			// A blob is no row of the format and no package version: removing one changes what no document renders.
-			routeBlobDelete:   "a blob item is no package row and no row of the format's tables: removing one changes no document the revision keys",
-			routeUploadStart:  not("starting an upload"),
-			routeUploadStatus: not("querying an upload"), routeUploadPatch: not("sending a chunk"),
-			routeUploadPut: not("finishing an upload"), routeUploadCancel: not("cancelling an upload"),
+			routeBlobDelete:  "a blob item is no package row and no row of the format's tables: removing one changes no document the revision keys",
+			routeUploadStart: uploadNoRow, routeUploadStatus: uploadNoRow, routeUploadPatch: uploadNoRow,
+			routeUploadPut: uploadNoRow, routeUploadCancel: uploadNoRow,
 		},
 		View: &formattest.ViewFixture{
 			Versions: []string{"1.0", "2.0", "3.0"}, Package: "app",

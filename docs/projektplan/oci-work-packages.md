@@ -48,7 +48,7 @@ One package, one builder (`voltagent-lang:golang-pro` with `voltagent-qa-sec:arc
 package. It writes the contract additions, the schema and the configuration keys, with no behaviour behind them beyond
 compile-time stubs (methods answer `errs.Unsupported`/501, as the NuGet skeleton did, Q-NUGET-32), so that WP1 to WP11 build
 against fixed types in parallel. One ADR: **ADR-161 · The format contract gains the registry root, the upstream handshake, HEAD
-revalidation, plan artifacts and upload sessions** (additions keep `ContractVersion` 2, R-ARCH-025; the surface file changes).
+revalidation, plan artifacts and upload sessions** (additions keep `ContractVersion`, R-ARCH-025; the surface file changes; the contract is at 3 since the upload sessions' Finalize took an offset, ADR-178).
 
 ### 2.1 Go contract (`internal/formats`, `internal/formats/catalog`, `internal/mirror/discover`)
 
@@ -361,6 +361,18 @@ WP0 ──┬─ WP1 ─────────────┐
   `EndpointRouter`, `RegistryEnforcer`), `internal/httpserver/{router,routetable}.go`, `internal/api/registry/route/route.go` (the
   version header), `docs/decisions.md`, `docs/spec/{README,architecture,endpoints}.md`.
 - `registry.CatalogStore` is the interface of `Store.CatalogNames`; `*ocidata.Store` satisfies it (compile-time assertion in `wire_registry.go`).
+
+
+## WP5 as built (blob uploads and the mount)
+
+- Built: `handlers_upload.go` (start, monolithic `POST`, `PATCH`, `PUT`, status, abort over the host's session port, the image name of the path as the binding on every call),
+  `handlers_mount.go` (`handleMount`, the exported `MountSource`, the mount through `Ingestor.Link` by source name), the commit-hook check that a blob item holds the content of its digest,
+  `routes.go` without `stub` (every operation has a handler). ADR-175, Q-OCI-110 to Q-OCI-116, H-660 to H-663, ADR-178 (contract version 3) ([oci-uploads.md](../security/oci-uploads.md)).
+- WP3 (landed first) strips `mount` and `from` of a request whose registry token lacks `pull` on the source; WP5 closed H-660 with `EndpointFacts.BoundRepo` and `ociformat.MountSource` in the composition root. The `Location` of a session is built by the link builder of the request. A write to a virtual
+  repository reaches the handler as a request for the deployment target, and the session and the `Location` name the target (H-663): WP9, which builds the OCI virtual class, makes the dispatcher keep the addressed
+  repository on a write redirect, `uploadTarget` accept an addressed virtual, and the `Location` come from `Links(rq).Registry(addressed)`; it is the only place the path can be tested.
+- Touched outside the owned files: `internal/formats/oci/hooks.go` (the blob branch of `OnCommit`), `routes.go` (`stub` removed), `format_test.go` and `conformance_test.go` (the routes
+  are built), `docs/security/README.md`, `docs/decisions.md`.
 
 ## WP6 as built (the remote engine's handshake and revalidation)
 

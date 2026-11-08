@@ -500,7 +500,7 @@ func (unsupportedUploads) Append(context.Context, *formats.Request, formats.Sess
 	return 0, uploadsNotBuilt()
 }
 
-func (unsupportedUploads) Finalize(context.Context, *formats.Request, formats.SessionRef, [32]byte, io.Reader, formats.Commit) (formats.Committed, error) {
+func (unsupportedUploads) Finalize(context.Context, *formats.Request, formats.SessionRef, int64, [32]byte, io.Reader, formats.Commit) (formats.Committed, error) {
 	return formats.Committed{}, uploadsNotBuilt()
 }
 

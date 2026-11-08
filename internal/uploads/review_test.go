@@ -245,11 +245,11 @@ func TestR_STOR_011_ARepeatedClosingRequestIsAnsweredFromTheRecord(t *testing.T)
 		commits.Add(1)
 		return f.commit(ctx, st, md)
 	}
-	res, err := s.Finalize(context.Background(), sess.ID, f.sc, sumOf(data), bytes.NewReader(data), 0, commit)
+	res, err := s.Finalize(context.Background(), sess.ID, f.sc, -1, sumOf(data), bytes.NewReader(data), 0, commit)
 	if err != nil || res.Replayed || res.ItemID != 42 {
 		t.Fatalf("first: %+v, %v", res, err)
 	}
-	res, err = f.replica().Finalize(context.Background(), sess.ID, f.sc, sumOf(data), nil, 0, commit)
+	res, err = f.replica().Finalize(context.Background(), sess.ID, f.sc, -1, sumOf(data), nil, 0, commit)
 	if err != nil || !res.Replayed || res.ItemID != 42 || commits.Load() != 1 {
 		t.Fatalf("repeat: %+v, %v, %d commits", res, err, commits.Load())
 	}
@@ -319,7 +319,7 @@ func TestR_STOR_011_SessionsAreCountedByHowTheyEnded(t *testing.T) {
 
 	done, _ := s.Start(context.Background(), 3, f.sc)
 	data := random(30)
-	if _, err := s.Finalize(context.Background(), done.ID, f.sc, sumOf(data), bytes.NewReader(data), 0, f.commit); err != nil {
+	if _, err := s.Finalize(context.Background(), done.ID, f.sc, -1, sumOf(data), bytes.NewReader(data), 0, f.commit); err != nil {
 		t.Fatal(err)
 	}
 	gone, _ := s.Start(context.Background(), 3, f.sc)

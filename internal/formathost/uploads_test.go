@@ -41,7 +41,7 @@ func TestTheUploadSessionPortAnswersNotImplementedWithoutAService(t *testing.T) 
 	check("Get", err)
 	_, err = u.Append(ctx, rq, id, 0, strings.NewReader("x"))
 	check("Append", err)
-	_, err = u.Finalize(ctx, rq, id, [32]byte{}, nil, formats.Commit{})
+	_, err = u.Finalize(ctx, rq, id, -1, [32]byte{}, nil, formats.Commit{})
 	check("Finalize", err)
 	check("Abort", u.Abort(ctx, rq, id))
 }
@@ -86,7 +86,7 @@ func (f *fakeSessions) Append(_ context.Context, _ uuid.UUID, sc uploads.Scope, 
 	return f.appendTo, f.err
 }
 
-func (f *fakeSessions) Finalize(_ context.Context, _ uuid.UUID, sc uploads.Scope, _ [32]byte, _ io.Reader, limit int64, commit uploads.CommitFunc) (uploads.Result, error) {
+func (f *fakeSessions) Finalize(_ context.Context, _ uuid.UUID, sc uploads.Scope, _ int64, _ [32]byte, _ io.Reader, limit int64, commit uploads.CommitFunc) (uploads.Result, error) {
 	f.note("finalize", sc)
 	f.limit = limit
 	if f.finalize != nil {
@@ -171,7 +171,7 @@ func TestR_STOR_011_TheHostDecidesDeployOnTheTargetBeforeEveryCall(t *testing.T)
 			return err
 		},
 		"Finalize": func(f *sessionFixture) error {
-			_, err := f.h.Uploads().Finalize(t.Context(), f.rq, ref, [32]byte{}, nil, formats.Commit{})
+			_, err := f.h.Uploads().Finalize(t.Context(), f.rq, ref, -1, [32]byte{}, nil, formats.Commit{})
 			return err
 		},
 		"Abort": func(f *sessionFixture) error { return f.h.Uploads().Abort(t.Context(), f.rq, ref) },
@@ -330,7 +330,7 @@ func TestR_STOR_011_FinalizeCommitsTheStagedBlobInTheTransactionThatEndsTheSessi
 		t.Fatal(err)
 	}
 	c := formats.Commit{Path: path, CreateOnly: true}
-	got, err := f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, sum, nil, c)
+	got, err := f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, -1, sum, nil, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestR_STOR_011_ARepeatedClosingRequestAnswersFromTheRecordWithoutACommit(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, [32]byte{1}, nil, formats.Commit{Path: path})
+	got, err := f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, -1, [32]byte{1}, nil, formats.Commit{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestR_STOR_011_FinalizeDecidesDeployOnThePathItCommits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, [32]byte{1}, nil, formats.Commit{Path: path}); err != nil {
+	if _, err := f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, -1, [32]byte{1}, nil, formats.Commit{Path: path}); err != nil {
 		t.Fatal(err)
 	}
 	if f.d.got.Path != path.Path || f.d.got.Package != "app" {

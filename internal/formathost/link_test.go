@@ -61,15 +61,24 @@ func TestR_STOR_008_LinkResolvesTheSourceByNameAndChecksIt(t *testing.T) {
 	src.Digest[0] = 0xaa
 	repos := linkRepos{by: map[qname.Repo]repository.Repository{qr("other"): other, qr("second"): second, qr("both"): virt}}
 	from := formats.SourceRef{Repo: qr("other"), Path: path}
+	var unusable map[qname.Repo]bool
+	var begin error
+	router := linkRouter{members: virt.Members(), admitted: true}
+	var dec *linkDecider
+	repos.by[qr("alien")] = repository.Repository{ID: "6", Name: qr("alien"), Class: repository.Local, Format: "other-format"}
 	run := func(mod func(*linkItems, *fakeDecider, *formats.SourceRef), c formats.Commit) (*linkItems, *fakeDecider, formats.Committed, error) {
 		li := &linkItems{live: map[string]items.Item{"it/other/" + path: src}}
 		d := &fakeDecider{}
 		d.decision = authz.Decision{Outcome: authz.Allow}
 		f := from
+		unusable, begin, router = nil, nil, linkRouter{members: virt.Members(), admitted: true}
 		if mod != nil {
 			mod(li, d, &f)
 		}
-		h, err := New(Options{Runner: nopRunner{}, Decider: d, Items: li, Packages: mustPackages(t), Repos: repos, Deps: Deps{Formats: func(string) (formats.Format, bool) { return nil, false }}})
+		dec = &linkDecider{fakeDecider: d, unusable: unusable, begin: begin}
+		h, err := New(Options{Runner: nopRunner{}, Decider: dec, Items: li, Packages: mustPackages(t), Repos: repos, Deps: Deps{
+			Formats: func(string) (formats.Format, bool) { return classFormat{portFormat{id: "probe"}}, true }, Refusal: router,
+		}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,6 +114,17 @@ func TestR_STOR_008_LinkResolvesTheSourceByNameAndChecksIt(t *testing.T) {
 			t.Errorf("the read was decided on %+v: the caller reads the virtual repository", d.got)
 		}
 	})
+	t.Run("a virtual source is linked from a member the caller may read, skipping one it may not", func(t *testing.T) {
+		li, _, _, err := run(func(l *linkItems, _ *fakeDecider, f *formats.SourceRef) {
+			f.Repo = qr("both")
+			l.live["it/other/"+path] = src
+			l.live["it/second/"+path] = src
+			unusable = map[qname.Repo]bool{qr("other"): true}
+		}, commit)
+		if err != nil || li.commits != 1 || len(dec.asked) != 2 {
+			t.Fatalf("err %v commits %d asked %v", err, li.commits, dec.asked)
+		}
+	})
 	gone := map[string]func(*linkItems, *fakeDecider, *formats.SourceRef){
 		"no such item":       func(l *linkItems, _ *fakeDecider, _ *formats.SourceRef) { l.live = nil },
 		"no such repository": func(_ *linkItems, _ *fakeDecider, f *formats.SourceRef) { f.Repo = qr("ghost") },
@@ -127,6 +147,39 @@ func TestR_STOR_008_LinkResolvesTheSourceByNameAndChecksIt(t *testing.T) {
 			it.Block = vuln.BlockRow{FindingID: "f1"}
 			l.live["it/other/"+path] = it
 		},
+		"a member the caller may not read holds the blob (M1: the 201 would confirm it)": func(l *linkItems, _ *fakeDecider, f *formats.SourceRef) {
+			f.Repo = qr("both")
+			delete(l.live, "it/other/"+path)
+			l.live["it/second/"+path] = src
+			unusable = map[qname.Repo]bool{qr("second"): true}
+		},
+		"a member the routing dropped holds the blob": func(l *linkItems, _ *fakeDecider, f *formats.SourceRef) {
+			f.Repo = qr("both")
+			delete(l.live, "it/other/"+path)
+			l.live["it/second/"+path] = src
+			router.members = []repository.Repository{other}
+		},
+		"a virtual source whose own patterns do not admit the name": func(l *linkItems, _ *fakeDecider, f *formats.SourceRef) {
+			f.Repo = qr("both")
+			router.admitted = false
+		},
+		"a remote member that a global claim refuses": func(l *linkItems, _ *fakeDecider, f *formats.SourceRef) {
+			f.Repo = qr("both")
+			delete(l.live, "it/other/"+path)
+			l.live["it/second/"+path] = src
+			router.members = []repository.Repository{{ID: "4", Name: qr("second"), Class: repository.Remote, Format: "probe"}}
+			router.refused = map[qname.Repo]bool{qr("second"): true}
+		},
+		"a replica that has not learned the source repository (stale)": func(*linkItems, *fakeDecider, *formats.SourceRef) {
+			begin = errs.E(errs.Unavailable, errs.CodeAuthzStale, "stale")
+		},
+		"an index whose epoch is unknown": func(*linkItems, *fakeDecider, *formats.SourceRef) {
+			begin = errs.E(errs.PreconditionFailed, errs.CodeAuthzEpochUnknown, "unknown")
+		},
+		"a source of another format than the target's": func(l *linkItems, _ *fakeDecider, f *formats.SourceRef) {
+			f.Repo = qr("alien")
+			l.live["it/alien/"+path] = src
+		},
 		"a source the caller may not read": func(_ *linkItems, d *fakeDecider, _ *formats.SourceRef) {
 			d.decision = authz.Decision{Outcome: authz.DenyHidden}
 		},
@@ -146,6 +199,42 @@ func TestR_STOR_008_LinkResolvesTheSourceByNameAndChecksIt(t *testing.T) {
 			t.Fatalf("err %v", err)
 		}
 	})
+}
+
+// linkDecider adds the per-member read check of a virtual source to the fake decision point.
+type linkDecider struct {
+	*fakeDecider
+	unusable map[qname.Repo]bool
+	asked    []qname.Repo
+	// begin, when set, is the error of the start of the source's decision.
+	begin error
+}
+
+func (d *linkDecider) Begin(ctx context.Context, sub authz.Subject, names ...qname.Repo) (*authz.Index, error) {
+	if d.begin != nil {
+		return nil, d.begin
+	}
+	return d.fakeDecider.Begin(ctx, sub, names...)
+}
+
+func (d *linkDecider) MemberUsableOn(_ context.Context, _ *authz.Index, _ authz.Subject, m qname.Repo, _ authz.Coordinate) (bool, bool) {
+	d.asked = append(d.asked, m)
+	return !d.unusable[m], false
+}
+
+// linkRouter is the routing of the virtual source: it admits the members it is given, in order.
+type linkRouter struct {
+	members  []repository.Repository
+	admitted bool
+	refused  map[qname.Repo]bool
+}
+
+func (r linkRouter) Route(context.Context, repository.Repository, repository.RouteRequest) (repository.Route, error) {
+	return repository.Route{Admitted: r.admitted, Members: r.members}, nil
+}
+
+func (r linkRouter) RemoteRefused(_ context.Context, m repository.Repository, _ string, _ *repository.Repository) (bool, error) {
+	return r.refused[m.Name], nil
 }
 
 func mustPackages(t *testing.T) *packages.Store {

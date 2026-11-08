@@ -461,20 +461,20 @@ func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
 	t.Run("R-EP-018 a restricting endpoint: the view and the fingerprint of the addressed repository", func(t *testing.T) {
 		v := &authz.ExposureView{}
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: v}}}
-		facts := d.endpointFacts(req, access(t, "customers"), qr("local"), false)
+		facts := d.endpointFacts(req, access(t, "customers"), qr("local"), qname.Repo{})
 		if facts.Exposure != formats.ExposureView(v) || facts.ExposureFingerprint != "sha256:customers/local" || facts.Name != "customers" {
 			t.Fatalf("facts %+v", facts)
 		}
 	})
 	t.Run("R-EP-018 mode all: no view", func(t *testing.T) {
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{}}}
-		if facts := d.endpointFacts(req, access(t, "default"), qr("local"), false); facts.Exposure != nil {
+		if facts := d.endpointFacts(req, access(t, "default"), qr("local"), qname.Repo{}); facts.Exposure != nil {
 			t.Fatalf("a view in mode all: %#v", facts.Exposure)
 		}
 	})
 	t.Run("R-EP-018 no endpoint (a job's subject): no view and no fingerprint", func(t *testing.T) {
 		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: &authz.ExposureView{}}}}
-		if facts := d.endpointFacts(req, access(t, ""), qr("local"), false); facts.Exposure != nil || facts.ExposureFingerprint != "" {
+		if facts := d.endpointFacts(req, access(t, ""), qr("local"), qname.Repo{}); facts.Exposure != nil || facts.ExposureFingerprint != "" {
 			t.Fatalf("facts %+v", facts)
 		}
 	})

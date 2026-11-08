@@ -142,7 +142,19 @@ func (i ingestor) Link(ctx context.Context, rq *formats.Request, from formats.So
 	}, nil
 }
 
-// linkSource resolves the source of a link and checks what R-STOR-008 asks of it.
+// SourceRouter is the routing of a virtual repository (claims, pin rules, member patterns) as the link of a virtual source needs it;
+// *repository.Routing implements it, and the composition root binds it as Deps.Refusal (a compile-time assertion in internal/app). Without it
+// a virtual source is not linked. The derived request of the source carries the endpoint's name and no exposure view: the source is
+// decided by the caller's index, and the exposure of the endpoint the mount arrived on is the target's.
+type SourceRouter interface {
+	Route(ctx context.Context, virtual repository.Repository, req repository.RouteRequest) (repository.Route, error)
+}
+
+// linkSource resolves the source of a link and checks what R-STOR-008 asks of it. The read of the source is decided as a read of
+// that repository is: through [Host.Authorize] on a request derived for the source (the decision, the repository's include and
+// exclude patterns and, for a remote repository, the refusal of a name a global claim covers), and for a virtual repository through
+// the routing of the name and the per-member read check the virtual engine makes (R-AUTHZ-009 rules 2 and 3), so a link can never
+// check less than a read. The source must be a repository of the format of the target. Everything else is errs.NotFound.
 func (h *Host) linkSource(ctx context.Context, rq *formats.Request, from formats.SourceRef) (items.Item, error) {
 	gone := errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
 	if h.o.Repos == nil {
@@ -155,26 +167,37 @@ func (h *Host) linkSource(ctx context.Context, rq *formats.Request, from formats
 		}
 		return items.Item{}, err
 	}
+	f, known := h.o.Formats(repo.Format)
+	if !known || repo.Format != rq.Repo.Format || repo.Lifecycle == repository.Deleting || repo.Disabled {
+		return items.Item{}, gone
+	}
 	// The read decision is the caller's on the named repository, on an index that knows it, before the item is looked up.
 	idx, err := h.o.Decider.Begin(ctx, rq.Subject, from.Repo)
 	if err != nil {
+		// A replica whose authorization state has not learned the repository, or cannot confirm itself, refuses as every other refusal does:
+		// the fallback of a mount is always safe, and a 5xx here would tell a repository that was just created from one that does not exist.
+		if e, ok := errs.As(err); ok && (e.Code == errs.CodeAuthzStale || e.Code == errs.CodeAuthzEpochUnknown) {
+			return items.Item{}, gone
+		}
 		return items.Item{}, err
 	}
-	var pkg string
-	if f, ok := h.o.Formats(repo.Format); ok {
-		pkg = f.Classify(formats.Path{Path: from.Path}).Package
+	info := f.Classify(formats.Path{Path: from.Path})
+	srq := &formats.Request{
+		Request: rq.Request, Repo: &repo, Route: &formats.Route{Name: "link.source", Kind: formats.Download},
+		Subject: rq.Subject, Index: idx, Endpoint: formats.EndpointFacts{Name: rq.Endpoint.Name}, Host: h, Log: rq.Log,
 	}
-	d := h.o.Decider.DecideOn(ctx, idx, rq.Subject, authz.Coordinate{
-		Repository: repo.Name, Class: repo.Class, Format: repo.Format,
-		Kind: authz.KindArtifact, Path: from.Path, Package: pkg, Actions: []formats.Action{formats.ActionRead},
-		Addressed: repo.Name,
-	})
-	if !d.Allowed() {
-		return items.Item{}, gone
+	read := formats.Target{Package: info.Package, Path: from.Path, Actions: []formats.Action{formats.ActionRead}}
+	if err := h.Authorize(ctx, srq, read); err != nil {
+		if k := errs.KindOf(err); k == errs.NotFound || k == errs.Forbidden || k == errs.Unauthenticated {
+			return items.Item{}, gone
+		}
+		return items.Item{}, err
 	}
 	holders := []repository.Repository{repo}
 	if repo.Class == repository.Virtual {
-		holders = repo.Members()
+		if holders, err = h.routedMembers(ctx, srq, idx, repo, info.Package, from.Path); err != nil {
+			return items.Item{}, err
+		}
 	}
 	for _, m := range holders {
 		ref, err := h.liveRef(ctx, repoRef(m))
@@ -194,6 +217,42 @@ func (h *Host) linkSource(ctx context.Context, rq *formats.Request, from formats
 		return it, nil
 	}
 	return items.Item{}, gone
+}
+
+// routedMembers are the members of a virtual source in the order a read consults them: those the routing admits for the name (claims,
+// pin rules, the members' patterns) and the caller may use (MemberUsable, unaudited); a remote member also needs that a global claim
+// does not refuse the name. A host without the routing fails closed.
+func (h *Host) routedMembers(ctx context.Context, srq *formats.Request, idx *authz.Index, v repository.Repository, pkg, path string) ([]repository.Repository, error) {
+	router, ok := h.o.Refusal.(SourceRouter)
+	if !ok {
+		return nil, errs.E(errs.NotFound, errs.CodeNotFound, "The content is not stored.")
+	}
+	route, err := router.Route(ctx, v, repository.RouteRequest{Name: pkg, Path: path})
+	if err != nil {
+		return nil, err
+	}
+	if !route.Admitted {
+		return nil, nil
+	}
+	coord := coordinate(srq, formats.Target{Package: pkg, Path: path})
+	var out []repository.Repository
+	for _, m := range route.Members {
+		usable, _ := h.o.Decider.MemberUsableOn(ctx, idx, srq.Subject, m.Name, coord)
+		if !usable {
+			continue
+		}
+		if m.Class == repository.Remote && h.o.Refusal != nil && pkg != "" {
+			refused, err := h.o.Refusal.RemoteRefused(ctx, m, pkg, &v)
+			if err != nil {
+				return nil, err
+			}
+			if refused {
+				continue
+			}
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 // Commit implements [formats.Ingestor]: the item store's one commit with the

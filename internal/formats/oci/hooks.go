@@ -26,7 +26,13 @@ func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEv
 	case *manifestCommit:
 		return f.commitManifestItem(ctx, tx, c, p.pushed)
 	}
-	if _, kind, _, ok := splitLayout(c.Path.Path); ok && kind == dirBlobs {
+	if _, kind, tail, ok := splitLayout(c.Path.Path); ok && kind == dirBlobs {
+		// A blob is named by its digest: whatever commits one, an upload, a mount linking an item of another repository, a fill, holds
+		// the bytes of the name, and an item whose name is no digest or whose commit carries no SHA-256 is refused (fail closed,
+		// Q-OCI-113). A mount whose source is not an image blob of that digest is refused here, in the transaction (R-OCI-012).
+		if d := c.Digests.SHA256; len(d) != 32 || !ValidDigest(tail) || digestOf(d) != tail {
+			return errs.E(errs.Conflict, errs.CodeConflict, "The content of a blob is not the content its digest names.")
+		}
 		return nil
 	}
 	switch {

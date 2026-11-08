@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/guided-traffic/trove/internal/api/registry"
 	"github.com/guided-traffic/trove/internal/auth"
@@ -13,7 +12,6 @@ import (
 	ocidata "github.com/guided-traffic/trove/internal/formatdata/oci"
 	ociformat "github.com/guided-traffic/trove/internal/formats/oci"
 	"github.com/guided-traffic/trove/internal/httpserver"
-	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The registry root of an endpoint (R-OCI-001, R-OCI-003, Q-OCI-100): one enforcement point of the registry tokens' grants, the
@@ -27,28 +25,6 @@ var _ registry.CatalogStore = (*ocidata.Store)(nil)
 
 // ociUploadStart is the route that starts an upload and may mount a blob (R-OCI-012).
 const ociUploadStart = "oci.upload.start"
-
-// ociMountSource parses the `from` of a blob mount the way the format's handler does (the format's exported parser comes with the
-// work package of the uploads and replaces this body: ociformat.MountSource). On a bound host `from` is an image name of the bound
-// repository; otherwise "<projectKey>/<repoKey>/<name>", a repository key with the cache suffix naming the base repository.
-func ociMountSource(from string, bound qname.Repo) (repo qname.Repo, name string, cache, ok bool) {
-	if !bound.IsZero() {
-		if !ociformat.ValidName(from) {
-			return qname.Repo{}, "", false, false
-		}
-		return bound, from, false, true
-	}
-	parts := strings.SplitN(from, "/", 3)
-	if len(parts) != 3 {
-		return qname.Repo{}, "", false, false
-	}
-	key, cache := strings.CutSuffix(parts[1], qname.CacheSuffix)
-	repo = qname.Repo{Project: parts[0], Key: key}
-	if !repo.Valid() || !ociformat.ValidName(parts[2]) || !ociformat.ValidFullName(repo.Project, repo.Key, parts[2]) {
-		return qname.Repo{}, "", false, false
-	}
-	return repo, parts[2], cache, true
-}
 
 // registerRegistry mounts the registry root on the router of one endpoint and sets rt.registry.
 func (a *App) registerRegistry(rt *endpointRuntime, router *httpserver.Router) error {
@@ -72,7 +48,7 @@ func (a *App) registerRegistry(rt *endpointRuntime, router *httpserver.Router) e
 	}
 	enforcer, err := registry.NewEnforcer(registry.EnforcerOptions{
 		Matcher: disp, WriteError: f.WriteError, ValidName: ociformat.ValidName,
-		Log: a.log.With("component", "registry"), MountRoute: ociUploadStart, MountSource: ociMountSource,
+		Log: a.log.With("component", "registry"), MountRoute: ociUploadStart, MountSource: ociformat.MountSource,
 	})
 	if err != nil {
 		return err

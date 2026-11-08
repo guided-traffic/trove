@@ -272,6 +272,10 @@ func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr vi
 	return formatsArea{deps: d, hooks: vz.hooks(formathost.NewHooks(d)), seam: seam}, nil
 }
 
+// The routing is the link's router of a virtual source: a drift of its method would silently turn every mount from a virtual repository into a
+// session (formathost.SourceRouter).
+var _ formathost.SourceRouter = (*repository.Routing)(nil)
+
 // wireFormatHost builds the Host and the dispatcher on the item store and the
 // decision point.
 func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo repositoryArea, ex exposureArea, fa filesArea, eng proxyEngineArea, ve virtualEngineArea, vz vulnArea) (formatHostArea, error) {

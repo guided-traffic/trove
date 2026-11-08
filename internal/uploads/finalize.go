@@ -27,6 +27,8 @@ type CommitFunc func(ctx context.Context, staged *blob.Spooled, markDone func(ct
 type Result struct {
 	ItemID   int64
 	Replayed bool
+	// Received is the recorded byte count, set alongside a refusal of kind RangeNotSatisfiable (a finalize at another offset).
+	Received int64
 }
 
 // errStale says that the state of the session moved on while a finalize step ran: another request of the same finalize advanced it.
@@ -36,20 +38,24 @@ var errStale = errors.New("the upload session moved on")
 var errDone = errors.New("the upload session is done")
 
 // Finalize completes the session of the scope with the SHA-256 the client names, after the bytes of last (R-STOR-011 Finalize).
-// A digest that is not the computed one is an error of kind Invalid and keeps the session open, with the bytes of last recorded.
+// An offset of zero or more says where the bytes of last start, as for Append: any other received count is an error of kind
+// RangeNotSatisfiable, decided under the claim in the statement that takes it, so that a request between a client's check and its finalize
+// cannot move the end (an offset below zero appends at the end). A digest that is not the computed one is an error of kind Invalid and keeps the session open, with the bytes of last recorded.
 // A session that is completing, assembled or done is a finalize that was cut or is repeated: it continues at the recorded state
 // without a claim, its body is not read, and its digest must equal the recorded one. A session that is done answers from its record
 // (Result.Replayed) and commits nothing again.
-func (s *Service) Finalize(ctx context.Context, id uuid.UUID, sc Scope, sum [32]byte, last io.Reader, limit int64, commit CommitFunc) (Result, error) {
+func (s *Service) Finalize(ctx context.Context, id uuid.UUID, sc Scope, offset int64, sum [32]byte, last io.Reader, limit int64, commit CommitFunc) (Result, error) {
 	r, err := s.lookup(ctx, id, sc)
 	if err != nil {
 		return Result{}, err
 	}
 	switch r.State {
 	case StateOpen:
-		if r, err = s.closeOpen(ctx, r, sc, sum, last, limit); err != nil {
-			return Result{}, err
+		var cur row
+		if cur, err = s.closeOpen(ctx, r, sc, offset, sum, last, limit); err != nil {
+			return Result{Received: cur.Received}, err
 		}
+		r = cur
 	case StateCompleting, StateAssembled, StateDone:
 		if !bytes.Equal(r.Digest, sum[:]) {
 			return Result{}, digestInvalid()
@@ -69,11 +75,14 @@ func (s *Service) Finalize(ctx context.Context, id uuid.UUID, sc Scope, sum [32]
 // closeOpen is step 1 of a finalize: the bytes of the request are handled as an append, and the computed SHA-256 must equal the
 // digest the client names. On a match one statement records the end of the body together with the digest and the state
 // completing; on a mismatch the session stays open.
-func (s *Service) closeOpen(ctx context.Context, r row, sc Scope, sum [32]byte, last io.Reader, limit int64) (out row, err error) {
+func (s *Service) closeOpen(ctx context.Context, r row, sc Scope, offset int64, sum [32]byte, last io.Reader, limit int64) (out row, err error) {
 	var writer string
-	r, writer, err = s.claim(ctx, r.ID, sc, -1)
+	if offset >= 0 && offset != r.Received {
+		return r, outOfOrder("The chunk does not start at the received count.")
+	}
+	r, writer, err = s.claim(ctx, r.ID, sc, offset)
 	if err != nil {
-		return row{}, err
+		return r, err // on a refusal of the claim r is the session as it stands
 	}
 	held := true
 	defer func() {
@@ -89,8 +98,9 @@ func (s *Service) closeOpen(ctx context.Context, r row, sc Scope, sum [32]byte, 
 	res, err = s.stream(ctx, r, writer, last, limit, st)
 	if err != nil {
 		held = !errors.Is(err, errLostClaim)
-		_, err = s.failed(ctx, r, st, err)
-		return row{}, err
+		var rcv int64
+		rcv, err = s.failed(ctx, r, st, err)
+		return row{Received: rcv}, err // the count the 416 of a lost claim reports
 	}
 	match := bytes.Equal(res.h.sha256.Sum(nil), sum[:])
 	e := res.e
@@ -109,8 +119,9 @@ func (s *Service) closeOpen(ctx context.Context, r row, sc Scope, sum [32]byte, 
 		if lost { // see Append: only a record that certainly failed lets the request delete what it wrote
 			s.removeObjects(ctx, res.newObjects)
 		}
-		_, err = s.failed(ctx, r, st, err)
-		return row{}, err
+		var rcv int64
+		rcv, err = s.failed(ctx, r, st, err)
+		return row{Received: rcv}, err // the count the 416 of a lost claim reports
 	}
 	held = false
 	s.removeObjects(ctx, res.oldObjects)

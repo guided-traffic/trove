@@ -209,10 +209,11 @@ type routed struct {
 	params  formats.Params
 	escaped string
 	cleaned repository.Cleaned
-	// bound is true when the match read the request on a host bound to the addressed repository (R-OCI-029): the registry
-	// root's match says it, a request below /api/<format>/ never is. It becomes EndpointFacts.Bound, so a format and the host's
-	// link builder read the address the way the match and the enforcement point did, and never from the raw binding.
-	bound bool
+	// boundRepo is the repository the host is bound to when the match read the request on a host bound to the addressed repository
+	// (R-OCI-029), the zero value otherwise: the registry root's match says it, a request below /api/<format>/ never is. It becomes
+	// EndpointFacts.BoundRepo and, non-zero, EndpointFacts.Bound, so a format and the host's link builder read the address the way the
+	// match and the enforcement point did, and never from the raw binding.
+	boundRepo qname.Repo
 }
 
 // serveRoute is the request path of R-ARCH-011 from the label of the matched route on: the Bastion's marking, the coarse
@@ -269,7 +270,7 @@ func (d *Dispatcher) serveRoute(w http.ResponseWriter, r *http.Request, f format
 	}
 	rq := &formats.Request{
 		Request: r, Repo: &repo, Route: route, Params: params, Path: cleaned, Escaped: rest,
-		Subject: acc.Subject, Index: acc.Index(), Endpoint: d.endpointFacts(r, acc, key, m.bound),
+		Subject: acc.Subject, Index: acc.Index(), Endpoint: d.endpointFacts(r, acc, key, m.boundRepo),
 		Host: d.o.Host, Log: httpserver.Logger(ctx), CacheView: cacheView,
 	}
 	defer d.o.Host.Begin(rq)()
@@ -358,8 +359,8 @@ func routeMatcher(r formats.Route) func(string) (formats.Params, bool) {
 // endpointFacts derives what a format reads of the request's endpoint from the
 // listener's endpoint and the request's index, never from request data (C-17,
 // Q-EP-20 (b)).
-func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key qname.Repo, bound bool) formats.EndpointFacts {
-	facts := formats.EndpointFacts{Name: acc.Subject.Endpoint, CacheFill: true, Bound: bound}
+func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key, boundRepo qname.Repo) formats.EndpointFacts {
+	facts := formats.EndpointFacts{Name: acc.Subject.Endpoint, CacheFill: true, Bound: !boundRepo.IsZero(), BoundRepo: boundRepo}
 	if ep := httpserver.EndpointFrom(r.Context()); ep != nil {
 		facts.Rules = ep.ExposureMode() == config.ExposureRules
 		facts.CacheFill = ep.CacheFill()

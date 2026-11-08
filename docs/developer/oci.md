@@ -7,7 +7,7 @@ manifests (WP4a, [ADR-164](../decisions.md#adr-164--the-oci-push-path-is-one-tra
 the tags list, referrers, deletion, sweep and replay (WP4b, ADR-168). The specification is [formats/oci.md](../spec/formats/oci.md); the decision for the contract is
 [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions).
 The registry tokens and the token service ([Registry tokens and the token service](#registry-tokens-and-the-token-service)) and the port of the
-[Upload sessions](#upload-sessions-r-stor-011) are built; the mount of `/v2/`, the upload routes, the remote and virtual classes, the mirror and the clients are not; the section
+[Upload sessions](#upload-sessions-r-stor-011) and the [blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) are built; the mount of `/v2/`, the remote and virtual classes, the mirror and the clients are not; the section
 [What is built and what is not](#what-is-built-and-what-is-not) lists them.
 
 ## What has to be in your head first
@@ -34,13 +34,14 @@ The registry tokens and the token service ([Registry tokens and the token servic
 | [format.go](../../internal/formats/oci/format.go) | `Format`, `Descriptor` (the facts: registry root, upstream, extra and credential hosts, periods, limits, data port), `New`, `Match` |
 | [names.go](../../internal/formats/oci/names.go) | The grammars of image names, tags and digests (`ValidName`, `ValidFullName`, `ValidTag`, `ValidDigest`) and the package-name rule `names` (a name is never folded; a pattern is left alone) |
 | [paths.go](../../internal/formats/oci/paths.go) | The storage layout (`ManifestPath`, `TagPath`, `TaglistPath`, `BlobPath`), `Classify` and `PackageDocumentPath` |
-| [routes.go](../../internal/formats/oci/routes.go) | The route table of R-OCI-009 to R-OCI-018 with its matchers (the image name has slashes, so the operation is read from the end of the path) and `stub`, the handler of an operation not built (the stub files `handlers_wp5_stub.go` hold them); a work package replaces its stub file and does not edit the table |
+| [routes.go](../../internal/formats/oci/routes.go) | The route table of R-OCI-009 to R-OCI-018 with its matchers (the image name has slashes, so the operation is read from the end of the path); every operation has a handler |
 | [errors.go](../../internal/formats/oci/errors.go) | `WriteError`: the distribution specification's error list `{"errors":[{"code":…}]}` for every row of R-OCI-008; a conflict is `409 DENIED` |
 | [handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) | The pull of a manifest and the push by tag or by digest: the order of the checks, the tag decision (`commitTag`), the reference check (`checkReferences`), the validator translation |
 | [handlers_blob.go](../../internal/formats/oci/handlers_blob.go) | The pull of a blob of a name (local class) |
 | [hooks.go](../../internal/formats/oci/hooks.go) | `OnCommit`: the package row, the claim, the version of a tag and the manifest rows, in the commit transaction |
 | [view.go](../../internal/formats/oci/view.go) | The package view adapter: tags newest push first, the platform table of an index, the withheld tags |
-| [handlers_wp5_stub.go](../../internal/formats/oci/handlers_wp5_stub.go) | The `501` handlers of the operations not built yet (uploads and mount); the work package that builds one deletes its file |
+| [handlers_upload.go](../../internal/formats/oci/handlers_upload.go) | The blob upload protocol over the host's session port: start, monolithic `POST`, `PATCH`, `PUT`, status, abort; `chunkStart` (the strict `Content-Range`), `outOfOrder` (the headers of a 416) |
+| [handlers_mount.go](../../internal/formats/oci/handlers_mount.go) | The cross-repository mount (`handleMount`) and `MountSource`, the one parser of `from` |
 | [manifest/](../../internal/formats/oci/manifest/manifest.go) | The manifest parser: the four media types, the strict JSON reader (`tree.go`), descriptors, references, the row annotations |
 | [tagorder/](../../internal/formats/oci/tagorder/tagorder.go) | The order of tags (Q-OCI-17, Q-OCI-64) |
 | [inspect.go](../../internal/formats/oci/inspect.go) | `Inspect`: a manifest at the path of a manifest or a tag item is read by the manifest parser within the limits (4 MiB, 32 levels, 100,000 values, 10,000 descriptors) |
@@ -260,6 +261,54 @@ and the host answers 404 `BLOB_UPLOAD_UNKNOWN` unless the session belongs to tha
 (R-STOR-011, Q-OCI-26). A session handler that reads the session by its ID alone, or takes the image name from the session instead of the
 path, lets a registry token push into an image its grant does not name.
 
+## Blob uploads and the mount (R-OCI-011, R-OCI-012)
+
+The handlers hold the protocol and nothing of a session: the state is the host's session port ([Upload sessions](#upload-sessions-r-stor-011)),
+so any replica continues a session and none keeps anything of it. The routes are `Classes` local; the dispatcher routes a write addressed
+to a virtual repository to its deployment target, and the handlers act on the request's repository.
+Decisions: [ADR-175](../decisions.md#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link),
+Q-OCI-110 to Q-OCI-114. The security view is [oci-uploads.md](../security/oci-uploads.md).
+
+| Request | Handler | What it does |
+|---|---|---|
+| `POST …/blobs/uploads/` | `handleUploadStart` | `?mount=` is the mount, `?digest=` a monolithic upload, else `Uploads().Start` with the image name as the binding: 202, `Location`, `Range: 0-0`, `OCI-Chunk-Min-Length` (the session's part size), `Docker-Upload-UUID` |
+| `POST …?digest=<d>` | `handleMonolithic` | `Authorize` deploy on the blob path, `Ingest().Spool`, the computed SHA-256 against the named one (400 `DIGEST_INVALID`, nothing stored), `Ingest().Commit` of `<name>/_blobs/<d>`: 201, no session |
+| `PATCH <location>` | `handleUploadPatch` | `chunkStart` reads `Content-Range` (`-1` without it), `Append`; 202 with `Range: 0-<received-1>`; the 416 of an offset mismatch gets `Range`, `Location` and `Docker-Upload-UUID` from the typed `received` (`outOfOrder`) |
+| `PUT <location>?digest=<d>` | `handleUploadPut` | a `Content-Range` on the last bytes is checked against `Get().Received` (416), then `Finalize` with the blob path; 201, `Location` of the blob, `Docker-Content-Digest`; a wrong digest keeps the session |
+| `GET`/`DELETE <location>` | `handleUploadStatus`, `handleUploadCancel` | `Get` (204 with `Range`, `Location`, `OCI-Chunk-Min-Length`), `Abort` (204) |
+| `POST …?mount=<d>&from=<src>` | `handleMount` | below |
+
+Every session call passes `SessionRef{ID, Binding: <image name of the path>}`; an id that is no UUID is 404 `BLOB_UPLOAD_UNKNOWN` without a call. The
+handlers never read a session by its id alone, and never take the image name from the session (the contract above).
+
+**The mount.** `handleMount` validates the digest (400 `DIGEST_INVALID`), parses `from` with `MountSource` (the shared host:
+`<projectKey>/<repoKey>/<name>`; a bound host, `rq.Endpoint.Bound`: an image name of the addressed repository; a key with `~cache` is the base
+repository of a remote's cache view and `cache` is true), decides `deploy` on the target blob path, asks the ownership rule without a publish (`checkOwnership`, Q-OCI-115), and calls
+`Ingest().Link(rq, SourceRef{repo, BlobPath(srcName, digest)}, Commit{...})`. The host ([linkSource](../../internal/formathost/ingest.go)) resolves the repository by name and
+refuses one of another format than the target's; decides the read as a read is decided (`Host.Authorize` on a request derived for the source: the decision, the repository's include and exclude
+patterns, the refusal of a claimed name for a remote; for a virtual source the routing, `SourceRouter`, and `MemberUsableOn` per routed member); and checks that the item is a live file whose blob is served
+and that no finding blocks it. It does not run the format's serve check. Every failure of that is `errs.NotFound`, and `handleMount` answers a `NotFound`, a `from` that names no image, and a `mount` without `from` the same way:
+`startSession`, 202. Anything else (the target's deploy gone, a store failure) is the error it is. The commit hook refuses, as defence in depth,
+a blob item whose content is not the digest of its path, whose name is no digest or whose commit carries no SHA-256 (`OnCommit`, 409 `DENIED`, Q-OCI-113).
+
+`oci.MountSource` is exported for the registry root: the enforcement point (`Enforcer.withoutUnreadableMount`, `internal/app/wire_registry.go` passes `ociformat.MountSource`) checks the grant of a registry token on the source
+(`pull` there) before the handler runs, with the repository and the name this function returns, and drops `mount` and `from` of a request whose grant lacks it, so the handler opens a plain session (Q-OCI-102). Both read the
+first value of a repeated parameter, and `from` against the bound repository the match read: `EndpointFacts.BoundRepo`, set by the dispatcher's `serveRoute` from the match (for a host bound to a virtual repository it is the
+virtual one, while `Request.Repo` of a write is the deployment target). See [The grant on the source](../security/oci-uploads.md#the-grant-on-the-source); the end-to-end test is
+[mount_test.go](../../test/integration/registry/mount_test.go).
+
+The `Finalize` of the port takes the offset of the last bytes as `Append` does (-1 appends at the end), decided under the session's claim, and returns the received count with a 416 in `Committed.Received` (ADR-178, contract version 3);
+`handleUploadPut` passes the `Content-Range` start (-1 for none or an empty body). It asks `deploy` and then the ownership rule before the body is read, as the start of a session, a monolithic upload and a mount do
+(`checkOwnership`: no publish, `FirstVersion` from the live versions of the name, Q-OCI-115); a session is decided on `<name>/_taglist` (Q-OCI-116).
+
+**Tests.** Unit: [handlers_upload_test.go](../../internal/formats/oci/handlers_upload_test.go) (`TestR_OCI_011_…`, `TestR_OCI_012_…`) over the kit's in-memory host
+and a session port that enforces the binding: the headers, chunks with and without `Content-Range`, the 416 and its `Range`, the strict header, the wrong
+digest, the binding and non-UUID ids on every method, abort, the monolithic upload, the mount (201, the fallback shapes compared field by field, deploy on the
+target, a source of the wrong content, a withheld manifest digest, a bound host, `MountSource` table). Integration, on the production host with three replicas
+(each its own blob store, spool and session service, requests pinned per replica) against PostgreSQL and S3:
+[oci_upload_test.go](../../test/integration/files/oci_upload_test.go) (`make test-integration`; the format is mounted at `/api/oci/` as in
+`oci_host_test.go` until `/v2/` is mounted).
+
 ## Configuration
 
 | Key | Default | Rule |
@@ -286,7 +335,7 @@ and Q-STOR-170 to Q-STOR-172.
 | [hashstate.go](../../internal/uploads/hashstate.go) | the four hash functions of the digest set, marshalled into `hash_state` and restored by the next request |
 | [uploads.go](../../internal/formathost/uploads.go) | the host's `formats.UploadSessions` over the service: the scope from the request, the target (the repository, or a virtual repository's deployment target), the `deploy` decision, the commit callback |
 
-How a format's handler uses the port (the handlers are the work package of the routes, WP5):
+How a format's handler uses the port (the handlers are [handlers_upload.go](../../internal/formats/oci/handlers_upload.go)):
 
 1. `POST …/blobs/uploads/`: `Uploads().Start(ctx, rq, target, imageName)` returns the session. `UploadSession.PartSize` is the value of the
    header `OCI-Chunk-Min-Length`; the id goes into the `Location` and `Docker-Upload-UUID`. For a virtual repository `target` is the deployment
@@ -328,6 +377,7 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [manifest_test.go](../../internal/formats/oci/manifest/manifest_test.go) | Valid documents written after the image specification's examples, ~70 refusals (duplicate and lookalike keys, digests, sizes, `data`, platforms), crafted bounds, the grammars against their expressions, the fuzz target |
 | [handlers_manifest_test.go](../../internal/formats/oci/handlers_manifest_test.go) with the in-memory twin [twin_test.go](../../internal/formats/oci/twin_test.go) | Pulls, pushes, refusals, tag moves, concurrent pushes, the failed transaction, the first-version check, the view, through the kit's in-memory host |
 | [store_test.go](../../test/integration/oci/store_test.go) | The data port's statements against PostgreSQL: rows, references, `FOR SHARE`, the annotation bound against the column, the view reads |
+| [oci_upload_test.go](../../test/integration/files/oci_upload_test.go), [handlers_upload_test.go](../../internal/formats/oci/handlers_upload_test.go) | The upload protocol and the mount: see [Blob uploads and the mount](#blob-uploads-and-the-mount-r-oci-011-r-oci-012) |
 | [oci_host_test.go](../../test/integration/files/oci_host_test.go) | The routes on the production host (real dispatcher, item store, hooks, S3), mounted at `/api/oci/` through a wrapper because `/v2/` is not mounted yet |
 | `TestR_OCI_015_…`, `TestR_OCI_016_…`, `TestR_OCI_018_…`, `TestR_OCI_030_…` ([handlers_lists_test.go](../../internal/formats/oci/handlers_lists_test.go), [handlers_delete_test.go](../../internal/formats/oci/handlers_delete_test.go), [hooks_remove_test.go](../../internal/formats/oci/hooks_remove_test.go), [setup_test.go](../../internal/formats/oci/setup_test.go)) | The lists, the deletion routes, the cascade and the refusals of the hook against an in-memory twin of the data port ([store_twin_test.go](../../internal/formats/oci/store_twin_test.go)), and the setup snippets |
 | [test/integration/ocilocal](../../test/integration/ocilocal) | Against the stack: 2,500 tags in pages, the referrers, a raw delete of an index through a running replica (cascade, events, journal entries), the sweep (grace, sessions, the lock against a push, the job on a worker), the replay and the reinstate. The registry routes are not mounted yet, so the state is what a push leaves: items committed through the item store and the rows by SQL |
@@ -361,14 +411,13 @@ the withheld-digest refusal, the package view and the tag order.
 
 Built: the manifest parser, the pulls and pushes and the package view (WP4a); the tags list, referrers, deletes, the sweep, the replay, reinstate,
 the setup snippets and the guide (WP4b); the registry token and its token service (R-OCI-004 to R-OCI-006, R-OCI-034 for the token service); the port of
-the upload sessions (R-STOR-011).
+the upload sessions (R-STOR-011) and the upload handlers and the mount that call it (WP5, [ADR-175](../decisions.md#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link)).
 
 Built by the registry root's work package: the mount of `/v2/` (one pattern, the dispatcher's handler, the enforcement point, the route
 table's checks), the version check, the catalog over the data port's `CatalogNames`, the bound host and the 404 shapes (R-OCI-001 mount,
 R-OCI-003, R-OCI-017, R-OCI-029).
 
-Not built here (each is a work package of T-16): the upload routes' remaining handlers (R-OCI-011, R-OCI-012) where WP5 has not landed, the remote
-and virtual classes and the mirror, the package screens' remaining parts.
+Not built here (each is a work package of T-16): the remote and virtual classes and the mirror, the package screens' remaining parts.
 
 ## The counting stub registry
 

@@ -74,7 +74,7 @@ type EnforcerOptions struct {
 	ValidName func(string) bool
 	// MountRoute is the name of the route that starts an upload and may mount a blob from another repository
 	// (oci.upload.start); MountSource parses the `from` of such a request into the source repository and image name, as the
-	// format reads it (the composition root passes its copy ociMountSource until the format's oci.MountSource is on the branch). Both set, a registry token's request of that route with `mount` and `from` is checked
+	// format reads it (the composition root passes the format's oci.MountSource). Both set, a registry token's request of that route with `mount` and `from` is checked
 	// for pull on the source (R-OCI-006, Q-OCI-102). Both empty: no mount is enforced.
 	MountRoute string
 	// Log records a stripped mount at debug level; nil is slog.Default.

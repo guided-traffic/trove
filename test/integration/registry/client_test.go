@@ -8,15 +8,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/guided-traffic/trove/internal/audit"
-	"github.com/guided-traffic/trove/internal/formats/oci"
-	"github.com/guided-traffic/trove/internal/items"
-	"github.com/guided-traffic/trove/internal/qname"
-	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // req is one request of a registry client.
@@ -72,32 +67,19 @@ func newImage(seed string) image {
 
 const manifestType = "application/vnd.oci.image.manifest.v1+json"
 
-// seedBlob stores a blob under an image name of a repository the way a finished upload leaves it. The upload routes are not served
-// yet (R-OCI-011 belongs to another work package), so the blob is committed through the item store of the running replica with the
-// payload the format's commit hook admits for a seeded item; everything after it - the manifest push, the pulls, the decisions -
-// goes through /v2/.
+// seedBlob uploads a blob under an image name of a repository as a client does, by a monolithic upload through /v2/ as the administrator.
 func (e *env) seedBlob(repoPath string, b []byte) {
 	e.t.Helper()
-	parts := strings.SplitN(repoPath, "/", 3)
-	rp, err := e.rep.App.Repositories().ByName(e.t.Context(), qname.Repo{Project: parts[0], Key: parts[1]})
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	sp, err := e.rep.App.Items().Spool(e.t.Context(), bytes.NewReader(b), items.IngestOptions{ContentLength: int64(len(b))})
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	defer sp.Close()
-	if _, err := e.rep.App.Items().Commit(e.t.Context(), items.CommitSpec{
-		Repo: rp, Path: repository.Cleaned{Path: oci.BlobPath(parts[2], digestOf(b))}, Spooled: sp, MediaType: "application/octet-stream",
-		Origin: items.OriginFill, UpstreamURL: "https://seed.invalid/", MayOverwrite: true, Payload: oci.SeededItem{},
-		Actor: audit.Actor{Kind: "system", Name: "push"},
-	}); err != nil {
-		e.t.Fatalf("commit blob: %v", err)
+	a := e.send("default", req{
+		method: "POST", path: "/v2/" + repoPath + "/blobs/uploads/?digest=" + digestOf(b), auth: bearer(e.admin), body: b,
+		header: map[string]string{"Content-Type": "application/octet-stream"},
+	})
+	if a.Code != http.StatusCreated {
+		e.t.Fatalf("upload of a blob to %s: %d %s", repoPath, a.Code, a.Body.String())
 	}
 }
 
-// push seeds the blobs of an image and pushes its manifest through /v2/; it stores an image under repoPath ("web/docker-local/<name>") with the tag and returns the answer of the manifest PUT.
+// push uploads the blobs of an image and pushes its manifest through /v2/; it stores an image under repoPath ("web/docker-local/<name>") with the tag and returns the answer of the manifest PUT.
 func (e *env) push(auth, repoPath, tag string, img image) answer {
 	e.t.Helper()
 	e.seedBlob(repoPath, img.config)

@@ -210,12 +210,3 @@ func (f *Format) named(h formats.HandlerFunc) formats.HandlerFunc {
 		return h(ctx, rq, w)
 	}
 }
-
-// stub is the handler of an operation this build does not serve yet: it answers 501, so the format registers, the conformance kit's
-// structural checks run and no route is missing from the table. The work package that builds an operation deletes the stub file that
-// holds its method (handlers_wp4b_stub.go, handlers_wp5_stub.go) and implements the method in a file of its own; the route table
-// names the methods and is not edited. Authorization has run when a handler is reached: the coarse check of the route's action on the
-// repository (R-ARCH-011 step 2), so a refused caller never learns that an operation is not built.
-func stub(what string) formats.HandlerFunc {
-	return func(context.Context, *formats.Request, http.ResponseWriter) error { return notImplemented(what) }
-}

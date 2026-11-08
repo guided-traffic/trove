@@ -60,7 +60,7 @@ func (r *replica) commit(path string) uploads.CommitFunc {
 }
 
 func (r *replica) finalize(sc uploads.Scope, id uuid.UUID, whole, last []byte, path string) error {
-	_, err := r.svc.Finalize(context.Background(), id, sc, sha256.Sum256(whole), bytes.NewReader(last), 0, r.commit(path))
+	_, err := r.svc.Finalize(context.Background(), id, sc, -1, sha256.Sum256(whole), bytes.NewReader(last), 0, r.commit(path))
 	return err
 }
 
@@ -291,6 +291,49 @@ func TestR_STOR_011_AZombieWriterFailsItsRecordAndLeavesTheRecordedTailAlone(t *
 	w.nothingStaged(t)
 }
 
+// A finalize that is the zombie of the same case is refused with the received count the second request recorded: the 416 of a lost claim
+// reports the session as it stands, not 0 (the count comes back with the refusal, ADR-178).
+func TestR_STOR_011_AZombieFinalizeIsRefusedWithTheReceivedCountOfTheSession(t *testing.T) {
+	w := newWorld(t)
+	zombie, other := newReplica(t, w.e, w.p, nil), newReplica(t, w.e, w.p, nil)
+	data := random(8 * mib)
+	ctx := context.Background()
+	sess, err := zombie.svc.Start(ctx, w.p.repo, w.sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached, resume := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	zombie.svc.Fault = func(point string) error {
+		if point == "append.body_ended" {
+			once.Do(func() {
+				close(reached)
+				<-resume
+			})
+		}
+		return nil
+	}
+	type result struct {
+		res uploads.Result
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		res, err := zombie.svc.Finalize(ctx, sess.ID, w.sc, -1, sha256.Sum256(data[:3*mib]), bytes.NewReader(data[:3*mib]), 0, zombie.commit("team/app/_blobs/zf"))
+		done <- result{res, err}
+	}()
+	<-reached
+	w.p.exec(t, "UPDATE trove.upload_sessions SET writer_until = now() - interval '1 second' WHERE id = $1::uuid", sess.ID.String())
+	if got, err := other.append(w.sc, sess.ID, 0, data[:4*mib]); err != nil || got != 4*mib {
+		t.Fatalf("the second request: received %d, err %v", got, err)
+	}
+	close(resume)
+	r := <-done
+	if kind(r.err) != errs.RangeNotSatisfiable || r.res.Received != 4*mib {
+		t.Fatalf("the zombie finalize: %v, received %d, want a 416 with %d", r.err, r.res.Received, 4*mib)
+	}
+}
+
 // A finalize killed after the multipart upload completed and before the session recorded it, or after the commit and before the
 // clean-up, is repeated on another replica and stores one blob.
 func TestR_STOR_011_ACutFinalizeIsCompletedByTheRetryOnAnotherReplica(t *testing.T) {
@@ -345,7 +388,7 @@ func TestR_STOR_011_ADigestThatDiffersKeepsTheSessionOpenInPostgres(t *testing.T
 		t.Fatal(err)
 	}
 	wrong := sha256.Sum256([]byte("wrong"))
-	_, err = r.svc.Finalize(context.Background(), sess.ID, w.sc, wrong, bytes.NewReader(data), 0, r.commit("team/app/_blobs/x"))
+	_, err = r.svc.Finalize(context.Background(), sess.ID, w.sc, -1, wrong, bytes.NewReader(data), 0, r.commit("team/app/_blobs/x"))
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeOCIDigestInvalid {
 		t.Fatalf("err = %v", err)

@@ -63,10 +63,11 @@ func TestEndpointFactsBoundIsTheMatchsReading(t *testing.T) {
 	root := qname.Repo{Project: "web", Key: "root"}
 	other := qname.Repo{Project: "web", Key: "other"}
 	repos := &fakeRepos{byKey: map[qname.Repo]repository.Repository{
-		root:                        {ID: "1", Name: root, Class: repository.Local, Format: "rootprobe"},
-		other:                       {ID: "2", Name: other, Class: repository.Local, Format: "probe"},
-		qr("local"):                 {ID: "3", Name: qr("local"), Class: repository.Local, Format: "probe"},
-		{Project: "web", Key: "us"}: {ID: "4", Name: qname.Repo{Project: "web", Key: "us"}, Class: repository.Local, Format: "rootprobe"},
+		root:                          {ID: "1", Name: root, Class: repository.Local, Format: "rootprobe"},
+		other:                         {ID: "2", Name: other, Class: repository.Local, Format: "probe"},
+		qr("local"):                   {ID: "3", Name: qr("local"), Class: repository.Local, Format: "probe"},
+		{Project: "web", Key: "virt"}: {ID: "5", Name: qname.Repo{Project: "web", Key: "virt"}, Class: repository.Virtual, Format: "rootprobe"},
+		{Project: "web", Key: "us"}:   {ID: "4", Name: qname.Repo{Project: "web", Key: "us"}, Class: repository.Local, Format: "rootprobe"},
 	}}
 	probeSeen := false
 	p := probe{handler: func(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
@@ -102,6 +103,7 @@ func TestEndpointFactsBoundIsTheMatchsReading(t *testing.T) {
 		"a bound host of the format":                     {"/v2/app/get", root, true},
 		"an unbound host":                                {"/v2/web/us/app/get", qname.Repo{}, false},
 		"a host bound to a repository of another format": {"/v2/web/us/app/get", other, false},
+		"a host bound to a virtual repository":           {"/v2/app/get", qname.Repo{Project: "web", Key: "virt"}, true},
 		"a host bound to a missing repository":           {"/v2/web/us/app/get", qname.Repo{Project: "web", Key: "ghost"}, false},
 	} {
 		seen = nil
@@ -110,6 +112,15 @@ func TestEndpointFactsBoundIsTheMatchsReading(t *testing.T) {
 		}
 		if seen[0].Bound != c.want {
 			t.Errorf("%s: Endpoint.Bound = %v, want %v", name, seen[0].Bound, c.want)
+		}
+		// BoundRepo is the repository the host is bound to as the match read it (for a virtual one, the virtual repository, which a write is
+		// redirected away from), and the zero value when the host is not bound for the registry.
+		wantRepo := qname.Repo{}
+		if c.want {
+			wantRepo = c.bound
+		}
+		if seen[0].BoundRepo != wantRepo {
+			t.Errorf("%s: Endpoint.BoundRepo = %v, want %v", name, seen[0].BoundRepo, wantRepo)
 		}
 	}
 	// A request below /api/<format>/ on a bound host is never bound: the binding belongs to the registry root.

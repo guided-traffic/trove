@@ -81,6 +81,7 @@ func TestTheKeyAndTheImageNameAreOneAddress(t *testing.T) {
 var builtRoutes = map[string]bool{
 	routeManifestGetTag: true, routeManifestGetDgs: true, routeManifestPut: true, routeBlobGet: true,
 	routeTagsList: true, routeReferrers: true, routeManifestDelete: true, routeBlobDelete: true,
+	routeUploadStart: true, routeUploadStatus: true, routeUploadPatch: true, routeUploadPut: true, routeUploadCancel: true,
 }
 
 func TestTheRoutesThatAreNotBuiltAnswer501(t *testing.T) {

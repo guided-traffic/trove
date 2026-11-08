@@ -203,6 +203,8 @@ checked every earlier decision against them:
 | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) | The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) | The registry root is one pattern, one handler and one match | Decided by the development agent — owner review at the walkthrough |
 | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) | The format contract gains the optional ViewSizer for the size of a version that is not the sum of its files | Decided by the development agent — owner review at the walkthrough |
+| [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) | The upload and mount handlers hold the protocol, and the host holds the session and the link | Decided by the development agent — owner review at the walkthrough |
+| [ADR-178](#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3) | The upload sessions' Finalize takes an offset and reports the received count, and the contract is at version 3 | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6477,7 +6479,7 @@ every change is an ADR, and a new behaviour is an optional interface, never a ne
 screens show as the version's `sizeBytes`, by version id, in one call for a page. `CapabilitiesOf` finds it and `Capabilities.ViewSizer`
 records it; the package view asks a format only when it has it (`view.Sizer`, which only the bridge of such a format implements), once
 for a page of the version list after the cut and once for the version details. `ViewData`, `ViewFields` and the view adapters of
-npm and NuGet are unchanged, and `ContractVersion` stays 2. The conformance kit gains a check: a `ViewSizer` answers only for the ids
+npm and NuGet are unchanged, and `ContractVersion` stays 3 (the upload sessions' Finalize raised it, ADR-178). The conformance kit gains a check: a `ViewSizer` answers only for the ids
 it was asked for, with sizes not below zero, in one call. OCI implements it (Q-OCI-130).
 
 **Consequences.** A format whose versions are not their files adds the one method; a format without it is never called. The version
@@ -6491,6 +6493,73 @@ the manifest rows hold (Q-OCI-130).
 **Revisit condition:** a second format reports a size that needs more than the version's id and name.
 
 **Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-025; [spec/formats/oci.md](spec/formats/oci.md) R-OCI-031, Q-OCI-130.
+
+### ADR-175 · The upload and mount handlers hold the protocol, and the host holds the session and the link
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The host's upload-session port (ADR-162) and `Ingestor.Link` by source name (Q-OCI-27) left the OCI routes to build: the blob upload protocol of
+the distribution specification and the cross-repository mount. Both are security-relevant: a session id continues an upload, and a mount reaches bytes in
+a repository by naming it.
+
+**Decision.**
+
+- The handlers (`handlers_upload.go`, `handlers_mount.go`) hold the protocol and no state. Every session call passes the image name of the path as the
+  binding; the host answers `404 BLOB_UPLOAD_UNKNOWN` for a session of another principal, repository or name, and the handlers read no session by its id
+  alone. An id that is no UUID names no session. A monolithic `POST` is the upload pipeline's spool and commit; the finalize of a session is the port's.
+- A mount is `Ingestor.Link` from `<source name>/_blobs/<digest>` of the repository `oci.MountSource` names, after `deploy` on the target. Whatever the link
+  answers `NotFound`, and whatever `from` does not name an image, is the answer of a request without `from`: a session and 202
+  ([Q-OCI-110](spec/formats/oci.md#q-oci-110--a-mount-that-cannot-be-served-opens-a-session-and-says-nothing-more-and-one-function-parses-its-source)).
+- The 416 of an offset mismatch is rendered from the port's typed received count ([Q-OCI-111](spec/formats/oci.md#q-oci-111--a-chunks-content-range-is-read-strictly-and-a-416-carries-the-range-the-session-holds)); a monolithic digest mismatch is `DIGEST_INVALID`
+  ([Q-OCI-112](spec/formats/oci.md#q-oci-112--a-monolithic-upload-compares-the-digest-after-the-spool-and-answers-400-digest_invalid)).
+- The link refuses a source of another format and decides the read of its source as a read is decided (patterns, the refusal of a claimed name, the routing and the per-member check of a virtual
+  source); `Finalize` takes the offset of the last bytes and checks it under the session's claim; a blob upload, a monolithic upload and a mount ask the ownership rule without a publish
+  ([Q-OCI-115](spec/formats/oci.md#q-oci-115--blob-uploads-and-mounts-ask-the-ownership-rule-without-a-publish-before-a-body-is-read)); a session is decided on the package's document path ([Q-OCI-116](spec/formats/oci.md#q-oci-116--a-session-is-decided-on-the-packages-document-path)).
+- The frozen contract changes in one place, [ADR-178](#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3).
+- The commit hook of the format refuses a blob item whose content is not the digest in its path
+  ([Q-OCI-113](spec/formats/oci.md#q-oci-113--a-blob-item-must-hold-the-content-its-digest-names-checked-by-the-commit-hook)): a mount links the source's bytes unread, and the
+  source may be any repository's path.
+- The registry token's `pull` on the source is the registry root's check, with the repository and name that `oci.MountSource` returns
+  ([Q-OCI-114](spec/formats/oci.md#q-oci-114--the-grant-on-the-source-of-a-mount-is-the-registry-roots-check-the-read-right-is-the-hosts-link)).
+
+**Consequences.** The handlers work at `/api/oci/` in tests and at `/v2/` once the root is mounted, with no change. A mount through a registry token is limited by the token's `pull` scope on the source
+by the root's enforcement point, which reads `from` with the same function and the same bound repository (`EndpointFacts.BoundRepo`, an addition to the contract). A mount
+costs one transaction and no bytes.
+
+**Alternatives considered.** A 404 for an unreadable source (a disclosure or a client error); the handler reading the registry grant (a layer violation); a blob check in the mount handler only
+(a later road would repeat the gap).
+
+**Revisit condition:** a supported client treats the 202 fallback of a mount as an error, or a second format needs a mount.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-011, R-OCI-012, Q-OCI-110 to Q-OCI-115.
+
+### ADR-178 · The upload sessions' Finalize takes an offset and reports the received count, and the contract is at version 3
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The first build of the OCI upload handlers checked the `Content-Range` of a final `PUT` against a separate read of the session and then appended at the end of whatever the session held,
+so a request between the two moved the end and ruined the upload. The check belongs where `Append`'s is: under the session's claim, in the statement that takes it. [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) says
+that a changed signature or an argument that gains a rule raises `ContractVersion` and is an ADR of its own.
+
+**Decision.** `UploadSessions.Finalize` gains the argument `offset int64` (the received count the bytes of `last` start at; `-1` appends at the end, the behaviour of version 2), decided under the claim. A
+finalize at another count is an error of kind `RangeNotSatisfiable` as for `Append`, and the received count comes back with it, in the new field `Committed.Received` (zero otherwise), so that the
+format renders the `Range` of the 416 from a typed value ([Q-OCI-111](spec/formats/oci.md#q-oci-111--a-chunks-content-range-is-read-strictly-and-a-416-carries-the-range-the-session-holds)). `uploads.Service.Finalize` and `uploads.Result` carry the same.
+`ContractVersion` is 3; the surface file and the contract blocks of R-ARCH-008/009 are regenerated.
+
+`EndpointFacts` gains the field `BoundRepo qname.Repo` (an addition: the zero value is an unbound host, and `Bound` stays the bool it was). `Bound` says that a host is bound; it cannot say to which
+repository, and on a host bound to a virtual repository the request's repository of a write is the deployment target, not the repository the client's names (the `from` of a mount) are relative to. The dispatcher
+sets `BoundRepo` from the match in `serveRoute`, so the format's handler and the registry root's enforcement point read the same repository; `Bound` is derived from it.
+
+**What breaks.** (`BoundRepo` breaks nothing.) Every implementation of `formats.UploadSessions` and every caller of `Finalize`: the host (`internal/formathost`), the conformance kit's host (`formattest`) and the OCI handlers, which are all in this
+repository. No other format has upload sessions, so no format changes its `ContractVersion` literal (they use the constant).
+
+**Consequences.** A final chunk is held to the same offset rule as every other chunk, on every replica, without a second read. The 416 of a finalize needs no later read of the session.
+
+**Alternatives considered.** Keeping version 2 and reading the session after the refusal (the first build: the count is a later fact and the check is racy); a new method `FinalizeAt` next to `Finalize` (two ways to finish, one of which is wrong).
+
+**Revisit condition:** a second format with upload sessions needs a different shape of the final chunk.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-011, Q-OCI-111; [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009, R-ARCH-025.
 
 ## Decisions by the development agent
 
@@ -7400,6 +7469,13 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-101](spec/formats/oci.md#q-oci-101--the-catalog-merges-the-pages-of-the-readable-repositories-and-decides-each-name) | How does the catalog page over repositories and decide names? | (a) Walk the readable repositories in the order of their name prefix, take names from the data port in pages, decide every name with the listing form of the decision point | — |
 | [Q-OCI-102](spec/formats/oci.md#q-oci-102--the-pull-check-on-a-mounts-source-is-made-by-the-enforcement-point-and-answers-as-an-unreadable-source) | Who checks the registry token's pull on a mount's source, and how does a refusal answer? | (a) The enforcement point drops `mount` and `from`, so the handler opens a session (202), as for an unreadable source | [ADR-173](#adr-173--the-registry-root-is-one-pattern-one-handler-and-one-match) |
 | [Q-OCI-130](spec/formats/oci.md#q-oci-130--the-size-of-a-tag-in-the-package-view-is-the-size-of-its-image-reported-by-the-format) | What is the size of an OCI tag in the package view, and where does it come from? | (a) The image size (config and layers; of an index its children), reported by the format through the optional `ViewSizer` from the manifest rows | [ADR-177](#adr-177--the-format-contract-gains-the-optional-viewsizer-for-the-size-of-a-version-that-is-not-the-sum-of-its-files) |
+| [Q-OCI-110](spec/formats/oci.md#q-oci-110--a-mount-that-cannot-be-served-opens-a-session-and-says-nothing-more-and-one-function-parses-its-source) | What does a mount that cannot be served answer? | (a) The same 202 with a session as a mount without `from`; a malformed digest is 400; one parser of `from`, exported | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-111](spec/formats/oci.md#q-oci-111--a-chunks-content-range-is-read-strictly-and-a-416-carries-the-range-the-session-holds) | How is a chunk's `Content-Range` read, and what does a 416 carry? | (a) Only `<start>-<end>` in decimal; the 416 carries `Range`, `Location` and `Docker-Upload-UUID` | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-112](spec/formats/oci.md#q-oci-112--a-monolithic-upload-compares-the-digest-after-the-spool-and-answers-400-digest_invalid) | Where is the digest of a monolithic upload compared? | (a) After the spool, by the format: 400 `DIGEST_INVALID` | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-113](spec/formats/oci.md#q-oci-113--a-blob-item-must-hold-the-content-its-digest-names-checked-by-the-commit-hook) | What keeps a mount from linking content that is not its digest's? | (a) The commit hook of a blob path compares the item's SHA-256 with the path | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-114](spec/formats/oci.md#q-oci-114--the-grant-on-the-source-of-a-mount-is-the-registry-roots-check-the-read-right-is-the-hosts-link) | Who checks the grant on the source of a mount? | (a) The root checks the token's `pull` with `oci.MountSource`; the host's link checks `read` | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-115](spec/formats/oci.md#q-oci-115--blob-uploads-and-mounts-ask-the-ownership-rule-without-a-publish-before-a-body-is-read) | Do blob uploads and mounts pass the ownership rule? | (b) `CheckOwnership` without a publish, `FirstVersion` from the live versions, at the start of a session, a monolithic upload, a mount and the finish of a session | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
+| [Q-OCI-116](spec/formats/oci.md#q-oci-116--a-session-is-decided-on-the-packages-document-path) | On which path is a session decided? | (a) The package's document path `<name>/_taglist`, before the ownership question | [ADR-175](#adr-175--the-upload-and-mount-handlers-hold-the-protocol-and-the-host-holds-the-session-and-the-link) |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

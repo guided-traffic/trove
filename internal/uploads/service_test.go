@@ -126,7 +126,7 @@ func (f *fixture) append(s *Service, id uuid.UUID, offset int64, data []byte) (i
 }
 
 func (f *fixture) finalize(s *Service, id uuid.UUID, data []byte, last []byte) error {
-	_, err := s.Finalize(context.Background(), id, f.sc, sha256.Sum256(data), bytes.NewReader(last), 0, f.commit)
+	_, err := s.Finalize(context.Background(), id, f.sc, -1, sha256.Sum256(data), bytes.NewReader(last), 0, f.commit)
 	return err
 }
 
@@ -346,7 +346,7 @@ func TestR_STOR_011_ADigestThatDiffersKeepsTheSessionOpen(t *testing.T) {
 	data := random(40)
 	sess, _ := s.Start(context.Background(), 3, f.sc)
 	wrong := sha256.Sum256([]byte("not the data"))
-	_, err := s.Finalize(context.Background(), sess.ID, f.sc, wrong, bytes.NewReader(data), 0, f.commit)
+	_, err := s.Finalize(context.Background(), sess.ID, f.sc, -1, wrong, bytes.NewReader(data), 0, f.commit)
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeOCIDigestInvalid {
 		t.Fatalf("err = %v", err)
@@ -418,7 +418,7 @@ func TestR_STOR_011_ARetriedFinalizeNeedsTheRecordedDigest(t *testing.T) {
 	}
 	_ = f.finalize(a, sess.ID, data, data)
 	other := sha256.Sum256([]byte("x"))
-	_, err := f.replica().Finalize(context.Background(), sess.ID, f.sc, other, nil, 0, f.commit)
+	_, err := f.replica().Finalize(context.Background(), sess.ID, f.sc, -1, other, nil, 0, f.commit)
 	var e *errs.Error
 	if !errors.As(err, &e) || e.Code != errs.CodeOCIDigestInvalid {
 		t.Fatalf("err = %v", err)
@@ -476,7 +476,7 @@ func TestR_STOR_011_ASessionOfAnotherScopeDoesNotExist(t *testing.T) {
 			if _, err := s.Append(ctx, sess.ID, sc, 0, strings.NewReader("x"), 0); errKind(err) != errs.NotFound {
 				t.Errorf("Append: %v", err)
 			}
-			if _, err := s.Finalize(ctx, sess.ID, sc, sha256.Sum256(nil), nil, 0, f.commit); errKind(err) != errs.NotFound {
+			if _, err := s.Finalize(ctx, sess.ID, sc, -1, sha256.Sum256(nil), nil, 0, f.commit); errKind(err) != errs.NotFound {
 				t.Errorf("Finalize: %v", err)
 			}
 			if err := s.Abort(ctx, sess.ID, sc); errKind(err) != errs.NotFound {
@@ -633,5 +633,39 @@ func TestR_STOR_011_HashStateRoundTrip(t *testing.T) {
 		if _, err := restoreHashes(bad); err == nil {
 			t.Fatalf("restoreHashes(%d bytes) succeeded", len(bad))
 		}
+	}
+}
+
+// TestR_STOR_011_AFinalizeWithAnOffsetIsHeldToTheReceivedCount: the last bytes of a finalize start where the client says, decided under the
+// claim; another received count is a 416 that changes nothing, and the right one finishes the blob (R-OCI-011).
+func TestR_STOR_011_AFinalizeWithAnOffsetIsHeldToTheReceivedCount(t *testing.T) {
+	f := newFixture(t)
+	a, b := f.replica(), f.replica()
+	data := random(1000)
+	sess, err := a.Start(context.Background(), 3, f.sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.append(a, sess.ID, -1, data[:600]); err != nil {
+		t.Fatal(err)
+	}
+	fin := func(s *Service, offset int64, last []byte) error {
+		_, err := s.Finalize(context.Background(), sess.ID, f.sc, offset, sha256.Sum256(data), bytes.NewReader(last), 0, f.commit)
+		return err
+	}
+	// a request between the client's check and its finalize moved the end: the offset the client knew is stale
+	if _, err := f.append(b, sess.ID, 600, data[600:700]); err != nil {
+		t.Fatal(err)
+	}
+	res, err := a.Finalize(context.Background(), sess.ID, f.sc, 600, sha256.Sum256(data), bytes.NewReader(data[600:]), 0, f.commit)
+	if errKind(err) != errs.RangeNotSatisfiable || res.Received != 700 {
+		t.Fatalf("a stale offset: %v, received %d (want the count the session holds, 700)", err, res.Received)
+	}
+	cur, err := a.Get(context.Background(), sess.ID, f.sc)
+	if err != nil || cur.Received != 700 {
+		t.Fatalf("the refused finalize changed the session: %+v %v", cur, err)
+	}
+	if err := fin(b, 700, data[700:]); err != nil {
+		t.Fatalf("the right offset: %v", err)
 	}
 }

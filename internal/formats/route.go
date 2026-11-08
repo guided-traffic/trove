@@ -410,6 +410,10 @@ type EndpointFacts struct {
 	// client of such a host names the image without the project and the repository key, and the links of the format omit them.
 	// The dispatcher sets it; the zero value is the shared host.
 	Bound bool
+	// BoundRepo is the repository the host root is bound to as the match read it, the zero value when Bound is false. It is the repository the
+	// client of a bound host means by an image name, which for a virtual repository is the virtual one and not the deployment target a write is
+	// redirected to (Request.Repo): a name the client sends that is relative to the binding (the `from` of a mount) is read against it.
+	BoundRepo qname.Repo
 }
 
 // Target is what a format asks the decision point inside the addressed

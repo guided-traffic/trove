@@ -70,7 +70,7 @@ with the table rows of Q-DEB-1 to Q-DEB-43:
   stored-secret key ring; rotation by a co-signing next key; the journal withholds keys and never erases them** (Q-DEB-9 to
   Q-DEB-11, Q-DEB-30, Q-DEB-31).
 - **ADR-172 · The format contract gains the remote name index and the serve-facts kinds `deb_local` and `deb_remote`** (additions
-  keep `ContractVersion` 2, R-ARCH-025; the surface file changes; Q-ARCH-381).
+  keep `ContractVersion` (3 since ADR-178), R-ARCH-025; the surface file changes; Q-ARCH-381).
 
 ### 2.1 Go contract (`internal/formats`, `internal/servefacts`)
 

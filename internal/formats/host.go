@@ -100,11 +100,13 @@ type Ingestor interface {
 	// the mount of an OCI blob from another repository, the link step of a push through a virtual repository, the tag item of a
 	// push by tag whose manifest is stored. The source is named by the qualified name of its repository and a path, never by a
 	// digest and never by a repository reference the caller supplies: the host resolves the repository by name (its id, class and
-	// format), and for a virtual repository the item through its members in member order, as a read would. It then checks, as the
-	// caller of the request, that the item is a live untrashed file that holds a blob the store serves, that no finding blocks its
-	// version, and that rq.Subject may read it (a read decision on the named repository, taken after the lookup and before anything
-	// is said of it; whatever is wrong answers errs.NotFound, the same for an item or a repository that does not exist and one the
-	// caller may not read). The size and the digests are those of the blob row. It does not depend on storage.deploy_by_checksum, which is
+	// format), and refuses a repository of another format than rq.Repo's. The read of the source is decided as a read of it is: the
+	// decision point on a fresh index, the repository's include and exclude patterns and, for a remote repository, the refusal of a name
+	// a global claim covers (Host.Authorize on a request derived for the source); for a virtual repository the routing of the name
+	// (claims, pin rules, member patterns) and the per-member read check, in member order, as the virtual engine makes them. It then
+	// checks that the item is a live untrashed file that holds a blob the store serves and that no finding blocks its version. It does
+	// not run the format's serve check (ServeCheck) nor the remote gate of the serving path. Every refusal answers errs.NotFound (a failure of the host's own, a store error, passes through), the
+	// same for an item or a repository that does not exist and one the caller may not read. The size and the digests are those of the blob row. It does not depend on storage.deploy_by_checksum, which is
 	// the switch of a client's deploy by checksum header. It is the commit of [Ingestor.Commit] without the body: the item
 	// row, the storage hook, the audit row and the recorded write decisions in one transaction. c.Companions must be empty.
 	// The write decisions (deploy, overwrite) on the target are the caller's, as for Commit.
@@ -143,9 +145,10 @@ type UploadSessions interface {
 	// that the format renders the Range header of a 416 from a typed value and not from the error text.
 	Append(ctx context.Context, rq *Request, ref SessionRef, offset int64, body io.Reader) (received int64, err error)
 	// Finalize completes the session with the SHA-256 the client names, after the bytes of last, and commits the blob as
-	// the item c names. A digest that is not the computed one is an error of kind Invalid and keeps the session open; a
+	// the item c names. offset is Append's: the received count the bytes of last must start at (an offset below zero
+	// appends at the end), decided under the session's claim; any other count is a 416 as for Append, with the received count in Committed.Received. A digest that is not the computed one is an error of kind Invalid and keeps the session open; a
 	// finalize cut by a drain is repeated by the client's retry and continues at the recorded state.
-	Finalize(ctx context.Context, rq *Request, ref SessionRef, sha256 [32]byte, last io.Reader, c Commit) (Committed, error)
+	Finalize(ctx context.Context, rq *Request, ref SessionRef, offset int64, sha256 [32]byte, last io.Reader, c Commit) (Committed, error)
 	// Abort ends the session and removes what it staged.
 	Abort(ctx context.Context, rq *Request, ref SessionRef) error
 }
@@ -207,6 +210,9 @@ type Committed struct {
 	// Companions are the items of [Commit.Companions], in order; empty when the lead
 	// was Identical.
 	Companions []ItemRef
+	// Received is set by [UploadSessions.Finalize] alongside a refusal of the kind RangeNotSatisfiable: the byte count the session has
+	// recorded, for the Range header of the 416. It is zero otherwise.
+	Received int64
 }
 
 // Item is a file or folder as the item store reads it.

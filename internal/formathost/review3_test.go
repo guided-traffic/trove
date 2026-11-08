@@ -52,7 +52,7 @@ func TestR_STOR_011_AFinalizeCommitsOnlyAPathOfThePackageTheSessionWasStartedFor
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, [32]byte{1}, nil, formats.Commit{Path: path})
+		_, err = f.h.Uploads().Finalize(t.Context(), f.rq, formats.SessionRef{ID: uuid.New(), Binding: "app"}, -1, [32]byte{1}, nil, formats.Commit{Path: path})
 		return f, err
 	}
 	t.Run("a path of the package is decided on that package", func(t *testing.T) {

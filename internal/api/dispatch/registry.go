@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/registry/route"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // CoreRoutes are the handlers of the three routes below /v2/ that belong to the core and name no repository (R-OCI-003). The
@@ -73,5 +74,13 @@ func (h *registryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Format: h.f.Descriptor().ID, Name: m.target.Repo, CacheView: m.target.CacheView,
 		BaseURL: strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/"),
 	})
-	h.d.serveRoute(w, r, h.f, m.target.Repo, m.target.CacheView, routed{route: m.route, params: m.params, escaped: m.rest, cleaned: m.cleaned, bound: m.target.Bound})
+	h.d.serveRoute(w, r, h.f, m.target.Repo, m.target.CacheView, routed{route: m.route, params: m.params, escaped: m.rest, cleaned: m.cleaned, boundRepo: boundRepoOf(m.target)})
+}
+
+// boundRepoOf is the repository a bound match names, the zero value for an unbound one.
+func boundRepoOf(t route.Target) qname.Repo {
+	if t.Bound {
+		return t.Repo
+	}
+	return qname.Repo{}
 }

@@ -1201,8 +1201,9 @@ package formats
 // contract is frozen since the end of M3 (E3.3, ADR-141): every change of it is an ADR, an
 // addition keeps the version, and a breaking change raises it and moves every format in the same
 // change. Version 2 is the project model's (ADR-156): the repository is named by its qualified name, the read scope, the
-// link builder and the refusals changed. A format declares the literal it was written against.
-const ContractVersion = 2
+// link builder and the refusals changed. Version 3 is the upload sessions' (ADR-178): UploadSessions.Finalize takes the offset of its last
+// bytes and returns the received count with a refusal of it. A format declares the literal it was written against.
+const ContractVersion = 3
 
 // The types of other packages under the names a format spells them: one type each, no mirrors
 // (Q-ARCH-188, Q-ARCH-189). A format imports this package and nothing else of the core.
@@ -1321,7 +1322,7 @@ type Request struct {
 	Escaped  string                 // the repository-relative path as received
 	Subject  authz.Subject          // who acts, and on which endpoint (Subject.Endpoint, Q-EP-20)
 	Index    *authz.Index           // the index the request began on; every decision of the request runs on it
-	Endpoint EndpointFacts          // Name, Rules, CacheFill, ExposureFingerprint: derived from the listener's endpoint
+	Endpoint EndpointFacts          // Name, Rules, CacheFill, ExposureFingerprint, Exposure, Bound, BoundRepo: derived from the listener's endpoint and the match
 	CacheView bool                 // the request addressed the cache view of a remote repository, "<key>~cache" (R-REPO-032)
 	Host     Host                  // shadows http.Request.Host on purpose: no handler reads the Host header (R-ARCH-006)
 	Log      *slog.Logger          // request-scoped; nil logs to slog's default
@@ -1947,7 +1948,7 @@ type Host interface {
 // names from there. ItemsEvent.InScope(ctx, path) (bool, error) says whether the live file at a path belongs to the same removal as the event (the delete of a subtree reaches a hook
 // in events of at most 5,000 files, or in the batches of a job): a hook that refuses a removal because something still references an item must not count what
 // the same removal takes in another event (Q-OCI-73). Route.PackageParam names the placeholder that holds the package of the route, so the core knows the image name
-// format-neutrally. EndpointFacts.Bound is true on a host whose root is bound to the repository, and LinkBuilder.ClientName gives the
+// format-neutrally. EndpointFacts.Bound is true on a host whose root is bound to the repository, and EndpointFacts.BoundRepo is that repository as the match read it (for a host bound to a virtual repository the virtual one, while Request.Repo of a write is its deployment target; the zero value when Bound is false), and LinkBuilder.ClientName gives the
 // name as that host's client spells it. Prepared.Aliases are further paths the fetched document is entered under as artifacts in the
 // fill transaction (R-OCI-022).
 
@@ -1972,8 +1973,9 @@ type UploadSessions interface {
 	// holds, is an *errs.Error of kind RangeNotSatisfiable (416). received is the recorded count after the call, also on that error, so
 	// the format renders Range from a typed value.
 	Append(ctx context.Context, rq *Request, ref SessionRef, offset int64, body io.Reader) (received int64, err error)
-	// Finalize: a digest other than the computed one is an error of kind Invalid and keeps the session open.
-	Finalize(ctx context.Context, rq *Request, ref SessionRef, sha256 [32]byte, last io.Reader, c Commit) (Committed, error)
+	// Finalize: offset is Append's (the received count the bytes of last start at, -1 appends), decided under the claim; a digest other
+	// than the computed one is an error of kind Invalid and keeps the session open.
+	Finalize(ctx context.Context, rq *Request, ref SessionRef, offset int64, sha256 [32]byte, last io.Reader, c Commit) (Committed, error)
 	Abort(ctx context.Context, rq *Request, ref SessionRef) error
 }
 
@@ -2091,8 +2093,8 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
   - an external process would add a network hop to every package request.
 - At start-up, `Register` panics, and the process exits, on any of these:
   - a duplicate or reserved ID;
-  - a `ContractVersion` mismatch (the contract is frozen since the end of M3, E3.3 and ADR-141, at 2 since the project
-    model, ADR-156; a change that raises it moves every format in the same change, R-ARCH-025);
+  - a `ContractVersion` mismatch (the contract is frozen since the end of M3, E3.3 and ADR-141, at 3 since the upload sessions,
+    ADR-178, after 2 of the project model, ADR-156; a change that raises it moves every format in the same change, R-ARCH-025);
   - a route set that fails the kit's ambiguity check, which `Register` runs itself: every route has
     a name, a method, a template, a handler, a kind, an action and at least one example, and every
     entry of `Route.Examples` is matched by its own route and by no other route of the same method;
@@ -4355,7 +4357,7 @@ describe the policy from the first stable release on.
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
 | Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
 | Bastion interface | `bastion.InterfaceVersion`, an integer of its own, carried in `Trove-Bastion-Interface` ([bastion.md](bastion.md) R-BAS-009) | Main installation and Bastion talk only at the same version; every change of the interface raises it, guarded by its surface file; a release that raises it says so in its notes |
-| Format contract | `formats.ContractVersion`, frozen since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)), at 2 since the project model ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
+| Format contract | `formats.ContractVersion`, frozen since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)), at 3 since the upload sessions ([ADR-178](../decisions.md#adr-178--the-upload-sessions-finalize-takes-an-offset-and-reports-the-received-count-and-the-contract-is-at-version-3)), after 2 of the project model ([ADR-156](../decisions.md#adr-156--projects-own-their-repositories-members-hold-roles-names-are-scoped-to-the-project)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
 
 **Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
 ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); Semantic Release sets each version from the

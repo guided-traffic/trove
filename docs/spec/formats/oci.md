@@ -299,7 +299,9 @@ The coordinate of every request is the repository, the image name as the package
 | `DELETE` a tag, a manifest or a blob | name | `delete` | `delete` |
 
 - Writes pass the ownership check of R-AUTHZ-018 with the image name as the package, as npm and NuGet do; the repository's
-  `packageOwnership` decides.
+  `packageOwnership` decides. A blob upload, a monolithic upload and a mount ask it without a publish before a body is read, and the `PUT` that finishes a session asks it
+  again; a name with no live version is the first version ([Q-OCI-115](#q-oci-115--blob-uploads-and-mounts-ask-the-ownership-rule-without-a-publish-before-a-body-is-read)).
+  A session is decided on the package's document path `<name>/_taglist` ([Q-OCI-116](#q-oci-116--a-session-is-decided-on-the-packages-document-path)).
 - **How the token service grants.** For each scope entry it runs the coarse check of the route kind on the named repository
   (R-ARCH-008: may the caller do this action for the image, decided on the path of its package document
   `<name>/_taglist` with the name as package, Q-OCI-140): `pull` → `read`, `push` → `deploy`, `delete` → `delete`, `*` → all three.
@@ -509,6 +511,14 @@ replica continues it and none keeps anything of it between requests (INV-18):
   An abandoned session expires (R-STOR-011 *Expiry*) and leaves no object.
 - Sizes: the effective maximum upload size of R-STOR-004 bounds a blob; beyond it the request answers 413 `SIZE_INVALID` and
   the session is aborted.
+- **Ownership** ([Q-OCI-115](#q-oci-115--blob-uploads-and-mounts-ask-the-ownership-rule-without-a-publish-before-a-body-is-read)). The start of a session, a monolithic upload and a `PUT` that finishes a session ask the
+  ownership rule of R-AUTHZ-018 for the image name, as a write that is no publish, after `deploy` is decided and before a body is read. A `416` of a finalize carries the received count the port returns with the refusal.
+- **Details of the handlers** ([Q-OCI-111](#q-oci-111--a-chunks-content-range-is-read-strictly-and-a-416-carries-the-range-the-session-holds), [Q-OCI-112](#q-oci-112--a-monolithic-upload-compares-the-digest-after-the-spool-and-answers-400-digest_invalid)).
+  `Content-Range` is `<start>-<end>` in decimal and covers as many bytes as the body holds; anything else is 400 `BLOB_UPLOAD_INVALID`
+  and reaches no session. A 416 carries `Range` (`0-<received − 1>`, `0-0` for none), `Location` and `Docker-Upload-UUID`. The last bytes of a `PUT`
+  with a `Content-Range` are held to the same start rule, decided under the session's claim (the port's `Finalize` takes the offset as `Append` does), so a request between a client's check and its finalize cannot move the end. `GET` of a session also answers `OCI-Chunk-Min-Length`. A session id that is no UUID is
+  404 `BLOB_UPLOAD_UNKNOWN`. A monolithic `POST` compares the digest after the body is spooled: 400 `DIGEST_INVALID` and nothing is stored (the
+  pipeline's own digest check would answer 409). `Location` is the absolute URL of the link builder.
 
 Acceptance criteria:
 
@@ -536,6 +546,16 @@ Priority: **P1** · Covers: PKG-DOCKER-019, PKG-OCI-006
   through a virtual source the member resolution of R-OCI-027 applies, without an upstream request.
 - `mount` without `from` opens a session and answers 202: there is no automatic mount, because it would tell a caller that a
   blob exists somewhere it may not read.
+- **What decides, and what is said** ([Q-OCI-110](#q-oci-110--a-mount-that-cannot-be-served-opens-a-session-and-says-nothing-more-and-one-function-parses-its-source),
+  [Q-OCI-113](#q-oci-113--a-blob-item-must-hold-the-content-its-digest-names-checked-by-the-commit-hook),
+  [Q-OCI-114](#q-oci-114--the-grant-on-the-source-of-a-mount-is-the-registry-roots-check-the-read-right-is-the-hosts-link)). The target needs `deploy` on
+  `<name>/_blobs/<digest>` (403 as for any push) and the ownership rule without a publish ([Q-OCI-115](#q-oci-115--blob-uploads-and-mounts-ask-the-ownership-rule-without-a-publish-before-a-body-is-read)). The source is linked by `Ingestor.Link` by its repository name and the path `<source name>/_blobs/<digest>`; the host
+  refuses a repository of another format than the target's and decides `read` for the caller as a read of the source is decided (the decision, the include and exclude patterns, the refusal of a claimed
+  name for a remote; for a virtual source the routing and the per-member check) and checks the item. A repository, a name or a blob that does not exist, a source the caller may not read, a blob a
+  finding blocks, a `from` that names no image, a digest that names a manifest, and a `mount` without `from` are all the same answer: 202 with a new session, with the
+  same headers and no other difference than the session id. A `mount` that is not a sha256 digest is 400 `DIGEST_INVALID`. On a bound host `from` is an image name of the bound repository; a key
+  with the cache suffix is the cache view of a remote repository. The blob item the mount commits must hold the content its digest names, whatever the source (409 `DENIED`
+  otherwise). The registry token's `pull` on the source is checked by the registry root with the parser the format exports (`oci.MountSource`).
 
 Acceptance criteria:
 
@@ -544,6 +564,9 @@ Acceptance criteria:
 - `mount` without `from` for a blob the installation holds answers 202.
 - With a registry token that grants `push` on `web/team-local/app` and no `pull` on `web/docker-local/base`, the same mount answers
   202 and links nothing (the unit test of the enforcement point proves the strip; the end-to-end case waits for the mount handler).
+- A mount from a repository the caller may not read, from one that does not exist and for a blob the source lacks answer the same 202, and none stores an item
+  (integration, three replicas).
+- A mount uploads no bytes: the object store receives no object, no session is opened, and the blob is served through the target name on every replica.
 
 ### R-OCI-013 · Pushing manifests and tags
 Priority: **P1** · Covers: PKG-DOCKER-020, PKG-DOCKER-021, PKG-DOCKER-026, PKG-DOCKER-027, PKG-OCI-007, PKG-OCI-008
@@ -2464,7 +2487,7 @@ reproduced by `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage`: 397 and 549 byt
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The format reports the size through an optional interface of the format contract, `ViewSizer`, from the manifest rows of R-OCI-007 (chosen) | `ViewSizes` returns the size by version id; the core asks only a format that has the interface, once for a page of the list and once for the details, and uses the answer in place of the sum of files | No new column on the version, no change to storage or ownership; the number is the one `metadata.size` holds; one statement for a page of the version list (OCI only), the details add one to the two of `Describe`, none on a download (R-ARCH-027); `ContractVersion` stays 2 and npm and NuGet are not touched or called (ADR-177) | The contract gains an interface and a capability field |
+| (a) The format reports the size through an optional interface of the format contract, `ViewSizer`, from the manifest rows of R-OCI-007 (chosen) | `ViewSizes` returns the size by version id; the core asks only a format that has the interface, once for a page of the list and once for the details, and uses the answer in place of the sum of files | No new column on the version, no change to storage or ownership; the number is the one `metadata.size` holds; one statement for a page of the version list (OCI only), the details add one to the two of `Describe`, none on a download (R-ARCH-027); `ContractVersion` stays 3 (ADR-178) and npm and NuGet are not touched or called (ADR-177) | The contract gains an interface and a capability field |
 | (a') A new case of `ViewFields` and a `ViewData.SizeBytes` member (first build, rejected in review) | `Describe` answers the size when asked with a new field | No new interface | An existing method gains a case every adapter has to know and is called for it; against the rule that a new behaviour is added, never inserted (R-ARCH-025) |
 | (b) Link the config and layer blobs to the version | The sum of linked files becomes the image size | The core stays unchanged | A blob shared by two tags or two names would be an item of several versions: it changes what an item belongs to, what a version delete removes and what the sweep keeps (R-OCI-018, R-OCI-020); the file list of a tag would list layers it has no path for |
 | (c) A stored size column on the version | The push writes the size on the version row | Cheapest read | A second copy of a fact the manifest rows hold, and the version row is replaced when a tag moves. The size of an index cannot go stale for its required children, though: they are stored before it (R-OCI-013 step 4, held in the commit transaction), a listed child cannot be removed while the index exists (R-OCI-018), and only the push writes the rows. A foreign child (a descriptor with `urls`) is not required and can be pushed after the index; the gap is [H-672](#h-672--the-size-of-an-index-leaves-out-a-foreign-child-that-is-pushed-after-it). That is why the push stores the index's size in the manifest's own row (the choice below) |
@@ -2495,6 +2518,144 @@ and [H-600](#h-600--the-sizes-a-manifest-declares-are-not-compared-with-the-stor
 conformance kit in [checks_view.go](../../../internal/formats/formattest/checks_view.go). Tests: `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage` (the
 evidence of the acceptance criterion), `TestR_OCI_031_TheSizesReadOnceAndAnswerForTheTagsAsked`, `TestR_OCI_031_TheMetadataSizeIsTheStoredImageSize`, `TestR_OCI_031_TheSizeOfAnIndexOfIndexesIsTheSumAtAnyDepth` (the store, with saturation), the index-of-indexes part of `TestR_OCI_031_AVersionOfATagIsTheSizeOfTheImage`,
 `TestR_API_029_OnlyAFormatWithAViewSizerIsAskedForSizes`, `TestR_ARCH_010_Check11ViewSizer`.
+
+### Q-OCI-110 · A mount that cannot be served opens a session and says nothing more, and one function parses its source
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-012 says a mount that is not allowed is a normal upload, and R-STOR-008 makes the host's link answer `errs.NotFound` for everything wrong with a
+source. What the handler does with that answer, and with a `from` it cannot read, decides whether the mount is an oracle.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every `NotFound` of the link, a `from` that names no image and a `mount` without `from` are the same 202 with a new session; a malformed `mount` digest is 400 `DIGEST_INVALID`; `oci.MountSource` is the one parser of `from` and is exported (chosen) | The answer carries no fact about the source | What a client reads is what the specification allows; the root and the handler cannot read `from` two ways | A client that mounts from a name that never existed uploads the bytes (it would have anyway) |
+| (b) 404 `BLOB_UNKNOWN` for a source the caller may not read | The client learns the mount failed | Honest | Tells a caller that a source it cannot read exists, unless the absent source answers 404 too, and clients treat a 404 on a mount as an error |
+| (c) 202 only for a missing `from`; every other failure is its own error | More information for a legitimate client | Easier to debug | An oracle for the existence of a repository, a name and a blob |
+
+**Choice:** (a).
+
+**Rationale:** the digest is the caller's own claim, so refusing a malformed one says nothing about a repository. The development agent would revisit it if a
+supported client turns out to treat the fallback as an error.
+
+**Applied in the spec:** [R-OCI-012](#r-oci-012--cross-repository-blob-mount). Code: `handleMount`, `MountSource` in [handlers_mount.go](../../../internal/formats/oci/handlers_mount.go).
+
+### Q-OCI-111 · A chunk's Content-Range is read strictly and a 416 carries the range the session holds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the distribution specification writes `Content-Range: <start>-<end>` for a chunk. Clients differ in what else they send (`bytes `, a total).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only `<start>-<end>` in decimal, no sign, no leading zero, end not before start, as many bytes as `Content-Length`; else 400 `BLOB_UPLOAD_INVALID`; the 416 gets `Range`, `Location` and `Docker-Upload-UUID` from the port's typed `received` (chosen) | One spelling | A second reader of the header cannot interpret it differently; the offset reaches the session as an integer | A client that sends `bytes 0-9/*` is refused (none of the supported ones does) |
+| (b) Accept `bytes `, a total and whitespace | Lenient | More clients | Several spellings of one offset |
+| (c) Ignore `Content-Range` and always append at the end | No parsing | Simple | A retried chunk is appended twice: a corrupt blob caught only by the digest |
+
+**Choice:** (a).
+
+**Rationale:** the 416 is the protocol's way to resynchronise a client; it needs the received count, which the port returns as a value and not in an error text
+(Q-OCI-26). The development agent would revisit it if Docker, Podman, containerd, skopeo, crane or Buildx send another form.
+
+**Applied in the spec:** [R-OCI-011](#r-oci-011--blob-uploads-across-requests-and-replicas). Code: `chunkStart`, `outOfOrder` in [handlers_upload.go](../../../internal/formats/oci/handlers_upload.go).
+
+### Q-OCI-112 · A monolithic upload compares the digest after the spool and answers 400 DIGEST_INVALID
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a `POST` with `?digest=` sends the whole blob; the upload pipeline of R-STOR-004 can check a declared digest itself.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Spool the body, compare the computed SHA-256 with the named one, answer 400 `DIGEST_INVALID`, commit through the pipeline (chosen) | The format owns the answer | The same code as every other digest mismatch of R-OCI-011; nothing stored | The body is read to the end before the refusal |
+| (b) Pass the digest to the spool as `Expect` | The pipeline refuses early | One pass | The pipeline answers 409 `conflict`, which the registry shape renders as `DENIED` |
+
+**Choice:** (a).
+
+**Rationale:** a digest that differs is `DIGEST_INVALID` on every path of the protocol, and a client's retry logic reads the code. The development agent would revisit it if the
+pipeline's refusal gets a code the format can map.
+
+**Applied in the spec:** [R-OCI-011](#r-oci-011--blob-uploads-across-requests-and-replicas). Code: `handleMonolithic`.
+
+### Q-OCI-113 · A blob item must hold the content its digest names, checked by the commit hook
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a mount links the item of another repository without reading it, and `Ingestor.Link` takes size and digests from the source's blob row. The source is chosen by the caller:
+the path `<name>/_blobs/<digest>` of a repository of any format is a valid source, and a raw file at that path with other content would be linked under a digest it does not have.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `OnCommit` of a blob path compares the item's SHA-256 with the digest in the path and refuses with 409 (chosen) | In the commit transaction | Holds for every road (upload, mount, fill, a raw write through `/files/`) | A few lines in the hook of the manifest package, which another work package owns |
+| (b) The source must be a repository of the target's format, refused by the host's link | At the source | Explicit; the host resolves the repository, so it knows the format | Does not cover another road that commits a blob item |
+| (c) Verify after the link and remove | After the fact | None | A window in which the item is served |
+
+**Choice:** (a), and (b) as well: the link refuses a source of another format (`Host.linkSource`), so the cross-format surface is closed at the source and the hook is the defence in depth. The hook fails closed: a name that is no digest and a commit without a 32-byte SHA-256 are refused too.
+
+**Rationale:** the digest in the name is what every client verifies; the layout must not hold anything else. The development agent would revisit it if a registry class stores blobs under another name.
+
+**Applied in the spec:** [R-OCI-012](#r-oci-012--cross-repository-blob-mount). Code: `Format.OnCommit` in [hooks.go](../../../internal/formats/oci/hooks.go). Test: `TestR_OCI_012_AMountIsRefusedWhenTheSourceIsNotTheBlobItsDigestNames`.
+
+### Q-OCI-114 · The grant on the source of a mount is the registry root's check; the read right is the host's link
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a mount needs `pull` on the source in a registry token ([R-OCI-006](#r-oci-006--permissions-per-operation)) and `read` on it for the principal. The enforcement point
+(`internal/api/registry`) checks the token; a format cannot import it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format decides `read` by `Ingestor.Link`; the root's enforcement point checks the token's `pull` with the repository and name `oci.MountSource` returns for the bound repository the match read (`EndpointFacts.BoundRepo`), and drops `mount` and `from` when it is missing ([Q-OCI-102](#q-oci-102--the-pull-check-on-a-mounts-source-is-made-by-the-enforcement-point-and-answers-as-an-unreadable-source)) (chosen) | Each party checks what it can see | Works on `/api/oci/` and on `/v2/`; one parser, one bound repository | The match must carry the bound repository (a bool is not enough on a host bound to a virtual repository) |
+| (b) The format reads the registry grant from the principal | Format-side | One place | The format would know the token's shape: a layer violation |
+| (c) A hook on the route in the contract | Generic | Reusable | A contract change for one route |
+
+**Choice:** (a). Built: `EndpointFacts.BoundRepo` (dispatcher `serveRoute`), `ociformat.MountSource` passed by the composition root, the integration test through `/v2/` on the shared and on a bound host.
+
+**Rationale:** the root owns the token; the host owns the principal. The development agent would revisit it if a second format needs a source grant.
+
+**Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation), [R-OCI-012](#r-oci-012--cross-repository-blob-mount).
+
+### Q-OCI-115 · Blob uploads and mounts ask the ownership rule without a publish before a body is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OCI-006 says writes pass the ownership check (R-AUTHZ-018). The manifest push asks it; the first build of the blob routes did not, so a holder of `deploy` could store
+bytes under an image name whose owner is someone else. A blob is content-addressed, which is the argument that the rule does not apply to it. The rule (`authz.judge`) treats a name
+with owners by its owners, a name that is unclaimed and holds no version as free to the holder of the action (`FirstVersion`), and every other name without owners as needing `manage`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Not applicable: a blob is named by its digest and claims nothing | No change | Nothing to build | R-OCI-006 as written is not met; a writer of the name's storage who is not its owner can fill it; the unreferenced blob is only swept after the grace period |
+| (b) `CheckOwnership` with `Publish: false` and `FirstVersion` computed from the live versions of the name (as the manifest push computes it), at the start of a session, at a monolithic upload, at a mount and at the `PUT` that finishes a session, before a body is read; a `PATCH` is decided for `deploy` only (chosen) | The read-only early form of the rule, on the name's document path for a session and on the blob's path otherwise | Meets R-OCI-006 where a caller can be refused before bytes cost anything; a plain deployer pushes a new image (a name without a version is its first version), is refused on a name another principal owns, and needs `manage` for a name that has versions and no owner, exactly as for the manifest | A name that gains an owner under a running upload does not stop the `PATCH`es that follow; the `PUT` that finishes it does (H-662) |
+| (c) The same check on every request of a session | The rule at every request | No window | One more read of the ownership per `PATCH`, on the hottest write route |
+| (d) `FirstVersion: false` always (the first build) | A blob never creates the name | Simple | Refuses every new image to a deployer without `manage`: the rule needs `manage` for a never-seen name when `FirstVersion` is false |
+
+**Choice:** (b). (d) was the first build and was wrong.
+
+**Rationale:** the rule exists to keep a name for its owner; the cheapest points that keep it are before the first byte and before the last one is committed. The development agent would revisit
+it if the window of (b) matters (it is the time between a `PATCH` and the `PUT` of one upload, bounded by `storage.uploads.session_max_age`), or if a name's first version should be decided by the format's claim and not by its live versions.
+
+**Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation), [R-OCI-011](#r-oci-011--blob-uploads-across-requests-and-replicas) and [R-OCI-012](#r-oci-012--cross-repository-blob-mount) state it. Code: `checkOwnership` in
+[handlers_upload.go](../../../internal/formats/oci/handlers_upload.go). Tests: `TestR_OCI_006_ADeployerPushesANewImageAndIsRefusedOnAnOwnedName` (the real rule, three replicas),
+`TestR_OCI_006_ABlobOfANameWithAVersionIsNoFirstVersion`, `TestR_OCI_006_AnUploadToAnOwnedNameIsRefusedBeforeABodyIsRead`.
+
+### Q-OCI-116 · A session is decided on the package's document path
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a session has no blob yet, but the host decides `deploy` on every call of it, and every decision names a path (R-AUTHZ-005, conformance check 13). The first build named the image name itself, which no `Classify` places in a package.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package's document path `<name>/_taglist` (`Format.PackageDocumentPath`) (chosen) | One path per name, of the package | A grant or a pattern scoped by path decides a session where it decides the name; the same path the tags list is decided on | A grant on `<name>/_blobs/**` alone allows the finalize and not the start |
+| (b) A path under the blob directory | A session is a staged blob | A grant on blobs also starts sessions | Which digest is not known at the start; a made-up path |
+| (c) The image name (the first build) | No change | None | Names no path of the package; a path grant cannot match it |
+
+**Choice:** (a), decided before the ownership question at a session start (as at a monolithic upload and a mount), so that a caller a path grant refuses never learns that the name has an owner.
+
+**Rationale:** the property is R-AUTHZ-005's; the document path is the one path every name has. [Q-OCI-140](#q-oci-140--every-oci-decision-and-claim-names-a-path-classify-places-in-the-image-the-tags-list-and-the-catalog-on-the-tags-list-document-referrers-on-the-subject-a-push-on-the-tag-or-the-manifest) names the same path for the lists, the claim of a push and the registry token's grant, so one grant on a name's paths decides the session, the lists and the token alike. The development agent would revisit it if a grant on the blob directory alone should start sessions.
+
+**Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation). Code: `sessions.decide` in [uploads.go](../../../internal/formathost/uploads.go), `startSession`. Tests:
+`TestR_AUTHZ_005_ASessionStartIsDecidedOnAPathOfThePackage` (an exclude and an include pattern, three replicas), `TestR_OCI_006_ADecisionThatRefusesComesBeforeTheOwnershipQuestion`.
 
 ## What this does not cover
 

@@ -23,7 +23,7 @@ type SessionService interface {
 	Lookup(ctx context.Context, id uuid.UUID, sc uploads.Scope) (uploads.Session, error)
 	Get(ctx context.Context, id uuid.UUID, sc uploads.Scope) (uploads.Session, error)
 	Append(ctx context.Context, id uuid.UUID, sc uploads.Scope, offset int64, body io.Reader, limit int64) (int64, error)
-	Finalize(ctx context.Context, id uuid.UUID, sc uploads.Scope, sum [32]byte, last io.Reader, limit int64, commit uploads.CommitFunc) (uploads.Result, error)
+	Finalize(ctx context.Context, id uuid.UUID, sc uploads.Scope, offset int64, sum [32]byte, last io.Reader, limit int64, commit uploads.CommitFunc) (uploads.Result, error)
 	Abort(ctx context.Context, id uuid.UUID, sc uploads.Scope) error
 }
 
@@ -51,7 +51,7 @@ func (unsupportedUploads) Append(context.Context, *formats.Request, formats.Sess
 	return 0, uploadsNotBuilt()
 }
 
-func (unsupportedUploads) Finalize(context.Context, *formats.Request, formats.SessionRef, [32]byte, io.Reader, formats.Commit) (formats.Committed, error) {
+func (unsupportedUploads) Finalize(context.Context, *formats.Request, formats.SessionRef, int64, [32]byte, io.Reader, formats.Commit) (formats.Committed, error) {
 	return formats.Committed{}, uploadsNotBuilt()
 }
 
@@ -121,7 +121,16 @@ func (u sessions) decide(ctx context.Context, rq *formats.Request, target reposi
 		}
 		trq.Index = idx
 	}
-	t := formats.Target{Package: binding, Path: binding, Actions: []formats.Action{formats.ActionDeploy}}
+	// The coordinate names a path of the package, as every decision does (R-AUTHZ-005): a session has no blob yet, so it is the package's
+	// document path when the format has one ("<name>/_taglist" for an image), the binding itself otherwise. A grant or a pattern scoped by
+	// path then decides on a path the format classifies in the package.
+	path := binding
+	if f, ok := u.h.o.Formats(target.Format); ok {
+		if doc, ok := f.PackageDocumentPath(binding); ok && doc.Path != "" {
+			path = doc.Path
+		}
+	}
+	t := formats.Target{Package: binding, Path: path, Actions: []formats.Action{formats.ActionDeploy}}
 	if err := u.h.Authorize(ctx, trq, t); err != nil {
 		return nil, err
 	}
@@ -215,7 +224,7 @@ func (u sessions) Append(ctx context.Context, rq *formats.Request, ref formats.S
 
 // Finalize implements [formats.UploadSessions]. The blob is committed as the item c names, with the target as the repository, in
 // the transaction that also ends the session.
-func (u sessions) Finalize(ctx context.Context, rq *formats.Request, ref formats.SessionRef, sum [32]byte, last io.Reader, c formats.Commit) (formats.Committed, error) {
+func (u sessions) Finalize(ctx context.Context, rq *formats.Request, ref formats.SessionRef, offset int64, sum [32]byte, last io.Reader, c formats.Commit) (formats.Committed, error) {
 	o, err := u.lookup(ctx, rq, ref)
 	if err != nil {
 		return formats.Committed{}, err
@@ -248,9 +257,9 @@ func (u sessions) Finalize(ctx context.Context, rq *formats.Request, ref formats
 		out, cerr = ingestor{h: u.h}.commit(ctx, o.trq, sp, c, func(ctx context.Context, tx meta.Tx, it items.Ref) error { return markDone(ctx, tx, it.ID) })
 		return cerr
 	}
-	res, err := u.svc.Finalize(ctx, ref.ID, o.sc, sum, last, limit, commit)
+	res, err := u.svc.Finalize(ctx, ref.ID, o.sc, offset, sum, last, limit, commit)
 	if err != nil {
-		return formats.Committed{}, err
+		return formats.Committed{Received: res.Received}, err
 	}
 	if res.Replayed {
 		// the session is done: the item is the one its first commit made, and nothing is committed again

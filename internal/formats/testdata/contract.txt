@@ -1,4 +1,4 @@
-contract version 2
+contract version 3
 formats.Action: alias authz.Action
 formats.Authenticator: method ReadToken(context.Context, RemoteContext, int, []byte) (string, time.Duration, error)
 formats.Authenticator: method TokenRequest(context.Context, RemoteContext, *http.Request, Path, int, http.Header) (*http.Request, string, bool, error)
@@ -59,6 +59,7 @@ formats.Committed: field Created bool
 formats.Committed: field Identical bool
 formats.Committed: field Item ItemRef
 formats.Committed: field Overwritten bool
+formats.Committed: field Received int64
 formats.Companion: field Generated bool
 formats.Companion: field MediaType string
 formats.Companion: field Path Path
@@ -83,6 +84,7 @@ formats.Digests: field SHA512 []byte
 formats.Discoverer: method DiscoveryDocument() (Path, string, bool)
 formats.Discoverer: method ParseDiscovery(context.Context, RemoteContext, []byte) (any, error)
 formats.EndpointFacts: field Bound bool
+formats.EndpointFacts: field BoundRepo qname.Repo
 formats.EndpointFacts: field CacheFill bool
 formats.EndpointFacts: field Exposure ExposureView
 formats.EndpointFacts: field ExposureFingerprint string
@@ -463,7 +465,7 @@ formats.UploadSession: field Received int64
 formats.UploadSession: field Target RepoRef
 formats.UploadSessions: method Abort(context.Context, *Request, SessionRef) error
 formats.UploadSessions: method Append(context.Context, *Request, SessionRef, int64, io.Reader) (int64, error)
-formats.UploadSessions: method Finalize(context.Context, *Request, SessionRef, [32]byte, io.Reader, Commit) (Committed, error)
+formats.UploadSessions: method Finalize(context.Context, *Request, SessionRef, int64, [32]byte, io.Reader, Commit) (Committed, error)
 formats.UploadSessions: method Get(context.Context, *Request, SessionRef) (UploadSession, error)
 formats.UploadSessions: method Start(context.Context, *Request, RepoRef, string) (UploadSession, error)
 formats.VersionID: type int64
@@ -544,7 +546,7 @@ formats.ActionRead: value = authz.Read
 formats.Admin: value = (repeated, place 5 of its group)
 formats.Computed: value = (repeated, place 2 of its group)
 formats.Content: value PathKind = iota + 1 (place 0 of its group)
-formats.ContractVersion: value = 2
+formats.ContractVersion: value = 3
 formats.Current: value Currency = iota + 1 (place 0 of its group)
 formats.Delete: value = (repeated, place 4 of its group)
 formats.Download: value RouteKind = iota + 1 (place 0 of its group)
