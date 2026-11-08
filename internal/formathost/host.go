@@ -240,6 +240,50 @@ func (h *Host) Authorize(ctx context.Context, rq *formats.Request, t formats.Tar
 	return nil
 }
 
+// PathsAllowed implements [formats.Host] with the listing form of Authorize: the decision (authz.PathsAllowedOn) on the request's index with
+// the coordinate of each path completed by the format's Classify, then the repository's include and exclude patterns and, on a remote
+// repository, the refusal of a name a global claim covers, for each path as Authorize applies them; it writes no audit event.
+func (h *Host) PathsAllowed(ctx context.Context, rq *formats.Request, a formats.Action, paths []string) ([]bool, error) {
+	f, known := h.o.lookup(rq.Repo.Format)
+	var classify authz.Classifier
+	if known {
+		classify = func(p string) (string, string) {
+			info := f.Classify(formats.Path{Path: p})
+			return info.Package, info.Version
+		}
+	}
+	out, err := h.o.Decider.PathsAllowedOn(ctx, rq.Index, rq.Subject, coordinate(rq, formats.Target{}), a, paths, classify)
+	if err != nil {
+		return nil, err
+	}
+	actions := []formats.Action{a}
+	refused := map[string]bool{}
+	for i, p := range paths {
+		if !out[i] {
+			continue
+		}
+		t := formats.Target{Path: p, Actions: actions}
+		if classify != nil {
+			t.Package, _ = classify(p)
+		}
+		if subject, ok := h.patternSubject(rq, t); ok && !rq.Repo.Admits(subject, false) {
+			out[i] = false
+			continue
+		}
+		if rq.Repo.Class == repository.Remote && t.Package != "" && h.o.Refusal != nil && !writes(actions) {
+			r, seen := refused[t.Package]
+			if !seen {
+				if r, err = h.o.Refusal.RemoteRefused(ctx, *rq.Repo, t.Package, nil); err != nil {
+					return nil, err
+				}
+				refused[t.Package] = r
+			}
+			out[i] = !r
+		}
+	}
+	return out, nil
+}
+
 // CheckOwnership implements [formats.Host]: the ownership rule on the request's index and
 // subject, read-only and before the body. A host with no ownership rule bound refuses, as the
 // claim in the commit does.
@@ -287,9 +331,27 @@ func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx format
 		if rm, ok := h.o.Items.(ItemRemover); ok {
 			w.(*writer).d.remove = rm
 		}
+		w.(*writer).d.guard = func(ctx context.Context, paths []string) error { return h.cascadeAllowed(ctx, rq, paths) }
 		if err := fn(tx, w); err != nil {
 			return err
 		}
 		return stateOf(rq).record(ctx, tx, h.o.Decider, rq.Subject)
 	})
+}
+
+// cascadeAllowed is the guard of a removal a request makes: every path a storage hook is about to remove besides the ones the request
+// named is decided for `delete` for the request's subject, with the listing form of the decision, and the first that is refused refuses
+// the whole removal. The cascade of a hook is thereby held to the same grants as the removal of its own items: the check and the
+// removal are one list (Q-OCI-76).
+func (h *Host) cascadeAllowed(ctx context.Context, rq *formats.Request, paths []string) error {
+	ok, err := h.PathsAllowed(ctx, rq, formats.ActionDelete, paths)
+	if err != nil {
+		return err
+	}
+	for i, allowed := range ok {
+		if !allowed {
+			return errs.E(errs.Forbidden, errs.CodeForbidden, "The removal would also take "+paths[i]+", which the caller may not delete.")
+		}
+	}
+	return nil
 }

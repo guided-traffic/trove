@@ -541,6 +541,8 @@ const (
 	CodeOCIManifestBlobUnknown = "oci_manifest_blob_unknown"
 	// CodeOCISizeInvalid: SIZE_INVALID.
 	CodeOCISizeInvalid = "oci_size_invalid"
+	// CodeOCIReferenced: DENIED (409), a removal the storage hook of the format refuses because a manifest still names the item (R-OCI-018).
+	CodeOCIReferenced = "oci_referenced"
 	// CodeOCIUnsupported: UNSUPPORTED.
 	CodeOCIUnsupported = "oci_unsupported"
 	// CodeOCIInsufficientScope: UNAUTHORIZED with error="insufficient_scope" in the challenge, the refusal of the enforcement

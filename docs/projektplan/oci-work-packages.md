@@ -308,6 +308,30 @@ WP0 ──┬─ WP1 ─────────────┐
   `internal/config/{oci,auth_identity}.go` and `schema.json` (descriptions), `test/integration/identity/env_test.go`
   (`replicaOpts.dbOpts`).
 
+## WP4a as built (manifests, pulls and the manifest push path)
+
+- Built: `internal/formats/oci/manifest/` (the strict parser, [Q-OCI-60](../spec/formats/oci.md#q-oci-60--a-manifest-is-read-by-a-strict-reader-that-refuses-what-two-readers-could-interpret-differently)),
+  `internal/formats/oci/tagorder/` (the tag order of Q-OCI-17, which WP4b and WP10 reuse), the handlers `handlers_manifest.go` and `handlers_blob.go`, the
+  hook `hooks.go` (`OnCommit`; `OnItemsRemoved` is the deletion's, in its own file), `view.go`, the stub file `handlers_wp5_stub.go` (`handlers_wp4b_stub.go` went with WP4b)
+  (a package deletes its file), the data-port methods of `internal/formatdata/oci/store_manifests.go` and `queries/oci_manifests.sql`.
+- The data port `Store` gained `ExistingItems`, `WithheldAmong`, `TagViews`, `StoredTags`, `WithheldVersions`; `PutManifest`, `Manifest`, `References` and
+  `Tombstone` are implemented. The error mapping maps the kind `conflict` to `DENIED` (409).
+- Helpers other files may reuse (all in `handlers_manifest.go`): `storeOf`, `portOf`, `errDigestInvalid`, `errTagInvalid`, `errUnsupported`, `ioError`,
+  `serveStored`, `checkReferences`.
+- The integration test of the routes mounts the format at `/api/oci/` in `test/integration/files/oci_host_test.go` until WP3 mounts `/v2/`; WP13 moves the
+  protocol criteria to `test/integration/oci` over `/v2/`.
+
+## WP4b as built (tags, referrers, deletion, sweep, replay, reinstate, setup)
+
+- Built: the tags list, the referrers API, `DELETE` of tags, manifests and blobs, the hook `OnItemsRemoved` with the cascade, the refusals and
+  `oci.manifest.deleted` (journal entry `{repository, name, digest, actorId}`), the job `oci-sweep` (hourly, `maintenance.tasks`,
+  `trove_oci_sweep_blobs_removed_total`), the replay handler (withholds), `trove admin oci reinstate` with `oci.reinstate`, the clients
+  `docker` and `podman` with their setup snippets and the guide, `Store.CatalogNames` (the page of one repository
+  for the catalog of the registry root, WP3). ADR-168, Q-OCI-70, Q-OCI-71, Q-OCI-73 to Q-OCI-75, H-606, H-607, H-643, H-644 (`docs/security/oci-content.md`).
+- Aligned with WP4a (merged): the tag order is WP4a's `tagorder` (Q-OCI-64, the package view); the tags list is in byte order and does not use it.
+  `store_removal.go` holds `RemoveManifest` and `ReferencedBy`; `registryError` maps a conflict to `409 DENIED`; the conformance fixture and the
+  twin carry the list and delete side (`store_twin_test.go` adds methods to WP4a's `twin`).
+
 ## WP6 as built (the remote engine's handshake and revalidation)
 
 - The engine calls `Authenticator` and `Revalidator` (ADR-165): `proxy.Authenticator`/`proxy.Revalidator` are the engine's views,
@@ -321,3 +345,4 @@ WP0 ──┬─ WP1 ─────────────┐
 - The generic test adapter of `internal/proxy/proxytest` (`Auth`, `HeadRevalidation`, `Tokens`, `TokenService`, `Challenge`, `As`) is what WP8's
   adapter tests may copy; the stub registry of WP7 is the OCI-shaped counterpart.
 - Security: [remote-repositories.md](../security/remote-repositories.md) (the handshake section, H-610 to H-612).
+

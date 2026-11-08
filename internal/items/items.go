@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/qname"
 
@@ -98,6 +99,7 @@ type Store struct {
 	rec      audit.Recorder
 	jobs     JobEnqueuer
 	hooks    Hooks
+	jobGuard atomic.Pointer[JobGuard]
 	cfg      config.Storage
 	download bool
 	activity ActivitySink

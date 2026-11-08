@@ -25,6 +25,7 @@ formats.CacheStatus: field Stored bool
 formats.CacheStatus: field TTL time.Duration
 formats.Capabilities: field ItemsRestorer ItemsRestorer
 formats.Capabilities: field Remote RemoteCaps
+formats.Capabilities: field RemovalLocker RemovalLocker
 formats.Capabilities: field ServeFacts ServeFactsKeyer
 formats.Capabilities: field Vulnerability VulnerabilityAdapter
 formats.Class: alias catalog.Class
@@ -158,6 +159,7 @@ formats.Host: method Ingest() Ingestor
 formats.Host: method Items() ItemStore
 formats.Host: method Links(*Request) LinkBuilder
 formats.Host: method Packages() PackageStore
+formats.Host: method PathsAllowed(context.Context, *Request, Action, []string) ([]bool, error)
 formats.Host: method Remote() RemoteFetcher
 formats.Host: method Renditions() RenditionCache
 formats.Host: method Resolver() Resolver
@@ -200,6 +202,7 @@ formats.ItemStore: method Stat(context.Context, RepoRef, Path) (Item, bool, erro
 formats.ItemsEvent: field Actor string
 formats.ItemsEvent: field Cascade func(context.Context, ...string) error
 formats.ItemsEvent: field Data any
+formats.ItemsEvent: field InScope func(context.Context, string) (bool, error)
 formats.ItemsEvent: field Items []RemovedItem
 formats.ItemsEvent: field Packages PackageWriter
 formats.ItemsEvent: field Reason string
@@ -333,6 +336,7 @@ formats.RemoteFetcher: method Gate(context.Context, *Request, Path) error
 formats.RemoteFetcher: method GateWith(context.Context, *Request, Path, ServeFacts) (ServeFacts, error)
 formats.RemoteFetcher: method Metadata(context.Context, *Request, Path, string) (*RemoteDocument, error)
 formats.RemoteFetcher: method Query(context.Context, *Request, Query) (*QueryResult, error)
+formats.RemovalLocker: method LockRemoval(context.Context, Tx, PackageWriter, RepoRef, []string) error
 formats.RemovedItem: field Item ItemRef
 formats.RemovedItem: field SHA256 []byte
 formats.RemovedItem: field Version VersionID

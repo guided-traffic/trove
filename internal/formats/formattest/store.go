@@ -390,7 +390,17 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 	if repo.ID != w.h.ref.ID {
 		return errs.E(errs.Internal, errs.CodeInternal, "formattest: the repository is not the host's")
 	}
-	ev := formats.ItemsEvent{Repo: w.h.ref, Reason: "delete", Actor: w.rq.Subject.ID, Data: w.h.opts.Data}
+	if err := w.h.lockRemovalIn(ctx, w.tx, w, paths); err != nil {
+		return err
+	}
+	return w.removeCovered(ctx, paths, "delete", w.rq.Subject.ID, true)
+}
+
+// removeCovered marks the live files the paths cover as removed and runs OnItemsRemoved for them in this transaction, with a Cascade that
+// does the same for the paths the hook names, as the production host does through the item store. For a request's removal (guarded) the
+// paths of a cascade are decided for `delete` first, as the production host's guard does, and the first refusal refuses the whole removal.
+func (w *writer) removeCovered(ctx context.Context, paths []string, reason, actor string, guarded bool) error {
+	ev := formats.ItemsEvent{Repo: w.h.ref, Reason: reason, Actor: actor, Data: w.h.opts.Data}
 	w.h.mu.Lock()
 	for _, rec := range w.h.sortedItems() {
 		if rec.removed || !coveredBy(rec.ref.Path, paths) {
@@ -405,6 +415,16 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 		return nil
 	}
 	ev.Packages = &writer{h: w.h, tx: w.tx, prefix: w.prefix}
+	ev.Cascade = func(ctx context.Context, cascaded ...string) error {
+		if guarded {
+			for i, ok := range w.h.allowedPaths(formats.ActionDelete, cascaded) {
+				if !ok {
+					return errs.E(errs.Forbidden, errs.CodeForbidden, "The removal would also take "+cascaded[i]+", which the caller may not delete.")
+				}
+			}
+		}
+		return w.removeCovered(ctx, cascaded, reason, actor, guarded)
+	}
 	w.h.noteHook("OnItemsRemoved")
 	return w.h.f.OnItemsRemoved(ctx, w.tx, ev)
 }
@@ -731,6 +751,12 @@ func (i ingestor) Link(ctx context.Context, rq *formats.Request, from formats.So
 // transaction; reason is "delete", "trash", "move" or "purge".
 func (h *Host) Remove(ctx context.Context, rq *formats.Request, reason string, paths ...string) error {
 	return h.Write(ctx, rq, func(tx formats.Tx, w formats.PackageWriter) error {
+		if err := h.lockRemovalIn(ctx, tx, w, paths); err != nil {
+			return err
+		}
+		mt := tx.(*memTx)
+		wr := &writer{h: h, tx: mt, prefix: h.f.Descriptor().PropertyPrefix}
+		// Only the listed files go (a path is a file here, as the items API removes them), and the writer of the event is the transaction's.
 		ev := formats.ItemsEvent{Repo: h.ref, Reason: reason, Packages: w, Data: h.opts.Data}
 		h.mu.Lock()
 		for _, p := range paths {
@@ -739,10 +765,13 @@ func (h *Host) Remove(ctx context.Context, rq *formats.Request, reason string, p
 				continue
 			}
 			rec.removed = true
-			tx.(*memTx).undo = append(tx.(*memTx).undo, func() { rec.removed = false })
+			mt.undo = append(mt.undo, func() { rec.removed = false })
 			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version, SHA256: rec.digests.SHA256})
 		}
 		h.mu.Unlock()
+		ev.Cascade = func(ctx context.Context, cascaded ...string) error {
+			return wr.removeCovered(ctx, cascaded, reason, "", false)
+		}
 		h.noteHook("OnItemsRemoved")
 		return h.f.OnItemsRemoved(ctx, tx, ev)
 	})
@@ -861,4 +890,26 @@ func (m *MemRemote) Exchange(ctx context.Context, rq *formats.Request, x formats
 		return nil, formats.ErrOffline
 	}
 	return m.Exchanges(ctx, rq, x)
+}
+
+// lockRemovalIn runs the format's optional RemovalLocker (formats.RemovalLocker) with the live files the paths cover, before the rows are
+// marked removed, as the item store does before it deletes them.
+func (h *Host) lockRemovalIn(ctx context.Context, tx formats.Tx, w formats.PackageWriter, paths []string) error {
+	l := formats.CapabilitiesOf(h.f).RemovalLocker
+	if l == nil {
+		return nil
+	}
+	h.mu.Lock()
+	var files []string
+	for _, rec := range h.sortedItems() {
+		if !rec.removed && coveredBy(rec.ref.Path, paths) {
+			files = append(files, rec.ref.Path)
+		}
+	}
+	h.mu.Unlock()
+	if len(files) == 0 {
+		return nil
+	}
+	h.noteHook("LockRemoval")
+	return l.LockRemoval(ctx, tx, w, h.ref, files)
 }

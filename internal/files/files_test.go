@@ -78,6 +78,8 @@ func (a *access) PathsAllowed(_ context.Context, base authz.Coordinate, act auth
 
 func (a *access) Index() *authz.Index { return a.idx }
 
+func (a *access) EncodedSubject() ([]byte, error) { return []byte(`{}`), nil }
+
 func (a *access) RecordAllowed(_ context.Context, _ meta.Tx, c authz.Coordinate, _ authz.Decision) error {
 	a.recorded = append(a.recorded, c)
 	return nil

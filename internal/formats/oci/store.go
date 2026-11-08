@@ -51,4 +51,39 @@ type Store interface {
 	// UnreferencedBlobs lists up to limit blob items of the repository that no manifest references and that are older than the
 	// grace period, for the sweep (R-OCI-019).
 	UnreferencedBlobs(ctx context.Context, repoID int64, before time.Time, limit int) ([]rows.Blob, error)
+
+	// ExistingItems returns those of the canonical item paths that are live files of the repository: the check of a push that
+	// everything a manifest names is stored under the name (R-OCI-013 step 4). With a transaction it reads in it and holds the
+	// rows against a concurrent removal until the transaction ends, so a blob cannot go between the check and the manifest's rows.
+	ExistingItems(ctx context.Context, tx formats.Tx, repoID int64, paths []string) ([]string, error)
+	// WithheldAmong returns those of the digests that carry a withheld mark under the image name (R-OCI-033). With a transaction it
+	// reads in it: the commit transaction takes no second connection of the pool.
+	WithheldAmong(ctx context.Context, tx formats.Tx, repoID int64, name string, digests [][32]byte) ([][32]byte, error)
+	// TagViews reads, for the tags with the given version ids (of any number of image names), the facts of the manifests they point at
+	// and, for an index, its children (R-OCI-031); a version that is not a stored tag of a recorded manifest is absent.
+	TagViews(ctx context.Context, versionIDs []int64) ([]rows.TagView, error)
+	// StoredTags lists the tags a local repository serves of an image name, newest push first, at most limit: the live versions
+	// whose manifest the journal replay did not withhold.
+	StoredTags(ctx context.Context, repoID int64, name string, limit int) ([]string, error)
+	// WithheldVersions returns the ids of the live tags of the repositories (by "<project>/<repository>") that point at a
+	// withheld manifest.
+	WithheldVersions(ctx context.Context, repos []string) ([]int64, error)
+	// Holds reports whether the repository holds any live item below the image name: a tag, a manifest or a blob. A tags list of
+	// a name it holds nothing of answers 404 NAME_UNKNOWN (R-OCI-015).
+	Holds(ctx context.Context, repoID int64, name string) (bool, error)
+	// CatalogNames lists the image names of the repository that hold a manifest, in byte order after the cursor name, at most
+	// limit: the page of one repository that the catalog of the registry root merges (R-OCI-017).
+	CatalogNames(ctx context.Context, repoID int64, after string, limit int) ([]string, error)
+
+	// The reads of the removal hook run in the transaction that removed the items and see its effects (R-OCI-018, Q-OCI-24).
+
+	// TagsPointingAt lists the tags of an image name whose item holds the manifest with the digest.
+	TagsPointingAt(ctx context.Context, tx formats.Tx, repoID int64, name string, digest [32]byte) ([]string, error)
+	// SubjectManifests lists the manifests of the name whose subject is the digest.
+	SubjectManifests(ctx context.Context, tx formats.Tx, repoID int64, name string, subject [32]byte) ([][32]byte, error)
+	// Children lists the manifests that a manifest names (the entries of an index).
+	Children(ctx context.Context, tx formats.Tx, repoID int64, name string, manifest [32]byte) ([][32]byte, error)
+	// RecordManifestDeleted writes the audit event oci.manifest.deleted with the journal entry a restore's replay withholds the
+	// manifest by (R-OCI-033).
+	RecordManifestDeleted(ctx context.Context, tx formats.Tx, in rows.ManifestDeleted) error
 }

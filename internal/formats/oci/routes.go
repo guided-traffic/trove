@@ -141,7 +141,7 @@ func matchReferrers(escaped string) (formats.Params, bool) {
 }
 
 // buildRoutes is the whole endpoint map of R-OCI-009 to R-OCI-018, written once with the name of every handler, so that a work
-// package that builds an operation moves its method out of handlers_stub.go into a file of its own and never edits this table.
+// package that builds an operation replaces its stub file with a file of its own and never edits this table.
 //
 // The writes are Classes local, so that a remote repository answers 405 and the dispatcher routes a write addressed to a
 // virtual repository to its deployment target (R-OCI-028). The reads stay open to every class the format supports.
@@ -173,12 +173,12 @@ func (f *Format) buildRoutes() []formats.Route {
 		route(routeManifestPut, http.MethodPut, "/{name...}/manifests/{reference}", formats.Upload, deploy,
 			matchManifest, []string{"app/manifests/1", "team/app/manifests/" + dgst}, f.handleManifestPut),
 		route(routeManifestDelete, http.MethodDelete, "/{name...}/manifests/{reference}", formats.Delete, del,
-			matchManifest, []string{"app/manifests/1", "team/app/manifests/" + dgst}, f.handleManifestDelete),
+			matchManifest, []string{"app/manifests/1", "team/app/manifests/" + dgst}, f.handleDeleteManifest),
 
 		route(routeBlobGet, http.MethodGet, "/{name...}/blobs/{digest}", formats.Download, read,
 			matchBlob, []string{"app/blobs/" + dgst, "team/app/blobs/" + dgst}, f.handleBlobGet),
 		route(routeBlobDelete, http.MethodDelete, "/{name...}/blobs/{digest}", formats.Delete, del,
-			matchBlob, []string{"app/blobs/" + dgst}, f.handleBlobDelete),
+			matchBlob, []string{"app/blobs/" + dgst}, f.handleDeleteBlob),
 
 		route(routeUploadStart, http.MethodPost, "/{name...}/blobs/uploads/", formats.Upload, deploy,
 			matchUploadStart, []string{"app/blobs/uploads/", "team/app/blobs/uploads/"}, f.handleUploadStart),
@@ -211,59 +211,11 @@ func (f *Format) named(h formats.HandlerFunc) formats.HandlerFunc {
 	}
 }
 
-// The handlers of the operations the skeleton routes and does not serve yet: each answers 501, so the format registers, the
-// conformance kit's structural checks run and no route is missing from the table. The work package that builds an operation moves
-// its method out of this file into a file of its own (handlers_<topic>.go); the route table (above) names the methods and is not
-// edited. Authorization has run when a handler is reached: the coarse check of the route's action on the repository (R-ARCH-011
-// step 2), so a refused caller never learns that an operation is not built.
+// stub is the handler of an operation this build does not serve yet: it answers 501, so the format registers, the conformance kit's
+// structural checks run and no route is missing from the table. The work package that builds an operation deletes the stub file that
+// holds its method (handlers_wp4b_stub.go, handlers_wp5_stub.go) and implements the method in a file of its own; the route table
+// names the methods and is not edited. Authorization has run when a handler is reached: the coarse check of the route's action on the
+// repository (R-ARCH-011 step 2), so a refused caller never learns that an operation is not built.
 func stub(what string) formats.HandlerFunc {
 	return func(context.Context, *formats.Request, http.ResponseWriter) error { return notImplemented(what) }
-}
-
-func (f *Format) handleManifestGet(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("pull a manifest (R-OCI-009)")(ctx, rq, w)
-}
-
-func (f *Format) handleManifestPut(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("push a manifest (R-OCI-013)")(ctx, rq, w)
-}
-
-func (f *Format) handleManifestDelete(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("delete a manifest or a tag (R-OCI-018)")(ctx, rq, w)
-}
-
-func (f *Format) handleBlobGet(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("pull a blob (R-OCI-010)")(ctx, rq, w)
-}
-
-func (f *Format) handleBlobDelete(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("delete a blob (R-OCI-018)")(ctx, rq, w)
-}
-
-func (f *Format) handleUploadStart(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("start a blob upload or mount a blob (R-OCI-011, R-OCI-012)")(ctx, rq, w)
-}
-
-func (f *Format) handleUploadStatus(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("query a blob upload (R-OCI-011)")(ctx, rq, w)
-}
-
-func (f *Format) handleUploadPatch(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("send a chunk of a blob (R-OCI-011)")(ctx, rq, w)
-}
-
-func (f *Format) handleUploadPut(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("finish a blob upload (R-OCI-011)")(ctx, rq, w)
-}
-
-func (f *Format) handleUploadCancel(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("cancel a blob upload (R-OCI-011)")(ctx, rq, w)
-}
-
-func (f *Format) handleTagsList(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("list tags (R-OCI-015)")(ctx, rq, w)
-}
-
-func (f *Format) handleReferrers(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("list referrers (R-OCI-016)")(ctx, rq, w)
 }

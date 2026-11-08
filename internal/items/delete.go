@@ -46,6 +46,8 @@ type DeleteArgs struct {
 	// never decided and stays (R-STOR-018). Zero (a job enqueued before the field
 	// existed) bounds nothing.
 	MaxID int64 `json:"maxId,omitempty"`
+	// Subject is the caller encoded for the job's guard (JobGuard); empty for a job asked by no subject.
+	Subject json.RawMessage `json:"subject,omitempty"`
 }
 
 // DeleteSpec is the removal of a file, or of a folder with its subtree.
@@ -56,6 +58,8 @@ type DeleteSpec struct {
 	Actor    audit.Actor
 	Source   audit.Source
 	Endpoint string
+	// Subject is the caller in the form the job guard decides for (see JobGuard); it is carried into the job.
+	Subject json.RawMessage
 	// Check is asked with the paths of the subtree, in batches of at most 1,000,
 	// before anything is removed; an error stops the delete with nothing changed.
 	// For a subtree removed at once it runs in the removing transaction, on the
@@ -123,7 +127,7 @@ func (s *Store) Delete(ctx context.Context, spec DeleteSpec) (DeleteResult, erro
 				return err
 			}
 		}
-		if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, repo, rows); err != nil {
+		if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, repo, rows, scopeOf(rows)); err != nil {
 			return err
 		}
 		return s.sweepAncestors(ctx, tx, qs, repo.ID, ParentOf(spec.Path))
@@ -208,7 +212,7 @@ func checkRows(ctx context.Context, check func(context.Context, []string) error,
 // events, and removes the folders of the rows deepest first, each only if it is
 // empty then: a child that a concurrent deploy added keeps its folder (and is not
 // removed unchecked).
-func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who, repo RepoRef, rows []subtreeRow) error {
+func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who, repo RepoRef, rows []subtreeRow, scope func(context.Context, string) (bool, error)) error {
 	var fileIDs []int64
 	var folders []subtreeRow
 	for _, r := range rows {
@@ -218,12 +222,27 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 			folders = append(folders, r)
 		}
 	}
+	paths := make(map[int64]string, len(fileIDs))
+	for _, r := range rows {
+		if r.Kind == KindFile {
+			paths[r.ID] = r.Path
+		}
+	}
 	for i := 0; i < len(fileIDs); i += 5000 {
+		if l, ok := s.hooks.(RemovalLocker); ok {
+			chunk := make([]string, 0, min(5000, len(fileIDs)-i))
+			for _, id := range fileIDs[i:min(i+5000, len(fileIDs))] {
+				chunk = append(chunk, paths[id])
+			}
+			if err := l.LockRemoval(ctx, tx, repo, chunk); err != nil {
+				return err
+			}
+		}
 		removed, err := qs.DeleteItemsByID(ctx, q.DeleteItemsByIDParams{Ids: fileIDs[i:min(i+5000, len(fileIDs))], RepoID: repo.ID})
 		if err != nil {
 			return err
 		}
-		ev := RemovedEvent{Repo: repo, Reason: "delete", Actor: actorID(w.actor), By: w.actor, Source: w.source, Items: make([]Removed, len(removed))}
+		ev := RemovedEvent{Repo: repo, Reason: "delete", Actor: actorID(w.actor), By: w.actor, Source: w.source, InScope: scope, Items: make([]Removed, len(removed))}
 		for j, r := range removed {
 			ev.Items[j] = Removed{Item: Ref{ID: r.ID, Repo: repo, Path: r.Path}, Size: r.Size.Int64, Version: r.VersionID}
 			copy(ev.Items[j].Digest[:], r.BlobSha256)
@@ -339,7 +358,7 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 		}
 		job, err := s.jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{
 			Kind: DeleteJobKind, DedupKey: DeleteJobKind + ":" + strconv.FormatInt(repo.ID, 10) + ":" + spec.Path,
-			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Name, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID},
+			Args:       DeleteArgs{RepoID: repo.ID, Key: repo.Name, Class: repo.Class, Format: repo.Format, Path: spec.Path, Actor: spec.Actor, MaxID: maxID, Subject: spec.Subject},
 			TargetKind: "item", TargetKey: repo.Name.String() + "/" + spec.Path, CreatedBy: actorID(spec.Actor),
 		})
 		if err != nil {
@@ -411,7 +430,16 @@ func (s *Store) deleteFileBatch(ctx context.Context, a DeleteArgs, lo, hi string
 			items[i] = subtreeRow{ID: r.ID, Path: r.Path, Kind: r.Kind, Digest: r.BlobSha256, Size: r.Size.Int64}
 		}
 		n = int64(len(items))
-		return s.removeRows(ctx, tx, qs, who{actor: a.Actor}, repo, items)
+		if g := s.jobGuard.Load(); g != nil && len(a.Subject) > 0 {
+			ctx = WithCascadeGuard(ctx, func(ctx context.Context, paths []string) error {
+				err := (*g)(ctx, a, paths)
+				if errs.KindOf(err) == errs.Forbidden {
+					return jobs.Permanent(err) // a refusal does not change by trying again
+				}
+				return err
+			})
+		}
+		return s.removeRows(ctx, tx, qs, who{actor: a.Actor}, repo, items, jobScope(qs, a))
 	})
 	return n, err
 }
@@ -490,6 +518,9 @@ type RemoveSpec struct {
 	Actor    audit.Actor
 	Source   audit.Source
 	Endpoint string
+	// InScope is the scope of the removal this one belongs to, when it is a cascade of a storage hook (RemovedEvent.InScope): the hooks of
+	// the cascaded events judge a reference against the whole removal and not only against the paths of the cascade. Nil: the paths alone.
+	InScope func(ctx context.Context, path string) (bool, error)
 }
 
 // RemoveIn removes the files at the paths of spec permanently, in the transaction
@@ -523,7 +554,7 @@ func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error
 	if len(rows) == 0 {
 		return nil
 	}
-	if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, spec.Repo, rows); err != nil {
+	if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, spec.Repo, rows, joinScope(scopeOf(rows), spec.InScope)); err != nil {
 		return err
 	}
 	for _, p := range spec.Paths {
@@ -533,3 +564,43 @@ func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error
 	}
 	return nil
 }
+
+// scopeOf is the scope of a removal whose rows are all known: the files among them.
+func scopeOf(rows []subtreeRow) func(context.Context, string) (bool, error) {
+	files := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if r.Kind == KindFile {
+			files[r.Path] = true
+		}
+	}
+	return func(_ context.Context, p string) (bool, error) { return files[p], nil }
+}
+
+// jobScope is the scope of the batches of the job `items-delete`: the files of the subtree that existed when the delete was
+// authorized (DeleteArgs.MaxID). Each batch is a transaction of its own, so the later batches are read from the database.
+func jobScope(qs *q.Queries, a DeleteArgs) func(context.Context, string) (bool, error) {
+	lo, hi := subtreeBounds(a.Path)
+	return func(ctx context.Context, p string) (bool, error) {
+		return qs.ItemInRemovalScope(ctx, q.ItemInRemovalScopeParams{RepoID: a.RepoID, ItemPath: p, Path: a.Path, Lo: lo, Hi: hi, MaxID: a.MaxID})
+	}
+}
+
+// joinScope is the scope of a cascade: its own files, then the scope of the removal it belongs to.
+func joinScope(own, outer func(context.Context, string) (bool, error)) func(context.Context, string) (bool, error) {
+	if outer == nil {
+		return own
+	}
+	return func(ctx context.Context, p string) (bool, error) {
+		if in, err := own(ctx, p); err != nil || in {
+			return in, err
+		}
+		return outer(ctx, p)
+	}
+}
+
+// JobGuard decides the paths a storage hook cascades to in a batch of the delete job, for the subject the job carries ([DeleteArgs.Subject]);
+// an error fails the batch and the job. The composition root installs it ([Store.SetJobGuard]) once the files service exists.
+type JobGuard func(ctx context.Context, a DeleteArgs, paths []string) error
+
+// SetJobGuard installs the guard of the delete job; it is set once, before the worker runs.
+func (s *Store) SetJobGuard(g JobGuard) { s.jobGuard.Store(&g) }

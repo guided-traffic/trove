@@ -58,10 +58,27 @@ func (s *Service) Delete(ctx context.Context, c Caller, req DeleteRequest) (item
 	if !found || (req.Strict && !admits(repo, req.Path, it.Kind == items.KindFolder, t.class)) {
 		return items.DeleteResult{}, notFound()
 	}
+	subject, err := c.Access.EncodedSubject()
+	if err != nil {
+		return items.DeleteResult{}, err
+	}
 	classify := s.classifier(repo)
 	record := c.recorder(req.Repo, req.Path, t.class, dec, authz.Delete)
+	// What a storage hook cascades to is held to the grants of the caller as the subtree is (the cascade of an OCI manifest takes its tags).
+	ctx = items.WithCascadeGuard(ctx, func(ctx context.Context, paths []string) error {
+		ok, err := c.allowedPaths(ctx, req.Repo, authz.Delete, paths, classify)
+		if err != nil {
+			return err
+		}
+		for i, allowed := range ok {
+			if !allowed {
+				return errForbidden(authz.Delete, req.Repo, paths[i])
+			}
+		}
+		return nil
+	})
 	return s.items.Delete(ctx, items.DeleteSpec{
-		Repo: repo, Path: req.Path, Actor: c.Actor, Source: c.Source, Endpoint: c.Subject.Endpoint,
+		Repo: repo, Path: req.Path, Actor: c.Actor, Source: c.Source, Endpoint: c.Subject.Endpoint, Subject: subject,
 		Check: func(ctx context.Context, paths []string) error {
 			ok, err := c.allowedPaths(ctx, req.Repo, authz.Delete, paths, classify)
 			if err != nil {
@@ -81,4 +98,34 @@ func (s *Service) Delete(ctx context.Context, c Caller, req DeleteRequest) (item
 			return s.checkRemoval(ctx, tx, c, repo, files)
 		},
 	})
+}
+
+// JobDecider decides for the subject a delete job carries ([authz.Engine.PathsAllowedFor]).
+type JobDecider interface {
+	PathsAllowedFor(ctx context.Context, encoded []byte, base authz.Coordinate, a authz.Action, paths []string, classify authz.Classifier) ([]bool, error)
+}
+
+// DeleteJobGuard returns the guard of the delete job: the paths a storage hook cascades to in a batch are decided for `delete` for the
+// subject that asked, on the index installed now, and the first refusal fails the job with the 403 of the path. A job that carries no
+// subject (none is queued without one) is not guarded.
+func (s *Service) DeleteJobGuard(d JobDecider) items.JobGuard {
+	return func(ctx context.Context, a items.DeleteArgs, paths []string) error {
+		if len(a.Subject) == 0 {
+			return nil
+		}
+		repo, err := s.repos.ByName(ctx, a.Key)
+		if err != nil {
+			return err
+		}
+		ok, err := d.PathsAllowedFor(ctx, a.Subject, authz.Coordinate{Repository: a.Key, Kind: authz.KindWrite}, authz.Delete, paths, s.classifier(repo))
+		if err != nil {
+			return err
+		}
+		for i, allowed := range ok {
+			if !allowed {
+				return errForbidden(authz.Delete, a.Key, paths[i])
+			}
+		}
+		return nil
+	}
 }

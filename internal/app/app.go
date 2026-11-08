@@ -28,6 +28,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
 	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
+	ocidata "github.com/guided-traffic/trove/internal/formatdata/oci"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
@@ -162,6 +163,7 @@ type App struct {
 	reseal      late[resealDeps]
 	host        late[formats.Host]
 	semver2     late[*nugetdata.Semver2]
+	ociSweep    late[*ocidata.Sweeper]
 	shipper     late[journal.Shipper]
 	checkBucket late[platform.Bucket]
 }

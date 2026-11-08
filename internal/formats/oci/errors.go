@@ -58,6 +58,8 @@ func codeOf(code string) (string, bool) {
 		return codeManifestBlobUnknown, true
 	case errs.CodeOCISizeInvalid:
 		return codeSizeInvalid, true
+	case errs.CodeOCIReferenced:
+		return codeDenied, true
 	case errs.CodeOCIUnsupported:
 		return codeUnsupported, true
 	case errs.CodeInvalidPath:
@@ -77,7 +79,9 @@ func registryError(e *errs.Error) (status int, code string) {
 	switch e.Kind {
 	case errs.Unauthenticated:
 		return status, codeUnauthorized
-	case errs.Forbidden:
+	case errs.Forbidden, errs.Conflict:
+		// 403 from the decision point, 409 from a refusal of the registry itself (a push of a withheld digest, a deletion that would
+		// leave a dangling reference): both are DENIED (R-OCI-008, R-OCI-013, R-OCI-018).
 		return status, codeDenied
 	case errs.NotFound:
 		return status, codeNameUnknown

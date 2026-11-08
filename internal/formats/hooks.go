@@ -206,6 +206,11 @@ type ItemsEvent struct {
 	// that goes to the trash takes its tags to the trash, and only "delete" and "purge" remove them for good. A hook that cascades
 	// on every reason would make a trashed manifest unrecoverable.
 	Cascade func(ctx context.Context, paths ...string) error
+	// InScope reports whether the live file at a canonical path of Repo belongs to the same removal as this event: the delete of a subtree
+	// reaches a hook in events of at most 5,000 files, or in the batches of a job, and a hook that refuses a removal because something
+	// still references an item (an OCI blob that a manifest names) must not count what the same removal takes in another event. Nil: only
+	// the items of this event.
+	InScope func(ctx context.Context, path string) (bool, error)
 }
 
 // PackageRef names a package row.

@@ -71,11 +71,11 @@ func (f *Format) Descriptor() formats.Descriptor {
 			DefaultCredentialHosts:    []string{"auth.docker.io"},
 			DefaultMetadataTTLSeconds: &metadataTTL,
 			DefaultNotFoundTTLSeconds: &notFoundTTL,
+			ChecksumAlwaysVerified:    true,
 			PatternSubject:            formats.SubjectName,
 			PackageNames:              true,
 			PriorityMembers:           true,
 			PinsAndClaims:             true,
-			ChecksumAlwaysVerified:    true,
 			// Writes pass the ownership check with the image name as the package (R-OCI-006).
 			OwnershipDefault: catalog.OwnershipEnforce,
 			SettingsSchema:   settingsSchema,
@@ -83,6 +83,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		ContractVersion:  formats.ContractVersion,
 		Names:            names{},
 		PropertyPrefix:   "oci.",
+		Clients:          clients(),
 		MaxDocumentBytes: MaxDocumentBytes,
 		// Every digest is the SHA-256 of the bytes it names, so a fill verifies whatever the checksum policy says (R-REPO-041).
 		VerifyAnnouncedDigests: true,

@@ -254,6 +254,24 @@ func TestBackupCommands(t *testing.T) {
 			}
 		}
 	})
+	t.Run("R-OCI-033 admin oci reinstate takes a repository and name@digest", func(t *testing.T) {
+		const digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+		for _, args := range [][]string{
+			{"admin", "oci"},
+			{"admin", "oci", "reinstate", "web/docker-local"},
+			{"admin", "oci", "reinstate", "docker-local", "app@" + digest},
+			{"admin", "oci", "reinstate", "web/docker-local", "app"},
+			{"admin", "oci", "reinstate", "web/docker-local", "app@"},
+			{"admin", "oci", "reinstate", "web/docker-local", "app@1"},
+			{"admin", "oci", "reinstate", "web/docker-local", "App@" + digest},
+			{"admin", "oci", "reinstate", "web/a/b", "app@" + digest},
+			{"admin", "oci", "delete", "web/docker-local", "app@" + digest},
+		} {
+			if code, _, stderr := runCmd(t, env, args...); code != 2 {
+				t.Errorf("%v: code %d stderr %q", args, code, stderr)
+			}
+		}
+	})
 }
 
 func writeConfig(t *testing.T, content string) string {

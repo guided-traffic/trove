@@ -113,6 +113,8 @@ FROM oci_manifests
 WHERE repo_id = $1::bigint AND name = $2::text AND subject = $3::bytea
   AND ($4::text = '' OR artifact_type = $4::text)
   AND ($5::bytea IS NULL OR digest > $5::bytea)
+  AND NOT EXISTS (SELECT 1 FROM oci_tombstones t
+                  WHERE t.repo_id = oci_manifests.repo_id AND t.name = oci_manifests.name AND t.digest = oci_manifests.digest)
 ORDER BY digest
 LIMIT $6::int
 `
@@ -127,7 +129,7 @@ type OCIListReferrersParams struct {
 }
 
 // The manifests whose subject is the digest, in digest order after the cursor, optionally of one artifact type (R-OCI-016).
-// A NULL cursor starts at the first digest.
+// A NULL cursor starts at the first digest. A manifest the journal replay withheld is not listed (R-OCI-033).
 func (q *Queries) OCIListReferrers(ctx context.Context, arg OCIListReferrersParams) ([]OciManifest, error) {
 	rows, err := q.db.Query(ctx, oCIListReferrers,
 		arg.RepoID,

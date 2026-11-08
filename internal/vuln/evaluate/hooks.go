@@ -59,6 +59,14 @@ func (h *hooks) OnItemsRemoved(ctx context.Context, tx meta.Tx, e items.RemovedE
 	return h.inner.OnItemsRemoved(ctx, tx, e)
 }
 
+// LockRemoval implements [items.RemovalLocker] by handing the call to the wrapped hooks when they implement it.
+func (h *hooks) LockRemoval(ctx context.Context, tx meta.Tx, repo items.RepoRef, paths []string) error {
+	if l, ok := h.inner.(items.RemovalLocker); ok {
+		return l.LockRemoval(ctx, tx, repo, paths)
+	}
+	return nil
+}
+
 // JobEnqueuer enqueues a job in the caller's transaction; *jobs.Queue implements it.
 type JobEnqueuer interface {
 	Enqueue(ctx context.Context, tx meta.Tx, e jobs.EnqueueSpec) (jobs.Result, error)

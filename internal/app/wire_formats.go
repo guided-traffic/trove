@@ -63,6 +63,9 @@ func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, e
 		if err := a.startFormatMigrations(ctx, in); err != nil {
 			return formatPortsArea{}, err
 		}
+		if err := a.startOCISweep(in, ports); err != nil {
+			return formatPortsArea{}, err
+		}
 	}
 	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
 }
@@ -92,6 +95,31 @@ func (a *App) startFormatMigrations(ctx context.Context, in infra) error {
 	return nil
 }
 
+// startOCISweep builds the sweeper of the job oci-sweep (R-OCI-019) on a replica that claims jobs. It removes through the item
+// store, which the files area builds later, so it asks for it when a run starts.
+func (a *App) startOCISweep(in infra, ports map[formats.ID]any) error {
+	st, ok := ports[ociformat.ID].(*ocidata.Store)
+	if !ok {
+		return fmt.Errorf("formats: the OCI data port is not the PostgreSQL store")
+	}
+	removed := a.tele.metrics.NewCounterVec("trove_oci_sweep_blobs_removed_total", "Blob items removed by oci-sweep.").WithLabelValues()
+	sw, err := ocidata.NewSweeper(ocidata.SweepOptions{
+		Store: st, DB: in.db, Grace: a.cfg.OCI.UnreferencedBlobGrace, Log: a.log.With("component", "oci-sweep"),
+		Items: func() ocidata.Remover {
+			if s, ok := a.itemStore.get(); ok {
+				return s
+			}
+			return nil
+		},
+		Removed: func(n int) { removed.Add(float64(n)) },
+	})
+	if err != nil {
+		return err
+	}
+	a.ociSweep.set(sw)
+	return nil
+}
+
 // registerFormatJobs registers the kinds of the format data ports that the composition root
 // binds: data_migration_nuget_semver2 (Q-NUGET-93). Its handler finds the replica's
 // recomputation at run time; startFormatMigrations builds it on a replica that claims jobs.
@@ -100,6 +128,15 @@ func (a *App) registerFormatJobs(r *jobs.Registry) {
 		a.semver2.handler("NuGet SemVer 2 recomputation", func(ctx context.Context, m *nugetdata.Semver2, run *jobs.Run) error {
 			return m.Run(ctx, run)
 		})))
+	r.RegisterKind(ocidata.SweepJobKind, ocidata.SweepJobSpec(
+		a.ociSweep.handler("OCI sweep", func(ctx context.Context, sw *ocidata.Sweeper, run *jobs.Run) error {
+			return sw.Run(ctx, run)
+		})))
+	spec := jobs.TaskSpec{Schedule: ocidata.SweepSchedule}
+	if t, ok := a.cfg.Maintenance.Tasks[ocidata.SweepJobKind]; ok && t.Schedule != "" {
+		spec.Schedule, spec.Disabled = t.Schedule, !t.Enabled
+	}
+	r.RegisterTask(ocidata.SweepJobKind, spec)
 }
 
 // formatsArea is what the hooks and the seam are made of. The seam reads the Host
@@ -143,7 +180,10 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue nu
 	if err != nil {
 		return nil, fmt.Errorf("formats: nuget data port: %w", err)
 	}
-	oci, err := ocidata.New(ocidata.Options{DB: db})
+	oci, err := ocidata.New(ocidata.Options{
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
+	})
 	if err != nil {
 		return nil, fmt.Errorf("formats: oci data port: %w", err)
 	}

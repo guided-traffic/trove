@@ -2,10 +2,12 @@
 
 The OCI format (`internal/formats/oci`) serves container images and other OCI content. This page describes the part that is built, the
 skeleton of phase T-16 ("WP0, contracts"): the contract additions, the schema, the configuration keys and the format that registers and
-answers `501` until the work packages fill it. The specification is [formats/oci.md](../spec/formats/oci.md); the decision for the
-contract is [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions).
-The registry tokens and the token service are built ([Registry tokens and the token service](#registry-tokens-and-the-token-service));
-the mount of `/v2/`, the routes, the uploads, the remote and virtual classes, the mirror and the clients are not; the section
+answers `501` until the work packages fill it, and the operations built on it: the manifest parser, the pulls of manifests and blobs and the push of
+manifests (WP4a, [ADR-164](../decisions.md#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items)),
+the tags list, referrers, deletion, sweep and replay (WP4b, ADR-168). The specification is [formats/oci.md](../spec/formats/oci.md); the decision for the contract is
+[ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions).
+The registry tokens and the token service ([Registry tokens and the token service](#registry-tokens-and-the-token-service)) and the port of the
+[Upload sessions](#upload-sessions-r-stor-011) are built; the mount of `/v2/`, the upload routes, the remote and virtual classes, the mirror and the clients are not; the section
 [What is built and what is not](#what-is-built-and-what-is-not) lists them.
 
 ## What has to be in your head first
@@ -30,14 +32,70 @@ the mount of `/v2/`, the routes, the uploads, the remote and virtual classes, th
 | [format.go](../../internal/formats/oci/format.go) | `Format`, `Descriptor` (the facts: registry root, upstream, extra and credential hosts, periods, limits, data port), `New`, `Match` |
 | [names.go](../../internal/formats/oci/names.go) | The grammars of image names, tags and digests (`ValidName`, `ValidFullName`, `ValidTag`, `ValidDigest`) and the package-name rule `names` (a name is never folded; a pattern is left alone) |
 | [paths.go](../../internal/formats/oci/paths.go) | The storage layout (`ManifestPath`, `TagPath`, `TaglistPath`, `BlobPath`), `Classify` and `PackageDocumentPath` |
-| [routes.go](../../internal/formats/oci/routes.go) | The route table of R-OCI-009 to R-OCI-018 with its matchers (the image name has slashes, so the operation is read from the end of the path) and the stub handlers that answer `501`; a work package moves its handler out of this file and does not edit the table |
+| [routes.go](../../internal/formats/oci/routes.go) | The route table of R-OCI-009 to R-OCI-018 with its matchers (the image name has slashes, so the operation is read from the end of the path) and `stub`, the handler of an operation not built (the stub files `handlers_wp5_stub.go` hold them); a work package replaces its stub file and does not edit the table |
+| [errors.go](../../internal/formats/oci/errors.go) | `WriteError`: the distribution specification's error list `{"errors":[{"code":…}]}` for every row of R-OCI-008; a conflict is `409 DENIED` |
+| [handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) | The pull of a manifest and the push by tag or by digest: the order of the checks, the tag decision (`commitTag`), the reference check (`checkReferences`), the validator translation |
+| [handlers_blob.go](../../internal/formats/oci/handlers_blob.go) | The pull of a blob of a name (local class) |
+| [hooks.go](../../internal/formats/oci/hooks.go) | `OnCommit`: the package row, the claim, the version of a tag and the manifest rows, in the commit transaction |
+| [view.go](../../internal/formats/oci/view.go) | The package view adapter: tags newest push first, the platform table of an index, the withheld tags |
+| [handlers_wp5_stub.go](../../internal/formats/oci/handlers_wp5_stub.go) | The `501` handlers of the operations not built yet (uploads and mount); the work package that builds one deletes its file |
+| [manifest/](../../internal/formats/oci/manifest/manifest.go) | The manifest parser: the four media types, the strict JSON reader (`tree.go`), descriptors, references, the row annotations |
+| [tagorder/](../../internal/formats/oci/tagorder/tagorder.go) | The order of tags (Q-OCI-17, Q-OCI-64) |
+| [inspect.go](../../internal/formats/oci/inspect.go) | `Inspect`: a manifest at the path of a manifest or a tag item is read by the manifest parser within the limits (4 MiB, 32 levels, 100,000 values, 10,000 descriptors) |
+| [settings.go](../../internal/formats/oci/settings.go), [settings.schema.json](../../internal/formats/oci/settings.schema.json) | The `oci` member of the repository document: `oci.mirror.tags`, `excludeTags`, `platforms` (remote repositories only) |
+| [store.go](../../internal/formats/oci/store.go) | `Store`, the data port: manifest rows, references, referrers, tags, catalog and sweep candidates |
+| [rows](../../internal/formats/oci/rows/rows.go) | The values that cross the port; a leaf (`internal/formats/<id>/rows` imports only `errs` and the standard library) |
+| [../formatdata/oci](../../internal/formatdata/oci/store.go) | The implementation of `Store` and the registration of the tables (`tables.go`); linked by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)) and by `cmd/trove/registry.go` |
+| [oci.sql](../../internal/meta/postgres/queries/oci.sql), [oci_manifests.sql](../../internal/meta/postgres/queries/oci_manifests.sql) | The statements of the port as sqlc; `oci_manifests.sql` is the push path and the view reads ([store_manifests.go](../../internal/formatdata/oci/store_manifests.go)) |
+
+## Manifests, pulls and the push path
+
+The local class serves `GET`/`HEAD` of manifests and blobs and `PUT` of manifests; the list and delete side, the uploads and the remote and
+virtual classes answer `501` through the stub files until their work packages replace them.
+
+**Pull** ([handlers_manifest.go](../../internal/formats/oci/handlers_manifest.go) `handleManifestGet`, [handlers_blob.go](../../internal/formats/oci/handlers_blob.go)).
+The tag or digest is validated, the read is decided for the name (and the tag), the item is looked up and served by the core
+(`Items().Serve`: serve check, conditionals, ranges, verifying reader, statistics). The response is the stored bytes whatever `Accept` says.
+`validatorWriter` sets `Docker-Content-Digest` and the `ETag` `"sha256:<hex>"` on a status line that carries the item, and
+`storedValidators` turns the request's `If-None-Match`, `If-Match` and `If-Range` into the hex form the item store compares (Q-OCI-62).
+A blob is `application/octet-stream` and is found only under the name that holds its item.
+
+**Push** (`handleManifestPut`). The order is fixed because each step is cheaper than the next and refuses more:
+
+1. names, tag or digest, the query (`?tag=` and a `digest-algorithm` other than sha256 are `UNSUPPORTED`), the `Content-Type` (`manifest.MediaTypeOf`);
+2. `Authorize` deploy for the name and tag and the ownership pre-check, before the body is read;
+3. `Spool` (4 MiB), `manifest.Parse`, the digest against the URL, the withheld mark (`409 DENIED`), `checkReferences` (all outside a transaction);
+4. the shadowing check while the name has no live version;
+5. the commit: by digest the manifest item is the lead; by tag `commitTag` reads the tag, authorizes `deploy` (and `overwrite` when the tag
+   points at another digest), then either links the tag to a stored manifest or commits the tag item (lead) with the manifest item (companion).
+   A concurrent push of the same tag makes the item store refuse the overwrite the decision did not cover; the tag is read and decided again (at most three rounds).
+
+**The hook** ([hooks.go](../../internal/formats/oci/hooks.go)). `OnCommit` runs in the commit transaction. The tag item's hook locks the
+package row (`EnsureLocked`), claims the name, creates the version of a new tag (a version whose tag item is gone is replaced; a moved tag keeps
+its version) and raises the revision. The manifest item's hook, after it, checks the references again with `ExistingItems` in the transaction
+(which holds the rows `FOR SHARE`), writes the manifest row and its references (`PutManifest`) and raises the revision. Where the manifest is the lead
+(a push by digest) it also claims the name. A blob item passes; a manifest or tag item without a push payload is refused.
+
+**The parser** ([manifest/](../../internal/formats/oci/manifest/manifest.go)). `Parse(data, contentType, limits)` bounds the document, scans it
+(`untrusted.CheckJSON`), reads it with its own tree reader (`tree.go`: duplicate keys, case-folded lookalikes, non-UTF-8 and trailing data are refused),
+checks the shape of the type, every descriptor (digest, size as a plain integer, media type, `urls`, `data`, `platform`) and computes the digest over the exact
+bytes. `References()` lists each target once with its kind, first platform and whether the repository must hold it; `RowAnnotations` cuts the annotations to
+the bound of the column (sums are saturated; the text is counted as jsonb prints it, to the byte, so the database's `CHECK` holds at exactly 65,536 bytes: the integration test stores the boundary).
+Fuzz targets: `FuzzR_OCI_020_Parse`, `FuzzR_ARCH_028_Inspect`, `FuzzR_OCI_031_Compare`.
+
+**The view** ([view.go](../../internal/formats/oci/view.go)): `Stored` lists the tags of a local repository newest push first, `Withheld` the tags of
+withheld manifests, `Describe` the digest, media type, size and (for an index) the platform table, `Compare` is `tagorder.Compare`.
+| [handlers_tags.go](../../internal/formats/oci/handlers_tags.go), [handlers_referrers.go](../../internal/formats/oci/handlers_referrers.go) | The tags list (`n`, `last`, the `Link`, 404 for a name that holds nothing) and the referrers API (the index answer, the `artifactType` filter, paging by the last digest, 4 MiB per page) | The tags list is in byte order (R-OCI-015) and does not use `tagorder`, whose rank order is the package view's and the mirror's (Q-OCI-64).
+| [handlers_delete.go](../../internal/formats/oci/handlers_delete.go), [hooks_remove.go](../../internal/formats/oci/hooks_remove.go) | `DELETE` of a tag, a manifest and a blob (authorization, existence, ownership, then the item store), and `OnItemsRemoved`: the refusals, the cascade and the deletion event of every road of removal |
+| [setup.go](../../internal/formats/oci/setup.go), [guide.go](../../internal/formats/oci/guide.go), [guide/](../../internal/formats/oci/guide) | The clients `docker` and `podman`, their setup snippets and the guide (R-OCI-030) |
 | [errors.go](../../internal/formats/oci/errors.go) | `WriteError`: the distribution specification's error list `{"errors":[{"code":…}]}` for every row of R-OCI-008 |
 | [inspect.go](../../internal/formats/oci/inspect.go) | `Inspect`: a manifest is scanned within the limits (4 MiB, 32 levels, 100,000 values) before anything decodes it; the manifest parser of R-OCI-013 replaces the generic decode |
 | [settings.go](../../internal/formats/oci/settings.go), [settings.schema.json](../../internal/formats/oci/settings.schema.json) | The `oci` member of the repository document: `oci.mirror.tags`, `excludeTags`, `platforms` (remote repositories only) |
 | [store.go](../../internal/formats/oci/store.go) | `Store`, the data port: manifest rows, references, referrers, tags, catalog and sweep candidates |
 | [rows](../../internal/formats/oci/rows/rows.go) | The values that cross the port; a leaf (`internal/formats/<id>/rows` imports only `errs` and the standard library) |
-| [../formatdata/oci](../../internal/formatdata/oci/store.go) | The implementation of `Store` (every method answers `not_implemented`) and the registration of the tables (`tables.go`); linked by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)) and by `cmd/trove/registry.go` |
-| [oci.sql](../../internal/meta/postgres/queries/oci.sql) | The reads of the port as sqlc statements |
+| [../formatdata/oci](../../internal/formatdata/oci/store.go) | The implementation of `Store` and the registration of the tables (`tables.go`); linked by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)) and by `cmd/trove/registry.go`. `store_lists.go`: tags, referrers, holds, catalog names, the reads of the removal hook and the deletion event; `store_sweep.go`: the sweep's statements and the marks; `sweep.go`: the job `oci-sweep`; `journal_replay.go`: the replay handler; `reinstate.go`: the administrator's command.  `store_removal.go`: `RemoveManifest` and `ReferencedBy` |
+| [oci.sql](../../internal/meta/postgres/queries/oci.sql), [oci_lists.sql](../../internal/meta/postgres/queries/oci_lists.sql) | The statements of the port (sqlc): the manifest reads, and the lists, the cascade, the sweep and the replay |
+| [admin_oci.go](../../cmd/trove/admin_oci.go) | `trove admin oci reinstate <projectKey>/<repoKey> <name>@<digest>` |
 
 ## The contract additions
 
@@ -61,6 +119,36 @@ lists them; the blocks of R-ARCH-008 and R-ARCH-009 in [architecture.md](../spec
 
 A push by tag commits the tag item as the lead and the manifest item as its companion (a companion goes with a lead that changed), or links the
 tag with `Ingestor.Link` when the manifest is stored; a push by digest has the manifest as the lead (R-OCI-013).
+
+## Removal, the sweep and the replay
+
+One hook holds the rules of every removal: [hooks_remove.go](../../internal/formats/oci/hooks_remove.go) `OnItemsRemoved`. The `DELETE`
+routes do not remove anything themselves; they decide authorization (`delete` on the image name, with the tag as the version), look the
+item up for the 404, take the lock of the name's package and the ownership claim, and call `PackageWriter.DeleteItems`, so the item store removes and the hook
+runs in the same transaction. A raw delete through `/files/`, the items API, a retention run and the sweep take the same road.
+
+| A removed item | What the hook does |
+|---|---|
+| `<name>/_tags/<tag>` | Deletes the version row the tag led (`TrashOrDeleteVersion`); the manifest stays |
+| `<name>/_manifests/<digest>` | Refuses (conflict, 409 `DENIED`) when an index of the name lists it and is not removed by the same event; else reads its tags, referrers and children, removes its row (the references go with it), cascades (`ItemsEvent.Cascade`) to the tags, to the referrers no index lists and to the children no other manifest and no tag names, and records `oci.manifest.deleted` with the journal entry; the hook runs again for what was cascaded |
+| `<name>/_blobs/<digest>` | Refuses while a manifest of the name references it and is not removed by the same event |
+| any item of a remote repository's `_manifests/` | Removes the manifest rows (Q-OCI-34); no event, no cascade |
+
+An event with the reason `trash` keeps the rows and cascades nothing (the trash can does not exist yet) but still refuses. A
+blob removal changes no row of the format and raises no revision; everything else raises the package's `rev_seq`.
+
+The sweep ([sweep.go](../../internal/formatdata/oci/sweep.go)) is built by `startOCISweep` in [wire_formats.go](../../internal/app/wire_formats.go) on a
+replica that claims jobs and handed the item store late (`a.itemStore`), like the job that deletes a subtree; the kind `oci-sweep` and
+its hourly task are registered in `registerFormatJobs`. Each blob item is removed in a transaction of its own that locks the package row
+of the name when it has one (a name that holds only blobs has none and gets none: the blob rows arbitrate, a push holds them `FOR SHARE`)
+and asks `OCIBlobStillUnreferenced` again (references and unfinished upload sessions), then calls the item store's `RemoveIn` as the
+system actor `removal`; a blob the hook refuses because a push committed a reference meanwhile (`oci_referenced`) is counted as kept. The scan (`OCIUnreferencedBlobs`) walks the blob items of a repository in path order and has no index of its
+own (Q-OCI-71).
+
+The replay ([journal_replay.go](../../internal/formatdata/oci/journal_replay.go)) is registered with `journal.Register` in `init`; `cmd/trove`
+links the package, and `TestR_HA_054_EveryJournaledEventHasAReplayHandler` fails when it is not there. It withholds (writes the mark and
+raises the revision) and deletes nothing. `Reinstate` ([reinstate.go](../../internal/formatdata/oci/reinstate.go)) is the command's transaction.
+The security view is [docs/security/oci-content.md](../security/oci-content.md).
 
 ## Registry tokens and the token service
 
@@ -214,6 +302,12 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [names_test.go](../../internal/formats/oci/names_test.go) | The grammars against the distribution specification's expressions over every string of a small alphabet, the layout, the `oci.mirror` schema |
 | `TestR_ARCH_008_OciSettingsSchemaEqualsTheOpenAPIMember` | The JSON schema and `OciSettings` in `api/openapi.yaml` say the same |
 | [authenticator_test.go](../../internal/proxy/authenticator_test.go), [handshake_test.go](../../test/integration/proxy/handshake_test.go) | The engine's side of R-OCI-021 and R-OCI-022 against the generic test upstream (no OCI knowledge): the handshake, the credential hosts, the token cache, the `HEAD` revalidation. Their names carry `R-REPO-033`, `R-REPO-027`, `R-REPO-054` and `R-ARCH-032`, the requirements the engine side builds; the `R-OCI-…` IDs are for the adapter that implements the handshake |
+| [manifest_test.go](../../internal/formats/oci/manifest/manifest_test.go) | Valid documents written after the image specification's examples, ~70 refusals (duplicate and lookalike keys, digests, sizes, `data`, platforms), crafted bounds, the grammars against their expressions, the fuzz target |
+| [handlers_manifest_test.go](../../internal/formats/oci/handlers_manifest_test.go) with the in-memory twin [twin_test.go](../../internal/formats/oci/twin_test.go) | Pulls, pushes, refusals, tag moves, concurrent pushes, the failed transaction, the first-version check, the view, through the kit's in-memory host |
+| [store_test.go](../../test/integration/oci/store_test.go) | The data port's statements against PostgreSQL: rows, references, `FOR SHARE`, the annotation bound against the column, the view reads |
+| [oci_host_test.go](../../test/integration/files/oci_host_test.go) | The routes on the production host (real dispatcher, item store, hooks, S3), mounted at `/api/oci/` through a wrapper because `/v2/` is not mounted yet |
+| `TestR_OCI_015_…`, `TestR_OCI_016_…`, `TestR_OCI_018_…`, `TestR_OCI_030_…` ([handlers_lists_test.go](../../internal/formats/oci/handlers_lists_test.go), [handlers_delete_test.go](../../internal/formats/oci/handlers_delete_test.go), [hooks_remove_test.go](../../internal/formats/oci/hooks_remove_test.go), [setup_test.go](../../internal/formats/oci/setup_test.go)) | The lists, the deletion routes, the cascade and the refusals of the hook against an in-memory twin of the data port ([store_twin_test.go](../../internal/formats/oci/store_twin_test.go)), and the setup snippets |
+| [test/integration/ocilocal](../../test/integration/ocilocal) | Against the stack: 2,500 tags in pages, the referrers, a raw delete of an index through a running replica (cascade, events, journal entries), the sweep (grace, sessions, the lock against a push, the job on a worker), the replay and the reinstate. The registry routes are not mounted yet, so the state is what a push leaves: items committed through the item store and the rows by SQL |
 | [oci_test.go](../../test/integration/postgres/oci_test.go) | The tables, their export classes, the phases of the three migrations and the key grammar at the database (`make test-integration`) |
 | [registrytoken/*_test.go](../../internal/auth/registrytoken) | `TestRegistryTokenForm` (round trip, every character flipped, expiry, another endpoint, another key, unknown key, malformed values, the scanner pattern), `TestRegistryTokenClaimsRules` (with the configured lifetime and the issue time ahead), `TestR_ARCH_021_RegistryTokenKeyRingRotation`, `TestScopeGrammar` (with the cache view), `TestChallenge` (with no base URL), `TestGrantAllows`, `TestTokenServiceMetrics`, `TestTheLogScrubberHidesARegistryToken` |
 | [stage_registry_test.go](../../internal/auth/stage_registry_test.go) | The stage: a registry token below `/v2/` only, as `Bearer` only and not on an escaped path, refusals without a token lookup, a revoked trove token, a claims mismatch (ID, owner, type), the endpoint's token types, bindings and `principal_disabled` (`TestR_EP_011_TheTroveTokensRulesReachItsRegistryToken`), a forged token counted by the throttle (`TestR_AUTH_038_…`), anonymous registry tokens, no session cookie below `/v2/`, the challenge, `AuthenticateTokenRequest`, `Presented` never printing its secret (`TestR_AUTH_001_…`) |
@@ -221,10 +315,9 @@ claim and no clean-up, and `errors.Is(err, blob.ErrFault)`; a hook may block to 
 | [registrytoken_test.go](../../test/integration/identity/registrytoken_test.go) | Against the stack, two replicas with Valkey running and stopped (`TestRegistryTokensAgainstTheRealStores`): a token issued on one works on the other, a forged, tampered, expired or foreign token runs no statement (a tracer on the replica's pools counts the statements of the marked request, with a positive control), a revoked PAT stops its registry token within the bound; `TestAnonymousRegistryTokenAgainstTheRealStores` with and without `auth.anonymous` and after the switch is turned off; `TestR_ARCH_021_RegistryTokenKeyRingRotationAcrossReplicas` |
 | [dedup_registry_test.go](../../internal/audit/dedup_registry_test.go) | `auth.registry_token.denied` collapses per address, endpoint, reason and credential |
 
-No test carries an `R-OCI-…` in its name yet: a requirement counts as implemented when the work package that builds its behaviour names
-it in a test ([coverage.md](coverage.md)). The tests of the token service name their R-OCI requirement in a comment, and the registry
-root names it in the test name once `/v2/` is mounted and the grant check runs; the R-ARCH, R-AUTH and R-EP requirements they prove are
-in their names. The upload sessions name R-STOR-011 and R-OCI-032.
+The skeleton tests of WP0 carry no `R-OCI-…` in their names; the tests of the work packages that build behaviour do ([coverage.md](coverage.md)).
+The tests of the token service name their R-OCI requirement in a comment until the registry root names it in the test name once `/v2/` is mounted
+and the grant check runs; the R-ARCH, R-AUTH and R-EP requirements they prove are in their names. The upload sessions name R-STOR-011 and R-OCI-032.
 
 ## What is built and what is not
 
@@ -232,18 +325,18 @@ Built: the contract additions, the three migrations, the configuration keys, the
 repository document, the descriptor, the grammars, the layout, the error shape, the route table, the data-port interface and its empty
 implementation, the registration of the format and its error codes (`oci_*`, [codes.go](../../internal/errs/codes.go)).
 
-The mark table `oci_tombstones` (manifests the journal replay withheld), the serve-facts kind `oci_local` ([servecheck.go](../../internal/formats/oci/servecheck.go): the item lookup returns the manifest row and the mark in its one statement, `ServeCheck` refuses a withheld manifest) and the audit event `oci.manifest.deleted` ([events_oci.go](../../internal/audit/events_oci.go), journal flag,
-required entry) exist; the replay handler that uses them, the sweep job `oci-sweep` (in `internal/formatdata/oci`, through the item store and
-the job queue as NuGet's index job does), the hook that cascades, the replay that withholds (never deletes), `trove admin oci reinstate` and the refusal of a push of a withheld digest are the work package of the deletion. A restore skips an
-`oci.manifest.deleted` entry and reports it until then; nothing emits the event yet.
+The mark table `oci_tombstones` (manifests the journal replay withheld), the serve-facts kind `oci_local` ([servecheck.go](../../internal/formats/oci/servecheck.go): the item lookup returns the manifest row and the mark in its one statement, `ServeCheck` refuses a withheld manifest) and the audit events `oci.manifest.deleted` and `oci.reinstate` ([events_oci.go](../../internal/audit/events_oci.go)) exist, and so do their users: the tags list, the referrers API, the deletion of tags, manifests and blobs with the hook that cascades, the sweep job `oci-sweep`, the replay that withholds (never deletes), `trove admin oci reinstate`, the setup snippets and the guide, and the tag order. The refusal of a push of a withheld digest belongs to the manifest push.
 
-Built by the token service's work package: the registry token, its keys, its verification in the stage, the scope grammar, the grant,
-the token service handler, the event and the metric (R-OCI-004 to R-OCI-006, R-OCI-034 for the token service). Built by the upload
-sessions' work package: the port of [Upload sessions](#upload-sessions-r-stor-011), which the upload handlers will call.
+Built since (WP4a): the manifest parser, the pulls of manifests and blobs, the push of manifests by tag and by digest with the hook and the rows,
+the withheld-digest refusal, the package view and the tag order.
 
-Not built (each is a work package of T-16): the mount of `/v2/` and the core routes (R-OCI-001, R-OCI-003, R-OCI-017) with the route of
-the token service and the grant check before the decision point, the handlers of the routes (R-OCI-009 to R-OCI-018), the remote and
-virtual classes, the mirror, the setup snippets and the guide (R-OCI-030), the package view (R-OCI-031). The edits that belong to the mount stay open
+Built: the manifest parser, the pulls and pushes and the package view (WP4a); the tags list, referrers, deletes, the sweep, the replay, reinstate,
+the setup snippets and the guide (WP4b); the registry token and its token service (R-OCI-004 to R-OCI-006, R-OCI-034 for the token service); the port of
+the upload sessions (R-STOR-011), which the upload handlers will call.
+
+Not built here (each is a work package of T-16): the mount of `/v2/` and the core routes (R-OCI-001, R-OCI-003, R-OCI-017; the catalog's page per repository
+is `Store.CatalogNames`) with the route of the token service and the grant check before the decision point, the upload routes (R-OCI-011, R-OCI-012), the remote
+and virtual classes and the mirror. The edits that belong to the mount stay open
 with it: the `/v2/` row and the route-table rule of R-ARCH-005 and INV-6 in [spec/README.md](../spec/README.md).
 
 ## The counting stub registry

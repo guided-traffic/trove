@@ -10,6 +10,10 @@ package audit
 // EventOCIManifestDeleted names the event, for the producers.
 const EventOCIManifestDeleted = "oci.manifest.deleted"
 
+// EventOCIReinstate names the event of `trove admin oci reinstate`, which puts back a manifest the replay withheld (R-OCI-033). It is
+// not journaled, as npm.reinstate is not: it restores access rather than removing it.
+const EventOCIReinstate = "oci.reinstate"
+
 func init() {
 	// A manifest of an image name was deleted: by a DELETE of the manifest or of its last tag with the cascade of R-OCI-018, by a
 	// raw delete, or by a removal without a request. name is the image name, digest the manifest's, deleted the number of items
@@ -20,6 +24,13 @@ func init() {
 		Schema: `{"type":"object","properties":{` +
 			`"name":{"type":"string","maxLength":255},"digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},` +
 			`"deleted":{"type":"integer","minimum":0}},` +
+			`"required":["name","digest"],"additionalProperties":false}`,
+	})
+	// The administrator put a withheld manifest back: the mark is gone and the manifest is served again.
+	Register(EventType{
+		Name: EventOCIReinstate, Category: CategoryContent, Mode: Transactional,
+		Schema: `{"type":"object","properties":{` +
+			`"name":{"type":"string","maxLength":255},"digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}},` +
 			`"required":["name","digest"],"additionalProperties":false}`,
 	})
 }

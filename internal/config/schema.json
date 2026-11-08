@@ -2404,6 +2404,10 @@
               "Enabled": true,
               "Schedule": "0 2 * * 0"
             },
+            "oci-sweep": {
+              "Enabled": true,
+              "Schedule": "0 * * * *"
+            },
             "orphan-sweep": {
               "Enabled": true,
               "Schedule": "0 5 * * 6"

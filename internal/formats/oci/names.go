@@ -3,6 +3,8 @@ package oci
 import (
 	"regexp"
 	"strings"
+
+	"github.com/guided-traffic/trove/internal/formats/oci/manifest"
 )
 
 // The grammars of R-OCI-002. They are the ones of the distribution specification
@@ -17,9 +19,8 @@ const (
 )
 
 var (
-	nameRE   = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$`)
-	tagRE    = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
-	digestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	nameRE = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$`)
+	tagRE  = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
 )
 
 // patternChars are the characters of a name pattern (R-AUTHZ-005); a string that holds one is a pattern and is not checked
@@ -38,7 +39,7 @@ func ValidFullName(project, repo, name string) bool {
 func ValidTag(s string) bool { return tagRE.MatchString(s) }
 
 // ValidDigest reports whether s is a digest: sha256 and 64 lower-case hexadecimal digits.
-func ValidDigest(s string) bool { return digestRE.MatchString(s) }
+func ValidDigest(s string) bool { return manifest.ValidDigest(s) }
 
 // names is the package-name rule of the format (R-AUTHZ-005): the package is the image name. A name is never folded
 // (upper-case letters are refused), so Normalize either returns the string as it is or refuses it; a pattern is left

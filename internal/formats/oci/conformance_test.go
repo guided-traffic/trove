@@ -1,19 +1,60 @@
 package oci
 
 import (
+	"bytes"
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
+	"github.com/guided-traffic/trove/internal/formats/oci/rows"
 )
 
 const digestZero = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
-// conformance is the fixture of the skeleton: the checks that need a built protocol (the content headers of a served route, the
-// revision of a push, the package view, the remote and virtual adapters) are skipped or listed as not built, each with its
-// reason, and the work package that builds the operation removes the entry (the kit refuses a skip the format contradicts).
+// The image the fixtures seed: a config, a layer and the manifest over them.
+var (
+	seedConfig   = []byte("{}")
+	seedLayer    = []byte("layer one")
+	seedManifest = imageManifestBytes(sha(seedConfig), sha(seedLayer))
+	seedDigest   = sha(seedManifest)
+)
+
+// bind gives the twin of the data port the Host it reads items and package rows through.
+func bind(h *formattest.Host) *twin {
+	tw := h.FormatData(ID).(*twin)
+	tw.host = h
+	return tw
+}
+
+// seed stores the blobs of the image under "app" and pushes its manifest as the tag "1" the way a client does.
+func seed(h *formattest.Host) error {
+	bind(h)
+	h.PutItem(BlobPath("app", sha(seedConfig)), "application/octet-stream", seedConfig)
+	h.PutItem(BlobPath("app", sha(seedLayer)), "application/octet-stream", seedLayer)
+	return pushManifest(h, "app/manifests/1", seedManifest)
+}
+
+func pushManifest(h *formattest.Host, path string, body []byte) error {
+	resp, err := h.Serve(context.Background(), http.MethodPut, path, bytes.NewReader(body), false, func(r *http.Request) {
+		r.Header.Set("Content-Type", ctImage)
+		r.ContentLength = int64(len(body))
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Code != http.StatusCreated {
+		return fmt.Errorf("PUT %s: %d %s", path, resp.Code, resp.Body)
+	}
+	return nil
+}
+
+// conformance is the fixture of the kit: the checks that need a built protocol (the remote and virtual adapters, the setup snippets)
+// are skipped or listed as not built, each with its reason, and the work package that builds the operation removes the entry (the kit
+// refuses a skip the format contradicts).
 func conformance() formattest.Fixture {
 	not := func(what string) string { return what + " is not built yet (T-16): its handler answers 501" }
 	return formattest.Fixture{
@@ -24,40 +65,79 @@ func conformance() formattest.Fixture {
 			{Path: "team/app/_tags/1.0", Want: formats.PathInfo{Kind: formats.PathMetadata, Package: "team/app", Version: "1.0"}},
 			{Path: "team/app/_taglist", Want: formats.PathInfo{Kind: formats.PathMetadata, Package: "team/app"}},
 		},
-		Host:      func() formattest.HostOptions { return formattest.HostOptions{Data: unbuiltStore{}} },
+		Host: func() formattest.HostOptions {
+			return formattest.HostOptions{Data: newTwin(), Resolver: proceedResolver{}}
+		},
 		Canonical: canonical,
 		Protocol:  protocol,
 		Inspect:   formattest.InspectJSON("team/app/_manifests/" + digestZero),
 		Names:     []formattest.NameCase{{Spellings: []string{"library/nginx"}}, {Spellings: []string{"a__b/c-d"}}},
 		Content: []formattest.ContentCase{
-			{Name: "manifest by tag", Path: "app/manifests/1", Status: http.StatusNotImplemented},
-			{Name: "manifest by digest", Path: "app/manifests/" + digestZero, Status: http.StatusNotImplemented},
-			{Name: "blob", Path: "app/blobs/" + digestZero, Status: http.StatusNotImplemented},
-			{Name: "tags list", Path: "app/tags/list", Status: http.StatusNotImplemented},
-			{Name: "referrers", Path: "app/referrers/" + digestZero, Status: http.StatusNotImplemented},
+			{Name: "manifest by tag", Path: "app/manifests/1", Seed: seed},
+			{Name: "manifest by tag, HEAD", Method: http.MethodHead, Path: "app/manifests/1", Seed: seed},
+			{Name: "manifest by digest", Path: "app/manifests/" + seedDigest, Seed: seed},
+			{Name: "blob", Path: "app/blobs/" + sha(seedLayer), Seed: seed},
+			{Name: "tags list", Path: "app/tags/list", Seed: func(h *formattest.Host) error {
+				bind(h).putTag("app", "1", digestN(1))
+				return nil
+			}},
+			{Name: "tags list of an unknown name", Path: "nothing/tags/list", Status: http.StatusNotFound, Seed: func(h *formattest.Host) error { bind(h); return nil }},
+			{Name: "referrers", Path: "app/referrers/" + digestZero, Seed: func(h *formattest.Host) error { bind(h); return nil }},
 		},
-		NoContent: map[string]string{
-			routeManifestGetTag: not("pulling a manifest"), routeManifestGetDgs: not("pulling a manifest"),
-			routeBlobGet: not("pulling a blob"), routeTagsList: not("the tags list"), routeReferrers: not("the referrers"),
-		},
+		OptionNames: optionNames(),
+		Changes: append(changes(), []formattest.ChangeCase{
+			{
+				Name: "push a manifest by tag", Package: "app", Seed: func(h *formattest.Host) error {
+					bind(h)
+					h.PutItem(BlobPath("app", sha(seedConfig)), "application/octet-stream", seedConfig)
+					h.PutItem(BlobPath("app", sha(seedLayer)), "application/octet-stream", seedLayer)
+					return nil
+				},
+				Do: func(_ context.Context, h *formattest.Host) error {
+					return pushManifest(h, "app/manifests/1", seedManifest)
+				},
+			},
+			{
+				Name: "push a manifest by digest", Package: "app", Seed: func(h *formattest.Host) error {
+					bind(h)
+					h.PutItem(BlobPath("app", sha(seedConfig)), "application/octet-stream", seedConfig)
+					h.PutItem(BlobPath("app", sha(seedLayer)), "application/octet-stream", seedLayer)
+					return nil
+				},
+				Do: func(_ context.Context, h *formattest.Host) error {
+					return pushManifest(h, "app/manifests/"+seedDigest, seedManifest)
+				},
+			},
+		}...),
 		NoRevision: map[string]string{
-			routeManifestPut: not("pushing a manifest"), routeManifestDelete: not("deleting a manifest"),
-			routeBlobDelete: not("deleting a blob"), routeUploadStart: not("starting an upload"),
+			// A blob is no row of the format and no package version: removing one changes what no document renders.
+			routeBlobDelete:   "a blob item is no package row and no row of the format's tables: removing one changes no document the revision keys",
+			routeUploadStart:  not("starting an upload"),
 			routeUploadStatus: not("querying an upload"), routeUploadPatch: not("sending a chunk"),
 			routeUploadPut: not("finishing an upload"), routeUploadCancel: not("cancelling an upload"),
-			"OnCommit": not("recording a manifest"), "OnItemsRemoved": not("removing a manifest"),
+		},
+		View: &formattest.ViewFixture{
+			Versions: []string{"1.0", "2.0", "3.0"}, Package: "app",
+			Seed: func(h *formattest.Host) error {
+				bind(h)
+				h.PutItem(BlobPath("app", sha(seedConfig)), "application/octet-stream", seedConfig)
+				h.PutItem(BlobPath("app", sha(seedLayer)), "application/octet-stream", seedLayer)
+				for _, tag := range []string{"1.0", "2.0", "3.0"} {
+					if err := pushManifest(h, "app/manifests/"+tag, seedManifest); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
 		},
 		Skip: map[formattest.Check]string{
 			formattest.CheckRewrite: "local class only: the remote adapter joins with its work package (R-OCI-021)",
 			formattest.CheckMerge:   "local class only: the virtual adapter joins with its work package (R-OCI-027)",
-			formattest.CheckSetup:   "no clients yet: the setup snippets and the guide join with R-OCI-030",
-			formattest.CheckView:    "no package view yet (R-OCI-031)",
 		},
 	}
 }
 
-// unbuiltStore is the in-memory twin of the data port of the skeleton: no handler reads it yet, and a call would panic on the nil
-// interface, which a test of a built handler replaces with a real twin.
+// unbuiltStore is the data port of a test that reaches no handler which reads it: a call would panic on the nil interface.
 type unbuiltStore struct{ Store }
 
 // canonical maps the example of a route to the canonical item path Classify is asked about; a route that addresses no item (an
@@ -93,3 +173,55 @@ func TestR_ARCH_010_Conformance(t *testing.T) {
 
 // FuzzR_ARCH_028_Match: Match never resolves a path that is not clean and never panics.
 func FuzzR_ARCH_028_Match(f *testing.F) { formattest.FuzzMatch(f, New()) }
+
+// FuzzR_ARCH_028_Inspect: Inspect of a manifest or a tag item never panics, finishes within its deadline and fails only with a client
+// error; the seeds are manifests of the four types and a near-valid document.
+func FuzzR_ARCH_028_Inspect(f *testing.F) {
+	formattest.FuzzInspect(f, New(), ManifestPath("app", digestZero), seedManifest, indexOf(digestZero+" linux/amd64"),
+		[]byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`))
+}
+
+// changes are the writes of kit check 9 that this build serves: the deletion of a tag, of a manifest by digest, and the removal of a
+// manifest through the items (the hook OnItemsRemoved), each of which raises the revision of the image name.
+func changes() []formattest.ChangeCase {
+	do := func(method, path string, want int) func(context.Context, *formattest.Host) error {
+		return func(ctx context.Context, h *formattest.Host) error {
+			r, err := h.Serve(ctx, method, path, nil, false)
+			if err == nil && r.Code != want {
+				err = fmt.Errorf("%s %s: status %d: %s", method, path, r.Code, r.Body)
+			}
+			return err
+		}
+	}
+	// seedImage stores the item of a tagged manifest and the version the tag leads, as a push does.
+	seedImage := func(tagged bool) func(h *formattest.Host) error {
+		return func(h *formattest.Host) error {
+			ctx := context.Background()
+			bind(h).putManifest(rows.Manifest{Name: "app", Digest: digestN(1)})
+			h.PutItem(ManifestPath("app", digestText(digestN(1))), manifestType, []byte("m"))
+			if !tagged {
+				return nil
+			}
+			tag := h.PutItem(TagPath("app", "1"), manifestType, []byte("m"))
+			return h.Seed(ctx, func(w formats.PackageWriter) error {
+				pkg, _, err := w.EnsureLocked(ctx, h.Ref(), "app", "app")
+				if err != nil {
+					return err
+				}
+				_, err = w.InsertVersion(ctx, pkg, formats.NewVersion{Version: "1", LeadItem: &tag})
+				return err
+			})
+		}
+	}
+	d1 := digestText(digestN(1))
+	return []formattest.ChangeCase{
+		{Name: "the deletion of a tag (DELETE, OnItemsRemoved)", Package: "app", Seed: seedImage(true), Do: do(http.MethodDelete, "app/manifests/1", http.StatusAccepted)},
+		{Name: "the deletion of a manifest by digest (DELETE, OnItemsRemoved)", Package: "app", Seed: seedImage(false), Do: do(http.MethodDelete, "app/manifests/"+d1, http.StatusAccepted)},
+		{
+			Name: "the removal of a manifest through the items (OnItemsRemoved)", Package: "app", Seed: seedImage(false),
+			Do: func(ctx context.Context, h *formattest.Host) error {
+				return h.Remove(ctx, nil, "delete", ManifestPath("app", d1))
+			},
+		},
+	}
+}

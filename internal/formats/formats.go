@@ -203,6 +203,14 @@ type ItemsRestorer interface {
 	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
 }
 
+// RemovalLocker is the optional hook of a format whose writers take a lock of their own first (a package row): LockRemoval runs in the
+// transaction of a removal, before the item store deletes the rows of the files at paths, with the writer of the transaction, so that the
+// removal waits in the order a commit does (OCI: a manifest push takes the package row and then holds the rows of the layers it names).
+// It decides nothing and removes nothing; [CapabilitiesOf] finds it (ADR-168).
+type RemovalLocker interface {
+	LockRemoval(ctx context.Context, tx Tx, w PackageWriter, repo RepoRef, paths []string) error
+}
+
 // Capabilities are the optional behaviours of a format, found once, when the format
 // registers (R-ARCH-025). A new behaviour is added to the contract as an optional
 // interface and a field here; no existing format changes, and ContractVersion stays
@@ -211,6 +219,8 @@ type ItemsRestorer interface {
 type Capabilities struct {
 	// ItemsRestorer is the restore hook; nil for a format without one.
 	ItemsRestorer ItemsRestorer
+	// RemovalLocker takes the locks a format's writers take first, before a removal deletes item rows; nil for a format without one.
+	RemovalLocker RemovalLocker
 	// Remote are the optional interfaces of the format's remote adapter (the fill
 	// hook and the discovery document); the zero value for a format without them.
 	Remote RemoteCaps
@@ -229,6 +239,9 @@ func CapabilitiesOf(f Format) Capabilities {
 	var c Capabilities
 	if r, ok := f.(ItemsRestorer); ok {
 		c.ItemsRestorer = r
+	}
+	if l, ok := f.(RemovalLocker); ok {
+		c.RemovalLocker = l
 	}
 	if v, ok := f.(VulnerabilityAdapter); ok {
 		c.Vulnerability = v

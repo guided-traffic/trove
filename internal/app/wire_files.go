@@ -99,6 +99,7 @@ func (a *App) wireFiles(ctx context.Context, in infra, repo repositoryArea, az a
 	if err != nil {
 		return filesArea{}, err
 	}
+	store.SetJobGuard(svc.DeleteJobGuard(az.engine))
 	if err := a.startComponent(ctx, &filesComponent{stats: stats, activity: activity}); err != nil {
 		return filesArea{}, err
 	}
@@ -160,8 +161,9 @@ func (a *App) repositoryAPI() v1.RepositoryServices {
 
 // registerFilesJobs registers the job that deletes a large subtree (R-STOR-018).
 // The handler finds the item store through a late value, because the registry is
-// built, and frozen, before the files area is wired. The job decides nothing: the
-// request that queued it decided every item (items.Store.RunDeleteJob).
+// built, and frozen, before the files area is wired. The request that queued the job
+// decided every item of the subtree; the job decides only what a hook cascades to, for the
+// requesting subject, through the job guard (items.Store.SetJobGuard, H-653).
 func (a *App) registerFilesJobs(r *jobs.Registry) {
 	r.RegisterKind(items.DeleteJobKind, items.DeleteJobSpec(
 		a.itemStore.handler("item store", func(ctx context.Context, store *items.Store, run *jobs.Run) error {

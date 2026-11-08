@@ -19,6 +19,7 @@ commands:
   post-restore --restored-to <time> [--credentials-file <path>]   clean up after a point-in-time restore (R-HA-025)
   backup check [--json]                        verify the declared platform protection: archive_mode, bucket versioning (R-HA-023)
   npm reinstate <projectKey>/<repoKey> <name>@<version>   put back a version a journal replay withheld (R-NPM-047)
+  oci reinstate <projectKey>/<repoKey> <name>@<digest>   put back a manifest a journal replay withheld (R-OCI-033)
   bastion create <name> [--description <text>]   register a Bastion (R-BAS-004)
   bastion token create <name> [--ttl 8760h]     print a Bastion token once (R-BAS-004)
   bastion token revoke <name> <token-id>        revoke a Bastion token (R-BAS-004)
@@ -54,6 +55,8 @@ func adminCmd(args []string, s streams) error {
 		return postRestoreCmd(args[1:], s)
 	case "npm":
 		return npmAdminCmd(args[1:], s)
+	case "oci":
+		return ociAdminCmd(args[1:], s)
 	}
 	return usageError{adminUsage}
 }

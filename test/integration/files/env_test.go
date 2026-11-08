@@ -624,6 +624,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if r.files, err = files.New(files.Options{Items: r.items, Repos: r.reader, Formats: o.formats, Log: quiet}); err != nil {
 		t.Fatal(err)
 	}
+	r.items.SetJobGuard(r.files.DeleteJobGuard(r.engine))
 
 	r.serve(o)
 	return r

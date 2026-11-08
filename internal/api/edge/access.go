@@ -131,6 +131,9 @@ func (a *Access) Exposed(keys []qname.Repo) []qname.Repo {
 	return a.D.ExposedOn(a.Index(), a.Subject, keys)
 }
 
+// EncodedSubject is the subject of the request in the form a job decides for later ([authz.EncodeSubject]).
+func (a *Access) EncodedSubject() ([]byte, error) { return authz.EncodeSubject(a.Subject) }
+
 // PathsAllowed decides one action for many paths of one repository, each on the
 // coordinate classify gives it.
 func (a *Access) PathsAllowed(ctx context.Context, base authz.Coordinate, act authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {

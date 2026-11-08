@@ -114,11 +114,16 @@ func (h *Hooks) cascade(tx meta.Tx, e items.RemovedEvent) func(context.Context, 
 		if rm == nil {
 			return errs.E(errs.Internal, errs.CodeInternal, "This host cannot remove items from a storage hook.")
 		}
+		if g := items.CascadeGuardFrom(ctx); g != nil {
+			if err := g(ctx, paths); err != nil {
+				return err
+			}
+		}
 		by := e.By
 		if by == (audit.Actor{}) {
 			by = systemRemoval
 		}
-		return rm.RemoveIn(ctx, tx, items.RemoveSpec{Repo: e.Repo, Paths: paths, Actor: by, Source: e.Source})
+		return rm.RemoveIn(ctx, tx, items.RemoveSpec{Repo: e.Repo, Paths: paths, Actor: by, Source: e.Source, InScope: e.InScope})
 	}
 }
 
@@ -134,11 +139,28 @@ func (h *Hooks) OnItemsRemoved(ctx context.Context, tx meta.Tx, e items.RemovedE
 	}
 	ev := formats.ItemsEvent{Repo: refOf(e.Repo), Reason: e.Reason, Actor: e.Actor, Packages: w, Data: h.d.Bindings.Get(f.Descriptor().ID)}
 	ev.Cascade = h.cascade(tx, e)
+	ev.InScope = e.InScope
 	ev.Items = make([]formats.RemovedItem, len(e.Items))
 	for i, r := range e.Items {
 		ev.Items[i] = formats.RemovedItem{Item: itemRef(r.Item), Version: formats.VersionID(r.Version), SHA256: slices.Clone(r.Digest[:])}
 	}
 	return f.OnItemsRemoved(ctx, tx, ev)
+}
+
+// LockRemoval implements [items.RemovalLocker].
+func (h *Hooks) LockRemoval(ctx context.Context, tx meta.Tx, repo items.RepoRef, paths []string) error {
+	if _, ok := h.d.lookup(repo.Format); !ok {
+		return nil
+	}
+	l := formats.CapabilitiesFor(formats.ID(repo.Format)).RemovalLocker
+	if l == nil {
+		return nil
+	}
+	w, err := h.d.writerForEvent(tx, refOf(repo), repo.Format)
+	if err != nil {
+		return err
+	}
+	return l.LockRemoval(ctx, tx, w, refOf(repo), paths)
 }
 
 func origin(o items.Origin) formats.Origin {

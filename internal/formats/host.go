@@ -32,6 +32,13 @@ type Host interface {
 	// target's package or path (R-REPO-005): a read answers 404, a write 403
 	// not_admitted.
 	Authorize(ctx context.Context, rq *Request, t Target) error
+	// PathsAllowed decides one action for many canonical paths of the request's repository, for the request's subject, on the index the
+	// request decides on, and reports per path whether it is held: the listing form of Authorize (R-AUTHZ-016: a listing contains only what
+	// the subject may read; a subtree is deleted only if every item may be). It completes each path's coordinate with the package and the
+	// version the format's Classify gives it, as Authorize would see it, and applies the repository's include and exclude patterns and, on a
+	// remote repository, the refusal of a name a global claim covers, as Authorize does. It writes no audit event: a list that omits entries
+	// is not a refusal. The request's own target stays an Authorize; only the filtering of lists and the checks of a cascade use this.
+	PathsAllowed(ctx context.Context, rq *Request, a Action, paths []string) ([]bool, error)
 	// CheckOwnership is the ownership rule of R-AUTHZ-018 asked before a body is read: the
 	// early, read-only form of what [PackageWriter.Claim] decides in the commit transaction. It
 	// locks and claims nothing and refuses a caller who is not allowed to write the package, so

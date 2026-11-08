@@ -413,6 +413,7 @@ The format's `WriteError` (R-ARCH-008) maps every core error onto the distributi
 | Too large (manifest, blob, quota) | 413 | `SIZE_INVALID` |
 | No credential, invalid credential, insufficient scope | 401 | `UNAUTHORIZED` with the challenge of R-OCI-004 |
 | Denied by the decision point | 403 | `DENIED` |
+| A refusal of the registry itself: the push of a manifest the journal replay withheld (R-OCI-013, R-OCI-033), a deletion that would leave a dangling reference (R-OCI-018) | 409 | `DENIED` |
 | Operation not offered (write to a remote, to a virtual without deploy target, an unsupported parameter) | 405 or 400 | `UNSUPPORTED` |
 | Rate limit (R-ARCH-005 step 7) | 429 | `TOOMANYREQUESTS` with `Retry-After` |
 | Upstream rate limit without a stored copy (R-REPO-029: 503 with `Retry-After`) | 503 | `TOOMANYREQUESTS` |
@@ -454,7 +455,8 @@ Priority: **P1** · Covers: PKG-DOCKER-017, PKG-OCI-006
   when an item of that name holds it (pushed, mounted or fetched for it), never because another name or repository holds the
   same bytes.
 - `Range` requests are answered with 206 (R-STOR-012); a repository with presigned downloads (R-STOR-014) answers `307` to the
-  object store for a `GET` of a blob, which every supported client follows without forwarding `Authorization`.
+  object store for a `GET` of a blob, which every supported client follows without forwarding `Authorization` (the redirect is the
+  core's P2 and is not built, H-601: a blob is streamed).
 - Download integrity (R-STOR-013) applies: a blob whose stored bytes do not match their SHA-256 ends the response.
 
 Acceptance criteria:
@@ -531,11 +533,19 @@ Priority: **P1** · Covers: PKG-DOCKER-020, PKG-DOCKER-021, PKG-DOCKER-026, PKG-
    the document has a `mediaType` field it must equal `Content-Type`; an OCI manifest without one is read by its
    `Content-Type`.
 3. **Parse** with the untrusted-input helpers (R-OCI-020): `schemaVersion` 2, the shape of the type (an image manifest has
-   `config` and `layers`; an index has `manifests`), every descriptor with a valid digest, a non-negative size and a media type.
-   Config and layer media types and `artifactType` are not restricted: the registry stores any OCI content (PKG-OCI-008).
+   `config` and `layers`; an index has `manifests`, and a document that has both shapes is refused), every descriptor with a
+   valid digest, a non-negative integer size and a media type in the form RFC 6838 gives (no parameters). Config and layer media
+   types and `artifactType` are not restricted beyond that form: the registry stores any OCI content (PKG-OCI-008). The reader is
+   strict where a second reader could interpret the document differently (Q-OCI-60): an object with the same key twice, a key that
+   only differs in case from one the registry reads, a document that is not UTF-8 or has data after its value, and a size that is
+   not a plain integer are `MANIFEST_INVALID`; unknown fields are accepted and ignored (the bytes are stored as they came). The
+   `data` of a descriptor must be the standard base64 of exactly the content its size and digest name, `urls` must be absolute
+   `http` or `https` URLs, and the `platform` of an index entry names an `os` and an `architecture` in a short plain form.
 4. **References.** Every config, layer and index entry must be stored under the name (`MANIFEST_BLOB_UNKNOWN` otherwise), with
    two exceptions: a layer with `urls` or a non-distributable media type is not required (foreign layers, Q-OCI-10), and the
-   `subject` may name a manifest that does not exist (yet).
+   `subject` may name a manifest that does not exist (yet). An index entry whose manifest the journal replay withheld is refused
+   the same way. The check runs before anything is stored and again in the commit transaction, on rows held against a removal
+   (Q-OCI-61); the sizes of the descriptors are the pusher's claims and are not compared with the stored blobs (H-600).
 5. **Digest.** The digest is the SHA-256 of the received bytes. A `PUT` by digest whose digest differs answers 400
    `DIGEST_INVALID`. A manifest whose digest the journal replay withheld under this name answers 409 `DENIED` until it is reinstated (R-OCI-033).
 6. **Tag.** A `PUT` by tag points the tag at the manifest: a new tag or one that points at the same digest needs `deploy`,
@@ -548,7 +558,12 @@ Priority: **P1** · Covers: PKG-DOCKER-020, PKG-DOCKER-021, PKG-DOCKER-026, PKG-
    a version row that disagree.
 
 - Pushing a tag that did not exist writes the audit event of a version publish; moving a tag writes the event of an
-  overwrite (R-OCI-034).
+  overwrite (R-OCI-034): the commit of the tag item records `artifact.deployed` with `overwritten` set for a moved tag, and the
+  write decisions `deploy` and `overwrite` are recorded with it (Q-OCI-65).
+- A push by tag whose manifest is stored already links the tag item to the stored manifest and writes no second copy; the
+  commit of a new manifest is the tag item as the lead and the manifest item as its companion (Q-OCI-61).
+- The name's first push, by digest or by tag, creates its package row and is the first version for the ownership rule and the
+  shadowing check (Q-OCI-63); a push by digest creates no version, a tag does.
 - Extra tags in the query (`?tag=`) are not supported in this phase: the parameter answers 400 `UNSUPPORTED`; clients fall back
   to one `PUT` per tag.
 
@@ -607,7 +622,10 @@ Priority: **P1** · Covers: PKG-OCI-009, PKG-OCI-010, PKG-OCI-011
   manifest's own, else its config's media type; none for an index without one) and its `annotations`.
 - No referrer, or a subject that does not exist: an empty index with 200. An invalid digest answers 400 `DIGEST_INVALID`.
 - `?artifactType=<type>` filters and the answer carries `OCI-Filters-Applied: artifactType`.
-- Pages hold at most 1,000 descriptors or 4 MiB; a longer list continues with `Link: <…>; rel="next"`.
+- Pages hold at most 1,000 descriptors or 4 MiB; a longer list continues with `Link: <…>; rel="next"`, which repeats the
+  `artifactType` filter and carries `last=<digest>`, the digest the page ended at (the list is in digest order). An answer that
+  holds a manifest whose annotations were cut at 64 KiB when it was recorded (R-OCI-007) carries `Trove-Annotations-Cut: true`
+  (Q-OCI-70). A manifest the journal replay withheld is not listed (R-OCI-033).
 - The list is read from the rows of R-OCI-007, so concurrent pushes of referrers to one subject never lose one: each push
   inserts its own row.
 - The referrers tag schema (`sha256-<hex>` tags) is not maintained by trove: the API exists from the start, so clients never
@@ -626,6 +644,8 @@ Priority: **P1** · Covers: PKG-DOCKER-003, PKG-DOCKER-022
   image name the caller may read in local repositories and in the caches of remote repositories of the format, in lexical
   order, with `n` capped at 1,000 and the `Link` rule of R-OCI-015 (Q-OCI-19). Virtual repositories are not expanded: their
   members appear under their own names.
+- The data port gives the registry root one page per repository: the image names that hold a manifest row, in byte order after a
+  cursor (Q-OCI-75); the root merges the pages of the repositories the caller may read and decides each name.
 - On a bound host the catalog lists the names of the bound repository only, without the prefix.
 - A registry token needs the `registry:catalog:*` grant; a direct trove token needs nothing more than its read grants.
 
@@ -656,6 +676,10 @@ The content-management category of the distribution specification is supported (
   (`ItemsEvent.Cascade`, Q-OCI-24).
 - A removal that has no request (a retention run, the purge of the trash, `/files/` through a job) runs the same hook with the same
   cascade, recorded as the system actor `removal` (Q-OCI-24).
+- The refusals and the cascade are the hook's (Q-OCI-73): a manifest an index of the name lists, and a blob a manifest references, are
+  refused with 409 `DENIED` unless the same removal takes the referencing manifest as well; a referrer that an index lists stays when
+  its subject goes; each removed manifest writes `oci.manifest.deleted` (R-OCI-033). Deleting a tag removes its version; deleting a
+  blob changes no row of the format and raises no revision.
 - Untagged manifests are kept: a tag moved away leaves its old manifest pullable by digest until it is deleted or a retention
   policy removes it.
 
@@ -671,7 +695,13 @@ Priority: **P1** · Covers: PKG-DOCKER-019, PKG-DOCKER-031
 - A blob item of a name that no manifest of the name references, and that is older than
   `oci.unreferenced_blob_grace` (# default (proposed) `24h`; it must exceed `storage.uploads.session_max_age`), is removed by
   the periodic job `oci-sweep` (queue `maintenance`, every hour, `exclusive`; R-ARCH-016). The grace keeps the blobs of a push
-  whose manifest has not arrived yet.
+  whose manifest has not arrived yet, measured from the creation of the blob item: a blob that is older and is reused is not
+  protected ([H-643](../../security/oci-content.md#h-643--a-blob-reused-after-the-grace-can-be-swept-before-its-manifest-arrives)).
+- The job removes each blob item in a transaction of its own that locks the package row of the image name when it has one (a name
+  that holds only blobs has none, and none is made: the rows of the blobs arbitrate) and reads the references again, and it leaves a blob whose digest an unfinished upload session of the name holds (Q-OCI-71); it removes through
+  the item store as the system actor `removal`, so the audit trail and the refusals of R-OCI-018 apply. The task `oci-sweep` is
+  scheduled in `maintenance.tasks` (default `0 * * * *`), and `trove_oci_sweep_blobs_removed_total` counts what it removed
+  (R-OCI-034).
 - The blob object itself is collected by the garbage collection of R-STOR-024 once no item references it.
 - A remote's cached blobs are not swept: they are cache entries, evicted by R-STOR-045.
 
@@ -685,8 +715,9 @@ Priority: **P1** · Covers: PKG-OCI-007
 
 Every manifest, pushed or fetched, is untrusted input (R-ARCH-028):
 
-- A manifest is read with `untrusted.DecodeJSON` within 4 MiB (`Descriptor.MaxDocumentBytes`), JSON nesting of 32 levels, at
-  most 10,000 descriptors and 100,000 JSON values; annotations count towards the bytes.
+- A manifest is read by the manifest parser (`internal/formats/oci/manifest`, Q-OCI-60) within 4 MiB (`Descriptor.MaxDocumentBytes`),
+  JSON nesting of 32 levels, at most 10,000 descriptors and 100,000 JSON values, after the scan of `untrusted.CheckJSON`; annotations
+  count towards the bytes. A bound that is crossed is 413 `SIZE_INVALID`, a document the parser will not read 400 `MANIFEST_INVALID`.
 - Every digest in a descriptor is validated by the grammar of R-OCI-002 before it is used as a path segment; nothing of a
   manifest is ever used as a file-system path.
 - A fetched manifest is accepted only when its SHA-256 equals the digest it was asked by, or the `Docker-Content-Digest` the
@@ -929,7 +960,7 @@ Priority: **P1** · Covers: PKG-DOCKER-011, PKG-DOCKER-013, PKG-DOCKER-015, PKG-
 - Setup templates (R-API-030; no credential field, the token only by reference): `configure` (`docker login <host> -u <user>
   --password-stdin` reading `$TROVE_TOKEN`; `podman login` the same), `install` (`docker pull <image prefix>/<name>:<tag>`),
   `publish` (`docker tag` and `docker push`; `podman push`; a multi-platform `docker buildx build --push`), and a Kubernetes
-  image pull secret (`kubectl create secret docker-registry` reading the token from a variable). The image prefix
+  image pull secret (`kubectl create secret generic --type=kubernetes.io/dockerconfigjson` reading a docker config file that the shell's `printf` builds from the token variable and hands over on standard input, so the token is in no argument list). The image prefix
   `<host>/<projectKey>/<repoKey>` comes from the new field `SetupData.ImagePrefix`, filled by the core for the format whose
   base path is the registry root (Q-OCI-4).
 - The guide (R-UI-049) covers every class and both clients with the required topics (kit check 8): what each class is, login,
@@ -946,8 +977,13 @@ Acceptance criteria:
 Priority: **P1** · Covers: PKG-DOCKER-041, PKG-DOCKER-023
 
 The format's view adapter (R-API-029) shows an image name as a package and its tags as versions, newest first by push time in a
-local repository and by fetch time in a remote one: per tag the digest, the media type, the summed size, and for an index its
+local repository and by fetch time in a remote one (the list of versions is ordered by push, `Stored`; the precedence of two tags,
+`Compare`, is the tag order, and decides which tag is "latest"): per tag the digest, the media type, the summed size, and for an index its
 platforms with each child's digest and size, from the rows of R-OCI-007. Layer history and labels are not shown (Deferred).
+The version `metadata` of a tag holds `digest`, `mediaType`, `size` (the summed size of the config and the layers; of an index the
+sum over its children) and `artifactType` (the manifest's own, else the media type of its config, so every image shows its config type); an index adds `platforms`, one object per child with
+`platform` (`os/arch[/variant]`, `unknown/unknown` for an attestation), `digest`, `mediaType` and `size`. `Compare` is the tag order
+of the format (Q-OCI-17, Q-OCI-64), and a string that is no tag sorts before every tag; a tag whose manifest the journal replay withheld is not listed (R-OCI-033).
 
 Acceptance criteria:
 
@@ -1001,8 +1037,8 @@ Priority: **P1** · Covers: trove-only
   are stored with that digest (so it brings back the same bytes and never admits new ones), increments `rev_seq` and writes
   `oci.reinstate` (not journaled, as `npm.reinstate`). There is no other way to push a digest back: reinstating is the explicit
   allowance.
-- The event, the table, the journal registration and the serve-facts kind exist; the replay handler and the command are built with
-  the deletion (R-OCI-018), and until then a restore skips the entry and reports it (nothing emits the event before that).
+- The event, the table, the journal registration, the serve-facts kind, the replay handler and the command are built; the entry of the
+  event is `{"repository": <id>, "name", "digest", "actorId"}`, a claim that the replay checks against the restored database.
 
 Acceptance criteria:
 
@@ -2054,6 +2090,201 @@ off (a client that presents the trove token as `Bearer` at the token service, wh
 **Applied in the spec:** [R-OCI-004](#r-oci-004--authentication-challenge-and-token-service); the Basic switch of R-AUTH-033 in
 [identity-and-authentication.md](../identity-and-authentication.md).
 
+### Q-OCI-60 · A manifest is read by a strict reader that refuses what two readers could interpret differently
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A reader of its own over the JSON tokens: every object key once, a key that differs from a known key only in case refused, valid UTF-8, one value, sizes as plain integers, `data` verified against size and digest, unknown fields ignored (chosen) | The manifest is understood exactly one way | Clients decode with the standard decoder, which keeps the last of two equal keys and matches `Layers` to `layers`; a registry that reads such a document one way and a client another stores what the client then misreads (a digest-pinned policy check sees one manifest, the runtime pulls another) | A few documents the standard decoder accepts are refused; no supported producer writes them |
+| (b) The standard decoder into structs | `encoding/json` after the depth scan | Least code | The differences above; the last duplicate wins silently |
+| (c) (a) and refuse unknown fields | Closed schema | Strictest | The image specification is extensible, and a future field would break every push |
+
+**Choice:** (a). Unknown fields are stored with the bytes (the manifest is stored as received) and ignored by the registry.
+
+**Rationale:** the registry's reading of a manifest decides the rows that referrers, deletion and the sweep trust, and clients read the same bytes with other code. Refusing the ambiguous cases costs nothing a producer does. The development agent would revisit it if a supported producer emits a duplicate or a differently cased key.
+
+**Applied in the spec:** [R-OCI-013](#r-oci-013--pushing-manifests-and-tags) step 3, [R-OCI-020](#r-oci-020--limits-for-untrusted-content). Code: `internal/formats/oci/manifest`.
+
+### Q-OCI-61 · A push is checked before it is stored and again in the commit transaction, on rows held against a removal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The references are checked before the commit, and in the hook under the package row lock with `FOR SHARE` on the named items; a new manifest commits as the tag item (lead) with the manifest item (companion), a stored one is linked (chosen) | A refused push stores nothing, and a blob cannot go between the check and the row | One round trip answers the common refusal before any object is written; the second check closes the race with a removal | Two queries per push, each over at most 10,000 paths |
+| (b) Before the commit only | One check | A deletion between the check and the commit leaves a manifest that names a missing blob | The registry then serves an image that cannot be pulled |
+| (c) In the hook only | One check, under the lock | The check is exact | The body is spooled and the object written before the client hears that a layer is missing |
+
+**Choice:** (a).
+
+**Rationale:** `FOR SHARE` on the item rows makes the removal of a named blob wait for the push's transaction; the hook takes the package row (`EnsureLocked`) before it locks the items it names. The order of all locks of a push is not one order: the item store has locked the item of the path first (the tag item of a push by tag, the manifest item of a push by digest), then the hook takes the package row, then the companion manifest item and the named items. A removal that takes the package row first and the item after it (the tag delete, the sweep) inverts the order against a push of the same tag, and a tag push and a digest push of the same new manifest invert it against each other; the database breaks such a cycle (40P01) and the transaction runner retries the loser (H-608). A removal must take the package row before it deletes the items a manifest names and read the references again after it has the lock. The development agent would revisit it if the second query shows in the latency of pushes of large indexes, or if retries of a cycle show in the metrics.
+
+**Applied in the spec:** [R-OCI-013](#r-oci-013--pushing-manifests-and-tags) steps 4 and 8.
+
+### Q-OCI-62 · The `ETag` of a manifest or a blob is the digest in quotes; the item store compares the hex
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The response carries `"sha256:<hex>"` (the spelling of R-OCI-008) and the conditional headers of the request are translated to the item store's `"<hex>"` before it evaluates them (chosen) | `Docker-Content-Digest` and `ETag` say the same | A client that sends back what it was given gets `304`; the item store stays as it is for every format | A copy of the request's headers when a validator of the registry's form is present |
+| (b) Leave the item store's `"<hex>"` | No translation | Nothing to build | The documented `ETag` is wrong and a client's `If-None-Match` of the documented form never matches |
+| (c) A second conditional evaluation in the format | The format answers `304` itself | Independent of the store | It skips the serve check and the download statistics |
+
+**Choice:** (a).
+
+**Rationale:** the validator is a presentation of the digest; translating at the boundary keeps one conditional and range implementation. The development agent would revisit it if the item store's `ETag` moves to the digest's own spelling.
+
+**Applied in the spec:** [R-OCI-008](#r-oci-008--error-codes-and-response-headers).
+
+### Q-OCI-63 · The first push of a name creates its package row and counts as its first version
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The first manifest that reaches a name, by digest or by tag, creates the package row, claims the name and runs the shadowing check while the name holds no live version; a tag is the only thing that makes a version; a moved tag is a change by an owner or a writer and never a claim (chosen) | The ownership rule and the shadowing check see the name when it first appears | The children of a multi-platform image are pushed by digest before any tag exists; without this the name would be unprotected until the tag | A push by digest to an unclaimed name claims it for the pusher, as the first tag would have |
+| (b) Only a tag push creates the package | A package always has a version | Package rows without versions do not exist | The children of an image would be written to a name nobody owns, and a second pusher could claim it with the tag |
+| (c) The ownership rule and the check run on tag pushes only | Fewer checks | Fewer calls | A push by digest is a write to the name |
+
+**Choice:** (a). The shadowing check runs once while the name has no live version; a commit that finds the push to be the first after the check was skipped asks the client to try again, as NuGet's does.
+
+**Rationale:** a name is protected from the first byte that is stored under it. The development agent would revisit it if package rows without versions show up as noise on the package screens.
+
+**Applied in the spec:** [R-OCI-006](#r-oci-006--permissions-per-operation), [R-OCI-013](#r-oci-013--pushing-manifests-and-tags).
+
+### Q-OCI-64 · The tag order ranks a release above its variants above its pre-releases
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Of Q-OCI-17 (a): equal numbers rank the release (no suffix) first, then a suffix that marks no pre-release (a variant such as `alpine`), then a pre-release, and within a rank by the bytes of the suffix; two different tags never compare equal (chosen) | `1.29.3`, `1.29.3-perl`, `1.29.3-alpine`, `1.29.3-rc1` | A variant of a release is newer than the release candidates before it; a total order, as the view contract asks | The relation of a variant to a later pre-release of the next version is by number first, as a reader expects |
+| (b) Suffix bytes only | `-alpine` before `-rc1` by accident | Simplest | A pre-release above a variant of the final release |
+
+**Choice:** (a). The package `internal/formats/oci/tagorder` is the one implementation; the package view's `Compare` uses it and the mirror's tag selection will.
+
+**Rationale:** Q-OCI-17 leaves the rank of the suffixes open. The development agent would revisit it if mirrors of the owner's images keep the wrong tags.
+
+**Applied in the spec:** [R-OCI-031](#r-oci-031--package-screens).
+
+### Q-OCI-65 · The version publish and the overwrite of a tag are the events of the item commit
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commit of the tag item records `artifact.deployed` with `overwritten` (true for a moved tag) and the write decisions `deploy` and `overwrite` are recorded in the same transaction (chosen) | The events the item store writes for every format | A tag move is visible to the audit as an overwrite with the digest it moved to; no event of the format's own to keep in step | The event names an artifact, not a package version |
+| (b) A `package.published` event from the data port, as NuGet writes | The event of the other formats | One vocabulary for versions | A tag is mutable and has no immutable version identity; NuGet's event belongs to an immutable number |
+
+**Choice:** (a).
+
+**Rationale:** a tag is a pointer, and the event that records the pointer moving is the overwrite of its item. The development agent would revisit it if the audit screens need the package and version of a push.
+
+**Applied in the spec:** [R-OCI-013](#r-oci-013--pushing-manifests-and-tags), [R-OCI-034](#r-oci-034--audit-events-and-metrics).
+
+### Q-OCI-70 · The referrers answer pages by the last digest and reports a cut annotation set in a header
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The `Link` of a longer list carries `last=<digest>` (the digest the page ended at) next to the `artifactType` filter; an answer whose descriptors include a manifest whose annotations were cut at 64 KiB carries `Trove-Annotations-Cut: true` (chosen) | The cursor is the index order of R-OCI-007; the cut is told in a header | No state, no token to sign; a client follows the `Link` as it is; the cut is visible without changing a descriptor | A header that is trove's own |
+| (b) An opaque, signed cursor | The page position hides behind a token | A format may change its order | A key and a lifetime for a cursor that is a digest anyway |
+| (c) Report the cut as an annotation of the descriptor | In the document | One place | Changes what the manifest says about itself and breaks a client that compares annotations |
+
+**Choice:** (a).
+
+**Rationale:** R-OCI-007 keeps the annotations a referrers answer needs and records the cut; the answer has to tell a client that what it reads is cut, and a header does so without touching the descriptors. The development agent would revisit it if the distribution specification adds a way to report a truncated descriptor.
+
+**Applied in the spec:** R-OCI-016.
+
+### Q-OCI-71 · The sweep removes one blob item per transaction, under the lock of the name's package, and reads the references again
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The job scans a repository in path order for blob items older than the grace that no manifest of the name references and no unfinished upload session holds the digest of; it removes each in a transaction of its own that first locks the package row of the image name, reads the references and the sessions again, and removes through the item store, so the storage hook runs (chosen) | A push that commits a reference while the sweep waits for the lock keeps its blob | The sweep and a push meet at the one lock every writer of the name takes; a removal is audited and refused like any other | One transaction per blob |
+| (b) One statement deletes every candidate | Fast | Simple | No lock, no hook, no audit event: a manifest that commits between the scan and the delete loses its layer |
+| (c) The sweep collects the blob objects itself | No item removal | Skips the item store | A second road to the blob store, against R-STOR-024 |
+
+**Choice:** (a). The scan reads `items` by the parent path `…/_blobs`; it has no index of its own because the job runs once an hour and the grace bounds what it finds.
+
+**Rationale:** the grace of R-OCI-019 keeps the blobs of a push whose manifest has not arrived yet, measured from the item's creation. The
+lock and the second read close the window between a manifest's validation and its commit: for a name that has a package row the sweep
+takes the same row a push takes first, and for a name that holds only blobs (no package row, and none is made for it) the rows of the
+blobs arbitrate, because a push holds them `FOR SHARE` until its own rows are written and the hook of the removal reads the references the
+push committed. What the grace does **not** protect is a blob that was created long ago, stayed unreferenced, and is reused: a client that
+finds it with `HEAD`, or uploads the same bytes again (an identical commit changes no row), can see it swept before its manifest arrives;
+the push then answers `MANIFEST_BLOB_UNKNOWN` and the client uploads again ([H-643](../../security/oci-content.md#h-643--a-blob-reused-after-the-grace-can-be-swept-before-its-manifest-arrives)). The development agent would revisit the scan with an index when a repository holds so many blob items that the hourly scan costs more than the job queue's lease, and the grace when a client is found that reuses blobs that late.
+
+**Applied in the spec:** R-OCI-019.
+
+### Q-OCI-73 · Every removal path refuses what would leave a dangling reference, and the refusal is `409 DENIED`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The hook `OnItemsRemoved` holds the rules (a manifest an index of the name lists, and a blob a manifest references, are refused with a conflict unless the same removal takes the referencing manifest too; a removed manifest takes its tags, its referrers that no index lists, and the children no other manifest and no tag names; it writes `oci.manifest.deleted` per manifest); the routes check authorization, existence and ownership and let the hook decide; the registry maps a conflict to `409` `DENIED` (chosen) | One rule for the protocol, `/files/`, the items API, a retention run and the sweep | A removal through any path keeps the graph whole | A bulk removal of a subtree must be ordered by the item store only by the hook's own set of paths |
+| (b) The routes check the references | Simple | Routes only | A raw delete leaves a dangling reference |
+| (c) Cascade the referrers that an index lists as well | Tidier | Fewer leftovers | A deletion of a subject would delete a manifest an index still names |
+
+**Choice:** (a). The item store tells the hook whether a referencing manifest belongs to the same removal (`ItemsEvent.InScope`): a delete of a whole image name reaches the hook in events of at most 5,000 files, or in the batches of the job above `storage.delete.max_sync_items`, and the blobs of a name sort before its manifests, so the hook would otherwise refuse the delete of a name with more than 5,000 files. A job commits its batches one by one, so the hook removes a blob **together with** the manifests of the same delete that reference it, in the transaction of the blob (and an index with the child it lists), through the cascade: a batch that is refused or a job that is cancelled afterwards leaves no manifest over a removed blob. A manifest outside the delete (pushed after it was authorized) refuses the blob, and the batch fails whole. The refusal carries the code `oci_referenced`, which the sweep alone treats as "kept". A referrer that an index lists stays (its subject is gone, which a manifest may allow); the trash can does not exist yet, so an event with the reason `trash` keeps the rows and cascades nothing but still refuses; the deletion of a blob changes no row of the format and raises no revision.
+
+**Rationale:** the protocol's deletes and trove's item store meet in one hook (Q-OCI-11, Q-OCI-24). The development agent would revisit the referrers rule if a client needs a subject's deletion to take every referrer.
+
+**Applied in the spec:** R-OCI-018.
+
+### Q-OCI-74 · The setup snippets log in to the image prefix, and the Kubernetes pull secret is a snippet of the Docker client
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `docker login` and `podman login` name `<host>/<projectKey>/<repoKey>` (`SetupData.ImagePrefix`), the token is read from standard input, a reader without a credential gets the interactive login, and the Kubernetes pull secret (`kubectl create secret generic --type=kubernetes.io/dockerconfigjson`, the file on standard input) is a configure snippet of the Docker client with the same prefix as its server (chosen) | One spelling for the login, the pull and the push | No template function and no new `SetupData` field; Kubernetes matches a secret to the images below its server | The login names a path, which Docker keys by host |
+| (b) A new `SetupData.Host` | The login names the host only | Exact | A contract change for one format, after ADR-161 |
+| (c) A third client `kubernetes` | Its own tab | Clear | No client of the registry; the e2e suite pins only two |
+
+**Choice:** (a). The tested majors are those of the e2e suite (R-OCI-035); until it pins them the descriptor names Docker 28 and Podman 5.
+
+**Rationale:** the snippets are rendered over `SetupData` only, which has no host field. The development agent would revisit it with the first user who finds the path in the login confusing.
+
+**Applied in the spec:** R-OCI-030.
+
+### Q-OCI-75 · The store's catalog page lists the image names that hold a manifest, per repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Store.CatalogNames(repo, after, limit)` returns the distinct names of the repository's manifest rows in byte order; the registry root merges the pages of the repositories the caller may read and decides each name (chosen) | A page is one index range | The rows exist for local repositories and for the cache of a remote one (R-OCI-007); no join with items | A name that only holds blobs, or only a tag document, is not listed |
+| (b) Names from the packages table | Generic | Versions only | A manifest without a tag is not a version, so an untagged image would vanish |
+
+**Choice:** (a).
+
+**Rationale:** R-OCI-017 lists the names of images that can be pulled; a pullable image is a manifest. The development agent would revisit it if a name should appear before its first manifest.
+
+**Applied in the spec:** R-OCI-017.
+
+### Q-OCI-76 · A delete is decided by the path of every item it removes, and a delete by digest is refused when its cascade would take an item the caller may not delete
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The routes decide the item they remove by its package, version and **path**; the cascade of the hook is held to the grants of the caller by the host: every path a hook cascades to is decided for `delete` with the listing-form check `Host.PathsAllowed` (one evaluation per path, no audit event), at every depth, and the first refusal refuses the whole removal (403, rolled back); the same guard covers a delete through `/files/`; the tags list and the referrers answer decide their entries in one batch and leave out the ones the caller may not read, and a Link names the last entry **listed**, never a hidden one (chosen) | The registry route is as strict as `/files/`, and the check and the cascade are one list that cannot drift apart | A grant scoped by path (`**/_tags/keep`) holds on every road; nothing is removed or shown that the caller could not remove or read by another road; the audit trail gets no event per hidden entry | A cascade that reaches a path the grant excludes refuses a delete that the caller named innocently; a delete job and a retention run have no subject and cascade unchecked |
+| (b) Decide the name only | The cascade is the hook's | Cheap | The registry route bypasses a path-scoped grant that `/files/` honours |
+| (c) Let the delete by digest remove the excluded items and document it | Simpler | No refusal | A caller removes what its grant withholds |
+
+**Choice:** (a). The decisions of a list are made in batches with the path of each entry; an entry the caller may not read is left out. The page is filled by reading on until `n` readable entries are found; a request that cannot find one within 10,000 tags (4,000 referrers) is refused with `400 UNSUPPORTED`, because the only cursor left would name a hidden entry (an opaque, sealed cursor needs a key derivation from the key ring and a new Host method: disproportionate for this case, [H-645](#h-645--a-list-with-more-than-10000-consecutive-tags-the-caller-may-not-read-is-refused)). The guard is installed by the request: the writer of `Host.Write` for the registry routes, and the files service for `/files/`.
+
+**Rationale:** a grant is a statement about paths (R-AUTHZ-005); the protocol and `/files/` reach the same items, and a cascade removes items the caller never named. The audited decision writes one `authz.denied` event per hidden entry (its dedup key includes the path), up to 1,000 per page; the listing form writes none, so the audit volume and the latency of a page are both bounded. The development agent would revisit the refusal of an unpageable list when a deployment has more than 10,000 consecutive hidden tags, and the unguarded cascade of jobs when a retention run is given a subject.
+
+**Applied in the spec:** R-OCI-006, R-OCI-015, R-OCI-016, R-OCI-018.
+
 ### Q-OCI-80 · The token cache is read after the challenge, and a rejected cached token is replaced once
 
 Status: **Superseded by [Q-OCI-82](#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged)** (decided by the development agent; the owner reviews it at the walkthrough). The text below is what was decided first.
@@ -2158,3 +2389,76 @@ the key ring Secret and to one of those hashes, who already opens every sealed u
 A tag moved by a push leaves the earlier manifest stored (R-OCI-018), which keeps digest pulls of running workloads working; nothing
 removes such manifests until the retention policies of R-STOR-037 to R-STOR-039 exist for the format. Live once the format is built;
 real for repositories that CI pushes the same tag to many times a day, whose storage grows by every build.
+
+### H-600 · The sizes a manifest declares are not compared with the stored blobs
+
+A descriptor's `size` is the pusher's claim. The registry checks that the blob of the digest exists under the name (R-OCI-013 step 4) and
+not that the stored blob has the declared size, so a manifest can name a layer with a size that is not its own. Pulls are unaffected (a
+client verifies the digest it asked for, and the response carries the real `Content-Length`); the summed size of the package screen
+(R-OCI-031, `oci_manifests.content_size`) is the sum of the declared sizes. Live today; real for a pusher that wants a misleading size on
+the screen, who can already name any tag and annotation.
+
+### H-601 · Blob downloads are streamed and never redirected to the object store
+
+R-OCI-010 says that a repository with presigned downloads answers `307` for a blob `GET`. The presigned redirect of R-STOR-014 is P2 and
+the download path of the core does not issue it yet, so every blob goes through the replica. Live today; real for large layers, which
+occupy a replica's connection and bandwidth for the whole transfer.
+
+### H-602 · The first push of a name by digest can claim the name for a caller that never pushes a tag
+
+A push by digest creates the package row and, under the ownership rule of R-AUTHZ-018, claims an unclaimed name for the pusher (Q-OCI-63).
+A holder of `deploy` on a repository whose `packageOwnership` is enforced can therefore claim names by pushing a manifest by digest and
+never a tag, which leaves a package without versions that only a holder of `manage` releases. The same caller can claim a name with a
+first tag, so the new path adds no standing the caller did not have; it adds a name that the package screens may list as empty (not
+verified: how the package list treats a package without a live version). Live today; real where `deploy` is granted widely and names are
+scarce.
+
+### H-604 · The shadowing check is asked once per push until the name has a tag
+
+The shadowing check of R-REPO-048 runs while the name has no live version (Q-OCI-63), through the virtual repositories that contain the
+repository. A multi-platform image pushes its children by digest before its index and tag exist, so each child push of a fresh name asks
+the resolver again until the first tag exists. The answer is correct each time; the cost is one resolution per push of the first
+manifests of a name. Live today; real for multi-platform builds into a fresh name behind a virtual repository with remote members.
+
+### H-608 · Pushes and removals take their locks in different orders and rely on the retry
+
+A push locks the item of its path before the hook takes the package row; the removals of R-OCI-018 and the sweep of R-OCI-019 take the
+package row first, before they delete the rows of the items (`LockRemoval`, Q-OCI-61). A push that moves a tag the same moment the tag is
+deleted, and a tag push and a digest push of the same new manifest, can therefore form a cycle. The database detects it (40P01), the
+transaction runner retries the loser, and the tests (the concurrent pushes of one new manifest by tag and by digest) end 201 for every
+push; a retry that runs out answers 503 and the client pushes again. A removal of blobs takes no package row (a name that holds only
+blobs has none): the rows of the blobs arbitrate. The delete job meets the same cycle from the other side: in a batch that holds only blobs, the manifests in the job's scope are removed through the cascade, and their `LockRemoval` takes the package row after the blob rows are locked, while a push takes the package row first and the rows after; the database ends that cycle too and the runner retries. Live today; real for CI that pushes the same new image by two routes at once. Not
+measured: how often a retry happens under load.
+
+### H-609 · The cost of a push is bounded by the size of the manifest, not by admission control
+
+A manifest within the limits costs memory to read: about 100,000 keys in 1.3 MB allocate 27 to 32 MiB and 64 to 124 ms, so some sixteen
+of them at once are about 512 MiB. The replica bounds a request body and the number of connections; whether its admission control
+bounds the pushes in flight is not verified. Live today; real where many clients push manifests at the limit at once.
+
+### H-642 · A pull by digest names no version, so the exposure rules that narrow by tag would not apply to it
+
+A pull by digest reads `<name>/_manifests/<digest>`, which names no tag, so an exposure rule that narrows by version or tag would not
+hide it. The format has no exposure adapter, so no rule exists and an endpoint with `exposure: rules` does not serve the format
+(Deferred, Q-OCI-23). The tags list decides each tag by its path and the name, as a pull by tag does (a grant that excludes a tag path hides
+it from both), so the two stay consistent. Dormant until the format gets an exposure adapter; real the day an adapter filters tags and
+not digests.
+
+### H-645 · A list with more than 10,000 consecutive tags the caller may not read is refused
+
+The tags list reads on until it has found `n` tags the caller may read, and a page that cannot go on without a Link at a tag the caller may not
+read would name it. A request that finds no readable tag within 10,000 tags (the referrers answer: 4,000 rows) is therefore refused with
+`400 UNSUPPORTED`, and a caller whose grant hides a run of more than that many consecutive tags cannot list past it. Dormant until a grant
+hides that many tags of one image name; real for a name with tens of thousands of tags and a path-scoped grant that hides most of them. An
+opaque, sealed cursor would close it and needs a new Host method and a key derivation from the key ring.
+
+### H-653 · The cascade of a retention run is not held to a subject's grants
+
+The cascade of a hook is held to the grants of the caller for a removal a request makes (the registry routes and `/files/`) and for the
+delete job that finishes a large `/files/` delete: the job carries the encoded subject of the request and decides every path a hook
+cascades to in a batch for `delete`, on the authorization index installed at that moment; the first refusal fails the batch and the job with
+the 403 of the path. What remains is a removal that has no subject: a retention run or a purge removes by policy, and the cascade of
+the OCI hook (a removed manifest takes its tags and referrers) is not decided for anyone. Dormant: no retention run reaches the OCI
+hook today, and when one does it acts as the system, not as a caller whose grant could be exceeded. That the delete job decides on the
+subject's groups, scope and CI grants as of the request (a withdrawn membership, a revoked token or a disabled principal does not narrow
+a running job) is a finding of the items-delete job for every format, F-84 in the project plan, not part of this gap.

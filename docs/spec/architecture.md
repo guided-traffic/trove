@@ -1535,10 +1535,18 @@ type ItemsRestorer interface {
 	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
 }
 
+// RemovalLocker is the optional hook of a format whose writers take a lock of their own first (a package row): LockRemoval runs in the
+// transaction of a removal, before the item store deletes the rows of the files at paths, with the writer of the transaction, so that the
+// removal waits in the order a commit does. It decides nothing and removes nothing (ADR-168).
+type RemovalLocker interface {
+	LockRemoval(ctx context.Context, tx Tx, w PackageWriter, repo RepoRef, paths []string) error
+}
+
 // Capabilities are the optional behaviours of a format, found once when it registers. A new behaviour is an optional
 // interface and a field here (R-ARCH-025).
 type Capabilities struct {
 	ItemsRestorer ItemsRestorer // nil for a format without a restore hook
+	RemovalLocker RemovalLocker // nil for a format without one (ADR-168)
 	Remote        RemoteCaps    // the optional interfaces of the remote adapter (WP3.0a, WP3.0b)
 	Vulnerability VulnerabilityAdapter // nil for a format without the vulnerability adapter (R-VULN-009, ADR-150)
 	ServeFacts    ServeFactsKeyer      // nil for a format whose serve check reads nothing besides the item (Q-ARCH-291)
@@ -1774,7 +1782,7 @@ R-ARCH-025 says which changes keep the version (Q-ARCH-280).
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there are seven: `ItemsRestorer` on the format, `Discoverer`,
+that assertion in `CapabilitiesOf` alone). Today there are eight: `ItemsRestorer` and `RemovalLocker` on the format, `Discoverer`,
 `FillInspector`, `MirrorLister`, `Authenticator` and `Revalidator` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268, Q-ARCH-284,
 [ADR-161](../decisions.md#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions)), and
 `VulnerabilityAdapter` on the format (`Capabilities.Vulnerability`, R-VULN-009,
@@ -1873,6 +1881,11 @@ type Host interface {
 	// refusal of R-AUTHZ-016, or nil. The host completes the coordinate and applies the repository's
 	// include and exclude patterns (R-REPO-005) to the package name or the path.
 	Authorize(ctx context.Context, rq *Request, t Target) error
+	// PathsAllowed decides one action for many canonical paths of the request's repository for the request's subject, on the index the
+	// request decides on, and reports per path whether it is held: the listing form of Authorize, with the coordinate of each path completed
+	// by the format's Classify, the repository's include and exclude patterns and (remote) the refusal of a claimed name applied as Authorize applies them, and no audit event. The filtering of a list and the checks of a cascade use it; the request's own target
+	// stays an Authorize (ADR-168, Q-OCI-76).
+	PathsAllowed(ctx context.Context, rq *Request, a Action, paths []string) ([]bool, error)
 	// CheckOwnership asks the ownership rule of R-AUTHZ-018 before a body is read, read-only: nothing is
 	// locked or claimed, and the commit decides again (Q-ARCH-226).
 	CheckOwnership(ctx context.Context, rq *Request, t Target, w OwnershipWrite) error
@@ -1906,7 +1919,9 @@ type Host interface {
 // ItemsEvent.Cascade(ctx, paths ...string) error removes the files at the paths of the event's repository in the transaction of the
 // event and runs OnItemsRemoved again for them, as the actor of the removal or as the system actor "removal" when the removal had no
 // request (a retention run, the purge of the trash, a job): the hook of an OCI manifest removes its tags and the manifests nobody else
-// names from there. Route.PackageParam names the placeholder that holds the package of the route, so the core knows the image name
+// names from there. ItemsEvent.InScope(ctx, path) (bool, error) says whether the live file at a path belongs to the same removal as the event (the delete of a subtree reaches a hook
+// in events of at most 5,000 files, or in the batches of a job): a hook that refuses a removal because something still references an item must not count what
+// the same removal takes in another event (Q-OCI-73). Route.PackageParam names the placeholder that holds the package of the route, so the core knows the image name
 // format-neutrally. EndpointFacts.Bound is true on a host whose root is bound to the repository, and LinkBuilder.ClientName gives the
 // name as that host's client spells it. Prepared.Aliases are further paths the fetched document is entered under as artifacts in the
 // fill transaction (R-OCI-022).

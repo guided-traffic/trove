@@ -197,7 +197,9 @@ checked every earlier decision against them:
 | [ADR-161](#adr-161--the-format-contract-gains-the-registry-root-the-upstream-handshake-head-revalidation-and-upload-sessions) | The format contract gains the registry root, the upstream handshake, HEAD revalidation and upload sessions | Decided by the development agent — owner review at the walkthrough |
 | [ADR-162](#adr-162--the-upload-session-service-is-a-domain-package-under-the-host-and-a-staged-blob-commits-through-the-commit-protocol-with-a-server-side-copy) | The upload session service is a domain package under the host, and a staged blob commits through the commit protocol with a server-side copy | Decided by the development agent — owner review at the walkthrough |
 | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) | Registry tokens are bound to their trove token by the hash of its secret and verified through the token cache | Decided by the development agent — owner review at the walkthrough |
+| [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) | The OCI push path is one transaction with its reference check under row locks, and the format's data port reads items | Decided by the development agent — owner review at the walkthrough |
 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) | The remote engine carries out the format's token handshake and HEAD revalidation | Decided by the development agent — owner review at the walkthrough |
+| [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) | The OCI data port reads and removes for the deletion, the sweep and the replay | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6223,6 +6225,53 @@ issue (a database write on the hottest route, Q-OCI-5 (d)); a JWT (header-driven
 [spec/identity-and-authentication.md](spec/identity-and-authentication.md) R-AUTH-001, R-AUTH-002, R-AUTH-022, R-AUTH-023, R-AUTH-041;
 [spec/authorization.md](spec/authorization.md) R-AUTHZ-007; [spec/architecture.md](spec/architecture.md) R-ARCH-021.
 
+### ADR-164 · The OCI push path is one transaction with its reference check under row locks, and the format's data port reads items
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** A push of an OCI manifest ([formats/oci.md](spec/formats/oci.md) R-OCI-013) writes the manifest item, a tag item, the package
+and version rows, the manifest and reference rows of the format, and must refuse a manifest that names what the repository does not hold,
+without a gap in which a concurrent removal takes a named blob away. The data port of WP0 (ADR-161) had the rows of the format and no way
+to ask which items exist, which a version points at which manifest, or what the screens list.
+
+**Decision.**
+
+- The tag item is the lead of a push by tag and the manifest item its companion (a companion goes with a lead that changed); a tag whose
+  manifest is stored already is linked with `Ingestor.Link`, a push by digest has the manifest as the lead
+  ([Q-OCI-61](spec/formats/oci.md#q-oci-61--a-push-is-checked-before-it-is-stored-and-again-in-the-commit-transaction-on-rows-held-against-a-removal)).
+  `OnCommit` of the format creates the package row under its lock, claims the name, creates the version of a new tag or leaves the
+  version of a moved tag where it is, checks the references again on rows held with `FOR SHARE`, records the manifest and its edges, and
+  raises the revision; a manifest or tag item without the payload of a push is refused (409), a blob item is let through for the upload
+  work package.
+- The data port `Store` gains `ExistingItems` (live files among canonical paths, locked inside a transaction), `WithheldAmong`,
+  `TagViews`, `StoredTags` and `WithheldVersions`; the port reads the generic `items`, `packages` and `package_versions` tables for
+  these, because the format's rows alone cannot say whether an item exists or which manifest a tag holds. The implementation and its
+  statements are `internal/formatdata/oci/store_manifests.go` and `internal/meta/postgres/queries/oci_manifests.sql`.
+- The manifest is read by `internal/formats/oci/manifest` (a strict reader, [Q-OCI-60](spec/formats/oci.md#q-oci-60--a-manifest-is-read-by-a-strict-reader-that-refuses-what-two-readers-could-interpret-differently)); the tag
+  order of `internal/formats/oci/tagorder` ([Q-OCI-64](spec/formats/oci.md#q-oci-64--the-tag-order-ranks-a-release-above-its-variants-above-its-pre-releases)) is the order of the package view.
+- A refusal of the registry itself that is a conflict (the push of a withheld digest, and the deletion that would leave a dangling
+  reference) is `409 DENIED`: the error kind `conflict` maps to the code `DENIED` in `WriteError`.
+- The response `ETag` of a manifest or blob is `"sha256:<hex>"` and the request's validators are translated for the item store
+  ([Q-OCI-62](spec/formats/oci.md#q-oci-62--the-etag-of-a-manifest-or-a-blob-is-the-digest-in-quotes-the-item-store-compares-the-hex)).
+
+**Consequences.** A push is two queries over the named paths (before the commit and in it), the second on rows held `FOR SHARE`, in the
+commit transaction and on its connection. The locks of a push are not in one order: the item of its path first (the item store), then
+the package row (the hook), then the companion manifest item and the items the manifest names. A removal takes the package row first and
+must read the references again once it has it; it inverts the order against a push of the same tag, and a tag push inverts it against a
+digest push of the same new manifest. The database breaks the cycle (40P01) and the transaction runner retries the loser; this is
+a constraint on the deletion work package (the tag delete, the sweep) and recorded as
+[H-608](spec/formats/oci.md#h-608--pushes-and-removals-take-their-locks-in-different-orders-and-rely-on-the-retry).
+
+**Alternatives considered.** A check before the commit only (a removal in the gap leaves a manifest over a missing blob); a check in
+the hook only (the body is spooled and written before the client hears of a missing layer); the standard decoder for the manifest
+(duplicate and case-folded keys are read two ways); a `package.published` event of the format (a tag is a pointer, not an immutable
+version).
+
+**Revisit condition:** the second query shows in the latency of pushes of large indexes, or the deletion work package needs a lock order
+other than the package row first.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-006, R-OCI-008, R-OCI-009, R-OCI-010, R-OCI-013, R-OCI-014, R-OCI-020, R-OCI-031, Q-OCI-60 to Q-OCI-65.
+
 ### ADR-165 · The remote engine carries out the format's token handshake and HEAD revalidation
 
 **Status:** Decided by the development agent — owner review at the walkthrough.
@@ -6279,6 +6328,59 @@ request header by the adapter (the hop policy removes it); a token guessed from 
 **Revisit condition:** the runner image carries the pins (the cache steps then do nothing), or a cold-cache run fails on the release host within the retry window again.
 
 **Spec:** [spec/architecture.md](spec/architecture.md) Q-ARCH-355; [developer/releasing.md](developer/releasing.md#pinned-tools-in-the-jobs).
+
+### ADR-168 · The OCI data port reads and removes for the deletion, the sweep and the replay
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** ADR-161 gave the OCI format the cascade of a removal (`ItemsEvent.Cascade`), the audit event `oci.manifest.deleted` with
+its journal flag and the table of withheld manifests, and left the behaviour behind them to the work package of the deletion. That
+package needs reads inside the transaction of a removal, the lists of the registry API, a job that removes unreferenced blobs, a
+replay handler and an administrator's command, and none of them may open a second road to the items or the audit trail.
+
+**Decision.**
+
+- The data port `Store` of the format gains the reads of the removal hook, which see the effects of the transaction that removed the
+  items (`TagsPointingAt`, `SubjectManifests`, `Children`), `RecordManifestDeleted`, `Holds` (the 404 of a tags list) and
+  `CatalogNames` (the page of one repository for the catalog of the registry root). `internal/formatdata/oci` records its events
+  itself, through the audit recorder, the source and the actor it is given, as the npm and NuGet ports do; `oci.manifest.deleted`
+  carries the journal entry `{repository, name, digest, actorId}` and a removal without a principal is written by the system
+  actor `removal` ([Q-OCI-24](spec/formats/oci.md#q-oci-24--a-storage-hook-cascades-through-the-host-and-a-removal-without-a-request-has-a-system-actor)).
+- The contract gains, additively, the listing-form decision `Host.PathsAllowed(ctx, rq, action, paths) []bool` (the evaluation of
+  `authz.PathsAllowedOn` with the coordinate of each path completed by the format's `Classify`, the repository's include and exclude patterns and the remote-claim refusal applied as `Authorize` applies them, no audit event): the filtering of lists and the
+  check of a cascade use it, while the request's own target stays an audited `Authorize`. The host guards the cascade of a removal a request
+  makes: `items.WithCascadeGuard` carries a function in the context, set by the writer of `Host.Write` and by the files service, and the
+  cascade of a storage hook decides every path it is about to remove with it and refuses the whole removal at the first refusal; the delete job carries the encoded subject of the request (`DeleteArgs.Subject`) and re-decides the cascade of every batch for it on the index of that moment (`items.JobGuard`), failing the job permanently with the 403 of the path
+  ([Q-OCI-76](spec/formats/oci.md#q-oci-76--a-delete-is-decided-by-the-path-of-every-item-it-removes-and-a-delete-by-digest-is-refused-when-its-cascade-would-take-an-item-the-caller-may-not-delete)).
+  Also additively, `ItemsEvent.InScope` (whether the live file at a path belongs to the same removal as the event: the delete of
+  a subtree reaches a hook in events of at most 5,000 files, or in the batches of a job) and the optional `formats.RemovalLocker`
+  (`LockRemoval`, found by `CapabilitiesOf`: the locks a format's writers take first, taken before the item store deletes the rows of the
+  files of a removal; the conformance host calls it). Both are in the blocks of R-ARCH-008/009 and in the surface file.
+- The hook `OnItemsRemoved` holds the rules of every removal ([Q-OCI-73](spec/formats/oci.md#q-oci-73--every-removal-path-refuses-what-would-leave-a-dangling-reference-and-the-refusal-is-409-denied)); the
+  routes of the deletion check authorization (by path, with the cascade of a delete by digest, [Q-OCI-76](spec/formats/oci.md#q-oci-76--a-delete-is-decided-by-the-path-of-every-item-it-removes-and-a-delete-by-digest-is-refused-when-its-cascade-would-take-an-item-the-caller-may-not-delete)) and ownership and let the hook decide. The registry error shape maps a conflict to `409`
+  `DENIED`.
+- The job `oci-sweep` lives in `internal/formatdata/oci` and removes through the item store, which the composition root hands it
+  late, as it does the job that deletes a subtree
+  ([Q-OCI-71](spec/formats/oci.md#q-oci-71--the-sweep-removes-one-blob-item-per-transaction-under-the-lock-of-the-names-package-and-reads-the-references-again)). The task is scheduled hourly in
+  `maintenance.tasks` and counted by `trove_oci_sweep_blobs_removed_total`.
+- The replay handler of `oci.manifest.deleted` withholds and never deletes
+  ([Q-OCI-30](spec/formats/oci.md#q-oci-30--the-deletion-of-a-manifest-is-journaled-so-a-restore-does-not-serve-a-deleted-image-again),
+  [Q-OCI-33](spec/formats/oci.md#q-oci-33--a-manifest-the-journal-replay-withheld-is-refused-by-the-serve-check-from-facts-read-with-the-item-and-an-administrator-reinstates-it));
+  `trove admin oci reinstate <projectKey>/<repoKey> <name>@<digest>` removes the mark while the manifest row and its item are stored
+  with the digest, raises the revision and writes `oci.reinstate`, which is not journaled.
+
+**Consequences.** Every road of removal (the protocol, `/files/`, the items API, a retention run, the sweep, the cascade itself)
+keeps the graph of manifests whole and writes the journal entry a restore withholds the image by. The sweep takes the lock every
+writer of the image name takes, and the manifest push holds its layers' rows until its own rows are written, so a push and the sweep
+of one blob end with the blob either swept before the push checks or kept by the manifest. The item store passes the scope of a whole delete to the hook (`ItemsEvent.InScope`, an addition to the contract), so a delete of an image name beyond one event or one job batch is one removal, and offers an optional `LockRemoval` before it deletes item rows, which the format uses to take its package rows first.
+
+**Alternatives considered.** Refusals in the routes only (a raw delete would leave a dangling reference); a statement that deletes every
+unreferenced blob (no lock, no hook, no audit); a second journal for OCI (R-HA-054 has one).
+
+**Revisit condition:** the trash can exists (R-STOR-022) and a deletion must follow its reason in more than the rows, or a format
+other than OCI needs a cascade that depends on the order of removal.
+
+**Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-015 to R-OCI-019, R-OCI-033, Q-OCI-70, Q-OCI-71, Q-OCI-73 to Q-OCI-76; [spec/ha-and-helm.md](spec/ha-and-helm.md) R-HA-054.
 
 ## Decisions by the development agent
 
@@ -7160,6 +7262,18 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-OCI-55](spec/formats/oci.md#q-oci-55--the-grant-asks-the-decision-point-as-a-question-with-the-image-name-as-the-package) | How does the token service ask the decision point? | (a) The listing form of the decision per entry and action, with the image name as the package, writing no audit event | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
 | [Q-OCI-56](spec/formats/oci.md#q-oci-56--one-enforcement-point-in-front-of-v2-checks-a-registry-tokens-grant-and-fails-closed) | Where is a registry token's grant enforced below `/v2/`? | (a) One enforcement point that is the only way to mount below `/v2/` (one call registers the routes and wraps the handler; the route table admits no other `/v2/` pattern), deciding on the dispatcher's own match; an unknown route, an unreadable address or an unmappable action is 401 `insufficient_scope` with its own code; a walk through the whole handler with real registry tokens | [ADR-163](#adr-163--registry-tokens-are-bound-to-their-trove-token-by-the-hash-of-its-secret-and-verified-through-the-token-cache) |
 | [Q-OCI-57](spec/formats/oci.md#q-oci-57--the-password-of-the-oauth-20-form-is-a-basic-presentation-and-follows-authclientsbasicenabled) | Does `auth.clients.basic.enabled: false` refuse the password of the OAuth 2.0 form? | (a) Yes: the form is a Basic presentation; no registry client gets a token with Basic off | — |
+| [Q-OCI-60](spec/formats/oci.md#q-oci-60--a-manifest-is-read-by-a-strict-reader-that-refuses-what-two-readers-could-interpret-differently) | How is a manifest read? | (a) A reader of its own: every key once, no key that differs only in case, valid UTF-8, plain integer sizes, `data` verified, unknown fields ignored | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) |
+| [Q-OCI-61](spec/formats/oci.md#q-oci-61--a-push-is-checked-before-it-is-stored-and-again-in-the-commit-transaction-on-rows-held-against-a-removal) | Where are the references of a push checked? | (a) Before the commit and again in it, on rows held with `FOR SHARE`; tag item as lead with the manifest as companion, or a link | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) |
+| [Q-OCI-62](spec/formats/oci.md#q-oci-62--the-etag-of-a-manifest-or-a-blob-is-the-digest-in-quotes-the-item-store-compares-the-hex) | What is the `ETag` of a manifest or blob? | (a) `"sha256:<hex>"`; the request's validators are translated for the item store | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) |
+| [Q-OCI-63](spec/formats/oci.md#q-oci-63--the-first-push-of-a-name-creates-its-package-row-and-counts-as-its-first-version) | When does a name get its package, its claim and its shadowing check? | (a) At the first manifest, by digest or by tag; a tag alone makes a version | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) |
+| [Q-OCI-64](spec/formats/oci.md#q-oci-64--the-tag-order-ranks-a-release-above-its-variants-above-its-pre-releases) | How do equal version numbers rank? | (a) Release, then variants, then pre-releases, then suffix bytes; a total order | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) |
+| [Q-OCI-65](spec/formats/oci.md#q-oci-65--the-version-publish-and-the-overwrite-of-a-tag-are-the-events-of-the-item-commit) | Which events record a push and a tag move? | (a) `artifact.deployed` with `overwritten`, and the recorded write decisions | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) |
+| [Q-OCI-70](spec/formats/oci.md#q-oci-70--the-referrers-answer-pages-by-the-last-digest-and-reports-a-cut-annotation-set-in-a-header) | How does the referrers answer page, and how does it report cut annotations? | (a) `last=<digest>` in the `Link`, and the header `Trove-Annotations-Cut` | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) |
+| [Q-OCI-71](spec/formats/oci.md#q-oci-71--the-sweep-removes-one-blob-item-per-transaction-under-the-lock-of-the-names-package-and-reads-the-references-again) | How does the sweep of unreferenced blobs meet a push? | (a) One blob item per transaction under the lock of the name's package, references and sessions read again, removal through the item store | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) |
+| [Q-OCI-73](spec/formats/oci.md#q-oci-73--every-removal-path-refuses-what-would-leave-a-dangling-reference-and-the-refusal-is-409-denied) | Where do the refusals and the cascade of a deletion live? | (a) In the hook `OnItemsRemoved`; the registry maps a conflict to `409` `DENIED` | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) |
+| [Q-OCI-74](spec/formats/oci.md#q-oci-74--the-setup-snippets-log-in-to-the-image-prefix-and-the-kubernetes-pull-secret-is-a-snippet-of-the-docker-client) | What do the setup snippets name, and where is the Kubernetes secret? | (a) The image prefix, the token on standard input; the pull secret is a configure snippet of the Docker client | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) |
+| [Q-OCI-75](spec/formats/oci.md#q-oci-75--the-stores-catalog-page-lists-the-image-names-that-hold-a-manifest-per-repository) | What does the store's catalog page list? | (a) The distinct names of the manifest rows of a repository, in byte order after a cursor | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) |
+| [Q-OCI-76](spec/formats/oci.md#q-oci-76--a-delete-is-decided-by-the-path-of-every-item-it-removes-and-a-delete-by-digest-is-refused-when-its-cascade-would-take-an-item-the-caller-may-not-delete) | How are the paths of the items of a delete and of a list decided? | (a) Per item by path; a delete by digest is refused when its cascade takes an item the caller may not delete | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) |
 | [Q-OCI-80](spec/formats/oci.md#q-oci-80--the-token-cache-is-read-after-the-challenge-and-a-rejected-cached-token-is-replaced-once) | When does the engine read its token cache, and what does it do with a rejected token? | (a) After the challenge named the key; a rejected cached token is dropped and one fresh handshake runs. Superseded by Q-OCI-82 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-OCI-81](spec/formats/oci.md#q-oci-81--a-head-that-is-not-a-2xx-is-the-engines-answer-and-a-2xx-that-is-not-unchanged-is-a-get) | What does the engine do with the answer to a revalidation request? | (a) A 2xx goes to the format's `Unchanged`; every other status follows the rules of a conditional `GET` | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |
 | [Q-OCI-82](spec/formats/oci.md#q-oci-82--the-engine-asks-the-format-before-a-request-with-the-last-challenge-so-only-the-first-request-of-a-replica-is-challenged) | When does the engine ask the format for a token? | (b) Before a request, with the last challenge remembered per repository and configuration version; the format takes the scope from the request and only realm and service from the challenge | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) |

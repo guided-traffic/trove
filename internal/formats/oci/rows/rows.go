@@ -78,6 +78,21 @@ type Blob struct {
 	Since time.Time
 }
 
+// ManifestDeleted is the deletion of a manifest to record in the transaction that removes its item (R-OCI-018, R-OCI-033): the
+// audit event oci.manifest.deleted with its journal entry.
+type ManifestDeleted struct {
+	RepoID int64
+	// RepoKey is "<projectKey>/<repoKey>".
+	RepoKey string
+	Name    string
+	Digest  [32]byte
+	// Deleted is the number of items the cascade of the deletion removed besides the manifest itself (its tags, its referrers and
+	// the children only it named).
+	Deleted int
+	// Actor is the principal id behind the removal, "" for a removal that no principal asked for (a retention run, a job).
+	Actor string
+}
+
 // Tombstone is the mark of a manifest the journal replay withheld after a restore (R-OCI-033, Q-OCI-33): the manifest keeps its items
 // and its bytes, and is neither served nor accepted again until an administrator reinstates it.
 type Tombstone struct {

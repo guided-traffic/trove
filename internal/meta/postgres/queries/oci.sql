@@ -25,12 +25,14 @@ ORDER BY manifest;
 
 -- name: OCIListReferrers :many
 -- The manifests whose subject is the digest, in digest order after the cursor, optionally of one artifact type (R-OCI-016).
--- A NULL cursor starts at the first digest.
+-- A NULL cursor starts at the first digest. A manifest the journal replay withheld is not listed (R-OCI-033).
 SELECT repo_id, name, digest, media_type, artifact_type, subject, size, content_size, annotations, annotations_cut, created_at
 FROM oci_manifests
 WHERE repo_id = sqlc.arg(repo_id)::bigint AND name = sqlc.arg(name)::text AND subject = sqlc.arg(subject)::bytea
   AND (sqlc.arg(artifact_type)::text = '' OR artifact_type = sqlc.arg(artifact_type)::text)
   AND (sqlc.narg(after)::bytea IS NULL OR digest > sqlc.narg(after)::bytea)
+  AND NOT EXISTS (SELECT 1 FROM oci_tombstones t
+                  WHERE t.repo_id = oci_manifests.repo_id AND t.name = oci_manifests.name AND t.digest = oci_manifests.digest)
 ORDER BY digest
 LIMIT sqlc.arg(max_rows)::int;
 

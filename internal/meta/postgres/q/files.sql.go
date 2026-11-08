@@ -540,6 +540,40 @@ func (q *Queries) InsertImplicitFolders(ctx context.Context, arg InsertImplicitF
 	return result.RowsAffected(), nil
 }
 
+const itemInRemovalScope = `-- name: ItemInRemovalScope :one
+SELECT EXISTS (
+  SELECT 1 FROM items
+   WHERE repo_id = $1::bigint AND path = $2::text AND kind = 'file' AND trashed_at IS NULL
+     AND (path = $3::text OR (path >= $4::text AND ($5::text = '' OR path < $5::text)))
+     AND ($6::bigint = 0 OR id <= $6::bigint)
+)::boolean AS in_scope
+`
+
+type ItemInRemovalScopeParams struct {
+	RepoID   int64
+	ItemPath string
+	Path     string
+	Lo       string
+	Hi       string
+	MaxID    int64
+}
+
+// Whether the live file at the path belongs to the removal of the subtree (root path, bounds lo and hi) that was authorized at max_id
+// (0: no bound): a storage hook asks it of an item that another batch of the same removal takes (R-OCI-018).
+func (q *Queries) ItemInRemovalScope(ctx context.Context, arg ItemInRemovalScopeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, itemInRemovalScope,
+		arg.RepoID,
+		arg.ItemPath,
+		arg.Path,
+		arg.Lo,
+		arg.Hi,
+		arg.MaxID,
+	)
+	var in_scope bool
+	err := row.Scan(&in_scope)
+	return in_scope, err
+}
+
 const itemPathByID = `-- name: ItemPathByID :many
 SELECT path FROM items WHERE id = $1::bigint AND repo_id = $2::bigint
 `

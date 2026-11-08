@@ -254,6 +254,21 @@ func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Targe
 	return nil
 }
 
+// PathsAllowed implements formats.Host: the Allow function of the options decides each path with the coordinate the format's Classify
+// gives it, and nothing is recorded as an Authorize call (the listing form writes no audit event).
+func (h *Host) PathsAllowed(_ context.Context, _ *formats.Request, a formats.Action, paths []string) ([]bool, error) {
+	return h.allowedPaths(a, paths), nil
+}
+
+func (h *Host) allowedPaths(a formats.Action, paths []string) []bool {
+	out := make([]bool, len(paths))
+	for i, p := range paths {
+		info := h.f.Classify(formats.Path{Path: p})
+		out[i] = h.opts.Allow == nil || h.opts.Allow(formats.Target{Package: info.Package, Version: info.Version, Path: p, Actions: []formats.Action{a}}) == nil
+	}
+	return out
+}
+
 // CheckOwnership implements formats.Host: it records the call and asks Precheck.
 func (h *Host) CheckOwnership(_ context.Context, _ *formats.Request, t formats.Target, w formats.OwnershipWrite) error {
 	h.mu.Lock()

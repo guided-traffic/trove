@@ -82,6 +82,8 @@ type writerDeps struct {
 	remove ItemRemover
 	// areas are the notification areas the writer's format declared.
 	areas []string
+	// guard decides the paths a hook cascades to for the request's subject; set for the writer of Host.Write.
+	guard func(ctx context.Context, paths []string) error
 }
 
 // writer implements formats.PackageWriter over the package rows of a transaction.
@@ -220,6 +222,9 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 	}
 	if err := w.owns(repo); err != nil {
 		return err
+	}
+	if w.d.guard != nil {
+		ctx = items.WithCascadeGuard(ctx, w.d.guard)
 	}
 	return w.d.remove.RemoveIn(ctx, w.tx, items.RemoveSpec{
 		Repo:  items.RepoRef{ID: repo.ID, Name: repo.Name, Class: string(repo.Class), Format: string(repo.Format)},

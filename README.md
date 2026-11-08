@@ -1351,6 +1351,7 @@ maintenance:
     vuln-sync-osv-full:   {enabled: true, schedule: "17 3 * * 0"}     # full OSV sync
     vuln-sync-kev:        {enabled: true, schedule: "41 */6 * * *"}   # CISA KEV catalog
     vuln-findings-retention: {enabled: true, schedule: "50 3 * * *"}
+    oci-sweep:            {enabled: true, schedule: "0 * * * *"}      # removes the blob items of an image name that no manifest references after oci.unreferenced_blob_grace (R-OCI-019)
 proxy:
   outbound:
     proxy_from_environment: false       # default

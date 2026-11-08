@@ -206,6 +206,16 @@ SELECT id, path, kind, blob_sha256, size
  ORDER BY path
  LIMIT sqlc.arg(row_limit)::int;
 
+-- name: ItemInRemovalScope :one
+-- Whether the live file at the path belongs to the removal of the subtree (root path, bounds lo and hi) that was authorized at max_id
+-- (0: no bound): a storage hook asks it of an item that another batch of the same removal takes (R-OCI-018).
+SELECT EXISTS (
+  SELECT 1 FROM items
+   WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(item_path)::text AND kind = 'file' AND trashed_at IS NULL
+     AND (path = sqlc.arg(path)::text OR (path >= sqlc.arg(lo)::text AND (sqlc.arg(hi)::text = '' OR path < sqlc.arg(hi)::text)))
+     AND (sqlc.arg(max_id)::bigint = 0 OR id <= sqlc.arg(max_id)::bigint)
+)::boolean AS in_scope;
+
 -- name: DeleteItemsByID :many
 -- Returns what was removed, so that the event of a file carries its digest and
 -- size. The statement trigger of 00002 queues the released blobs for collection.

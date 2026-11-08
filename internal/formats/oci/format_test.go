@@ -1,7 +1,6 @@
 package oci
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -78,10 +77,19 @@ func TestTheKeyAndTheImageNameAreOneAddress(t *testing.T) {
 	}
 }
 
-func TestEveryRouteAnswers501UntilItIsBuilt(t *testing.T) {
+// builtRoutes are the routes that have a handler; a work package that builds an operation adds its routes here.
+var builtRoutes = map[string]bool{
+	routeManifestGetTag: true, routeManifestGetDgs: true, routeManifestPut: true, routeBlobGet: true,
+	routeTagsList: true, routeReferrers: true, routeManifestDelete: true, routeBlobDelete: true,
+}
+
+func TestTheRoutesThatAreNotBuiltAnswer501(t *testing.T) {
 	f := New()
 	h := formattest.NewHost(f, formattest.HostOptions{Data: unbuiltStore{}})
 	for _, r := range f.Routes() {
+		if builtRoutes[r.Name] {
+			continue
+		}
 		for _, ex := range r.Examples {
 			resp, err := h.Serve(context.Background(), r.Method, ex, nil, false)
 			if err != nil {
@@ -261,7 +269,10 @@ func TestInspectRefusesAnOversizedOrMalformedManifest(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	ok := formats.InspectInput{Path: formats.Path{Path: TagPath("team/app", "1")}, Body: formattest.Spool([]byte(`{"schemaVersion":2}`)), Limits: f.Descriptor().Limits}
+	ok := formats.InspectInput{
+		Path: formats.Path{Path: TagPath("team/app", "1")}, Limits: f.Descriptor().Limits,
+		Body: formattest.Spool([]byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`)),
+	}
 	if got, err := f.Inspect(context.Background(), ok); err != nil || got == nil || got.Package != "team/app" {
 		t.Errorf("a manifest: %+v, %v", got, err)
 	}
@@ -295,9 +306,9 @@ func TestAnImageNameOutsideTheGrammarAnswersNameInvalidBeforeTheHandler(t *testi
 			t.Errorf("%s %q: %v %d %s", c[0], c[1], err, resp.Code, resp.Body)
 		}
 	}
-	// The longest name that fits is accepted by the check (the handler is not built: 501).
+	// The longest name that fits is accepted by the check: the handler answers, and the repository holds no such tag.
 	ok := strings.Repeat("a", 255-len("it/main/"))
-	if resp, err := h.Serve(context.Background(), http.MethodGet, ok+"/manifests/1", nil, false); err != nil || resp.Code != http.StatusNotImplemented {
+	if resp, err := h.Serve(context.Background(), http.MethodGet, ok+"/manifests/1", nil, false); err != nil || resp.Code != http.StatusNotFound || !strings.Contains(resp.Body.String(), `"MANIFEST_UNKNOWN"`) {
 		t.Errorf("a name of 255 bytes with the repository: %v %v", err, resp)
 	}
 }
@@ -363,22 +374,14 @@ func TestServeCheckWithholdsAManifestTheJournalReplayWithheld(t *testing.T) {
 		body := []byte(`{"schemaVersion":2}`)
 		sum := sha256.Sum256(body)
 		gh := formattest.NewHost(f, formattest.HostOptions{Data: memTombstones{manifests: map[[32]byte]bool{sum: true}, withheld: map[[32]byte]bool{}}})
-		rq, _ := gh.NewRequest(context.Background(), http.MethodPut, "app/manifests/1", nil)
 		path := TagPath("app", "1")
-		sp, _ := gh.Ingest().Spool(context.Background(), rq, bytes.NewReader(body), formats.IngestOptions{})
-		if _, err := gh.Ingest().Commit(context.Background(), rq, sp, formats.Commit{Path: formats.Path{Path: path}, MediaType: "application/json"}); err != nil {
-			t.Fatal(err)
-		}
+		gh.PutItem(path, "application/json", body)
 		repo := gh.Ref()
 		if err := check(repo, path, servefacts.Facts{}, gh); err != nil {
 			t.Fatalf("a manifest with its row: %v", err)
 		}
 		gh2 := formattest.NewHost(f, formattest.HostOptions{Data: memTombstones{manifests: map[[32]byte]bool{sum: true}, withheld: map[[32]byte]bool{sum: true}}})
-		rq2, _ := gh2.NewRequest(context.Background(), http.MethodPut, "app/manifests/1", nil)
-		sp2, _ := gh2.Ingest().Spool(context.Background(), rq2, bytes.NewReader(body), formats.IngestOptions{})
-		if _, err := gh2.Ingest().Commit(context.Background(), rq2, sp2, formats.Commit{Path: formats.Path{Path: path}, MediaType: "application/json"}); err != nil {
-			t.Fatal(err)
-		}
+		gh2.PutItem(path, "application/json", body)
 		if err := check(gh2.Ref(), path, servefacts.Facts{}, gh2); errs.KindOf(err) != errs.NotFound {
 			t.Fatalf("a withheld manifest: %v", err)
 		}
