@@ -6062,6 +6062,22 @@ download); the evaluation reading `restored_at` itself on each miss (a query per
 
 **Spec:** [spec/formats/npm.md](spec/formats/npm.md) R-NPM-025, Q-NPM-79; [spec/repositories-and-proxy.md](spec/repositories-and-proxy.md) R-REPO-041.
 
+### ADR-167 · The pinned tools of a CI job come from a verified cache, not from a live release download
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** On 2026-11-08 the GitHub release host answered 504 for the buildx archive of the nightly run 42465102401, and the buildx action's own binary cache held an entry that a runner with another workspace depth could not extract: the cache writer stores paths relative to the workspace, and that entry was saved from `/runner/_work/trove/trove`, four levels deep, and restored into `/home/runner/_work/trove/trove`, five levels deep. Each job of Test and Release and of the nightly downloads its tools again, and a release-host outage of a minute fails the leg.
+
+**Decision.** A tool pinned in `tools/versions.env` reaches a job as a verified archive: a composite action (`.github/actions/install-buildx`) first uses the runner's copy when that file is the pinned release binary (the same SHA-256; another build of the pinned version goes through the cache), otherwise a copy cached under the workspace path `.bin/`, otherwise a download with a bounded retry; the archive is used only when its SHA-256 equals the pinned digest. The action's own binary download is avoided. Applied to Docker Buildx in all 23 jobs, and to the chart pulls of `make dev-up` as a retry (`chart_tgz`). Still open: the Go toolchain, the cache and the digests of the chart archives.
+
+**Consequences.** One pin and its digests per tool, read by the workflows and by `make versions-check`. A version bump edits the version and its digests together. The Go toolchain keeps its exposure until it is moved.
+
+**Alternatives considered.** Only fixing the cache key (the download stays exposed); longer retries inside the actions (not configurable); baking the pins into the runner image (outside the repository, and a bump waits for an image rebuild).
+
+**Revisit condition:** the runner image carries the pins (the cache steps then do nothing), or a cold-cache run fails on the release host within the retry window again.
+
+**Spec:** [spec/architecture.md](spec/architecture.md) Q-ARCH-355; [developer/releasing.md](developer/releasing.md#pinned-tools-in-the-jobs).
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -6262,6 +6278,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-344](spec/architecture.md#q-arch-344--the-runners-restore-mode-is-a-method-of-the-restore-session-not-a-flag-of-trove-migrate) | How does the runner offer its restore mode? | (b) `RestoreSession.MigrateTo`, no flag | |
 | [Q-ARCH-345](spec/architecture.md#q-arch-345--where-the-outbox-implementation-and-the-post-restore-live) | Where do the outbox implementation and the post-restore live? | (a) `internal/journal/ship` and `internal/backup/postrestore`, because infrastructure must not import the domain |
 | [Q-ARCH-347](spec/architecture.md#q-arch-347--the-restore-builds-its-item-store-through-a-narrow-constructor-of-internalapp-not-through-a-replica) | How does the restore get the item store with the format hooks? | (b) `app.RestoreItems`, a narrow constructor | |
+| [Q-ARCH-355](spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job) | How do the CI jobs get their pinned tools, without a live release-asset download per job? | (c) a repo-owned install per pinned tool, and a cache of the chart archives of `make dev-up`: a verified archive cached under `.bin`, a bounded retry, the digest of `tools/versions.env` (chosen, applied to Docker Buildx and the chart pulls' retry) | [ADR-167](decisions.md#adr-167--the-pinned-tools-of-a-ci-job-come-from-a-verified-cache-not-from-a-live-release-download) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |

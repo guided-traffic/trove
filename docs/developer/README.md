@@ -210,10 +210,12 @@ trove/
 │                             # nugetclients/: the NuGet clients image (.NET SDK, nuget.exe on Mono; R-NUGET-027), nuget_clients_test.go
 ├── perf/                     # data of the performance tests: npm/reference (package.json, package-lock.json), see perf/README.md
 ├── .github/
-│   ├── workflows/            # release.yml (Test and Release), build.yml (Release Docker & Helm), renovate.yml
-│   ├── actionlint.yaml       # actionlint's configuration (the App token inputs of the pinned version)
-│   ├── scripts/              # s3-conformance.sh, run by make s3-conformance
-│   └── actions/load-pins/    # loads tools/versions.env into the job
+│   ├── workflows/              # release.yml (Test and Release), build.yml (Release Docker & Helm), renovate.yml
+│   ├── actionlint.yaml         # actionlint's configuration (the App token inputs of the pinned version)
+│   ├── scripts/                # s3-conformance.sh, run by make s3-conformance
+│   ├── actions/load-pins/      # loads tools/versions.env into the job
+│   ├── actions/install-buildx/ # the pinned Docker Buildx, verified and cached under .bin (Q-ARCH-355)
+│   └── actions/select-leg/     # decides whether a leg of the nightly matrix runs in this dispatch
 ├── hack/                     # verify-release-tooling.mjs: the release notes of .releaserc.json rendered
 ├── test/coverage/            # report.sh: merges the unit and integration profiles into the badge
 └── docs/                     # README.md, decisions.md, developer/, spec/, security/, coverage/, features/

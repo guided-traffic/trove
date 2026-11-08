@@ -386,7 +386,9 @@ $(PROMTOOL_BIN):
 	  if [ -z "$$want" ]; then echo "promtool: tools/versions.env has no digest for $(PROMTOOL_OS)/$(PROMTOOL_ARCH)"; exit 1; fi; \
 	  tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	  name="prometheus-$(PROMTOOL_VERSION:v%=%).$(PROMTOOL_OS)-$(PROMTOOL_ARCH)"; \
-	  curl -fsSL -o "$$tmp/promtool.tar.gz" "https://github.com/prometheus/prometheus/releases/download/$(PROMTOOL_VERSION)/$$name.tar.gz"; \
+	  curl --fail --show-error --silent --location --retry 6 --retry-all-errors --retry-delay 20 --retry-max-time 600 \
+	    --connect-timeout 20 --speed-limit 51200 --speed-time 30 \
+	    -o "$$tmp/promtool.tar.gz" "https://github.com/prometheus/prometheus/releases/download/$(PROMTOOL_VERSION)/$$name.tar.gz"; \
 	  if command -v sha256sum >/dev/null; then got="$$(sha256sum "$$tmp/promtool.tar.gz" | awk '{print $$1}')"; \
 	  else got="$$(shasum -a 256 "$$tmp/promtool.tar.gz" | awk '{print $$1}')"; fi; \
 	  if [ "$$got" != "$$want" ]; then echo "promtool: $$name.tar.gz has SHA-256 $$got, tools/versions.env pins $$want"; exit 1; fi; \
@@ -407,7 +409,8 @@ $(TRIVY_BIN):
 	  case "$(PROMTOOL_ARCH)" in amd64) arch=64bit ;; arm64) arch=ARM64 ;; *) echo "trivy: no archive for $(PROMTOOL_ARCH)"; exit 1 ;; esac; \
 	  name="trivy_$(TRIVY_VERSION:v%=%)_$${os}-$${arch}.tar.gz"; \
 	  tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
-	  curl --fail --show-error --silent --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 \
+	  curl --fail --show-error --silent --location --retry 6 --retry-all-errors --retry-delay 20 --retry-max-time 600 \
+	    --connect-timeout 20 --speed-limit 51200 --speed-time 30 \
 	    -o "$$tmp/$$name" "https://github.com/aquasecurity/trivy/releases/download/$(TRIVY_VERSION)/$$name"; \
 	  if command -v sha256sum >/dev/null; then got="$$(sha256sum "$$tmp/$$name" | awk '{print $$1}')"; \
 	  else got="$$(shasum -a 256 "$$tmp/$$name" | awk '{print $$1}')"; fi; \

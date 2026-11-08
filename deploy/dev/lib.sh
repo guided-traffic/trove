@@ -32,13 +32,32 @@ kn() { kubectl --context "$CTX" -n "$NS" "$@"; }
 # chart_tgz REPO_URL CHART VERSION prints the path of the chart's archive in $STATE_DIR/charts and fetches it once. Every
 # later install of the same pin, such as the profile switch an e2e test makes with up.sh, reads the file and needs no
 # network (an unreachable chart host failed `e2e on kind (access-long)` mid-run, Test and Release run 42150467806).
+#
+# Bounds of a pull that fails. Some charts are archives on GitHub releases (haproxy-ingress, cloudnative-pg), whose host
+# answered 504 for minutes on 2026-11-08 (run 42465102401), so a failed pull is retried, 20 s apart, up to
+# CHART_PULL_ATTEMPTS attempts (default 7) and until CHART_PULL_SECONDS (default 600) have passed since the first one. The
+# deadline is checked between attempts, so one attempt that is already running may end after it: a single pull was seen
+# to take 4 min 55 s. A chart version that the repository does not list ("not found in") is not retried. A caller that
+# retries itself, such as release-smoke's wait loop, sets CHART_PULL_ATTEMPTS=1.
 chart_tgz() {
-  local url="$1" chart="$2" version="$3" dir="$STATE_DIR/charts" tmp
+  local url="$1" chart="$2" version="$3" dir="$STATE_DIR/charts" tmp attempt=1 start=$SECONDS err
+  local attempts="${CHART_PULL_ATTEMPTS:-7}" limit="${CHART_PULL_SECONDS:-600}"
   local file="$dir/$chart-$version.tgz"
   if [ ! -s "$file" ]; then
     mkdir -p "$dir"
     tmp="$(mktemp -d "$dir/.pull.XXXXXX")"
-    helm pull "$chart" --repo "$url" --version "$version" --destination "$tmp" >&2 || { rm -rf "$tmp"; return 1; }
+    err="$tmp/pull.err"
+    # helm's stdout and stderr both go to the file: the function's stdout is the archive path that the callers capture.
+    until helm pull "$chart" --repo "$url" --version "$version" --destination "$tmp" >"$err" 2>&1; do
+      cat "$err" >&2
+      # helm's messages for a version the repository does not list (the templates "%s not found in %s repository" and
+      # "%s chart not found in repo %s" of the helm binary)
+      if grep -qE 'version ".*" not found in |chart not found in repo ' "$err"; then rm -rf "$tmp"; return 1; fi
+      if [ "$attempt" -ge "$attempts" ] || [ $(( SECONDS - start )) -ge "$limit" ]; then rm -rf "$tmp"; return 1; fi
+      echo "helm pull of $chart $version failed (attempt $attempt of $attempts), retrying in 20 s" >&2
+      sleep 20
+      attempt=$((attempt + 1))
+    done
     mv "$tmp/$chart-$version.tgz" "$file"
     rm -rf "$tmp"
   fi

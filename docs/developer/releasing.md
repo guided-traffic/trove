@@ -68,7 +68,7 @@ at its pin (`make promtool`, below).
 
 | Job | Make target | Runs |
 |---|---|---|
-| versions (E0.2) | `make versions-check` | go, node (`web/.nvmrc`), sqlc, oapi-codegen, golangci-lint, oasdiff (when built), promtool (when fetched), kind, kubectl, helm, k6 and docker buildx against their pins. The job installs the pinned helm, kubectl, kind and buildx first, so the runner's copies are not the ones checked |
+| versions (E0.2) | `make versions-check` | go, node (`web/.nvmrc`), sqlc, oapi-codegen, golangci-lint, oasdiff (when built), promtool (when fetched), kind, kubectl, helm, k6 and docker buildx against their pins. The job installs the pinned helm, kubectl and kind first, so the runner's copies are not the ones checked; buildx comes from [install-buildx](../../.github/actions/install-buildx/action.yml), whose probe keeps the runner's file only when its SHA-256 is the pin, so the buildx checked is the one the CLI resolves |
 | Code Linting | `make lint` | golangci-lint (pinned; its binary is cached by version and Go version) with the linters of [.golangci.yml](../../.golangci.yml), then `go vet` |
 | GoSec Security Scan | `make gosec` | golangci-lint with only gosec enabled, the settings and the accepted findings of [.golangci.yml](../../.golangci.yml) |
 | Vulnerability Check | `make vuln` | govulncheck (pinned) over the module |
@@ -117,6 +117,51 @@ run with the release secrets are pinned by tag too: the owner decided so on 2026
 was named ([ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)). A tag can be
 moved, and a moved tag runs in the job that names it with that job's secrets
 ([H-325](../security/data-and-secret-flow.md#h-325--a-moved-action-tag-runs-in-a-job-that-holds-release-secrets)).
+
+### Pinned tools in the jobs
+
+A pin in [tools/versions.env](../../tools/versions.env) is the one source for the jobs and for `make versions-check`. Where a
+job downloads a pinned archive from a GitHub release, the download can fail on the release host (504 in run 42465102401 on
+2026-11-08, verified in its log; run 42464736969 reported the same), so the Docker Buildx of every job is installed by [.github/actions/install-buildx](../../.github/actions/install-buildx/action.yml)
+([Q-ARCH-355](../spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job)):
+
+1. the file the Docker CLI resolves (`docker info`: the buildx plugin's `Path`), when its version is the pin and its SHA-256 is the
+   pinned digest of the platform: nothing is installed;
+2. otherwise the archive cached under `.bin/buildx-<pin>/` (the cache key holds the pin and the digest of the platform);
+3. otherwise a download of the release asset, six retries 20 s apart, no retry after 600 s in all, and an attempt that stalls
+   under 50 KiB/s for 30 s is aborted;
+4. the archive is used only when its SHA-256 equals `BUILDX_SHA256_LINUX_AMD64` or `_ARM64` of `tools/versions.env`;
+5. the plugin is installed into `${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins`, and the CLI is checked to resolve that file.
+
+The step is skipped where the job's setup-buildx step is skipped (the legs of a dispatch, the scope of a release job), and the
+composite refuses an empty version.
+
+The `docker/setup-buildx-action` step that follows runs with `cache-binary: false` and without `version`, so it never
+downloads or caches the binary. Its cache of the binary is the entry whose paths broke the restore of run 42465102401: the
+action stores paths relative to the workspace, so an entry saved in one workspace layout does not extract in another.
+
+Inventory of the downloads of the workflows, as the development agent checked them on 2026-11-08 (the host named in the log
+of run 42465102401 where a row says so):
+
+| Tool | Where the job gets it | Host | Handled |
+|---|---|---|---|
+| Docker Buildx | [install-buildx](../../.github/actions/install-buildx/action.yml), 23 jobs | github.com release asset | runner copy, cache, bounded retry, SHA-256 (this section) |
+| Go 1.27.3 | `actions/setup-go@v7`, 43 uses | github.com `actions/go-versions` release asset (run 42465102401: 504 twice, then success) | not yet: [Q-ARCH-355](../spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job) names it as the next application |
+| Helm v4.3.1 | `azure/setup-helm@v5` | get.helm.sh (run 42465102401) | action's own download; no failure seen |
+| kubectl v1.37.2 | `azure/setup-kubectl@v5` | dl.k8s.io (run 42465102401) | action's own download; no failure seen |
+| Node.js | `actions/setup-node@v7` | not checked | action's own download |
+| promtool, Trivy (`make promtool`, `make trivy`) | the Makefile's rules | github.com release assets | SHA-256; Trivy with a retry, promtool without one |
+| Trivy action, syft (`anchore/sbom-action`), Docker Scout | the actions | not checked | action's own download |
+| kind, golangci-lint, govulncheck, gocyclo, oasdiff, osv-scanner | `go install` in the workflows and the Makefile | the Go module proxy | not a release asset |
+
+`make dev-up` downloads no tool: `deploy/dev/lib.sh` `check_tools` checks kind, kubectl and Helm against their pins and prints the
+install command when one is missing. It does pull the charts of its releases through `chart_tgz` ([deploy/dev/lib.sh](../../deploy/dev/lib.sh)),
+into `.dev/charts`. A failed pull is retried, 20 s apart, up to seven attempts and until 600 s have passed since the first
+(`CHART_PULL_ATTEMPTS`, `CHART_PULL_SECONDS`); a version the repository does not list is not retried, and release-smoke's wait loop
+runs one attempt per round. The deadline is checked between attempts, so an attempt that is running may end after it. The haproxy-ingress and cloudnative-pg chart archives are
+GitHub release assets (the chart indexes point there); in run 42465102401 their pulls got 504 (haproxy after about a minute,
+cloudnative-pg after about 5 minutes). The cache of those archives in CI and the digests of the archives are not in place yet
+([Q-ARCH-355](../spec/architecture.md#q-arch-355--how-do-the-ci-jobs-get-their-pinned-tools-without-a-live-release-asset-download-per-job)).
 
 ### Coverage
 

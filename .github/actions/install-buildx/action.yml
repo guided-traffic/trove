@@ -1,0 +1,100 @@
+# Puts the Docker Buildx plugin at its pin on the runner (Q-ARCH-355), so that docker/setup-buildx-action never downloads
+# it. The probe takes the plugin file the Docker CLI resolves (docker info reports its Path and Version), and keeps it only
+# when its SHA-256 is the pinned digest of the platform: a runner's copy of another build, or of another version, falls
+# through. Otherwise the verified archive is restored from the GitHub cache (keyed by the pin and the digest, under the
+# workspace path .bin, as the golangci-lint build is); a miss downloads the release asset with bounded retries. The
+# archive is used only when its SHA-256 equals the digest of tools/versions.env. It goes to the Docker CLI's plugin
+# directory (DOCKER_CONFIG, else HOME), which the CLI searches before the system directory, and the CLI is checked to
+# resolve that file afterwards.
+# Run after actions/checkout and load-pins: the version and the digests come from the job's environment. A job whose
+# setup-buildx step is skipped by its scope must skip this step too (same if:), or it fails on the empty version.
+# The retries are not test retries: they retry the download of a pinned archive, and the digest decides what is used.
+name: Install the pinned Docker Buildx
+description: Use the runner's docker buildx when its file has the pinned SHA-256, otherwise install the pinned release archive, verified by SHA-256 (tools/versions.env)
+inputs:
+  version:
+    description: The pin, BUILDX_VERSION of tools/versions.env
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check the runner's copy and the platform
+      id: probe
+      shell: bash
+      env:
+        WANT: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        [ -n "$WANT" ] || { echo "::error::input version is empty: run load-pins first"; exit 1; }
+        case "$(uname -m)" in
+          x86_64) arch=amd64; digest="${BUILDX_SHA256_LINUX_AMD64:-}" ;;
+          aarch64) arch=arm64; digest="${BUILDX_SHA256_LINUX_ARM64:-}" ;;
+          *) echo "::error::no docker buildx archive for $(uname -m)"; exit 1 ;;
+        esac
+        if [ -z "$digest" ]; then
+          echo "::error::the SHA-256 of buildx linux/${arch} is not in the job's environment (load-pins, tools/versions.env)"
+          exit 1
+        fi
+        echo "arch=${arch}" >> "$GITHUB_OUTPUT"
+        echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+        # The file the CLI resolves, and the version it reports for it. More than one record, or no record, is not a match.
+        path="$(docker info --format '{{range .ClientInfo.Plugins}}{{if eq .Name "buildx"}}{{.Path}}{{end}}{{end}}' 2>/dev/null || true)"
+        have="$(docker info --format '{{range .ClientInfo.Plugins}}{{if eq .Name "buildx"}}{{.Version}}{{end}}{{end}}' 2>/dev/null || true)"
+        if [ -n "$path" ] && [ -f "$path" ] && [ "$have" = "$WANT" ] \
+           && [ "$(sha256sum "$path" | awk '{print $1}')" = "$digest" ]; then
+          echo "the docker buildx the CLI resolves ($path, ${have}) is the pinned release file: nothing to install"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "the runner's docker buildx is not the pinned release file (path '${path:-none}', version '${have:-none}'): installing the pin"
+          echo "present=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Restore the verified archive from the cache
+      if: steps.probe.outputs.present != 'true'
+      uses: actions/cache@v6
+      with:
+        path: .bin/buildx-${{ inputs.version }}
+        key: buildx-${{ inputs.version }}-linux-${{ steps.probe.outputs.arch }}-${{ steps.probe.outputs.digest }}
+
+    - name: Install the pinned Docker Buildx
+      if: steps.probe.outputs.present != 'true'
+      shell: bash
+      env:
+        WANT: ${{ inputs.version }}
+        ARCH: ${{ steps.probe.outputs.arch }}
+        DIGEST: ${{ steps.probe.outputs.digest }}
+      run: |
+        set -euo pipefail
+        dir=".bin/buildx-${WANT}"
+        archive="${dir}/docker-buildx"
+        trap 'rm -f "${archive}.part"' EXIT
+        verified() { [ -f "$archive" ] && [ "$(sha256sum "$archive" | awk '{print $1}')" = "$DIGEST" ]; }
+        if verified; then
+          echo "the archive ${archive} is in the cache and has the pin's digest"
+        else
+          rm -f "$archive"
+          mkdir -p "$dir"
+          # Bounded: six retries, 20 s apart, and no retry after 600 s in all. An attempt that stalls under 50 KiB/s for 30 s
+          # is aborted and retried (the stalled-connection case, which --connect-timeout does not cover).
+          curl --fail --show-error --silent --location --retry 6 --retry-all-errors --retry-delay 20 --retry-max-time 600 \
+            --connect-timeout 20 --speed-limit 51200 --speed-time 30 \
+            -o "${archive}.part" "https://github.com/docker/buildx/releases/download/${WANT}/buildx-${WANT}.linux-${ARCH}"
+          got="$(sha256sum "${archive}.part" | awk '{print $1}')"
+          if [ "$got" != "$DIGEST" ]; then
+            echo "::error::buildx ${WANT} linux/${ARCH} has SHA-256 ${got}, tools/versions.env pins ${DIGEST}"
+            exit 1
+          fi
+          mv "${archive}.part" "$archive"
+        fi
+        plugin_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+        mkdir -p "$plugin_dir"
+        install -m 0755 "$archive" "$plugin_dir/docker-buildx"
+        used="$(docker info --format '{{range .ClientInfo.Plugins}}{{if eq .Name "buildx"}}{{.Path}}{{end}}{{end}}')" \
+          || { echo "::error::docker info failed after the install"; exit 1; }
+        have="$(docker buildx version | awk '{print $2}')"
+        # Same file, not the same spelling: the CLI normalises the path (a trailing slash in DOCKER_CONFIG or HOME).
+        if [ -z "$used" ] || [ ! "$used" -ef "$plugin_dir/docker-buildx" ] || [ "$have" != "$WANT" ]; then
+          echo "::error::the docker CLI resolves buildx ${have} at '${used}' after the install, the pin is ${WANT} at ${plugin_dir}/docker-buildx"
+          exit 1
+        fi
+        echo "installed docker buildx ${have} into ${plugin_dir}, the file the CLI resolves"

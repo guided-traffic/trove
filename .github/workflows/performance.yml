@@ -276,10 +276,15 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         uses: docker/login-action@v4
@@ -452,11 +457,17 @@ jobs:
           # --with-deps installs the system libraries through apt (sudo, as for the build tools above).
           npx playwright install --with-deps chromium
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -642,11 +653,17 @@ jobs:
       # The clients run inside the clients image (its own Node.js, test/e2e/clients/Dockerfile), so this job needs no
       # Node.js on the runner and none of the libraries the pinned Node.js loads (Q-ARCH-218).
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -808,11 +825,17 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -980,11 +1003,17 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -1160,11 +1189,17 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -1361,11 +1396,17 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -1554,11 +1595,17 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -1715,11 +1762,17 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        if: steps.leg.outputs.run == 'true'
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         if: steps.leg.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images)
         if: steps.leg.outputs.run == 'true'
@@ -1881,10 +1934,15 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Install the pinned Docker Buildx
+        uses: ./.github/actions/install-buildx
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
-          version: ${{ env.BUILDX_VERSION }}
+          cache-binary: false
 
       - name: Log in to Docker Hub (the dev profile's images and the published releases)
         uses: docker/login-action@v4

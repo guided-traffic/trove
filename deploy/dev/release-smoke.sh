@@ -88,7 +88,8 @@ verify() {
       [ "$n" -le 1 ] || die "chart package differs from the index: ${CHART_REPO_URL}index.yaml lists trove $version $n times"
       if [ "$n" = 1 ]; then
         rm -f "$STATE_DIR/charts/trove-$version.tgz"
-        if tgz="$(chart_tgz "$CHART_REPO_URL" trove "$version" 2>"$OUT/pull.err")"; then break; fi
+        # One attempt per round: this loop is the retry, and chart_tgz's own retries would overrun WAIT_SECONDS.
+        if tgz="$(CHART_PULL_ATTEMPTS=1 chart_tgz "$CHART_REPO_URL" trove "$version" 2>"$OUT/pull.err")"; then break; fi
       fi
     fi
     [ "$(date +%s)" -lt "$deadline" ] || die "chart not published: ${CHART_REPO_URL} does not list and serve trove $version after ${WAIT_SECONDS}s (the release job or GitHub Pages did not publish it); the last helm pull said: $(tail -n 3 "$OUT/pull.err" 2>/dev/null | tr '\n' ' ')"
