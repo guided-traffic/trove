@@ -26,13 +26,13 @@ and the restore on [backup-and-restore.md](backup-and-restore.md). The requireme
 | Step | What is decided | Where | Answer |
 |---|---|---|---|
 | 1 | The route is a write of the class `local`: a remote repository refuses it, a virtual repository hands it to its deployment target; the caller holds `deploy` on the repository at all | the dispatcher's coarse check and `redirectClass` ([dispatcher.go](../../internal/api/dispatch/dispatcher.go)), [routes.go](../../internal/formats/npm/routes.go) | 401, 403, 405 `npm_class_not_writable`, 405 `no_deploy_target` |
-| 2 | `deploy` on the name of the path, and the read-only form of the ownership rule (R-AUTHZ-018), before a byte of the body is read; a `Content-Length` above the cap | `Host.Authorize`, `precheckOwnership` | 403, 413 `npm_too_large` |
+| 2 | `deploy` on the name of the path at the package document's path `<name>` (Q-NPM-80), and the read-only form of the ownership rule (R-AUTHZ-018), before a byte of the body is read; a `Content-Length` above the cap | `Host.Authorize`, `precheckOwnership` | 403, 413 `npm_too_large` |
 | 3 | The body is read once as a stream, capped at the base64 form of `npm.publish.max_tarball_size` plus 768 KiB of metadata and the base64 form of a 256 KiB provenance bundle; the tarball is decoded straight into the spool; only one `.tgz` and at most one `.sigstore` attachment | [publish/scan.go](../../internal/formats/npm/publish/scan.go) `Scan`, the host's spool | 400 `npm_bad_publish`, 413 `npm_too_large` |
 | 4 | The request: `name` equals the path's name and passes the rules for new names (R-NPM-002), `_id` equals `name`, exactly one version and exactly one dist-tag pointing to it, a canonical SemVer version without build metadata, no NUL in the manifest, each attachment's length its data's | [publish/request.go](../../internal/formats/npm/publish/request.go) `Request` | 400 `npm_bad_publish`, `npm_invalid_name`, `npm_invalid_version` |
 | 5 | Every `sha512` entry of `dist.integrity` and `dist.shasum` equal the digests computed while the tarball was spooled | `Request.CheckDigests` | 409 |
 | 6 | The tarball in one streaming pass: one gzip member, clean entry names under one first component, exactly one regular `package.json`, no duplicate install path, links inside the package, the size, entry and ratio bounds | [tarball.go](../../internal/formats/npm/tarball/tarball.go) `Validate` | 400 `npm_bad_publish`, 413 `npm_too_large` |
 | 7 | The `name` and `version` of the tarball's `package.json` are the request's; the compared fields of the request manifest and the `package.json` agree (`npm.publish.manifest_consistency`) | [manifest/compare.go](../../internal/formats/npm/manifest/compare.go) `CheckIdentity`, `Mismatches` | 400 `npm_manifest_mismatch` |
-| 8 | `deploy` on the name and the version | `Host.Authorize` | 403 |
+| 8 | `deploy` on the name and the version, at the tarball's path, so a grant's path patterns decide the file the publish creates (Q-AUTHZ-250) | `Host.Authorize` | 403 |
 | 9 | The number: tombstoned, or live with other bytes; the acknowledged retry (below) | `Store.VersionFacts`, `versionTaken` | 409 `npm_version_unpublished`, 409 `npm_version_exists`, or 201 without a write |
 | 10 | For the first version of a name: whether a remote member of a containing virtual repository serves it (R-REPO-048) | `shadowCheck` | 403 `shadows_remote_package`, 503 `shadow_check_unavailable` |
 | 11 | The commit transaction: the package row is locked, the live versions are read again, the ownership rule decides and claims, the tombstone is read again, the name fold must be free, then the rows, the tags and the audit event are written | [hooks.go](../../internal/formats/npm/hooks.go) `OnCommit`, [store.go](../../internal/formatdata/npm/store.go) `Publish` | 409, 403, 400 `npm_invalid_name`, 503 `shadow_check_unavailable`, or 201 |
@@ -240,7 +240,9 @@ cannot be reached the stored marks decide (H-33). The cache view never contacts 
 
 The body is bounded before it is parsed (Q-NPM-64): `npm.audit.maxBodySize` as sent (default 1 MiB, 1 KiB to 10 MiB), ten times that
 decompressed, gzip or no content coding, and at most 100,000 names. One statement decides which names leave and which are withheld as
-local, claimed, pinned or not proxied (Q-NPM-63; the table is on [data-and-secret-flow.md](data-and-secret-flow.md#the-audit-forward)).
+local, claimed, pinned or not proxied (Q-NPM-63; the table is on [data-and-secret-flow.md](data-and-secret-flow.md#the-audit-forward)),
+and a name the caller may not read on the forwarding remote is withheld as not proxied too, so the answer and its notice do not tell
+whether the remote fetched a name the caller's grants hide (Q-NPM-81; until 2026-11-08 they did).
 The provider is `npm.audit.providerURL`, `https` without user info, query or fragment, else the remote's upstream URL; the request goes
 through the remote's upstream client with its egress, TLS, redirect and credential rules, within `npm.audit.timeout` (default 30 s, 1 to
 300 s, shortened to the replica's shutdown bound). The engine's exchange takes no fetch slot and neither reads nor moves the remote's

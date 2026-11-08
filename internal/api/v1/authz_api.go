@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/project"
@@ -583,9 +584,13 @@ func (s *Server) CheckPermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]authz.CheckItem, len(in.Checks))
+	refused := make([]bool, len(in.Checks))
 	for i, c := range in.Checks {
 		name, _ := qname.ParseRepo(c.Repository) // a text that is no name stays the zero name, which no grant covers
 		items[i] = authz.CheckItem{Repository: name, Package: c.Package, Path: c.Path, Action: authz.Action(c.Action)}
+		if c.Path != "" {
+			items[i], refused[i] = s.checkedPath(r.Context(), items[i])
+		}
 	}
 	// One index answers every check and names the epoch of the answer.
 	acc, err := edge.Resolve(r.Context(), s.o.Authz.Engine, caller(r))
@@ -599,7 +604,46 @@ func (s *Server) CheckPermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	out := checkResponse{Results: make([]checkResult, len(got)), Epoch: acc.Epoch()}
 	for i, ok := range got {
-		out.Results[i] = checkResult{Allowed: ok}
+		out.Results[i] = checkResult{Allowed: ok && !refused[i]}
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// checkedPath gives a check that names a path the coordinate the files service decides the path on (R-AUTHZ-023,
+// Q-AUTHZ-252): the package and the version the repository's format gives the path, as the shared step completes an
+// items operation (Server.classified, R-EP-014). refused is true for a check the answer is false for whatever the
+// grants say: a path that is not canonical names nothing, and a check whose package is not the package of its path
+// asks about two coordinates at once, so its path's grant must not answer for its package. A repository the snapshot
+// does not hold is left to the decision point, which refuses it.
+func (s *Server) checkedPath(ctx context.Context, it authz.CheckItem) (authz.CheckItem, bool) {
+	if _, err := CheckItemPath(it.Path, PathOptions{}); err != nil {
+		return it, true
+	}
+	if s.o.Files == nil {
+		return it, false
+	}
+	pc, format, ok := s.o.Files.ClassOf(ctx, it.Repository, it.Path)
+	if !ok {
+		return it, false
+	}
+	if it.Package == "" {
+		it.Package = pc.Package
+		return it, false
+	}
+	return it, !samePackage(format, it.Package, pc.Package)
+}
+
+// samePackage reports whether a package name a caller sent is the package a path belongs to: the name normalized by the
+// format's one name rule (R-AUTHZ-005) equals it. A format without package names places no path in a package, so a
+// named package is never the path's.
+func samePackage(format, named, ofPath string) bool {
+	if ofPath == "" {
+		return false
+	}
+	f, ok := formats.Lookup(format)
+	if !ok || f.Descriptor().Names == nil {
+		return false
+	}
+	norm, ok := f.Descriptor().Names.Normalize(named)
+	return ok && norm == ofPath
 }

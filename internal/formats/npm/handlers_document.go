@@ -123,7 +123,7 @@ func (f *Format) handleVersion(ctx context.Context, rq *formats.Request, w http.
 // authorizeRead decides the read of a package and finds its row. A package that does
 // not exist and one the caller may not read answer alike (R-AUTHZ-016).
 func (f *Format) authorizeRead(ctx context.Context, rq *formats.Request, n name.Name, version string) (Store, formats.PackageRow, error) {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, version, formats.ActionRead)); err != nil {
 		return nil, formats.PackageRow{}, err
 	}
 	st, err := storeOf(rq.Host.FormatData(ID))

@@ -30,6 +30,7 @@ func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w htt
 	repoID := rq.RepoRef().ID
 	keep := exposes(viewOf(rq), lowerID)
 	return f.serveDocument(ctx, rq, w, lowerID, docSpec{
+		path:    PackageDocumentPath(lowerID),
 		variant: "flat",
 		render: func(ctx context.Context, st Store) ([]byte, int64, bool, error) {
 			idx, err := st.FlatIndex(ctx, repoID, lowerID)
@@ -83,7 +84,7 @@ func (f *Format) serveFile(ctx context.Context, rq *formats.Request, w http.Resp
 	if rq.Repo.Class == formats.Virtual {
 		return f.virtualFile(ctx, rq, w, lowerID, ver, path, mediaType)
 	}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Path: path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
 	// The ceiling decided the version above; the view repeats it from the same rules, so a

@@ -68,7 +68,7 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 |---|---|
 | [internal/formats/catalog](../../internal/formats/catalog/) | The facts of every format, the name rule, the exposure facts and the compiled settings schema with `Entry.ValidateSettings` (a leaf layer); `Register` fills it |
 | [internal/formats/untrusted](../../internal/formats/untrusted/) | `Limits`, `DefaultLimits`, `Tighten`, and the bounded readers of R-ARCH-028 (see [Untrusted content](#untrusted-content)) |
-| [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the twelve checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
+| [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the thirteen checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
 | [internal/formats/generic](../../internal/formats/generic/) | The generic format: no routes, `Classify`, a paths-only exposure adapter, the curl setup templates ([setup.go](../../internal/formats/generic/setup.go)) and the guide of curl ([guide.go](../../internal/formats/generic/guide.go), [guide/](../../internal/formats/generic/guide/)) |
 | [internal/formats/all](../../internal/formats/all/all.go) | Registers every format at compile time (R-ARCH-010) |
 | [internal/httpserver/content](../../internal/httpserver/content/content.go) | The content-header wrapper (`File`, `Index`, `Document`); `httpserver.ContentWriterFor` is the request-aware call |
@@ -155,7 +155,9 @@ prefix ([router.go](../../internal/httpserver/router.go), [context.go](../../int
 
 The handler decides on the concrete package or path with `Host.Authorize(ctx, rq, Target{...})`: the host completes the coordinate (repository, class, format, the
 request kind of the route), decides on `rq.Index`, then applies the repository's include and exclude patterns to the package name or the path (404 for a read,
-403 `not_admitted` for a write). An allowed write decision is remembered with the request and recorded in the transaction of the write
+403 `not_admitted` for a write). A target that names a package names the canonical path of the document or file the route serves or writes as well
+(npm's `documentTarget` and `tarballTarget`, NuGet's `docSpec.path` and the file paths): the decision point refuses a package without a path to every
+grant with path patterns, and kit check 13 fails the handler (Q-AUTHZ-250). The same holds for the targets of `CheckOwnership` and `Claim`. An allowed write decision is remembered with the request and recorded in the transaction of the write
 (`Ingest().Commit` and `Host.Write`), where the generic layer records its own (R-AUTHZ-029). Before that transaction opens, the host decides
 every remembered write again on a new index (`Host.recheck`, the commit-time re-check of R-AUTHZ-015, Q-ARCH-225): a grant removed while a
 body was arriving refuses the write, the new decisions are the ones recorded, and the request decides on the new index from then on, so
@@ -338,7 +340,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | `OptionNames` | 8 | Literal client option names a template may spell although they contain `token`, `password` or `_auth` |
 | `Skip` | all | The checks that do not apply, each with the reason |
 
-### The twelve checks
+### The thirteen checks
 
 | # | The kit does | Fails when |
 |---|---|---|
@@ -353,8 +355,9 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | 9 | Each `ChangeCase` against the in-memory host: `rev_seq` of its package before and after, and the routes and hooks it ran | The revision did not rise; a route of kind `Upload`, `Delete` or `Admin`, or a hook the format has (`OnCommit` and `OnItemsRemoved` with package names, `OnItemsRestored` with `ItemsRestorer`), without a case or a `NoRevision` entry |
 | 10 | For each spelling: normalize, `PackageDocumentPath`, escape, `Protocol` when the fixture has one, `Match("GET", …)`; all spellings of one name | A name the format rejects, spellings that normalize differently or lead to two paths, a path that matches no `GET` route |
 | 12 | Every content case that a `Metadata` or `Computed` route serves, sent once to one seeded Host as a user, a service account and the anonymous caller ([checks_shared.go](../../internal/formats/formattest/checks_shared.go); the callers are derived from the Host's own subject, the seed is made once so only the rendering is compared) | The status, the bytes or `ETag`, `Content-Type`, `Content-Encoding`, `Vary` or `Cache-Control` differ between the callers; a `Metadata` or `Computed` route without a case that serves a document and without a `NoContent` entry. The message says to render the route `Volatile` or to take the caller out of the document |
+| 13 | Every content case and every change case again, each on a fresh Host of the local class with the targets of its seed forgotten, every document of the `Remote` fixture on a remote Host and every case of the `Merge` fixture on a virtual one, each at its protocol path (`RemoteDoc.Request`, `MergeCase.Request`; NuGet names them, npm's are its canonical paths); the package rules apply to every answer that was served or asked the decision point anything; reads the targets of `Authorize`, `CheckOwnership` and `Claim` (`h.Authorizations()`, `h.OwnershipChecks()`, `h.Claims()`) and the paths of the items a route served (`h.ServedPaths()`) ([checks_authz.go](../../internal/formats/formattest/checks_authz.go), Q-AUTHZ-250) | A target names a package and no path; a path that is not canonical, or that `Classify` places in another package than the target names; a file a route served and did not authorize for `read` at its own path; a request whose canonical path `Classify` places in a package and that authorized no target naming that package at a path (a repository-level `Authorize` for a package's document); a `Remote` document or `Merge` case that matches no route; content cases served or change cases ran and no target with a path was handed over (a fixture whose every case refuses by design, as the OCI skeleton's, has nothing to judge yet), or the fixture has no content and no change case |
 
-A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3, 7 and 12 with routes, 4 with a remote adapter, 5 with a virtual
+A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3, 7, 12 and 13 with routes, 4 with a remote adapter, 5 with a virtual
 adapter, 6 with an `Upload` route, 8 with clients, setup templates or a guide, 9 with package names or a route that writes, 10 with package names, 11 with a
 view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package). A check with nothing to run over and no skip fails: that is how a later generic remote
 class cannot pass vacuously ([generic's test](../../internal/formats/generic/conformance_test.go) shows the skips of a format with no routes).
@@ -411,7 +414,9 @@ kit's tightened limits: it must not panic, finish within its deadline, fail only
 
 - Which hooks a format implements: `formats.Base` supplies no-op hooks, so the kit cannot tell an overridden `OnCommit` from the default. The fixture must hold a change case for each hook the
   format overrides; a hook with no case is a gap nobody reports.
-- That a route handler decides authorization on the right target: the host records every `Authorize` call (`h.Authorizations()`), and a format's own test asserts on them.
+- That a route handler decides authorization on the right action and package: check 13 holds every target to a canonical path of its package and every
+  served file to a read at its path, but not that the action is the one R-AUTHZ-007 names; the host records every `Authorize` call (`h.Authorizations()`),
+  and a format's own test asserts on them.
 - The dispatcher's order of checks and the error shapes of the chain: [dispatcher_test.go](../../internal/api/dispatch/dispatcher_test.go).
 - Retried transactions: `Write` runs the function once; a format with a non-transactional twin of its data port must not depend on a rollback.
 - A leak of package bytes through an `Upload`, `Delete` or `Admin` route that the kit detects only when the bytes appear unchanged in the body or the route served an item; a `Volatile` route is allowed to return them (Q-ARCH-258), so what a search puts in its answer is the format's to review.

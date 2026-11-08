@@ -48,7 +48,9 @@ func (f *Format) handlePush(ctx context.Context, rq *formats.Request, w http.Res
 	// The caller holds deploy on the repository (the coarse check ran before the body was
 	// read); here the ID the package declares is authorized (R-AUTHZ-005), including the
 	// ownership of an ID that has an owner, before the number is looked at.
-	target := formats.Target{Package: in.lowerID, Version: in.lowerVersion, Actions: []formats.Action{formats.ActionDeploy}}
+	// The path is the package's lead item, which the push creates (R-NUGET-005): a grant's path patterns decide it as
+	// /files/ decides the same file (R-AUTHZ-005, Q-AUTHZ-250).
+	target := formats.Target{Package: in.lowerID, Version: in.lowerVersion, Path: NupkgPath(in.lowerID, in.lowerVersion), Actions: []formats.Action{formats.ActionDeploy}}
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}

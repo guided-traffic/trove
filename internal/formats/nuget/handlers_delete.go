@@ -29,7 +29,8 @@ import (
 // a removal.
 func (f *Format) handleDelete(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	lowerID, lowerVersion := rq.Params.Get("id"), rq.Params.Get("version")
-	target := formats.Target{Package: lowerID, Version: lowerVersion, Actions: []formats.Action{formats.ActionDelete}}
+	// The path is the version's lead item, the file the delete removes or the unlist marks (Q-AUTHZ-250).
+	target := formats.Target{Package: lowerID, Version: lowerVersion, Path: NupkgPath(lowerID, lowerVersion), Actions: []formats.Action{formats.ActionDelete}}
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}
@@ -134,7 +135,7 @@ func (f *Format) deleteGone(ctx context.Context, tx formats.Tx, st Store, rq *fo
 // 404, a tombstoned one included.
 func (f *Format) handleRelist(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	lowerID, lowerVersion := rq.Params.Get("id"), rq.Params.Get("version")
-	target := formats.Target{Package: lowerID, Version: lowerVersion, Actions: []formats.Action{formats.ActionDeploy}}
+	target := formats.Target{Package: lowerID, Version: lowerVersion, Path: NupkgPath(lowerID, lowerVersion), Actions: []formats.Action{formats.ActionDeploy}}
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}

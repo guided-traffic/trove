@@ -59,7 +59,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	}
 	// The name decides before a byte of the body is read; the version, which the body
 	// names, decides again once it is known.
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, "", formats.ActionDeploy)); err != nil {
 		return err
 	}
 	// The ownership rule decides before the body is read too (S-4, R-AUTHZ-018): a caller who
@@ -130,7 +130,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 			return manifest.CheckConsistency(req.Manifest, res.Manifest, res.Facts)
 		}
 	}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, tarballTarget(n, version, formats.ActionDeploy)); err != nil {
 		return err
 	}
 
@@ -403,7 +403,8 @@ func (f *Format) precheckOwnership(ctx context.Context, rq *formats.Request, pkg
 	if err != nil {
 		return err
 	}
-	return rq.Host.CheckOwnership(ctx, rq, formats.Target{Package: pkg, Actions: []formats.Action{formats.ActionDeploy}},
+	// The path is the package document's, the name itself (PackageDocumentPath): the write changes the package.
+	return rq.Host.CheckOwnership(ctx, rq, formats.Target{Package: pkg, Path: pkg, Actions: []formats.Action{formats.ActionDeploy}},
 		formats.OwnershipWrite{FirstVersion: len(live) == 0})
 }
 

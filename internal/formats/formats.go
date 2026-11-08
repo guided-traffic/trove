@@ -300,11 +300,17 @@ func CapabilitiesFor(id ID) Capabilities {
 	return formatRegistry.caps[id]
 }
 
-// CatalogEntry derives the catalog entry of a format: its facts, its name rule
-// and the exposure facts of its adapter.
+// CatalogEntry derives the catalog entry of a format: its facts, its name rule,
+// the path of its package documents and the exposure facts of its adapter.
 func CatalogEntry(f Format) catalog.Entry {
 	d := f.Descriptor()
 	e := catalog.Entry{Facts: d.Facts, Names: d.Names}
+	if d.PackageNames {
+		e.DocumentPath = func(name string) (string, bool) {
+			p, ok := f.PackageDocumentPath(name)
+			return p.Path, ok && p.Path != ""
+		}
+	}
 	caps := CapabilitiesOf(f)
 	if v := caps.Vulnerability; v != nil {
 		e.Ecosystem = v.Ecosystem()

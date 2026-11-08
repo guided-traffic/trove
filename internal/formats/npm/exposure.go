@@ -309,7 +309,8 @@ func (hidesAll) Tag(string, string, string) bool { return false }
 // as the write it prepares, which records deny.endpoint_read_only; the error below
 // is the same answer where no ceiling decided.
 func readOnly(ctx context.Context, rq *formats.Request, name string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Actions: []formats.Action{formats.ActionRead, formats.ActionDeploy}}); err != nil {
+	// The path is the package document's, the name itself (PackageDocumentPath).
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: name, Actions: []formats.Action{formats.ActionRead, formats.ActionDeploy}}); err != nil {
 		return err
 	}
 	info, _ := errs.Lookup(errs.CodeEndpointReadOnly)

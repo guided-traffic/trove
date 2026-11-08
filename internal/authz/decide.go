@@ -313,7 +313,7 @@ func (e *Engine) scopeAdmits(sc *scope.Scope, a Action, r *repoInfo, repoLevel b
 		if err != nil {
 			continue
 		}
-		paths, err := e.compile.set(dimPath, el.Paths.Include, el.Paths.Exclude, "", nil)
+		paths, err := e.compile.set(dimPath, el.Paths.Include, el.Paths.Exclude, r.Format, pathFoldIn(e.o.Formats, r.Format))
 		if err != nil {
 			continue
 		}
@@ -829,7 +829,8 @@ func (e *Engine) CheckOn(idx *Index, sub Subject, items []CheckItem) ([]bool, er
 		if it.Action != Read {
 			kind = KindWrite
 		}
-		d := e.evaluate(idx, sub, Coordinate{Repository: it.Repository, Package: it.Package, Path: it.Path, Kind: kind, Actions: []Action{it.Action}})
+		// A check that names a package and no path asks about the package as a whole: its document's path (Q-AUTHZ-250).
+		d := e.evaluate(idx, sub, e.atPackage(idx, Coordinate{Repository: it.Repository, Package: it.Package, Path: it.Path, Kind: kind, Actions: []Action{it.Action}}))
 		out[i] = d.Outcome == Allow
 	}
 	return out, nil

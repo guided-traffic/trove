@@ -99,6 +99,30 @@ func TestR_AUTHZ_005_Patterns(t *testing.T) {
 		}
 	})
 
+	t.Run("R-AUTHZ-005 a package coordinate without a path fails a path set with any pattern", func(t *testing.T) {
+		none, _ := compileSet(dimPath, nil, nil, nil)
+		exc, _ := compileSet(dimPath, nil, []string{"secret/**"}, nil)
+		inc, _ := compileSet(dimPath, []string{"open/**"}, nil, nil)
+		for _, tc := range []struct {
+			name  string
+			paths globSet
+			path  string
+			want  bool
+		}{
+			{"no path pattern, no path", none, "", true},
+			{"an exclude-only set, no path", exc, "", false},
+			{"an exclude-only set, a path outside the excludes", exc, "open/-/open-1.0.0.tgz", true},
+			{"an exclude-only set, an excluded path", exc, "secret/-/secret-1.0.0.tgz", false},
+			{"an exclude-only set, the excluded package's document", exc, "secret", false},
+			{"an include set, no path", inc, "", false},
+			{"an include set, an included path", inc, "open", true},
+		} {
+			if got := (resourceSet{paths: tc.paths}).matches(false, "pkg", tc.path); got != tc.want {
+				t.Errorf("%s: matches = %v, want %v", tc.name, got, tc.want)
+			}
+		}
+	})
+
 	t.Run("R-AUTHZ-005 a repository-level coordinate matches whatever the patterns say", func(t *testing.T) {
 		pkg, _ := compileSet(dimPackage, []string{"@acme/*"}, nil, nil)
 		path, _ := compileSet(dimPath, []string{"releases/**"}, nil, nil)

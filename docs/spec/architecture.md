@@ -1815,7 +1815,10 @@ Normative rules:
 - `Route.Action` is a coarse check that the core runs before the body is read: "may this principal
   do this action anywhere in this repository?". The handler then decides on the concrete path or
   package through `Host.Authorize`, with a `Target` that names it; the host completes the coordinate
-  with the repository, its class and format and the request kind of the route.
+  with the repository, its class and format and the request kind of the route. A target that names a
+  package also names the canonical path of the document or file the operation serves or writes, which
+  path patterns are matched against ([authorization.md](authorization.md) R-AUTHZ-005, R-AUTHZ-007,
+  Q-AUTHZ-250; kit check 13 of R-ARCH-010).
 - A format that has side tables of its own declares the interface type of their port in
   `Descriptor.DataPort`; the port is implemented by a domain package (`internal/formatdata/<id>`) and
   bound to the format ID by the composition root (Q-ARCH-193). A hook reaches it as `event.Data`, a
@@ -2150,16 +2153,29 @@ own tests:
     `ETag`, `Content-Type`, `Content-Encoding`, `Vary` and `Cache-Control` (R-BAS-013, Q-BAS-72). A route whose document
     depends on who asks is `Volatile`. A `Metadata` or `Computed` route without a content case that serves a document and
     without a `NoContent` entry fails, as in check 7.
-13. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
+13. For a format with routes: every target a handler hands `Host.Authorize`, `Host.CheckOwnership` or
+    `PackageWriter.Claim` while the content cases and the change cases run on a local repository, the documents of the
+    `Remote` fixture on a remote one and the cases of the `Merge` fixture on a virtual one names the canonical path of what
+    the operation serves or writes when it names a package; the path is canonical and, for a format with package names,
+    `Classify` places it in that package; every file a route serves was authorized for `read` at its own path; and a
+    request whose canonical path `Classify` places in a package authorized that package at a path, not the repository
+    ([authorization.md](authorization.md) R-AUTHZ-005, R-AUTHZ-007, Q-AUTHZ-250). The last two rules apply to a served
+    answer and to every refusal that asked the decision point anything, so a route whose cases all refuse after a decision
+    (listed in `NoContent`) is held to them as well. A `Remote` document or a `Merge` case is requested at its protocol path
+    (`RemoteDoc.Request`, `MergeCase.Request`, for a format whose protocol paths are not its canonical paths), and one that
+    matches no route fails. A fixture without content and change cases fails, and so does one whose cases serve or change
+    something while no target with a path was handed over; a format whose every route decides nothing yet (its routes in
+    `NoContent` and `NoRevision`, answering before any decision, as a skeleton does) has nothing to judge.
+14. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
     [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (the event table test and the
     frozen real-record corpus) gives the expected results (Q-VULN-15).
 
 A check that cannot apply to a format is skipped in the format's test with a stated reason (generic
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
 later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
-checks 1, 3, 7 and 12 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
+checks 1, 3, 7, 12 and 13 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
 virtual adapter, check 6 with an `Upload` route, check 8 with clients, setup templates or a guide, check 9 with
-package names or a route that writes, check 10 with package names, check 11 with a view adapter, check 13 with a
+package names or a route that writes, check 10 with package names, check 11 with a view adapter, check 14 with a
 vulnerability adapter. Check 2 is never skipped. A check with nothing to run over (an empty fixture) fails unless it
 is skipped. npm and NuGet skip no check (`TestR_ARCH_010_NoCheckIsSkipped`); what a check of theirs does not look at
 is an entry of `NoRevision` or `NoContent`, each with its reason, in the format's `conformance_test.go`.
@@ -2168,7 +2184,8 @@ A format runs the kit as `formattest.Run(t, format, formattest.Fixture{…})` in
 subtest per check is named `R-ARCH-010 check N <name>`. The fixture holds what the format alone can
 state: extra paths for checks 2 and 3, upstream documents for 4, member documents for 5, the crafted
 uploads for 6 (`InspectTarGz`, `InspectZip`, `InspectJSON` and `InspectXML` give the standard ones),
-requests for 7, changes for 9, sample names for 10 and the sample versions, a package name and a seed for 11. The kit derives the rest from the format. It
+requests for 7 (which check 13 runs again), changes for 9 (also run again by check 13), sample names for 10 and the
+sample versions, a package name and a seed for 11. The kit derives the rest from the format. It
 requires a content case it serves, or a reasoned `NoContent` entry, for every `Download`, `Metadata`, `Computed` and
 `Volatile` route, and a change case, or a reasoned `NoRevision` entry, for every `Upload`, `Delete` and `Admin` route
 and every storage hook.
@@ -2200,6 +2217,14 @@ Acceptance criteria:
 - A content route whose cases only refuse fails kit check 7 unless `NoContent` lists it with a reason, a restore hook
   no change case drives fails check 9, a fill hook that panics on a crafted input fails check 6, and a skip of check 6
   or 9 that the format contradicts fails (`TestQ_ARCH_281_*`, `TestR_ARCH_010_KitSkips`).
+- A test format whose document route authorizes the package without a path, whose document route authorizes the
+  repository instead of the package, whose tarball route authorizes the package document's path for the tarball it
+  serves, or whose document route leaves the path out or authorizes the repository in a remote and a virtual repository
+  only fails kit check 13 and no other check (`TestR_ARCH_010_Defects`); npm and NuGet pass it, and the OCI skeleton,
+  whose routes all refuse before any decision, has nothing for it to judge yet.
+- A test format with a leaking document route and a fixture whose cases all refuse, every route listed in `NoContent` and
+  `NoRevision`, fails kit check 13 (`TestR_ARCH_010_Check13HoldsARefusingFixtureToItsDecisions`); a `Remote` document or a
+  `Merge` case that matches no route fails it as well.
 
 ## Request paths
 

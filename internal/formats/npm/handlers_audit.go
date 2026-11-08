@@ -19,6 +19,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/npm/name"
 	"github.com/guided-traffic/trove/internal/formats/npm/rows"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The security audit (R-NPM-038). A remote repository forwards the bulk advisory request
@@ -253,8 +254,12 @@ func (f *Format) auditSplit(ctx context.Context, rq *formats.Request, fw *auditF
 	if err != nil {
 		return nil, nil, err
 	}
+	readable, err := readableNames(ctx, rq, fw)
+	if err != nil {
+		return nil, nil, err
+	}
 	for _, a := range facts {
-		reason := withheldReason(a, admitted(rq, fw, a.Name))
+		reason := withheldReason(a, admitted(rq, fw, a.Name) && readable(a.Name))
 		if reason == "" {
 			forward[a.Name] = body[a.Name]
 			continue
@@ -277,6 +282,25 @@ func withheldReason(a rows.AuditName, admitted bool) string {
 		return withheldNotProxied
 	}
 	return ""
+}
+
+// readableNames is the caller's read of the names on the forwarding remote (R-AUTHZ-016, Q-NPM-81), decided as a read
+// through the repository the client addressed: a name the caller may not read is withheld as one the remote has not
+// proxied, so neither the provider's answer nor the notice tells the caller whether the remote fetched a name its grants
+// hide. A caller who reads the remote whole is asked nothing per name.
+func readableNames(ctx context.Context, rq *formats.Request, fw *auditForwarder) (func(string) bool, error) {
+	key := fw.rq.Repo.Name
+	scope, err := rq.Host.Resolver().ReadScope(ctx, rq, []qname.Repo{key})
+	if err != nil {
+		return nil, err
+	}
+	switch scope.Shape(key) {
+	case formats.ReadAll:
+		return func(string) bool { return true }, nil
+	case formats.ReadNone:
+		return func(string) bool { return false }, nil
+	}
+	return func(n string) bool { return scope.MayRead(key, n, "") }, nil
 }
 
 // admitted says whether the include and exclude patterns of the forwarding remote and of

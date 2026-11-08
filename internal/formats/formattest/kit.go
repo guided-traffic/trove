@@ -11,7 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest/crafted"
 )
 
-// Check is one of the twelve checks of R-ARCH-010, numbered as the spec numbers them.
+// Check is one of the thirteen checks of R-ARCH-010, numbered as the spec numbers them.
 type Check int
 
 // The checks.
@@ -28,8 +28,9 @@ const (
 	CheckNames
 	CheckView
 	CheckShared
+	CheckAuthzPaths
 
-	lastCheck = CheckShared
+	lastCheck = CheckAuthzPaths
 )
 
 // name is the short name of the check.
@@ -59,6 +60,8 @@ func (c Check) name() string {
 		return "package view"
 	case CheckShared:
 		return "shared documents"
+	case CheckAuthzPaths:
+		return "authorization paths"
 	}
 	return "unknown"
 }
@@ -163,8 +166,11 @@ type RemoteFixture struct {
 // RemoteDoc is one upstream document.
 type RemoteDoc struct {
 	Name string
-	// Path is the escaped repository path the document is served at.
-	Path    string
+	// Path is the escaped repository path the document is served at (Rewrite is asked about it).
+	Path string
+	// Request is the escaped protocol path a client requests the document at, for a format whose protocol paths are not its
+	// canonical paths (check 13 serves it on a remote repository); empty: Path.
+	Request string
 	Variant string
 	Body    []byte
 }
@@ -186,7 +192,10 @@ type MergeFixture struct {
 type MergeCase struct {
 	Name string
 	// Path is the escaped repository path of the merged document.
-	Path    string
+	Path string
+	// Request is the escaped protocol path a client requests the merged document at, for a format whose protocol paths are
+	// not its canonical paths (check 13 serves it on a virtual repository); empty: Path.
+	Request string
 	Parts   []formats.MemberDocument
 	Sources []string
 }
@@ -358,6 +367,8 @@ func runCheck(c Check, f formats.Format, fx Fixture) (res Result) {
 		r.view()
 	case CheckShared:
 		r.shared()
+	case CheckAuthzPaths:
+		r.authzPaths()
 	}
 	return res
 }
@@ -396,7 +407,7 @@ func (r *run) skipProblem(c Check, reason string) string {
 	switch {
 	case c == CheckTraversal:
 		return fmt.Sprintf("%s always applies, to a format without routes as well: Match must refuse every traversal input", c)
-	case (c == CheckAmbiguity || c == CheckHeaders || c == CheckClassify || c == CheckShared) && routes > 0:
+	case (c == CheckAmbiguity || c == CheckHeaders || c == CheckClassify || c == CheckShared || c == CheckAuthzPaths) && routes > 0:
 		return fmt.Sprintf("%s is skipped (%s) and the format has %d routes", c, reason, routes)
 	case c == CheckRewrite && r.f.Remote() != nil:
 		return fmt.Sprintf("%s is skipped (%s) and the format has a remote adapter", c, reason)

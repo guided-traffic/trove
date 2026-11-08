@@ -300,9 +300,9 @@ func remoteFixture() *formattest.RemoteFixture {
 	return &formattest.RemoteFixture{
 		Upstream: upstreamHost,
 		Docs: []formattest.RemoteDoc{
-			{Name: "registration index", Path: "acme.widgets/.registration/index.json", Variant: documentVariant, Body: []byte(index)},
-			{Name: "registration page", Path: "acme.widgets/.registration/page/1.0.0/1.0.0.json", Variant: documentVariant, Body: []byte(page)},
-			{Name: "version list", Path: "acme.widgets/index.json", Variant: documentVariant, Body: []byte(`{"versions":["1.0.0","1.1.0-beta.1"]}`)},
+			{Name: "registration index", Path: "acme.widgets/.registration/index.json", Request: "v3/registration-semver2/acme.widgets/index.json", Variant: documentVariant, Body: []byte(index)},
+			{Name: "registration page", Path: "acme.widgets/.registration/page/1.0.0/1.0.0.json", Request: "v3/registration-semver2/acme.widgets/page/1.0.0/1.0.0.json", Variant: documentVariant, Body: []byte(page)},
+			{Name: "version list", Path: "acme.widgets/index.json", Request: "v3/flatcontainer/acme.widgets/index.json", Variant: documentVariant, Body: []byte(`{"versions":["1.0.0","1.1.0-beta.1"]}`)},
 		},
 		DownloadLinks: func(doc []byte) []string {
 			var out []string

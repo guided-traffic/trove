@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/guided-traffic/trove/internal/qname"
@@ -424,8 +426,65 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput, opts ...WriteOpti
 	if err != nil {
 		return nil, nil, err
 	}
-	rp.warnings, rp.covers = warningsFor(rp, all, s.o.Formats)
+	var covered []repository.Repository
+	rp.warnings, rp.covers, covered = warningsFor(rp, all, s.o.Formats)
+	if ps := upperCasePathFields(rp.in.Resources.Paths, covered, s.o.Formats); len(ps) > 0 {
+		return nil, ps, nil
+	}
 	return rp, nil, nil
+}
+
+// upperCasePathFields refuses each path pattern with an upper-case letter of a policy that covers a repository whose
+// format stores lower-case paths (Q-AUTHZ-253): the decision point compares such a pattern in lower case (Q-AUTHZ-254),
+// so the refusal is feedback to the writer, who then sees the pattern as it is applied.
+func upperCasePathFields(p PatternLists, covered []repository.Repository, reg *catalog.Registry) []ProblemField {
+	repo, ok := lowerCasePathRepo(covered, reg)
+	if !ok {
+		return nil
+	}
+	var ps []ProblemField
+	for _, l := range []struct {
+		pointer string
+		list    []string
+	}{{"/resources/paths/include", p.Include}, {"/resources/paths/exclude", p.Exclude}} {
+		for i, pat := range l.list {
+			if HasUpperCase(pat) {
+				ps = append(ps, field(l.pointer+"/"+strconv.Itoa(i), errs.CodeInvalidPattern, upperCaseDetail(pat, repo)))
+			}
+		}
+	}
+	return ps
+}
+
+// lowerCasePathRepo returns the first repository of a format with lower-case paths.
+func lowerCasePathRepo(repos []repository.Repository, reg *catalog.Registry) (qname.Repo, bool) {
+	for _, r := range repos {
+		if e, ok := reg.Lookup(r.Format); ok && e.LowerCasePaths {
+			return r.Name, true
+		}
+	}
+	return qname.Repo{}, false
+}
+
+// HasUpperCase reports whether a path pattern holds an upper-case letter outside a template ("{{…}}"), whose letters are
+// known only when it is rendered.
+func HasUpperCase(pattern string) bool {
+	depth := 0
+	for i, r := range pattern {
+		switch {
+		case strings.HasPrefix(pattern[i:], "{{"):
+			depth++
+		case strings.HasPrefix(pattern[i:], "}}") && depth > 0:
+			depth--
+		case depth == 0 && unicode.IsUpper(r):
+			return true
+		}
+	}
+	return false
+}
+
+func upperCaseDetail(pattern string, repo qname.Repo) string {
+	return fmt.Sprintf("The path pattern %q has an upper-case letter and covers %s, whose format stores lower-case paths and compares path patterns in lower case. Write it in lower case, as it is applied.", pattern, repo)
 }
 
 // projectRule applies the principal rules of R-AUTHZ-026 to one entry: a project
@@ -580,9 +639,8 @@ func (s *Service) entryRules(ptr string, ref Ref, acts ActionSet, rp *resolvedPo
 
 // warningsFor computes the warnings of R-AUTHZ-021 and the keys of the
 // repositories the selectors currently cover.
-func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.Registry) (warnings, covers []string) {
+func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.Registry) (warnings, covers []string, covered []repository.Repository) {
 	coveredBy := make([]int, len(rp.selectors))
-	var covered []repository.Repository
 	for _, r := range all {
 		if rp.project != "" && r.ProjectID != rp.project {
 			continue // a project policy covers only the repositories of its project (R-AUTHZ-026)
@@ -608,7 +666,7 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 			break
 		}
 	}
-	if len(rp.in.Resources.Paths.Include) > 0 {
+	if len(rp.in.Resources.Paths.Include)+len(rp.in.Resources.Paths.Exclude) > 0 { // a path pattern decides documents and files apart (Q-AUTHZ-253)
 		for _, r := range covered {
 			if e, _ := reg.Lookup(r.Format); e.PatternSubject == catalog.SubjectName {
 				warnings = append(warnings, WarnPathPatternsOnPackageFormat)
@@ -623,11 +681,11 @@ func warningsFor(rp *resolvedPolicy, all []repository.Repository, reg *catalog.R
 		for _, r := range covered {
 			if r.Class == repository.Remote && cacheFillOf(r.Config) == "read" {
 				warnings = append(warnings, WarnAnonymousPopulatesRemote)
-				return warnings, covers
+				return warnings, covers, covered
 			}
 		}
 	}
-	return warnings, covers
+	return warnings, covers, covered
 }
 
 // cacheFillOf reads the cacheFillAction of a remote repository's document; the

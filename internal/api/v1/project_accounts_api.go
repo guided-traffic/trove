@@ -235,6 +235,9 @@ func (s *Server) CreateProjectServiceAccountToken(w http.ResponseWriter, r *http
 	if err == nil {
 		scope, err = scopeBytes(in.Scope)
 	}
+	if err == nil {
+		err = s.refuseUpperCasePaths(scope)
+	}
 	var parent *token.Info
 	if err == nil && derived {
 		parent, err = s.presenting(ctx, p)

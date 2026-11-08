@@ -134,7 +134,7 @@ func TestR_EP_012_RuleMatching(t *testing.T) {
 		t.Helper()
 		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, Tags: d.Tags})
 		d.Packages, d.Paths, d.Versions, d.Tags = n.Packages, n.Paths, n.Versions, n.Tags
-		r, err := compileRule("id", "r", 1, enabled, d, nil)
+		r, err := compileRule("id", "r", 1, enabled, d, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,7 +226,7 @@ func TestR_EP_016_ExplainReasons(t *testing.T) {
 	mk := func(name string, enabled bool, d ruleDims) *compiledRule {
 		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, Tags: d.Tags})
 		d.Packages, d.Paths, d.Versions, d.Tags = n.Packages, n.Paths, n.Versions, n.Tags
-		r, err := compileRule("id-"+name, name, 1, enabled, d, nil)
+		r, err := compileRule("id-"+name, name, 1, enabled, d, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

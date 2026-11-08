@@ -396,6 +396,20 @@ func (s *ExposureService) validateForFormat(in ExposureRuleInput, format, prefix
 	if !f.Tags && len(in.Tags.Include)+len(in.Tags.Exclude) > 0 {
 		add("/distTags", errs.CodeDimensionNotSupported, fmt.Sprintf("%s repositories have no tags", format))
 	}
+	// A format that stores lower-case paths compares path patterns in lower case (Q-AUTHZ-254); an upper-case one is refused as
+	// feedback to its writer (Q-AUTHZ-253).
+	if en, ok := s.o.Ceiling.reg.Lookup(format); ok && en.LowerCasePaths {
+		for _, l := range []struct {
+			ptr  string
+			list []string
+		}{{"/paths/include", in.Paths.Include}, {"/paths/exclude", in.Paths.Exclude}} {
+			for i, p := range l.list {
+				if HasUpperCase(p) {
+					add(fmt.Sprintf("%s/%d", l.ptr, i), errs.CodeInvalidPattern, fmt.Sprintf("%s repositories store lower-case paths and compare path patterns in lower case; write %q in lower case, as it is applied", format, p))
+				}
+			}
+		}
+	}
 	if f.Versions && in.Versions.Range != nil {
 		if f.Versioning == nil {
 			add("/versions/range", errs.CodeInvalidVersionRange, "the format cannot check a range")
@@ -822,7 +836,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 			if err != nil {
 				return err
 			}
-			cr, err := compileRule(r.ID, r.Name, r.Revision, r.Enabled, d, names)
+			cr, err := compileRule(r.ID, r.Name, r.Revision, r.Enabled, d, names, pathFoldIn(s.o.Ceiling.reg, repo.Format))
 			if err != nil {
 				return err
 			}
@@ -846,8 +860,11 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		if res.Mode == ExposureModeAll {
 			res.Warnings = append(res.Warnings, WarnEndpointNotInRulesMode)
 		}
-		res.Exposed, res.Rule, res.Reason = judge(exposureItem{pkg: in.Package})
-		held = checkHeld{repo: repo, f: f, names: names, rules: rules, judge: judge}
+		// The package, its versions and its tags are judged on the path of its document, as the view and the ceiling decide them
+		// (Q-AUTHZ-251); a path the request names is judged on that path.
+		doc := documentPathIn(s.o.Ceiling.reg, repo.Format, in.Package)
+		res.Exposed, res.Rule, res.Reason = judge(exposureItem{pkg: in.Package, path: doc})
+		held = checkHeld{repo: repo, f: f, names: names, rules: rules, judge: judge, doc: doc}
 		res.Paths = make([]ExposureCheckItem, 0, len(in.Paths))
 		for _, p := range in.Paths {
 			ok, rule, reason := judge(exposureItem{pkg: in.Package, path: p})
@@ -865,7 +882,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		return res, err
 	}
 	for _, v := range versions {
-		ok, rule, reason := held.judge(exposureItem{pkg: in.Package, version: v})
+		ok, rule, reason := held.judge(exposureItem{pkg: in.Package, path: held.doc, version: v})
 		res.Versions = append(res.Versions, ExposureCheckItem{Value: v, Exposed: ok, Rule: rule, Reason: reason})
 	}
 	return res, nil
@@ -914,8 +931,8 @@ func tagVisible(held checkHeld, mode, pkg, tag, target string) bool {
 	if mode == ExposureModeAll {
 		return true
 	}
-	pointed, _, _ := held.judge(exposureItem{pkg: pkg, version: target})
-	return pointed && admitsItem(held.rules, exposureItem{pkg: pkg, tag: tag}, held.f.Versioning)
+	pointed, _, _ := held.judge(exposureItem{pkg: pkg, path: held.doc, version: target})
+	return pointed && admitsItem(held.rules, exposureItem{pkg: pkg, path: held.doc, tag: tag}, held.f.Versioning)
 }
 
 // checkHeld is what the transaction of a check hands to the part that lists the
@@ -927,6 +944,8 @@ type checkHeld struct {
 	names catalog.Names
 	rules []*compiledRule
 	judge func(exposureItem) (bool, string, string)
+	// doc is the path of the package's document, "" for a check without a package.
+	doc string
 }
 
 // storedWant says what a check needs of the source.
@@ -1002,7 +1021,7 @@ func (s *ExposureService) withDraft(ctx context.Context, qs *q.Queries, stored [
 	if rr.in.Repository != repoKey {
 		return nil, problemError([]ProblemField{{Pointer: "/rule/repository", Code: errs.CodeValidation, Detail: "the draft rule must belong to the repository of the check"}})
 	}
-	cr, err := compileRule("draft", rr.in.Name, 0, rr.in.Enabled, rr.dims, names)
+	cr, err := compileRule("draft", rr.in.Name, 0, rr.in.Enabled, rr.dims, names, pathFoldIn(s.o.Ceiling.reg, rr.format))
 	if err != nil {
 		return nil, err
 	}

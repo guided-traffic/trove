@@ -235,15 +235,6 @@ Found on 2026-11-08 by the penetration test of T-16 WP4a, reading the npm and Nu
 
 ### Product
 
-- **F-82 · Path-scoped grants may not apply on format protocol routes** (read in the code by the penetration test of T-16 WP4a,
-  2026-11-08, not reproduced). Format handlers call `Authorize` with a `formats.Target` without `Path` (NuGet
-  `internal/formats/nuget/documents.go:51` named); the decision point gets an empty path (`internal/formathost/host.go:189-195`) and
-  `globSet.match` (`internal/authz/pattern.go:141-150`) lets a missing path pass a path set with only excludes, while a set with includes
-  denies everything; so a `paths.exclude` grant could read excluded content through the protocol route that `/files/` refuses
-  (R-AUTHZ-005). The OCI format passes the path since its WP4a review round. Done when every format handler authorizes with the item
-  path, an empty path cannot pass a path-scoped set, and a conformance-kit check fails a format that authorizes without one; an agent
-  is on it.
-
 Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools

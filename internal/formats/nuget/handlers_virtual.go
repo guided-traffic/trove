@@ -41,15 +41,16 @@ type virtualDoc struct {
 // member that could not be asked is partial: it is served, and neither it nor its rendering
 // is kept (R-REPO-020).
 func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID string, spec virtualDoc) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	p, variant := formats.Path{Path: PackageDocumentPath(lowerID)}, VariantFlat
+	if spec.kind == merge.Registration {
+		p, variant = formats.Path{Path: registrationDocumentPath(lowerID)}, VariantRegistration
+	}
+	// The read is decided on the document's canonical path, as the members are (R-AUTHZ-005, Q-AUTHZ-250).
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Path: p.Path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
 	if view := viewOf(rq); view != nil && !view.Package(lowerID) {
 		return errNoSuchResource()
-	}
-	p, variant := formats.Path{Path: PackageDocumentPath(lowerID)}, VariantFlat
-	if spec.kind == merge.Registration {
-		p, variant = formats.Path{Path: registrationDocumentPath(lowerID)}, VariantRegistration
 	}
 	m, err := rq.Host.Resolver().Metadata(ctx, rq, p, f.Classify(p), variant)
 	if err != nil {
@@ -263,7 +264,7 @@ func (f *Format) virtualRegistration(ctx context.Context, rq *formats.Request, w
 // upstreams), the first member that has it wins and the answer names it in
 // Trove-Resolved-From. A version the endpoint hides is a missing one.
 func (f *Format) virtualFile(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID, ver, path, mediaType string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Path: path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
 	if view := viewOf(rq); view != nil && (!view.Package(lowerID) || !view.Version(lowerID, ver)) {

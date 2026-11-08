@@ -87,7 +87,7 @@ func (f *Format) handleSymbolPush(ctx context.Context, rq *formats.Request, w ht
 	if err != nil {
 		return ioError(err)
 	}
-	target := formats.Target{Package: in.lowerID, Version: in.lowerVersion, Actions: []formats.Action{formats.ActionDeploy}}
+	target := formats.Target{Package: in.lowerID, Version: in.lowerVersion, Path: SnupkgPath(in.lowerID, in.lowerVersion), Actions: []formats.Action{formats.ActionDeploy}}
 	if err := rq.Host.Authorize(ctx, rq, target); err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (f *Format) commitSymbols(ctx context.Context, tx formats.Tx, c formats.Com
 		if v.Version != in.lowerVersion {
 			continue
 		}
-		if err := c.Packages.Claim(ctx, formats.Target{Package: in.lowerID, Version: in.lowerVersion, Actions: []formats.Action{formats.ActionDeploy}},
+		if err := c.Packages.Claim(ctx, formats.Target{Package: in.lowerID, Version: in.lowerVersion, Path: SnupkgPath(in.lowerID, in.lowerVersion), Actions: []formats.Action{formats.ActionDeploy}},
 			formats.OwnershipWrite{Publish: true}); err != nil {
 			return err
 		}

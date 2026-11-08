@@ -21,6 +21,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/npm/npmtest"
 	"github.com/guided-traffic/trove/internal/formats/npm/rows"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // provider is the advisory provider of a test: it records what it was sent and answers
@@ -62,16 +63,44 @@ func (p *provider) names(t *testing.T, i int) []string {
 	return out
 }
 
-// auditHost is a remote repository with the npm settings of config, the twin and a provider.
+// auditHost is a remote repository with the npm settings of config, the twin and a provider; the caller reads the
+// repository whole.
 func auditHost(t *testing.T, class formats.Class, config string) (*formattest.Host, *npmtest.Store, *provider) {
+	t.Helper()
+	return auditHostReading(t, class, config, auditScope{shape: formats.ReadAll})
+}
+
+// auditHostReading is auditHost for a caller with the read scope.
+func auditHostReading(t *testing.T, class formats.Class, config string, scope formats.ReadScope) (*formattest.Host, *npmtest.Store, *provider) {
 	t.Helper()
 	p := &provider{}
 	twin := npmtest.New()
 	h := formattest.NewHost(New(), formattest.HostOptions{
-		Class: class, Data: twin, Remote: &formattest.MemRemote{Exchanges: p.exchange},
+		Class: class, Data: twin, Remote: &formattest.MemRemote{Exchanges: p.exchange}, Resolver: auditResolver{scope: scope},
 	})
 	h.Repo().Config = []byte(config)
 	return h, twin, p
+}
+
+// auditScope is a read scope of a shape; with rows, may decides each name.
+type auditScope struct {
+	shape formats.ReadShape
+	may   func(pkg string) bool
+}
+
+func (s auditScope) Shape(qname.Repo) formats.ReadShape { return s.shape }
+func (s auditScope) MayRead(_ qname.Repo, pkg, _ string) bool {
+	return s.may == nil || s.may(pkg)
+}
+
+// auditResolver answers the read scope; nothing else of the resolver is asked by an audit.
+type auditResolver struct {
+	formats.Resolver
+	scope formats.ReadScope
+}
+
+func (r auditResolver) ReadScope(context.Context, *formats.Request, []qname.Repo) (formats.ReadScope, error) {
+	return r.scope, nil
 }
 
 // fetched records that the remote holds a stored document of the names.
@@ -180,6 +209,41 @@ func TestR_NPM_038_ARemoteForwardsOnlyProxiedNamesThatNothingMarksInternal(t *te
 		r := audit(t, h, auditBulkPath, `{}`)
 		if r.Code != 200 || r.Body.String() != "{}" || r.Header().Get("npm-notice") != "" || len(p.sent) != before {
 			t.Fatalf("%d %s %v", r.Code, r.Body, r.Header())
+		}
+	})
+}
+
+// TestR_NPM_038_ANameTheCallerMayNotReadIsWithheldLikeOneNeverFetched: the forwarded set holds only names the caller may
+// read on the forwarding remote, decided through the repository the client addressed (R-AUTHZ-016, Q-NPM-81). A name a
+// grant's package or path pattern hides is counted with the names the remote never fetched, so neither the provider's
+// answer nor the notice tells whether the remote proxied it; a caller who reads the remote whole is asked nothing per name.
+func TestR_NPM_038_ANameTheCallerMayNotReadIsWithheldLikeOneNeverFetched(t *testing.T) {
+	asked := []string{}
+	scope := auditScope{shape: formats.ReadRows, may: func(pkg string) bool { asked = append(asked, pkg); return pkg != "lodash" }}
+	h, twin, p := auditHostReading(t, formats.Remote, `{}`, scope)
+	fetched(t, twin, "lodash", "left-pad")
+	r := audit(t, h, auditBulkPath, `{"lodash":["4.17.20"],"left-pad":["1.3.0"],"never-fetched":["1.0.0"]}`)
+	if r.Code != 200 {
+		t.Fatalf("%d %s", r.Code, r.Body)
+	}
+	if got := p.names(t, 0); strings.Join(got, ",") != "left-pad" {
+		t.Fatalf("the provider was sent %v, want left-pad alone", got)
+	}
+	want := "trove audited 1 of 3 packages; 2 internal or not yet proxied names were not sent to the advisory provider"
+	if got := r.Header().Get("npm-notice"); got != want {
+		t.Errorf("npm-notice %q, want %q", got, want)
+	}
+
+	t.Run("a caller who reads the remote whole is asked nothing per name", func(t *testing.T) {
+		asked = asked[:0]
+		all := auditScope{shape: formats.ReadAll, may: func(pkg string) bool { asked = append(asked, pkg); return false }}
+		h, twin, p := auditHostReading(t, formats.Remote, `{}`, all)
+		fetched(t, twin, "lodash")
+		if r := audit(t, h, auditBulkPath, `{"lodash":["4.17.20"]}`); r.Code != 200 || strings.Join(p.names(t, 0), ",") != "lodash" {
+			t.Fatalf("%d %s", r.Code, r.Body)
+		}
+		if len(asked) != 0 {
+			t.Fatalf("MayRead was asked about %v", asked)
 		}
 	})
 }

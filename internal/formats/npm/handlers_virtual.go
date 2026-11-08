@@ -39,7 +39,7 @@ func (f *Format) virtualSource(ctx context.Context, rq *formats.Request, n name.
 
 // virtualDocument serves a form of the merged document of a virtual repository.
 func (f *Format) virtualDocument(ctx context.Context, rq *formats.Request, w http.ResponseWriter, n name.Name, fm form, ref string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, "", formats.ActionRead)); err != nil {
 		return err
 	}
 	src, err := f.virtualSource(ctx, rq, n, fm, ref)
@@ -53,7 +53,7 @@ func (f *Format) virtualDocument(ctx context.Context, rq *formats.Request, w htt
 // R-REPO-019 step 6 (local members, the caches of the remote members, then their
 // upstreams), the first hit wins.
 func (f *Format) virtualTarball(ctx context.Context, rq *formats.Request, w http.ResponseWriter, n name.Name, version string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, tarballTarget(n, version, formats.ActionRead)); err != nil {
 		return err
 	}
 	if err := hiddenVersion(rq, n, version); err != nil {

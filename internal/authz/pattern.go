@@ -2,6 +2,7 @@ package authz
 
 import (
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -35,6 +36,26 @@ func fold(names catalog.Names, s string) string {
 		return n
 	}
 	return s
+}
+
+// caseFold is the fold of the path dimension on a format whose canonical paths are lower case
+// (catalog.Facts.LowerCasePaths, NuGet): a path pattern and a path are compared in lower case, so a
+// pattern written in another case decides what its writer meant whenever it was written and whatever
+// selector brought it to the repository (Q-AUTHZ-254).
+type caseFold struct{}
+
+func (caseFold) Normalize(s string) (string, bool) { return strings.ToLower(s), true }
+
+// pathFoldIn returns the fold of the path dimension of a format: caseFold for a format with lower-case
+// paths, nil for every other format and for one the catalog does not know.
+func pathFoldIn(reg *catalog.Registry, format string) catalog.Names {
+	if reg == nil {
+		return nil
+	}
+	if e, ok := reg.Lookup(format); ok && e.LowerCasePaths {
+		return caseFold{}
+	}
+	return nil
 }
 
 // namesIn returns the name rule of a format in the catalog; nil for a format
@@ -100,17 +121,17 @@ type globSet struct {
 }
 
 // compileSet compiles an include and an exclude list of one dimension; names is
-// the name rule of the package dimension and is ignored for paths.
+// the fold of the dimension: the name rule of the format for packages, and for
+// paths the case fold of a format whose canonical paths are lower case
+// (pathFoldIn), nil for none. The fold is applied to the patterns here and to
+// every value match compares (Q-AUTHZ-254).
 func compileSet(dim dimension, include, exclude []string, names catalog.Names) (globSet, error) {
-	g := globSet{}
-	if dim == dimPackage {
-		g.names = names
-	}
+	g := globSet{names: names}
 	compile := func(p string) (*repository.Pattern, error) {
 		if dim == dimPackage {
 			return compileName(p, g.names)
 		}
-		return compilePath(p)
+		return compilePath(fold(g.names, p))
 	}
 	for _, p := range include {
 		re, err := compile(p)
@@ -137,8 +158,8 @@ func compileSet(dim dimension, include, exclude []string, names catalog.Names) (
 // The package dimension of a format with package names (names set) fails closed
 // for a coordinate without a name once it holds any pattern: such a coordinate is
 // a path the format placed in no package, and nothing shows that it lies outside
-// the excluded names (Q-AUTHZ-160). Paths, versions and tags have no names and
-// keep the rule as written.
+// the excluded names (Q-AUTHZ-160). The path dimension fails closed the same way
+// for a coordinate without a path (matchPath, Q-AUTHZ-250).
 func (g globSet) match(v string, present bool) bool {
 	v = fold(g.names, v)
 	if len(g.include) == 0 {
@@ -181,5 +202,20 @@ func (r resourceSet) matches(repoLevel bool, pkg, path string) bool {
 	if repoLevel {
 		return true
 	}
-	return r.packages.match(pkg, pkg != "") && r.paths.match(path, path != "")
+	return r.packages.match(pkg, pkg != "") && r.paths.matchPath(path)
+}
+
+// matchPath is the path dimension of a coordinate that is not repository-level.
+// Such a coordinate without a path names a package and nothing at a path; once
+// the dimension holds any pattern, include or exclude, nothing shows that what
+// the coordinate stands for lies outside the excluded paths, so it does not match
+// (Q-AUTHZ-250, the path form of Q-AUTHZ-160). Formats state the canonical path of
+// what a protocol request serves or writes, and the decision point's own questions
+// about a package as a whole carry the path of its package document (atPackage),
+// so this refuses only a coordinate that lacks one.
+func (g globSet) matchPath(path string) bool {
+	if path == "" {
+		return len(g.include) == 0 && len(g.exclude) == 0
+	}
+	return g.match(path, true)
 }

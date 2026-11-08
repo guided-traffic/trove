@@ -26,15 +26,16 @@ func conformance() formattest.Fixture {
 		},
 		OptionNames: []string{"TROVE_TOKEN"},
 		Skip: map[formattest.Check]string{
-			formattest.CheckAmbiguity: "no routes: /files/ is the protocol, served by the generic layer and tested by rawfiles (Q-GENERIC-7, R-GENERIC-002)",
-			formattest.CheckRewrite:   "local class only: no remote adapter, no upstream document to rewrite",
-			formattest.CheckMerge:     "local class only: no virtual adapter",
-			formattest.CheckInspect:   "Inspect reads no archive: an upload is an opaque file",
-			formattest.CheckHeaders:   "no routes: the content headers of /files/ are tested with the generic layer (R-STOR-012)",
-			formattest.CheckRevision:  "no package rows: the format writes none and keeps no hook",
-			formattest.CheckNames:     "no package names",
-			formattest.CheckView:      "no package screens: the format has no view adapter, its files are listed by the generic layer",
-			formattest.CheckShared:    "no routes: the documents of /files/ are the generic layer's, listed per caller by R-STOR-017",
+			formattest.CheckAmbiguity:  "no routes: /files/ is the protocol, served by the generic layer and tested by rawfiles (Q-GENERIC-7, R-GENERIC-002)",
+			formattest.CheckRewrite:    "local class only: no remote adapter, no upstream document to rewrite",
+			formattest.CheckMerge:      "local class only: no virtual adapter",
+			formattest.CheckInspect:    "Inspect reads no archive: an upload is an opaque file",
+			formattest.CheckHeaders:    "no routes: the content headers of /files/ are tested with the generic layer (R-STOR-012)",
+			formattest.CheckRevision:   "no package rows: the format writes none and keeps no hook",
+			formattest.CheckNames:      "no package names",
+			formattest.CheckView:       "no package screens: the format has no view adapter, its files are listed by the generic layer",
+			formattest.CheckShared:     "no routes: the documents of /files/ are the generic layer's, listed per caller by R-STOR-017",
+			formattest.CheckAuthzPaths: "no routes: /files/ decides every request on its canonical path (R-EP-014), tested with the generic layer",
 		},
 	}
 }
@@ -49,7 +50,7 @@ func TestR_ARCH_010_Conformance(t *testing.T) {
 // class or package names fails them.
 func TestR_ARCH_010_ConformanceSkipsAreHonest(t *testing.T) {
 	rep := formattest.Evaluate(Format{}, conformance())
-	for c := formattest.CheckAmbiguity; c <= formattest.CheckShared; c++ {
+	for c := formattest.CheckAmbiguity; c <= formattest.CheckAuthzPaths; c++ {
 		res := rep.Result(c)
 		switch c {
 		case formattest.CheckTraversal, formattest.CheckClassify, formattest.CheckSetup:

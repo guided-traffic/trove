@@ -122,6 +122,12 @@ type Facts struct {
 	// or updated with them: 422 not_applicable (Q-NPM-79). Register holds it equal to
 	// formats.Descriptor.VerifyAnnouncedDigests.
 	ChecksumAlwaysVerified bool
+	// LowerCasePaths is true for a format whose canonical package paths are lower case (NuGet's layout,
+	// R-NUGET-005). The decision point compares the path dimension of a grant, a token scope, a CI inline grant
+	// and an exposure rule in lower case for a repository of the format, pattern and path alike (Q-AUTHZ-254),
+	// and the writers of those refuse a path pattern with an upper-case letter that covers one, as feedback to
+	// whoever wrote it (Q-AUTHZ-253).
+	LowerCasePaths bool
 	// PatternSubject is what include and exclude patterns match.
 	PatternSubject PatternSubject
 	// PackageNames is true for a format whose content has package names:
@@ -212,8 +218,15 @@ type Exposure struct {
 type Entry struct {
 	Facts
 	// Names is nil exactly when the format has no package names.
-	Names    Names
-	Exposure Exposure
+	Names Names
+	// DocumentPath returns the canonical path of the package document of a normalized name, the format's
+	// PackageDocumentPath (R-REPO-029); ok is false for a string the format takes for no name. formats.Register
+	// derives it for a format with package names. The decision point decides a question about a package as a whole
+	// (a listing row, the ownership of a name, a check of the caller) on that path, so that path patterns apply to
+	// it as they apply to the protocol's package document (R-AUTHZ-005, Q-AUTHZ-250). Nil: such a question carries
+	// no path, and a grant with path patterns does not match it (fail closed).
+	DocumentPath func(name string) (path string, ok bool)
+	Exposure     Exposure
 	// Ecosystem is the OSV ecosystem name of the format's vulnerability adapter (R-VULN-009), "" for a format without
 	// one. formats.Register derives it; the repository model reads it to refuse the member `vulnerabilities` where it
 	// does not apply (R-VULN-002), and the scanning derives the ecosystems it syncs from the entries that have one

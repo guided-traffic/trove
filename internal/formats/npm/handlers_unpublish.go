@@ -84,7 +84,7 @@ func (f *Format) handleUnpublishTarball(ctx context.Context, rq *formats.Request
 	if !ok {
 		return notFound()
 	}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionDelete}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, tarballTarget(n, version, formats.ActionDelete)); err != nil {
 		return err
 	}
 	st, repo, err := f.writeTarget(ctx, rq, n)
@@ -113,7 +113,7 @@ func (f *Format) handleUnpublishTarball(ctx context.Context, rq *formats.Request
 func (f *Format) unpublish(ctx context.Context, rq *formats.Request, w http.ResponseWriter, n name.Name, rev string,
 	pick func(live []rows.LiveVersion) ([]string, error),
 ) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Actions: []formats.Action{formats.ActionDelete}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, "", formats.ActionDelete)); err != nil {
 		return err
 	}
 	st, repo, err := f.writeTarget(ctx, rq, n)

@@ -3,14 +3,17 @@ package v1
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth/jws"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/ci"
 	"github.com/guided-traffic/trove/internal/ci/claims"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The identity-mapping operations and the dry run (R-CI-009, R-CI-019), work package W3. The declarations are
@@ -85,6 +88,41 @@ func (s *Server) decodeMapping(w http.ResponseWriter, r *http.Request) (ci.Mappi
 	}
 	in.Match = node
 	return in, nil
+}
+
+// refuseUpperCaseInline refuses a mapping whose inline grant has a path pattern with an upper-case letter outside a
+// template while its selectors cover a repository whose format stores lower-case paths (Q-AUTHZ-253), with 422
+// invalid_pattern at the pattern, as feedback: the decision point compares it in lower case there (Q-AUTHZ-254). The
+// selectors are read in the project of a project mapping, else in the instance context. A template's letters are known
+// only at the exchange and are not judged here.
+func (s *Server) refuseUpperCaseInline(in ci.MappingInput, project string) error {
+	if s.o.Authz.Engine == nil {
+		return nil
+	}
+	ctx := qname.Context{Project: project}
+	var fields []errs.FieldError
+	for i, g := range in.Grants.Inline {
+		if g.Paths == nil {
+			continue
+		}
+		for _, l := range []struct {
+			name string
+			list []string
+		}{{"include", g.Paths.Include}, {"exclude", g.Paths.Exclude}} {
+			for j, p := range l.list {
+				if _, repo, bad := s.o.Authz.Engine.UpperCasePath(ctx, g.Repositories, []string{p}); bad {
+					fields = append(fields, errs.FieldError{
+						Pointer: "/grants/inline/" + strconv.Itoa(i) + "/paths/" + l.name + "/" + strconv.Itoa(j),
+						Code:    errs.CodeInvalidPattern, Detail: authz.UpperCaseDetail(p, repo),
+					})
+				}
+			}
+		}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return errs.E(errs.Invalid, errs.CodeInvalidPattern, fields[0].Detail, errs.WithFields(fields...))
 }
 
 func asClaimsError(err error, target **claims.Error) bool {
@@ -187,6 +225,9 @@ func (s *Server) CreateCiMapping(w http.ResponseWriter, r *http.Request, issuer 
 	if err == nil {
 		in, err = s.decodeMapping(w, r)
 	}
+	if err == nil {
+		err = s.refuseUpperCaseInline(in, "")
+	}
 	var res ci.MappingResult
 	if err == nil {
 		res, err = svc.Create(r.Context(), caller(r), issuer, in)
@@ -231,6 +272,9 @@ func (s *Server) ReplaceCiMapping(w http.ResponseWriter, r *http.Request, issuer
 	var in ci.MappingInput
 	if err == nil {
 		in, err = s.decodeMapping(w, r)
+	}
+	if err == nil {
+		err = s.refuseUpperCaseInline(in, "")
 	}
 	var res ci.MappingResult
 	if err == nil {

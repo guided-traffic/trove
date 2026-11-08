@@ -106,6 +106,11 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 		{"R-ARCH-010 a document path no GET route resolves fails check 10", testformat.WrongDocumentPath, formattest.CheckNames, "does not match a route", nil},
 		{"R-BAS-013 a package document that names the caller fails check 12", testformat.VariesByCaller, formattest.CheckShared, "the document differs between", nil},
 		{"R-BAS-013 a package document that varies by a request header it does not name in Vary fails check 12", testformat.VariesByHeader, formattest.CheckShared, "the document differs between", nil},
+		{"R-AUTHZ-005 a handler that authorizes a package without a path fails check 13", testformat.AuthorizesWithoutPath, formattest.CheckAuthzPaths, "and no path", nil},
+		{"R-AUTHZ-005 a handler that authorizes the repository for a package's document fails check 13", testformat.AuthorizesRepositoryLevel, formattest.CheckAuthzPaths, "authorized no target that names the package at a path", nil},
+		{"R-AUTHZ-005 a handler that authorizes the package document's path for a file it serves fails check 13", testformat.AuthorizesDocumentForFile, formattest.CheckAuthzPaths, "authorized no read of that path", nil},
+		{"R-AUTHZ-005 a handler that forgets the path in a remote and a virtual repository only fails check 13", testformat.AuthorizesWithoutPathOffLocal, formattest.CheckAuthzPaths, "remote document", nil},
+		{"R-AUTHZ-005 a handler that authorizes the repository in a remote and a virtual repository only fails check 13", testformat.AuthorizesRepositoryLevelOffLocal, formattest.CheckAuthzPaths, "authorized no target that names the package at a path", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

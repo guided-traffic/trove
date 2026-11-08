@@ -151,14 +151,14 @@ func decodeDims(packages, paths, versions string, prereleases bool, tags string)
 }
 
 // compileRule compiles the dimensions of one rule with the name rule of the
-// repository's format (R-AUTHZ-005).
-func compileRule(id, name string, revision int64, enabled bool, d ruleDims, names catalog.Names) (*compiledRule, error) {
+// repository's format (R-AUTHZ-005) and its paths with the case fold of a format with lower-case paths (Q-AUTHZ-254).
+func compileRule(id, name string, revision int64, enabled bool, d ruleDims, names, pathFold catalog.Names) (*compiledRule, error) {
 	r := &compiledRule{id: id, name: name, revision: revision, enabled: enabled, prereleases: d.Prereleases}
 	var err error
 	if r.packages, err = compileSet(dimPackage, d.Packages.Include, d.Packages.Exclude, names); err != nil {
 		return nil, fmt.Errorf("packages: %w", err)
 	}
-	if r.paths, err = compileSet(dimPath, d.Paths.Include, d.Paths.Exclude, nil); err != nil {
+	if r.paths, err = compileSet(dimPath, d.Paths.Include, d.Paths.Exclude, pathFold); err != nil {
 		return nil, fmt.Errorf("paths: %w", err)
 	}
 	// Versions and tags are names: the package-name glob without case folding.
@@ -189,7 +189,7 @@ func buildExposure(rows []q.EndpointsExposureBuildRow, byID map[int64]*repoInfo,
 		d, err := decodeDims(row.Packages, row.Paths, row.Versions, row.Prereleases, row.DistTags)
 		var cr *compiledRule
 		if err == nil {
-			cr, err = compileRule(row.ID, row.Name, row.Revision, row.Enabled, d, namesIn(reg, repo.Format))
+			cr, err = compileRule(row.ID, row.Name, row.Revision, row.Enabled, d, namesIn(reg, repo.Format), pathFoldIn(reg, repo.Format))
 		}
 		if err != nil {
 			log.Error("authz: exposure rule skipped, it does not compile", "endpoint", row.Endpoint, "rule", row.Name, "err", err)
@@ -266,7 +266,10 @@ func (r *compiledRule) evaluate(it exposureItem, v catalog.Versioning) int {
 	if !r.packages.match(it.pkg, it.pkg != "") {
 		return stagePackage
 	}
-	if !r.paths.match(it.path, it.path != "") {
+	// A package without a path fails a path set with any pattern (Q-AUTHZ-250): the view
+	// and check-exposure ask about a package on its document's path (Q-AUTHZ-251), so an
+	// item that still has none is one nothing shows to lie outside the excluded paths.
+	if !r.paths.matchPath(it.path) {
 		return stagePath
 	}
 	if it.version != "" {
@@ -453,6 +456,18 @@ func (e *ExposureCeiling) ExposureFingerprint(x *Index, endpoint string, repoKey
 type ExposureView struct {
 	rules []*compiledRule
 	v     catalog.Versioning
+	// doc is the path of a package's document in the repository's format: the view decides a
+	// package, its versions and its tags on it, as the ceiling decides the protocol's document
+	// and a listing row (Q-AUTHZ-251). Nil: no path, which a rule with path patterns refuses.
+	doc func(name string) string
+}
+
+// docPath is the path the view decides a package on.
+func (v *ExposureView) docPath(name string) string {
+	if v.doc == nil {
+		return ""
+	}
+	return v.doc(name)
 }
 
 // View returns the exposure of an endpoint for an addressed repository on the index
@@ -477,25 +492,27 @@ func (e *ExposureCeiling) View(x *Index, endpoint string, repoKey qname.Repo) *E
 	if ee := x.exposure[endpoint]; ee != nil {
 		rules = ee.byRepo[r.ID]
 	}
-	return &ExposureView{rules: rules, v: f.Versioning}
+	reg, format := e.reg, r.Format
+	return &ExposureView{rules: rules, v: f.Versioning, doc: func(name string) string { return documentPathIn(reg, format, name) }}
 }
 
 // Package reports whether a rule admits the package: a document of it may be served,
-// with its versions filtered.
+// with its versions filtered. The package is decided on its document's path.
 func (v *ExposureView) Package(name string) bool {
-	return admitsItem(v.rules, exposureItem{pkg: name}, v.v)
+	return admitsItem(v.rules, exposureItem{pkg: name, path: v.docPath(name)}, v.v)
 }
 
-// Version reports whether a version of the package is exposed.
+// Version reports whether a version of the package is exposed, on the package's document
+// path, where the version's entry is listed.
 func (v *ExposureView) Version(name, version string) bool {
-	return admitsItem(v.rules, exposureItem{pkg: name, version: version}, v.v)
+	return admitsItem(v.rules, exposureItem{pkg: name, path: v.docPath(name), version: version}, v.v)
 }
 
 // Tag reports whether a tag stays in a filtered document: a rule that admits the
 // package admits the tag name, and the version the tag points to is exposed
 // (R-EP-012). A format that re-points a tag (npm's latest) does not ask.
 func (v *ExposureView) Tag(name, tag, version string) bool {
-	return admitsItem(v.rules, exposureItem{pkg: name, tag: tag}, v.v) && v.Version(name, version)
+	return admitsItem(v.rules, exposureItem{pkg: name, path: v.docPath(name), tag: tag}, v.v) && v.Version(name, version)
 }
 
 // exposedRules counts the enabled rules of an endpoint in the index, for the

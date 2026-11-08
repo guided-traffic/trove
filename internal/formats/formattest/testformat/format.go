@@ -104,6 +104,23 @@ const (
 	// in Vary: a shared copy keyed by what Vary names would serve one client's document to another, so check 12
 	// fails it (R-BAS-013, Q-BAS-86).
 	VariesByHeader Defect = "varies-by-header"
+	// AuthorizesWithoutPath lets the document route and the tag route authorize the package without the path of its
+	// document, so a grant's path patterns could not apply to them: check 13 (R-AUTHZ-005).
+	AuthorizesWithoutPath Defect = "authorizes-without-path"
+	// AuthorizesRepositoryLevel lets the document route authorize the repository instead of the package, which every
+	// grant on the repository matches whatever its patterns say: check 13.
+	AuthorizesRepositoryLevel Defect = "authorizes-repository-level"
+	// AuthorizesDocumentForFile lets the tarball route authorize the path of the package document for the tarball it
+	// serves, so a path pattern that excludes the file would not refuse it: check 13.
+	AuthorizesDocumentForFile Defect = "authorizes-document-for-file"
+	// AuthorizesWithoutPathOffLocal lets the document route authorize the package without a path in a remote and a
+	// virtual repository only, as a handler of those classes that forgot the path would: check 13, through the documents
+	// of the Remote fixture and the cases of the Merge fixture.
+	AuthorizesWithoutPathOffLocal Defect = "authorizes-without-path-off-local"
+	// AuthorizesRepositoryLevelOffLocal lets the document route authorize the repository instead of the package in a
+	// remote and a virtual repository only: the leaking form, since every grant on the repository matches it whatever its
+	// patterns say. Check 13, through the documents of the Remote fixture and the cases of the Merge fixture.
+	AuthorizesRepositoryLevelOffLocal Defect = "authorizes-repository-level-off-local"
 )
 
 // Option adjusts the format; it is not a defect.
@@ -658,13 +675,34 @@ func (f Format) norm(p string) string {
 	return n
 }
 
+// documentTarget is the target of an operation on the package document of a name: the name and the document's
+// canonical path, which a grant's path patterns are matched against (R-AUTHZ-005). AuthorizesWithoutPath leaves the
+// path out.
+func (f Format) documentTarget(name string, actions ...formats.Action) formats.Target {
+	t := formats.Target{Package: name, Actions: actions}
+	if !f.has(string(AuthorizesWithoutPath)) {
+		p, _ := f.PackageDocumentPath(name)
+		t.Path = p.Path
+	}
+	return t
+}
+
 func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	name := f.norm(rq.Params.Get("package"))
 	if name == "" {
 		pkg, _, _ := splitName(rq.Escaped)
 		name = f.norm(pkg)
 	}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	t := f.documentTarget(name, formats.ActionRead)
+	switch {
+	case f.has(string(AuthorizesRepositoryLevel)):
+		t = formats.Target{Actions: []formats.Action{formats.ActionRead}}
+	case f.has(string(AuthorizesWithoutPathOffLocal)) && rq.Repo.Class != formats.Local:
+		t.Path = ""
+	case f.has(string(AuthorizesRepositoryLevelOffLocal)) && rq.Repo.Class != formats.Local:
+		t = formats.Target{Actions: []formats.Action{formats.ActionRead}}
+	}
+	if err := rq.Host.Authorize(ctx, rq, t); err != nil {
 		return err
 	}
 	if f.has(string(ReadsOtherRepository)) {
@@ -699,7 +737,11 @@ func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.Response
 
 func (f Format) tarballGet(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	name := f.norm(rq.Params.Get("package"))
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Path: rq.Path.Path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	t := formats.Target{Package: name, Path: rq.Path.Path, Actions: []formats.Action{formats.ActionRead}}
+	if f.has(string(AuthorizesDocumentForFile)) {
+		t = f.documentTarget(name, formats.ActionRead)
+	}
+	if err := rq.Host.Authorize(ctx, rq, t); err != nil {
 		return err
 	}
 	it, ok, err := rq.Host.Items().Stat(ctx, rq.RepoRef(), rq.Path)
@@ -760,7 +802,7 @@ func (f Format) tarballDelete(ctx context.Context, rq *formats.Request, w http.R
 
 func (f Format) tagPut(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	name, tag := f.norm(rq.Params.Get("package")), rq.Params.Get("tag")
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, f.documentTarget(name, formats.ActionDeploy)); err != nil {
 		return err
 	}
 	var version string
@@ -778,7 +820,7 @@ func (f Format) tagPut(ctx context.Context, rq *formats.Request, w http.Response
 		if err != nil {
 			return err
 		}
-		if err := wr.Claim(ctx, formats.Target{Package: name}, formats.OwnershipWrite{}); err != nil {
+		if err := wr.Claim(ctx, f.documentTarget(name), formats.OwnershipWrite{}); err != nil {
 			return err
 		}
 		st.SetTag(name, tag, version)

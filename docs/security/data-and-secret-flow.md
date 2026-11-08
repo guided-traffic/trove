@@ -175,7 +175,7 @@ remote member. This is the one place where trove sends data a client posted to a
 | A name that a package row or a tombstone of any npm local repository holds | — | `local` |
 | A name a namespace claim of any scope of an npm local repository covers | — | `claimed` |
 | A name a pin rule of the requesting virtual repository selects | — | `pinned` |
-| A name the remote never fetched, one its or the virtual repository's patterns refuse, and what is no npm name | — | `not_proxied` |
+| A name the remote never fetched, one its or the virtual repository's patterns refuse, one the caller may not read on the forwarding remote (its grants, role, token scope and endpoint, decided through the addressed repository, Q-NPM-81), and what is no npm name | — | `not_proxied` |
 
 One statement decides all of it before the provider is asked (`NPMAuditNames` in
 [npm_remote.sql](../../internal/meta/postgres/queries/npm_remote.sql)), on committed rows, so a claim made a moment ago on another

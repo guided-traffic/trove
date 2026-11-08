@@ -31,6 +31,11 @@ func documentStore(h formats.Host) (Store, error) {
 
 // docSpec describes one document of an ID.
 type docSpec struct {
+	// path is the canonical path of the document (CanonicalPath of its route): the version
+	// list's "{id}/index.json" or the registration documents' "{id}/.registration/index.json".
+	// The read is decided on it, so a grant's path patterns apply as /files/ applies them to
+	// the paths it serves (R-AUTHZ-005, Q-AUTHZ-250).
+	path string
 	// variant tells the documents of one ID apart in the validator and the key of the
 	// rendition cache: "flat", or the hive with the document.
 	variant string
@@ -48,7 +53,7 @@ type docSpec struct {
 // resolved the route; the read permission on the ID is decided here, and an ID the caller
 // may not read is answered like one that does not exist (R-AUTHZ-016).
 func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID string, spec docSpec) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Path: spec.path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
 	// A package the endpoint does not expose is a missing one, decided before any lookup

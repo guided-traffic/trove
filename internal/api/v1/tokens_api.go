@@ -14,9 +14,11 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 )
 
 // The token operations of R-AUTH-027 to R-AUTH-030. The value of a token is in
@@ -206,6 +208,27 @@ func scopeBytes(sc *gen.TokenScope) ([]byte, error) {
 	return json.Marshal(sc)
 }
 
+// refuseUpperCasePaths refuses a token scope with 400 invalid_scope when a path pattern of one of its elements has an
+// upper-case letter and the element's selectors cover a repository whose format stores lower-case paths (Q-AUTHZ-253):
+// the decision point compares it in lower case there (Q-AUTHZ-254), so the refusal is feedback. A scope that does not
+// parse is left to the token service, which refuses it with its own reason.
+func (s *Server) refuseUpperCasePaths(raw []byte) error {
+	if len(raw) == 0 || s.o.Authz.Engine == nil {
+		return nil
+	}
+	sc, err := token.ParseStoredScope(raw)
+	if err != nil {
+		return nil //nolint:nilerr // the token service refuses a scope that does not parse
+	}
+	for _, g := range sc.Repositories {
+		patterns := append(append([]string(nil), g.Paths.Include...), g.Paths.Exclude...)
+		if p, repo, bad := s.o.Authz.Engine.UpperCasePath(qname.Context{}, g.Repositories, patterns); bad {
+			return errs.E(errs.Invalid, errs.CodeInvalidScope, authz.UpperCaseDetail(p, repo))
+		}
+	}
+	return nil
+}
+
 // tokenIssued is the answer to a replay of a create whose value was not stored.
 func tokenIssued(id string) error {
 	return errs.E(errs.Conflict, errs.CodeTokenAlreadyIssued,
@@ -250,6 +273,9 @@ func (s *Server) CreateToken(w http.ResponseWriter, r *http.Request, _ gen.Creat
 	var scope []byte
 	if err == nil {
 		scope, err = scopeBytes(in.Scope)
+	}
+	if err == nil {
+		err = s.refuseUpperCasePaths(scope)
 	}
 	if err == nil {
 		err = firstErr(refuseBreakGlass(p), refuseOtherOwner(in.Owner, p))
@@ -315,6 +341,9 @@ func (s *Server) CreateServiceAccountToken(w http.ResponseWriter, r *http.Reques
 	var scope []byte
 	if err == nil {
 		scope, err = scopeBytes(in.Scope)
+	}
+	if err == nil {
+		err = s.refuseUpperCasePaths(scope)
 	}
 	var sa principal.ServiceAccount
 	var parent *token.Info

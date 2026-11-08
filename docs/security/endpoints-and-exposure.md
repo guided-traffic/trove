@@ -224,3 +224,18 @@ version ever pushed or cached, kept when later versions declare another casing a
 [nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql), `hitOf` in [search.go](../../internal/formatdata/nuget/search.go)). A consumer who
 reads only a newer version can see the casing of an older hidden one. What makes it real: a package whose versions declare the ID in different casings, and
 a consumer who must not learn that a hidden version exists.
+
+### H-646 · An exposure rule's path pattern finer than a package hides its files and leaves them listed in its documents
+
+Stage: the `paths` dimension of an exposure rule on an npm or NuGet repository. The ceiling decides each protocol request on
+its canonical path, and the format's document view, check-exposure and a listing row decide a package, its versions and its
+tags on the path of the package's document ([authorization.md](../spec/authorization.md) Q-AUTHZ-250, Q-AUTHZ-251).
+
+Subject: the versions and the metadata of a package an exposure rule means to withhold in part. A rule with
+`paths.exclude: ["acme-sdk/-/acme-sdk-2.0.1.tgz"]` or `["acme.sdk/2.0.1/**"]` refuses those files on the endpoint, while
+the package document, the registrations and the search still list version 2.0.1 with its manifest or description: the
+view has no path of a version's files to decide the version on. Live for a rule whose path patterns are finer than a
+package's folder; dormant for a rule that narrows versions with its `versions` dimension, which is the dimension that
+filters a document's versions (R-EP-012), and for folder-level path patterns. The policy form of the same shape is
+[H-647](permissions.md#h-647--a-path-pattern-finer-than-a-package-hides-its-files-and-leaves-their-contents-in-its-documents);
+closing both is one decision (F-83).

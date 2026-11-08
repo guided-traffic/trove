@@ -118,6 +118,33 @@ func TestR_CI_010_TheSaveTimeRulesOverHTTP(t *testing.T) {
 	})
 }
 
+// TestR_AUTHZ_005_AnInlineGrantsUpperCasePathPatternOnNuGetIsRefused: NuGet stores lower-case paths and the path
+// dimension is not folded, so an inline grant's path pattern with an upper-case letter over a NuGet repository would match
+// nothing, and an exclude written so would admit what it names; the save refuses it at the pattern (Q-AUTHZ-253). The
+// repository exists before the replica starts, so the decision point's index holds it.
+func TestR_AUTHZ_005_AnInlineGrantsUpperCasePathPatternOnNuGetIsRefused(t *testing.T) {
+	e := newEnv(t, options{valkey: true})
+	e.stack.Repository("nuget-internal", "local", "nuget", "{}")
+	a := e.web("web-a")
+	e.issuer(t, a, "gitlab-main", false)
+	pinned := all(eq("project_id", "4242"), eq("ref_protected", true))
+	body := func(pattern string) map[string]any {
+		return mapping("mm", 1, pinned, map[string]any{"inline": []any{map[string]any{
+			"repositories": []string{"it/nuget-internal"}, "paths": map[string]any{"exclude": []string{pattern}}, "actions": []string{"read"},
+		}}})
+	}
+	r := e.do(a, "POST", mappingsOf("gitlab-main"), body("Acme.Secret/**"))
+	wantStatus(t, r, 422, "invalid_pattern")
+	found := false
+	for _, f := range problemFields(t, r) {
+		found = found || f == "/grants/inline/0/paths/exclude/0 invalid_pattern"
+	}
+	if !found {
+		t.Errorf("errors[] = %v, want the pattern's pointer", problemFields(t, r))
+	}
+	wantStatus(t, e.do(a, "POST", mappingsOf("gitlab-main"), body("acme.secret/**")), 201, "")
+}
+
 func orValidation(code string) string {
 	if code == "" {
 		return "validation_failed"

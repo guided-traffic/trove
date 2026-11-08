@@ -6,6 +6,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/qname"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/servefacts"
 )
@@ -93,6 +94,18 @@ func (s *Service) Classified(ctx context.Context, c authz.Coordinate) authz.Coor
 	pc := s.classify(repo, c.Path, false)
 	c.Package, c.Version = pc.Package, pc.Version
 	return c
+}
+
+// ClassOf is what the format of a repository makes of a canonical path, with the
+// format's name, for a question that names the path (POST /api/v1/authz/check,
+// R-AUTHZ-023, Q-AUTHZ-252). ok is false when the replica's snapshot does not hold
+// the repository; the caller checks that the path is canonical first.
+func (s *Service) ClassOf(ctx context.Context, repoKey qname.Repo, path string) (pc PathClass, format string, ok bool) {
+	repo, err := s.repos.ByName(ctx, repoKey)
+	if err != nil {
+		return PathClass{}, "", false
+	}
+	return s.classify(repo, path, false), repo.Format, true
 }
 
 // classify is what the repository's format makes of a path; the zero class (the

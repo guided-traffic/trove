@@ -587,6 +587,7 @@ func (s itemStore) Serve(ctx context.Context, rq *formats.Request, w http.Respon
 	}
 	s.h.mu.Lock()
 	s.h.served = true
+	s.h.servedPaths = append(s.h.servedPaths, it.Ref.Path)
 	s.h.mu.Unlock()
 	s.h.noteRead(rec.data)
 	hd := w.Header()

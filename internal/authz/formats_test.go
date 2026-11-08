@@ -33,15 +33,26 @@ func testRegistry() *catalog.Registry {
 			ID: "npm", Classes: []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}, Layout: "npm",
 			PatternSubject: catalog.SubjectName, PackageNames: true,
 		},
-		Names:    exactNames{},
-		Exposure: catalog.Exposure{Exposable: true, Packages: true, Versions: true, Tags: true, Versioning: semverish{}},
+		Names:        exactNames{},
+		DocumentPath: npmDocumentPath,
+		Exposure:     catalog.Exposure{Exposable: true, Packages: true, Versions: true, Tags: true, Versioning: semverish{}},
 	})
 	r.Register(catalog.Entry{
 		Facts: catalog.Facts{
 			ID: "nuget", Classes: []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}, Layout: "nuget",
-			PatternSubject: catalog.SubjectName, PackageNames: true,
+			PatternSubject: catalog.SubjectName, PackageNames: true, LowerCasePaths: true,
 		},
-		Names: lowerNames{},
+		Names:        lowerNames{},
+		DocumentPath: nugetDocumentPath,
 	})
 	return r
+}
+
+// npmDocumentPath is the package document path of the npm-like format: the name itself, as npm's (R-NPM-003).
+func npmDocumentPath(name string) (string, bool) { return name, name != "" }
+
+// nugetDocumentPath is the package document path of the NuGet-like format: "{lower_id}/index.json", as NuGet's
+// (R-NUGET-001).
+func nugetDocumentPath(name string) (string, bool) {
+	return strings.ToLower(name) + "/index.json", name != ""
 }

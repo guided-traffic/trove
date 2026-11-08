@@ -231,7 +231,7 @@ func (f *Format) remoteSource(ctx context.Context, rq *formats.Request, n name.N
 
 // remoteDocument serves a form of the package document of a remote repository.
 func (f *Format) remoteDocument(ctx context.Context, rq *formats.Request, w http.ResponseWriter, n name.Name, fm form, ref string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, "", formats.ActionRead)); err != nil {
 		return err
 	}
 	src, err := f.remoteSource(ctx, rq, n, fm, ref)
@@ -246,7 +246,7 @@ func (f *Format) remoteDocument(ctx context.Context, rq *formats.Request, w http
 // after the format's gate applied the marks and revalidated a stale document
 // (R-NPM-025, R-NPM-026).
 func (f *Format) remoteTarball(ctx context.Context, rq *formats.Request, w http.ResponseWriter, n name.Name, version string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, tarballTarget(n, version, formats.ActionRead)); err != nil {
 		return err
 	}
 	if err := hiddenVersion(rq, n, version); err != nil {

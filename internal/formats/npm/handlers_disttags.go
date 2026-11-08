@@ -78,7 +78,7 @@ func (f *Format) handleDistTagSet(ctx context.Context, rq *formats.Request, w ht
 	if err != nil {
 		return err
 	}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, version, formats.ActionDeploy)); err != nil {
 		return err
 	}
 	st, repo, err := f.writeTarget(ctx, rq, n)
@@ -137,7 +137,7 @@ func (f *Format) handleDistTagDelete(ctx context.Context, rq *formats.Request, w
 		return err
 	}
 	tag := rq.Params.Get("tag")
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, documentTarget(n, "", formats.ActionDeploy)); err != nil {
 		return err
 	}
 	st, repo, err := f.writeTarget(ctx, rq, n)

@@ -73,6 +73,9 @@ func (s *Server) CreateProjectCiMapping(w http.ResponseWriter, r *http.Request, 
 	if err == nil {
 		in, err = s.decodeMapping(w, r)
 	}
+	if err == nil {
+		err = s.refuseUpperCaseInline(in, key)
+	}
 	var res ci.MappingResult
 	if err == nil {
 		res, err = svc.CreateIn(r.Context(), caller(r), key, in)
@@ -117,6 +120,9 @@ func (s *Server) ReplaceProjectCiMapping(w http.ResponseWriter, r *http.Request,
 	var in ci.MappingInput
 	if err == nil {
 		in, err = s.decodeMapping(w, r)
+	}
+	if err == nil {
+		err = s.refuseUpperCaseInline(in, key)
 	}
 	var res ci.MappingResult
 	if err == nil {

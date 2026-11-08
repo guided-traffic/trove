@@ -211,6 +211,9 @@ Consequences:
   patterns (R-AUTHZ-005) use the same package-name syntax. Either way one rule covers a package's
   metadata and files, so the catalog's trap of a policy that admits the tarball but not the
   separately stored metadata (PKG-NPM-047) cannot occur.
+- Permission path patterns (R-AUTHZ-005) are matched against the path the route decides on: `<name>` for the package
+  document, a version document, the dist-tags and every write of the package as a whole, the tarball's path for a tarball
+  (Q-NPM-80). `@acme/**` covers both; a pattern that names only tarballs admits no document.
 - Every stored tarball is an item at its canonical path (storage.md); raw access through
   `/files/<projectKey>/<repoKey>/<path>` (INV-6) uses the same path, and is refused wherever the npm tarball
   route refuses the tarball: a tombstoned version (R-NPM-015, R-NPM-047) or a version removed
@@ -1922,7 +1925,9 @@ names, each with a list of versions:
   tombstone), is covered by a namespace claim of any scope of any npm local repository, matches a
   pin rule of the requesting virtual repository (R-REPO-023), or is refused by the include and
   exclude patterns of the forwarding remote or of the requesting virtual repository (R-REPO-005,
-  Q-NPM-63). A name the remote has fetched is one the upstream has already seen from this
+  Q-NPM-63), or that the caller may not read on the forwarding remote, decided through the repository the client
+  addressed with the caller's grants, project role, token scope and endpoint (R-AUTHZ-016; counted as `not_proxied`, so
+  the answer does not tell whether the remote fetched a name the caller's grants hide, Q-NPM-81). A name the remote has fetched is one the upstream has already seen from this
   installation, so forwarding discloses which public packages a project combines but no name the
   upstream did not already know; a name it never fetched (a git or file dependency, a package
   installed from elsewhere, an internal name nobody claimed) is withheld. A `providerURL` other than
@@ -4886,6 +4891,59 @@ Context: R-REPO-041 says npm verifies the announced digest whatever `remote.inte
 **Rationale:** the policy exists for formats that may announce nothing; npm's protocol addresses tarballs by the digest, so a choice would only produce the failure it is meant to avoid. The development agent would revisit the `sha384` refusal if an upstream announces it (compute it in the blob pass for a request that needs it).
 
 **Applied in the spec:** R-NPM-025 (the digests and the two sentences on a document without digest and on `require`), [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-041 (reference corrected to R-NPM-025), [architecture.md](../architecture.md) R-ARCH-008 (`VerifyAnnouncedDigests`), the manual row of `integrity.checksumPolicy`. The catalog fact is [ADR-160](../../decisions.md#adr-160--the-catalog-says-which-formats-always-verify-the-announced-digest). Code: [format.go](../../../internal/formats/npm/format.go), [remote.go](../../../internal/formats/npm/remote.go) `announcedDigests`, [validate_remote.go](../../../internal/repository/validate_remote.go). Tests: `TestR_REPO_041_*` in [test/integration/npm](../../../test/integration/npm/remote_digest_test.go), [test/integration/mirror](../../../test/integration/mirror/digest_test.go) and [checksum_always_test.go](../../../internal/repository/checksum_always_test.go).
+
+### Q-NPM-80 · The npm routes are decided on the package document's path or on the tarball's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: every npm handler authorized the package without a path, so a grant's path patterns did not apply to the
+protocol: an exclude admitted the excluded package, an include refused every package (F-82,
+[authorization.md](../authorization.md) Q-AUTHZ-250, which requires every target that names a package to name a path). The
+version document (`GET {name}/{version-or-tag}`) and the dist-tags (`GET -/package/{name}/dist-tags`) are rendered from the
+rows of the package document, and R-NPM-003 gives the version document the canonical path `<name>/<version-or-tag>` and
+the dist-tags `<name>`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package document's path `<name>` for the document and every part of it, the tarball's path for a tarball (chosen) | Reads of the document, a version document and the dist-tags, a dist-tag write, a whole unpublish, the revisioned `PUT` of an unpublish, a publish before its body and the ownership questions use `<name>`; a tarball read, the tarball `DELETE` of an unpublish and a publish once its body named the version use `<name>/-/<file>` | What one document holds is decided once, as `npm view` reads it; a pattern that admits the document admits all of it | A pattern can admit a version document's content only by admitting the whole document |
+| (b) The request's canonical path of R-NPM-003 for every read | The version document on `<name>/<version-or-tag>` | A path pattern can single out a version document | The same version entry is readable in the package document under another path, so the narrower pattern hides nothing |
+
+**Choice:** (a). `documentTarget` and `tarballTarget` ([paths.go](../../../internal/formats/npm/paths.go)) build every
+target of the handlers, the remote and the virtual routes included; `claim` and `precheckOwnership` name `<name>`.
+
+**Rationale:** a path pattern narrows files and documents; a part of a document is the document. The development agent
+would revisit (b) if a version document ever carries something the package document does not.
+
+**Applied in the spec:** R-NPM-003 (the consequences on path patterns), [authorization.md](../authorization.md) R-AUTHZ-007
+(the npm rows). Tests: `TestR_AUTHZ_005_PathPatternsDecideTheNPMProtocolOnCanonicalPaths`
+([path_patterns_test.go](../../../test/integration/npm/path_patterns_test.go)), the npm run of kit check 13.
+
+### Q-NPM-81 · A forwarded audit withholds the names the caller may not read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the second penetration test of F-82 (2026-11-08). The forwarded set of R-NPM-038 is decided by what the
+forwarding remote has fetched and what the installation treats as internal, not by what the caller may read. A caller
+whose grant excludes `lodash/**` was refused every read of `lodash` (404), yet an audit naming `lodash` was forwarded and
+answered with its advisories, and the notice's count told whether the remote had fetched it: an existence oracle for the
+names a grant hides.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Withhold a name the caller may not read, counted as not proxied (chosen) | `readableNames` asks the read scope of the forwarding remote through the addressed repository (`Resolver.ReadScope`); `ReadAll` asks nothing per name | The answer and the notice are the same for a hidden name and one the remote never fetched; a narrowed caller keeps the audit of what it may read | One read-scope decision per name for a caller whose read is decided row by row |
+| (b) Answer 501 unless the caller reads the remote whole | The audit is for unrestricted readers | Simplest | A team with an exclude loses its audit altogether |
+| (c) Leave it | The provider knows the names anyway | No cost | The caller learns which hidden names the installation fetched |
+
+**Choice:** (a). The decision is the unaudited read of a listing row (R-AUTHZ-016: no client requested a refused
+resource), on the path of the package document (Q-AUTHZ-250).
+
+**Rationale:** the audit is a read; a name the caller may not read is no name trove talks about to it. The development agent
+would revisit this if an audit body's size makes the per-name decisions measurable (H-299 is the same cost for the
+package list).
+
+**Applied in the spec:** R-NPM-038. Code: [handlers_audit.go](../../../internal/formats/npm/handlers_audit.go)
+(`readableNames`). Tests: `TestR_NPM_038_ANameTheCallerMayNotReadIsWithheldLikeOneNeverFetched` (unit),
+`TestR_NPM_038_ANameTheCallerMayNotReadIsNotForwarded` (integration).
 
 ## What this does not cover
 

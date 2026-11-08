@@ -607,6 +607,7 @@ formats.Volatile: value = (repeated, place 6 of its group)
 catalog.Class: method Valid() bool
 catalog.Class: type string
 catalog.Entry: embedded Facts
+catalog.Entry: field DocumentPath func(string) (string, bool)
 catalog.Entry: field Ecosystem string
 catalog.Entry: field Exposure Exposure
 catalog.Entry: field Mirror bool
@@ -630,6 +631,7 @@ catalog.Facts: field DefaultUpstreamURL string
 catalog.Facts: field DisplayName string
 catalog.Facts: field ID ID
 catalog.Facts: field Layout string
+catalog.Facts: field LowerCasePaths bool
 catalog.Facts: field OwnershipDefault string
 catalog.Facts: field PackageNames bool
 catalog.Facts: field PatternSubject PatternSubject

@@ -89,10 +89,13 @@ func (f *Format) Descriptor() formats.Descriptor {
 			// NuGet v3 announces no content digest, so checksumPolicy: require could only
 			// refuse every package (R-NUGET-015, Q-ARCH-269).
 			ChecksumRequireUnsupported: true,
-			PatternSubject:             formats.SubjectName,
-			PackageNames:               true,
-			PriorityMembers:            true,
-			PinsAndClaims:              true,
+			// The layout stores lower_id and lower_version (R-NUGET-005), so a path pattern with an
+			// upper-case letter is compared in lower case (Q-AUTHZ-254) and refused where it is written (Q-AUTHZ-253).
+			LowerCasePaths:  true,
+			PatternSubject:  formats.SubjectName,
+			PackageNames:    true,
+			PriorityMembers: true,
+			PinsAndClaims:   true,
 			// A local repository of NuGet holds package ownership enforced until its
 			// document says otherwise (R-AUTHZ-018, Q-AUTHZ-2).
 			OwnershipDefault: catalog.OwnershipEnforce,

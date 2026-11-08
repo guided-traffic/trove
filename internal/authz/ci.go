@@ -233,7 +233,7 @@ func (e *Engine) inlineAllows(in qname.Context, g claims.InlineGrant, a Action, 
 	if err != nil {
 		return false
 	}
-	paths, err := e.compile.set(dimPath, fInc, fExc, "", nil)
+	paths, err := e.compile.set(dimPath, fInc, fExc, r.Format, pathFoldIn(e.o.Formats, r.Format))
 	if err != nil {
 		return false
 	}
@@ -261,7 +261,7 @@ func (e *Engine) ciReadShape(g CIGrantSet, idx *Index, r *repoInfo) (anyRead, un
 				continue
 			}
 			anyRead = true
-			if (ig.Packages == nil || len(ig.Packages.Include)+len(ig.Packages.Exclude) == 0) && (ig.Paths == nil || len(ig.Paths.Include) == 0) {
+			if (ig.Packages == nil || len(ig.Packages.Include)+len(ig.Packages.Exclude) == 0) && (ig.Paths == nil || len(ig.Paths.Include)+len(ig.Paths.Exclude) == 0) {
 				unrestricted = true
 			}
 		}

@@ -259,7 +259,9 @@ const (
 // content:bypass. The work packages that build the other three call it with their
 // operation, so every write of npm asks the same question the same way.
 func (f *Format) claim(ctx context.Context, w formats.PackageWriter, op operation, pkg, version string, firstVersion bool) error {
-	t := formats.Target{Package: pkg, Version: version, Actions: []formats.Action{formats.ActionDeploy}}
+	// The ownership of a name is a question about the package as a whole: the path is the package document's, the
+	// name itself (PackageDocumentPath, Q-AUTHZ-250).
+	t := formats.Target{Package: pkg, Version: version, Path: pkg, Actions: []formats.Action{formats.ActionDeploy}}
 	if op == opUnpublish {
 		t.Actions = []formats.Action{formats.ActionDelete}
 	}

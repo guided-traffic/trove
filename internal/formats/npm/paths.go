@@ -3,6 +3,7 @@ package npm
 import (
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/npm/name"
 	"github.com/guided-traffic/trove/internal/formats/npm/semver"
 )
@@ -33,6 +34,21 @@ func TarballPath(n name.Name, version string) string {
 // SigstorePath is the canonical path of a version's provenance bundle.
 func SigstorePath(n name.Name, version string) string {
 	return n.String() + "/-/" + SigstoreFile(n, version)
+}
+
+// documentTarget is the target of an operation on the package document of n, or on
+// what it holds (a version's entry, the dist-tags): the name, the version when the
+// operation names one, and the document's canonical path, the name itself
+// (PackageDocumentPath). A grant's path patterns are matched against that path, as
+// /files/ matches them against the paths it serves (R-AUTHZ-005, Q-AUTHZ-250).
+func documentTarget(n name.Name, version string, actions ...formats.Action) formats.Target {
+	return formats.Target{Package: n.String(), Version: version, Path: n.String(), Actions: actions}
+}
+
+// tarballTarget is the target of an operation on the tarball of a version: the
+// tarball's canonical path, the path of its item.
+func tarballTarget(n name.Name, version string, actions ...formats.Action) formats.Target {
+	return formats.Target{Package: n.String(), Version: version, Path: TarballPath(n, version), Actions: actions}
 }
 
 // VersionOfFile returns the version a file name of a package names, when the file

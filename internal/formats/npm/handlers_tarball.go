@@ -33,7 +33,7 @@ func (f *Format) handleTarball(ctx context.Context, rq *formats.Request, w http.
 	case formats.Virtual:
 		return f.virtualTarball(ctx, rq, w, n, version)
 	}
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, tarballTarget(n, version, formats.ActionRead)); err != nil {
 		return err
 	}
 	// >>> WP2.9 exposure

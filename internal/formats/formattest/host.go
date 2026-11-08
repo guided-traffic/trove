@@ -1,5 +1,5 @@
 // Package formattest is the conformance kit of the format contract (R-ARCH-010):
-// the in-memory Host a format runs against, the ten checks of R-ARCH-010 as a
+// the in-memory Host a format runs against, the checks of R-ARCH-010 as a
 // table-driven test a format calls from its own package, the fuzz helpers for
 // Match and Inspect, and (in the subpackage crafted) the hostile inputs of check
 // 6. The kit needs no PostgreSQL, no object store and no Valkey (R-ARCH-009
@@ -104,7 +104,9 @@ type Host struct {
 	hooks     []string // names of the storage hooks run, in order
 	reads     [][]byte // package bytes handed to a handler
 	served    bool     // an item was served to a response
-	violation []string
+	// servedPaths are the paths of the items the last request served, for check 13.
+	servedPaths []string
+	violation   []string
 }
 
 // AuthorizeCall is one call of Host.Authorize.
@@ -183,6 +185,21 @@ func (h *Host) Authorizations() []AuthorizeCall {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]AuthorizeCall(nil), h.authz...)
+}
+
+// ServedPaths returns the paths of the items the last request [Host.ServeRequest] ran served to its response.
+func (h *Host) ServedPaths() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.servedPaths...)
+}
+
+// forgetTargets clears what Authorize, CheckOwnership and Claim recorded, so that a check reads the targets of one
+// request and not those of its seed.
+func (h *Host) forgetTargets() {
+	h.mu.Lock()
+	h.authz, h.claims, h.prechecks = nil, nil, nil
+	h.mu.Unlock()
 }
 
 // Claims returns the calls of Claim so far.
@@ -585,7 +602,7 @@ func (h *Host) Serve(ctx context.Context, method, escapedPath string, body io.Re
 func (h *Host) ServeRequest(rq *formats.Request, sameOrigin bool) *Response {
 	h.mu.Lock()
 	h.routes = append(h.routes, rq.Route.Name)
-	h.reads, h.served = nil, false
+	h.reads, h.served, h.servedPaths = nil, false, nil
 	h.mu.Unlock()
 
 	rec := httptest.NewRecorder()

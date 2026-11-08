@@ -40,6 +40,8 @@ type remoteSource struct {
 
 // remoteSpec describes one document of an ID of a remote repository.
 type remoteSpec struct {
+	// path is the canonical path of the document, the one the read is decided on (docSpec.path).
+	path     string
 	variant  string
 	gzip     bool
 	settings string
@@ -53,7 +55,7 @@ type remoteSpec struct {
 // rendering (serveRemoteFiltered). An ID the caller may not read is answered like one that does
 // not exist (R-AUTHZ-016).
 func (f *Format) serveRemote(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID string, spec remoteSpec) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Path: spec.path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
 	if view := viewOf(rq); view != nil && !view.Package(lowerID) {
@@ -183,6 +185,7 @@ func (f *Format) remoteFlatIndex(ctx context.Context, rq *formats.Request, w htt
 	lowerID := rq.Params.Get("id")
 	keep := exposes(viewOf(rq), lowerID)
 	return f.serveRemote(ctx, rq, w, lowerID, remoteSpec{
+		path:    PackageDocumentPath(lowerID),
 		variant: "flat",
 		resolve: func(ctx context.Context) (remoteSource, error) {
 			doc, err := storedDocument(ctx, rq, PackageDocumentPath(lowerID))
@@ -228,7 +231,7 @@ func renderVersionList(list []string, keep func(lowerVersion string) bool) (body
 // under the collapsing protocol (R-NUGET-015). The permission on the version and the exposure
 // of the endpoint are decided first, so a hidden version costs no fetch (R-NUGET-034).
 func (f *Format) remoteFile(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID, ver, path, mediaType string) error {
-	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Actions: []formats.Action{formats.ActionRead}}); err != nil {
+	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Path: path, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
 	if view := viewOf(rq); view != nil && (!view.Package(lowerID) || !view.Version(lowerID, ver)) {
@@ -269,6 +272,7 @@ func (f *Format) remoteRegistration(ctx context.Context, rq *formats.Request, w 
 		variant += "/leaf/" + ver
 	}
 	return f.serveRemote(ctx, rq, w, lowerID, remoteSpec{
+		path:     RegistrationIndexPath(lowerID),
 		variant:  variant,
 		gzip:     hive.Gzipped(),
 		settings: strconv.Itoa(pg.PageSize) + "/" + strconv.Itoa(pg.InlineBelow),

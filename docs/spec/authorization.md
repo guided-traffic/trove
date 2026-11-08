@@ -346,11 +346,19 @@ Each dimension has an `include` and an `exclude` list. Matching rules:
   the excluded names (Q-AUTHZ-160). A raw path under `/files/` and in the items API carries the
   package and the version its format gives it, so an npm tarball is decided on its package
   ([endpoints.md](endpoints.md) R-EP-014).
+- A coordinate that is not repository-level and carries no path does not match a `paths` dimension that holds any
+  pattern, include or exclude (Q-AUTHZ-250): nothing shows that what it stands for lies outside the excluded paths. The
+  path of a protocol request is the canonical path of the document or file it serves or writes, which the format plug-in
+  states with the package (R-AUTHZ-007); a question about a package as a whole that the core asks itself (a row of a
+  listing or a search, the ownership of a name, a check of R-AUTHZ-023 that names a package and no path) is decided on
+  the canonical path of the package's document, the format's package-document path
+  ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-029). The conformance kit fails a format whose handler
+  authorizes a package without a path ([architecture.md](architecture.md) R-ARCH-010 check 13).
 - Both dimensions MUST match. Exclude beats include within one resource set and nowhere else
   (R-AUTHZ-001).
 - Repository-level coordinates (search, NuGet service index, repository listing) match every grant
   whose selectors cover the repository, regardless of its patterns. Results that list items are
-  then filtered per item (R-AUTHZ-016).
+  then filtered per item (R-AUTHZ-016), a package on the path of its package document.
 - Limits: each pattern 1 to 1024 characters, at most 256 patterns per list. Invalid syntax is
   rejected with 422 `invalid_pattern`.
 
@@ -369,8 +377,21 @@ Name patterns are the recommended narrowing for package formats: one name grant 
 metadata, its files, its dist-tags and its deprecation state, so the trap where a path pattern
 admits the tarball but not the separately stored metadata (PKG-NPM-047) cannot arise
 ([formats/npm.md](formats/npm.md) relies on this). Path patterns are matched against the paths
-the format plug-in reports. When a policy with a non-empty `paths.include` covers an npm or NuGet
-repository, the policy API returns the warning `path_patterns_on_package_format` (R-AUTHZ-021).
+the format plug-in reports: on a protocol route the canonical path of the document or file the route serves or writes,
+so the protocol and `/files/` decide one file on one path (Q-AUTHZ-250). A path pattern that admits a package of an npm
+or NuGet repository has to cover its package document and its files: `@acme/**` covers `@acme/ui` and
+`@acme/ui/-/ui-1.0.0.tgz`, and NuGet's `acme.core/**` covers `acme.core/index.json`,
+`acme.core/.registration/index.json` and the files below `acme.core/<version>/`. A pattern finer than a package's folder
+(`<name>/-/**`, `acme.core/1.0.0/**`, a single file) decides some of a package's paths and not others: it hides the files
+it names, while the package document, the search and the package screens still show what those files hold
+([permissions.md](../security/permissions.md) H-647). When a policy with any path pattern, include or exclude, covers an
+npm or NuGet repository, the policy API returns the warning `path_patterns_on_package_format` (R-AUTHZ-021,
+Q-AUTHZ-253). NuGet stores lower-case paths (R-NUGET-005), and the path dimension of a NuGet repository is compared in
+lower case, pattern and path alike, whenever the pattern was written and whatever selector brings it to the repository
+(Q-AUTHZ-254): `Acme.Secret/**` excludes `acme.secret`. A policy, an exposure rule, a token scope and a CI inline grant
+whose resource set covers a NuGet repository when it is written refuse a path pattern with an upper-case letter, 422
+`invalid_pattern` (400 `invalid_scope` for a token scope) at the pattern, so its writer sees the pattern as it is applied
+(Q-AUTHZ-253).
 
 Preconditions on coordinates:
 
@@ -396,6 +417,10 @@ Preconditions on coordinates:
 | packages exclude `@secret/*` | raw file `/files/web/npm-internal/@secret/x/-/x-1.0.0.tgz` (package `@secret/x`) | no |
 | packages exclude `@secret/*` | raw folder `/files/web/npm-internal/@acme/` (no package name, Q-AUTHZ-160) | no |
 | packages include `a\*b` (a rendered CI template) | npm `a*b` / `ab` | yes / no |
+| paths exclude `@secret/**` | npm protocol: the package document of `@secret/x` (path `@secret/x`), its tarball (`@secret/x/-/x-1.0.0.tgz`) | no |
+| paths exclude `@secret/**` | npm protocol: the package document of `@acme/ui` (path `@acme/ui`) | yes |
+| paths exclude `@secret/**` | a coordinate that names the package `@acme/ui` and no path (Q-AUTHZ-250) | no |
+| paths include `acme.core/**` | NuGet protocol: a registration leaf of `acme.core` (path `acme.core/.registration/index.json`) | yes |
 | no include lists | anything in the selected repositories | yes |
 
 Acceptance criteria:
@@ -405,6 +430,13 @@ Acceptance criteria:
 - A policy grants `read` on `web/nuget-internal` with `packages.include: ["Acme.*"]`.
   `dotnet add package acme.core --source
   https://trove.example.com/api/nuget/web/nuget-internal/v3/index.json` succeeds.
+- A policy grants `read` and `deploy` on `web/npm-internal` with `paths.exclude: ["@secret/**"]`. `npm view @secret/x`
+  and the download of its tarball get `E404` through the protocol as through `/files/`, and `npm publish` of
+  `@secret/x` gets `E403`; `npm install @acme/ui` succeeds. With `paths.include: ["@acme/**"]`
+  instead, `npm install @acme/ui` succeeds and `npm view @other/ui` gets `E404`; the same holds for a token whose scope
+  carries the pattern, and for NuGet's flat container, registrations, search and push
+  (`TestR_AUTHZ_005_PathPatternsDecideTheNPMProtocolOnCanonicalPaths`,
+  `TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`).
 - `curl -X PUT --data-binary @evil-1.0.0.tgz
   https://trove.example.com/files/web/npm-internal/@acme/ui/-/ui-9.9.9.tgz` with a tarball whose
   `package.json` names `@other/evil` answers 400 and stores nothing.
@@ -463,14 +495,14 @@ npm:
 
 | Client operation | Coordinate | Actions | Ownership |
 |---|---|---|---|
-| `npm view`, `npm install`: package document | name | `read` | — |
-| Tarball download | name, path | `read` | — |
-| `npm publish` of a new version (with its dist-tag) | name | `deploy`; for the first version of the name in the repository also the shadowing check | yes |
+| `npm view`, `npm install`: package document, version document, dist-tags | name; path `<name>`, the package document they are part of | `read` | — |
+| Tarball download | name; the tarball's path `<name>/-/<file>` | `read` | — |
+| `npm publish` of a new version (with its dist-tag) | name; path `<name>` before the body is read, the tarball's path once the body names the version | `deploy`; for the first version of the name in the repository also the shadowing check | yes |
 | `npm publish` of an existing version | name | refused by the format (immutable versions) | — |
-| `npm unpublish name@version`, `npm unpublish name` | name | `delete` | yes |
-| `npm dist-tag add` / `rm` | name | `deploy` | yes |
-| `npm deprecate` | name | `deploy` | yes |
-| `npm search` | repository level; results filtered per name | `read` | — |
+| `npm unpublish name@version`, `npm unpublish name` | name; path `<name>`, and the tarball's path for the tarball `DELETE` | `delete` | yes |
+| `npm dist-tag add` / `rm` | name; path `<name>` | `deploy` | yes |
+| `npm deprecate` | name; path `<name>` | `deploy` | yes |
+| `npm search` | repository level; results filtered per name, on the path `<name>` | `read` | — |
 | npm metadata recalculation | repository level | `manage` | — |
 | `npm whoami` | none | an authenticated subject who can read the repository (Q-AUTHZ-167) | — |
 
@@ -487,13 +519,13 @@ NuGet:
 | Client operation | Coordinate | Actions | Ownership |
 |---|---|---|---|
 | Service index | repository level | `read` | — |
-| Flat container (version list, package download), registrations | ID | `read` | — |
-| Search, autocomplete | repository level; results filtered per ID | `read` | — |
-| `dotnet nuget push` of a new version | ID | `deploy`; for the first version of the ID in the repository also the shadowing check | yes |
+| Flat container (version list, package download), registrations | ID; the canonical path of the document or file (R-NUGET-005): `{id}/index.json`, `{id}/{version}/{file}`, and `{id}/.registration/index.json` for every registration document | `read` | — |
+| Search, autocomplete | repository level; results filtered per ID, on the path of its version list `{id}/index.json` | `read` | — |
+| `dotnet nuget push` of a new version | ID; the path of the version's `.nupkg` | `deploy`; for the first version of the ID in the repository also the shadowing check | yes |
 | Push of an existing, deleted or moved-away version | ID | refused by the format (immutable versions with tombstones, [formats/nuget.md](formats/nuget.md) R-NUGET-006) | — |
-| `dotnet nuget delete` | ID | `delete`, whether the repository deletes or unlists | yes |
-| Relist | ID | `deploy` | yes |
-| Symbol package push | ID | `deploy` | yes |
+| `dotnet nuget delete` | ID; the path of the version's `.nupkg` | `delete`, whether the repository deletes or unlists | yes |
+| Relist | ID; the path of the version's `.nupkg` | `deploy` | yes |
+| Symbol package push | ID; the path of the version's `.snupkg` | `deploy` | yes |
 
 The NuGet API key header carries a credential (INV-8) and plays no further part in authorization.
 
@@ -515,6 +547,13 @@ request is decided again (R-OCI-005, Q-OCI-6):
 
 The per-row test of the OCI table is `TestR_AUTHZ_007_OCIActionMap`, with the integration tests of the format; a row the format does not
 serve yet answers its `501` until the handler of the row is built.
+
+The path in the coordinate column is what a grant's, a token scope's and an exposure rule's path patterns are matched
+against (R-AUTHZ-005): the canonical path of the document or file the operation serves or writes, as the format's
+classification reports it ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-003), so the protocol decides a
+file on the path `/files/` decides it on. An operation on the package as a whole is decided on its package document's
+path. A new format's table names the path of every row ([architecture.md](architecture.md) R-ARCH-010 check 13 fails a
+handler that authorizes a package without one, Q-AUTHZ-250).
 
 **Per-format notes and tests (E3.4).** Every row of the two tables has one test per format, or a note below, each
 holding a principal with exactly the action of the row (plus `read`, which a client needs to see
@@ -1694,9 +1733,11 @@ Representation:
   `unknown_repository`, `unknown_format`, `invalid_pattern`, `invalid_action`,
   `duplicate_principal`, `anonymous_write_action`, `anonymous_dynamic_selector`,
   `authenticated_write_action`, `virtual_action_not_applicable`, `action_not_allowed`; `invalid_pattern` also for a
-  bare key in a global policy and for a selector with a `/` in a project policy (R-AUTHZ-004); for a project policy
-  also `principal_outside_project` (R-AUTHZ-026). Warnings do not block saving: `path_patterns_on_package_format`,
-  `selector_matches_nothing` and `anonymous_populates_remote` (R-AUTHZ-008).
+  bare key in a global policy and for a selector with a `/` in a project policy (R-AUTHZ-004), and for a path pattern
+  with an upper-case letter in a policy that covers a repository of a format with lower-case paths (NuGet, Q-AUTHZ-253);
+  for a project policy also `principal_outside_project` (R-AUTHZ-026). Warnings do not block saving:
+  `path_patterns_on_package_format` (any path pattern, include or exclude, over a repository of a format with package
+  names, R-AUTHZ-005), `selector_matches_nothing` and `anonymous_populates_remote` (R-AUTHZ-008).
 - The declarative bootstrap file (configuration as code, P1,
   [operations-and-observability.md](operations-and-observability.md)) uses the same
   representation.
@@ -1794,7 +1835,12 @@ other principals.
 ```
 
 - `repository` is the qualified name `<projectKey>/<repoKey>`. A check on a repository the caller cannot see answers
-  `allowed: false`, exactly as for a missing repository or project. Checks of package-mutating actions include the ownership rule; the ownership rows of
+  `allowed: false`, exactly as for a missing repository or project. A check that names a package and no path asks about
+  the package as a whole and is decided on the path of its package document, as a listing row is (R-AUTHZ-005,
+  Q-AUTHZ-250). A check that names a path is decided on the coordinate `/files/` decides the path on: the package and the
+  version the repository's format gives it (R-EP-014). It answers `allowed: false` whatever the grants say when the path
+  is not canonical, or when it also names a package that is not the package of its path (Q-AUTHZ-252). Checks of
+  package-mutating actions include the ownership rule; the ownership rows of
   all checks of one call are read with one query, so a call costs at most one database round trip
   however many checks it holds.
 - Any authenticated subject may call it; anonymous callers get 401.
@@ -5484,6 +5530,175 @@ development agent would revisit (b) if publishing pipelines turn out to need to 
 **Applied:** R-AUTHZ-019 (the narrowed token, acceptance); `internal/authz/ownership.go` (`changeAllowed`, `scopeReachesName`),
 `api/openapi.yaml` (`addPackageOwner`), [permissions.md](../security/permissions.md). Tests:
 `TestR_AUTHZ_019_ANarrowedTokenChangesOwnersOnlyWhereItsScopeListsManage` (unit and integration).
+
+### Q-AUTHZ-250 · A protocol request is decided on the canonical path of what it serves or writes, and a package without a path fails a path set
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: finding F-82 (a penetration tester's reading of 2026-11-08, reproduced the same day by
+`TestR_AUTHZ_005_PathPatternsDecideTheNPMProtocolOnCanonicalPaths` and `…NuGetProtocolOnCanonicalPaths` before the fix).
+Every npm and NuGet handler handed `Host.Authorize` a `Target` with the package and no path, the dispatcher's coarse check
+is repository-level, and the path dimension let a coordinate without a path pass a set without an include list. A grant or a
+token scope with `read` and `paths.exclude: ["acme.secret/**"]` therefore read the version list, the registrations, the
+`.nupkg` and the `.nuspec` of `acme.secret` through the protocol, found it in the search and pushed new versions of it,
+while `/files/` refused the same principal the same file; a set with `paths.include: ["acme.open/**"]` refused even
+`acme.open` through the protocol. The listing scope did the same: `unrestrictedPackages` read an exclude-only path set as no
+restriction, so the search counted the excluded ID. R-AUTHZ-005 says path patterns are matched against the paths the format
+reports, and R-AUTHZ-007 already named a path for the npm tarball download, which the handler did not pass.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format states the canonical path, the decision point fails closed without one, and the core decides its own package questions on the package document's path (chosen) | Every `Target` a handler builds carries the canonical path of the document or file (the npm document `<name>` for the document and its parts, the tarball path; NuGet's `{id}/index.json`, `{id}/.registration/index.json`, `{id}/{version}/{file}`); `resourceSet.matches` refuses a non-repository coordinate without a path once the path set holds any pattern; a listing row, the ownership of a name and a check of R-AUTHZ-023 that names a package and no path are decided on the format's package-document path, which the catalog now carries; kit check 13 fails a handler that authorizes a package without a path, a path Classify does not place in the package, a served file it did not authorize at its path, or a package's request it authorized repository-level | One coordinate per file whichever road reaches it; a format that forgets the path refuses every caller with path patterns instead of admitting them, and the kit says so before a release; listings and the protocol agree | Every format names a path per target; a path pattern on a package format has to cover the document and the files |
+| (b) The core derives the path from the request | The host fills `Target.Path` from `rq.Path` or a new contract method that maps a route to its canonical path | Formats change nothing | A write's path is known only after the body (the declared ID and version); a protocol path is not a canonical path (NuGet's `v3/flatcontainer/…`); a required `Format` method raises `ContractVersion`, and an optional one leaves a format that lacks it deciding without a path |
+| (c) Refuse path patterns on package formats | A policy, a scope or a CI grant with `paths` that covers an npm or NuGet repository is 422 | No path to state | A selector covers repositories of several formats and of formats created later, so the refusal cannot be decided when the grant is written; breaks the model R-AUTHZ-021 warns about instead |
+| (d) Fail closed only | Keep the formats as they are; a package coordinate without a path fails every path set | Smallest change | Path patterns become useless on package formats: an exclude refuses every package, as an include already did |
+
+**Choice:** (a). The npm handlers decide the package document, the version document, the dist-tags, a dist-tag write, a
+whole unpublish and a publish before its body on `<name>`, and a tarball, the tarball `DELETE` of an unpublish and a
+publish once the body named the version on the tarball path (Q-NPM-80). The NuGet handlers decide the version list on
+`{id}/index.json`, every registration document on `{id}/.registration/index.json`, a file on its path, and a push, a
+delete, a relist and a symbol push on the version's `.nupkg` or `.snupkg` (Q-NUGET-113). `catalog.Entry.DocumentPath`
+(ADR-169) gives the decision point the package-document path of a format; `Engine.atPackage` completes the coordinates of
+`ReadScope.MayRead`, of the ownership checks and operations (`CheckTx`, `PrecheckWrite`, `manages`, `Owners`,
+`scopeReachesName`) and of `CheckOn` when they name a package and no path, and nowhere else: a format's target is decided
+as the format states it. `unrestrictedPackages` counts path excludes too, so a grant with any path pattern makes a listing
+decide row by row. Repository-level coordinates keep matching every grant on the repository (R-AUTHZ-005).
+
+**Rationale:** the patterns of a grant are only as good as the coordinate they are matched against, and the protocol is
+the road a client takes most; a path the format leaves out has to cost the caller, not the policy. Deriving the path in the
+core would hide the format that forgot it and cannot know a write's path; refusing path patterns would decide on
+repositories that do not exist yet. Deciding the core's package questions on the package document keeps a listing equal to
+the document a client would fetch. The development agent would revisit this if a format serves a document that spans
+packages under one path (then its rows need paths of their own), or if an operation that removes several files (H-586 in
+[permissions.md](../security/permissions.md)) has to be decided per file.
+
+**Applied:** R-AUTHZ-005 (the rule for a coordinate without a path, the paths a format reports, examples, acceptance),
+R-AUTHZ-007 (the path of every row), R-AUTHZ-023; [architecture.md](architecture.md) R-ARCH-010 check 13;
+[formats/npm.md](formats/npm.md) Q-NPM-80, [formats/nuget.md](formats/nuget.md) Q-NUGET-113. Code:
+`internal/authz/{pattern.go,package_path.go,visible.go,ci.go,ownership.go,decide.go}`, `internal/formats/catalog/catalog.go`,
+`internal/formats/formats.go` (`CatalogEntry`), the handlers of `internal/formats/npm` and `internal/formats/nuget`,
+`internal/formats/formattest/checks_authz.go`. Tests: `TestR_AUTHZ_005_APathPatternDecidesAPackageOnItsPath`,
+`TestR_AUTHZ_005_Patterns`, the two integration tests above, `TestR_ARCH_010_Defects` (the defects
+`authorizes-without-path`, `authorizes-repository-level`, `authorizes-document-for-file`,
+`authorizes-without-path-off-local`).
+
+### Q-AUTHZ-251 · An exposure rule's view and check-exposure decide a package on its document's path
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the second penetration test of F-82 (2026-11-08). After Q-AUTHZ-250 the endpoint ceiling met the path of every
+protocol request, but the view a format filters its documents with (`ExposureView.Package`, `Version`, `Tag`) and
+`POST /api/v1/endpoints/{endpoint}/check-exposure` evaluated a package without a path. On an npm repository an exposure
+rule with `paths.include: ["open-pkg/**"]` therefore hid `open-pkg` entirely on the endpoint (the view refused the
+document and the tarball's version although the ceiling admitted them), and a rule with `paths.exclude:
+["secret-pkg/**"]` was enforced on the protocol while check-exposure reported `packageExposed: true` for `secret-pkg`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The view and check-exposure decide a package, its versions and its tags on the package document's path, and a rule's path set fails a package item without one (chosen) | `ExposureView` carries the format's package-document path (`catalog.Entry.DocumentPath`, through the ceiling's catalog); check-exposure judges the package, the versions and the tags on it; `compiledRule.evaluate` uses `matchPath` | The view, the ceiling, a listing row and the preview agree on one path; a rule that names a package's folder exposes the package | A path rule finer than a package's folder hides files and leaves the document listing them (H-646 in [endpoints-and-exposure.md](../security/endpoints-and-exposure.md)) |
+| (b) The view ignores path patterns | Only the ceiling applies them | No path needed | The preview and the documents disagree with what the ceiling serves |
+| (c) Refuse path patterns on package formats in exposure rules | 422 for a rule with paths on npm or NuGet | Nothing to decide | Breaks what R-EP-012 allows and the warning `path_patterns_on_package_format` already covers |
+
+**Choice:** (a). The view's `Package`, `Version` and `Tag` and check-exposure's package, version and tag verdicts are
+evaluated on `DocumentPath(name)`; a path the check names is judged on that path, as before.
+
+**Rationale:** one rule is one promise; its preview and its documents must say what its ceiling does. The development agent
+would revisit this if a format's documents span packages under one path.
+
+**Applied:** R-AUTHZ-005, [endpoints.md](endpoints.md) R-EP-012 and R-EP-018 (the view and the preview); code
+`internal/authz/{exposure.go,exposure_service.go}`. Tests: `TestR_EP_018_TheViewDecidesAPackageOnItsDocumentPath`,
+`TestR_EP_018_PathRulesDecideAnNPMPackageOnItsDocumentPath` (integration).
+
+### Q-AUTHZ-252 · A permission check that names a path is decided on its path's package, and a path of another package answers false
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the second penetration test of F-82. `POST /api/v1/authz/check` handed the decision point the package and the
+path a caller sent as they were. A check of `{package: "@sec/x", path: "open/-/open-1.0.0.tgz"}` was decided on the path
+of another package and answered `allowed: true` for a package the caller's path exclude hides; a check that named a path
+alone was decided without the package its format gives it, which a name pattern refuses (Q-AUTHZ-160). The answer grants
+nothing, but the UI and scripts act on it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Classify the path as the items operations do; a named package that is not the path's, or a path that is not canonical, answers false (chosen) | `Server.checkedPath` takes the package and version of `files.Service.ClassOf`; the named package is normalized by the format's name rule and compared | The check answers what `/files/` and the protocol decide | A check with a path of no package and a named package is false, even on a format without package names |
+| (b) Ignore the named package when a path is given | The path's package decides | Never false by mismatch | A caller who asks about two things gets an answer about one |
+| (c) Refuse the request with 422 | The body is invalid | Explicit | One bad check out of 100 fails the whole call |
+
+**Choice:** (a). A check with a path and no package takes the path's package; one with both is false unless the normalized
+name equals the path's package; a path `CheckItemPath` refuses is false.
+
+**Rationale:** a check is a prediction of a decision; it must be the decision the request would get. The development agent
+would revisit (c) if callers need to tell a malformed check from a refused one.
+
+**Applied:** R-AUTHZ-023; code `internal/api/v1/authz_api.go` (`checkedPath`, `samePackage`), `internal/files/formats.go`
+(`ClassOf`). Test: the R-AUTHZ-023 case of `TestR_AUTHZ_005_PathPatternsDecideTheNPMProtocolOnCanonicalPaths`.
+
+### Q-AUTHZ-253 · Path patterns over a format with lower-case paths are lower case, and every path pattern on a package format is warned about
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the second penetration test of F-82. NuGet stores `{lower_id}/{lower_version}/…` (R-NUGET-005) and the path
+dimension is compared as written, so a grant with `paths.exclude: ["Acme.Secret/**"]` excluded nothing and the caller
+read `acme.secret`; the policy API took the pattern without a word. The warning `path_patterns_on_package_format` was given
+for an include only, although an exclude finer than a package's folder is the shape that hides files and leaves their
+contents in the documents (H-647).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse an upper-case path pattern where the resource set covers a repository of a format with lower-case paths; warn on every path pattern on a package format (chosen) | `catalog.Facts.LowerCasePaths` (NuGet); the policy validation refuses from the repositories it covers, an exposure rule from its repository, a token scope and a CI inline grant through `Engine.UpperCasePath` on the installed index; `path_patterns_on_package_format` for include and exclude | The writer learns at once | A selector that comes to cover a NuGet repository later, and a CI template whose rendered value has upper-case letters, are not refused (closed by folding, Q-AUTHZ-254) |
+| (b) Fold path patterns on such formats | Compare lower-cased | Also covers later repositories and templates | A different matching rule per format; the future `.symbols/<entry path>` keeps its file names' case (R-NUGET-021, P1): chosen in addition by Q-AUTHZ-254, which folds both sides |
+| (c) Warn only | A warning on upper case | No refusal | An exclude that does nothing is saved |
+
+**Choice:** (a). The refusal is 422 `invalid_pattern` at the pattern for a policy, an exposure rule and a CI inline grant,
+400 `invalid_scope` for a token scope; letters inside a template (`{{…}}`) are judged when it is rendered. The warning is
+given whatever the pattern's shape: telling a folder pattern from a finer one needs the format's layout of files, which
+the catalog does not carry. The third penetration test of F-82 reproduced what the refusal cannot see (a policy with the
+selector `it/later-*` saved before the NuGet repository existed, a token with that scope, then the repository: the
+excluding token read `acme.secret`); Q-AUTHZ-254 closes it by folding the dimension where it is compiled, and the refusal
+stays as feedback to whoever writes the pattern.
+
+**Rationale:** a pattern written in a case the format does not store is a mistake its writer should see when writing it;
+how a stored pattern matches is Q-AUTHZ-254's. The development agent would revisit the refusal if `.symbols/<entry path>`
+(R-NUGET-021, P1) makes mixed-case path patterns useful on NuGet.
+
+**Applied:** R-AUTHZ-005, R-AUTHZ-021, [endpoints.md](endpoints.md) R-EP-012; ADR-169 (the catalog fact); code
+`internal/authz/{validate.go,path_case.go,exposure_service.go}`, `internal/api/v1/{tokens_api.go,project_accounts_api.go,ci_mappings_api.go,ci_project_api.go}`,
+`internal/formats/nuget/format.go`. Tests: `TestR_AUTHZ_005_AnUpperCasePathPatternOnALowerCaseFormatIsRefused`,
+`TestR_AUTHZ_005_AnInlineGrantsUpperCasePathPatternOnNuGetIsRefused` (integration), the token-scope case of
+`TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`.
+
+### Q-AUTHZ-254 · The path dimension of a format with lower-case paths is compared in lower case, pattern and path alike
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the third penetration test of F-82 (2026-11-08) reproduced the residual of Q-AUTHZ-253. A global policy with the
+selector `it/later-*` and `paths.exclude: ["Acme.Secret/**"]` was saved while no repository matched the selector (201,
+only `selector_matches_nothing`), a token with that scope was created, and then the NuGet repository `later-ng`: the
+"excluding" token read `acme.secret/index.json` (200). A refusal can only see the repositories that exist when a grant is
+written; a CI template's rendered value is not seen at all. Q-AUTHZ-253 had rejected folding for one reason: the
+planned `{lower_id}/{lower_version}/.symbols/<entry path>` (R-NUGET-021, P1) keeps the case of the file names inside a
+symbol package.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Fold pattern and path to lower case where the dimension is compiled for a format with lower-case paths (chosen) | `pathFoldIn` gives `compileSet` the case fold for a policy's grants (per format, in the index), a token scope's element and a CI inline grant (per repository, at the decision) and an exposure rule (per repository); `globSet.match` folds the path it compares | The result depends neither on when a grant was written nor on the selector or template that brought it; a mixed-case `.symbols/<entry path>` still matches, case-insensitively, as NuGet and the Windows debuggers that ask for symbols treat file names | Two entries that differ in case only cannot be told apart by a pattern |
+| (b) Fold the pattern only | Lower-case the pattern, compare the path as stored | Exact for every path stored today | A mixed-case `.symbols` entry would match no folded pattern, the revisit condition of Q-AUTHZ-253 |
+| (c) Keep the refusal alone | As Q-AUTHZ-253 | No change to matching | The reproduced residual stays: an exclude that a later repository makes useless |
+
+**Choice:** (a). The fold applies to the path dimension of a repository whose format declares `catalog.Facts.LowerCasePaths`
+(NuGet) and to nothing else: npm and generic paths keep their case. The write-time refusal of Q-AUTHZ-253 stays as feedback.
+The revisit condition of Q-AUTHZ-253 is answered: folding both sides keeps `.symbols/<entry path>` matchable, and a pattern
+names a symbol file in any case, which is how its clients name it.
+
+**Rationale:** a stored grant must mean the same whichever repository its selector meets; folding where the dimension is
+compiled is the one place every road passes. The development agent would revisit this if a format with lower-case paths
+gains paths whose case carries meaning.
+
+**Applied:** R-AUTHZ-005, Q-AUTHZ-253, [endpoints.md](endpoints.md) R-EP-012; `catalog.Facts.LowerCasePaths` (ADR-169);
+code `internal/authz/{pattern.go,index.go,decide.go,ci.go,exposure.go,exposure_service.go}`. Tests: the folding cases of
+`TestR_AUTHZ_005_AnUpperCasePathPatternOnALowerCaseFormatIsRefused`, the upper-case case of
+`TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths` (integration).
 
 ## What this does not cover
 

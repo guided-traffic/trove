@@ -45,10 +45,63 @@ an attacker who controls one of the inputs gains. The mechanics are in
 | Populate check | Bringing new content into a remote cache needs `read` plus the repository's `cacheFillAction`; the session cookie never populates, so a link or an image in another site cannot make an administrator's browser fill a frozen mirror; an endpoint with `cache_fill: false` refuses every subject, the setting travelling in the subject so a collapsed or fanned-out decision keeps it | [populate.go](../../internal/authz/populate.go) |
 | Package ownership | On an enforcing repository a name is changed by its owners, `manage` holders and `content:bypass` only, however wide a `deploy` grant's patterns are; an imported name with versions and no owner needs `manage`; the claim of a first publish is decided by the primary key in the commit transaction, so two replicas cannot both claim. A delete through `/files/` or the items API is a change of every package whose files it removes, asked under each package's row lock in the transaction that removes them or queues their job; one refusal refuses the whole delete (`TestR_AUTHZ_018_RawRemovalsAskOwnership`, `TestR_STOR_018_ARawRemovalAboveTheSyncLimitAsksOwnershipBeforeItsJob`) | [ownership.go](../../internal/authz/ownership.go), [hooks.go](../../internal/formathost/hooks.go) (`FilesSeam.CheckRemoval`) |
 | Raw paths of package formats | `/files/` and the items API decide a path of an npm repository on the package and the version the format gives it, so a grant's name patterns, a token scope's and an exposure rule's apply to the tarball as to the package; a path the format places in no package does not match a name set with any pattern (Q-AUTHZ-160, `TestR_AUTHZ_005_FilesDecideNpmItemsOnTheirPackage`) | [files.go](../../internal/files/files.go) (`locate`), [paths.go](../../internal/authz/paths.go), [pattern.go](../../internal/authz/pattern.go) |
+| Paths on protocol routes | A format's handler names, with the package, the canonical path of the document or file it serves or writes (npm `<name>` or the tarball's path; NuGet `{id}/index.json`, `{id}/.registration/index.json`, the file's path, the version's `.nupkg` for a write), so a grant's, a token scope's and an exposure rule's path patterns decide each protocol read of a file and of a document on that path, as `/files/` decides it. A coordinate that names a package and no path does not match a path set with any pattern; the decision point's own package questions (a listing row, the ownership of a name, a forwarded audit's names, `POST /authz/check` without a path) and an exposure rule's document view and check-exposure are decided on the package document's path, and a check that names a path on the path's package. Two things stay coarser than `/files/`: a pattern finer than a package's folder hides files whose contents the documents, the search and the package screens still show ([H-647](#h-647--a-path-pattern-finer-than-a-package-hides-its-files-and-leaves-their-contents-in-its-documents)), and a write or removal of several files is decided on one of them ([H-586](#h-586--an-operation-that-writes-or-removes-several-files-of-a-package-is-decided-on-one-path)). Kit check 13 fails a format whose handler authorizes a package without a path ([below](#path-patterns-on-the-protocol-routes), Q-AUTHZ-250 to Q-AUTHZ-253, Q-NPM-81) | [pattern.go](../../internal/authz/pattern.go) (`matchPath`), [package_path.go](../../internal/authz/package_path.go), [exposure.go](../../internal/authz/exposure.go) (`ExposureView`), [paths.go](../../internal/formats/npm/paths.go) of npm, [documents.go](../../internal/formats/nuget/documents.go) of NuGet, [checks_authz.go](../../internal/formats/formattest/checks_authz.go) |
 
 Principals are referenced by their immutable ID in `authz_policy_entry` and `authz_role_binding`, so a deleted and
 re-created user, group or service account of the same name inherits nothing, and a repository deleted and re-created under
 the same key is not covered by the old key selector (the policy reports `inert`).
+
+## Path patterns on the protocol routes
+
+A grant's `paths` dimension is only as good as the path the decision point is given. Until 2026-11-08 (finding F-82) the
+npm and NuGet handlers authorized a package without a path, the dispatcher's coarse check is repository-level, and
+`globSet.match` let a coordinate without a path pass a path set that had no include list. A grant or a token scope with
+`read` (and `deploy`) and `paths.exclude: ["acme.secret/**"]` therefore:
+
+- read the version list, every registration document, the `.nupkg` and the `.nuspec` of `acme.secret`, and npm's package
+  document, version documents, dist-tags and tarballs of an excluded package, through the protocol, while `/files/`
+  refused the same principal the same file;
+- found the excluded ID in the NuGet search, counted in `totalHits` (`unrestrictedPackages` read an exclude-only path set
+  as no restriction, so the listing did not even decide row by row);
+- pushed and published new versions of the excluded package and moved its dist-tags.
+
+A set with `paths.include` refused every package through the protocol, the included ones too. An exposure rule's path
+exclude on an npm or NuGet repository was passed the same way by the endpoint ceiling.
+
+Now (Q-AUTHZ-250) every target of the npm and NuGet handlers carries the canonical path, `resourceSet.matches` refuses a
+non-repository coordinate without a path once its path set holds any pattern, and the decision point decides its own
+package-level questions on the package document's path (`Engine.atPackage`, from `catalog.Entry.DocumentPath`). The
+reproduction was `TestR_AUTHZ_005_PathPatternsDecideTheNPMProtocolOnCanonicalPaths` and
+`TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths` ([npm](../../test/integration/npm/path_patterns_test.go),
+[NuGet](../../test/integration/nuget/path_patterns_test.go)), red before the change on every read, the search, the push, the
+publish and the dist-tag write; `TestR_AUTHZ_005_APathPatternDecidesAPackageOnItsPath` holds the decision point to it. The
+conformance kit's check 13 runs every content and change case of a format, the documents of its `Remote` fixture on a
+remote repository and the cases of its `Merge` fixture on a virtual one, and fails a handler that authorizes a package
+without a path, with a path `Classify` does not place in the package, a served file it did not authorize at its own path,
+or a package's request at the repository level, whether the request was served or refused after asking the decision point; a `Remote` document or `Merge` case that matches no route fails as well (both found by the third penetration test), so the next format (OCI included) cannot repeat it. A format that still
+forgot a path would refuse every caller with path patterns, not admit them.
+
+A second penetration test of the change (2026-11-08) found the same blind spot in four neighbours, closed with it:
+
+- an exposure rule's document view and check-exposure evaluated a package without a path, so `paths.include:
+  ["open-pkg/**"]` hid `open-pkg` on its endpoint and check-exposure reported an excluded package as exposed; both now
+  decide on the package document's path (Q-AUTHZ-251, `TestR_EP_018_PathRulesDecideAnNPMPackageOnItsDocumentPath`);
+- `POST /api/v1/authz/check` answered a check that named a package together with a path of another package on that path;
+  a path is now classified and a mismatch answers false (Q-AUTHZ-252);
+- a forwarded npm audit sent a name the caller's grant hides to the provider and answered with its advisories, and its
+  notice told whether the remote had fetched the name; such a name is now withheld like one never fetched (Q-NPM-81,
+  `TestR_NPM_038_ANameTheCallerMayNotReadIsNotForwarded`);
+- a NuGet path pattern with an upper-case letter (`Acme.Secret/**`) matched nothing, because NuGet stores lower-case paths
+  and the path dimension was compared as written, and was saved without a word. The path dimension of a NuGet repository
+  is now compared in lower case, pattern and path alike, where it is compiled (Q-AUTHZ-254), so the result depends
+  neither on when a grant was written nor on the selector or CI template that brought it: the third penetration test's
+  case of a policy with the selector `it/later-*` saved before the NuGet repository existed, whose token then read
+  `acme.secret`, now refuses it. The pattern is also refused where it is written, as feedback (Q-AUTHZ-253).
+
+What stays coarser than `/files/` is
+[H-647](#h-647--a-path-pattern-finer-than-a-package-hides-its-files-and-leaves-their-contents-in-its-documents) and
+[H-586](#h-586--an-operation-that-writes-or-removes-several-files-of-a-package-is-decided-on-one-path), both reproduced by
+that test.
 
 ## What a refusal reveals
 
@@ -380,6 +433,62 @@ return at their next sign-in) and stops for a declared user or service account. 
 deletes the declared group or user, by mistake or to take the role away outside the GitOps review. The deletion is audited
 (`group.deleted`, `authz.role.unbound` is not written for the cascade), and the last_admin guard still applies to it.
 
+### H-586 · An operation that writes or removes several files of a package is decided on one path
+
+A protocol operation is decided on one path (Q-AUTHZ-250, Q-NPM-80, Q-NUGET-113), and some write or remove more files than
+that one:
+
+- npm's unpublish of a whole package (`DELETE {name}/-rev/{rev}`) and the revisioned `PUT {name}/-rev/{rev}` that removes
+  versions are decided on `<name>` and remove every removed version's tarball and provenance bundle;
+- an npm publish is decided on `<name>` and on the tarball's path and also stores the provenance bundle
+  (`<name>/-/<base>-<version>.sigstore`);
+- NuGet's hard delete is decided on the version's `.nupkg` and removes the `.nuspec`, the embedded files and the `.snupkg`
+  below `{id}/{version}/`; a push stores the generated `.nuspec` with the `.nupkg` it is decided on.
+
+A grant or a token scope whose path patterns admit that one path and exclude some of the other files writes or removes the
+excluded files with the operation, which `/files/` refuses file by file. **Live**, reproduced by the second penetration
+test of F-82 on 2026-11-08 against the integration stack (probes of the test, not kept in the repository):
+
+- npm, a grant with `read`, `delete` and `paths.exclude: ["keep/-/keep-1.0.0.tgz"]`: `/files/` answered 404 to the read
+  and 403 to the `DELETE` of `keep/-/keep-1.0.0.tgz`, and the revisioned `PUT keep/-rev/<rev>` without version 1.0.0
+  answered 200 and removed the item;
+- npm, a grant with `read`, `deploy` and `paths.exclude: ["**/*.sigstore"]`: a publish with a provenance bundle answered
+  201 and stored `signed/-/signed-1.0.0.sigstore`, which `/files/` then refused the same principal (404);
+- NuGet, a grant with `read`, `deploy`, `delete` and `paths.exclude: ["**/*.snupkg", "**/*.nuspec"]`: `/files/` refused
+  the read (404) and the `DELETE` (403) of the `.snupkg`, and the protocol `DELETE` of the version in delete mode answered
+  204 and removed its three files; a push of `Acme.Nusp` answered 201 and stored the excluded generated `.nuspec`.
+
+Dormant for name patterns and for folder-level path patterns (`@acme/**`, `acme.core/**`, `acme.core/1.0.0/**`), which
+cover every file of the operation alike; the policy API warns about every path pattern on a package format
+(`path_patterns_on_package_format`, Q-AUTHZ-253). Package ownership and the operation's own action still apply. Closing it
+means deciding the path of every file the operation writes or removes (the format knows them before its transaction), or
+refusing the operation when a path set holds a pattern finer than the folder it touches.
+
+### H-647 · A path pattern finer than a package hides its files and leaves their contents in its documents
+
+A package's document, its search rows and its package screens are decided on the path of the package document
+(Q-AUTHZ-250), while each file is decided on its own path. A path exclude finer than a package's folder therefore hides the
+files it names and leaves what they hold visible wherever the package's metadata is shown: the npm package document carries
+each version's manifest and the README of the latest version, NuGet's registration documents and search rows carry each
+version's description and metadata, and the package API (`/api/v1/packages/…/versions/<v>/readme`) serves a version's
+README. **Live**, reproduced by the second penetration test of F-82 on 2026-11-08:
+
+- npm, a grant with `read` and `paths.exclude: ["hidden/-/hidden-2.0.0.tgz"]`: the tarball answered 404; the package
+  document answered 200 and held the README of 2.0.0, the lookup named 2.0.0 the latest version, and
+  `/api/v1/packages/<id>/versions/2.0.0/readme` answered 200 with it;
+- NuGet, a grant with `read` and `paths.exclude: ["acme.secret/2.0.0/**"]`: the `.nupkg` and the `.nuspec` of 2.0.0 answered
+  404; the registration index answered 200 and held the description of 2.0.0, the version list listed 2.0.0, and the
+  search found `Acme.Secret@2.0.0` by the words of that description (`q=TOPSECRET`, `q=description:…`, `q=version:2.0.0`).
+
+Live for a grant or a token scope with a path pattern of the shapes `<name>/-/**`, `<name>/-/<file>` (npm) or
+`<id>/<version>/**`, a single file (NuGet) on a repository of those formats; dormant for name patterns, for folder-level
+patterns that cover a whole package (`<name>/**`, `<id>/**`), and on generic repositories, whose files are listed by the
+path patterns themselves. The exposure-rule form of the same shape is
+[H-646](endpoints-and-exposure.md#h-646--an-exposure-rules-path-pattern-finer-than-a-package-hides-its-files-and-leaves-them-listed-in-its-documents).
+Closing it means one of: version-level decisions inside the documents (a document lists only the versions whose files the
+caller may read, as an exposure rule's version dimension filters them), or refusing path patterns finer than a package's
+folder on package formats; the choice is a finding of its own (F-83).
+
 ### H-299 · The cost of a package list for a caller with row-level grants depends on versions the caller cannot read
 
 Live today for a caller whose read of a repository is narrowed by a package pattern, a path pattern, a token scope with elements or an
@@ -409,7 +518,7 @@ All of this stays inside the owner's own rights; the bound is the owner, the lif
 
 ### H-335 · A NuGet search by a caller with row-level grants scans up to 200,000 matches per request
 
-Live today for a caller whose read of a NuGet repository is narrowed row by row (`authz.ReadRows`: a package pattern in a grant, a token
+Live today for a caller whose read of a NuGet repository is narrowed row by row (`authz.ReadRows`: a package or path pattern in a grant, a token
 scope with elements, or an endpoint with exposure rules), and for every caller of a repository with include or exclude patterns (Q-NUGET-77),
 who calls `GET …/v3/search` (R-NUGET-010, Q-NUGET-45). SQL cannot ask the decision point which versions the caller may read, so `totalHits`
 stays exact by scanning the candidates in rank order and asking `MayRead` per listed version; the scan stops with `400` above 200,000

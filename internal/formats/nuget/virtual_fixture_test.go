@@ -13,6 +13,7 @@ import (
 // index, and the reading back of the member each merged entry came from.
 func mergeFixture() *formattest.MergeFixture {
 	const path = "acme.widgets/.registration/index.json"
+	const request = "v3/registration-semver2/acme.widgets/index.json" // the protocol path a client requests the merge at
 	local := func(key string, vs ...string) []byte {
 		entries := make([]merge.Entry, len(vs))
 		for i, v := range vs {
@@ -27,7 +28,7 @@ func mergeFixture() *formattest.MergeFixture {
 	return &formattest.MergeFixture{
 		Cases: []formattest.MergeCase{
 			{
-				Name: "a local member and a remote member that share a version", Path: path,
+				Name: "a local member and a remote member that share a version", Path: path, Request: request,
 				Parts: []formats.MemberDocument{
 					{Member: formats.RepoRef{Name: qr("local")}, Tier: formats.TierLocal, Position: 0, Doc: local("local", "1.0.0")},
 					remotePart("remote", 1, "", "1.0.0", "2.0.0"),
@@ -35,7 +36,7 @@ func mergeFixture() *formattest.MergeFixture {
 				Sources: []string{"it/local", "it/remote"},
 			},
 			{
-				Name: "a remote member with a cached package before one without, local last", Path: path,
+				Name: "a remote member with a cached package before one without, local last", Path: path, Request: request,
 				Parts: []formats.MemberDocument{
 					remotePart("first", 0, "", "1.0.0", "2.0.0"),
 					{Member: formats.RepoRef{Name: qr("second")}, Tier: formats.TierRemoteCached, Position: 1, Doc: remotePart("second", 1, "", "1.0.0").Doc},

@@ -200,6 +200,7 @@ checked every earlier decision against them:
 | [ADR-164](#adr-164--the-oci-push-path-is-one-transaction-with-its-reference-check-under-row-locks-and-the-formats-data-port-reads-items) | The OCI push path is one transaction with its reference check under row locks, and the format's data port reads items | Decided by the development agent — owner review at the walkthrough |
 | [ADR-165](#adr-165--the-remote-engine-carries-out-the-formats-token-handshake-and-head-revalidation) | The remote engine carries out the format's token handshake and HEAD revalidation | Decided by the development agent — owner review at the walkthrough |
 | [ADR-168](#adr-168--the-oci-data-port-reads-and-removes-for-the-deletion-the-sweep-and-the-replay) | The OCI data port reads and removes for the deletion, the sweep and the replay | Decided by the development agent — owner review at the walkthrough |
+| [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) | The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
@@ -6382,6 +6383,50 @@ other than OCI needs a cascade that depends on the order of removal.
 
 **Spec:** [spec/formats/oci.md](spec/formats/oci.md) R-OCI-015 to R-OCI-019, R-OCI-033, Q-OCI-70, Q-OCI-71, Q-OCI-73 to Q-OCI-76; [spec/ha-and-helm.md](spec/ha-and-helm.md) R-HA-054.
 
+### ADR-169 · The catalog carries the package-document path, and the conformance kit holds every format to the paths it authorizes
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** Finding F-82 (2026-11-08): the npm and NuGet handlers authorized a package without a path, and the decision
+point let a coordinate without a path pass a path set without an include list, so a grant or a token scope that excluded a
+package's paths read, listed and pushed that package through the protocol while `/files/` refused the same file; an
+include refused every package. The decision point also asks questions about a package as a whole of its own (a listing row,
+the ownership of a name, a check of the caller) and had no path to decide them on. The format contract is frozen at version
+2 (ADR-141, R-ARCH-025): every change of it is an ADR.
+
+**Decision.** A target that names a package names the canonical path of the document or file the operation serves or
+writes, and a non-repository coordinate without a path does not match a path set with any pattern
+([Q-AUTHZ-250](spec/authorization.md#q-authz-250--a-protocol-request-is-decided-on-the-canonical-path-of-what-it-serves-or-writes-and-a-package-without-a-path-fails-a-path-set)).
+`catalog.Entry` gains `DocumentPath`, which `formats.CatalogEntry` derives from a format's `PackageDocumentPath` for a format
+with package names; the decision point completes its own package-level coordinates with it. It is an addition: the zero
+value leaves such a question without a path, which fails closed, and `ContractVersion` stays 2. `catalog.Facts` gains
+`LowerCasePaths`, true for NuGet: the path dimension of such a repository is compared in lower case, pattern and path alike
+([Q-AUTHZ-254](spec/authorization.md#q-authz-254--the-path-dimension-of-a-format-with-lower-case-paths-is-compared-in-lower-case-pattern-and-path-alike)),
+and a path pattern with an upper-case letter over such a repository is refused where it
+is written ([Q-AUTHZ-253](spec/authorization.md#q-authz-253--path-patterns-over-a-format-with-lower-case-paths-are-lower-case-and-every-path-pattern-on-a-package-format-is-warned-about));
+the zero value folds and refuses nothing. The conformance kit gains
+check 13 (R-ARCH-010): every target a handler hands `Authorize`, `CheckOwnership` or `Claim` names a canonical path that
+`Classify` places in the target's package, every served file was authorized at its path, and a package's request is not
+authorized at the repository level. The vulnerability corpus of the spec's list moves from item 13 to item 14; the kit did
+not number it. The frozen surface file is regenerated with `go test ./internal/formats -run TestR_ARCH_025 -update-contract`.
+
+**Consequences.** A format states a path for every target, and a format that forgets one refuses every caller with path
+patterns and fails the kit before a release; the OCI format of its feature branch is held to the same check when it lands.
+A path pattern on a package format has to cover the package document and the files. Listings and the protocol decide a
+package on the same path.
+
+**Alternatives considered.** The host deriving the path from the request (a write's path is known only after the body; a
+protocol path is not a canonical one; a required method would raise `ContractVersion`, an optional one would leave a format without it deciding without a path); refusing path patterns on package
+formats (a selector covers repositories that do not exist yet); failing closed without the format changes (path patterns
+would refuse every package).
+
+**Revisit condition:** a format serves a document that spans packages under one path, or an operation that removes several
+files has to be decided per file (H-586).
+
+**Spec:** [spec/authorization.md](spec/authorization.md) R-AUTHZ-005, R-AUTHZ-007, Q-AUTHZ-250;
+[spec/architecture.md](spec/architecture.md) R-ARCH-010; [spec/formats/npm.md](spec/formats/npm.md) Q-NPM-80;
+[spec/formats/nuget.md](spec/formats/nuget.md) Q-NUGET-113.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -6980,6 +7025,11 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-AUTHZ-238](spec/authorization.md#q-authz-238--disabling-a-repository-is-journaled-as-repositorydisabled-with-a-handler-of-its-own) | How is disabling a repository journaled? Decided by the development agent | (b) a journaled `repository.disabled` beside `repository.updated`, replayed as a removal that disables the repository; rejected: a fifth setting of `authz.settings.changed`, an entry on every `repository.updated` | — |
 | [Q-AUTHZ-239](spec/authorization.md#q-authz-239--a-deleted-repository-is-journaled-and-replayed-as-disabled) | Is a repository's deletion journaled, and how is it replayed? Decided by the development agent | (b) `repository.deleted` carries the entry in both phases; the replay disables the repository, never deletes it | — |
 | [Q-AUTHZ-240](spec/authorization.md#q-authz-240--an-owner-changes-the-owners-of-a-name-through-a-narrowed-token-only-where-its-scope-lists-manage-on-the-name) | May an owner change a name's owners through a token with a narrow scope? Decided by the development agent | (a) only where the scope lists `manage` on the repository and the name | (b) `deploy` suffices; (c) any action on the repository; (d) sessions and inheriting tokens only |
+| [Q-AUTHZ-250](spec/authorization.md#q-authz-250--a-protocol-request-is-decided-on-the-canonical-path-of-what-it-serves-or-writes-and-a-package-without-a-path-fails-a-path-set) | Which path do path patterns meet on a protocol route, and what does a package without a path match? Decided by the development agent | (a) the format states the canonical path of what it serves or writes, a non-repository coordinate without a path fails a path set with any pattern, the core decides its own package questions on the package document's path, kit check 13; rejected: the core derives the path, path patterns refused on package formats, fail closed only | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) |
+| [Q-AUTHZ-251](spec/authorization.md#q-authz-251--an-exposure-rules-view-and-check-exposure-decide-a-package-on-its-documents-path) | On which path do an exposure rule's view and check-exposure decide a package? Decided by the development agent | (a) the package document's path, for the package, its versions and its tags; a package item without a path fails a rule with path patterns; rejected: the view ignoring path patterns, refusing path rules on package formats | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) |
+| [Q-AUTHZ-252](spec/authorization.md#q-authz-252--a-permission-check-that-names-a-path-is-decided-on-its-paths-package-and-a-path-of-another-package-answers-false) | How is a permission check that names a path decided? Decided by the development agent | (a) on the package its format gives the path; a named package that is not the path's, or a path that is not canonical, answers false; rejected: ignoring the named package, a 422 | — |
+| [Q-AUTHZ-253](spec/authorization.md#q-authz-253--path-patterns-over-a-format-with-lower-case-paths-are-lower-case-and-every-path-pattern-on-a-package-format-is-warned-about) | What happens to an upper-case path pattern over NuGet, and which path patterns are warned about? Decided by the development agent | (a) refused where the resource set covers a repository of a format with lower-case paths (policies, exposure rules, token scopes, CI inline grants); the warning for every path pattern on a package format; matching folded by Q-AUTHZ-254; rejected: a warning only | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) |
+| [Q-AUTHZ-254](spec/authorization.md#q-authz-254--the-path-dimension-of-a-format-with-lower-case-paths-is-compared-in-lower-case-pattern-and-path-alike) | How is the path dimension of a format with lower-case paths compared? Decided by the development agent | (a) in lower case, pattern and path alike, where the dimension is compiled for such a format; rejected: folding the pattern only, the refusal alone | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) |
 | [Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings) | First match per tier, or union of all matching mappings? | (a) first match within a tier, union across tiers | [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) |
 | [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter) | Grammar of the exchange's `scope` parameter? | (c) an RFC 6749 scope string as notation for the repository part of the R-AUTH-024 scope | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
 | [Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences) | Accept ID tokens with several audiences? | (c) only if every audience is an allowed audience of the CI issuer | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |
@@ -7110,6 +7160,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NPM-77](spec/formats/npm.md#q-npm-77--the-wait-for-the-advisory-providers-answer-is-bounded-by-npmaudittimeout-alone) | What bounds the wait for the advisory provider's answer? | (a) `npm.audit.timeout` alone; the forward's client ignores the remote's `readTimeoutMs` | — |
 | [Q-NPM-78](spec/formats/npm.md#q-npm-78--an-exchange-without-a-deadline-gets-the-largest-bound) | What bounds an exchange whose caller set no deadline? | (a) `upstream.ExchangeHeaderTimeout` until the body is closed | — |
 | [Q-NPM-79](spec/formats/npm.md#q-npm-79--npm-always-verifies-the-announced-digest-and-the-policies-that-would-not-are-refused) | Does an npm remote follow `integrity.checksumPolicy`? Decided by the development agent | (a) npm always verifies the strongest digest the blob pass computes; `ignore` and `pass-through` are refused with 422 `not_applicable` | — |
+| [Q-NPM-80](spec/formats/npm.md#q-npm-80--the-npm-routes-are-decided-on-the-package-documents-path-or-on-the-tarballs) | Which path does each npm route authorize? Decided by the development agent | (a) `<name>` for the package document and every part of it and for a write of the package as a whole, the tarball's path for a tarball; rejected: the version document on `<name>/<version-or-tag>` | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) |
+| [Q-NPM-81](spec/formats/npm.md#q-npm-81--a-forwarded-audit-withholds-the-names-the-caller-may-not-read) | Does a forwarded audit send names the caller may not read? Decided by the development agent | (a) no: withheld and counted as not proxied, decided by the read scope through the addressed repository; rejected: 501 unless the caller reads the remote whole, leaving it | — |
 | [Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete) | Default meaning of a NuGet delete? | (a) the protocol `DELETE` unlists unless the repository sets `deleteMode: delete`; management, UI and raw deletes are hard deletes | [ADR-090](#adr-090--a-nuget-protocol-delete-unlists-by-default) |
 | [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes) | Metadata cache period of NuGet remotes? | (b) 300 s as the NuGet format default; 1800 s stays for not-found entries. Revisited 2026-10-28, unchanged: refreshes collapse through Valkey, and degrade to one per replica while Valkey is unavailable | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids) | Allow non-ASCII package IDs? | (a) ASCII-restricted IDs for everything entering a local repository; upstream IDs keyed by the client's lowercased path | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
@@ -7220,6 +7272,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NUGET-110](spec/formats/nuget.md#q-nuget-110--a-feed-page-without-a-name-is-a-page-and-its-cursor-is-the-progress) | May a feed call return no name? | (a) yes, with the moved cursor | — |
 | [Q-NUGET-111](spec/formats/nuget.md#q-nuget-111--the-fixture-of-the-nuget-drain-load-repositories-restore-project-and-pushed-archives) | What is the fixture of the NuGet drain load? | (a) three repositories of their own, a 61-package project of one corpus root, pushed archives built beforehand by the test upstream's generator | — |
 | [Q-NUGET-112](spec/formats/nuget.md#q-nuget-112--two-replayed-additions-of-one-version-that-name-different-bytes-leave-its-number-refusing-every-package) | What does the replay do with two additions of one version that name different bytes? | (c) the reservation becomes `removed`, so the number refuses every package, and the replay warns with both digests; rejected: first entry wins, admitting every digest, a tombstone kind of its own, the restored row, authenticated entries, an administrator release | — |
+| [Q-NUGET-113](spec/formats/nuget.md#q-nuget-113--the-nuget-routes-are-decided-on-the-canonical-path-of-the-document-or-file-they-serve-or-write) | Which path does each NuGet route authorize? Decided by the development agent | (a) the canonical path of `CanonicalPath` for every read (every registration document on `{lower_id}/.registration/index.json`), the version's `.nupkg` or `.snupkg` for a push, an unlist, a delete, a relist and a symbol push; rejected: a path per registration document | [ADR-169](#adr-169--the-catalog-carries-the-package-document-path-and-the-conformance-kit-holds-every-format-to-the-paths-it-authorizes) |
 | [Q-OCI-1](spec/formats/oci.md#q-oci-1--one-format-oci-serves-docker-and-oci-content-on-the-page-formatsocimd-with-the-prefix-r-oci) | Does one format serve Docker images and OCI content? | (a) One format `oci`, display name "OCI (Docker)", one page `oci.md` | — |
 | [Q-OCI-2](spec/formats/oci.md#q-oci-2--what-this-phase-builds-and-what-stays-in-f4) | What does the Docker registry phase build and what stays in F4? | (a) The registry for Docker CLI and Podman in full, remote in both modes, virtual, bound hosts, Kubernetes pulls and Buildx push; BuildKit caches, ORAS, Cosign and the other clients stay in F4 | — |
 | [Q-OCI-3](spec/formats/oci.md#q-oci-3--repository-and-project-keys-follow-the-oci-component-grammar-for-every-format) | Which grammar do repository and project keys follow? | (a) The OCI component grammar for every format, applied with migration 00056 and the OpenAPI patterns | — |

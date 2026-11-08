@@ -117,7 +117,7 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 		return errs.E(errs.Unavailable, errs.CodeShadowCheckUnavailable,
 			in.lowerID+" lost its last version while this push ran; try again.", errs.WithRetryAfter(time.Second))
 	}
-	if err := c.Packages.Claim(ctx, formats.Target{Package: in.lowerID, Version: in.lowerVersion, Actions: []formats.Action{formats.ActionDeploy}},
+	if err := c.Packages.Claim(ctx, formats.Target{Package: in.lowerID, Version: in.lowerVersion, Path: NupkgPath(in.lowerID, in.lowerVersion), Actions: []formats.Action{formats.ActionDeploy}},
 		formats.OwnershipWrite{Publish: true, FirstVersion: first}); err != nil {
 		return err
 	}

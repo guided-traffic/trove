@@ -445,6 +445,7 @@ func ownerOfRow(r q.OwnershipOwnersRow) Owner {
 // with deny.ownership; the check then also holds the decision. The claim row,
 // when there is one, stays locked until the transaction ends.
 func (o *Ownership) CheckTx(ctx context.Context, tx meta.Tx, idx *Index, sub Subject, c Coordinate, w OwnershipWrite) (OwnershipCheck, error) {
+	c = o.e.atPackage(idx, c) // a change of the package as a whole is decided on its document's path (Q-AUTHZ-250)
 	k, applies, err := o.keyFor(idx, sub, c)
 	if err != nil || !applies {
 		return OwnershipCheck{}, err
@@ -478,6 +479,7 @@ func (o *Ownership) CheckTx(ctx context.Context, tx meta.Tx, idx *Index, sub Sub
 // under the claim row lock and stays the decision that counts; a refusal is returned, counted and
 // audited like the commit's. A write that ownership does not apply to passes.
 func (o *Ownership) PrecheckWrite(ctx context.Context, idx *Index, sub Subject, c Coordinate, w OwnershipWrite) error {
+	c = o.e.atPackage(idx, c)
 	k, applies, err := o.keyFor(idx, sub, c)
 	if err != nil || !applies {
 		return err
@@ -679,7 +681,7 @@ func (o *Ownership) nameIn(idx *Index, repoKey qname.Repo, name string) (k ownKe
 // included, under the ceiling of its endpoint. A repository the index does not
 // hold has no grants.
 func (o *Ownership) manages(idx *Index, sub Subject, repoKey qname.Repo, name string) bool {
-	c := Coordinate{Repository: repoKey, Package: name, Kind: KindWrite, Actions: []Action{Manage}}
+	c := o.e.atPackage(idx, Coordinate{Repository: repoKey, Package: name, Kind: KindWrite, Actions: []Action{Manage}})
 	return o.e.evaluate(idx, sub, c).Outcome == Allow
 }
 
@@ -702,7 +704,7 @@ func owns(idx *Index, sub Subject, owners []Owner) bool {
 // audited like a refused write. It is the same for a name that does not exist,
 // so a refused write reveals nothing (R-AUTHZ-016).
 func (o *Ownership) refuseChange(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name string) error {
-	c := Coordinate{Repository: repoKey, Package: name, Kind: KindWrite, Actions: []Action{Manage}}
+	c := o.e.atPackage(idx, Coordinate{Repository: repoKey, Package: name, Kind: KindWrite, Actions: []Action{Manage}})
 	d := Decision{Outcome: DenyVisible, Reason: ReasonNoGrant, Missing: Manage, Target: targetOf(c), Epoch: idx.Epoch()}
 	o.e.count(d, sub, c)
 	o.e.audit(ctx, sub, c, d)
@@ -740,7 +742,7 @@ func (o *Ownership) packageOwners(k ownKey, state string, owners []Owner) Packag
 // name). Where ownership does not exist the answer is the same 404.
 func (o *Ownership) Owners(ctx context.Context, idx *Index, sub Subject, repoKey qname.Repo, name string) (PackageOwners, error) {
 	k, norm, ok := o.nameIn(idx, repoKey, name)
-	d := o.e.DecideOn(ctx, idx, sub, Coordinate{Repository: repoKey, Package: norm, Kind: KindMetadata, Actions: []Action{Read}})
+	d := o.e.DecideOn(ctx, idx, sub, o.e.atPackage(idx, Coordinate{Repository: repoKey, Package: norm, Kind: KindMetadata, Actions: []Action{Read}}))
 	if d.Outcome != Allow {
 		return PackageOwners{}, d.Err()
 	}
@@ -839,7 +841,7 @@ func (o *Ownership) changeAllowed(ctx context.Context, idx *Index, sub Subject, 
 // (R-AUTHZ-006), on the repository and the name. A session and an inheriting token
 // carry no such limit.
 func (o *Ownership) scopeReachesName(sub Subject, k ownKey) bool {
-	return o.e.scopeAdmits(sub.Scope, Manage, k.repo, false, k.name, "")
+	return o.e.scopeAdmits(sub.Scope, Manage, k.repo, false, k.name, o.e.packagePath(k.repo.Format, k.name))
 }
 
 // AddOwner adds an owner to a name (POST …/owners) in a transaction of its own;

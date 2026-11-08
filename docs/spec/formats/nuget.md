@@ -481,9 +481,10 @@ cache fills. A raw deploy is not an ingestion path of NuGet (Q-NUGET-13). The Nu
    dependency range. On the package pipeline a
    package whose package types include `SymbolsPackage` is rejected with 400 and the message that
    symbol packages go to the symbol publish resource (R-NUGET-020).
-5. Authorize with the declared ID as coordinate (R-AUTHZ-005 in
+5. Authorize with the declared ID and the path of the version's `.nupkg` as coordinate (R-AUTHZ-005 in
    [authorization.md](../authorization.md): the name the content declares is the name that is
-   authorized and indexed), including the ownership check (R-AUTHZ-018). A caller holding no
+   authorized and indexed, and a grant's path patterns decide the file the push creates, Q-NUGET-113),
+   including the ownership check (R-AUTHZ-018). A caller holding no
    `deploy` grant on the repository at all is refused before the body is read, so unauthorized
    callers cannot fill the spool. A caller who holds `deploy` on the repository and no right to the
    declared ID does fill it once per request ([H-334](../../security/nuget-publish.md#h-334--a-push-is-read-in-full-before-the-permission-on-its-id-can-be-decided)).
@@ -1203,11 +1204,11 @@ operations that table does not list:
 
 | Operation | Coordinate | Action |
 |---|---|---|
-| Service index, search, autocomplete | repository level; results filtered per ID | `read` |
-| Version list, registration documents, `.nupkg`, `.nuspec`, embedded files | `lower_id` and canonical path | `read` |
-| Push, symbol push | declared ID | `deploy`, ownership |
-| Unlist, hard delete | `lower_id` | `delete`, ownership |
-| Relist | `lower_id` | `deploy`, ownership |
+| Service index, search, autocomplete | repository level; results filtered per ID, on the path of its version list `{lower_id}/index.json` (Q-AUTHZ-250) | `read` |
+| Version list, registration documents, `.nupkg`, `.nuspec`, embedded files | `lower_id` and canonical path: `{lower_id}/index.json`, `{lower_id}/.registration/index.json` for every registration document, the file's path (Q-NUGET-113) | `read` |
+| Push, symbol push | declared ID and the path of the version's `.nupkg` or `.snupkg` | `deploy`, ownership |
+| Unlist, hard delete | `lower_id` and the path of the version's `.nupkg` | `delete`, ownership |
+| Relist | `lower_id` and the path of the version's `.nupkg` | `deploy`, ownership |
 | Symbol file from a local repository | `lower_id` of the version that holds the file | `read` |
 | Symbol file or vulnerability page from a remote upstream | repository level | `read`, plus the cache fill rule for uncached files |
 | Metadata reindex (R-NUGET-025) | repository level | per R-REPO-016 |
@@ -1230,6 +1231,11 @@ Acceptance criteria:
   `Acme.Billing` answers 403 and no blob is written (storage metrics unchanged).
 - A second CI mapping with `deploy` on the same pattern cannot push a new version of
   `Acme.Payments.Api` once the first mapping owns it (403 `deny.ownership`).
+- A grant or a token scope with `read` and `paths.exclude: ["acme.secret/**"]`: the version list, every registration
+  document, the `.nupkg` and the `.nuspec` of `acme.secret` answer 404 and the search neither lists nor counts it, while
+  `acme.open` is served; with `deploy`, a push of `Acme.Secret` answers 403. With `paths.include: ["acme.open/**"]`,
+  `acme.open` is served through the protocol and `acme.secret` answers 404
+  (`TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`).
 
 ### R-NUGET-014 · Remote repository: upstream and resource discovery
 Priority: **MVP** · Covers: PKG-NUGET-023, PKG-NUGET-024, RMT-004
@@ -5402,6 +5408,35 @@ index of [docs/security/README.md](../../security/README.md). Code: `published` 
 [formats_nuget_test.go](../../../test/integration/backup/formats_nuget_test.go), and
 `TestR_NUGET_033_TheEndStateOfANumberDoesNotDependOnTheOrderOfItsEntries` in
 [journal_replay_test.go](../../../internal/formatdata/nuget/journal_replay_test.go).
+
+### Q-NUGET-113 · The NuGet routes are decided on the canonical path of the document or file they serve or write
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-013 named `lower_id` and the canonical path as the coordinate of every document and file, and the
+handlers passed the ID alone, so a grant's path patterns did not apply to the protocol (F-82,
+[authorization.md](../authorization.md) Q-AUTHZ-250). The three registration documents of an ID (index, page, leaf, in
+every hive) share one canonical path, the cache entry `{lower_id}/.registration/index.json` (`CanonicalPath`,
+R-NUGET-015); a push, a delete, a relist and a symbol push have no canonical path in their request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The canonical path of `CanonicalPath` for every read; the version's `.nupkg` for a push, an unlist, a delete and a relist; the `.snupkg` for a symbol push (chosen) | One rule with the remote cache and `/files/`: the version list `{lower_id}/index.json`, every registration document `{lower_id}/.registration/index.json`, a file its own path | A pattern on the ID's folder (`acme.core/**`) covers every document and file of the ID, and a pattern on a version folder (`acme.core/1.0.0/**`) every file and write of that version | The registration documents of an ID are one coordinate: a pattern cannot admit the leaf of one version and not the index |
+| (b) A path per registration document (`{lower_id}/.registration/{hive}/…`) | A coordinate per hive, page and leaf | Finer patterns | Paths no item and no cache entry has, so `/files/` and the protocol would decide different coordinates for the same content; every version is listed in the index anyway |
+
+**Choice:** (a). `docSpec.path` and `remoteSpec.path` carry the document's path, `serveFile`, `remoteFile` and
+`virtualFile` the file's, `serveVirtual` the document's; the push, the symbol push, the delete and the relist name the
+version's `.nupkg` or `.snupkg` in the target of `Authorize`, `CheckOwnership` and `Claim`. A delete removes the version's
+files below `{lower_id}/{version}/` and is decided on its `.nupkg` (H-586 in
+[permissions.md](../../security/permissions.md)).
+
+**Rationale:** the path a pattern is matched against must be one the content has; the cache layout already says where
+each document lives. The development agent would revisit (b) if registration documents become items of their own.
+
+**Applied in the spec:** R-NUGET-005 step 5, R-NUGET-013 (the coordinate table and acceptance),
+[authorization.md](../authorization.md) R-AUTHZ-007 (the NuGet rows). Tests:
+`TestR_AUTHZ_005_PathPatternsDecideTheNuGetProtocolOnCanonicalPaths`
+([path_patterns_test.go](../../../test/integration/nuget/path_patterns_test.go)), the NuGet run of kit check 13.
 
 ## What this does not cover
 

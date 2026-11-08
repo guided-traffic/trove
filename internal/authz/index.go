@@ -423,14 +423,14 @@ func (b *builder) policyRepos(p q.AuthzBuildPoliciesRow) []*repoInfo {
 }
 
 // resourcesFor compiles the pattern lists of a policy for the repositories of
-// one format's package-name comparison (nil names: no folding).
-func (b *builder) resourcesFor(p q.AuthzBuildPoliciesRow, names catalog.Names) (resourceSet, error) {
+// one format: its package-name comparison and the case fold of its paths (nil: no folding, Q-AUTHZ-254).
+func (b *builder) resourcesFor(p q.AuthzBuildPoliciesRow, names, pathFold catalog.Names) (resourceSet, error) {
 	pk := b.patterns[p.ID]
 	pkg, err := compileSet(dimPackage, pk[patternKey{"package", "include"}], pk[patternKey{"package", "exclude"}], names)
 	if err != nil {
 		return resourceSet{}, err
 	}
-	path, err := compileSet(dimPath, pk[patternKey{"path", "include"}], pk[patternKey{"path", "exclude"}], nil)
+	path, err := compileSet(dimPath, pk[patternKey{"path", "include"}], pk[patternKey{"path", "exclude"}], pathFold)
 	if err != nil {
 		return resourceSet{}, err
 	}
@@ -450,13 +450,13 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 	// repository, for ciTexts.
 	effective := map[string]ActionSet{}
 	for _, r := range repos {
-		names := namesIn(b.reg, r.Format)
+		names, pathFold := namesIn(b.reg, r.Format), pathFoldIn(b.reg, r.Format)
 		key := ""
-		if names != nil {
+		if names != nil || pathFold != nil {
 			key = r.Format
 		}
 		if byRule[key] == nil {
-			rs, err := b.resourcesFor(p, names)
+			rs, err := b.resourcesFor(p, names, pathFold)
 			if err != nil {
 				b.log.Error("authz: policy skipped, its patterns do not compile", "policy", p.Name, "err", err)
 				return

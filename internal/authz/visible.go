@@ -116,10 +116,12 @@ func (s *readScope) MayRead(repo qname.Repo, pkg, version string) bool {
 	if !s.idx.addressedReaches(s.addressed, repo) {
 		return false
 	}
-	d := s.e.evaluateWith(s.idx, s.sub, s.st, Coordinate{
+	// A row stands for the package's document: it is decided on that document's path,
+	// so a path pattern hides from a listing what it hides from the protocol (Q-AUTHZ-250).
+	d := s.e.evaluateWith(s.idx, s.sub, s.st, s.e.atPackage(s.idx, Coordinate{
 		Repository: repo, Package: pkg, Version: version,
 		Kind: KindMetadata, Actions: s.read, Addressed: s.addressed,
-	})
+	}))
 	return d.Outcome == Allow
 }
 
@@ -234,9 +236,9 @@ func rowsUnless(all bool) ReadShape {
 }
 
 // unrestrictedPackages reports whether a grant's resource set admits every package
-// of the repository: no package pattern at all, and no path include list (a path
-// include list needs a path, which a package coordinate does not have). Path
-// exclusions never apply to a coordinate without a path.
+// of the repository: no package pattern and no path pattern at all. A row is decided
+// on the path of its package document (atPackage), which a path include or exclude
+// may leave out (Q-AUTHZ-250).
 func (r resourceSet) unrestrictedPackages() bool {
-	return len(r.packages.include) == 0 && len(r.packages.exclude) == 0 && len(r.paths.include) == 0
+	return len(r.packages.include) == 0 && len(r.packages.exclude) == 0 && len(r.paths.include) == 0 && len(r.paths.exclude) == 0
 }

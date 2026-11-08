@@ -817,6 +817,10 @@ Priority: **MVP** · Covers: trove-only
   Exclude wins inside a rule and nowhere else, so rules add up like grants (R-AUTHZ-001).
   - A coordinate without a version (a package document, a dist-tag document) is admitted when a
     rule admits its package; its versions are then filtered inside the document (R-EP-018).
+  - On a format with package names the `paths` dimension meets the path the coordinate carries: a protocol request's
+    canonical path, and for a package, its versions and its tags in the format's document view and in check-exposure the
+    path of the package's document (npm `<name>`, NuGet `<id>/index.json`). An item that names a package and no path
+    fails a rule with path patterns ([authorization.md](authorization.md) Q-AUTHZ-250, Q-AUTHZ-251).
   - A repository-level coordinate (a service index, a search, the registry root) is admitted when
     E has an enabled rule for the repository; listed items are filtered per item.
   - A tag is visible when a rule that admits its package admits the tag name and the version the
@@ -882,7 +886,9 @@ CREATE INDEX endpoint_exposure_rule_repo ON endpoint_exposure_rule (repo_id);
   its project); `invalid_version_range` (the
   format refuses the range); `dimension_not_supported` (a non-empty `versions` or `distTags` for a
   format without versions or tags, or a non-empty `packages` for a format without package names);
-  `format_not_exposable` (a format without exposure support, R-EP-018). Saved with a warning:
+  `format_not_exposable` (a format without exposure support, R-EP-018); `invalid_pattern` also for a path pattern with
+  an upper-case letter on a repository of a format with lower-case paths (NuGet, [authorization.md](authorization.md)
+  Q-AUTHZ-253; the paths of such a repository are compared in lower case, Q-AUTHZ-254). Saved with a warning:
   `path_patterns_on_package_format`, as for policies (R-AUTHZ-005), and `endpoint_not_in_rules_mode`
   when the endpoint's mode is `all`.
 

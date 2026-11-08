@@ -72,6 +72,7 @@ func (f *Format) serveRegistration(ctx context.Context, rq *formats.Request, w h
 		variant += "/leaf/" + ver
 	}
 	return f.serveDocument(ctx, rq, w, lowerID, docSpec{
+		path:    RegistrationIndexPath(lowerID),
 		variant: variant,
 		gzip:    hive.Gzipped(),
 		// The paging changes the bytes of the index and of the pages' bounds.
