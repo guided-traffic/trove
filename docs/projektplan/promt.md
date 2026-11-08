@@ -252,6 +252,24 @@ Found on 2026-11-08 during the run of T-16, by the penetration test of the F-82 
   "All versions" shows a few hundred bytes for an image of many MiB; npm and NuGet are unaffected (their lead item is the
   package file). Done when the server reports an image's size (config and layers; an index's children) and a test pushes an
   image and reads it back.
+- **F-87 · A scoped client-setup request duplicates the snippets of every format** (read, dormant). The client-setup API
+  accepts `scope` for every format (`internal/api/v1/packages_api.go`), and the renderer adds a `-scoped` copy of each
+  configure template whether or not it reads the scope: an OCI repository answers `docker.configure.shell-scoped` as an
+  identical copy. Only npm's templates use the scope, and the UI sends none. Done when a scope yields only snippets that use
+  it, or is refused for a format without scoped snippets, with a test.
+
+### Tests and tools
+
+- **F-88 · OCI tests carry requirement IDs whose acceptance criteria they do not prove** (read). The code review of T-16 WP3
+  found tests of WP4 named with R-OCI-006, 014, 015, 016, 018, 020, 028, 030, 031, 032 and 033 whose criteria need real
+  clients, the conformance suite (R-OCI-035), the e2e runs or the restore drill; the coverage report derives "implemented"
+  from those names. Done when each OCI test name carries only an ID it proves, with a requirement-specific reason for every
+  ID moved into a comment.
+- **F-89 · The stall-deadline test fails under the race detector on a loaded host** (confirmed once).
+  `TestStallTimeout/R-ARCH-005_every_successful_chunk_moves_the_deadline…` (`internal/httpserver/server_test.go:335`) read
+  370 of 480 bytes in the pinned Linux image with `-race` while about ten agents shared the host; no data race was reported.
+  Done when the cause (the test's timing or a late deadline move) is fixed and the test holds under `-race -count=10` on a
+  loaded host.
 
 Found on 2026-11-03 while closing phase 5:
 
