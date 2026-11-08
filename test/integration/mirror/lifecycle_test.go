@@ -74,6 +74,12 @@ func TestR_REPO_053_ALostLeaseIsContinuedByTheNextDispatchAndTheOldFenceWritesNo
 		return e.text(`SELECT pass_job_id::text FROM mirror_state WHERE repo_id = $1`) != oldJob
 	})
 	e.waitFills(5, 30*time.Second)
+	// A fill is counted before the commit of its package (PackageDone) is: the snapshot is taken once the new job holds at pkg-005
+	// with nothing left to write, five packages done and the pending names starting at the held one.
+	testenv.WaitFor(t, "the new job to hold at pkg-005 with five packages done", 30*time.Second, func() bool {
+		return e.st.Number(`SELECT pass_packages_done FROM mirror_state WHERE repo_id = $1`, e.repoN) == 5 &&
+			e.st.Number(`SELECT count(*) FROM mirror_pending WHERE repo_id = $1 AND name < 'pkg-005'`, e.repoN) == 0
+	})
 	before := e.snapshot()
 	err := e.store.PackageDone(context.Background(), mirror.Fence{RepoID: e.repoN, JobID: oldJob, Holder: oldHolder}, mirror.PackageResult{Name: "pkg-007"})
 	if !errors.Is(err, mirror.ErrFenceLost) {
